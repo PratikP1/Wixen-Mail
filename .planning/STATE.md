@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-current_phase: 02
-current_phase_name: Search that says what it covers
+current_phase: 04.2
+current_phase_name: What was built and never reached
 status: executing
 stopped_at: Completed 04.2-01-PLAN.md
 last_updated: "2026-09-06T23:23:14.434Z"
 last_activity: "2026-09-06, 04.2-01 done and merged to main at 146b104, version 0.77.0. Undo Send really has something to take back: a message is held, says \"Sending in 10 seconds. Undo Send takes it back.\", goes on its own when the hold runs out, and can be taken back while it waits. It refused every time it was pressed before this, because queue_outbox_message was a wrapper pinning the moment to AsSoonAsPossible and the composer worked out what its message was waiting for and never passed it to the queue. That wrapper is deleted, so every caller says what it waits for. How long the hold lasts is a top-level setting under Sending on the Compose tab; both settings checks were red about it before they were green. Two guard records added, both breaks measured by hand. Ledger 81 closed; 147 and 148 opened, both unrun-verify. Nothing here has met a real server and nobody has heard the countdown through a screen reader: 04.2-04's checkpoint item 4 asks that question. Owed but deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 9611b70, which is not on the critical path and belongs to the end-of-phase sweep. STATE.md's own current_phase still says 02, which was stale before this plan and is left alone as out of scope."
 state_head: 146b104f9ca35020ccddd2496ad80734a9b120eb
 progress:
-  total_phases: 9
-  completed_phases: 0
-  total_plans: 50
-  completed_plans: 50
-  percent: 0
+  total_phases: 13
+  completed_phases: 5
+  total_plans: 85
+  completed_plans: 51
+  percent: 60
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---

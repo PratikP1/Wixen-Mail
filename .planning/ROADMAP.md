@@ -32,8 +32,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Search that says what it covers** - The scope selector scopes, the coverage is disclosed, and a rule can be a folder
 - [ ] **Phase 2.1: What phase 1 found on its way past** (INSERTED) - Thirteen defects and stale documents that belong to no other phase
 - [ ] **Phase 3: Mail at scale on the wire** - Resume rather than re-list, hold one connection, fetch a whole mailbox, and never pick a conflict winner silently
-- [ ] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
-- [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere, recurring events across weeks and months, notes that sync, contacts over CardDAV
+- [x] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
+- [ ] **Phase 4.1: Mail moves between accounts** (INSERTED) - The move and copy window is a tree built for several accounts and fed one, so mail cannot cross an account and nothing says so. Goes before phase 5, because a reminder moving between accounts would otherwise be the first cross-account move in the program
+- [ ] **Phase 4.2: What was built and never reached** (INSERTED) - Thirteen findings from the sweep of 2026-09-06, all of them code that runs, is tested, and is quietly narrower in production than its own design. Undo Send, scheduled send, meeting replies that reach the organiser, accepting an invitation reaching the calendar, the Blocked Senders screen
+- [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere including contacts and reminders, recurring events across weeks and months, and a provider task move that survives being half finished
+- [ ] **Phase 5.1: Notes and contacts reach a server** (INSERTED) - The notes seam and its first backend, and CardDAV. Cut from phase 5 at the boundary between moving what is already here and reaching a server for the first time
+- [ ] **Phase 5.2: Notes in OneNote** (INSERTED) - The second notes backend, separated because a OneNote page has no ETag and cannot come back character for character, so PIM-04's criterion has to be decided rather than met
 - [ ] **Phase 6: How the application speaks** - Per-event feedback channels, dates in the user's language, and a scan that names what it cannot judge
 - [ ] **Phase 7: Installing, updating and what is stored** - A signed installer, an update check, shortcuts, the cache encryption decision, and the other two platforms
 - [ ] **Phase 8: Every number the project quotes** - Replace the estimates with measurements
@@ -409,7 +413,11 @@ lifts out whole if it is not.
 **Requirements**: FEEDBACK-01, FEEDBACK-02, FEEDBACK-03
 **Success Criteria** (what must be TRUE):
 
-  1. A user sets Speech, Earcon, Braille and Visual independently for each of the sixteen events from the Settings Feedback tab, by keyboard, and the setting survives a restart.
+  1. A user sets Earcon and Visual independently for each of the sixteen events from the Settings Feedback tab, by keyboard, and the setting survives a restart. Speech and Braille are set **together**, as one choice, and the screen the user meets says that choosing between them is done in their screen reader rather than here.
+
+     **This criterion was rewritten on 2026-09-06 because the original could not be built.** It asked for Speech and Braille to be set independently. They ride a single `UiaRaiseNotificationEvent`, whose declared signature takes no medium parameter at all, so whether a notification is spoken, brailled or both is the screen reader's decision and not this program's. Four readings agree: the call site, the module comment above it, `screen_reader.rs`, and `docs/accessibility.md`, which has said the honest version all along.
+
+     The `||` in `accessibility.rs` that releases the notification when either channel is on is deliberate and correct, and there is a test named for the case with a comment explaining it: requiring both would leave a deaf-blind user with nothing when a send fails. So the defect is not the routing. It is that Settings offers two independent tick boxes and one changelog entry promises independent control, both of which describe something that cannot happen. Correcting those three false sentences belongs to phase 4.2; offering the honest control belongs here.
   2. Month names, day names and relative wording follow the machine's locale, falling back to English silently where there is no translation.
   3. The accessibility scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so "roughly half" becomes a list.
   4. The interactions only a human screen reader pass can cover are written down as a scoped list, and each of the five WebView2 findings is either fixed or recorded as upstream with the upstream named.
@@ -466,11 +474,15 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 9/9 | Executed, all merged, verification human_needed | - |
-| 4. Writing and reading a message in full | 9/9 | In Progress|  |
-| 5. The other five modules keep up | 0/TBD | Not started | - |
-| 6. How the application speaks | 0/TBD | Not started | - |
-| 7. Installing, updating and what is stored | 0/TBD | Not started | - |
-| 8. Every number the project quotes | 0/TBD | Not started | - |
+| 4. Writing and reading a message in full | 9/9 | Executed, all merged, verification human_needed | 2026-09-06 |
+| 4.1 Mail moves between accounts | 0/TBD | Context written, not planned | - |
+| 4.2 What was built and never reached | 1/9 | In progress | - |
+| 5. The other five modules keep up | 0/8 | Planned, not started | - |
+| 5.1 Notes and contacts reach a server | 0/6 | Planned, not started | - |
+| 5.2 Notes in OneNote | 0/3 | Planned, not started | - |
+| 6. How the application speaks | 0/TBD | Researched, not planned | - |
+| 7. Installing, updating and what is stored | 0/9 | Planned, not started | - |
+| 8. Every number the project quotes | 0/TBD | Researched, not planned | - |
 
 ## Notes on this roadmap
 
