@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 121
+open_count: 127
 waived_count: 0
 fixed_count: 13
-total_count: 134
-last_updated: 2026-09-06T10:49:29.074Z
+total_count: 140
+last_updated: 2026-09-06T13:51:20.786Z
 ---
 
 # Broken Windows Ledger
@@ -149,6 +149,12 @@ last_updated: 2026-09-06T10:49:29.074Z
 | 132 | 04 | unrun-verify | src/presentation/editor_document.rs |  | Whether a file dragged onto the composer reaches anything at all. The page now turns a drop on the message body away so the engine cannot navigate to the file, and the composer says where a drop does land, and both rest on documentation rather than on somebody watching: WebView2's AllowExternalDrop defaults to true so the drag reaches the page, and the OLE drag loop walks up the parent chain so a drop on the subject line, the toolbar, the attachments line or the list should reach the dialog's target. Nobody has dragged a file onto a running composer. The four observations to make are in 04-07-SUMMARY.md. | open |  | 2026-09-06T10:49:18.354Z |  |
 | 133 | 04 | deviation | Cargo.toml |  | Upstream gap, not reported yet: WebView2's AllowExternalDrop cannot be turned off through this stack. It lives on ICoreWebView2Controller4; wxWidgets 3.3.2 keeps the controller in wx/msw/private/webview_edge.h and wxWebViewEdge::GetNativeBackend returns the ICoreWebView2_2 underneath it, which cannot be asked for its controller, so wxdragon 0.9.17 has nothing to expose. The reachable mitigation is the page refusing the drop itself, which depends on the page's script having loaded and so is weaker than the host-level setting would be. Worth an issue against wxWidgets or wxdragon. | open |  | 2026-09-06T10:49:28.613Z |  |
 | 134 | 04 | unrun-verify | src/application/attaching.rs |  | Whether the sentence said when a file is dropped on the message area is heard as an answer or as an interruption. It arrives spoken at high priority and shown in a message box at the same time, three sentences long, at the moment somebody let go of a file. Nothing here can say whether that is help or a modal in the way, or whether naming Ctrl+V and Attach File in speech is how somebody finds them. | open |  | 2026-09-06T10:49:29.074Z |  |
+| 135 | 04 | stub | src/presentation/html_renderer.rs |  | The setting that says where a decorative picture is reaches the formatted reading path only. html_to_plain_text strips every tag, so in the plain text reading path no picture says anything at all, described or decorative, and this setting is inert there. Older than 04-08 and not fixed here: it changes what every plain text reader hears on every message with a picture in it, so it needs its own red, its own green and its own changelog line. | open |  | 2026-09-06T13:50:55.540Z |  |
+| 136 | 04 | unrun-verify | src/presentation/wx_compose.rs |  | Nobody has heard the decorative question read aloud. It is a Yes/No box whose text runs to four lines and names what each answer does, and the buttons say only Yes and No. Whether somebody hearing it understands that Yes sends a picture with nothing said, whether four lines is too much to hold while reaching for a button, and whether Enter arriving on No is felt as safe or as an obstacle, are all things only a real screen reader run can settle. | open |  | 2026-09-06T13:51:18.753Z |  |
+| 137 | 04 | unrun-verify | src/presentation/wx_settings.rs |  | The Say where a picture the sender marked decorative is check box has not been heard. Its label carries the mnemonic and set_accessible_name_and_description names it on the MSAA channel, but nothing here can say whether Narrator reads the label from the window text, whether NVDA reads the accessible name rather than the neighbouring text, or whether the description saying what off means is reached at all. | open |  | 2026-09-06T13:51:19.324Z |  |
+| 138 | 04 | unrun-verify | src/application/pictures.rs |  | Nobody has heard a mailing with thirty spacers in it. Announcing decorative pictures ships on, and guardrail 5 forbids feedback that floods. The words are short and go into the document rather than into the announcement queue, so they are passed over rather than spoken at, but whether a bulk mail template that marks twenty layout images decorative turns a message into a wall of the same phrase is unmeasured. | open |  | 2026-09-06T13:51:19.876Z |  |
+| 139 | 04 | unrun-verify | src/application/pictures.rs |  | The furniture threshold is a judgement with no field data behind it. A shorter side of 200 pixels and 100 KB on disk were chosen from what furniture is, not from measuring real mail. Nobody has run it over a real mailbox to see how often the decorative question is offered over something that is not furniture, or refused over something that is. | open |  | 2026-09-06T13:51:20.326Z |  |
+| 140 | 04 | unrun-verify | src/application/pictures.rs |  | No decorative picture has been sent to a real recipient. Whether an inline picture sent as multipart/related with an empty alt arrives at Gmail or Outlook with that alt intact, and whether their readers then skip it, has never been tested, because no message from this program has ever reached anybody. | open |  | 2026-09-06T13:51:20.786Z |  |
 
 ````json
 [
@@ -1758,6 +1764,78 @@ last_updated: 2026-09-06T10:49:29.074Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T10:49:29.074Z",
+    "resolved_at": null
+  },
+  {
+    "id": 135,
+    "kind": "stub",
+    "phase": "04",
+    "file": "src/presentation/html_renderer.rs",
+    "line": null,
+    "description": "The setting that says where a decorative picture is reaches the formatted reading path only. html_to_plain_text strips every tag, so in the plain text reading path no picture says anything at all, described or decorative, and this setting is inert there. Older than 04-08 and not fixed here: it changes what every plain text reader hears on every message with a picture in it, so it needs its own red, its own green and its own changelog line.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:50:55.540Z",
+    "resolved_at": null
+  },
+  {
+    "id": 136,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "Nobody has heard the decorative question read aloud. It is a Yes/No box whose text runs to four lines and names what each answer does, and the buttons say only Yes and No. Whether somebody hearing it understands that Yes sends a picture with nothing said, whether four lines is too much to hold while reaching for a button, and whether Enter arriving on No is felt as safe or as an obstacle, are all things only a real screen reader run can settle.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:51:18.753Z",
+    "resolved_at": null
+  },
+  {
+    "id": 137,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "The Say where a picture the sender marked decorative is check box has not been heard. Its label carries the mnemonic and set_accessible_name_and_description names it on the MSAA channel, but nothing here can say whether Narrator reads the label from the window text, whether NVDA reads the accessible name rather than the neighbouring text, or whether the description saying what off means is reached at all.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:51:19.324Z",
+    "resolved_at": null
+  },
+  {
+    "id": 138,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/pictures.rs",
+    "line": null,
+    "description": "Nobody has heard a mailing with thirty spacers in it. Announcing decorative pictures ships on, and guardrail 5 forbids feedback that floods. The words are short and go into the document rather than into the announcement queue, so they are passed over rather than spoken at, but whether a bulk mail template that marks twenty layout images decorative turns a message into a wall of the same phrase is unmeasured.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:51:19.876Z",
+    "resolved_at": null
+  },
+  {
+    "id": 139,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/pictures.rs",
+    "line": null,
+    "description": "The furniture threshold is a judgement with no field data behind it. A shorter side of 200 pixels and 100 KB on disk were chosen from what furniture is, not from measuring real mail. Nobody has run it over a real mailbox to see how often the decorative question is offered over something that is not furniture, or refused over something that is.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:51:20.326Z",
+    "resolved_at": null
+  },
+  {
+    "id": 140,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/pictures.rs",
+    "line": null,
+    "description": "No decorative picture has been sent to a real recipient. Whether an inline picture sent as multipart/related with an empty alt arrives at Gmail or Outlook with that alt intact, and whether their readers then skip it, has never been tested, because no message from this program has ever reached anybody.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T13:51:20.786Z",
     "resolved_at": null
   }
 ]

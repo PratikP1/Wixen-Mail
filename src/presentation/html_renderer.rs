@@ -87,6 +87,16 @@ fn one_attribute(tag: &str, name: &str) -> Option<String> {
         .map(|found| found.as_str().to_string())
 }
 
+/// An `alt` attribute that is present and empty, which is the decorative mark.
+///
+/// Only ever run over a tag ammonia has written, where every value is in
+/// double quotes and an internal quote is an entity, so these six characters
+/// cannot occur anywhere but the attribute itself.
+fn empty_alt_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r#"(?i)\balt="""#).expect("valid empty alt regex"))
+}
+
 pub fn image_alt_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -424,11 +434,34 @@ impl HtmlRenderer {
     /// its way out to somebody else, so words written there would be sent to
     /// the recipient and would overwrite the mark this program just made.
     fn say_where_a_decorative_picture_is(&self, tag: &str) -> String {
-        // The stub, for the red commit. The seam is here and the answer is
-        // read, so what fails is what the words do rather than a missing
-        // symbol.
-        let _ = self.announcing;
-        tag.to_string()
+        use crate::application::pictures::{Announcing, WHAT_A_DECORATIVE_PICTURE_SAYS};
+
+        if self.announcing == Announcing::Silently {
+            return tag.to_string();
+        }
+        // Present and empty, told apart from absent. `one_attribute` answers
+        // `None` for an attribute that is not there and `Some("")` for one
+        // that is there and empty, which is the whole distinction.
+        if one_attribute(tag, "alt").as_deref() != Some("") {
+            return tag.to_string();
+        }
+        // Anchored on the attribute. `a`, `l` and `t` are all base64
+        // characters, so a picture's own data can hold the letters, and a
+        // replacement over the whole tag would corrupt the picture rather than
+        // describe it. `\b` refuses a longer attribute name ending in `alt`,
+        // and a `"` cannot appear inside a value ammonia has written, so the
+        // six characters `alt=""` occur exactly where the empty description
+        // is.
+        empty_alt_re()
+            .replace(
+                tag,
+                format!(
+                    r#"alt="{}""#,
+                    html_escape::encode_double_quoted_attribute(WHAT_A_DECORATIVE_PICTURE_SAYS)
+                )
+                .as_str(),
+            )
+            .into_owned()
     }
 
     /// Extract alt text from images for accessibility

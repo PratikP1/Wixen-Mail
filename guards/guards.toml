@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 432 records have arrived since and have not been through it.
+# 434 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11897,7 +11897,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 52 },
+    { file = "src/data/config.rs", tests = 53 },
 ]
 
 [[guard]]
@@ -12749,7 +12749,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 25 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 52 },
+    { file = "src/data/config.rs", tests = 53 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -15695,18 +15695,24 @@ after = """        let mut builder = ammonia::Builder::default();
         builder.rm_tag_attributes("img", ["alt"]);"""
 red = [
     "data::message_cache::drafts::tests::test_a_picture_and_its_description_come_back_out_of_a_real_database",
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_said_to_be_there_when_the_reader_asked_for_that",
     "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
+    "presentation::html_renderer::tests::test_a_described_picture_is_untouched_whatever_the_reader_chose",
     "presentation::html_renderer::tests::test_a_held_back_picture_leaves_the_senders_words_in_its_place",
+    "presentation::html_renderer::tests::test_a_message_on_its_way_out_keeps_its_mark_whatever_this_reader_chose",
     "presentation::html_renderer::tests::test_a_picture_and_its_description_survive_the_whole_trip",
     "presentation::html_renderer::tests::test_a_picture_the_message_carries_is_shown",
     "presentation::html_renderer::tests::test_an_awkward_description_survives_the_whole_trip_unmangled",
     "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
     "presentation::html_renderer::tests::test_image_alt_text_survives_sanitizing",
+    "presentation::html_renderer::tests::test_only_the_decorative_picture_changes_when_two_are_shown",
+    "presentation::html_renderer::tests::test_the_rewrite_is_anchored_to_the_attribute_and_not_to_a_substring",
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 6 },
-    { file = "src/presentation/html_renderer.rs", tests = 67 },
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
 ]
 
 # ── An empty description quietly becoming a decorative mark ─────────────────
@@ -15801,4 +15807,71 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/a_picture_is_only_decorative_because_somebody_said_so.rs", tests = 14 },
+]
+
+# ── A setting that decides nothing ──────────────────────────────────────────
+#
+# `announce_decorative_pictures` moves the final say about a sender's
+# decorative mark to the person reading. A renderer that answers the same way
+# whatever the setting says is the shape that passes every test of the words
+# themselves: the line appears, it is worded correctly, it is escaped
+# correctly, and somebody who turned it off still hears it on every message
+# with a spacer in it.
+#
+# The break is the arm that returns early, not the field, because removing the
+# field would not compile and a compile error is a weaker red than a stubbed
+# body. It only breaks one direction, which is the honest one to break: a
+# setting stuck on is noise somebody can hear past, and a setting stuck off is
+# the loss this whole feature exists to prevent, so the noisy direction is the
+# one a test can be sure about on any machine.
+#
+# Measured by hand on 2026-09-06 with `WIXEN_TEST_THREADS=4 cargo test
+# --all-targets --no-fail-fast` from a tree green in the library. One test in
+# 6,427.
+
+[[guard]]
+name = "a reader who asked for silence about decorative pictures gets it"
+file = "src/presentation/html_renderer.rs"
+before = """        if self.announcing == Announcing::Silently {
+            return tag.to_string();
+        }"""
+after = """        let _ = self.announcing;"""
+red = [
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
+]
+
+# ── This reader's words reaching somebody else's message ────────────────────
+#
+# `sanitize_html` is one call doing two jobs, and its own comment says so: it
+# cleans a stranger's message on the way in and it cleans this person's message
+# on the way out. Words written there would be sent to the recipient, and the
+# mark the composer just made would be overwritten by a sentence about it.
+#
+# That is why the announcing seam is in `hold_back_what_would_be_fetched`,
+# which only runs when a message is being read. The break is the version
+# somebody would write who had not read that comment: the same call, one layer
+# up, where it reads as tidier.
+#
+# Three tests notice and they notice differently. One puts a decorative picture
+# through the outgoing path and finds the mark gone. One runs the whole trip
+# from the composer to the page and finds the description changed on the way.
+# One is the sanitiser assertion the decorative mark rests on.
+#
+# Measured by hand on 2026-09-06 the same way. Three tests in 6,427.
+
+[[guard]]
+name = "a message on its way out does not pick up this reader's own words"
+file = "src/presentation/html_renderer.rs"
+before = """        cleaner().clean(html).to_string()"""
+after = """        self.say_where_a_decorative_picture_is(&cleaner().clean(html).to_string())"""
+red = [
+    "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
+    "presentation::html_renderer::tests::test_a_message_on_its_way_out_keeps_its_mark_whatever_this_reader_chose",
+    "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
 ]

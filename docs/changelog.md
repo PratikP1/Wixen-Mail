@@ -8,6 +8,39 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You decide whether a picture the sender called decorative is announced to
+  you.**
+
+  A sender can mark a picture as having nothing to say, and their mail program
+  then tells your screen reader to skip it. That mark can be wrong, and you are
+  the one who pays for it: a picture that actually said something arrives with
+  nothing said and nothing to ask about.
+
+  Settings, Reading now has **Say where a picture the sender marked decorative
+  is**. It ships on. With it on, a short line saying the sender marked the
+  picture decorative is put where the picture is, so you can judge that for
+  yourself. Turn it off and the mark is taken at face value and the picture is
+  passed over in silence.
+
+  It ships on because the two mistakes do not cost the same. A line you did not
+  need is noise you hear past and switch off in one place. A picture you were
+  never told about is something you cannot ask about.
+
+  The words say the sender marked it decorative rather than that it is
+  decorative, because the first is something this program knows and the second
+  is not.
+
+  Known limitations:
+
+  - It does nothing in the plain text reading path. There no picture says
+    anything at all, described or not, because every tag is stripped. That gap
+    is older than this setting and needs its own piece of work.
+  - It changes nothing about a message you send. A decorative picture you send
+    carries a correct empty description and is skipped by other mail programs,
+    whatever you have chosen here.
+  - Nobody has heard the line read aloud, and nobody has heard a mailing with
+    thirty spacers in it.
+
 - **A picture can now be marked decorative, and it is a question somebody
   answers rather than a box left empty.**
 
