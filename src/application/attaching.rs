@@ -367,12 +367,22 @@ fn attached_sentence(added: &[Chosen], all: &[Chosen]) -> Option<String> {
 /// Three sentences and no more: what happened, why, and what to do instead. The
 /// last one names the routes that do work rather than only the one that does
 /// not, because "that did not work" is not an answer somebody can act on.
-pub fn dropped_on_the_message(_count: usize) -> Announcement {
-    // Here with no behaviour so the assertions compile and fail for the reason
-    // they are about rather than as a missing symbol. Green follows.
+pub fn dropped_on_the_message(count: usize) -> Announcement {
+    // Zero is a bug rather than an attack: the page counts what it was handed
+    // and should never hand over none. Naming a number nobody sent would be
+    // worse than not naming one, so it takes the plural without a number.
+    let what = match count {
+        1 => "That file was not attached.".to_string(),
+        0 => "Those files were not attached.".to_string(),
+        many => format!("Those {many} files were not attached."),
+    };
     Announcement {
-        words: String::new(),
-        trouble: false,
+        words: format!(
+            "{what} The message area is a small browser inside this window, and it takes the \
+             drop before the composer sees it. Drop files on the attachments line under the \
+             message, or press Ctrl+V, or use Attach File."
+        ),
+        trouble: true,
     }
 }
 

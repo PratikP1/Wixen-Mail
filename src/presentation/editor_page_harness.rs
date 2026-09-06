@@ -37,8 +37,26 @@ use boa_engine::{Context, Source};
 #[cfg(test)]
 const DOM_STUB: &str = r#"
 var window = globalThis;
-window.chrome = { webview: { postMessage: function () {} } };
 var posted = [];
+window.chrome = { webview: { postMessage: function (raw) { posted.push(raw); } } };
+// What the page asked the window to do, in the order it asked, as the objects
+// it sent rather than as the JSON it sent them in.
+window.wixenPosted = function () {
+  var out = [];
+  for (var i = 0; i < posted.length; i++) { out.push(JSON.parse(posted[i])); }
+  return out;
+};
+// Listeners the page hangs on the document itself, kept so a test can run one.
+// The page registers its refusal of a dragged-in file this way, and a stub that
+// only swallowed the registration would leave the one handler nothing here
+// could execute.
+var documentListeners = [];
+window.wixenDocumentListener = function (kind) {
+  for (var i = 0; i < documentListeners.length; i++) {
+    if (documentListeners[i].kind === kind) { return documentListeners[i]; }
+  }
+  return null;
+};
 function element() {
   return {
     addEventListener: function () {},
@@ -52,6 +70,9 @@ function element() {
   };
 }
 var document = {
+  addEventListener: function (kind, handler, capture) {
+    documentListeners.push({ kind: kind, handler: handler, capture: capture === true });
+  },
   getElementById: function () { return element(); },
   createTreeWalker: function () { return { nextNode: function () { return null; } }; },
   createRange: function () {

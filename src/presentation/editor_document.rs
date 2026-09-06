@@ -165,6 +165,49 @@ img {{ max-width: 100%; height: auto; }}
      role="textbox" aria-multiline="true" aria-label="Message body">{safe_body}</div>
 <script>
 (function () {{
+  // ── A file dragged onto the message ──────────────────────────────────────
+  //
+  // First, before the element below is looked up, because a lookup that
+  // answers null makes everything after it throw and this is the part that
+  // must be registered whatever else fails. `post` is used here and written
+  // below: a function declaration is hoisted, so it exists by the time a drop
+  // can happen. `carriesFiles` is the same.
+  //
+  // Why any of this. WebView2's AllowExternalDrop defaults to true, so a file
+  // dragged in from Explorer reaches this page, and a browser engine handed a
+  // file navigates to it. That would take the message somebody is writing off
+  // the screen. Refusing the drop makes the message area a dead zone, which is
+  // a disappointment; leaving it alone loses drafts, which is a defect.
+  //
+  // Only for a drag carrying files. Dragging selected text from one place in
+  // the message to another is the editor's own and somebody writes with it.
+  //
+  // The count goes out and the paths do not. A path chosen by whoever did the
+  // dragging, carried through a browser engine and a message channel before
+  // this program decides whether it may be attached, is a different security
+  // boundary with its own threat model, recorded as T-04-30 and not built.
+  function carriesFiles(event) {{
+    var moved = event.dataTransfer;
+    if (!moved) {{ return false; }}
+    var kinds = moved.types || [];
+    for (var k = 0; k < kinds.length; k++) {{
+      if (kinds[k] === 'Files') {{ return true; }}
+    }}
+    return false;
+  }}
+  document.addEventListener('dragover', function (event) {{
+    if (!carriesFiles(event)) {{ return; }}
+    event.preventDefault();
+    // Says so under the pointer, before the file is let go.
+    event.dataTransfer.dropEffect = 'none';
+  }}, true);
+  document.addEventListener('drop', function (event) {{
+    if (!carriesFiles(event)) {{ return; }}
+    event.preventDefault();
+    var moved = event.dataTransfer;
+    var many = (moved && moved.files) ? moved.files.length : 0;
+    post({{ kind: 'dropped', count: many }});
+  }}, true);
   var body = document.getElementById({BODY_ID:?});
   function post(message) {{
     try {{ window.chrome.webview.postMessage(JSON.stringify(message)); }}
@@ -1627,6 +1670,13 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
             Reached::ALL.get(index).copied().map(EditorMessage::Reached)
         }
         "toolbar" => Some(EditorMessage::ToToolbar),
+        // A count and nothing else. `as_u64` refuses a negative and
+        // `try_from` refuses one too large to be a number of files, and either
+        // way saying nothing beats telling somebody that a number of files
+        // nobody sent did not go on.
+        "dropped" => usize::try_from(value.get("count")?.as_u64()?)
+            .ok()
+            .map(|count| EditorMessage::FilesDroppedOnTheMessage { count }),
         "leave" => Some(EditorMessage::Leaving {
             back: value.get("back")?.as_bool()?,
         }),

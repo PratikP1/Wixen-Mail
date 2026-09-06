@@ -8,6 +8,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Files dragged onto the composer go on the message, except on the message
+  area itself.**
+
+  Drag files from File Explorer onto the compose window and they attach,
+  through the same rules the button and `Ctrl+V` use: a folder among them is
+  refused by name, the rest still go on, and whatever did not go on is said
+  once. The subject line, the toolbar, the attachments line under the message
+  and the attachments list all take a drop.
+
+  The message area does not. It is a small browser inside the window and it
+  takes the drop before the composer sees it. Dropping a file there now does
+  nothing except say so and name the three places that do work. That is a
+  disappointment rather than a loss, which is the trade being made here: see
+  the fix below for what it used to do instead.
+
+  Known limitations:
+
+  - Nobody has watched a drop happen. Which parts of the window take a drop
+    rests on what Microsoft's and Windows' documentation says about how a drop
+    is routed, not on somebody dragging a file onto a running composer.
+  - The direct fix would be to turn off WebView2's own handling of dragged-in
+    files. Neither wxWidgets 3.3.2 nor wxdragon 0.9.17 offers a way to: the
+    setting lives on the WebView2 controller and what wxWidgets hands out is
+    the view underneath it. So the page turns the drop away instead, which
+    depends on the page's script having loaded.
+  - Attaching a file by dropping it on the message area is not built. Doing it
+    would mean a file path chosen by whoever did the dragging travelling
+    through the browser engine and back, which is a different question about
+    trust and gets its own piece of work.
+
 - **Several files go on a message at once, and there is a key that does it
   without a mouse.**
 
@@ -43,6 +73,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     drive can make the window pause. Nothing bounds the number of files.
 
 ### Fixed
+
+- **A file dropped on the message you are writing no longer replaces it.**
+  The message area is a browser, and a browser handed a file opens it. Dropping
+  a picture onto a half-written reply put the picture on the screen and took the
+  reply off it, with no warning and nothing to undo. The message area now turns
+  a dragged-in file away and says where to drop it instead.
 
 - **The shortcuts document had Attach File and Discard the wrong way round.**
   Attach File is `Alt+A` and Discard is `Alt+I`, and the document said the

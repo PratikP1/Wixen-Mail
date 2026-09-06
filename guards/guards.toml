@@ -15566,7 +15566,7 @@ red = [
     "application::attaching::tests::test_what_a_batch_of_three_says_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/application/attaching.rs", tests = 30 },
+    { file = "src/application/attaching.rs", tests = 34 },
 ]
 
 # ── Every way a file goes on a message ends at one model ───────────────────

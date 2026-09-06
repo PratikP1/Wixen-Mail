@@ -1545,32 +1545,44 @@ pub fn show_compose_dialog_full(
     //
     // ── Which window this is on, and why that one ──────────────────────────
     //
-    // The dialog. Windows registers a drop target per window and sends a drop
-    // to the window under the pointer; it does not walk up to the parent when
-    // that window has none of its own. So this catches a drop on the dialog's
-    // own surface, which is the space around and between the controls, and it
-    // does not catch one on any child.
+    // The dialog. `SetDropTarget` registers with Windows per window, and the
+    // drag loop sends a drop to the deepest window under the pointer that has
+    // registered one, walking up the parent chain when the window under the
+    // pointer has none of its own. Every control on this dialog is an ordinary
+    // wxWidgets window with no drop target: the subject line, the toolbar, the
+    // attachments line, the attachments list and the space between them. So a
+    // drop on any of those walks up to here.
+    //
+    // The one exception is the message body, and it is the exception because it
+    // is the one child that registers a drop target of its own. WebView2 does
+    // that inside its own window, so a drop there is taken by the browser
+    // engine and never reaches this. Moving this target to another wxWidgets
+    // window would not change that, because the body is the window the drop
+    // lands on.
     //
     // The dialog rather than the attachments list, which would be the obvious
     // place to drop a file: that list is hidden until there is something in it,
     // so it cannot be the target for the first file, which is the drop somebody
-    // actually makes. The same reason the paste key is not bound there.
+    // actually makes. The same reason the paste key is not bound there. The
+    // sentence in `attaching::dropped_on_the_message` names the attachments
+    // line under the message, which is a static text that is always there.
     //
     // ── What is not known ──────────────────────────────────────────────────
     //
-    // Whether a drop over the message body reaches this at all. The body is a
-    // WebView2 control, which handles drag and drop inside its own window, and
-    // no amount of reading source settles what it does with a file. Task 3 of
-    // plan 04-07 is a person dragging a file onto a running composer to find
-    // out, and the answer goes in the product either way rather than in a
-    // report. Do not read this compiling as evidence that dropping works.
+    // All of the above is how the documents say Windows and WebView2 behave.
+    // **Nobody has watched a drop happen.** A drop on the body is handled in
+    // the page by `editor_document`, which refuses it so the engine cannot
+    // navigate to the file, and posts back so this window says where a drop
+    // does land; whether a drop anywhere else really walks up to this target is
+    // the half that only somebody dragging a file settles. Ledger entries 129
+    // and 132. Do not read this compiling as evidence that dropping works.
     //
-    // If it turns out that the body swallows the drop, moving this to another
-    // wxWidgets window will not help, because the body is the window it lands
-    // on. The design that would is catching the drop in the page's own
-    // JavaScript and posting the path over the wixenEditor channel, which is a
-    // different security boundary: the page would then be handling a file path.
-    // That is its own plan and its own threat model.
+    // The design that would make the body itself attach a file is catching the
+    // drop in the page and posting the path over the wixenEditor channel. That
+    // is a different security boundary, because the page would then be handling
+    // a file path chosen by whoever did the dragging, and it is deliberately
+    // not what the page does: it sends a count and no paths. Its own plan and
+    // its own threat model, recorded as T-04-30.
     let _files_dropped_here = FileDropTarget::builder(&dialog)
         .with_on_drop_files({
             let attach_from_paths = attach_from_paths.clone();
