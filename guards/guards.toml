@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 428 records have arrived since and have not been through it.
+# 429 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15654,4 +15654,53 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 80 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
+]
+
+# ── A description that is lost quietly ──────────────────────────────────────
+#
+# Criterion 2 of phase 4 says a picture inserted into a message keeps its
+# description across a draft save and a reload, and until 04-08 nothing
+# asserted any of it. The trip has four stages and the description can be lost
+# at any of them: the escaping when it is written, the sanitiser when the body
+# leaves the editor, the drafts table, and the sanitiser again when the body
+# goes back into the page.
+#
+# The break is the sanitiser forgetting `alt` on an `img`, because that is the
+# one that loses the description and keeps the picture. Somebody sighted sees
+# no change at all. The picture is still there, still shown, and the person it
+# was described for is told nothing, which is the exact defect this whole
+# module exists to prevent.
+#
+# It is written as a line added to `cleaner`, which is the shape of the real
+# mistake: somebody tightening the allowed attributes and taking `alt` with
+# them. Removing the whole attribute filter was tried first and is a much
+# larger break, reddening the security tests too, so it would go on passing if
+# somebody left the filter alone and narrowed the attribute list, which is the
+# likelier mistake.
+#
+# Measured by hand on 2026-09-06 with `WIXEN_TEST_THREADS=4 cargo test
+# --all-targets --no-fail-fast` against a tree where `scripts/check.sh all` had
+# just passed. Exactly nine tests went red in 6,401, six of them the new round
+# trip and three that already stood over `alt` from one end or the other.
+
+[[guard]]
+name = "a picture's description survives the trip from the composer to the page"
+file = "src/presentation/html_renderer.rs"
+before = """        let mut builder = ammonia::Builder::default();"""
+after = """        let mut builder = ammonia::Builder::default();
+        builder.rm_tag_attributes("img", ["alt"]);"""
+red = [
+    "data::message_cache::drafts::tests::test_a_picture_and_its_description_come_back_out_of_a_real_database",
+    "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
+    "presentation::html_renderer::tests::test_a_held_back_picture_leaves_the_senders_words_in_its_place",
+    "presentation::html_renderer::tests::test_a_picture_and_its_description_survive_the_whole_trip",
+    "presentation::html_renderer::tests::test_a_picture_the_message_carries_is_shown",
+    "presentation::html_renderer::tests::test_an_awkward_description_survives_the_whole_trip_unmangled",
+    "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
+    "presentation::html_renderer::tests::test_image_alt_text_survives_sanitizing",
+    "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/drafts.rs", tests = 6 },
+    { file = "src/presentation/html_renderer.rs", tests = 67 },
 ]

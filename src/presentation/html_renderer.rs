@@ -730,6 +730,273 @@ mod tests {
         assert_eq!(held_back, 0);
         assert!(shown.contains("cdn.example"), "{shown}");
     }
+
+    /// The trip a picture really takes between being inserted and being seen
+    /// again, one stage at a time so a failure says which stage lost it.
+    ///
+    /// Named for the functions rather than for the story, because the point of
+    /// this fixture is that every one of them is really called. A test that
+    /// sanitises a string twice and finds it unchanged is a test about the
+    /// sanitiser, and what can go wrong is a step somewhere else.
+    ///
+    /// The storage stage is not here. It needs a real database and it lives in
+    /// `data::message_cache::drafts`, where a fixture already opens one.
+    struct RoundTrip {
+        /// What `pictures::a_picture_to_send` wrote.
+        composed: String,
+        /// What `editor_document::body_from_editor` handed back, which is the
+        /// sanitiser over what the page returned. This is what a draft stores.
+        left_the_editor: String,
+        /// The same body put into the page again by
+        /// `editor_document::editor_document`, which sanitises a second time.
+        back_in_the_page: String,
+    }
+
+    impl RoundTrip {
+        /// Run the trip for a body somebody wrote in the composer.
+        fn of(composed: &str) -> Self {
+            use crate::presentation::editor_document::{body_from_editor, editor_document};
+
+            // As the page hands it back: a JSON string on some backends, which
+            // is what `body_from_editor` unwraps before anything looks at it.
+            let as_the_page_answers =
+                serde_json::to_string(composed).expect("a body a page could answer with");
+            let left_the_editor = body_from_editor(&as_the_page_answers);
+            let back_in_the_page =
+                editor_document(&MessageBody::Html(left_the_editor.clone()), "en-GB", false);
+            Self {
+                composed: composed.to_string(),
+                left_the_editor,
+                back_in_the_page,
+            }
+        }
+
+        /// The `img` tags at each stage, so an assertion can name the stage.
+        fn pictures_at_each_stage(&self) -> [(&'static str, Vec<String>); 3] {
+            let tags = |markup: &str| {
+                img_tag_whole_re()
+                    .find_iter(markup)
+                    .map(|found| found.as_str().to_string())
+                    .collect::<Vec<_>>()
+            };
+            [
+                ("as it was composed", tags(&self.composed)),
+                ("as it left the editor", tags(&self.left_the_editor)),
+                (
+                    "as it went back into the page",
+                    tags(&self.back_in_the_page),
+                ),
+            ]
+        }
+    }
+
+    #[test]
+    fn test_a_picture_and_its_description_survive_the_whole_trip() {
+        // Criterion 2 of this phase says a description survives a draft save
+        // and reload, and until now nothing asserted any of it. Every stage is
+        // named so a failure says which end lost it, rather than "the
+        // description is gone" about a trip with four stages in it.
+        use crate::application::pictures::{a_picture_to_send, is_a_picture_we_carried};
+
+        let composed = a_picture_to_send("image/png", &a_tiny_png(), "A chart of sales")
+            .expect("a described picture");
+        let trip = RoundTrip::of(&composed);
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(
+                pictures.len(),
+                1,
+                "the picture was lost {stage}: {}",
+                trip.back_in_the_page
+            );
+            let tag = &pictures[0];
+            let address = one_attribute(tag, "src").unwrap_or_default();
+            assert!(
+                is_a_picture_we_carried(&address),
+                "the picture stopped being one this program carried {stage}: {tag}"
+            );
+            assert_eq!(
+                one_attribute(tag, "alt").as_deref(),
+                Some("A chart of sales"),
+                "the description was lost {stage}: {tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_awkward_description_survives_the_whole_trip_unmangled() {
+        // Three characters the escaping and the sanitiser could each mangle in
+        // a different way, and the trip escapes and unescapes more than once.
+        // A quote would close the attribute, an angle bracket would start a
+        // tag, and a non-ASCII character is where an encoding mistake shows.
+        use crate::application::pictures::a_picture_to_send;
+
+        let awkward = r#"Ada's "3 < 4" café"#;
+        let composed =
+            a_picture_to_send("image/png", &a_tiny_png(), awkward).expect("a described picture");
+        let trip = RoundTrip::of(&composed);
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            let tag = pictures
+                .first()
+                .unwrap_or_else(|| panic!("no picture {stage}"));
+            // Read back through the same decoding the send path uses, because
+            // what is stored is escaped and what a reader hears is not.
+            let stored = one_attribute(tag, "alt").unwrap_or_default();
+            let spoken = html_escape::decode_html_entities(&stored);
+            assert_eq!(
+                spoken, awkward,
+                "the description came back different {stage}: {tag}"
+            );
+            assert!(
+                !tag.contains(r#"alt="Ada's "3"#),
+                "the quote broke out of the attribute {stage}: {tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_two_pictures_keep_their_own_descriptions_in_order() {
+        // One picture cannot tell a swap from a survival. Two can, and a
+        // message with a signature under a chart is the ordinary case.
+        use crate::application::pictures::a_picture_to_send;
+
+        let first = a_picture_to_send("image/png", &a_tiny_png(), "First, a chart").expect("one");
+        let second =
+            a_picture_to_send("image/jpeg", &a_tiny_png(), "Second, a photo").expect("two");
+        let trip = RoundTrip::of(&format!("<p>{first}</p><p>{second}</p>"));
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(pictures.len(), 2, "a picture was lost {stage}");
+            assert_eq!(
+                pictures
+                    .iter()
+                    .map(|tag| one_attribute(tag, "alt").unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                vec!["First, a chart", "Second, a photo"],
+                "the descriptions did not come back in order {stage}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_data_address_that_is_not_a_carried_picture_is_still_removed() {
+        // So proving a picture survives has not widened what else does. An SVG
+        // is a document and can carry a script, and this is the exact address
+        // shape the filter exists to refuse.
+        let trip = RoundTrip::of(
+            r#"<img src="data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pjwvc2NyaXB0Pjwvc3ZnPg==" alt="A drawing">"#,
+        );
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            if stage == "as it was composed" {
+                continue;
+            }
+            let addresses: Vec<String> = pictures
+                .iter()
+                .filter_map(|tag| one_attribute(tag, "src"))
+                .collect();
+            assert!(
+                addresses.is_empty(),
+                "a data: address that is not a carried picture survived {stage}: {addresses:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_role_of_presentation_does_not_survive_the_sanitiser() {
+        // The finding the decorative design rests on, asserted here rather
+        // than read out of a crate's source. `role` is in neither of ammonia's
+        // allowed lists, so it is removed, and a decorative mark written that
+        // way would be lost the first time a draft was saved with nothing
+        // saying so.
+        let cleaned = HtmlRenderer::new().sanitize_html(&format!(
+            r#"<img src="data:image/png;base64,{}" alt="" role="presentation">"#,
+            a_tiny_encoded_png()
+        ));
+
+        assert!(
+            !cleaned.contains("role"),
+            "role survived the sanitiser, so the decorative mark had a second \
+             representation after all: {cleaned}"
+        );
+        assert!(
+            cleaned.contains("data:image/png;base64,"),
+            "the picture itself was removed: {cleaned}"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_description_is_kept_and_is_not_the_same_as_having_none() {
+        // The decorative mark is an explicit empty `alt`, which is what WCAG
+        // says a decorative image carries. It is only a mark if the sanitiser
+        // keeps it, and only a mark if a picture that carries it can be told
+        // apart from a picture whose sender said nothing at all. If ammonia
+        // added an empty `alt` to every picture, or dropped an empty one, the
+        // two would be the same string and there would be no mark here.
+        let renderer = HtmlRenderer::new();
+        let carried = a_tiny_encoded_png();
+
+        let marked = renderer.sanitize_html(&format!(
+            r#"<img src="data:image/png;base64,{carried}" alt="">"#
+        ));
+        let said_nothing =
+            renderer.sanitize_html(&format!(r#"<img src="data:image/png;base64,{carried}">"#));
+
+        assert_eq!(
+            one_attribute(&marked, "alt").as_deref(),
+            Some(""),
+            "the empty description did not survive, so the decorative mark has \
+             no representation: {marked}"
+        );
+        assert_eq!(
+            one_attribute(&said_nothing, "alt"),
+            None,
+            "a picture whose sender said nothing came back carrying an empty \
+             description, so the mark cannot be told from an absence: {said_nothing}"
+        );
+    }
+
+    #[test]
+    fn test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried() {
+        // A picture it stops recognising is not stripped of its mark, it is
+        // deleted: the attribute filter admits a `data:` address only when
+        // `is_a_picture_we_carried` says yes, so an empty description that
+        // made that answer no would take the picture away with nothing said.
+        use crate::application::pictures::is_a_picture_we_carried;
+
+        let carried = a_tiny_encoded_png();
+        let trip = RoundTrip::of(&format!(
+            r#"<img src="data:image/png;base64,{carried}" alt="">"#
+        ));
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(pictures.len(), 1, "the decorative picture was lost {stage}");
+            let tag = &pictures[0];
+            assert!(
+                is_a_picture_we_carried(&one_attribute(tag, "src").unwrap_or_default()),
+                "an empty description stopped this being a carried picture {stage}: {tag}"
+            );
+            assert_eq!(
+                one_attribute(tag, "alt").as_deref(),
+                Some(""),
+                "the decorative mark was lost {stage}: {tag}"
+            );
+        }
+    }
+
+    /// Bytes of a kind worth carrying, under the size limit. Not a real PNG:
+    /// nothing on this trip decodes one.
+    fn a_tiny_png() -> Vec<u8> {
+        vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4]
+    }
+
+    /// The same bytes as they appear inside a `data:` address.
+    fn a_tiny_encoded_png() -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(a_tiny_png())
+    }
+
     use super::*;
 
     #[test]
