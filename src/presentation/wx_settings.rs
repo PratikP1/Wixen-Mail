@@ -67,6 +67,7 @@ pub struct SettingsWidgets {
     // Compose
     preview_before_send: CheckBox,
     keep_sent_mail_on_this_computer: CheckBox,
+    undo_send_hold: SpinCtrl,
     draft_autosave: SpinCtrl,
     add_signature_automatically: CheckBox,
     // Reading
@@ -213,6 +214,7 @@ pub fn build_settings_dialog(
     let (
         preview_before_send,
         keep_sent_mail_on_this_computer,
+        undo_send_hold,
         draft_autosave,
         add_signature_automatically,
     ) = build_compose_tab(&compose_panel, config);
@@ -360,6 +362,7 @@ pub fn build_settings_dialog(
         font_family,
         preview_before_send,
         keep_sent_mail_on_this_computer,
+        undo_send_hold,
         draft_autosave,
         add_signature_automatically,
         sort_order,
@@ -803,7 +806,8 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
 fn build_compose_tab(
     panel: &Panel,
     config: &AppConfig,
-) -> (CheckBox, CheckBox, SpinCtrl, CheckBox) {
+) -> (CheckBox, CheckBox, SpinCtrl, SpinCtrl, CheckBox) {
+    use crate::application::sending_later::{Hold, what_send_does};
     use crate::application::sent_copy::{KEEP_A_COPY_CONSEQUENCE, KEEP_A_COPY_LABEL};
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
@@ -831,6 +835,46 @@ fn build_compose_tab(
     );
     keep_a_copy_cb.set_value(config.keep_sent_mail_on_this_computer);
     send_sec.add(&keep_a_copy_cb, 0, SizerFlag::All, 4);
+
+    // How long Send waits before anything goes to a server. Under Sending on
+    // the Compose tab, because that is where somebody looking for what Send
+    // does will look, and a setting buried anywhere else is one they meet in
+    // order while arrowing through a screen reader and cannot skim past.
+    //
+    // The same shape as the autosave spin box in the Drafts section below: a
+    // number of units with nought meaning never, stepped with the arrow keys
+    // rather than typed, read back through a constructor that clamps.
+    //
+    // The description is the part that cannot be guessed from the label, which
+    // is what turning it off costs. `what_send_does` says it in the words it
+    // will really be heard in, at whatever length is set, and at nought it says
+    // there is no time to take a message back at all.
+    let hold_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let hold_label = StaticText::builder(panel)
+        .with_label("&Hold a message before sending for (seconds, 0 for no hold):")
+        .build();
+    let hold_spin = SpinCtrl::builder(panel)
+        .with_range(Hold::OFF.seconds() as i32, Hold::LONGEST.seconds() as i32)
+        .build();
+    let hold_now = Hold::of_seconds(config.undo_send_hold_seconds);
+    // `set_accessible_name_and_description` rather than `set_name`, which sets
+    // an internal wxWidgets identifier and never reaches the accessibility
+    // tree. Sixteen widgets were once named that way; it compiled and 324
+    // tests passed and no screen reader heard any of them.
+    set_accessible_name_and_description(
+        &hold_spin,
+        "Hold a message before sending for, seconds, 0 for no hold",
+        &what_send_does(hold_now),
+    );
+    hold_spin.set_value(hold_now.seconds() as i32);
+    hold_row.add(
+        &hold_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    hold_row.add(&hold_spin, 0, SizerFlag::All, 4);
+    send_sec.add_sizer(&hold_row, 0, SizerFlag::Expand, 0);
 
     // A choice of "HTML" or "Plain Text" used to sit here, fixed on HTML and
     // read back by nothing. There is no such setting: the composer is one
@@ -901,7 +945,7 @@ fn build_compose_tab(
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (preview_cb, keep_a_copy_cb, autosave_spin, sig_cb)
+    (preview_cb, keep_a_copy_cb, hold_spin, autosave_spin, sig_cb)
 }
 
 /// One sentence, said once, in the label and in the accessible name.
@@ -2201,6 +2245,12 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // Compose
     cfg.preview_before_send = w.preview_before_send.get_value();
     cfg.keep_sent_mail_on_this_computer = w.keep_sent_mail_on_this_computer.get_value();
+    // Through the clamping constructor on the way out as well as on the way
+    // in, so what is stored is a length the program will really use and every
+    // sentence about the hold names the length that came out.
+    cfg.undo_send_hold_seconds =
+        crate::application::sending_later::Hold::of_seconds(w.undo_send_hold.value() as i64)
+            .seconds();
     cfg.draft_autosave_minutes =
         AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
     cfg.add_signature_automatically = w.add_signature_automatically.get_value();

@@ -42,7 +42,7 @@ const THE_LINE_NUMBER: &str = " //line ";
 
 /// Every place mail is handed to a server, and what asked for it.
 ///
-/// Three, as of 2026-09-05. Each one has to be something a person did:
+/// Four, as of 2026-09-06. Each one has to be something a person did:
 ///
 /// 1. Outbox then Send Queued Mail, the menu item.
 /// 2. The composer's Send, which queues and then flushes, and only when the
@@ -50,11 +50,33 @@ const THE_LINE_NUMBER: &str = " //line ";
 ///    goes now.
 /// 3. The button offered when the network comes back, which sends nothing until
 ///    somebody presses it and whose own label says that pressing it sends.
+/// 4. The poll timer, when a hold has run out.
 ///
-/// A fourth appearing is not automatically wrong, and it is automatically worth
+/// **The fourth is an event and not a key, and it is the first one here that
+/// is, so it is worth saying why it is allowed rather than only recording it.**
+/// This check exists because "the network came back, so send" is the shape
+/// guardrail 7 forbids: nobody asked, and what leaves is whatever had
+/// accumulated. A hold running out is the opposite end of that. Somebody
+/// pressed Send, was told in so many words that the message was being held for
+/// ten seconds and that Undo Send would take it back, and did not take it back.
+/// The clock is finishing the act they asked for, not starting one.
+///
+/// The test that says so is the one worth naming, because the reasoning above
+/// is prose and could be written about anything.
+/// `application::sending_later::its_moment_came` answers about an edge rather
+/// than a level: a row asks for a pass at the moment its own hold runs out, and
+/// never again. So turning the hold on cannot make more mail leave than turning
+/// it off would. With the hold off, Send flushes at once and sweeps everything
+/// the readiness filter allows. With it on, the same sweep happens ten seconds
+/// later over the same set. The clock changes when mail leaves and not what
+/// leaves, and there is no state of the queue that this reaches and a person
+/// pressing Send would not have reached already.
+///
+/// A fifth appearing is not automatically wrong, and it is automatically worth
 /// reading: the question to ask of it is whether a person asked, or whether an
-/// event did.
-const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 3;
+/// event did, and if an event, whether it is completing something a person
+/// asked for or starting something nobody did.
+const PLACES_THAT_HAND_MAIL_TO_A_SERVER: usize = 4;
 
 /// The declaration, which is not a call site.
 const WHERE_IT_IS_DECLARED: &str = "fn flush_outbox(";

@@ -49,16 +49,49 @@
 //! Values in and values out. No database, no connection, no window, and
 //! nothing platform-specific, so it behaves the same wherever it is built.
 //!
-//! All of it runs. The queue carries the time, the send loop asks
-//! [`readiness`] on every pass rather than taking the whole queue, and Undo
-//! Send is on the Tools menu with `Ctrl+Shift+Z`.
+//! # What is wired, and to what
 //!
-//! That last one was owed for a while. The countdown has always said "Undo Send
-//! takes it back", and for as long as it said so there was no Undo Send: no
-//! menu item, no key, no button. It was harmless while nothing showed the
-//! countdown, and became a promise the moment the send loop started honouring
-//! the hold. `tests/wired.rs` now asks whether a command named in a sentence
-//! exists at all, which is the check that should have been there first.
+//! Said as what reaches what, rather than as a claim about completeness. This
+//! paragraph has twice said the feature worked when it did not, and a third
+//! version of the same sentence would be worth nothing.
+//!
+//! [`GoAfter::held`] is called by the composer's Send, which passes the answer
+//! to `queue_outbox_message_to_go`, so a row carries the moment it may go.
+//! [`readiness`] is asked by `outbox_messages_that_may_go_now` on every pass of
+//! the send loop. [`its_moment_came`] is asked by the main window's poll timer
+//! about once a second, and when the answer is yes the send loop is woken, so a
+//! held message leaves without anybody pressing anything. [`countdown`] is said
+//! when Send is pressed, through [`what_send_did`], and again on the Outbox row
+//! through [`Readiness::spoken`]. [`what_send_does`] is the description under
+//! the hold's setting on the Compose tab. [`take_back`] and
+//! [`what_undo_send_takes_back`] are asked by Undo Send on the Tools menu and
+//! on `Ctrl+Shift+Z`.
+//!
+//! [`schedule`] has no caller. Setting a message to go at a time somebody chose
+//! is not built, and `04.2-02` builds it.
+//!
+//! # What was wrong here until 04.2-01
+//!
+//! This said "All of it runs", and named the menu item and the key as evidence.
+//! The menu item and the key were real and every part of the machinery worked.
+//! Nothing was ever held, so there was never anything to take back and Undo
+//! Send refused every single time it was pressed.
+//!
+//! One wrapper did it. `queue_outbox_message` pinned the moment to
+//! [`GoAfter::AsSoonAsPossible`], so the general function had a caller, its
+//! parameter had a value, nothing was unused, and the other two variants were
+//! built only under `#[cfg(test)]`. The composer worked out what its message
+//! was waiting for and then did not pass it to the queue call two lines below.
+//! [`countdown`] and [`Readiness::spoken`] had no production caller at all, so
+//! "Sending in 10 seconds. Undo Send takes it back." had never been said to
+//! anybody, and a Send that went quiet for ten seconds would have read as a
+//! program that had stopped.
+//!
+//! The version before that was wrong the other way round. The countdown said
+//! "Undo Send takes it back" while there was no Undo Send: no menu item, no
+//! key, no button. `tests/wired.rs` asks whether a command a sentence names
+//! exists at all, which is the check that should have been there first, and it
+//! now also asks whether the composer passes the hold to the queue.
 
 use chrono::{DateTime, Duration, Local};
 
@@ -223,6 +256,47 @@ pub fn readiness(when: &GoAfter, now: DateTime<Local>) -> Readiness {
     }
 }
 
+/// Whether a message waiting on a moment reached it since the clock last
+/// looked.
+///
+/// An edge and not a level, which is the whole safety of putting the send loop
+/// on a clock. [`readiness`] answers whether a message may go, and a row that
+/// may go goes on saying so for as long as it sits there; a clock that asked
+/// that question every second would offer a message that failed to send to the
+/// server again every second, counting a failure each time. This asks the
+/// narrower question the clock is for: did something come due since the last
+/// look. Each row answers yes once.
+///
+/// `since` is `None` when this program has not looked yet, which is every first
+/// look after it opens. A hold that ran out while it was closed has to be
+/// caught then, or the message sits in the Outbox until somebody presses Send
+/// Queued Mail, which is the failure that wiring a hold without a clock would
+/// introduce.
+///
+/// A message with nothing on it is never this: it went on the pass it was
+/// queued in, and one still in the queue is one a send failed on, which is the
+/// Outbox's own business and a person's, exactly as it is today. A moment that
+/// cannot be read is not this either, for the reason
+/// [`MessageCache::outbox_messages_that_may_go_now`] gives: sending a message
+/// that was set for next week, now, is the one thing here that cannot be
+/// undone.
+///
+/// [`MessageCache::outbox_messages_that_may_go_now`]: crate::data::message_cache::MessageCache::outbox_messages_that_may_go_now
+pub fn its_moment_came(
+    when: &GoAfter,
+    since: Option<DateTime<Local>>,
+    now: DateTime<Local>,
+) -> bool {
+    let moment = match when {
+        GoAfter::AsSoonAsPossible => return false,
+        GoAfter::Held(stored) | GoAfter::Chosen(stored) => the_moment(stored),
+    };
+    match moment {
+        None => false,
+        Some(moment) => moment <= now && since.is_none_or(|last| moment > last),
+    }
+}
+
 /// Whether this program is handing anything to a server at the moment.
 ///
 /// Offline mode is a switch on the View menu. A bool called `offline` reads as
@@ -287,18 +361,63 @@ pub fn when_it_goes(
 /// A message that did not go is the case worth wording carefully. Somebody who
 /// pressed Send and heard nothing about the Outbox believes their mail has
 /// gone, which is the defect this whole decision exists to end.
-pub fn what_send_did(goes: WhenItGoes, recipient: &str) -> String {
+///
+/// A message being held is the case worth wording most carefully of all,
+/// because the whole point of the hold is that somebody can act inside it and
+/// nobody acts on a wait they were not told about. It gets [`countdown`], which
+/// says how long is left and names the command that takes it back. Somebody
+/// working by ear otherwise meets a Send that goes quiet for ten seconds, which
+/// reads as a program that has stopped rather than as a chance to change their
+/// mind.
+///
+/// `goes` is what [`when_it_goes`] said about this same `when` and this same
+/// `now`, and passing a mismatched pair produces a wrong sentence rather than a
+/// wrong decision: `goes` is what decides whether anything is handed to a
+/// server, and it is not read here for anything but the words.
+pub fn what_send_did(
+    goes: WhenItGoes,
+    when: &GoAfter,
+    now: DateTime<Local>,
+    recipient: &str,
+) -> String {
     match goes {
         // Unchanged, because every message sent today gets this and there is
         // nothing wrong with it.
         WhenItGoes::Now => format!("Sending to {recipient}..."),
+        // Offline is answered before the message's own time here as well as in
+        // `when_it_goes`, and for the same reason. A message queued while
+        // offline mode is on is waiting on two things; the one worth saying is
+        // the one that can be undone now. Offering a countdown that is not
+        // running would send somebody reaching for Undo Send inside ten
+        // seconds for a message that is not going anywhere until they switch
+        // offline mode off.
         WhenItGoes::WhenThereIsANetworkAgain => format!(
             "Offline mode is on, so the message to {recipient} is waiting in the Outbox. \
              It goes when you go back online."
         ),
-        WhenItGoes::WhenItsTimeComes => {
-            format!("The message to {recipient} is waiting in the Outbox until the time set on it.")
-        }
+        // A hold and a time somebody chose are both "its own time has not
+        // come", and they are not the same thing to hear. One is over in
+        // seconds and the way out of it is a key; the other is a decision and
+        // the way out of it is the Outbox. This is why `somebody_chose_it` is
+        // stored beside the moment rather than guessed from how far off it is.
+        //
+        // The held sentence is [`countdown`] and nothing else, which is the
+        // one place these words are written. It does not name the recipient,
+        // and that is deliberate rather than an omission: the other two mean
+        // "this is in the Outbox with however much else", where saying which
+        // message is the whole use of the sentence, while this one is about
+        // the message whose Send was just pressed and there is no other it
+        // could be. Every word costs, because the announcement has to finish
+        // before somebody knows there is anything to undo and the hold is ten
+        // seconds long. That argument is `Hold::DEFAULT`'s.
+        WhenItGoes::WhenItsTimeComes => match readiness(when, now) {
+            Readiness::HeldFor(left) => countdown(left),
+            _ => {
+                format!(
+                    "The message to {recipient} is waiting in the Outbox until the time set on it."
+                )
+            }
+        },
     }
 }
 
@@ -1242,7 +1361,12 @@ mod what_offline_mode_holds_back {
     fn test_a_message_held_by_offline_mode_says_so_rather_than_saying_it_is_sending() {
         // Somebody pressed a key called Send. If the only sentence they get is
         // the one about sending, they have been told their mail has gone.
-        let said = what_send_did(WhenItGoes::WhenThereIsANetworkAgain, "kim@example.com");
+        let said = what_send_did(
+            WhenItGoes::WhenThereIsANetworkAgain,
+            &GoAfter::AsSoonAsPossible,
+            at("2026-08-24 09:00"),
+            "kim@example.com",
+        );
 
         assert!(
             said.contains("Outbox"),
@@ -1254,7 +1378,12 @@ mod what_offline_mode_holds_back {
         );
         assert_ne!(
             said,
-            what_send_did(WhenItGoes::Now, "kim@example.com"),
+            what_send_did(
+                WhenItGoes::Now,
+                &GoAfter::AsSoonAsPossible,
+                at("2026-08-24 09:00"),
+                "kim@example.com",
+            ),
             "a message that went and one that did not are told the same thing"
         );
     }
@@ -1265,9 +1394,25 @@ mod what_offline_mode_holds_back {
         // Two of these mean the message is in the Outbox and the way out of
         // each is different, so hearing the wrong one sends somebody looking
         // in the wrong place.
-        let went = what_send_did(WhenItGoes::Now, "kim@example.com");
-        let offline = what_send_did(WhenItGoes::WhenThereIsANetworkAgain, "kim@example.com");
-        let waiting = what_send_did(WhenItGoes::WhenItsTimeComes, "kim@example.com");
+        let now = at("2026-08-24 09:00");
+        let went = what_send_did(
+            WhenItGoes::Now,
+            &GoAfter::AsSoonAsPossible,
+            now,
+            "kim@example.com",
+        );
+        let offline = what_send_did(
+            WhenItGoes::WhenThereIsANetworkAgain,
+            &GoAfter::AsSoonAsPossible,
+            now,
+            "kim@example.com",
+        );
+        let waiting = what_send_did(
+            WhenItGoes::WhenItsTimeComes,
+            &GoAfter::Chosen(stored(at("2026-08-25 09:00"))),
+            now,
+            "kim@example.com",
+        );
 
         assert_ne!(went, offline);
         assert_ne!(went, waiting);
@@ -1276,5 +1421,174 @@ mod what_offline_mode_holds_back {
             "offline mode and a time somebody set are the same sentence, so \
              neither says what to do about it"
         );
+    }
+}
+
+/// What is said, and what asks again, once a message is really being held.
+///
+/// Its own module because none of it is about offline mode. The two are next
+/// to each other in the source because they are both answers to "why has this
+/// message not gone", and telling them apart is most of what the sentences
+/// below are for.
+#[cfg(test)]
+mod what_happens_while_a_message_is_held {
+    use super::*;
+
+    /// A moment on this computer's clock, written the way the cache holds one.
+    fn at(text: &str) -> DateTime<Local> {
+        crate::common::moment::read(text)
+            .and_then(crate::common::moment::Moment::on_this_computer)
+            .expect("a real moment")
+    }
+
+    #[test]
+    fn test_pressing_send_on_a_held_message_says_how_long_is_left_and_what_takes_it_back() {
+        // The sentence nobody has ever heard. Send has been queueing a message
+        // and saying "Sending to ...", which is what it says for a message
+        // already on its way, so a hold would read as a program that had gone
+        // quiet for ten seconds. Somebody working by ear has no other way to
+        // learn there is anything to undo.
+        let now = at("2026-08-24 09:00");
+        let said = what_send_did(
+            WhenItGoes::WhenItsTimeComes,
+            &GoAfter::held(Hold::DEFAULT, now),
+            now,
+            "kim@example.com",
+        );
+
+        assert!(
+            said.contains("10 seconds"),
+            "the sentence does not say how long is left: {said}"
+        );
+        assert!(
+            said.contains("Undo Send"),
+            "the sentence does not name the command that takes it back: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_held_message_and_one_set_for_a_chosen_time_are_told_apart() {
+        // Guardrail 5 again, and the reason `somebody_chose_it` is stored
+        // rather than guessed. A hold is over in seconds and the way out of it
+        // is a key. A chosen time is somebody's decision and the way out of it
+        // is the Outbox. Reading one as the other would count down at somebody
+        // from next Tuesday.
+        let now = at("2026-08-24 09:00");
+        let held = what_send_did(
+            WhenItGoes::WhenItsTimeComes,
+            &GoAfter::held(Hold::DEFAULT, now),
+            now,
+            "kim@example.com",
+        );
+        let chosen = what_send_did(
+            WhenItGoes::WhenItsTimeComes,
+            &GoAfter::Chosen(stored(at("2026-08-25 09:00"))),
+            now,
+            "kim@example.com",
+        );
+
+        assert_ne!(
+            held, chosen,
+            "a ten second hold and a message set for tomorrow say the same thing"
+        );
+    }
+
+    #[test]
+    fn test_offline_mode_is_still_what_somebody_is_told_while_the_message_is_also_held() {
+        // Two things hold this message back at once and only one of them is
+        // something the person can act on now. `when_it_goes` already answers
+        // offline first and the sentence has to follow it, or somebody who
+        // switched offline mode on is told to wait ten seconds for a message
+        // that is not going anywhere until they switch it off.
+        let now = at("2026-08-24 09:00");
+        let held = GoAfter::held(Hold::DEFAULT, now);
+
+        assert_eq!(
+            when_it_goes(Reachability::Offline, &held, now),
+            WhenItGoes::WhenThereIsANetworkAgain
+        );
+        let said = what_send_did(
+            WhenItGoes::WhenThereIsANetworkAgain,
+            &held,
+            now,
+            "kim@example.com",
+        );
+
+        assert!(
+            said.contains("Offline mode"),
+            "a message queued while offline was told about the hold instead: {said}"
+        );
+        assert!(
+            !said.contains("Undo Send"),
+            "offline mode offered a countdown that is not running: {said}"
+        );
+    }
+
+    #[test]
+    fn test_only_a_moment_that_came_since_the_clock_last_looked_asks_the_send_loop() {
+        // What stops the timer from becoming a retry storm. A row whose moment
+        // passed long ago has already been offered to the send loop once; if
+        // that pass failed, asking again every second would hammer the server
+        // and count a failure a second. So this is an edge and not a level:
+        // each row asks for one pass, at the moment it comes due.
+        let now = at("2026-08-24 09:00:10");
+        let ran_out = GoAfter::Held(stored(at("2026-08-24 09:00:05")));
+
+        assert!(
+            its_moment_came(&ran_out, Some(at("2026-08-24 09:00:00")), now),
+            "a hold that ran out since the last look did not ask for a pass"
+        );
+        assert!(
+            !its_moment_came(&ran_out, Some(at("2026-08-24 09:00:08")), now),
+            "a hold that had already been offered asked for a second pass"
+        );
+        assert!(
+            !its_moment_came(&ran_out, Some(now), at("2026-08-24 09:00:11")),
+            "a moment older than every look this program has taken kept asking"
+        );
+    }
+
+    #[test]
+    fn test_the_first_look_after_a_restart_catches_a_hold_that_ran_out_while_the_program_was_shut()
+    {
+        // Closing the program in the middle of a hold leaves a row with a
+        // moment already past. Nothing looked at it while the program was
+        // closed, so there is no last look to measure against, and treating
+        // the moment the program opened as the last look would strand that
+        // message in the Outbox until somebody pressed Send Queued Mail.
+        assert!(
+            its_moment_came(
+                &GoAfter::Held(stored(at("2026-08-23 09:00:10"))),
+                None,
+                at("2026-08-24 09:00")
+            ),
+            "a message held when the program was last closed was never offered again"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_holding_it_back_is_never_the_clocks_business() {
+        // The clock is only there to let held mail go. A message with nothing
+        // set went on the pass it was queued in, and one still sitting in the
+        // queue is one a send failed on. Retrying those is the Outbox's own
+        // business and a person's, exactly as it is today.
+        assert!(!its_moment_came(
+            &GoAfter::AsSoonAsPossible,
+            None,
+            at("2026-08-24 09:00")
+        ));
+    }
+
+    #[test]
+    fn test_a_moment_this_build_cannot_read_never_reads_as_a_moment_that_came() {
+        // The same arm `readiness` refuses to collapse, for the same reason:
+        // sending a message that was set for next week, now, is the one thing
+        // here that cannot be taken back. A row nothing can read stays in the
+        // Outbox saying so.
+        assert!(!its_moment_came(
+            &GoAfter::Chosen("the day after the fair".to_string()),
+            None,
+            at("2026-08-24 09:00")
+        ));
     }
 }

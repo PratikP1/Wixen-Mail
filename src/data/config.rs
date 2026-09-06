@@ -462,6 +462,20 @@ pub struct AppConfig {
     /// Default reminder lead-time in minutes (e.g. 15 = remind 15 min before)
     #[serde(default = "default_reminder_minutes")]
     pub default_reminder_minutes: u32,
+    /// How long Send holds a message before anything hands it to a server, in
+    /// seconds.
+    ///
+    /// Nought means Send sends, with no time to take it back. See
+    /// `application::sending_later::Hold` for why the range stops at a minute
+    /// and why ten is the default.
+    ///
+    /// Signed, and read back through `Hold::of_seconds`, which clamps rather
+    /// than refuses. This number has survived a restart and can hold whatever
+    /// an older build, a hand-edited file or a typo left there, including a
+    /// negative one, and there is no sensible way for a stored number to stop
+    /// the program sending mail.
+    #[serde(default = "default_undo_send_hold_seconds")]
+    pub undo_send_hold_seconds: i64,
 }
 
 /// What a new or upgraded installation may change.
@@ -567,6 +581,10 @@ fn default_autosave_minutes() -> u32 {
     crate::application::autosave::AutosaveInterval::default().minutes()
 }
 
+fn default_undo_send_hold_seconds() -> i64 {
+    crate::application::sending_later::Hold::DEFAULT.seconds()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -587,6 +605,7 @@ impl Default for AppConfig {
             mute_message_reading: false,
             default_account_id: String::new(),
             draft_autosave_minutes: default_autosave_minutes(),
+            undo_send_hold_seconds: default_undo_send_hold_seconds(),
             message_columns: String::new(),
             feedback_channels: String::new(),
             sound_scheme_id: String::new(),
@@ -1204,6 +1223,7 @@ mod permission_tests {
             "default_reminder_minutes",
             "unread_on_a_parent",
             "announce_decorative_pictures",
+            "undo_send_hold_seconds",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1259,10 +1279,49 @@ mod permission_tests {
             parsed.draft_autosave_minutes,
             crate::application::autosave::AutosaveInterval::default().minutes()
         );
+        // An upgrade gets the hold rather than no hold. Falling back to nought
+        // would take Undo Send away from everybody already using the program,
+        // silently, on the release that first made it work.
+        assert_eq!(
+            parsed.undo_send_hold_seconds,
+            crate::application::sending_later::Hold::DEFAULT.seconds()
+        );
         assert!(
             parsed.working_day_starts < parsed.working_day_ends,
             "the working day ends before it starts"
         );
+    }
+
+    #[test]
+    fn test_a_stored_hold_outside_what_is_offered_is_brought_inside_it_rather_than_refused() {
+        // The one way a stored number could stop this program sending mail. A
+        // hand-edited file, an older build or a typo can leave anything here,
+        // including a negative, and a value the settings screen cannot offer
+        // must not become a message that never leaves or a hold nobody can end.
+        use crate::application::sending_later::Hold;
+
+        for (stored, expected) in [
+            (i64::MAX, Hold::LONGEST.seconds()),
+            (3600, Hold::LONGEST.seconds()),
+            (61, Hold::LONGEST.seconds()),
+            (-1, Hold::OFF.seconds()),
+            (i64::MIN, Hold::OFF.seconds()),
+            (0, Hold::OFF.seconds()),
+            (10, 10),
+        ] {
+            let written = format!(
+                r#"{{"version":"0.1.0","download_folder":".","theme":"default",
+                   "font_size":12,"log_level":"info","undo_send_hold_seconds":{stored}}}"#
+            );
+            let parsed: AppConfig =
+                serde_json::from_str(&written).expect("a settings file with that hold in it");
+
+            assert_eq!(
+                Hold::of_seconds(parsed.undo_send_hold_seconds).seconds(),
+                expected,
+                "a stored hold of {stored} came back as something outside the range"
+            );
+        }
     }
 
     #[test]

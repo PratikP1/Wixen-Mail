@@ -335,7 +335,7 @@ can navigate. Making them real headings is being worked on.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Quit Application | `Ctrl+Q` | Exit Wixen Mail |
-| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds by default. After that it says so rather than promising something it cannot do |
+| Undo Send | `Ctrl+Shift+Z` | Take back the message you just sent and open it again to edit. Works while the message is still being held, which is ten seconds unless you change it under Sending on the Compose tab. After that it says so rather than promising something it cannot do |
 | Open Settings | `Ctrl+,` | Open settings dialog |
 | Help for what you are looking at | `F1` | Opens the page about the module you are in. Every page is on the Help menu, which is the contents. |
 | Close Dialog | `Esc` | Close the current dialog or window |

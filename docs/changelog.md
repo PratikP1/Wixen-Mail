@@ -215,6 +215,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Undo Send now has something to take back. Until this release it refused
+  every single time it was pressed.**
+
+  Send was supposed to hold a message for a few seconds before handing it to a
+  server, and the hold was never written on the message. So every message went
+  on the next pass of the send queue, and `Ctrl+Shift+Z` answered that it was
+  too late, every time, for every message. The menu item, the key and the
+  wording that explains the refusal were all real. There was simply never a
+  message being held.
+
+  Three things change, and none of them works without the other two.
+
+  A message you send is held for ten seconds before anything hands it to a
+  server. Pressing Send now says so and names the key: "Sending in 10 seconds.
+  Undo Send takes it back." Before, Send said "Sending to ..." and then went
+  quiet, which reads as a program that has stopped rather than as a chance to
+  change your mind.
+
+  A held message goes on its own when its ten seconds are up. Nothing in the
+  program ran on a clock before this, so a held message would have waited its
+  ten seconds and then waited in the Outbox until you pressed Send Queued Mail.
+
+  The Outbox row for a held message says what it is waiting for, so a message
+  counting down, one set for a time you chose, and one waiting on nothing are
+  three different sentences instead of one.
+
+  How long the hold lasts is now a setting, under Sending on the Compose tab.
+  Anything from nought to sixty seconds, stepped with the arrow keys. Nought
+  means Send sends straight away, and the setting says so where you choose it:
+  "Send sends the message straight away, with no time to take it back."
+  Choosing a length says what that length will do. The changelog has claimed
+  since the hold was written that the length was adjustable, and there was no
+  such setting.
+
+  Known limitation: none of this has met a real mail server. Whether a message
+  that leaves after a hold arrives with the headers a recipient's program
+  expects is not settled, and neither is whether ten seconds feels long or
+  short with a real mailbox syncing underneath.
+
 - **A file dropped on the message you are writing no longer replaces it.**
   The message area is a browser, and a browser handed a file opens it. Dropping
   a picture onto a half-written reply put the picture on the screen and took the
@@ -1965,9 +2004,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 - **A message can be held before it goes, and taken back.** Send now holds a
   message briefly rather than sending at once, so there is a moment to change
-  your mind. Ten seconds by default, adjustable, because reaching the undo
-  starts with hearing that it exists: the announcement has to finish before
-  anyone knows there is something to undo.
+  your mind. Ten seconds by default, because reaching the undo starts with
+  hearing that it exists: the announcement has to finish before anyone knows
+  there is something to undo.
+
+  This entry was wrong when it was written and stayed wrong for two releases.
+  The hold was never put on a message, so Undo Send refused every time it was
+  pressed, and the length was not adjustable because there was no setting. Both
+  are fixed under Unreleased above. The entry is left here rather than removed,
+  because it is what the release it sits under actually claimed.
 
   A message can also be set to go at a chosen time. A time in the past is
   refused rather than sent immediately, and one more than a year ahead is
