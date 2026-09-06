@@ -140,8 +140,7 @@ pub fn read(bytes: &[u8]) -> Result<PictureReading> {
 /// application will happily carry a GIF or a WebP in a message, so a caller
 /// must expect `None` for a real picture that is perfectly all right.
 pub fn how_big_it_says_it_is(bytes: &[u8]) -> Option<(u32, u32)> {
-    let _ = bytes;
-    None
+    reader_over(bytes).ok()?.into_dimensions().ok()
 }
 
 /// Refuse a picture on the size its own header declares, before decoding.

@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A picture can now be marked decorative, and it is a question somebody
+  answers rather than a box left empty.**
+
+  Some pictures in a message carry nothing: a spacer, a rule, a line under a
+  signature. Describing one of those tells a person listening nothing they
+  wanted to know. Until now Insert Picture refused to go on without a
+  description, so the only way past was to type something meaningless.
+
+  When you insert a small picture, Wixen Mail now asks whether it is
+  decorative before it asks for a description. Answer Yes and the picture is
+  sent with no description at all, which is what tells another mail program's
+  screen reader to skip it. Answer No, or press Enter, and you are asked to
+  describe it exactly as before.
+
+  The question is only offered where furniture is plausible: the picture's
+  shorter side is 200 pixels or less and the file is 100 KB or less. Over a
+  photograph or a screen capture the question is not asked, because there the
+  only honest answer is a description.
+
+  Known limitations:
+
+  - A GIF or a WebP is never offered the question, even a tiny one. Wixen Mail
+    will carry both in a message and this build cannot read their size, so it
+    cannot tell whether one is small enough to be furniture. It asks for a
+    description rather than guessing.
+  - The rule is about size, and size is not meaning. A small screen capture of
+    an error message is exactly the size furniture is, so the question will be
+    offered over one. Nothing can tell what a picture is of, which is why this
+    is a question and not a decision.
+  - Nobody has heard the question read aloud by a screen reader.
+
 - **Files dragged onto the composer go on the message, except on the message
   area itself.**
 

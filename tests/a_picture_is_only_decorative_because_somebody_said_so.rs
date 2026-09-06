@@ -76,6 +76,29 @@ const THE_DECORATIVE_ANSWER: &str = "WhatThePictureSays::Decorative";
 /// The only thing that may produce that answer.
 const THE_YES_ARM: &str = "TheDecorativeAnswer::ItIsDecorative";
 
+/// Any arm of the answer, so "which arm is the mark in" can be asked.
+const AN_ARM: &str = "TheDecorativeAnswer::";
+
+/// Which arm a line of code sits in, by the nearest arm named at or above it.
+///
+/// Not "on the same line as the arm", which is what this asked first and is a
+/// question about rustfmt rather than about the code: rustfmt puts a long arm
+/// body on its own line as soon as it is long enough, and this one is. The
+/// version that read one line reported the correct code as wrong, which is a
+/// check on its way to being deleted rather than fixed.
+fn the_arm_holding(lines: &[(usize, String)], at: usize) -> Option<String> {
+    lines
+        .iter()
+        .filter(|(line, _)| *line <= at)
+        .filter_map(|(_, line)| {
+            let code = code_of(line);
+            let after = code.split_once(AN_ARM)?.1;
+            let name: String = after.chars().take_while(|c| c.is_alphanumeric()).collect();
+            (!name.is_empty()).then(|| format!("{AN_ARM}{name}"))
+        })
+        .next_back()
+}
+
 /// The style where Enter answers No, which here means "describe it".
 ///
 /// Spelled with its full path as well as bare, because a check anchored on a
@@ -298,12 +321,12 @@ fn test_nothing_but_the_yes_answer_reaches_the_decorative_mark() {
          something other than somebody saying so."
     );
 
-    let from_yes = where_the_code_says(&lines, THE_YES_ARM);
-    assert!(
-        from_yes.contains(&marked[0]),
-        "`{THE_DECORATIVE_ANSWER}` is at line {} and `{THE_YES_ARM}` is at lines \
-         {from_yes:?}, so the mark is not written in the arm the Yes answer \
-         reaches.",
+    assert_eq!(
+        the_arm_holding(&lines, marked[0]).as_deref(),
+        Some(THE_YES_ARM),
+        "`{THE_DECORATIVE_ANSWER}` is at line {} in {THE_COMPOSER} and the arm \
+         above it is not `{THE_YES_ARM}`, so a picture is marked decorative by \
+         an answer other than Yes.",
         marked[0]
     );
 
@@ -465,6 +488,58 @@ fn test_the_full_path_spelling_of_the_right_style_is_seen() {
         where_the_code_says(body, ENTER_MEANS_DESCRIBE_IT),
         vec![2],
         "the full path spelling of the right style was not seen"
+    );
+}
+
+#[test]
+fn test_the_mark_written_under_the_wrong_arm_is_found() {
+    // The defect this whole file is about, in its quietest form: everything is
+    // present, the question is asked, and the mark is produced by the answer
+    // that means "describe it". Nothing about the mark's presence shows that.
+    let made_up = "fn insert_picture(a: u8) -> u8 {\n    \
+                       match asked {\n        \
+                           TheDecorativeAnswer::ItIsDecorative => {\n            \
+                               WhatThePictureSays::InWords(x)\n        \
+                           }\n        \
+                           TheDecorativeAnswer::DescribeIt => {\n            \
+                               WhatThePictureSays::Decorative\n        \
+                           }\n    \
+                       }\n\
+                   }\n";
+    let lines = the_shipping_lines_of(made_up);
+    let marked = where_the_code_says(&lines, THE_DECORATIVE_ANSWER);
+
+    assert_eq!(marked.len(), 1);
+    assert_eq!(
+        the_arm_holding(&lines, marked[0]).as_deref(),
+        Some("TheDecorativeAnswer::DescribeIt"),
+        "the mark written under the wrong arm was read as being under the right one"
+    );
+}
+
+#[test]
+fn test_the_mark_on_its_own_line_under_the_right_arm_is_not_reported() {
+    // The other direction, and the reason this reads an arm rather than a
+    // line. rustfmt puts a long arm body on its own line, so a check asking
+    // whether the mark and the arm share a line reports the correct code as
+    // wrong. That version was written first and did exactly that.
+    let made_up = "fn insert_picture(a: u8) -> u8 {\n    \
+                       match asked {\n        \
+                           TheDecorativeAnswer::ItIsDecorative => (\n            \
+                               WhatThePictureSays::Decorative,\n            \
+                               \"said\".to_string(),\n        \
+                           ),\n    \
+                       }\n\
+                   }\n";
+    let lines = the_shipping_lines_of(made_up);
+    let marked = where_the_code_says(&lines, THE_DECORATIVE_ANSWER);
+
+    assert_eq!(marked.len(), 1);
+    assert_eq!(
+        the_arm_holding(&lines, marked[0]).as_deref(),
+        Some(THE_YES_ARM),
+        "the mark on its own line under the right arm was reported as under \
+         another one"
     );
 }
 

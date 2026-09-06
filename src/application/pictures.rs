@@ -406,8 +406,12 @@ pub const MOST_FURNITURE_MAY_BE: usize = 100 * 1024;
 /// asked to describe it rather than handed a shortcut on a picture nothing
 /// could measure.
 pub fn could_be_furniture(kind: &str, how_big: usize, size: Option<(u32, u32)>) -> bool {
-    let _ = (kind, how_big, size);
-    false
+    let Some((width, height)) = size else {
+        return false;
+    };
+    worth_carrying(kind, how_big)
+        && how_big <= MOST_FURNITURE_MAY_BE
+        && width.min(height) <= MOST_FURNITURE_MAY_MEASURE
 }
 
 /// A picture somebody is putting into a message they are writing.
@@ -435,9 +439,12 @@ pub fn a_picture_to_send(
         WhatThePictureSays::InWords(words) if !words.trim().is_empty() => {
             html_escape::encode_double_quoted_attribute(words.trim()).into_owned()
         }
-        // The stub, for the red commit: the shape is present and the answer is
-        // still the old one, so what fails is a value rather than a symbol.
-        WhatThePictureSays::InWords(_) | WhatThePictureSays::Decorative => {
+        // The mark: an `alt` that is present and empty. Written as an empty
+        // string here rather than left out of the tag, because a missing `alt`
+        // is a sender who said nothing and this is a sender who said there is
+        // nothing to say. `presentation::html_renderer` holds the two apart.
+        WhatThePictureSays::Decorative => String::new(),
+        WhatThePictureSays::InWords(_) => {
             return Err(
                 "A picture needs a description, so somebody who cannot see it \
                     still knows what you sent."
