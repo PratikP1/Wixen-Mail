@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 434 records have arrived since and have not been through it.
+# 435 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15874,4 +15874,58 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 77 },
+]
+
+# ── An owner of credential store entries that nobody registered ─────────────
+#
+# `application::forget::entries_for` is the whole list of credential store
+# entries an uninstall erases, written out by hand from what were four owners
+# and are now five. Its own comment records this list coming apart from another
+# one once already: it named an account's tokens, the single-account delete
+# path did not, and a removed account left its refresh token on the machine.
+#
+# Eighteen tests were beside it and every one of them asserts that a
+# *particular* known entry is present. None asked whether anything was missing,
+# so a fifth owner added and never registered passed all eighteen. The fifth
+# owner is the OpenPGP private key, which is the highest-value secret this
+# program will hold, and left behind it is unreadable, belongs to nothing, and
+# is invisible to the uninstaller that would have removed it.
+#
+# The break is the omission itself: the loop that asks `service::pgp` for its
+# entries, gone. That is what forgetting to register an owner looks like.
+#
+# **Three tests redden and the third is the one worth reading.**
+# `test_the_master_key_is_always_forgotten` asserts an exact count of the
+# entries an installation with no accounts has, so it notices a machine-level
+# entry disappearing without being about the private key at all. It is a census
+# and `CLAUDE.md` warns that a census weakens the guards around it once it
+# becomes a floor. This one is an equality, so it stays load-bearing, and it
+# went red when the private key arrived as well as when it was taken away.
+#
+# **A second candidate break was measured and is why the record uses this one.**
+# Keeping the loop and neutering it, `pgp::keyring_entries().into_iter()
+# .take(0)`, reddens two rather than three, and the completeness guard is not
+# among them: the source still says `pgp`, so the reading still finds the
+# owner. That is the known limit of a guard that reads source, and what covers
+# the gap is `test_the_private_key_entry_is_one_uninstalling_erases`, which
+# asks for the entry itself and went red under both breaks. Recorded because
+# the first plausible break was the weak one and one extra run is what said so.
+#
+# Measured by hand on 2026-09-06 against a green tree of 6,434 tests, with
+# `cargo test --no-fail-fast --lib`. Three tests in 6,434.
+
+[[guard]]
+name = "an owner of credential store entries that uninstalling never names"
+file = "src/application/forget.rs"
+before = """    for (service, user) in pgp::keyring_entries() {
+        entries.push(CredentialEntry { service, user });
+    }"""
+after = """"""
+red = [
+    "application::forget::tests::test_every_owner_of_credential_entries_is_named_where_uninstalling_reads",
+    "application::forget::tests::test_the_master_key_is_always_forgotten",
+    "application::forget::tests::test_the_private_key_entry_is_one_uninstalling_erases",
+]
+tests_last_seen = [
+    { file = "src/application/forget.rs", tests = 21 },
 ]

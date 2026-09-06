@@ -10,7 +10,7 @@
 //! removes any files.
 
 use crate::data::account::Account;
-use crate::service::{caldav, credentials, oauth, security};
+use crate::service::{caldav, credentials, oauth, pgp, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +40,14 @@ fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<Cred
         service: security::KEYRING_SERVICE.to_string(),
         user: security::KEYRING_MASTER_KEY.to_string(),
     }];
+
+    // Asked rather than listed, the same as the OAuth tokens below and for the
+    // same reason. It also belongs to the machine rather than to an account: a
+    // private key is imported once and opens mail in any mailbox, so it is
+    // named here beside the master key and not inside the loop.
+    for (service, user) in pgp::keyring_entries() {
+        entries.push(CredentialEntry { service, user });
+    }
 
     for account in accounts {
         entries.push(CredentialEntry {
@@ -355,11 +363,22 @@ mod tests {
     fn test_the_master_key_is_always_forgotten() {
         // It is stored on first run, before any account exists, so it cannot
         // be found by looking at what accounts there are.
+        //
+        // The count is exact rather than a floor, and it is the reason this
+        // test had to change when the OpenPGP private key entry arrived. An
+        // installation with no accounts and no calendars has exactly the
+        // entries that belong to the machine rather than to an account, and
+        // there are now two of them. A floor would have let the second one
+        // arrive in silence, which is the failure `CLAUDE.md` records a census
+        // causing elsewhere: with a spare above the floor, the guard stops
+        // being load-bearing.
         let entries = entries_for(&[], &[]);
 
-        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].service, "wixen-mail");
         assert_eq!(entries[0].user, "master-key");
+        assert_eq!(entries[1].service, "wixen-mail-pgp");
+        assert_eq!(entries[1].user, "private-key");
     }
 
     #[test]
@@ -752,6 +771,19 @@ mod tests {
         // `entries_for` and the failure this is written for are both a whole
         // owner nobody registered, and a module that is not mentioned at all
         // is exactly that.
+        //
+        // **The size of that weakness was measured rather than guessed, and it
+        // is larger than it sounds.** Two candidate breaks were run against
+        // the whole library. Deleting the PGP loop from `entries_for` reddens
+        // three tests including this one. Leaving the loop in place and
+        // neutering it, `pgp::keyring_entries().into_iter().take(0)`, reddens
+        // two and this one is not among them: the source still says `pgp`, so
+        // the reading still finds it. What covers that case is not this test
+        // but `test_the_private_key_entry_is_one_uninstalling_erases`, which
+        // asks for the entry itself and went red under both breaks. The pair
+        // is what holds; neither half does on its own, and the next owner
+        // somebody adds wants a test of that second shape as well as a
+        // mention here.
         let list = what_uninstalling_names();
         let missing: Vec<String> = owners_of_credential_entries()
             .into_iter()
