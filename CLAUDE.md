@@ -381,11 +381,27 @@ The check is a net under the common case and not a replacement for the run.
 Three things it cannot see. A test added to a file no record names can still
 redden a record, and nothing about the counts predicts that. A count is a size
 rather than a set, so a test deleted and another added leaves the number where it
-was. And what it costs when it fires is not flat: 471 of the 548 records name one
-file, but a test added to `src/application/contacts_sync.rs` flags 74 of them,
-which at a build and a run each is hours. That case is what the paragraph below
-about the critical path is for, and the answer is to run the command it prints in
-the background rather than to lower the check.
+was. And what it costs when it fires is not flat. Measured 2026-09-06 against
+`main` at `485030f`, when the file held 617 records: 477 of them name one file,
+but a test added to `src/application/contacts_sync.rs` flags 77, which at a build
+and a run each is hours. That case is what the paragraph below about the critical
+path is for, and the answer is to run the command it prints in the background
+rather than to lower the check.
+
+**Count records, not mentions, and do not use a ratio to convert between them.**
+This file used to say a grep for a file name overcounts by roughly two, and ten
+plans were misled by quoting a grep. The ratio is not two and it is not stable: on
+the same tree, `grep -c contacts_sync guards/guards.toml` answers 363 against the
+77 records that really name it in a `tests_last_seen` block, which is nearly five
+to one, because a file appears in a record's `file`, its `before`, its `after`,
+its `red` list and its prose comment as well. Parse the `tests_last_seen` blocks:
+
+```bash
+awk '/^\[\[guard\]\]/ {if(n>0) c++; n=0}
+     /^tests_last_seen/ {b=1; next} b && /^\]/ {b=0; next}
+     b && /file *=/ && /contacts_sync/ {n++}
+     END {if(n>0) c++; print c}' guards/guards.toml
+```
 
 **A renamed test is worse than a stale record, and it is the second half of
 that middle limit.** A count cannot see a rename: 71 tests before, 71 after. And
@@ -453,9 +469,23 @@ cover the common case. It is carried as a success criterion of phase 8 rather
 than left here as a sentence, for the reason this file keeps giving: a rule that
 lives in a document is one somebody has to notice being broken.
 
-**Know what it costs before starting it.** The whole sweep is 565 records and
-about 15 hours, an overnight job rather than an impossible one since the thread
-setting halved it. Scoped to a single branch it was 63 records of the 536 that
+**Know what it costs before starting it, and take the count again rather than
+reading it here.** This paragraph quoted 565 records, and two others quoted 548
+and 536, none of them dated, in a file whose whole argument is that a measurement
+without a date perishes. Phase 6 and phase 8 research both went to count and found
+617, on 2026-09-06 against `main` at `485030f`.
+
+At that size the sweep is about **20 hours**, not the 15 this used to say. The
+figure moved for two reasons at once: 52 more records, and a library that grew to
+roughly 6,000 test functions, which puts the per-record cost nearer 119 seconds
+than the 112 the old number assumed. Both terms go on moving, so multiply the
+count you take today by a rate you measure today.
+
+**A plain sweep has no resume.** It writes nothing back to `guards.toml`; its only
+artefact is the flushed log. A twenty-hour job that cannot be stopped and picked
+up is a scheduling question before it is a technical one.
+
+Scoped to a single branch it was 63 records of the 536 that
 existed then, about 90 minutes, for plan 02-01. Narrowing that to modules which
 actually gained a test only reached 52, because one large shared file gained
 tests and many records name a test in it, so there is no clever selection that
@@ -722,10 +752,32 @@ the gap stays visible.
   blind to. So **a new setting added as a top-level field fails on arrival**, which is the red half
   for free.
 
-  What is genuinely unenforced is narrower and is exactly where the two exceptions live: a setting
-  held **nested** inside another structure is invisible to that check, because it reads one struct's
-  fields. Both per-event feedback channels and the per-account answer are nested, which is how they
-  got past it. Widening it to follow nesting is real work and is ledger 114.
+  **The paragraph above was corrected once and the correction was also wrong.** It said both
+  exceptions were nested settings and that widening the check to follow nesting would close them.
+  Neither half is true, found on 2026-09-06 by phase 6's research going to look. Twice wrong about
+  the same four sentences is worth leaving on the record rather than tidying away, because the cause
+  both times was writing down what the shape of the problem ought to be instead of reading it.
+
+  The two exceptions are two different shapes, and neither is nesting.
+
+  `allowed_per_account` is a **top-level** `AppConfig` field, `config.rs:276`. The check can see it
+  perfectly well. It is excused by name, through `STORED_AND_OFFERED_BY_NOTHING` at `config.rs:1799`,
+  a list that today holds exactly one entry.
+
+  The per-event feedback channels are a third shape that no name-based check can ever reach: they
+  live inside the **serialised string value** of `feedback_channels`, not as fields of anything. No
+  amount of following nesting finds them, because there is no field to find.
+
+  So **ledger 114 as written closes neither of the two things it was raised for.** What would is a
+  hand-named companion on the pattern of `test_whether_message_text_may_be_fetched_is_offered_by_a_screen`
+  at `config.rs:1829`, which costs two guard records rather than disturbing all five tests in that
+  module.
+
+  **And emptying the exception list disarms the guard watching it.** With one entry gone,
+  `test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing` at `config.rs:1947`
+  iterates over nothing and passes unconditionally. That is the census-emptying failure this file
+  already describes two sections up, waiting to happen again, so whoever offers the per-account
+  answer from a screen retires that guard in the same commit rather than leaving it green and blind.
 
   `test_nothing_offers_a_setting_per_account_that_no_screen_writes` in `tests/house_style.rs` is not
   that check and should not be mistaken for it: it reads documents for a phrase and catches a *page*
