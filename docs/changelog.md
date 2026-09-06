@@ -138,6 +138,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     form.** One bar over five messages cannot say which of them it is about.
     Opening that message on its own says it.
 
+- **A filter rule and a saved search can now ask what the spam and phishing
+  check made of a message.**
+
+  Pick Safety in the rule editor or in the saved search editor, the same place
+  every other field is picked. It is the column the message list already has,
+  and it holds one of four words: `ordinary`, `suspicious`, `spam` or
+  `phishing`. So "Safety is exactly spam, move to Junk" is a rule you can write,
+  and "Safety is not ordinary" is a saved search that collects everything
+  anything has flagged.
+
+  The verdict itself is not new. It has been read out of the message headers,
+  merged with the folder the message arrived in and with this program's own
+  reading of it, stored, sorted on and read out in the reader's warning bar for
+  some time. What was missing was the one thing that acts on it: no rule could
+  name it, so the answer was there and nothing could be done with it.
+
+  `ordinary` is a word a rule can ask for, not a blank. A message nothing was
+  said about does not read as a message with no verdict.
+
+  Nothing files or deletes anything on its own because of this. A rule that
+  moves or deletes is one you wrote, and it obeys the Allowed Changes setting
+  the same as any other rule.
+
+  Known limitations:
+
+  - **Whether a provider's spam headers arrive in the shapes this program
+    expects is unverified.** Every parser for them is tested against
+    hand-written header blocks, and no account has ever been used with this
+    program. Gmail in particular tells an IMAP client almost nothing about its
+    spam judgement beyond moving the message, which is why the folder a message
+    is in counts as a verdict too.
+  - **A rule that deletes says only that a message was "sorted by your
+    rules".** The sync summary counts it with every other rule that fired and
+    does not say a message was deleted. That is worth knowing before you write
+    one.
+
 ### Fixed
 
 - **Marking a message read, or starring it, while the mail server cannot be

@@ -58,7 +58,7 @@ pub struct FilterRule {
 /// So the list is written down and a test below requires it to hold exactly
 /// the names the reading handles, in both directions. A name added to one and
 /// not the other is the shape this exists to stop.
-pub const A_FIELD_A_RULE_MAY_NAME: [&str; 11] = [
+pub const A_FIELD_A_RULE_MAY_NAME: [&str; 12] = [
     "subject",
     "from",
     "to",
@@ -70,6 +70,7 @@ pub const A_FIELD_A_RULE_MAY_NAME: [&str; 11] = [
     "read",
     "starred",
     "deleted",
+    "safety",
 ];
 
 /// Whether a rule naming this field is one this build can evaluate.
@@ -99,7 +100,15 @@ pub fn a_rule_may_name(field: &str) -> bool {
 /// by the reading below, so their words name the state rather than an action.
 /// "Flagged" for `starred` is the spelling the message list and the mail
 /// server both use, and the column name is the odd one out.
-pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 11] = [
+///
+/// `safety` keeps its stored spelling, which is the exception to everything
+/// above and is the same argument as `regex` two lists down. Every other entry
+/// here is reworded because the stored name is a column name a person never
+/// meets. This one they do meet: the message list has a column headed Safety
+/// (`presentation::message_columns`), and it is the column this field asks
+/// about. A second name for it here would be two names for one thing, which is
+/// how somebody comes to believe there are two.
+pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 12] = [
     ("subject", "Subject"),
     ("from", "From"),
     ("to", "To"),
@@ -111,6 +120,7 @@ pub const WHAT_EACH_FIELD_IS_CALLED: [(&str, &str); 11] = [
     ("read", "Read"),
     ("starred", "Flagged"),
     ("deleted", "Deleted"),
+    ("safety", "Safety"),
 ];
 
 /// The words for a stored field name, or nothing when it is not one of these.
@@ -327,6 +337,15 @@ impl FilterEngine {
             "read" => Some(Some(bool_to_str(message.read))),
             "starred" => Some(Some(bool_to_str(message.starred))),
             "deleted" => Some(Some(bool_to_str(message.deleted))),
+            // The stored word, not the column's label. `Safety::label` is
+            // written for a list column that stays quiet about ordinary mail,
+            // so it answers the empty string for it; read through that, an
+            // ordinary message would look to everything below like a field
+            // that is not there, "safety is empty" would be the only way to
+            // ask for ordinary mail, and "safety is exactly ordinary" could
+            // never fire. `as_str` is the spelling the column holds and the
+            // one a person reading the database with a browser sees.
+            "safety" => Some(Some(message.safety.as_str())),
             _ => None,
         };
         let Some(present) = known_field else {

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 420 records have arrived since and have not been through it.
+# 421 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15294,4 +15294,50 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 110 },
+]
+
+# ── The verdict a rule asks about is the row's, not a constant ──────────────
+#
+# A rule may name `safety`, and the arm answering it is one line. The failure
+# this is about is not the arm being missing, which four tests would catch at
+# once through the list-and-reading pair. It is the arm being there and
+# answering the same thing about every message, which is what a half-finished
+# version of this looks like: the field is offered in both editors, a rule
+# naming it stores and loads, a saved search runs, and every message comes back
+# ordinary.
+#
+# So the break is a constant rather than a removal. It is the shape plan 03-08
+# found matters: a removal is caught by the guards that already hold the list
+# and the reading in agreement, and a constant is caught by nothing unless
+# something asserts that a real verdict reaches the engine.
+#
+# Measured by hand 2026-09-05 with
+# `cargo test --all-targets --no-fail-fast` against a tree with no other
+# failure in it. Three tests went red, and which three is the point:
+#
+#   - the fixture one, where a message is handed to the matcher already
+#     carrying a verdict;
+#   - the arrival one, which goes through `mail_sync::apply_rules` and
+#     `MessageCache::get_message`;
+#   - the saved search one, which goes through `messages_a_saved_search_reads`.
+#
+# The two that did not redden are worth naming as well.
+# `test_an_ordinary_message_is_a_verdict_a_rule_can_ask_for_rather_than_a_blank`
+# stays green because the constant is `ordinary` and that test asks for
+# ordinary; `test_every_field_the_list_names_is_one_the_reading_really_handles`
+# stays green because a constant is still a non-empty answer. Both are about
+# the arm existing, which this break leaves alone.
+
+[[guard]]
+name = "a rule about the verdict reads the message's own, not a constant"
+file = "src/application/filters.rs"
+before = """            "safety" => Some(Some(message.safety.as_str())),"""
+after = """            "safety" => Some(Some(crate::service::safety::Safety::Ordinary.as_str())),"""
+red = [
+    "application::filters::the_fields_a_rule_may_name::test_a_rule_may_ask_how_safe_a_message_was_judged_to_be",
+    "application::filters::the_fields_a_rule_may_name::test_a_rule_naming_the_verdict_fires_on_mail_as_it_arrives",
+    "application::filters::the_fields_a_rule_may_name::test_a_saved_search_reads_the_verdict_along_with_the_message",
+]
+tests_last_seen = [
+    { file = "src/application/filters.rs", tests = 46 },
 ]
