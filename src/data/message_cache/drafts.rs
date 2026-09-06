@@ -214,11 +214,15 @@ mod tests {
         // Both descriptions here are awkward on purpose. A quote and an angle
         // bracket are what the escaping is for, and SQLite is the one stage
         // that could return them as something else.
-        use crate::application::pictures::a_picture_to_send;
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
 
         let bytes = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4];
-        let chart = a_picture_to_send("image/png", &bytes, r#"A chart of "sales" < 2026"#)
-            .expect("a described picture");
+        let chart = a_picture_to_send(
+            "image/png",
+            &bytes,
+            &WhatThePictureSays::InWords(r#"A chart of "sales" < 2026"#.to_string()),
+        )
+        .expect("a described picture");
         let furniture = format!(r#"<img src="data:image/png;base64,{}" alt="">"#, {
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD.encode(&bytes)

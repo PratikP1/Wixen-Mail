@@ -3261,7 +3261,11 @@ fn insert_picture(
         return;
     }
 
-    match a_picture_to_send(kind, &bytes, &described) {
+    match a_picture_to_send(
+        kind,
+        &bytes,
+        &crate::application::pictures::WhatThePictureSays::InWords(described.clone()),
+    ) {
         Ok(markup) => {
             run_in_editor(
                 &body_editor,
@@ -4022,7 +4026,7 @@ US Navy",
         let picture = crate::application::pictures::a_picture_to_send(
             "image/png",
             &[0x89, b'P', b'N', b'G', 1, 2],
-            "A cat",
+            &crate::application::pictures::WhatThePictureSays::InWords("A cat".to_string()),
         )
         .expect("one");
 
@@ -4046,7 +4050,7 @@ US Navy",
         let picture = crate::application::pictures::a_picture_to_send(
             "image/png",
             &[0x89, b'P', b'N', b'G', 1, 2],
-            "A cat",
+            &crate::application::pictures::WhatThePictureSays::InWords("A cat".to_string()),
         )
         .expect("one");
 

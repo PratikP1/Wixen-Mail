@@ -796,10 +796,16 @@ mod tests {
         // and reload, and until now nothing asserted any of it. Every stage is
         // named so a failure says which end lost it, rather than "the
         // description is gone" about a trip with four stages in it.
-        use crate::application::pictures::{a_picture_to_send, is_a_picture_we_carried};
+        use crate::application::pictures::{
+            WhatThePictureSays, a_picture_to_send, is_a_picture_we_carried,
+        };
 
-        let composed = a_picture_to_send("image/png", &a_tiny_png(), "A chart of sales")
-            .expect("a described picture");
+        let composed = a_picture_to_send(
+            "image/png",
+            &a_tiny_png(),
+            &WhatThePictureSays::InWords("A chart of sales".to_string()),
+        )
+        .expect("a described picture");
         let trip = RoundTrip::of(&composed);
 
         for (stage, pictures) in trip.pictures_at_each_stage() {
@@ -829,11 +835,15 @@ mod tests {
         // a different way, and the trip escapes and unescapes more than once.
         // A quote would close the attribute, an angle bracket would start a
         // tag, and a non-ASCII character is where an encoding mistake shows.
-        use crate::application::pictures::a_picture_to_send;
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
 
         let awkward = r#"Ada's "3 < 4" café"#;
-        let composed =
-            a_picture_to_send("image/png", &a_tiny_png(), awkward).expect("a described picture");
+        let composed = a_picture_to_send(
+            "image/png",
+            &a_tiny_png(),
+            &WhatThePictureSays::InWords(awkward.to_string()),
+        )
+        .expect("a described picture");
         let trip = RoundTrip::of(&composed);
 
         for (stage, pictures) in trip.pictures_at_each_stage() {
@@ -859,11 +869,13 @@ mod tests {
     fn test_two_pictures_keep_their_own_descriptions_in_order() {
         // One picture cannot tell a swap from a survival. Two can, and a
         // message with a signature under a chart is the ordinary case.
-        use crate::application::pictures::a_picture_to_send;
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
 
-        let first = a_picture_to_send("image/png", &a_tiny_png(), "First, a chart").expect("one");
-        let second =
-            a_picture_to_send("image/jpeg", &a_tiny_png(), "Second, a photo").expect("two");
+        let in_words = |words: &str| WhatThePictureSays::InWords(words.to_string());
+        let first = a_picture_to_send("image/png", &a_tiny_png(), &in_words("First, a chart"))
+            .expect("one");
+        let second = a_picture_to_send("image/jpeg", &a_tiny_png(), &in_words("Second, a photo"))
+            .expect("two");
         let trip = RoundTrip::of(&format!("<p>{first}</p><p>{second}</p>"));
 
         for (stage, pictures) in trip.pictures_at_each_stage() {
@@ -963,12 +975,18 @@ mod tests {
         // deleted: the attribute filter admits a `data:` address only when
         // `is_a_picture_we_carried` says yes, so an empty description that
         // made that answer no would take the picture away with nothing said.
-        use crate::application::pictures::is_a_picture_we_carried;
+        use crate::application::pictures::{
+            WhatThePictureSays, a_picture_to_send, is_a_picture_we_carried,
+        };
 
-        let carried = a_tiny_encoded_png();
-        let trip = RoundTrip::of(&format!(
-            r#"<img src="data:image/png;base64,{carried}" alt="">"#
-        ));
+        // Written by the real writer rather than by hand, so this is the trip
+        // a decorative picture somebody inserted really takes. Hand-built
+        // markup would prove the sanitiser keeps an empty `alt` and say
+        // nothing about whether anything produces one.
+        let trip = RoundTrip::of(
+            &a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+                .expect("a decorative picture"),
+        );
 
         for (stage, pictures) in trip.pictures_at_each_stage() {
             assert_eq!(pictures.len(), 1, "the decorative picture was lost {stage}");
