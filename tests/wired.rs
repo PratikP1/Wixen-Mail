@@ -3075,12 +3075,20 @@ fn test_opening_a_message_works_out_what_its_signature_is_worth() {
     );
 }
 
-/// The bytes a signed message arrived in are kept when one arrives.
+/// The form a message arrived in is recorded when one arrives.
 ///
-/// The other half of the same wiring. A signature can only be checked against
-/// the exact bytes that were signed, so without this call the verdict above is
-/// worked out once as the message comes off the wire and never again, and every
-/// later opening of the message says the signature could not be checked.
+/// The other half of the same wiring, and it is now two facts rather than one.
+/// A signature can only be checked against the exact bytes that were signed, so
+/// without this call the verdict above is worked out once as the message comes
+/// off the wire and never again, and every later opening of the message says
+/// the signature could not be checked. And an S/MIME enveloped message has no
+/// text part at all, so without the mark this call also writes, one opens as a
+/// blank message with nothing said about it.
+///
+/// `note_the_form_it_arrived_in` asks both questions itself, which is why this
+/// names one call rather than two: a path that made one of them and forgot the
+/// other is exactly the drift this is here to notice, and
+/// `data::message_cache::how_it_arrived` holds the whole tree to it.
 ///
 /// What this cannot see: whether the bytes stored are the right ones, or
 /// whether anything reads them back. `data::message_cache::signed_original`
@@ -3090,17 +3098,18 @@ fn test_opening_a_message_works_out_what_its_signature_is_worth() {
 fn test_a_signed_message_has_its_arrived_in_form_kept_when_it_arrives() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     assert!(
-        body_of(&app, "fn spawn_body_fetch(").contains("keep_signed_original("),
-        "a message downloaded over IMAP no longer has the form it arrived in kept, so its \
-         signature can never be checked again after the first time"
+        body_of(&app, "fn spawn_body_fetch(").contains("note_the_form_it_arrived_in("),
+        "a message downloaded over IMAP no longer has the form it arrived in recorded, so its \
+         signature can never be checked again after the first time and an encrypted one opens \
+         blank"
     );
 
     // The download loop and not the whole file, which a comment naming the call
     // was enough to satisfy.
     let pop = fs::read_to_string("src/application/pop_sync.rs").expect("the POP sync");
     assert!(
-        body_of(&pop, "async fn sync<M: PopMailbox>(").contains("keep_signed_original("),
-        "a message collected over POP no longer has the form it arrived in kept, and POP has \
+        body_of(&pop, "async fn sync<M: PopMailbox>(").contains("note_the_form_it_arrived_in("),
+        "a message collected over POP no longer has the form it arrived in recorded, and POP has \
          no server to ask again, so its signature could never be checked at all"
     );
 }
@@ -3126,8 +3135,9 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
     let importing =
         fs::read_to_string("src/application/importing_messages.rs").expect("the mail import");
     assert!(
-        body_of(&importing, "pub fn file_one_imported_message(").contains("keep_signed_original("),
-        "mail brought in from a file no longer has the form it arrived in kept, so a signed \
+        body_of(&importing, "pub fn file_one_imported_message(")
+            .contains("note_the_form_it_arrived_in("),
+        "mail brought in from a file no longer has the form it arrived in recorded, so a signed \
          message imported from an archive reads as one that never claimed a signature"
     );
 

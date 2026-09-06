@@ -375,9 +375,9 @@ pub fn file_one_imported_message(
     // the message, and the reader says the signature could not be checked here
     // rather than saying it failed, which are opposite pieces of news.
     if let Some(raw) = &read.the_form_it_arrived_in
-        && let Err(e) = cache.keep_signed_original(stored, raw)
+        && let Err(e) = cache.note_the_form_it_arrived_in(stored, raw)
     {
-        tracing::warn!("Could not keep the form an imported signed message arrived in: {e}");
+        tracing::warn!("Could not record the form an imported message arrived in: {e}");
     }
     WhetherItWasWrittenDown::ItIsInTheFolder
 }

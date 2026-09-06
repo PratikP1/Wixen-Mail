@@ -1539,6 +1539,52 @@ impl ReaderDocument {
         });
         self
     }
+
+    /// Say why an S/MIME encrypted message has nothing in it.
+    ///
+    /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
+    /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
+    /// reasoning unchanged.
+    ///
+    /// # Why this is not the PGP path under another name
+    ///
+    /// A PGP message's armour is a text part, so the body shows the armour and
+    /// [`ENCRYPTED_AND_NOT_OPENED_HERE`] explains it. An S/MIME enveloped
+    /// message has no text part at all, so the body is
+    /// [`nothing_to_read`]: "This message has no text, or it has not been
+    /// downloaded yet." That sentence is false about this message. It has text,
+    /// and the text is encrypted, and saying it was not downloaded sends
+    /// somebody to fetch it again.
+    ///
+    /// # One sentence, in two places, and why not two sentences
+    ///
+    /// The same string goes into the bar and into the body, and both are
+    /// needed. The bar is what [`crate::presentation::wx_reader`] speaks as the
+    /// message opens, so without it the fact arrives only after somebody has
+    /// listened past the whole header block. The body is where the falsehood
+    /// is, so without it a message that really is encrypted goes on saying it
+    /// might not have been downloaded.
+    ///
+    /// Two differently worded sentences were the other option and were refused.
+    /// A listener meeting two near-identical sentences has to work out whether
+    /// the second one added anything; meeting the same sentence twice, they
+    /// recognise a fact restated. It is also one place to change the wording
+    /// rather than two that can drift.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly, and the
+    /// same for `looks_unsafe` being left alone: an encrypted message is not an
+    /// unsafe one.
+    pub fn with_smime_envelope(
+        self,
+        says: &crate::application::encrypted_mail::WhatTheEnvelopeSays,
+    ) -> Self {
+        // Insufficient on purpose, and only for the length of one commit. The
+        // tests name what it has to do and this does none of it.
+        let _ = says;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -2893,13 +2939,13 @@ mod signature_tests {
     }
 
     /// A report as the reader is handed it.
-    fn checked(report: &SignatureReport) -> SignatureCheck {
+    pub(super) fn checked(report: &SignatureReport) -> SignatureCheck {
         SignatureCheck::Checked(Box::new(report.clone()))
     }
 
     /// The everyday good case: it adds up, for the address it came from, and
     /// every question that could have been asked was asked and came back well.
-    fn a_signature_that_holds() -> SignatureReport {
+    pub(super) fn a_signature_that_holds() -> SignatureReport {
         report(
             SignatureOutcome::Matches,
             vec![
@@ -3310,6 +3356,143 @@ mod encryption_tests {
         assert!(
             !ENCRYPTED_AND_NOT_OPENED_HERE.contains("cannot open encrypted mail"),
             "{ENCRYPTED_AND_NOT_OPENED_HERE}"
+        );
+    }
+
+    // ── The S/MIME case, where there is no armour to explain ─────────────
+
+    /// A message with no text at all, which is what an enveloped one is.
+    fn opened_with_nothing_in_it() -> ReaderDocument {
+        single_message(
+            &super::tests::message(),
+            &MessageBody::Plain(String::new()),
+            super::tests::aloud(),
+        )
+    }
+
+    fn addressed_to_one_certificate() -> crate::application::encrypted_mail::WhatTheEnvelopeSays {
+        crate::application::encrypted_mail::from_what_was_kept(
+            true,
+            Some(&crate::service::signed_mail::for_tests::the_envelope_alices_message_carried()),
+            crate::service::signed_mail::this_computers_certificates().as_ref(),
+        )
+    }
+
+    #[test]
+    fn test_an_encrypted_message_reads_as_the_sentence_rather_than_as_nothing_to_read() {
+        // The defect. An enveloped message has no text part, so `mime::parse`
+        // finds no body of either kind and the reader says "This message has no
+        // text, or it has not been downloaded yet" about a message that has
+        // text and was downloaded. Somebody acting on that goes and fetches it
+        // again, and gets the same nothing.
+        let document =
+            opened_with_nothing_in_it().with_smime_envelope(&addressed_to_one_certificate());
+
+        assert!(
+            !document.text.contains(&nothing_to_read()),
+            "the body still claims the message may not have arrived:\n{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("This message is encrypted"),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_the_same_sentence_is_spoken_as_the_message_opens() {
+        // The body is not announced; the top of the bar is. Without this the
+        // fact reaches somebody only after they have listened past the whole
+        // header block, on the one kind of message where the header block is
+        // all there is.
+        let document =
+            opened_with_nothing_in_it().with_smime_envelope(&addressed_to_one_certificate());
+        let bar = document.warning.as_deref().expect("something to say");
+
+        assert_eq!(
+            said_before_the_message(bar),
+            bar,
+            "the sentence has to be above the line the reader cuts at"
+        );
+        assert!(bar.contains("This message is encrypted"), "{bar}");
+        assert!(
+            document.text.contains(bar),
+            "the bar and the body should carry one sentence, not two"
+        );
+    }
+
+    #[test]
+    fn test_it_still_reaches_the_spoken_half_when_a_signature_verdict_follows() {
+        // The ordering trap `with_encryption` already carries. A signature
+        // verdict puts `HOW_IT_WAS_CHECKED` into the bar and
+        // `said_before_the_message` cuts there, so a sentence folded in
+        // afterwards is on screen and never spoken.
+        let holds = super::signature_tests::a_signature_that_holds();
+        let document = opened_with_nothing_in_it()
+            .with_smime_envelope(&addressed_to_one_certificate())
+            .with_signature(&super::signature_tests::checked(&holds));
+        let bar = document.warning.as_deref().expect("something to say");
+
+        assert!(
+            said_before_the_message(bar).contains("This message is encrypted"),
+            "spoken half was {:?}",
+            said_before_the_message(bar)
+        );
+    }
+
+    #[test]
+    fn test_an_envelope_that_could_not_be_read_still_says_the_message_is_encrypted() {
+        // The path the whole feature rests on. If a real envelope will not
+        // parse, this is what somebody meets, and it must not be the blank
+        // message it replaced.
+        let document = opened_with_nothing_in_it().with_smime_envelope(
+            &crate::application::encrypted_mail::WhatTheEnvelopeSays::EncryptedAndTheDetailsCouldNotBeRead,
+        );
+
+        assert!(
+            !document.text.contains(&nothing_to_read()),
+            "{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("This message is encrypted"),
+            "{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("could not read"),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_message_is_left_exactly_as_it_was() {
+        // Nearly all mail. A bar where there was none is a line to tab past on
+        // every message, and then the one that matters is tabbed past too.
+        let before = opened(Safety::Ordinary, "One o'clock?");
+        let after = before.clone().with_smime_envelope(
+            &crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
+        );
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn test_the_smime_sentence_and_the_pgp_one_are_not_the_same_sentence() {
+        // They are opposite situations and they were written on different
+        // days. A PGP message shows its armour, so its sentence explains what
+        // is below; an S/MIME one shows nothing, so its sentence is what is
+        // below. The way these collide is somebody reusing a helper.
+        let smime = addressed_to_one_certificate();
+        let smime = smime.said().expect("a sentence");
+
+        assert_ne!(smime, ENCRYPTED_AND_NOT_OPENED_HERE);
+        assert_ne!(smime, SIGNED_AND_NOT_CHECKED_HERE);
+        assert_ne!(
+            smime,
+            crate::application::encrypted_mail::ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ
         );
     }
 

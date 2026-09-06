@@ -1944,8 +1944,8 @@ async fn fetch_and_store_one<M: Mailbox>(
         parsed.body_plain.as_deref(),
         parsed.body_html.as_deref(),
     )?;
-    if let Err(e) = cache.keep_signed_original(message.message_id, &raw) {
-        tracing::warn!("Could not keep the form a signed message arrived in: {e}");
+    if let Err(e) = cache.note_the_form_it_arrived_in(message.message_id, &raw) {
+        tracing::warn!("Could not record the form a message arrived in: {e}");
     }
     Ok(())
 }

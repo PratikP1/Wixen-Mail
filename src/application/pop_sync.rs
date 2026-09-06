@@ -297,8 +297,8 @@ pub(crate) async fn sync<M: PopMailbox>(
         // say the mail had not arrived when it had, and would return before the
         // polite ending, which is the only thing that commits anything on a POP
         // server.
-        if let Err(e) = cache.keep_signed_original(row, &raw) {
-            tracing::warn!("Could not keep the form a signed message arrived in: {e}");
+        if let Err(e) = cache.note_the_form_it_arrived_in(row, &raw) {
+            tracing::warn!("Could not record the form a message arrived in: {e}");
         }
         written.push(row);
     }

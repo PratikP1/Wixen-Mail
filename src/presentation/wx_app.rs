@@ -10090,16 +10090,22 @@ fn read_the_whole_message(
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
-    let Some(body) = cache
+    let envelope = envelope_check_for(cache, message);
+    let body = cache
         .as_ref()
-        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
-    else {
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
+    // An encrypted message has no body to fetch and is never going to have
+    // one, so falling back to the row would answer the second press with the
+    // row for ever, on the one kind of message that most needs a word about
+    // itself. It has something to say instead.
+    if body.is_none() && envelope.said().is_none() {
         return with_conversation_count(in_conversation, &message.read_full(out));
-    };
+    }
     whole_message_reading(
         message,
-        &body_as_written(Some(body)),
+        &body_as_written(body),
         signature_check_for(cache, message),
+        envelope,
         in_conversation,
         out,
     )
@@ -10119,6 +10125,7 @@ fn whole_message_reading(
     message: &MessageItem,
     body: &MessageBody,
     signature: crate::application::checking_signatures::SignatureCheck,
+    envelope: crate::application::encrypted_mail::WhatTheEnvelopeSays,
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
@@ -10127,7 +10134,12 @@ fn whole_message_reading(
     // is on screen afterwards to go back to, so leaving the signature out of it
     // would mean the quickest way to read a message was the one that never said
     // what its signature was worth.
-    let document = reader_text::single_message(message, body, out).with_signature(&signature);
+    //
+    // The envelope goes in first, for the ordering reason `with_encryption`
+    // carries: everything above `HOW_IT_WAS_CHECKED` is what gets spoken.
+    let document = reader_text::single_message(message, body, out)
+        .with_smime_envelope(&envelope)
+        .with_signature(&signature);
     let state = read_aloud::state_worth_saying(message);
     let reading = reader_text::read_whole(&document);
     let reading = if state.is_empty() {
@@ -11312,6 +11324,11 @@ fn open_in_the_text_reader(
     message.attachments = attachments_of(cache, message.message_id);
     reader.open(
         reader_text::single_message(&message, &body, out)
+            // Before the signature verdict, and that ordering is load-bearing
+            // rather than tidy: a verdict puts `HOW_IT_WAS_CHECKED` into the
+            // bar and `said_before_the_message` cuts there, so a sentence
+            // folded in after one is on screen and never spoken.
+            .with_smime_envelope(&envelope_check_for(cache, &message))
             .with_signature(&signature_check_for(cache, &message)),
     );
 }
@@ -11365,6 +11382,29 @@ fn signature_check_for(
         &crate::application::receipts::address_of(&message.from),
         chrono::Utc::now(),
     )
+}
+
+/// What can be said about one message's S/MIME envelope, for the surfaces that
+/// open mail.
+///
+/// Beside [`signature_check_for`] and asked in the same place for the same
+/// reason. It costs a column and, for the one message in a great many that
+/// arrived encrypted, a row and a DER read. Ordinary mail costs the column and
+/// stops there.
+///
+/// Late would be worse than slow here too: this sentence is the body of the
+/// message. A body that arrived after the window opened would be a blank
+/// message that filled itself in afterwards.
+fn envelope_check_for(
+    cache: &Option<Arc<MessageCache>>,
+    message: &MessageItem,
+) -> crate::application::encrypted_mail::WhatTheEnvelopeSays {
+    use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
+
+    let Some(cache) = cache.as_ref() else {
+        return WhatTheEnvelopeSays::NotEncrypted;
+    };
+    encrypted_mail::for_message(cache, message.message_id)
 }
 
 /// The attachments recorded for one message, as the reader wants them.
@@ -19130,20 +19170,27 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
             tracing::warn!("Could not store the message body: {}", e);
             return;
         }
-        // And the bytes as they arrived, where this message says it is signed.
-        // A signature is arithmetic over exactly those bytes, and nothing the
+        // And what the message's own headers said about the form it arrived
+        // in, which is two facts and both are gone the moment these bytes are.
+        //
+        // The bytes themselves, where this message says it is signed. A
+        // signature is arithmetic over exactly those bytes, and nothing the
         // parse above produces can be turned back into them: header order,
         // folding, whitespace and transfer encoding all change on the way
         // through, and any one of those makes a good signature read as bad.
         // Without this the answer could be worked out here, once, and never
         // again, so a message reopened from the cache said nothing.
         //
+        // And a mark, where it says it is encrypted. An enveloped message has
+        // no text part at all, so the parse above yields nothing for either
+        // body and the reader would show a message with nothing in it and no
+        // explanation.
+        //
         // Ordinary mail writes nothing. The call reads the content type and
-        // stops. Failure is logged and not fatal: it costs a verdict, not a
-        // message, and the reader says so rather than saying a signature
-        // failed.
-        if let Err(e) = cache.keep_signed_original(message_row_id, &raw) {
-            tracing::warn!("Could not keep the form a signed message arrived in: {}", e);
+        // stops. Failure is logged and not fatal: it costs a verdict or a
+        // sentence, not a message.
+        if let Err(e) = cache.note_the_form_it_arrived_in(message_row_id, &raw) {
+            tracing::warn!("Could not record the form a message arrived in: {}", e);
         }
         // Our own checks need the body, so they run here rather than during
         // the header sync, and merge with what the provider already said
@@ -21252,6 +21299,7 @@ mod tests {
             &m,
             &crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
             crate::application::checking_signatures::SignatureCheck::NotSigned,
+            crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
             None,
             aloud(),
         );
