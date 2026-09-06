@@ -712,14 +712,24 @@ the gap stays visible.
   That is FEEDBACK-01 and it belongs to phase 6. And the per-account Allow Changes answer, which the
   model holds and nothing offers. Phase 1's criterion 8 already said a phase must not add a third.
 
-  **This rule is not enforced by anything yet, and saying so is the point.**
-  `test_nothing_offers_a_setting_per_account_that_no_screen_writes` sounds like the check and is
-  not: it reads documents for a phrase and catches a *page* promising a control that does not exist.
-  Nothing compares what the model holds against what a screen offers. Writing that check means
-  enumerating the settings surface and the screen's sections and asserting every member of the first
-  appears in the second, the way `tests/one_sign_in_per_piece_of_work.rs` counts sign-in sites and
-  names each one. Until it exists, this paragraph is a rule somebody has to notice being broken,
-  which is the thing this file keeps saying does not work.
+  **A check does enforce this, for top-level settings, and the first version of this paragraph said
+  otherwise.** Corrected 2026-09-06, the same day it was written, which is the rule this file gives
+  about writing a rule down: it claimed nothing enforced this without going to look.
+  `every_setting_is_acted_on` in `src/data/config.rs` reads the `AppConfig` struct itself, so a
+  field added later is covered without anybody remembering, and
+  `test_every_setting_somebody_can_change_is_offered_by_a_screen` asserts every public field is
+  offered by a screen. Its own comment says why it is the mirror of its neighbour and what each is
+  blind to. So **a new setting added as a top-level field fails on arrival**, which is the red half
+  for free.
+
+  What is genuinely unenforced is narrower and is exactly where the two exceptions live: a setting
+  held **nested** inside another structure is invisible to that check, because it reads one struct's
+  fields. Both per-event feedback channels and the per-account answer are nested, which is how they
+  got past it. Widening it to follow nesting is real work and is ledger 114.
+
+  `test_nothing_offers_a_setting_per_account_that_no_screen_writes` in `tests/house_style.rs` is not
+  that check and should not be mistaken for it: it reads documents for a phrase and catches a *page*
+  promising a control that does not exist.
 
 - **Schema changes are additive.** `MessageCache` opens existing user databases, so add tables with
   `CREATE TABLE IF NOT EXISTS` and columns with `ensure_column_exists`. Never drop or rename a column

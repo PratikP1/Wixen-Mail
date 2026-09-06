@@ -333,8 +333,9 @@ announcement topic a whole-folder fetch belongs on.
 
 `docs/changelog.md` and `Cargo.toml`, are touched by most plans under the
 same-commit rules, and `src/presentation/wx_app.rs` by six of them, so the plans
-are ordered rather than run in parallel. Plans 07, 08 and 09 carry blocking
-checkpoints and are not autonomous.
+are ordered rather than run in parallel. Plans 07 and 09 carry blocking
+checkpoints and are not autonomous. Plan 08 carried one until 2026-09-06, when
+the decision it held was settled and the plan became a build.
 
 - [ ] `04-01-PLAN.md` — An attachment's own description arrives and is spoken, and an image with none borrows the alt on the `<img>` that names it
 - [ ] `04-02-PLAN.md` — `List-Unsubscribe` arrives, so the mailing-list warning that ships and has never fired reaches somebody
@@ -343,7 +344,7 @@ checkpoints and are not autonomous.
 - [ ] `04-05-PLAN.md` — A filter rule may name the safety verdict, and every sentence in the warning bar says who said it
 - [ ] `04-06-PLAN.md` — A key moves between misspellings in both directions without a dialog, and says what a word could be instead
 - [ ] `04-07-PLAN.md` — Several files at once by dropping, pasting or picking, with an honest answer about whether a drop on a web view lands
-- [ ] `04-08-PLAN.md` — The inline picture draft round trip is proved, and whether a picture may be decorative is put to a decision
+- [ ] `04-08-PLAN.md` — The inline picture draft round trip is proved, a picture may be marked decorative on purpose, and the reader decides whether they hear about it
 - [ ] `04-09-PLAN.md` — An S/MIME encrypted message says why it cannot be read instead of opening blank, then an OpenPGP crate is chosen and PGP reading is built on it
 
 Two of the four decisions from `04-RESEARCH.md` were answered on 2026-09-05 and
@@ -367,12 +368,20 @@ feared: `image` is already a direct dependency and already decodes ICO, PNG and
 BMP in this binary, so JPEG is a feature flag rather than a new adoption, and
 only the transitive crates the flags add are audited.
 
-Two remain open. Whether a picture may be marked decorative is decided in
-`04-08`'s second task, which now states the trade rather than only the options:
-a decorative mark buys silence where silence is right, and is also the fastest
-way past a prompt, so a photograph gets marked decorative and the reader is told
-nothing at all. `04-02` assumes `List-Unsubscribe` is in scope and lifts out
-whole if it is not.
+**Whether a picture may be marked decorative was settled on 2026-09-06**, and
+not as one of the three options that were written: a decorative path exists,
+narrowed to where furniture is plausible, plus a setting that decides whether a
+decorative picture is announced to the person reading. That last part is what
+makes the rest safe. A decorative mark buys silence where silence is right and
+is also the fastest way past a prompt, so a photograph gets marked decorative
+and the reader is told nothing at all; moving the final say to the receiving
+side means the sender's mark is no longer the last word. `04-08` builds all
+three and its checkpoint is gone. The setting is reachable from the settings
+screen in the same plan that introduces it, because criterion 8 of phase 1 says
+a phase must not add another setting the model holds and no screen offers.
+
+One decision remains open. `04-02` assumes `List-Unsubscribe` is in scope and
+lifts out whole if it is not.
 
 **UI hint**: yes
 
