@@ -556,6 +556,89 @@ mod tests {
         );
     }
 
+    // ── Where the caret is ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_asking_where_the_caret_is_with_nothing_selected_says_nothing() {
+        // The state a composer is in before anybody has clicked or typed in
+        // it. Reaching into a selection that is not there throws, and a page
+        // handler that throws stops without a word: the key would do nothing
+        // and there would be no way to tell that from a key nobody bound.
+        let mut page = page_rules();
+
+        assert_eq!(ask(&mut page, "window.wixenCaret()"), "\"null\"");
+    }
+
+    #[test]
+    fn test_the_caret_is_reported_in_the_coordinates_the_words_are_in() {
+        // The mapping that matters. Everything on the Rust side works in text
+        // node indexes as `wixenText` numbers them, so a caret reported in any
+        // other coordinates selects the wrong span of the message.
+        //
+        // The stub document has no nodes and no selection, so this test gives
+        // it both, in the same shape the page reads them in.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(
+                &mut page,
+                "(function () {
+                   var nodes = [{ data: 'one ' }, { data: 'two ' }, { data: 'three' }];
+                   document.createTreeWalker = function () {
+                     var n = 0;
+                     return { nextNode: function () {
+                       return n < nodes.length ? nodes[n++] : null;
+                     } };
+                   };
+                   window.getSelection = function () {
+                     return { rangeCount: 1, getRangeAt: function () {
+                       return {
+                         startContainer: nodes[1], startOffset: 0,
+                         endContainer: nodes[1], endOffset: 3,
+                       };
+                     } };
+                   };
+                   return JSON.parse(window.wixenCaret());
+                 })()"
+            ),
+            r#"{"start":{"node":1,"offset":0},"end":{"node":1,"offset":3}}"#
+        );
+    }
+
+    #[test]
+    fn test_a_caret_in_a_node_the_page_cannot_place_says_nothing() {
+        // A selection sitting in a node the walker did not hand back, which is
+        // what a caret inside an element rather than inside text looks like.
+        // Answering node -1 would select from the end of the message.
+        let mut page = page_rules();
+
+        assert_eq!(
+            ask(
+                &mut page,
+                "(function () {
+                   var nodes = [{ data: 'one ' }];
+                   var stranger = { data: 'elsewhere' };
+                   document.createTreeWalker = function () {
+                     var n = 0;
+                     return { nextNode: function () {
+                       return n < nodes.length ? nodes[n++] : null;
+                     } };
+                   };
+                   window.getSelection = function () {
+                     return { rangeCount: 1, getRangeAt: function () {
+                       return {
+                         startContainer: stranger, startOffset: 0,
+                         endContainer: stranger, endOffset: 1,
+                       };
+                     } };
+                   };
+                   return window.wixenCaret();
+                 })()"
+            ),
+            "\"null\""
+        );
+    }
+
     #[test]
     fn test_a_word_in_another_script_is_still_a_word() {
         // The rule uses Unicode letter categories rather than A to Z, and an

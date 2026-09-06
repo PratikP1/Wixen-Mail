@@ -2023,6 +2023,9 @@ pub fn show_compose_dialog_full(
                     waiting.set(Some(Deferred::Spelling));
                     later.start(1, true);
                 }
+                // Named so the match stays exhaustive while the walk itself is
+                // still red. The commit that binds the key fills this in.
+                Some(editor_document::EditorMessage::ToAMisspelling) => {}
                 // The sound at the end of a word that is wrong. Not spoken:
                 // the engine has already marked the word, and the screen
                 // reader says it as the caret crosses it, which is better than

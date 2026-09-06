@@ -940,6 +940,44 @@ pub fn text_from_editor(raw: &str) -> Vec<TextNode> {
     serde_json::from_str::<Vec<TextNode>>(&unwrapped).unwrap_or_default()
 }
 
+/// Ask the page where the caret is.
+///
+/// Its own question rather than a value remembered from the last thing that
+/// happened, because somebody typing, clicking or arrowing moves the caret and
+/// nothing tells this side. A walk that started from a remembered place would
+/// jump to wherever the last one ended.
+pub fn caret_script() -> String {
+    "window.wixenCaret()".to_string()
+}
+
+/// Where the selection sits, at both ends, in the page's own coordinates.
+///
+/// Both ends rather than one, because the two directions start from opposite
+/// ones. Forward carries on from where the selection ends, so the word just
+/// landed on is behind it; backward starts from where the selection begins, so
+/// that same word is ahead of it. With one end only, one of the two directions
+/// offers the word somebody is already standing on.
+///
+/// Taken from the range rather than from the anchor and the focus. A selection
+/// dragged backwards has its focus at the earlier end, so anchor and focus
+/// answer "which end did the mouse finish at", which is not the question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub struct Caret {
+    pub start: crate::application::words::Position,
+    pub end: crate::application::words::Position,
+}
+
+/// Where the caret is, as the page reported it.
+///
+/// `None` when the page could not say, which happens in an editor nobody has
+/// put the caret into yet. Nothing here trusts the answer to be the shape it
+/// asked for: a walk that cannot tell where it is says so and moves nothing,
+/// which is better than a panic in the middle of writing a message.
+pub fn caret_from_editor(raw: &str) -> Option<Caret> {
+    let _ = raw;
+    todo!("reading the caret back out of what the page answered")
+}
+
 /// Where a replacement left the caret, as the page reported it.
 ///
 /// `None` when the page could not say, which is a reason to stop the pass
@@ -1464,6 +1502,8 @@ pub enum EditorMessage {
     TableRowAdded,
     /// F7: walk the spelling of the message.
     CheckSpelling,
+    /// Move the caret to the next misspelling. No dialog.
+    ToAMisspelling,
     /// A word was finished, and wants checking.
     WordFinished(String),
     /// Alt and a letter were pressed, naming a control in the compose window.
@@ -1877,6 +1917,83 @@ mod tests {
             parse_message(r#"{"kind":"spelling"}"#),
             Some(EditorMessage::CheckSpelling)
         );
+    }
+
+    #[test]
+    fn test_the_page_binds_a_key_for_the_next_misspelling_with_its_modifiers() {
+        // Anchored on the whole condition, modifiers and all. A search for
+        // `'F7'` alone matches the arm above it, which is the plain F7 that
+        // opens the dialog, so the assertion would pass with nothing new bound
+        // at all.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(
+            page.contains(
+                "event.key === 'F7' && event.altKey && !event.ctrlKey && !event.shiftKey"
+            ),
+            "{page}"
+        );
+        assert!(page.contains("'misspelling'"), "{page}");
+        // And the plain F7 arm still refuses the key when Alt is held, or the
+        // dialog opens as well as the caret moving.
+        assert!(
+            page.contains("event.key === 'F7' && !event.ctrlKey && !event.altKey"),
+            "{page}"
+        );
+    }
+
+    #[test]
+    fn test_the_page_asks_where_the_caret_is() {
+        // The walk moves from wherever somebody left the caret, so the page
+        // has to be able to say. Without this the key would always start at
+        // the top of the message.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(page.contains("window.wixenCaret = function"), "{page}");
+        assert_eq!(caret_script(), "window.wixenCaret()");
+    }
+
+    #[test]
+    fn test_a_request_for_the_next_misspelling_is_understood() {
+        // The only step between the key and the caret moving. Dropping it
+        // makes the key do nothing at all, silently.
+        assert_eq!(
+            parse_message(r#"{"kind":"misspelling"}"#),
+            Some(EditorMessage::ToAMisspelling)
+        );
+    }
+
+    #[test]
+    fn test_where_the_caret_is_comes_back_as_two_places_rather_than_one() {
+        let both =
+            caret_from_editor(r#"{"start":{"node":1,"offset":4},"end":{"node":1,"offset":9}}"#)
+                .expect("a caret the page reported");
+
+        assert_eq!(
+            both.start,
+            crate::application::words::Position { node: 1, offset: 4 }
+        );
+        assert_eq!(
+            both.end,
+            crate::application::words::Position { node: 1, offset: 9 }
+        );
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_a_place_moves_nothing_rather_than_panicking() {
+        // The page posts a position and this hands it straight back to the
+        // page, so an answer that is not one has to end the walk rather than
+        // end the message. `unwrap` is forbidden outside tests for exactly
+        // this shape.
+        for raw in [
+            "",
+            "not json",
+            "null",
+            r#"{"start":{"node":1}}"#,
+            r#"{"start":"somewhere","end":"else"}"#,
+        ] {
+            assert_eq!(caret_from_editor(raw), None, "{raw}");
+        }
     }
 
     #[test]
