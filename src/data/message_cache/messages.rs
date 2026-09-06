@@ -337,6 +337,24 @@ pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<Conversa
 /// Column order is the contract between the two, and it is stated in each
 /// query rather than derived, because SQLite has no way to ask for a column by
 /// name from a positional row.
+/// The verdict a row holds, read the one way.
+///
+/// One reader rather than one per query. Four reads gather messages that
+/// something then asks a question of, and a column decoded a second way in one
+/// of them is a read that quietly answers no to every rule about the verdict.
+/// An empty or missing column is an ordinary message, which is what
+/// [`crate::service::safety::Safety::from_stored`] says about anything it does
+/// not recognise, and for the same reason: a row written by a newer version
+/// must not make this one refuse the mailbox.
+pub(super) fn safety_in(
+    row: &rusqlite::Row,
+    column: usize,
+) -> rusqlite::Result<crate::service::safety::Safety> {
+    Ok(crate::service::safety::Safety::from_stored(
+        &row.get::<_, Option<String>>(column)?.unwrap_or_default(),
+    ))
+}
+
 pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRow> {
     Ok(MessageListRow {
         id: row.get(0)?,
@@ -357,9 +375,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
         answered: row.get(15)?,
         draft: row.get(16)?,
         has_attachments: row.get(17)?,
-        safety: crate::service::safety::Safety::from_stored(
-            &row.get::<_, Option<String>>(18)?.unwrap_or_default(),
-        ),
+        safety: safety_in(row, 18)?,
         // Stored one per line, because SQLite has no list type worth the
         // trouble and the bar reads them as sentences.
         safety_reasons: row
@@ -2047,7 +2063,7 @@ impl MessageCache {
             // pulling body text through to render one is what made this table
             // unusable at scale.
             "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
-                    NULL, NULL, m.read, m.starred, m.deleted
+                    NULL, NULL, m.read, m.starred, m.deleted, m.safety
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -2071,6 +2087,7 @@ impl MessageCache {
                     read: row.get(11)?,
                     starred: row.get(12)?,
                     deleted: row.get(13)?,
+                    safety: safety_in(row, 14)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query messages: {}", e)))?
@@ -2419,7 +2436,7 @@ impl MessageCache {
                 // before the rules run, so a rule matching on what a message
                 // said stopped matching and said nothing about it.
                 "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr,
-                    m.cc, m.date, m.read, m.starred, m.deleted
+                    m.cc, m.date, m.read, m.starred, m.deleted, m.safety
              FROM messages m
              WHERE m.id = ?1",
             )
@@ -2443,6 +2460,11 @@ impl MessageCache {
                     read: row.get(9)?,
                     starred: row.get(10)?,
                     deleted: row.get(11)?,
+                    // The read the arriving-mail path uses.
+                    // `mail_sync::apply_rules` reads each new message back
+                    // through here and hands it to the filter engine, so a
+                    // rule about the verdict is answered from this column.
+                    safety: safety_in(row, 12)?,
                 })
             })
             .optional()
@@ -5623,6 +5645,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 
@@ -5817,6 +5840,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
 
         let msg_id = cache.save_message(&message).unwrap();
@@ -5871,6 +5895,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
         let msg2 = CachedMessage {
             id: 0,
@@ -5887,6 +5912,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
 
         cache.save_message(&msg1).unwrap();
@@ -5931,6 +5957,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
         let msg_id = cache.save_message(&msg).unwrap();
 
@@ -5970,6 +5997,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
         let msg_id = cache.save_message(&msg).unwrap();
 

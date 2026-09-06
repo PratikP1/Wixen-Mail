@@ -771,6 +771,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 

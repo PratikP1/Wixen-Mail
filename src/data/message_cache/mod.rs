@@ -185,6 +185,24 @@ pub struct CachedMessage {
     pub read: bool,
     pub starred: bool,
     pub deleted: bool,
+    /// What a filter, the folder it arrived in, and this program's own reading
+    /// made of it, worst winning.
+    ///
+    /// Here rather than only on `MessageListRow`, which is where it used to
+    /// live alone, because this is the struct a filter rule is answered
+    /// against. The verdict was merged, stored, listed and read out in the
+    /// warning bar, and the one thing nothing could do with it was act on it:
+    /// [`crate::application::filters::FilterEngine::matches`] takes this
+    /// struct, so a field that is not on it is a field no rule can name.
+    ///
+    /// Not the reasons, which are sentences for the reader's bar and are read
+    /// from the row by the listing. A rule asks how bad a message was called,
+    /// not why.
+    ///
+    /// Every read that gathers messages for a question has to carry it. A read
+    /// that leaves it at the default answers no to every rule about the
+    /// verdict, which is indistinguishable from a rule that matched nothing.
+    pub safety: crate::service::safety::Safety,
 }
 
 /// Cached attachment information

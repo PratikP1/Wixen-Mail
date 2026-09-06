@@ -214,6 +214,7 @@ fn test_filter_multiple_rules_single_message() {
         read: false,
         starred: false,
         deleted: false,
+        safety: wixen_mail::service::safety::Safety::Ordinary,
     };
 
     let actions = engine.evaluate_message(&message);
@@ -251,6 +252,7 @@ fn test_filter_disabled_rule_not_applied() {
         read: false,
         starred: false,
         deleted: false,
+        safety: wixen_mail::service::safety::Safety::Ordinary,
     };
 
     let actions = engine.evaluate_message(&message);
@@ -288,6 +290,7 @@ fn test_filter_regex_match() {
         read: false,
         starred: false,
         deleted: false,
+        safety: wixen_mail::service::safety::Safety::Ordinary,
     };
 
     let msg_no_match = CachedMessage {
@@ -305,6 +308,7 @@ fn test_filter_regex_match() {
         read: false,
         starred: false,
         deleted: false,
+        safety: wixen_mail::service::safety::Safety::Ordinary,
     };
 
     assert_eq!(engine.evaluate_message(&msg_match).len(), 1);

@@ -636,6 +636,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
 
         let actions = engine.evaluate_message(&message);
@@ -674,6 +675,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
 
         let actions = engine.evaluate_message(&message);
@@ -712,6 +714,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 
@@ -1071,6 +1074,7 @@ mod tests {
 #[cfg(test)]
 mod the_fields_a_rule_may_name {
     use super::*;
+    use crate::data::message_cache::MessageCache;
 
     /// A rule asking whether a field is empty.
     ///
@@ -1344,5 +1348,218 @@ mod the_fields_a_rule_may_name {
                  match at all"
             );
         }
+    }
+
+    /// A rule asking for a field to hold a particular thing.
+    ///
+    /// [`asking_about`] above is written for the questions that answer from
+    /// the field alone and leaves the pattern empty, which is the wrong
+    /// fixture for a rule that compares one.
+    fn asking_for(field: &str, match_type: &str, pattern: &str) -> FilterRule {
+        FilterRule {
+            pattern: pattern.to_string(),
+            ..asking_about(field, match_type)
+        }
+    }
+
+    /// A cache in a directory of its own.
+    ///
+    /// Here rather than a hand-built [`CachedMessage`], for the two tests
+    /// below that are about the row a rule is really answered against rather
+    /// than about the answering. A fixture cannot tell whether the read that
+    /// gathers a message carries the verdict with it, which is the half of
+    /// this that could be built and reach nobody.
+    fn a_cache(what_for: &str) -> crate::common::temp_home::TempHome<MessageCache> {
+        crate::common::temp_home::TempHome::named(what_for, |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a cache to open")
+        })
+    }
+
+    /// One folder holding one message that a filter already judged.
+    fn a_message_a_filter_judged(
+        cache: &MessageCache,
+        level: crate::service::safety::Safety,
+    ) -> i64 {
+        let folder = cache
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: "acct".to_string(),
+                name: "Inbox".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        cache
+            .upsert_message(&crate::data::message_cache::IncomingMessage {
+                folder_id: folder,
+                uid: 1,
+                message_id: "<one@example.com>".to_string(),
+                subject: "Your account needs attention".to_string(),
+                from_addr: "billing@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-09-05T10:00:00+00:00".to_string(),
+                internal_date: None,
+                size_bytes: Some(64),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict {
+                    level,
+                    reasons: vec!["Your mail provider's filter marked it as spam.".to_string()],
+                },
+                gmail_message_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: None,
+            })
+            .expect("a stored message")
+    }
+
+    #[test]
+    fn test_a_rule_may_ask_how_safe_a_message_was_judged_to_be() {
+        // The verdict is merged from up to four sources, stored on the row,
+        // shown as a column and read out in the reader's bar, and no rule
+        // could ask about it. Somebody who wants their junk filed by their
+        // provider's own answer had every part of that answer except the one
+        // that acts on it.
+        use crate::service::safety::Safety;
+
+        assert!(
+            a_rule_may_name("safety"),
+            "a rule cannot ask how safe a message was judged to be"
+        );
+
+        let mut judged_spam = super::tests::message_with_subject("Free money");
+        judged_spam.safety = Safety::Spam;
+        let ordinary = super::tests::message_with_subject("Notes on the engine");
+
+        assert!(
+            FilterEngine::matches(&asking_for("safety", "equals", "spam"), &judged_spam),
+            "a rule asking for the messages a filter called spam did not take one"
+        );
+        assert!(
+            !FilterEngine::matches(&asking_for("safety", "equals", "spam"), &ordinary),
+            "a rule asking for spam took a message nothing had said anything about"
+        );
+    }
+
+    #[test]
+    fn test_the_verdict_is_offered_in_words_somebody_would_choose_from_a_list() {
+        // The list is read out loud, and "safety" arriving with no words would
+        // be offered blank or not at all. The words are the message list's own
+        // column header, because two names for one thing is how somebody comes
+        // to believe there are two.
+        assert_eq!(the_words_for_a_field("safety"), Some("Safety"));
+        assert_eq!(the_field_those_words_name("Safety"), Some("safety"));
+    }
+
+    #[test]
+    fn test_an_ordinary_message_is_a_verdict_a_rule_can_ask_for_rather_than_a_blank() {
+        // Which of the two spellings the reading uses, asked as behaviour. The
+        // stored word for an unremarkable message is "ordinary";
+        // `Safety::label` gives the empty string for the same message, because
+        // it is written for a list column that should stay quiet. Read through
+        // `label` the field would be absent, the engine would treat it as
+        // empty, and "safety is empty" would be the only way to ask for
+        // ordinary mail while "safety is exactly ordinary" could never fire.
+        let ordinary = super::tests::message_with_subject("Notes on the engine");
+
+        assert!(
+            FilterEngine::matches(&asking_for("safety", "equals", "ordinary"), &ordinary),
+            "a rule asking for the mail nothing was said about could not fire"
+        );
+        assert!(
+            !FilterEngine::matches(&asking_for("safety", "is_empty", ""), &ordinary),
+            "an ordinary message reads as a message with no verdict at all, which is what \
+             the engine answers for a field it has never heard of"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_naming_the_verdict_fires_on_mail_as_it_arrives() {
+        // The half that could be built and reach nobody. `mail_sync::apply_rules`
+        // reads each arriving message back with `MessageCache::get_message`
+        // and hands it to the engine, so a verdict the read does not carry is
+        // a rule that is offered, stored, and answered no about every message.
+        use crate::service::safety::Safety;
+
+        let cache = a_cache("a_rule_about_the_verdict_on_arrival");
+        let row = a_message_a_filter_judged(&cache, Safety::Spam);
+        let mut engine = FilterEngine::new().expect("an engine");
+        engine.load_from_persisted(&[MessageFilterRule {
+            id: "r1".into(),
+            account_id: "acct".into(),
+            name: "Junk my provider already caught".into(),
+            field: "safety".into(),
+            match_type: "equals".into(),
+            pattern: "spam".into(),
+            case_sensitive: false,
+            action_type: "mark_as_read".into(),
+            action_value: None,
+            enabled: true,
+            created_at: "2026-09-05T00:00:00Z".into(),
+        }]);
+
+        let done = crate::application::mail_sync::apply_rules(
+            &cache,
+            &crate::application::mail_sync::Filtering {
+                rules: &engine,
+                allowed: crate::application::allowed::Allowed::NOTHING,
+            },
+            &[row],
+        );
+
+        assert_eq!(
+            done.changed, 1,
+            "a rule about the verdict did nothing to a message the provider called spam"
+        );
+        assert!(
+            cache
+                .get_message(row)
+                .expect("the message to be read back")
+                .expect("the message to be there")
+                .read,
+            "the rule was counted as done and the message is still unread"
+        );
+    }
+
+    #[test]
+    fn test_a_saved_search_reads_the_verdict_along_with_the_message() {
+        // The other reader of the same vocabulary. A saved search gathers its
+        // own messages and puts each one to the same engine, so a scan that
+        // leaves the verdict off answers no about every message and shows an
+        // empty folder, which is the failure that never gets reported.
+        use crate::service::safety::Safety;
+
+        let cache = a_cache("a_saved_search_reads_the_verdict");
+        a_message_a_filter_judged(&cache, Safety::Spam);
+
+        let read = cache
+            .messages_a_saved_search_reads(
+                "acct",
+                None,
+                crate::data::message_cache::saved_searches::TheMessageText::LeftAlone,
+            )
+            .expect("the mail to search");
+
+        assert_eq!(
+            read.len(),
+            1,
+            "the message a search should read was not read"
+        );
+        assert!(
+            FilterEngine::matches(&asking_for("safety", "equals", "spam"), &read[0]),
+            "a saved search asking for what the provider called spam found nothing in a \
+             mailbox holding exactly one message it called spam"
+        );
     }
 }

@@ -543,7 +543,7 @@ fn scan_query(one_folder: bool, text: TheMessageText) -> String {
     };
     format!(
         "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr,
-                m.cc, m.date, {columns}, m.read, m.starred, m.deleted
+                m.cc, m.date, {columns}, m.read, m.starred, m.deleted, m.safety
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          {joined}
@@ -579,6 +579,11 @@ fn scanned_message(row: &rusqlite::Row, text: TheMessageText) -> rusqlite::Resul
         read: row.get(13)?,
         starred: row.get(14)?,
         deleted: row.get(15)?,
+        // Carried, because a saved search puts each message it gathers to the
+        // same filter engine a rule goes through. Left off, a search asking
+        // what the provider's filter made of a message would be answered no
+        // about every one of them, which reads as an empty folder.
+        safety: super::messages::safety_in(row, 16)?,
     })
 }
 
@@ -1085,6 +1090,7 @@ mod tests {
                 read: false,
                 starred: false,
                 deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
             })
             .expect("the message to be stored");
         (folder_id, message_id)
