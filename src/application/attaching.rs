@@ -350,6 +350,42 @@ fn attached_sentence(added: &[Chosen], all: &[Chosen]) -> Option<String> {
     }
 }
 
+/// What is said when files are dropped on the message itself.
+///
+/// The message area is a WebView2 control, and Windows sends a drop to the
+/// deepest window that has registered for one. WebView2 registers its own, so a
+/// drop there never reaches the composer's, and no arrangement of wxWidgets
+/// windows changes that. The page refuses the drop so the engine does not
+/// navigate to the file and take a half-written message off the screen, and
+/// then says this, because nothing happening and nothing being said is
+/// indistinguishable from the feature not existing.
+///
+/// Trouble, so it is shown as well as said: somebody who dropped a file with a
+/// mouse is not necessarily listening to a screen reader, and they are the ones
+/// who just watched nothing happen.
+///
+/// Three sentences and no more: what happened, why, and what to do instead. The
+/// last one names the routes that do work rather than only the one that does
+/// not, because "that did not work" is not an answer somebody can act on.
+pub fn dropped_on_the_message(count: usize) -> Announcement {
+    // Zero is a bug rather than an attack: the page counts what it was handed
+    // and should never hand over none. Naming a number nobody sent would be
+    // worse than not naming one, so it takes the plural without a number.
+    let what = match count {
+        1 => "That file was not attached.".to_string(),
+        0 => "Those files were not attached.".to_string(),
+        many => format!("Those {many} files were not attached."),
+    };
+    Announcement {
+        words: format!(
+            "{what} The message area is a small browser inside this window, and it takes the \
+             drop before the composer sees it. Drop files on the attachments line under the \
+             message, or press Ctrl+V, or use Attach File."
+        ),
+        trouble: true,
+    }
+}
+
 /// What the line under the message says.
 ///
 /// Said out loud when it changes as well as shown, because somebody who cannot
@@ -517,6 +553,86 @@ mod tests {
     #[test]
     fn test_nothing_attached_says_so() {
         assert_eq!(summary(&[]), "No attachments");
+    }
+
+    #[test]
+    fn test_a_drop_on_the_message_says_where_a_drop_does_work() {
+        // "Nothing happened" is not an answer somebody can act on, and it is
+        // exactly what a dead zone gives them. So the sentence names the three
+        // routes that do work, and names them by what somebody would look for
+        // rather than by what the code calls them.
+        let said = dropped_on_the_message(1);
+
+        assert!(
+            said.words.contains("Ctrl+V"),
+            "the quickest route is not named: {}",
+            said.words
+        );
+        assert!(
+            said.words.contains("Attach File"),
+            "the button is not named, so somebody who has never found it still has not: {}",
+            said.words
+        );
+        assert!(
+            said.words.contains("attachments line"),
+            "the place a drop does land is not named, so this says what does not work and \
+             leaves somebody to guess what does: {}",
+            said.words
+        );
+        assert!(
+            said.trouble,
+            "the refusal is spoken and not shown, so the person who used a mouse to drop the \
+             file and is not listening to a screen reader gets nothing at all"
+        );
+    }
+
+    #[test]
+    fn test_a_drop_on_the_message_says_why_nothing_happened() {
+        // What happened, why, and what to do next: the same three things every
+        // other refusal in this program owes somebody. The why matters here
+        // more than usual, because without it the honest reading is that
+        // dropping is broken rather than that it lands somewhere else.
+        let said = dropped_on_the_message(1);
+
+        assert!(
+            said.words.starts_with("That file was not attached."),
+            "what happened is not the first thing said: {}",
+            said.words
+        );
+        assert!(
+            said.words.contains("small browser"),
+            "why it did not happen is not said: {}",
+            said.words
+        );
+    }
+
+    #[test]
+    fn test_a_drop_of_several_says_how_many_did_not_go_on() {
+        // Somebody who dragged four files and heard "that file was not
+        // attached" would reasonably go looking for the other three.
+        assert!(
+            dropped_on_the_message(4)
+                .words
+                .starts_with("Those 4 files were not attached."),
+            "{}",
+            dropped_on_the_message(4).words
+        );
+    }
+
+    #[test]
+    fn test_a_drop_that_carried_nothing_countable_still_says_what_to_do() {
+        // The page counts what it was handed and the count can be zero, which
+        // is a bug rather than an attack. Naming a number nobody sent would be
+        // worse than not naming one, and saying nothing at all would leave
+        // somebody watching a drop do nothing.
+        let said = dropped_on_the_message(0);
+
+        assert!(
+            said.words.starts_with("Those files were not attached."),
+            "{}",
+            said.words
+        );
+        assert!(said.words.contains("Ctrl+V"), "{}", said.words);
     }
 
     #[test]

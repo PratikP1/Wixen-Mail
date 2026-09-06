@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 427 records have arrived since and have not been through it.
+# 428 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15566,7 +15566,7 @@ red = [
     "application::attaching::tests::test_what_a_batch_of_three_says_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/application/attaching.rs", tests = 30 },
+    { file = "src/application/attaching.rs", tests = 34 },
 ]
 
 # ── Every way a file goes on a message ends at one model ───────────────────
@@ -15617,4 +15617,41 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/every_way_a_file_goes_on_a_message.rs", tests = 7 },
+]
+
+# ── The drop the composer cannot catch ──────────────────────────────────────
+#
+# The message body is a WebView2 control and registers its own drop target, so a
+# file dropped there never reaches the composer's. What matters is not that the
+# drop is missed but what the engine does with it instead: AllowExternalDrop
+# defaults to true, the drag reaches the page, and a browser handed a file
+# navigates to it. The half-written message goes off the screen.
+#
+# Turning that setting off is the direct fix and is out of reach. It lives on
+# `ICoreWebView2Controller4`; wxWidgets 3.3.2 keeps the controller in
+# `wx/msw/private/webview_edge.h` and `GetNativeBackend` hands out the
+# `ICoreWebView2_2` underneath it, which cannot be asked for its controller. So
+# the refusal is written in the page, and this is what says it is still there.
+#
+# One line, and the rest of the handler still runs without it: the count is
+# still posted and the composer still says where a drop lands, which is exactly
+# how this would come out green while the draft was being lost. Two tests
+# notice, and they notice differently. One reads the page and one runs it.
+#
+# Measured by hand on 2026-09-06 with `--all-targets --no-fail-fast`: exactly
+# those two, nothing else in 6,400.
+
+[[guard]]
+name = "a file dropped on the message is turned away rather than opened"
+file = "src/presentation/editor_document.rs"
+before = """    event.preventDefault();
+    var moved = event.dataTransfer;"""
+after = """    var moved = event.dataTransfer;"""
+red = [
+    "presentation::editor_document::tests::test_a_file_dropped_on_the_message_is_refused_rather_than_opened",
+    "presentation::editor_page_harness::tests::test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 80 },
+    { file = "src/presentation/editor_page_harness.rs", tests = 36 },
 ]

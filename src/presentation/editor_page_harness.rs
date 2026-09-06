@@ -37,8 +37,26 @@ use boa_engine::{Context, Source};
 #[cfg(test)]
 const DOM_STUB: &str = r#"
 var window = globalThis;
-window.chrome = { webview: { postMessage: function () {} } };
 var posted = [];
+window.chrome = { webview: { postMessage: function (raw) { posted.push(raw); } } };
+// What the page asked the window to do, in the order it asked, as the objects
+// it sent rather than as the JSON it sent them in.
+window.wixenPosted = function () {
+  var out = [];
+  for (var i = 0; i < posted.length; i++) { out.push(JSON.parse(posted[i])); }
+  return out;
+};
+// Listeners the page hangs on the document itself, kept so a test can run one.
+// The page registers its refusal of a dragged-in file this way, and a stub that
+// only swallowed the registration would leave the one handler nothing here
+// could execute.
+var documentListeners = [];
+window.wixenDocumentListener = function (kind) {
+  for (var i = 0; i < documentListeners.length; i++) {
+    if (documentListeners[i].kind === kind) { return documentListeners[i]; }
+  }
+  return null;
+};
 function element() {
   return {
     addEventListener: function () {},
@@ -52,6 +70,9 @@ function element() {
   };
 }
 var document = {
+  addEventListener: function (kind, handler, capture) {
+    documentListeners.push({ kind: kind, handler: handler, capture: capture === true });
+  },
   getElementById: function () { return element(); },
   createTreeWalker: function () { return { nextNode: function () { return null; } }; },
   createRange: function () {
@@ -650,5 +671,174 @@ mod tests {
             ask(&mut page, r#"window.wixenRules.word("λόγος")"#),
             "\"\u{3bb}\u{3cc}\u{3b3}\u{3bf}\u{3c2}\""
         );
+    }
+
+    // ── A file dragged onto the message ────────────────────────────────────
+    //
+    // The rule these ask about is written down twice, once in
+    // `editor_document`'s own tests as a reading of the page and once here as a
+    // run of it, and the second is worth more than the first. A reading is
+    // answered by the words being present; a run is answered by the handler
+    // doing what the words say. `guards/guards.toml` carries the break that
+    // proves both notice, measured by hand.
+    //
+    // What none of it can say is whether WebView2 delivers the event at all.
+    // That is a question about a browser engine in a running window and only
+    // somebody dragging a file settles it. Ledger entry 132.
+
+    /// A drag arriving at the page, carrying whatever `kinds` says it carries.
+    ///
+    /// `files` is a count and not a list, because the page is not allowed to
+    /// look at the list and a stub that offered one would let a test pass
+    /// against a page that did.
+    fn a_drag_of(kinds: &str, files: usize) -> String {
+        format!(
+            "(function () {{
+               var prevented = false;
+               var moved = {{ types: {kinds}, files: {{ length: {files} }},
+                              dropEffect: 'copy' }};
+               var event = {{ dataTransfer: moved,
+                              preventDefault: function () {{ prevented = true; }} }};
+               return {{ event: event, moved: moved,
+                         report: function () {{
+                           return {{ prevented: prevented,
+                                     effect: moved.dropEffect,
+                                     posted: window.wixenPosted() }};
+                         }} }};
+             }})()"
+        )
+    }
+
+    #[test]
+    fn test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs() {
+        // The defect is not a dead zone. Left alone the engine navigates to the
+        // dropped file, and the message somebody is writing is gone.
+        let mut page = page_rules();
+
+        let answer = ask(
+            &mut page,
+            &format!(
+                "(function () {{
+                   var drag = {};
+                   window.wixenDocumentListener('drop').handler(drag.event);
+                   return drag.report();
+                 }})()",
+                a_drag_of("['Files']", 3)
+            ),
+        );
+
+        assert!(
+            answer.contains(r#""prevented":true"#),
+            "the drop was not refused, so the engine keeps its own handling of it: {answer}"
+        );
+        assert!(
+            answer.contains(r#""posted":[{"kind":"dropped","count":3}]"#),
+            "the window was not told the drop happened, or was told the wrong thing: {answer}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_the_page_sends_about_a_drop_carries_a_path() {
+        // The whole security boundary of this, asked of what actually crosses
+        // rather than of the source that builds it. A path chosen by whoever
+        // did the dragging is T-04-30 and is not built.
+        let mut page = page_rules();
+
+        let keys = ask(
+            &mut page,
+            &format!(
+                "(function () {{
+                   var drag = {};
+                   window.wixenDocumentListener('drop').handler(drag.event);
+                   return Object.keys(window.wixenPosted()[0]);
+                 }})()",
+                a_drag_of("['Files']", 1)
+            ),
+        );
+
+        assert_eq!(
+            keys, r#"["kind","count"]"#,
+            "the page sent more than a kind and a count: {keys}"
+        );
+    }
+
+    #[test]
+    fn test_a_drag_of_text_inside_the_message_is_left_alone_when_the_page_runs() {
+        // Dragging selected text from one place in a message to another is the
+        // editor's own and somebody writes with it. A refusal that did not ask
+        // what the drag carries would take it away.
+        let mut page = page_rules();
+
+        let answer = ask(
+            &mut page,
+            &format!(
+                "(function () {{
+                   var drag = {};
+                   window.wixenDocumentListener('drop').handler(drag.event);
+                   window.wixenDocumentListener('dragover').handler(drag.event);
+                   return drag.report();
+                 }})()",
+                a_drag_of("['text/plain', 'text/html']", 0)
+            ),
+        );
+
+        assert!(
+            answer.contains(r#""prevented":false"#),
+            "a drag carrying no files was refused, so dragging text inside the message stops \
+             working: {answer}"
+        );
+        assert!(
+            answer.contains(r#""posted":[]"#),
+            "a drag carrying no files was reported as a drop, so somebody moving text within \
+             their own message is told it was not attached: {answer}"
+        );
+    }
+
+    #[test]
+    fn test_the_drag_says_no_before_the_file_is_let_go() {
+        // Under the pointer, while the file is still held. A refusal that only
+        // arrives after the drop is a refusal somebody has already committed
+        // to.
+        let mut page = page_rules();
+
+        let answer = ask(
+            &mut page,
+            &format!(
+                "(function () {{
+                   var drag = {};
+                   window.wixenDocumentListener('dragover').handler(drag.event);
+                   return drag.report();
+                 }})()",
+                a_drag_of("['Files']", 2)
+            ),
+        );
+
+        assert!(
+            answer.contains(r#""prevented":true"#),
+            "the drag was not refused, so the engine decides what the pointer offers: {answer}"
+        );
+        assert!(
+            answer.contains(r#""effect":"none""#),
+            "the pointer goes on offering a drop that will not happen: {answer}"
+        );
+    }
+
+    #[test]
+    fn test_the_refusal_is_registered_where_nothing_below_it_can_take_the_event_first() {
+        // On the document rather than on the editable element, so a lookup that
+        // answers null cannot leave it unregistered, and in the capture phase,
+        // so a handler further down cannot have the event first.
+        let mut page = page_rules();
+
+        for kind in ["dragover", "drop"] {
+            assert_eq!(
+                ask(
+                    &mut page,
+                    &format!("window.wixenDocumentListener('{kind}').capture")
+                ),
+                "true",
+                "the {kind} handler is not registered in the capture phase"
+            );
+        }
     }
 }

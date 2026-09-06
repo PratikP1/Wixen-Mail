@@ -17,6 +17,10 @@ provides:
   - "Ctrl+V in the composer, which attaches the files on the clipboard"
   - "a FileDropTarget on the composer dialog, wired to the same door and not established to receive anything"
   - "tests/every_way_a_file_goes_on_a_message.rs: a census asserting every route ends at the one model"
+  - "editor_document's page turns a dragged-in file away, so the engine cannot navigate to it and take a half-written message off the screen"
+  - "EditorMessage::FilesDroppedOnTheMessage: a count and no paths, so the composer can say where a drop does land"
+  - "attaching::dropped_on_the_message: what happened, why, and the three routes that do work"
+  - "editor_page_harness's stub records document listeners and what the page posts, so a handler can be run rather than only read"
 affects:
   - "docs/KEYBOARD_SHORTCUTS.md, whose composition section names one more key and had two accelerators the wrong way round"
   - "any later plan that adds a fourth way to attach a file, which the census will fail until it goes through the same door"
@@ -46,24 +50,26 @@ decisions:
   - "One path handed over keeps the sentence picking a file has always had, whole path and the operating system's reason; several are named. Keyed on how many paths arrived, not on how many were refused, which is a correction made during this plan"
   - "One heading over both message boxes, 'Attaching files', rather than the two this used to have. The heading is not where the information is and two headings for one route is how two things drift apart"
   - "The drop target is on the dialog and not on the attachments list, which is hidden until there is something in it and so can never catch the first file. The same reason the paste key is not bound there"
-  - "No changelog entry and no version bump for the drop target. There is nothing true to write until somebody has dropped a file, and this project pairs a bump with an entry"
+  - "The page refuses the drop rather than the host turning external drops off. AllowExternalDrop is not reachable through this stack, and the refusal in the page can also say what happened, which the host setting could not"
+  - "A count crosses the channel and no path does. Attaching a file dropped on the message body would mean the page handling a stranger's path, which is T-04-30 and its own plan"
+  - "The message area says where a drop does land at the moment somebody gets it wrong, rather than as a standing line. A standing line in the accessible description of the body would be read on every focus, which is the flooding guardrail 5 is about, and the list's description does not reach the accessibility tree in this binding at all"
 metrics:
-  duration: about four hours
+  duration: about six hours
   completed: 2026-09-06
-  commits: 8
-  version: 0.69.0 to 0.70.0
+  commits: 12
+  version: 0.69.0 to 0.71.0
 actuals:
-  tokens: 41000
-  tasks: 2
-  commits: 8
+  tokens: 58000
+  tasks: 3
+  commits: 12
 ---
 
 # Phase 04 Plan 07: Several files on a message Summary
 
 ## Does it work
 
-**Two of the three tasks are done and work. The third was not attempted and
-needs a person.**
+**All three tasks are done. Nobody has watched a drop happen, and that is the
+one thing still open.**
 
 Working, and exercised by tests that would notice if they stopped:
 
@@ -76,22 +82,42 @@ Working, and exercised by tests that would notice if they stopped:
   message rather than once about each file.
 - Every one of those routes ends at `attaching::choose_all`, and a census
   fails if a fourth grows rules of its own.
+- A file dragged onto the message body is turned away by the page, so the
+  browser engine cannot navigate to it and take a half-written message off the
+  screen. This one is executed rather than read: the page's own handler is run
+  in a JavaScript engine in `editor_page_harness` and the refusal is watched
+  happening.
+- Dropping a file on the message body says what happened, why, and where a drop
+  does land, spoken and shown.
 
-Wired and **not** established to work:
+Rests on documentation rather than on somebody watching:
 
-- A file dropped on the composer. The drop target is installed and hands its
-  paths to the same door. Whether a drop over the message body reaches it is
-  unknown, because the body is a WebView2 control that handles drag and drop
-  inside its own window, and no reading of source answers that. **Task 3 is a
-  person dragging a file, and it was not done.** Instructions for it are at the
-  end of this document.
+- **That a drop on the message body reaches the page at all.** WebView2's
+  `AllowExternalDrop` defaults to true, which is what lets an external drag
+  reach a page's DOM. That is Microsoft's documented default, not something
+  measured here.
+- **That a drop anywhere else on the composer reaches the dialog's drop
+  target.** The OLE drag loop walks up the parent chain when the window under
+  the pointer has no drop target of its own, and every other control on the
+  composer is a plain wxWidgets window with none. That is how the mechanism is
+  documented to work. Nobody has dragged a file onto a running composer.
+
+Ledger entry 132 carries both, and the four observations somebody should make
+are at the end of this document, unchanged.
+
+Reached for and not available:
+
+- **Turning WebView2's own handling of dragged-in files off.** That is the
+  direct fix and it cannot be done through this stack, which was measured
+  rather than assumed. Ledger entry 133, and the section below.
 
 Not heard by anybody:
 
 - None of this has been through a screen reader. The announcements are tested
   as strings and no test can say whether six file names is a useful
-  confirmation or ten seconds nobody can sit through. Four entries in
-  `.planning/WINDOWS.md`, 126 to 129.
+  confirmation or ten seconds nobody can sit through, or whether a message box
+  in front of somebody who just dropped a file is help or an obstacle. Five
+  entries in `.planning/WINDOWS.md`: 126 to 129, and 134.
 
 ## What criterion 1 now says
 
@@ -100,8 +126,17 @@ at least as quick to reach" is the paste key and the widened picker. Neither
 depends on where a drop lands, and WCAG 2.5.7's rule against a drag-only
 interaction is satisfied by task 1 alone.
 
-**Its first clause is not.** "A file dropped on the composer attaches" is not
-settled and a build that compiles is not evidence for it.
+**Its first clause is closed the second way the criterion allows, and not the
+first.** The criterion reads "files land **or** the product says so where
+somebody will see it, rather than the gap living in a report". Files landing is
+still unwatched. The product saying so is built: drop a file on the message area
+and it says that it was not attached, why, and where to drop it instead, spoken
+and shown. That sentence is in `application::attaching` with its wording held by
+tests, the same shape `application::allowed` uses for everything else this
+program is honest about.
+
+A build that compiles is still not evidence that a drop lands, and nothing here
+claims it is.
 
 ## The grep the plan asked for, and what it found
 
@@ -430,14 +465,201 @@ and nothing fails.
 | `ea20fa6` | RED: a bad path named in the middle of a batch |
 | `d2d7d6c` | GREEN: a batch names; one path still gets its path |
 | `3c088f9` | pin the sentence a batch of three says, whole, and correct the record it made stale |
+| `a10af9c` | merge of tasks 1 and 2 |
+| `7f29c35` | RED: nine failing tests for a file dropped where the drop cannot land |
+| `2633ca2` | GREEN: the page turns a dragged-in file away, the composer says where a drop lands, 0.71.0 |
+| `2c2d168` | run the drop handler rather than reading it, and record the break that would notice |
 
 ---
 
-# Task 3 was not done. Here is how to do it.
+# Task 3, and how it changed
+
+The plan wrote task 3 as a blocking human verification: somebody drags a file
+onto a running composer and reports what happened. Manual testing is happening
+later, so the instruction became: make the best design now on documented
+behaviour, and keep the human check as a check rather than dropping it.
+
+**The research that changed the design.** Two facts, neither of them a guess.
+
+**A drop over the message body does not reach the dialog.** WebView2 registers
+its own `IDropTarget` on its own window, and Windows routes a drop to the
+deepest registered drop target under the pointer. Microsoft's own guidance
+confirms it from the other side: a host that *wants* those drops has to
+register as `IDropTarget` itself and forward the calls into WebView2's
+composition controller.
+
+**`AllowExternalDrop` defaults to true, and that is the part that mattered.**
+Before this change a file dropped on the message body was not ignored. WebView2
+accepted it and handled it itself, which for a file means the engine navigates
+to it. The composed message goes off the screen with nothing to undo. A dead
+zone is a disappointment; a lost draft is a defect, and the plan had not
+noticed that the second one was what shipped.
+
+## Turning AllowExternalDrop off, and why it is not reachable
+
+Measured against the tree on 2026-09-06 rather than assumed, because "the
+binding does not expose it" is the kind of claim that turns out to be one grep
+away from being wrong.
+
+| asked | found |
+|---|---|
+| `AllowExternalDrop`, `allow_drop`, `accept_drop` anywhere in `wxdragon 0.9.17` | nothing |
+| what `WebView::get_native_backend` returns | `wxd_WebView_GetNativeBackend` → `wxWebViewEdge::GetNativeBackend()` |
+| what that returns in wxWidgets 3.3.2 | `m_impl->m_webView`, declared `wxCOMPtr<ICoreWebView2_2>` |
+| where the controller is | `m_webViewController`, `wxCOMPtr<ICoreWebView2Controller>`, in `wx/msw/private/webview_edge.h` |
+| `AllowExternalDrop` in wxWidgets 3.3.2 | nothing |
+
+`put_AllowExternalDrop` lives on `ICoreWebView2Controller4`, which is reached by
+asking the **controller** for it. wxWidgets hands out the view underneath the
+controller, and there is no way back from one to the other in the WebView2 API.
+The controller is in a private header. So the setting is out of reach two layers
+up, not one, and no amount of unsafe COM code on this side gets to it.
+
+**Named rather than absorbed, which is guardrail 9.** It is written in the
+changelog where a user reads it, in the guard record's comment where the next
+person to touch the page reads it, and in ledger entry 133. It has not been
+reported upstream yet, which the changelog says in the same words the tree
+control leak already uses.
+
+## What was built instead
+
+**The page turns the drop away itself.** `editor_document`'s script registers
+`dragover` and `drop` on `document` in the capture phase and calls
+`preventDefault` on a drag carrying files, which is the documented way to stop a
+browser engine doing its own thing with a dropped file. So the message area is
+now a dead zone rather than a trapdoor.
+
+Four decisions inside that, each with a test holding it:
+
+- **First in the script, before the editable element is looked up.** A lookup
+  that answers null makes everything after it throw, and an unregistered refusal
+  is the engine's own handling back in charge. `post` and `carriesFiles` are
+  function declarations, so hoisting makes them available above where they are
+  written; the comment says so, because it reads like a mistake otherwise.
+- **In the capture phase**, so nothing further down the page can take the event
+  first.
+- **Only for a drag carrying files.** Dragging selected text from one place in a
+  message to another is the editor's own behaviour and somebody writes with it.
+  `dataTransfer.types` holds `Files` for one and `text/plain` for the other.
+- **A count crosses the channel and no path does.** Attaching a file dropped on
+  the body would mean a path chosen by whoever did the dragging travelling
+  through the browser engine and a message channel before this program decides
+  whether it may be attached. That is T-04-30, disposition **transfer**, and it
+  is still not built. One test asks the running page for the keys of what it
+  posted and requires them to be exactly `kind` and `count`.
+
+**The composer says where a drop does land.** `attaching::dropped_on_the_message`
+is the sentence, and it is `trouble`, so it goes through the same path every
+other answer about attaching goes through: spoken at high priority and shown
+under the heading "Attaching files". One file:
+
+> That file was not attached. The message area is a small browser inside this
+> window, and it takes the drop before the composer sees it. Drop files on the
+> attachments line under the message, or press Ctrl+V, or use Attach File.
+
+Four files opens "Those 4 files were not attached." A count of zero, which is a
+bug rather than an attack, opens "Those files were not attached." and still says
+what to do.
+
+What happened, why, and what to do next, which is what every refusal in this
+program owes somebody. `common::Error` is not in this path, so this is one of
+the few sentences here that does not open with the word "Error"; ledger entry
+130 is still open and was not touched.
+
+## Where the statement lives, and two places it deliberately does not
+
+The guardrail is that a warning which only exists in a report is a warning
+nobody gets. Two obvious homes for a standing sentence were rejected for
+reasons this codebase had already measured:
+
+- **The message body's accessible description.** A screen reader reads a
+  description on every focus, and somebody writing a message focuses the body
+  constantly. Guardrail 5 asks for feedback that is bounded, and a three-sentence
+  description on every focus is the flooding it names.
+- **The attachments list's accessible description.** `attaching.rs` already
+  carries a comment saying a description set that way does not reach the
+  accessibility tree for a native list in this binding, which is why "press
+  Delete to take one off" is spoken rather than described. A drop hint put there
+  would be invisible for the same reason.
+
+So it is said at the moment somebody gets it wrong, which is bounded by
+definition, and it names the attachments line as the place to aim. **That line
+is what makes the attachments area the explicit drop zone**: it is a static text
+that is always visible, unlike the list, which is hidden until there is
+something in it and so can never take the first file.
+
+## The comment beside the drop target was wrong, and is corrected
+
+Task 2 wrote that Windows "does not walk up to the parent when that window has
+none of its own", so the target caught the dialog surface "and not any child".
+That is the opposite of how the OLE drag loop works: it walks up the parent
+chain from the window under the pointer. Every control on the composer except
+the message body is a plain wxWidgets window with no drop target, so a drop on
+the subject line, the toolbar, the attachments line or the list should reach the
+dialog's target. The body is the one child that registers its own.
+
+The corrected comment says that, says it is documented behaviour, and says
+plainly that nobody has watched it.
+
+## The tests, and the one that is worth more than the others
+
+The drop rule is written down twice on purpose. `editor_document`'s own tests
+read the page; `editor_page_harness` runs it, in a real JavaScript engine, using
+the page that ships rather than a copy. The second is worth more: a reading is
+answered by the words being present, a run is answered by the handler doing what
+the words say.
+
+The harness could not load the page at all until its stub grew
+`document.addEventListener`, which is how the change was caught: 29 harness
+tests went red on the green half and said so. The stub now records what it is
+handed, so a handler can be run, and `postMessage` fills the `posted` array the
+stub had declared and nothing had ever written to.
+
+**The five harness tests were written after the code, so they had never been
+red.** Taking out the one line they are about reddens exactly two tests, the
+reading and the run, and nothing else in 6,400. Measured by hand with
+`--all-targets --no-fail-fast` and written down as a guard record.
+
+That break is the one worth having, and the record's comment says why: without
+`preventDefault` the rest of the handler still runs. The count is still posted
+and the composer still says where a drop lands. It would look completely right
+and lose drafts.
+
+## What the guard bookkeeping cost
+
+- **One re-measure.** Four tests added to `src/application/attaching.rs` took it
+  from 30 to 34 and made one record's fingerprint stale in the same commit. Its
+  remedy needs the green code, so there is no ordering where the red commit has
+  a clean tree around it; `CLAUDE.md` says to name the count check among the
+  failures rather than split the commit, and that is what the red commit did.
+  `--remeasure` then found all 3 named tests still red and nothing else.
+- **One new record**, measured by hand as above.
+- **Nothing on `src/presentation/wx_compose.rs`.** No test was added to it, so
+  its count is still 43 and the three records naming it are untouched.
+- **Nothing on `tests/every_way_a_file_goes_on_a_message.rs`.** No new route was
+  added: the page's drop handler carries no path and attaches nothing, so the
+  census still counts three ways a file goes on a message and its record is
+  untouched.
+- The sweep line at the top of `guards.toml` went from 427 records arrived since
+  to 428.
+
+Counted by parsing `tests_last_seen` rather than by grepping a file name, which
+is the third plan in a row to do it that way.
+
+---
+
+# The human check, which is deferred and not skipped
 
 **This is the part that needs a person, and it cannot be faked, guessed or
 worked around.** Read this even if you have not read the plan; it assumes
 nothing.
+
+**What changed since it was written.** The design no longer waits on the answer:
+the message area is a dead zone that says so, whichever way this goes. What the
+check settles now is whether the parts that are supposed to work do, and what
+any of it sounds like. Two of the four things below have already been answered
+in the direction the design assumed, and the point of asking is that assuming is
+not watching.
 
 ## What you are settling
 
@@ -450,12 +672,17 @@ The reason it is not is worth understanding, because it decides what the answer
 means. The big box you type your message into is not an ordinary Windows
 control. It is a small web browser, WebView2, embedded in the window, and it
 handles dragging and dropping inside itself, before this program sees anything.
-Windows sends a drop to whichever window is under the mouse pointer and does
-not pass it up to the parent window if that one is not interested. So a file
-dropped on the message area may go to the browser, which will do whatever a
-browser does with a dropped file, and this program may never hear about it.
+Windows sends a drop to the innermost window under the mouse pointer that has
+asked for drops, and every other control in the composer has not asked, so a
+drop on any of them travels outwards to the window itself, which has. The
+message area is the exception, because the browser asks for its own.
 
-Nobody can settle that by reading code. It has to be watched.
+So the message area is expected not to attach anything, on purpose. It has been
+told to turn a dropped file away and say where to drop it instead, because
+before that it did something worse: a browser handed a file opens it, so
+dropping a picture on a half-written reply replaced the reply with the picture.
+
+Nobody can settle any of this by reading code. It has to be watched.
 
 ## What to build and run
 
@@ -466,7 +693,7 @@ cargo build --release
 ```
 
 Then run `target/release/wixen-mail.exe`. Say in your report which build you
-used: the version is `0.70.0` and the executable prints its version and the
+used: the version is `0.71.0` and the executable prints its version and the
 commit it came from with `--version`, so paste that line.
 
 Open a composer: `Ctrl+N`, or File, then New, then Message.
@@ -482,24 +709,40 @@ They can have different answers and the whole question is which of them worked.
 **1. Drag one file onto the message body.** That is the large area where you
 type the message itself, below the Subject line. Drop it there.
 
-- If it works: the composer says something like "Attached notes.txt, 2 KB",
-  and a list of attachments appears under the message with that file in it.
-- If it does not: nothing happens at all, or the mouse pointer shows a "no
-  entry" sign while you are over the message area, or something else entirely
-  happens, such as the file's contents appearing inside your message as text,
-  or a picture appearing in the message, or the file opening in a different
-  program.
+This one is expected to refuse, and what is being checked is that it refuses in
+the way it was built to.
 
-Report what actually happened, including "nothing" if it was nothing, and
-including the odd outcomes, because "the file opened in the message" is a
-different finding from "nothing happened" and points at a different fix.
+- What should happen: while you are still over the message area the pointer
+  shows a "no entry" sign. When you let go, the message you were writing is
+  still there, untouched, and a box appears saying "That file was not attached.
+  The message area is a small browser inside this window, and it takes the drop
+  before the composer sees it. Drop files on the attachments line under the
+  message, or press Ctrl+V, or use Attach File."
+- What would be a finding: nothing at all happens, no box and no pointer
+  change. Or the message you were writing disappears and the file is shown in
+  its place. Or the file's contents appear inside the message as text, or a
+  picture appears in it.
 
-**2. Drag one file onto the subject line, or onto the row of buttons at the top
-of the window.** Those are ordinary Windows controls rather than a browser.
-Does it attach?
+The second and third of those are the defect this was built to stop, so if
+either happens say so first. Report what actually happened, including "nothing"
+if it was nothing, because "nothing happened" and "the file opened in the
+message" point at different fixes.
 
-**3. Drag three files at once** onto whichever of those two places worked. If
-neither worked, skip this one and say so.
+Type a sentence into the message before you try this, so you can see whether it
+survives.
+
+**2. Drag one file onto the subject line, onto the row of buttons at the top of
+the window, and onto the attachments line under the message.** Those are
+ordinary Windows controls rather than a browser, and all three are expected to
+attach. Try each separately and say which of them worked, because they are
+different windows and the answer can differ.
+
+The attachments line is the one that matters most: it is the place the refusal
+in test 1 tells somebody to aim at, so if it does not take a drop then the
+product is giving bad directions.
+
+**3. Drag three files at once** onto whichever of those places worked. If none
+worked, skip this one and say so.
 
 - If it works: all three should attach, and you should hear **one** sentence
   naming all three, not three sentences. Something like "Attached notes.txt,
@@ -510,39 +753,41 @@ neither worked, skip this one and say so.
 down what it says, in the words it says them**, not a summary. If it says
 nothing at all, that is the finding and it matters as much as the others.
 
+The refusal in test 1 is spoken at high priority as well as shown in a box, so
+there are two things to judge: whether it is heard at all, and whether three
+sentences in front of somebody who has just let go of a file is help or an
+obstacle. That is ledger entry 134 and it is a judgement only listening makes.
+
 ## What each answer means, and what to do about it
 
-### If a drop on the message body works
+### If test 1 refuses the way it is meant to
 
-The feature is finished. Then:
+That half is settled. Close ledger entry 132's first clause, and say in
+`.planning/WINDOWS.md` what was watched, in your own words.
 
-- Add an entry to `docs/changelog.md` under `[Unreleased]` saying that
-  dropping and pasting both attach files, with an honest note that the
-  announcement has not been heard by a screen reader unless observation 4 says
-  otherwise.
-- Record what was and was not settled in `.planning/WINDOWS.md`.
-- No version bump is needed if `0.70.0` has not shipped; add to its entry.
+### If test 1 loses the message you were writing
 
-### If a drop on the message body does not work
+**Stop and say so first.** That is the defect the whole of this was built to
+stop, and it means the page's refusal is not being registered or not being
+reached. Two things to check before anything else: that the build is `0.71.0` or
+later, and whether the message area still refuses a drop after the composer has
+been open a while, because the refusal depends on the page's script having
+loaded.
 
-**Do not leave this in a planning document.** `CLAUDE.md` is explicit: a
-warning that only exists in a report is a warning nobody gets. It has to be
-said in the product, where the person using it will see it.
+### If tests 2 and 3 attach nothing
 
-- The composer says that files can be dropped on the window and that dropping
-  on the message area may do nothing. In the same place and the same style
-  `src/application/allowed.rs` and `src/presentation/first_run.rs` say what
-  else is experimental.
-- The changelog entry says exactly which drops work and which do not, and
-  softens neither.
-- `.planning/WINDOWS.md` carries it as a deviation.
+Then the drag loop is not walking up to the dialog's target the way the
+documentation says, and the sentence in `attaching::dropped_on_the_message` is
+telling somebody to aim at a place that does not work. Fix the sentence in the
+same change as anything else, because bad directions are worse than none.
 
-**And name the fallback design without building it.** If the body swallows the
-drop, moving the drop target to another wxWidgets window will not help, because
-the body is the window it lands on. The design that would work is catching the
-drop in the page's own JavaScript, in `src/presentation/editor_document.rs`,
-and posting the file path back over the `wixenEditor` channel the page already
-uses for `Ctrl+Enter` and the formatting keys.
+### The fallback design, named and not built
+
+Making the message area itself attach a file means catching the drop in the
+page's own JavaScript, in `src/presentation/editor_document.rs`, and posting the
+file path back over the `wixenEditor` channel the page already uses for
+`Ctrl+Enter` and the formatting keys. The page already catches the drop; what it
+deliberately does not do is send the path.
 
 **That is a different security boundary and it is why this is its own plan.**
 Today the page is given HTML and gives back small facts: a key was pressed, a
@@ -557,15 +802,37 @@ in a summary. It is recorded here as T-04-30, disposition **transfer**.
 The paste key and the multi-file picker are unaffected either way, and they are
 what makes this plan worth having.
 
+## What is still open when this is read
+
+- **Ledger 132**, that nobody has watched a drop happen anywhere on the
+  composer. The four tests above are what closes it.
+- **Ledger 133**, the upstream gap. `AllowExternalDrop` is unreachable through
+  wxWidgets 3.3.2 and wxdragon 0.9.17, and it has not been reported upstream.
+- **Ledger 134**, that the refusal has not been heard.
+- **Ledgers 126 to 129**, from tasks 1 and 2, all about what nothing here can
+  hear.
+- **Ledger 130**, that every refusal this program speaks opens with the word
+  "Error". Untouched on purpose; it is a change to `common::Error` and to every
+  announcement that goes through it. The drop refusal does not go through it and
+  so does not make it worse.
+
+`status` in the frontmatter stays `partial` for that reason. The work is done
+and one thing about it has never been watched, and calling that complete is the
+mistake this whole document is written against.
+
 ## Self-Check: PASSED
 
 - `tests/every_way_a_file_goes_on_a_message.rs` exists on disk.
-- All eight commits above exist in `git log`.
+- All twelve commits above exist in `git log`.
 - `cargo test --lib -- application::attaching:: service::attachment_name::`
-  passes, 42 tests.
+  passes, 46 tests.
+- `cargo test --lib -- presentation::editor_document:: presentation::editor_page_harness::`
+  passes, 116 tests.
 - `cargo test --test every_way_a_file_goes_on_a_message` passes, 7 tests.
 - `cargo test --test wired` passes, 61 tests, with both shortcut checks green.
 - `cargo test --test house_style` passes, 64 tests, including the three that
   read `guards/guards.toml`.
 - `scripts/check.sh all` passes on the branch head.
-- `Cargo.toml` changed by one line, the version.
+- `.planning/WINDOWS.md` carries 132, 133 and 134 in both its table and its JSON
+  block, checked by parsing the JSON rather than by reading the table.
+- `Cargo.toml` changed by one line, the version, twice.

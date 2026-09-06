@@ -165,6 +165,49 @@ img {{ max-width: 100%; height: auto; }}
      role="textbox" aria-multiline="true" aria-label="Message body">{safe_body}</div>
 <script>
 (function () {{
+  // ── A file dragged onto the message ──────────────────────────────────────
+  //
+  // First, before the element below is looked up, because a lookup that
+  // answers null makes everything after it throw and this is the part that
+  // must be registered whatever else fails. `post` is used here and written
+  // below: a function declaration is hoisted, so it exists by the time a drop
+  // can happen. `carriesFiles` is the same.
+  //
+  // Why any of this. WebView2's AllowExternalDrop defaults to true, so a file
+  // dragged in from Explorer reaches this page, and a browser engine handed a
+  // file navigates to it. That would take the message somebody is writing off
+  // the screen. Refusing the drop makes the message area a dead zone, which is
+  // a disappointment; leaving it alone loses drafts, which is a defect.
+  //
+  // Only for a drag carrying files. Dragging selected text from one place in
+  // the message to another is the editor's own and somebody writes with it.
+  //
+  // The count goes out and the paths do not. A path chosen by whoever did the
+  // dragging, carried through a browser engine and a message channel before
+  // this program decides whether it may be attached, is a different security
+  // boundary with its own threat model, recorded as T-04-30 and not built.
+  function carriesFiles(event) {{
+    var moved = event.dataTransfer;
+    if (!moved) {{ return false; }}
+    var kinds = moved.types || [];
+    for (var k = 0; k < kinds.length; k++) {{
+      if (kinds[k] === 'Files') {{ return true; }}
+    }}
+    return false;
+  }}
+  document.addEventListener('dragover', function (event) {{
+    if (!carriesFiles(event)) {{ return; }}
+    event.preventDefault();
+    // Says so under the pointer, before the file is let go.
+    event.dataTransfer.dropEffect = 'none';
+  }}, true);
+  document.addEventListener('drop', function (event) {{
+    if (!carriesFiles(event)) {{ return; }}
+    event.preventDefault();
+    var moved = event.dataTransfer;
+    var many = (moved && moved.files) ? moved.files.length : 0;
+    post({{ kind: 'dropped', count: many }});
+  }}, true);
   var body = document.getElementById({BODY_ID:?});
   function post(message) {{
     try {{ window.chrome.webview.postMessage(JSON.stringify(message)); }}
@@ -1573,6 +1616,22 @@ pub enum EditorMessage {
     },
     /// Ctrl+backslash: go to the toolbar.
     ToToolbar,
+    /// Files were dropped on the message body, and the page refused them.
+    ///
+    /// The page refuses rather than the window, because the window never sees
+    /// this drop: WebView2 registers its own drop target and Windows sends the
+    /// drop to the deepest window that has one. Left to itself the engine
+    /// navigates to the file, which takes the message being written off the
+    /// screen, so the page prevents that and reports it here, and the composer
+    /// says where a drop does land.
+    ///
+    /// `count` and no paths. A path chosen by whoever did the dragging,
+    /// travelling through a browser engine and a message channel before this
+    /// program decides whether it may be attached, is a different security
+    /// boundary and its own plan. This carries a number.
+    FilesDroppedOnTheMessage {
+        count: usize,
+    },
 }
 
 /// Read one message posted by the page.
@@ -1611,6 +1670,13 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
             Reached::ALL.get(index).copied().map(EditorMessage::Reached)
         }
         "toolbar" => Some(EditorMessage::ToToolbar),
+        // A count and nothing else. `as_u64` refuses a negative and
+        // `try_from` refuses one too large to be a number of files, and either
+        // way saying nothing beats telling somebody that a number of files
+        // nobody sent did not go on.
+        "dropped" => usize::try_from(value.get("count")?.as_u64()?)
+            .ok()
+            .map(|count| EditorMessage::FilesDroppedOnTheMessage { count }),
         "leave" => Some(EditorMessage::Leaving {
             back: value.get("back")?.as_bool()?,
         }),
@@ -1674,6 +1740,29 @@ mod tests {
             .map(|(tag, _)| tag)
             .unwrap_or("")
     }
+
+    /// The part of `page` between two markers, so an assertion about one
+    /// handler cannot be answered by another handler somewhere else.
+    ///
+    /// A page this long contains `preventDefault` twenty times over, and a
+    /// test that only asked whether the word appears would pass against a drop
+    /// handler that does nothing at all.
+    fn between<'a>(page: &'a str, from: &str, to: &str) -> &'a str {
+        let start = page
+            .find(from)
+            .unwrap_or_else(|| panic!("the page does not contain {from:?}"));
+        let rest = &page[start..];
+        let end = rest
+            .find(to)
+            .unwrap_or_else(|| panic!("the page does not contain {to:?} after {from:?}"));
+        &rest[..end]
+    }
+
+    /// Where the page registers its refusal of a dragged-in file.
+    const DRAGGED_OVER: &str = "document.addEventListener('dragover'";
+
+    /// Where the page registers what happens when that file is let go.
+    const DROPPED: &str = "document.addEventListener('drop'";
 
     #[test]
     fn test_the_editor_asks_the_engine_to_check_spelling() {
@@ -1809,6 +1898,143 @@ mod tests {
         for kind in ["'cancel'", "'send'", "'save'"] {
             assert!(page.contains(kind), "{kind} not posted: {page}");
         }
+    }
+
+    #[test]
+    fn test_a_file_dropped_on_the_message_is_refused_rather_than_opened() {
+        // The defect this exists to stop is not a dead zone. WebView2 lets an
+        // external drag reach the page, and left alone a browser engine
+        // navigates to a dropped file, which takes the half-written message off
+        // the screen. Nothing happening is a disappointment; a lost draft is a
+        // defect.
+        let page = editor_document(&blank(), "en", true);
+
+        let over = between(&page, DRAGGED_OVER, "}, true);");
+        assert!(
+            over.contains("event.preventDefault();"),
+            "the dragover handler does not refuse the drag, so the engine keeps its own \
+             handling of it: {over}"
+        );
+        assert!(
+            over.contains("dropEffect = 'none'"),
+            "the drag says nothing about what will happen, so the pointer offers a drop that \
+             will not happen: {over}"
+        );
+
+        let drop = between(&page, DROPPED, "}, true);");
+        assert!(
+            drop.contains("event.preventDefault();"),
+            "the drop handler does not refuse the file, so the engine navigates to it and the \
+             message being written is gone: {drop}"
+        );
+    }
+
+    #[test]
+    fn test_the_drop_is_refused_before_anything_in_the_page_can_throw() {
+        // The refusal is only worth what its registration is worth. Anything
+        // below it that throws leaves the listeners unregistered and the
+        // engine's own handling back in charge, which is the outcome this is
+        // about. So it is registered first, on `document`, which always
+        // exists, rather than on an element that has to be found.
+        let page = editor_document(&blank(), "en", true);
+
+        let refused = page.find(DRAGGED_OVER).expect("the dragover handler");
+        let looked_up = page
+            .find("document.getElementById")
+            .expect("the lookup of the editable element");
+        assert!(
+            refused < looked_up,
+            "the drop is refused at {refused} and the page looks an element up at {looked_up}. \
+             A lookup that answers null makes everything after it throw, and the refusal has to \
+             be registered before that can happen."
+        );
+
+        // The capture phase, so the refusal runs before any handler further
+        // down the tree, whoever added it.
+        for handler in [DRAGGED_OVER, DROPPED] {
+            let from = page.find(handler).expect("the handler");
+            let rest = &page[from + handler.len()..];
+            let captures = rest.find("}, true);").unwrap_or(usize::MAX);
+            let next_handler = rest.find("addEventListener").unwrap_or(usize::MAX);
+            assert!(
+                captures < next_handler,
+                "{handler} is not registered in the capture phase, so a handler further down \
+                 the page can take the event first and do the engine's own thing with it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_drag_carrying_no_files_is_left_to_the_editor() {
+        // Dragging selected text from one place in the message to another is
+        // the editor's own behaviour and somebody uses it to write. A refusal
+        // that did not ask what the drag carries would take that away to solve
+        // a problem it does not have.
+        let page = editor_document(&blank(), "en", true);
+
+        assert!(
+            page.contains("kinds[k] === 'Files'"),
+            "nothing asks whether the drag carries files: {page}"
+        );
+        for handler in [DRAGGED_OVER, DROPPED] {
+            let body = between(&page, handler, "}, true);");
+            assert!(
+                body.contains("if (!carriesFiles(event)) { return; }"),
+                "{handler} refuses every drag rather than only the ones carrying files, so \
+                 dragging text inside the message stops working: {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_file_path_crosses_the_channel_when_a_drop_is_refused() {
+        // The count crosses and the paths do not, and that is the whole
+        // security boundary of this change. Handing a path chosen by whoever
+        // did the dragging to a browser engine and back over a message channel
+        // is a different design with a different threat model, recorded as
+        // T-04-30 and not built here.
+        let page = editor_document(&blank(), "en", true);
+        let drop = between(&page, DROPPED, "}, true);");
+
+        assert!(
+            drop.contains("post({ kind: 'dropped', count: many });"),
+            "the drop does not tell the window it happened, so nothing can say where a drop \
+             does work: {drop}"
+        );
+        for path in [
+            ".name",
+            ".path",
+            "getAsFile",
+            "webkitRelativePath",
+            "text()",
+        ] {
+            assert!(
+                !drop.contains(path),
+                "the drop handler reaches for {path}, which is a file path or its contents \
+                 leaving the page: {drop}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_drop_on_the_message_is_read_back_as_the_files_that_did_not_go_on() {
+        assert_eq!(
+            parse_message(r#"{"kind":"dropped","count":3}"#),
+            Some(EditorMessage::FilesDroppedOnTheMessage { count: 3 })
+        );
+        assert_eq!(
+            parse_message(r#"{"kind":"dropped","count":1}"#),
+            Some(EditorMessage::FilesDroppedOnTheMessage { count: 1 })
+        );
+    }
+
+    #[test]
+    fn test_a_drop_that_does_not_say_how_many_is_not_read() {
+        // The page is ours, so this is a bug rather than an attack, and doing
+        // nothing beats saying "those files were not attached" about a number
+        // nobody sent.
+        assert_eq!(parse_message(r#"{"kind":"dropped"}"#), None);
+        assert_eq!(parse_message(r#"{"kind":"dropped","count":-1}"#), None);
     }
 
     #[test]
