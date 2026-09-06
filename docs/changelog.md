@@ -31,8 +31,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   - The direct fix would be to turn off WebView2's own handling of dragged-in
     files. Neither wxWidgets 3.3.2 nor wxdragon 0.9.17 offers a way to: the
     setting lives on the WebView2 controller and what wxWidgets hands out is
-    the view underneath it. So the page turns the drop away instead, which
-    depends on the page's script having loaded.
+    the view underneath it, which cannot be asked for its controller. So the
+    page turns the drop away instead, which depends on the page's script having
+    loaded. This has not been reported upstream yet.
   - Attaching a file by dropping it on the message area is not built. Doing it
     would mean a file path chosen by whoever did the dragging travelling
     through the browser engine and back, which is a different question about

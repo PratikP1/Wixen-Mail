@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 118
+open_count: 121
 waived_count: 0
 fixed_count: 13
-total_count: 131
-last_updated: 2026-09-06T08:33:16.753Z
+total_count: 134
+last_updated: 2026-09-06T10:49:29.074Z
 ---
 
 # Broken Windows Ledger
@@ -146,6 +146,9 @@ last_updated: 2026-09-06T08:33:16.753Z
 | 129 | 04 | unrun-verify | src/presentation/wx_compose.rs |  | Whether a file dropped on the composer attaches at all. The drop target is installed on the dialog and hands its paths to the same door the picker uses, and whether a drop over the message body reaches it is unknown: the body is a WebView2 control that handles drops in its own window. Task 3 of plan 04-07 is a person dragging a file to settle it, and the answer goes in the product either way. | open |  | 2026-09-06T08:33:15.932Z |  |
 | 130 | 04 | stub | src/common/error.rs | 58 | Error::Other displays as 'Error: {message}', so every refusal this program says out loud opens with the word Error before the sentence. Found by a test pinning the composer's single-file refusal against the old code rather than against a copy of it. Poor wording for a screen reader and unchanged here, because it is a change to common::Error and to every announcement that goes through it. | open |  | 2026-09-06T08:33:16.343Z |  |
 | 131 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-07-PLAN.md |  | Four premises corrected. Premise 5 says the paste key needs a second home because the attachments list is hidden when empty; it needs no second home, because wxWidgets passes an unhandled key up the parent chain and the composer already uses one dialog-level handler for exactly this, so Ctrl+V is bound once there. The plan's tests/wired.rs change is unnecessary: Ctrl+V is already documented and already bound as a menu accelerator in the main window, so bound_somewhere finds it and no exception entry is needed, which also means that check gives the composer's Ctrl+V no protection at all. The threat register asks for fixtures with a traversing name and a reserved Windows device name; neither can exist as a real file on Windows, and what protects those cases is Chosen::at asking for the last component and safe_file_name prefixing a device name, both tested where they live. No version bump in task 2: there is nothing true to write in a changelog entry until task 3 answers whether a drop lands, and this project pairs a bump with an entry. Premise 8's guard table is right in every row: 617 records, attaching 0, wx_compose 2, wired 8, attachment_name 0. | open |  | 2026-09-06T08:33:16.753Z |  |
+| 132 | 04 | unrun-verify | src/presentation/editor_document.rs |  | Whether a file dragged onto the composer reaches anything at all. The page now turns a drop on the message body away so the engine cannot navigate to the file, and the composer says where a drop does land, and both rest on documentation rather than on somebody watching: WebView2's AllowExternalDrop defaults to true so the drag reaches the page, and the OLE drag loop walks up the parent chain so a drop on the subject line, the toolbar, the attachments line or the list should reach the dialog's target. Nobody has dragged a file onto a running composer. The four observations to make are in 04-07-SUMMARY.md. | open |  | 2026-09-06T10:49:18.354Z |  |
+| 133 | 04 | deviation | Cargo.toml |  | Upstream gap, not reported yet: WebView2's AllowExternalDrop cannot be turned off through this stack. It lives on ICoreWebView2Controller4; wxWidgets 3.3.2 keeps the controller in wx/msw/private/webview_edge.h and wxWebViewEdge::GetNativeBackend returns the ICoreWebView2_2 underneath it, which cannot be asked for its controller, so wxdragon 0.9.17 has nothing to expose. The reachable mitigation is the page refusing the drop itself, which depends on the page's script having loaded and so is weaker than the host-level setting would be. Worth an issue against wxWidgets or wxdragon. | open |  | 2026-09-06T10:49:28.613Z |  |
+| 134 | 04 | unrun-verify | src/application/attaching.rs |  | Whether the sentence said when a file is dropped on the message area is heard as an answer or as an interruption. It arrives spoken at high priority and shown in a message box at the same time, three sentences long, at the moment somebody let go of a file. Nothing here can say whether that is help or a modal in the way, or whether naming Ctrl+V and Attach File in speech is how somebody finds them. | open |  | 2026-09-06T10:49:29.074Z |  |
 
 ````json
 [
@@ -1719,6 +1722,42 @@ last_updated: 2026-09-06T08:33:16.753Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T08:33:16.753Z",
+    "resolved_at": null
+  },
+  {
+    "id": 132,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/editor_document.rs",
+    "line": null,
+    "description": "Whether a file dragged onto the composer reaches anything at all. The page now turns a drop on the message body away so the engine cannot navigate to the file, and the composer says where a drop does land, and both rest on documentation rather than on somebody watching: WebView2's AllowExternalDrop defaults to true so the drag reaches the page, and the OLE drag loop walks up the parent chain so a drop on the subject line, the toolbar, the attachments line or the list should reach the dialog's target. Nobody has dragged a file onto a running composer. The four observations to make are in 04-07-SUMMARY.md.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T10:49:18.354Z",
+    "resolved_at": null
+  },
+  {
+    "id": 133,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "Cargo.toml",
+    "line": null,
+    "description": "Upstream gap, not reported yet: WebView2's AllowExternalDrop cannot be turned off through this stack. It lives on ICoreWebView2Controller4; wxWidgets 3.3.2 keeps the controller in wx/msw/private/webview_edge.h and wxWebViewEdge::GetNativeBackend returns the ICoreWebView2_2 underneath it, which cannot be asked for its controller, so wxdragon 0.9.17 has nothing to expose. The reachable mitigation is the page refusing the drop itself, which depends on the page's script having loaded and so is weaker than the host-level setting would be. Worth an issue against wxWidgets or wxdragon.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T10:49:28.613Z",
+    "resolved_at": null
+  },
+  {
+    "id": 134,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/attaching.rs",
+    "line": null,
+    "description": "Whether the sentence said when a file is dropped on the message area is heard as an answer or as an interruption. It arrives spoken at high priority and shown in a message box at the same time, three sentences long, at the moment somebody let go of a file. Nothing here can say whether that is help or a modal in the way, or whether naming Ctrl+V and Attach File in speech is how somebody finds them.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T10:49:29.074Z",
     "resolved_at": null
   }
 ]
