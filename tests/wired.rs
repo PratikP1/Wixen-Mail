@@ -2731,6 +2731,58 @@ fn as_it_is_read_out(label: &str) -> String {
 /// catch, so add to it deliberately and never to quiet a run.
 const NOT_A_COMMAND: &[&str] = &[];
 
+/// The composer's Send hands the queue what the message is waiting for.
+///
+/// This replaces `test_undo_send_saves_the_draft_before_it_empties_the_queue`,
+/// which read the order of two calls inside `undo_send` and was green from the
+/// day it was written against a command that refused every time it was pressed.
+/// Its own doc said what it could not see: whether Undo Send is reachable. The
+/// round trip it could not drive is now
+/// `data::message_cache::outbox::tests::test_undo_send_takes_back_the_message_that_is_still_being_held`,
+/// over a real database, and the ordering it did check is
+/// `test_undo_send_saves_the_draft_before_it_empties_the_queue` below, which
+/// keeps its name because a rename is the one edit a test-count check cannot
+/// see and there is nothing to be gained by making one here.
+///
+/// What was wrong is the shape this whole phase is about. `queue_for_sending`
+/// worked out what the message was waiting for, and then called a convenience
+/// wrapper that pinned that argument to "as soon as possible" and threw the
+/// answer away. The value was returned rather than passed, so the compiler was
+/// satisfied, every symbol had a caller, and no automatic check in this tree
+/// could see that production only ever queued one of the three kinds.
+///
+/// What this cannot see: whether the hold's length is the one somebody set, or
+/// whether the message really leaves when it runs out. Those are driven over a
+/// database in `data::message_cache::outbox`. This reads the source of the one
+/// function no test in that layer can reach.
+#[test]
+fn test_the_composers_send_passes_the_hold_to_the_queue() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let body = body_of(&app, "fn queue_for_sending(");
+
+    assert!(
+        body.contains("GoAfter::held("),
+        "the composer's Send no longer works out a hold, so nothing is ever held \
+         and Undo Send refuses every time it is pressed"
+    );
+
+    let worked_out = body
+        .find("let waiting_on")
+        .expect("the composer's Send no longer names what the message is waiting for");
+    let queued = body
+        .find("queue_outbox_message_to_go(")
+        .expect("the composer's Send does not tell the queue what the message is waiting for");
+    assert!(
+        worked_out < queued,
+        "the value is worked out after the row is written, so the row cannot carry it"
+    );
+    assert!(
+        body[queued..].contains("&waiting_on"),
+        "the composer's Send works out what the message is waiting for and then queues \
+         it without passing that, which is the defect this guard is about"
+    );
+}
+
 /// Undo Send writes the draft before it takes the row out of the queue.
 ///
 /// The ordering is the whole safety of the command, and reversing it loses
@@ -2747,7 +2799,9 @@ const NOT_A_COMMAND: &[&str] = &[];
 ///
 /// What this cannot see: whether Undo Send is reachable, whether either call
 /// does what its name says, or whether the message that comes back is the one
-/// that was queued. It reads the order of two calls in the source.
+/// that was queued. It reads the order of two calls in the source. That was the
+/// whole of the cover this command had, and the round trip it could not drive
+/// now runs over a real database in `data::message_cache::outbox`.
 #[test]
 fn test_undo_send_saves_the_draft_before_it_empties_the_queue() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -2773,6 +2827,30 @@ fn test_undo_send_saves_the_draft_before_it_empties_the_queue() {
         body.contains("delete_draft("),
         "Undo Send leaves its draft behind when the message had already gone, so the \
          same message can be sent twice"
+    );
+}
+
+/// Held mail leaves on its own, without anybody pressing anything.
+///
+/// The failure this stops is worse than the one being fixed. `flush_outbox`
+/// had three call sites and every one of them was a person pressing something:
+/// Go Back Online, Send Queued Mail, and the composer's Send. Nothing ran on a
+/// clock. Writing a hold into a row with that still true means the message
+/// waits ten seconds and then waits forever, and the person was told it was
+/// being held for ten seconds.
+#[test]
+fn test_the_clock_lets_held_mail_go() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert!(
+        app.contains("HOW_OFTEN_TO_LET_HELD_MAIL_GO"),
+        "nothing on a clock asks the outbox again, so a held message waits its hold \
+         and then waits forever"
+    );
+    assert!(
+        app.contains("anything_reached_its_moment("),
+        "the clock asks the outbox to send without first asking whether anything came \
+         due, which retries a failed message every second"
     );
 }
 

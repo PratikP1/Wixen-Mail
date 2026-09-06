@@ -172,6 +172,17 @@ impl MessageCache {
         Ok(rows)
     }
 
+    /// Whether anything in this account's queue reached its moment since the
+    /// clock last looked.
+    pub fn anything_reached_its_moment(
+        &self,
+        _account_id: &str,
+        _since: Option<DateTime<Local>>,
+        _now: DateTime<Local>,
+    ) -> Result<bool> {
+        Ok(false)
+    }
+
     /// The queue, as rows the message list can show.
     ///
     /// Read from the queue itself rather than copied into the messages table.
@@ -186,7 +197,12 @@ impl MessageCache {
     /// The attempt count and the last error go in the subject line, because
     /// that is the column somebody reads and "tried 4 times" is the thing they
     /// need to know about a message that has not gone.
-    pub fn outbox_rows(&self, account_id: &str) -> Result<Vec<super::MessageListRow>> {
+    pub fn outbox_rows(
+        &self,
+        account_id: &str,
+        _now: DateTime<Local>,
+        _dates: crate::presentation::date_display::DateSettings,
+    ) -> Result<Vec<super::MessageListRow>> {
         let mut stmt = self
             .conn
             .prepare_cached(
@@ -335,7 +351,9 @@ mod tests {
             })
             .unwrap();
 
-        let rows = cache.outbox_rows("acc-1").unwrap();
+        let rows = cache
+            .outbox_rows("acc-1", chrono::Local::now(), dates())
+            .unwrap();
         assert_eq!(rows.len(), 1);
         assert!(
             rows[0].id < 0,
@@ -349,7 +367,12 @@ mod tests {
             cache.cancel_queued(rows[0].id).unwrap(),
             "the row could not be cancelled by the number it was listed with"
         );
-        assert!(cache.outbox_rows("acc-1").unwrap().is_empty());
+        assert!(
+            cache
+                .outbox_rows("acc-1", chrono::Local::now(), dates())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -470,7 +493,9 @@ mod tests {
             .queue_outbox_message(&queued("z", "acc-2", "Elsewhere", "2026-08-01T09:30:00Z"))
             .expect("a message to queue");
 
-        let rows = cache.outbox_rows("acc-1").expect("the outbox to be read");
+        let rows = cache
+            .outbox_rows("acc-1", chrono::Local::now(), dates())
+            .expect("the outbox to be read");
 
         assert_eq!(
             rows.iter().map(|r| r.subject.as_str()).collect::<Vec<_>>(),
@@ -509,14 +534,20 @@ mod tests {
         cache
             .queue_outbox_message(&queued("a", "acc-1", "Going", "2026-08-01T09:00:00Z"))
             .expect("a message to queue");
-        let row_id = cache.outbox_rows("acc-1").expect("the outbox")[0].id;
+        let row_id = cache
+            .outbox_rows("acc-1", chrono::Local::now(), dates())
+            .expect("the outbox")[0]
+            .id;
 
         assert!(
             cache.cancel_queued(row_id).expect("the cancel to run"),
             "cancelling a message that is there reported that it was not"
         );
         assert!(
-            cache.outbox_rows("acc-1").expect("the outbox").is_empty(),
+            cache
+                .outbox_rows("acc-1", chrono::Local::now(), dates())
+                .expect("the outbox")
+                .is_empty(),
             "the message was reported cancelled and is still queued"
         );
         assert!(
@@ -554,7 +585,10 @@ mod tests {
         assert_eq!(counted("a"), 2, "the failures were not counted up");
         assert_eq!(counted("b"), 0, "a failure was counted against both");
         assert_eq!(
-            cache.outbox_rows("acc-1").expect("the outbox")[0].subject,
+            cache
+                .outbox_rows("acc-1", chrono::Local::now(), dates())
+                .expect("the outbox")[0]
+                .subject,
             "Mine, tried 2 times: mailbox full",
             "the outbox does not say why it keeps failing"
         );
@@ -877,5 +911,235 @@ mod tests {
             5,
             "the messages that may not go yet were taken out of the queue"
         );
+    }
+
+    /// What the settings say about dates, for the rows that name one.
+    fn dates() -> crate::presentation::date_display::DateSettings {
+        crate::presentation::date_display::DateSettings::default()
+    }
+
+    #[test]
+    fn test_a_message_the_composer_held_waits_and_then_goes_on_its_own() {
+        // The round trip this whole plan is about, from the value the
+        // composer's Send now writes to the send loop taking the message. Both
+        // halves failed before it: nothing production ever wrote a hold, so
+        // the first assertion had nothing to hold back, and nothing ever asked
+        // again, so the third had nobody to ask.
+        let cache = a_cache("outbox_hold_round_trip");
+        let sent_at = at("2026-08-24 09:00:00");
+        let what_send_writes =
+            GoAfter::held(crate::application::sending_later::Hold::DEFAULT, sent_at);
+
+        cache
+            .queue_outbox_message_to_go(
+                &queued("just-sent", "acc-1", "Sorry", "2026-08-24T09:00:00Z"),
+                &what_send_writes,
+            )
+            .expect("a message to queue");
+
+        assert!(
+            cache
+                .outbox_messages_that_may_go_now("acc-1", sent_at)
+                .expect("the queue to be read")
+                .is_empty(),
+            "the message went straight away, so there was never anything to take back"
+        );
+
+        // And the clock asks for exactly one pass, at the moment the hold runs
+        // out, which is what stops a message waiting ten seconds and then
+        // waiting forever.
+        let after = sent_at + chrono::Duration::seconds(11);
+        assert!(
+            cache
+                .anything_reached_its_moment("acc-1", Some(sent_at), after)
+                .expect("the queue to be read"),
+            "nothing told the clock the hold had run out, so the message sat in the Outbox"
+        );
+        assert!(
+            !cache
+                .anything_reached_its_moment(
+                    "acc-1",
+                    Some(after),
+                    after + chrono::Duration::seconds(1)
+                )
+                .expect("the queue to be read"),
+            "the same row asked for a second pass, which is a retry every second"
+        );
+
+        let going: Vec<String> = cache
+            .outbox_messages_that_may_go_now("acc-1", after)
+            .expect("the queue to be read")
+            .into_iter()
+            .map(|message| message.id)
+            .collect();
+        assert_eq!(going, vec!["just-sent".to_string()]);
+    }
+
+    #[test]
+    fn test_a_message_sent_with_the_hold_off_goes_on_the_very_next_pass() {
+        // Somebody who turns the hold off gets what Send has always done, and
+        // not a broken version of it. `GoAfter::held` answers
+        // `AsSoonAsPossible` for a hold of nought, so there is nothing on the
+        // row and nothing for the clock to watch.
+        let cache = a_cache("outbox_hold_off");
+        let sent_at = at("2026-08-24 09:00:00");
+        let what_send_writes = GoAfter::held(crate::application::sending_later::Hold::OFF, sent_at);
+
+        assert_eq!(what_send_writes, GoAfter::AsSoonAsPossible);
+        cache
+            .queue_outbox_message_to_go(
+                &queued("straight-out", "acc-1", "Now", "2026-08-24T09:00:00Z"),
+                &what_send_writes,
+            )
+            .expect("a message to queue");
+
+        assert_eq!(
+            cache
+                .outbox_messages_that_may_go_now("acc-1", sent_at)
+                .expect("the queue to be read")
+                .len(),
+            1,
+            "turning the hold off left the message waiting for something"
+        );
+    }
+
+    #[test]
+    fn test_undo_send_takes_back_the_message_that_is_still_being_held() {
+        // This replaces the check in `tests/wired.rs` that read the order of
+        // two calls in the source of `undo_send`. That one was green from the
+        // day it was written against a command that refused every single time
+        // it was pressed, because nothing in production ever held a message,
+        // and its own doc said what it could not see: whether Undo Send is
+        // reachable, or whether either call does what its name says.
+        //
+        // This drives the round trip instead: queue with a hold, ask what Undo
+        // Send is about, and take that row out.
+        use crate::application::sending_later::{WhatToTakeBack, what_undo_send_takes_back};
+
+        let cache = a_cache("outbox_undo_send");
+        let sent_at = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("caught", "acc-1", "Sorry", "2026-08-24T09:00:00Z"),
+                &GoAfter::held(crate::application::sending_later::Hold::DEFAULT, sent_at),
+            )
+            .expect("a message to queue");
+
+        let queue: Vec<(String, GoAfter)> = cache
+            .queued_with_their_times("acc-1")
+            .expect("the queue to be read")
+            .into_iter()
+            .map(|(message, when)| (message.id, when))
+            .collect();
+
+        assert_eq!(
+            what_undo_send_takes_back(&queue, sent_at + chrono::Duration::seconds(3)),
+            WhatToTakeBack::ThisOne("caught".to_string()),
+            "Undo Send could not name the message pressed three seconds ago"
+        );
+        assert!(
+            cache
+                .delete_outbox_message("caught")
+                .expect("the row to be deleted"),
+            "the row Undo Send named was not in the queue"
+        );
+        assert!(
+            cache
+                .load_outbox_messages("acc-1")
+                .expect("the queue to load")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_undo_send_refuses_once_the_hold_has_run_out_and_does_not_say_it_has_not_gone() {
+        // The other half, and the one that must never over-promise. Once the
+        // send loop may pick a message up, nothing here can see whether the
+        // connection has opened, so the refusal points at the Outbox instead
+        // of claiming the message is still on this computer.
+        use crate::application::sending_later::{WhatToTakeBack, what_undo_send_takes_back};
+
+        let cache = a_cache("outbox_undo_too_late");
+        let sent_at = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("gone", "acc-1", "Sorry", "2026-08-24T09:00:00Z"),
+                &GoAfter::held(crate::application::sending_later::Hold::DEFAULT, sent_at),
+            )
+            .expect("a message to queue");
+
+        let queue: Vec<(String, GoAfter)> = cache
+            .queued_with_their_times("acc-1")
+            .expect("the queue to be read")
+            .into_iter()
+            .map(|(message, when)| (message.id, when))
+            .collect();
+
+        let taking = what_undo_send_takes_back(&queue, sent_at + chrono::Duration::seconds(30));
+        assert_eq!(taking, WhatToTakeBack::TooLateForEverything);
+        let why = taking.why_not().expect("a refusal to say why");
+        assert!(
+            why.contains("Outbox"),
+            "the refusal does not say where to look: {why}"
+        );
+        assert!(
+            !why.contains("has not"),
+            "the refusal claims the message has not gone, which nothing here knows: {why}"
+        );
+    }
+
+    #[test]
+    fn test_the_outbox_row_for_a_held_message_says_it_is_counting_down() {
+        // The second place the countdown was always meant to be said, and the
+        // third function in this feature that dropped the times: this query
+        // never selected `send_after` or `somebody_chose_it` at all, so every
+        // row got `waiting_label` and nothing else. Four rows that are doing
+        // four different things read identically.
+        let cache = a_cache("outbox_row_says_held");
+        let now = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("held", "acc-1", "Sorry", "2026-08-24T09:00:00Z"),
+                &GoAfter::held(crate::application::sending_later::Hold::DEFAULT, now),
+            )
+            .expect("a message to queue");
+
+        let rows = cache
+            .outbox_rows("acc-1", now, dates())
+            .expect("the outbox to be read");
+
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].subject.contains("Sorry"),
+            "the row stopped saying which message it is: {}",
+            rows[0].subject
+        );
+        assert!(
+            rows[0].subject.contains("Undo Send"),
+            "the row does not say it can still be taken back: {}",
+            rows[0].subject
+        );
+    }
+
+    #[test]
+    fn test_a_row_with_nothing_holding_it_back_goes_on_saying_what_it_always_said() {
+        // The rows that were already right. Every message queued before these
+        // columns existed has nothing in them, and a message that failed four
+        // times still has to say so, because that is the whole reason somebody
+        // opens this folder.
+        let cache = a_cache("outbox_row_unchanged");
+        let now = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("plain", "acc-1", "Ordinary", "2026-08-24T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
+            .expect("a message to queue");
+
+        let rows = cache
+            .outbox_rows("acc-1", now, dates())
+            .expect("the outbox to be read");
+
+        assert_eq!(rows[0].subject, "Ordinary, waiting to send");
     }
 }

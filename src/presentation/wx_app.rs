@@ -12396,7 +12396,14 @@ fn load_folder_messages(
     // right.
     if cache.folder_kind(folder_id).ok().flatten() == Some(crate::common::types::FolderType::Outbox)
     {
-        match cache.outbox_rows(&account_id) {
+        // How dates are written is read here rather than threaded through the
+        // fourteen callers of this function, because only the Outbox branch
+        // wants it and only for a message set for a time somebody chose. The
+        // same read is done in `flush_outbox` for the same reason.
+        let dates = crate::data::config::ConfigManager::load_stored()
+            .map(|stored| date_settings_from(stored.app_config()))
+            .unwrap_or_default();
+        match cache.outbox_rows(&account_id, chrono::Local::now(), dates) {
             Ok(rows) => {
                 let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
                 let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
@@ -13757,7 +13764,12 @@ fn open_compose(
                         &waiting_on,
                         chrono::Local::now(),
                     );
-                    let said = crate::application::sending_later::what_send_did(goes, &recipient);
+                    let said = crate::application::sending_later::what_send_did(
+                        goes,
+                        &waiting_on,
+                        chrono::Local::now(),
+                        &recipient,
+                    );
                     match goes {
                         crate::application::sending_later::WhenItGoes::Now => {
                             send_status(tx, rt, &said);
