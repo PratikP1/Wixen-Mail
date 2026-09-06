@@ -119,10 +119,11 @@ pub fn claims_a_signature(raw: &[u8]) -> bool {
 /// Cheap in the same way and asked in the same place. Nearly no mail is
 /// encrypted, so this has to be able to say no without taking anything apart.
 pub fn claims_encryption(raw: &[u8]) -> bool {
-    // Insufficient on purpose, and only for the length of one commit. The
-    // tests below name what it has to answer and this answers none of it.
-    let _ = raw;
-    false
+    let (headers, _) = split_headers_from_body(raw);
+    matches!(
+        header_value(headers, "content-type").and_then(|content_type| layout_of(&content_type)),
+        Some(SmimeLayout::Encrypted)
+    )
 }
 
 /// Whether one of a message's stored files is the S/MIME envelope it arrived
@@ -141,9 +142,15 @@ pub fn claims_encryption(raw: &[u8]) -> bool {
 /// the parameter that tells an envelope from a wrapped signature. The file name
 /// says which, and senders leave it off.
 pub fn is_an_smime_envelope(filename: &str, mime_type: &str) -> bool {
-    // Insufficient on purpose, for the length of one commit.
-    let _ = (filename, mime_type);
-    false
+    match file_suffix(filename).as_str() {
+        "p7m" => true,
+        // A signature, whatever the media type says, and the name wins because
+        // the media type is the one that lost the parameter telling them
+        // apart. A message can carry both, and picking the signature would
+        // report details that could not be read with the envelope beside it.
+        "p7s" => false,
+        _ => is_pkcs7(mime_type, "mime"),
+    }
 }
 
 pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {
@@ -3743,9 +3750,18 @@ impl EncryptedMessage {
 
     /// What to say about an encrypted message before anything is opened.
     ///
-    /// Honest about the state of this: nothing here can open one yet, and a
-    /// person is better told that than shown an empty message body with no
+    /// Honest about the state of this: nothing here can open one, and a person
+    /// is better told that than shown an empty message body with no
     /// explanation.
+    ///
+    /// **About this message, not about the program.** It used to end "Wixen
+    /// Mail cannot open encrypted mail yet", and 04-03 named that sentence when
+    /// it wrote a narrower one of its own: a claim about the program "stops
+    /// being true the moment anything here learns to open one kind". It has.
+    /// `service::pgp` opens PGP mail. This says what is true of the message in
+    /// front of somebody, which was always the stronger thing to say, and
+    /// `test_what_is_said_is_about_this_message_and_not_about_the_program`
+    /// holds it there.
     pub fn spoken(&self, addressed_to_us: Option<bool>) -> String {
         let who = match addressed_to_us {
             Some(true) => {
@@ -3761,8 +3777,8 @@ impl EncryptedMessage {
             ),
         };
         format!(
-            "This message is encrypted. {who} Wixen Mail cannot open encrypted mail yet, so \
-             nothing of it can be read here."
+            "This message is encrypted. {who} Wixen Mail cannot open it, so nothing of it can \
+             be read here."
         )
     }
 }

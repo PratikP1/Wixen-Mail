@@ -1577,13 +1577,45 @@ impl ReaderDocument {
     /// same for `looks_unsafe` being left alone: an encrypted message is not an
     /// unsafe one.
     pub fn with_smime_envelope(
-        self,
+        mut self,
         says: &crate::application::encrypted_mail::WhatTheEnvelopeSays,
     ) -> Self {
-        // Insufficient on purpose, and only for the length of one commit. The
-        // tests name what it has to do and this does none of it.
-        let _ = says;
+        let Some(sentence) = says.said() else {
+            return self;
+        };
+        self.text = instead_of_nothing_to_read(&self.text, sentence);
+        self.warning = Some(match self.warning.take() {
+            // Under what the filter said, the way a signature verdict goes
+            // under it. A bar that reshuffles itself by how bad the news is has
+            // to be read from the top every time to find out what is in it.
+            Some(already) => format!("{already}\n{sentence}"),
+            None => sentence.to_string(),
+        });
         self
+    }
+}
+
+/// Put a sentence where the reader would otherwise say there is no text.
+///
+/// The document is the header block, a blank line, the body and a newline, so a
+/// message with nothing in it ends with exactly [`nothing_to_read`]. That is
+/// the case this replaces, and it is the case every enveloped message lands in.
+///
+/// A message that arrived encrypted and has a body anyway is a shape nothing
+/// here has met: an enveloped message has no `text/*` part, so there is nothing
+/// for `mime::parse` to find. If one turns up, the sentence goes after what is
+/// there rather than over it. Dropping a stranger's words to make room for ours
+/// is the worse of the two mistakes, and it is the one reading further cannot
+/// undo.
+///
+/// Nothing moves the landmarks. In the case this is for there are none below
+/// the header block, because there was no body to find headings in; in the
+/// other the sentence is appended past everything they point at.
+fn instead_of_nothing_to_read(text: &str, sentence: &str) -> String {
+    let empty = format!("{}\n", nothing_to_read());
+    match text.strip_suffix(&empty) {
+        Some(above) => format!("{above}{sentence}\n"),
+        None => format!("{}\n\n{sentence}\n", text.trim_end()),
     }
 }
 

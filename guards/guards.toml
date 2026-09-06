@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 435 records have arrived since and have not been through it.
+# 437 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11133,7 +11133,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 103 },
+    { file = "src/service/signed_mail.rs", tests = 112 },
 ]
 
 [[guard]]
@@ -11175,21 +11175,31 @@ tests_last_seen = [
 # The break leaves everything else about the import working, which is what the
 # defect looked like: the message arrives, the folder count is right, and the
 # only thing missing is the sentence nobody knows to expect.
+#
+# **Re-measured by hand on 2026-09-06, because the code moved.** 04-09 gave this
+# call a second fact to record and renamed it, so the recorded break stopped
+# matching the file and `test_every_guard_record_still_names_one_place_in_the_tree`
+# said so. The break was taken again rather than the record edited until it
+# applied, and it now reddens more than it did: the same end-to-end test, and the
+# completeness guard over the arrival paths, which reads the source and no longer
+# finds this one.
 
 [[guard]]
 name = "signed mail brought in from a file keeps the bytes its signature is over"
 file = "src/application/importing_messages.rs"
 before = """    if let Some(raw) = &read.the_form_it_arrived_in
-        && let Err(e) = cache.keep_signed_original(stored, raw)
+        && let Err(e) = cache.note_the_form_it_arrived_in(stored, raw)
     {
-        tracing::warn!("Could not keep the form an imported signed message arrived in: {e}");
+        tracing::warn!("Could not record the form an imported message arrived in: {e}");
     }"""
 after = """    let _ = &read.the_form_it_arrived_in;"""
 red = [
     "application::importing_messages::end_to_end::test_a_signed_message_brought_in_from_a_file_can_still_have_its_signature_checked",
+    "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
 ]
 
 # Two guards from the same stretch of work are deliberately not recorded here,
@@ -14895,7 +14905,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -15116,7 +15126,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -15144,7 +15154,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15170,7 +15180,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -15201,7 +15211,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -15235,7 +15245,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -15297,7 +15307,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 110 },
+    { file = "src/presentation/reader_text.rs", tests = 116 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -15928,4 +15938,90 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 21 },
+]
+
+# ── An encrypted message opened as a blank message with nothing said ────────
+#
+# An S/MIME enveloped message has no `text/*` part at all, so `mime::parse`
+# yields nothing for either body and the reader says "This message has no text,
+# or it has not been downloaded yet" about a message that has text and did
+# arrive. Somebody acting on that fetches it again and gets the same nothing.
+#
+# The question that decides it is asked once, of the raw bytes, on the way in.
+# The break is that question always answering no, which is what it did for the
+# whole of this program's life until 04-09: `layout_of` has recognised an
+# enveloped message all along and nothing called it.
+#
+# What goes red is the whole chain and not only the question. The recognition
+# tests, the mark in the cache, and the reader's body all fail, which is what
+# says the wiring is really there rather than the function merely existing.
+#
+# **The reader's own tests do not appear here and that is not an omission.**
+# They hand `with_smime_envelope` an answer directly, so they never ask this
+# question and stay green under this break. What covers that half is the mark
+# in the cache, `test_a_message_that_arrived_encrypted_is_recorded_as_having_done_so`,
+# which is the one hop between the two and goes red here. Measured rather than
+# assumed: the first draft of this note said the reader would redden.
+#
+# Measured by hand on 2026-09-06 against a green tree of 6,465 tests, with
+# `cargo test --no-fail-fast --lib`.
+
+[[guard]]
+name = "an encrypted message that nothing ever recognised as encrypted"
+file = "src/service/signed_mail.rs"
+before = """pub fn claims_encryption(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    matches!(
+        header_value(headers, "content-type").and_then(|content_type| layout_of(&content_type)),
+        Some(SmimeLayout::Encrypted)
+    )
+}"""
+after = """pub fn claims_encryption(raw: &[u8]) -> bool {
+    let _ = raw;
+    false
+}"""
+red = [
+    "data::message_cache::how_it_arrived::tests::test_a_message_that_arrived_encrypted_is_recorded_as_having_done_so",
+    "service::signed_mail::the_cheap_first_question::test_a_message_naming_a_p7m_file_and_nothing_else_still_claims_encryption",
+    "service::signed_mail::the_cheap_first_question::test_an_enveloped_message_says_it_claims_encryption",
+    "service::signed_mail::the_cheap_first_question::test_capitals_in_enveloped_data_still_claim_encryption",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
+    { file = "src/service/signed_mail.rs", tests = 112 },
+]
+
+# ── The sentence reached the bar and the body still said "no text" ──────────
+#
+# The other half of the same defect, and the half a reader meets. The bar is
+# spoken as a message opens and the body is where somebody lands, and only the
+# body was ever wrong: it said "This message has no text, or it has not been
+# downloaded yet" about a message that has text and did arrive.
+#
+# So this break leaves the bar alone and puts the body back. Everything about
+# the message is right, the sentence is spoken on open, and the one thing
+# missing is the one thing somebody reads. That is what makes it worth a record
+# of its own rather than leaving the chain to the break above: a fix that
+# reached only the bar would have looked complete.
+#
+# Measured by hand on 2026-09-06 against a green tree of 6,465 tests, with
+# `cargo test --no-fail-fast --lib`.
+
+[[guard]]
+name = "an encrypted message whose body still says it may not have been downloaded"
+file = "src/presentation/reader_text.rs"
+before = '''    let empty = format!("{}\n", nothing_to_read());
+    match text.strip_suffix(&empty) {
+        Some(above) => format!("{above}{sentence}\n"),
+        None => format!("{}\n\n{sentence}\n", text.trim_end()),
+    }'''
+after = '''    let _ = sentence;
+    text.to_string()'''
+red = [
+    "presentation::reader_text::encryption_tests::test_an_encrypted_message_reads_as_the_sentence_rather_than_as_nothing_to_read",
+    "presentation::reader_text::encryption_tests::test_an_envelope_that_could_not_be_read_still_says_the_message_is_encrypted",
+    "presentation::reader_text::encryption_tests::test_the_same_sentence_is_spoken_as_the_message_opens",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 116 },
 ]

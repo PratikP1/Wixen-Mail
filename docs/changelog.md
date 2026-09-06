@@ -8,6 +8,38 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **An S/MIME encrypted message now says why there is nothing to read.**
+
+  Until now one opened as a blank message. Not an error, not a warning: an
+  empty pane, and above it the line "This message has no text, or it has not
+  been downloaded yet." That sentence was false twice over. The message did
+  arrive, and it does have text. Acting on it means fetching the message again
+  and getting the same nothing.
+
+  Opening one now says that it is encrypted, how it is addressed, and that
+  Wixen Mail cannot open it. Where this computer can be asked whether it holds
+  a certificate the message was encrypted to, the sentence says which. Where it
+  cannot be asked, it says how many certificates the message names and claims
+  neither way, because "you do not hold the key for this" and "nobody could
+  check" are different things to be told and only one of them is about you.
+
+  The same sentence is in the bar spoken as the message opens and in the body
+  where you land, so it reaches you whether you listen to the opening or read
+  down.
+
+  Known limitations:
+
+  - **It still cannot be opened.** Nothing here decrypts an S/MIME message.
+    This replaces a blank pane with an explanation, and that is all it does.
+  - It reaches messages that arrive from now on. A message already in the cache
+    was stored before anything recorded that it came in encrypted, so it goes
+    on opening blank until it is fetched again.
+  - If the encrypted part will not parse, the message says it is encrypted and
+    that its details could not be read. No enveloped message from Outlook or
+    Thunderbird has ever been through this, so whether that path is the common
+    one or the rare one is unknown.
+  - Nobody has heard it with a screen reader.
+
 - **You decide whether a picture the sender called decorative is announced to
   you.**
 
