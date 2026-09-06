@@ -49,16 +49,49 @@
 //! Values in and values out. No database, no connection, no window, and
 //! nothing platform-specific, so it behaves the same wherever it is built.
 //!
-//! All of it runs. The queue carries the time, the send loop asks
-//! [`readiness`] on every pass rather than taking the whole queue, and Undo
-//! Send is on the Tools menu with `Ctrl+Shift+Z`.
+//! # What is wired, and to what
 //!
-//! That last one was owed for a while. The countdown has always said "Undo Send
-//! takes it back", and for as long as it said so there was no Undo Send: no
-//! menu item, no key, no button. It was harmless while nothing showed the
-//! countdown, and became a promise the moment the send loop started honouring
-//! the hold. `tests/wired.rs` now asks whether a command named in a sentence
-//! exists at all, which is the check that should have been there first.
+//! Said as what reaches what, rather than as a claim about completeness. This
+//! paragraph has twice said the feature worked when it did not, and a third
+//! version of the same sentence would be worth nothing.
+//!
+//! [`GoAfter::held`] is called by the composer's Send, which passes the answer
+//! to `queue_outbox_message_to_go`, so a row carries the moment it may go.
+//! [`readiness`] is asked by `outbox_messages_that_may_go_now` on every pass of
+//! the send loop. [`its_moment_came`] is asked by the main window's poll timer
+//! about once a second, and when the answer is yes the send loop is woken, so a
+//! held message leaves without anybody pressing anything. [`countdown`] is said
+//! when Send is pressed, through [`what_send_did`], and again on the Outbox row
+//! through [`Readiness::spoken`]. [`what_send_does`] is the description under
+//! the hold's setting on the Compose tab. [`take_back`] and
+//! [`what_undo_send_takes_back`] are asked by Undo Send on the Tools menu and
+//! on `Ctrl+Shift+Z`.
+//!
+//! [`schedule`] has no caller. Setting a message to go at a time somebody chose
+//! is not built, and `04.2-02` builds it.
+//!
+//! # What was wrong here until 04.2-01
+//!
+//! This said "All of it runs", and named the menu item and the key as evidence.
+//! The menu item and the key were real and every part of the machinery worked.
+//! Nothing was ever held, so there was never anything to take back and Undo
+//! Send refused every single time it was pressed.
+//!
+//! One wrapper did it. `queue_outbox_message` pinned the moment to
+//! [`GoAfter::AsSoonAsPossible`], so the general function had a caller, its
+//! parameter had a value, nothing was unused, and the other two variants were
+//! built only under `#[cfg(test)]`. The composer worked out what its message
+//! was waiting for and then did not pass it to the queue call two lines below.
+//! [`countdown`] and [`Readiness::spoken`] had no production caller at all, so
+//! "Sending in 10 seconds. Undo Send takes it back." had never been said to
+//! anybody, and a Send that went quiet for ten seconds would have read as a
+//! program that had stopped.
+//!
+//! The version before that was wrong the other way round. The countdown said
+//! "Undo Send takes it back" while there was no Undo Send: no menu item, no
+//! key, no button. `tests/wired.rs` asks whether a command a sentence names
+//! exists at all, which is the check that should have been there first, and it
+//! now also asks whether the composer passes the hold to the queue.
 
 use chrono::{DateTime, Duration, Local};
 

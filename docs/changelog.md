@@ -2004,9 +2004,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 - **A message can be held before it goes, and taken back.** Send now holds a
   message briefly rather than sending at once, so there is a moment to change
-  your mind. Ten seconds by default, adjustable, because reaching the undo
-  starts with hearing that it exists: the announcement has to finish before
-  anyone knows there is something to undo.
+  your mind. Ten seconds by default, because reaching the undo starts with
+  hearing that it exists: the announcement has to finish before anyone knows
+  there is something to undo.
+
+  This entry was wrong when it was written and stayed wrong for two releases.
+  The hold was never put on a message, so Undo Send refused every time it was
+  pressed, and the length was not adjustable because there was no setting. Both
+  are fixed under Unreleased above. The entry is left here rather than removed,
+  because it is what the release it sits under actually claimed.
 
   A message can also be set to go at a chosen time. A time in the past is
   refused rather than sent immediately, and one more than a year ahead is

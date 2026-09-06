@@ -2866,10 +2866,28 @@ fn test_the_clock_lets_held_mail_go() {
         "nothing on a clock asks the outbox again, so a held message waits its hold \
          and then waits forever"
     );
+
+    // The branch itself, from the interval it is paced by to the end of it. A
+    // check for the two names alone was written first and would have passed
+    // against a branch that asked the question and then did nothing with the
+    // answer, which is the whole of the defect this is about. It was measured
+    // that way, by making that break by hand and watching this stay green.
+    let at = app
+        .find("if looked_for_held_mail_at.get().elapsed()")
+        .expect("the branch that lets held mail go, paced by its own interval");
+    let branch: String = app[at..].lines().take(20).collect::<Vec<_>>().join("\n");
+
     assert!(
-        app.contains("anything_reached_its_moment("),
+        branch.contains("anything_reached_its_moment("),
         "the clock asks the outbox to send without first asking whether anything came \
-         due, which retries a failed message every second"
+         due, which opens the database once a second and retries a failed message \
+         every second"
+    );
+    assert!(
+        branch.contains("flush_outbox(app)"),
+        "the clock works out that a hold has run out and then does not send, so a \
+         held message waits its hold and then waits forever, having told somebody it \
+         was going in ten seconds"
     );
 }
 

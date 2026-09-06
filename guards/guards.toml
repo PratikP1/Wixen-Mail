@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 440 records have arrived since and have not been through it.
+# 442 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16140,4 +16140,67 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 120 },
+]
+
+# ── Undo Send: the hold reaching the row, and the clock letting it go ────────
+#
+# Both measured by hand on 2026-09-06 against a green tree of 6,502 tests, with
+# `WIXEN_TEST_THREADS=4 cargo test --all-targets --no-fail-fast`, one break at a
+# time and the tree green in between.
+#
+# Read the red lists as short and know why. Neither break can be caught by a
+# behavioural test, because both lines live in `queue_for_sending` and in the
+# poll timer closure, and reaching either from a test means a `#[test]` in
+# `src/presentation/wx_app.rs`. Forty-two records name that file, so one test
+# there costs forty-two builds and forty-two full library runs. The honest
+# statement is that these two guards are source-reading, that a source-reading
+# guard cannot see whether the line is reached, and that what the line does once
+# reached is driven over a real database in `data::message_cache::outbox`.
+
+[[guard]]
+# The defect itself, in the shape it really had: the value worked out and then
+# not handed to the call it was worked out for. `waiting_on` stays computed and
+# stays returned, so the compiler is satisfied, `when_it_goes` downstream still
+# branches on it, and everything reads as though a decision about waiting had
+# reached storage. It had not. That shipped for two phases and every automatic
+# check in this tree read the feature as wired.
+name = "the composer's Send hands the queue the hold it worked out"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """        .queue_outbox_message_to_go(&queued, &waiting_on)"""
+after = """        .queue_outbox_message_to_go(
+            &queued,
+            &crate::application::sending_later::GoAfter::AsSoonAsPossible,
+        )"""
+red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 66 },
+]
+
+[[guard]]
+# Wiring a hold without wiring a clock is a worse defect than the one being
+# fixed: the message waits its ten seconds and then waits forever, having told
+# somebody it was going in ten seconds. Every other caller of `flush_outbox` is
+# a person pressing something.
+#
+# This break reddens a second test in a second target, and a record names one
+# suite, so it is recorded here rather than in the list above:
+# `test_the_places_that_hand_mail_to_a_server_are_the_ones_counted` in
+# `tests/nothing_leaves_the_outbox_unasked.rs` also goes red, because the break
+# takes away the fourth place mail is handed to a server and that file counts
+# them. Measured, not assumed.
+name = "the clock lets held mail go rather than only working out that it may"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                        if held_mail_is_due {
+                            flush_outbox(app);
+                        }"""
+after = """                        if held_mail_is_due {
+                            let _ = held_mail_is_due;
+                        }"""
+red = ["test_the_clock_lets_held_mail_go"]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 66 },
 ]

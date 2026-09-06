@@ -6493,11 +6493,18 @@ impl WxMailApp {
                 "Add a calendar held on a calendar server, or one published as a feed",
             )
             .append_separator()
-            // The command the countdown names. Every held message says "Undo
-            // Send takes it back", and for as long as the hold existed there
-            // was no Undo Send: no menu item, no key, no button. Somebody who
-            // can see the menu bar loses a second to that. Somebody working by
-            // ear opens every menu looking for words that were never there.
+            // The command the countdown names. Pressing Send says "Sending in
+            // 10 seconds. Undo Send takes it back", and the Outbox row for a
+            // held message says the same, so this is the door those sentences
+            // point at.
+            //
+            // Both halves of that have been false in turn, which is why it is
+            // written out. First there was no Undo Send at all: no menu item,
+            // no key, no button, while the countdown's words already named it.
+            // Then this item existed and nothing ever showed the countdown,
+            // because nothing production ever held a message, so the command
+            // refused every time it was pressed and the sentence above was
+            // said to nobody. 04.2-01 made both true at once.
             //
             // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
             // would mean a key that puts characters back in one window and
