@@ -582,4 +582,189 @@ mod tests {
         assert!(entries.iter().any(|entry| entry.user == "a1"));
         assert!(entries.iter().any(|entry| entry.user == "a2"));
     }
+
+    // ── Every owner of a credential store entry, and nobody left out ─────
+    //
+    // The list above is written out by hand, and the comment on `entries_for`
+    // records what that has already cost once: this list named an account's
+    // tokens and the delete path did not, so a removed account left its
+    // refresh token behind. The eighteen tests that were here before all ask
+    // whether a *particular* known entry is present. Not one of them asks
+    // whether the list is complete, so a fifth owner added and never
+    // registered would have passed every one of them.
+
+    #[test]
+    fn test_the_private_key_entry_is_one_uninstalling_erases() {
+        // A private key is the highest-value secret this program holds. Left
+        // in the credential store after an uninstall said everything was
+        // erased, it is unreadable, belongs to nothing, and is invisible to
+        // the uninstaller that would have removed it.
+        let entries = entries_for(&[], &[]);
+
+        assert!(
+            entries.iter().any(|entry| {
+                entry.service == crate::service::pgp::KEYRING_SERVICE
+                    && entry.user == crate::service::pgp::KEYRING_PRIVATE_KEY
+            }),
+            "uninstalling does not name the OpenPGP private key, so a key \
+             imported on this machine outlives the program that stored it"
+        );
+    }
+
+    /// Every module under `src/service/` that owns credential store entries.
+    ///
+    /// # How this enumerates, and the two ways the obvious version is blind
+    ///
+    /// The naive enumeration is a grep of `src/service/` for
+    /// `KEYRING_SERVICE`. It finds two of the four owners that exist today and
+    /// misses `caldav`, whose service name is built by `keyring_service` and
+    /// is a function rather than a constant, and `oauth`, which answers for
+    /// its own entries through `entries_for_account`. A guard that cannot see
+    /// half of what it exists to cover is worse than none, because it reads as
+    /// covered.
+    ///
+    /// So the first clause asks the question that has one answer:
+    /// `service::secret_store`'s own doc calls it "the one way in and out of
+    /// the operating system's credential store", and every one of the four
+    /// owners reaches it. That clause alone finds `caldav`, `credentials`,
+    /// `oauth` and `security`, which is exactly the set `entries_for` names,
+    /// and `test_this_reading_finds_every_owner_that_exists_today` holds it to
+    /// that rather than leaving the claim in a comment.
+    ///
+    /// The second clause catches a module in the window where an owner is most
+    /// likely to be forgotten: the name has been chosen and written down and
+    /// the store is not wired up yet. `service::pgp` is in exactly that state
+    /// as this is written. Being a second clause, it can only add owners and
+    /// never remove them, so its incompleteness costs nothing.
+    ///
+    /// **A third enumeration was measured and refused.** Every credential
+    /// store service name in this project starts with `wixen-mail`, so a
+    /// search for that literal looks like it would find all of them at once.
+    /// It does, and it also finds six files that have nothing to do with the
+    /// credential store: the executable file name in `default_apps` and
+    /// `default_apps_registration`, a named pipe in `handover`, a client id in
+    /// `safebrowsing`, and two more. A guard reporting six owners that are not
+    /// owners is one somebody edits until it is quiet.
+    fn owners_of_credential_entries() -> Vec<String> {
+        fn walk(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    into.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(std::path::Path::new("src/service"), &mut files);
+        files.sort();
+
+        let mut owners: Vec<String> = files
+            .iter()
+            .filter(|path| {
+                // The seam itself is the road to the store, not an owner of
+                // anything kept in it.
+                !path.ends_with("secret_store.rs")
+            })
+            .filter_map(|path| {
+                let source = std::fs::read_to_string(path).ok()?;
+                // The half that ships. Cutting at the first `#[cfg(test)]`
+                // instead is the mistake `what_ships` exists to end, and the
+                // test halves of these files are full of the same words.
+                let ships = crate::common::what_ships::what_ships(&source);
+                let reaches_the_store = ships.contains("secret_store");
+                let names_an_entry = ships.contains("KEYRING_")
+                    || ships.contains("fn keyring_service")
+                    || ships.contains("fn keyring_entries");
+                (reaches_the_store || names_an_entry).then(|| module_name(path))
+            })
+            .collect();
+        owners.sort();
+        owners.dedup();
+        owners
+    }
+
+    /// What a module under `src/service/` is called in a path such as
+    /// `service::caldav`, from the file it lives in.
+    ///
+    /// `mod.rs` takes the name of its directory, which is how
+    /// `src/service/pgp/mod.rs` answers `pgp` rather than `mod`.
+    fn module_name(path: &std::path::Path) -> String {
+        let stem = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if stem != "mod" {
+            return stem.to_string();
+        }
+        path.parent()
+            .and_then(|dir| dir.file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// The body of `entries_for`, read out of this file.
+    fn what_uninstalling_names() -> String {
+        let source = std::fs::read_to_string("src/application/forget.rs")
+            .expect("this file, which is what the list is written in");
+        let start = source
+            .find("fn entries_for(")
+            .expect("the list uninstalling erases");
+        let body = &source[start..];
+        let end = body.find("\n}").expect("the function ends");
+        body[..end].to_string()
+    }
+
+    #[test]
+    fn test_this_reading_finds_every_owner_that_exists_today() {
+        // The companion this project asks any source-reading guard to carry.
+        // Without it, a reading that had quietly stopped matching anything
+        // would report no unregistered owners and read exactly like a clean
+        // result. Named rather than counted, because a count cannot tell one
+        // owner disappearing and another arriving from nothing happening.
+        let found = owners_of_credential_entries();
+
+        for owner in ["caldav", "credentials", "oauth", "pgp", "security"] {
+            assert!(
+                found.iter().any(|name| name == owner),
+                "the reading no longer finds service::{owner}, so it is not \
+                 watching what it says it watches: found {found:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_owner_of_credential_entries_is_named_where_uninstalling_reads() {
+        // The guard the eighteen tests above leave a hole for. Each of them
+        // asserts that one known entry is present; none asks whether anything
+        // is missing, so the failure this catches is the one that arrives
+        // with the next owner somebody adds.
+        //
+        // It checks that the owner is *named* in the list rather than that
+        // every string matches, and that is weaker than proving completeness:
+        // a module named there could still name the wrong entry. It is not
+        // weaker in the direction that matters. The failure recorded on
+        // `entries_for` and the failure this is written for are both a whole
+        // owner nobody registered, and a module that is not mentioned at all
+        // is exactly that.
+        let list = what_uninstalling_names();
+        let missing: Vec<String> = owners_of_credential_entries()
+            .into_iter()
+            .filter(|owner| !list.contains(owner.as_str()))
+            .collect();
+
+        assert!(
+            missing.is_empty(),
+            "{} module(s) under src/service/ own credential store entries and \
+             are not named in entries_for, so an uninstall leaves their \
+             secrets on the machine and reports that everything was removed:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
 }
