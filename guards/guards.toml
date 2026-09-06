@@ -15557,7 +15557,7 @@ red = [
     "application::attaching::tests::test_a_folder_among_them_is_refused_by_name_and_the_others_still_go_on",
 ]
 tests_last_seen = [
-    { file = "src/application/attaching.rs", tests = 28 },
+    { file = "src/application/attaching.rs", tests = 29 },
 ]
 
 # ── Every way a file goes on a message ends at one model ───────────────────

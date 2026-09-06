@@ -178,13 +178,19 @@ pub fn choose_all(paths: &[PathBuf]) -> Batch {
         }
     }
 
-    let refused = match folders.len() + unreadable.len() {
-        0 => None,
-        // One keeps the sentence it has always had: the whole path and the
-        // reason the operating system gave. Several are said by name, because
-        // several full paths read out one after another is not a sentence
-        // anybody can follow.
-        1 => on_its_own,
+    let refused = match (folders.len() + unreadable.len(), paths.len()) {
+        (0, _) => None,
+        // One path handed over is somebody picking a file, and it keeps the
+        // sentence picking a file has always had: the whole path, and the
+        // reason the operating system gave, which is the difference between a
+        // file that has moved and one this program is not allowed to open.
+        //
+        // Keyed on how many paths arrived rather than on how many were
+        // refused, and the two are not the same question. Three paths with one
+        // folder among them is a batch: a whole path read out in the middle of
+        // a list of the files that did go on is not a sentence anybody can
+        // follow, and it opens with the word "Error" as well.
+        (_, 1) => on_its_own,
         _ => Some(refusals(&folders, &unreadable)),
     };
 
