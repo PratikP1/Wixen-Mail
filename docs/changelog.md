@@ -8,6 +8,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Several files go on a message at once, and there is a key that does it
+  without a mouse.**
+
+  The Attach File button now opens a picker that takes several files, so
+  attaching six things is one trip rather than six. `Ctrl+V` in the composer
+  attaches whatever files you copied in File Explorer, which is the same job
+  done entirely from the keyboard. It works while you are on the toolbar or on
+  the attachments list; in the message itself and in the address and subject
+  lines `Ctrl+V` still pastes text. With nothing but text on the clipboard it
+  says so, and if another program is holding the clipboard it says that
+  instead, because those have different answers.
+
+  A batch is not all or nothing. A folder picked by mistake is refused by name
+  and the other files still go on. So is a file that has moved, or one this
+  program is not allowed to open. Whatever did not go on is said once, naming
+  all of it, instead of once per file, and the complaint about a message being
+  too big to send is made once about the message rather than once about each
+  file.
+
+  Every file that goes on is named as it is attached. Past six it names the
+  first six and says how many others there were, because a list of forty names
+  read aloud is not something anybody can sit through.
+
+  Known limitations:
+
+  - Nobody has heard any of this with a screen reader. Whether a sentence
+    naming six files is useful or is too long to sit through, and whether the
+    refusal for a folder is told apart from the names of the files that did go
+    on, are questions only a real NVDA or Narrator run answers.
+  - `Ctrl+V` is not discoverable from the composer itself. It is in the
+    shortcuts document and said nowhere in the window.
+  - Reading each file takes a moment, so a very large batch from a network
+    drive can make the window pause. Nothing bounds the number of files.
+
+### Fixed
+
+- **The shortcuts document had Attach File and Discard the wrong way round.**
+  Attach File is `Alt+A` and Discard is `Alt+I`, and the document said the
+  opposite for both. The check that reads the document only asks whether a
+  letter is a mnemonic somewhere in the program, so two letters swapped between
+  two buttons look correct to it.
+
 - **Keys that move between misspelled words and say what each could be instead,
   without opening anything.**
 

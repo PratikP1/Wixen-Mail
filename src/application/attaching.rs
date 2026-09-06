@@ -52,13 +52,19 @@ impl Chosen {
     /// cannot be read now will not read at Send either, and finding that out
     /// then means finding it out after the rest of the message has gone.
     pub fn at(path: &Path) -> Result<Self> {
-        let data = std::fs::metadata(path)
-            .map_err(|e| Error::Other(format!("Could not read {}: {e}", path.display())))?;
+        Self::looked_at(path).map_err(|why| Error::Other(why.about(path)))
+    }
+
+    /// The same read, answering why rather than saying it.
+    ///
+    /// The one place a path is turned into an attachment. [`Self::at`] is this
+    /// with the reason written out as the sentence it has always given, and
+    /// [`choose_all`] is this with the reasons grouped, so neither of them
+    /// carries a rule of its own about what may go on a message.
+    fn looked_at(path: &Path) -> std::result::Result<Self, NotAttached> {
+        let data = std::fs::metadata(path).map_err(|e| NotAttached::Unreadable(e.to_string()))?;
         if data.is_dir() {
-            return Err(Error::Other(format!(
-                "{} is a folder, and a folder cannot be attached",
-                path.display()
-            )));
+            return Err(NotAttached::Folder);
         }
         Ok(Self {
             path: path.to_path_buf(),
@@ -86,6 +92,42 @@ impl Chosen {
     }
 }
 
+/// The most files one announcement names before it starts counting them.
+///
+/// Guardrail 5: feedback has to be bounded. Six names is about ten seconds of
+/// speech, which is as long as a routine confirmation should ever be, and past
+/// that the total said at the end is the useful fact rather than the roll call.
+const NAMED_ALOUD: usize = 6;
+
+/// Why a path did not become an attachment.
+///
+/// A reason rather than a sentence, because a batch has to group them: five
+/// files that would not read, each said in its own sentence, is five
+/// interruptions for one thing that went wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NotAttached {
+    /// A folder has a size and a name, so everything downstream would work
+    /// until the read at Send, which is after the rest of the message went.
+    Folder,
+    /// What the operating system said. Kept, because for one file it is the
+    /// difference between a file that has moved and one this program is not
+    /// allowed to open, and those have different answers.
+    Unreadable(String),
+}
+
+impl NotAttached {
+    /// The sentence for this path on its own.
+    fn about(&self, path: &Path) -> String {
+        match self {
+            Self::Folder => format!(
+                "{} is a folder, and a folder cannot be attached",
+                path.display()
+            ),
+            Self::Unreadable(why) => format!("Could not read {}: {why}", path.display()),
+        }
+    }
+}
+
 /// What a handful of paths came to.
 ///
 /// A batch is not all or nothing. Somebody who dropped six files and got none
@@ -104,13 +146,112 @@ pub struct Batch {
 ///
 /// The one door every route in. A file picked, a file pasted and a file dropped
 /// are the same file, so the picker, the paste key and the drop target all end
-/// here and here ends at [`Chosen::at`], which is where the refusals and the
-/// name cleaning live. Anything building a [`Chosen`] of its own would be a
+/// here and here ends at [`Chosen::looked_at`], which is where the refusals and
+/// the name cleaning live. Anything building a [`Chosen`] of its own would be a
 /// second set of rules for a stranger's path.
-pub fn choose_all(_paths: &[PathBuf]) -> Batch {
-    Batch {
-        chosen: Vec::new(),
-        refused: None,
+pub fn choose_all(paths: &[PathBuf]) -> Batch {
+    let mut chosen = Vec::new();
+    let mut folders = Vec::new();
+    let mut unreadable = Vec::new();
+    // The sentence a single refusal would have been given on its own, kept in
+    // case it turns out to be the only one.
+    let mut on_its_own = None;
+
+    for path in paths {
+        match Chosen::looked_at(path) {
+            Ok(file) => chosen.push(file),
+            Err(why) => {
+                // Through `Error` rather than straight from `about`, because
+                // the sentence a single refusal is given has to be the one it
+                // was given before there were batches, and that one came out
+                // of `Chosen::at` and was formatted as an error. It therefore
+                // opens with the word "Error", which is poor wording for a
+                // thing said out loud and is how every refusal in this program
+                // is worded; changing it is a change to `common::Error` and
+                // every announcement that goes through it, not to this.
+                on_its_own = Some(Error::Other(why.about(path)).to_string());
+                match why {
+                    NotAttached::Folder => folders.push(refused_name(path)),
+                    NotAttached::Unreadable(_) => unreadable.push(refused_name(path)),
+                }
+            }
+        }
+    }
+
+    let refused = match folders.len() + unreadable.len() {
+        0 => None,
+        // One keeps the sentence it has always had: the whole path and the
+        // reason the operating system gave. Several are said by name, because
+        // several full paths read out one after another is not a sentence
+        // anybody can follow.
+        1 => on_its_own,
+        _ => Some(refusals(&folders, &unreadable)),
+    };
+
+    Batch { chosen, refused }
+}
+
+/// What to call a path that did not go on, in a list of several.
+///
+/// Through the same cleaner an attached name goes through. Nothing is written
+/// anywhere with this, so the filesystem rules do not apply, but the
+/// bidirectional overrides do: a name that reads backwards is read backwards
+/// aloud too, and a refusal is exactly the moment somebody is being asked to
+/// recognise a file by hearing its name.
+fn refused_name(path: &Path) -> String {
+    crate::service::attachment_name::safe_file_name(
+        &path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+    )
+}
+
+/// One announcement about everything in a batch that did not go on.
+///
+/// Grouped by the reason rather than listed by file, so six folders dropped
+/// among the photos say "these are folders" once instead of six times.
+fn refusals(folders: &[String], unreadable: &[String]) -> String {
+    let mut said = Vec::new();
+    match folders.len() {
+        0 => {}
+        1 => said.push(format!(
+            "{} is a folder, and a folder cannot be attached",
+            folders[0]
+        )),
+        _ => said.push(format!(
+            "{} are folders, and a folder cannot be attached",
+            named(folders)
+        )),
+    }
+    match unreadable.len() {
+        0 => {}
+        1 => said.push(format!(
+            "{} could not be read, so it is not attached",
+            unreadable[0]
+        )),
+        _ => said.push(format!(
+            "{} could not be read, so they are not attached",
+            named(unreadable)
+        )),
+    }
+    said.join(". ")
+}
+
+/// Several names, said as a list somebody can follow.
+///
+/// Bounded at [`NAMED_ALOUD`], after which it counts. The names past that point
+/// are not information: somebody who dropped forty files knows they dropped
+/// forty, and what they are waiting to hear is that forty went on.
+fn named(names: &[String]) -> String {
+    if names.len() > NAMED_ALOUD {
+        let (said, rest) = names.split_at(NAMED_ALOUD);
+        return format!("{} and {} others", said.join(", "), rest.len());
+    }
+    match names.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, first)) => format!("{} and {last}", first.join(", ")),
     }
 }
 
@@ -137,8 +278,70 @@ pub struct Announcement {
 /// what the running total and the limit are about. Whether anything was
 /// attached before this batch is read from it rather than passed in, so the two
 /// cannot disagree.
-pub fn what_to_say(_batch: &Batch, _all: &[Chosen]) -> Vec<Announcement> {
-    Vec::new()
+pub fn what_to_say(batch: &Batch, all: &[Chosen]) -> Vec<Announcement> {
+    let mut said = Vec::new();
+    if let Some(words) = attached_sentence(&batch.chosen, all) {
+        said.push(Announcement {
+            words,
+            trouble: false,
+        });
+    }
+    if let Some(words) = batch.refused.clone() {
+        said.push(Announcement {
+            words,
+            trouble: true,
+        });
+    }
+    // Once, at the end, about the message rather than about a file. Asked
+    // after every file instead, three files that between them go over would
+    // complain three times and the third complaint would say what the first
+    // one said.
+    if let Some(words) = over_the_limit(all) {
+        said.push(Announcement {
+            words,
+            trouble: true,
+        });
+    }
+    said
+}
+
+/// What is said about the files that just went on, or `None` if none did.
+///
+/// The names, not only the count. A batch that said "3 attachments" and stopped
+/// would lose the one thing somebody who cannot see the window is waiting for,
+/// which is whether the files that went on are the files they meant.
+fn attached_sentence(added: &[Chosen], all: &[Chosen]) -> Option<String> {
+    let what = match added {
+        [] => return None,
+        // One file says exactly what it said before there were batches: the
+        // name and the size, which is the whole of what somebody needs to know
+        // it is the right file.
+        [only] => format!("Attached {}", only.label()),
+        several => format!(
+            "Attached {}, {} in total",
+            named(
+                &several
+                    .iter()
+                    .map(|file| file.name.clone())
+                    .collect::<Vec<_>>()
+            ),
+            crate::presentation::reader_text::human_size(total_bytes(several) as usize)
+        ),
+    };
+    // How to take one off is said once, with the first file to go on, and then
+    // not repeated. It belongs on the list, as the description of a control,
+    // and a description set that way does not reach the accessibility tree for
+    // a native list in this wxWidgets binding: what a screen reader reads there
+    // is the line above it. So it is said here, where it is heard.
+    //
+    // "Nothing was attached before this batch" is read from the message rather
+    // than passed in, so the two cannot disagree.
+    match all.len() == added.len() {
+        true => Some(format!(
+            "{what}. Press Delete in the attachments list to take one off"
+        )),
+        false => Some(what),
+    }
 }
 
 /// What the line under the message says.
