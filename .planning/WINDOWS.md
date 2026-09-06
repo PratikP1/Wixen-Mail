@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 101
+open_count: 106
 waived_count: 0
 fixed_count: 13
-total_count: 114
-last_updated: 2026-09-06T00:04:31.844Z
+total_count: 119
+last_updated: 2026-09-06T04:45:32.068Z
 ---
 
 # Broken Windows Ledger
@@ -129,6 +129,11 @@ last_updated: 2026-09-06T00:04:31.844Z
 | 112 | 04 | unrun-verify | src/service/picture.rs |  | Whether real senders put Content-Description on image parts at all decides whether an image preview usually says what is in the picture or usually says nothing is known about it. Unmeasurable here, and unchanged since the research raised it as assumption A5. Now that the picture is also drawn, the cost of the answer being no falls on a blind reader alone rather than on everybody, which makes it more worth measuring rather than less. | open |  | 2026-09-05T23:22:21.453Z |  |
 | 113 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-04-PLAN.md |  | Two of this plan's premises could not be followed as written. Its guard table says reader_text.rs is fingerprinted by no record and theme_reach.rs by three; four records name the first and none name the second, both wrong within hours of the plan being written, which is the fourth phase-04 plan whose record table expired against a same-day sibling. And it asks the task 2 RED commit to name both a new test saying a picture can be read here and the existing test saying it cannot; those are opposite assertions about one function, so exactly one can be red and the gate holds a red commit to every named test really failing. The gate was widened at the red instead, which makes the existing assertion the red one, and the commit says so. | open |  | 2026-09-05T23:22:21.828Z |  |
 | 114 | 04 | stub | tests/house_style.rs |  | Corrected 2026-09-06, hours after being written and by the plan revision that read the code. A check DOES compare the model against the screen for top-level settings: every_setting_is_acted_on in src/data/config.rs reads the AppConfig struct itself and test_every_setting_somebody_can_change_is_offered_by_a_screen asserts every public field is offered, so a new top-level setting fails on arrival. The gap is narrower and is where both exceptions live: a setting held NESTED inside another structure is invisible to it, because it reads one struct's fields. Widening it to follow nesting is the work. The original entry claimed nothing enforced this at all, written straight after the rule without going to look, which is the mistake the rule itself is about. Two settings break the rule today and both predate it: per-event feedback channels, whose per_event field and set_event_channels are private so no screen could write one, which is FEEDBACK-01 and phase 6's; and the per-account Allow Changes answer. Phase 1's criterion 8 already said a phase must not add a third. Writing the check means enumerating the settings surface and the screen's sections and asserting every member of the first appears in the second, the way tests/one_sign_in_per_piece_of_work.rs counts sign-in sites and names each. Recorded 2026-09-06 when Pratik made the rule explicit. | open |  | 2026-09-06T00:04:31.844Z |  |
+| 115 | 04 | unrun-verify | src/service/safety.rs |  | Whether a warning bar carrying attributed sentences from two or three sources is heard as separate facts or as one run-on. Every sentence now names which of the four checks reached it, and this program's own reading says everything it found in one sentence so attribution does not become repetition. That the structure is right is asserted; that it is heard right is not, and only NVDA or Narrator on a real message settles it. Measured bar, three sources: 'This message was marked as spam. Your mail provider's filter marked it as spam. Your mail provider put it in the junk folder. Wixen Mail read this message on your computer and found a link that says it goes one place and goes somewhere else.' | open |  | 2026-09-06T04:45:08.263Z |  |
+| 116 | 04 | unrun-verify | src/application/filters.rs |  | Whether 'Safety' is recognised as being about spam and phishing when it is read out as one of twelve field names in a rule editor. The words were chosen to match the message list's own column header rather than inventing a second name for one thing, which is the right trade if somebody has met that column and the wrong one if they have not. Only a screen reader run through the rule editor's field list settles it. | open |  | 2026-09-06T04:45:16.983Z |  |
+| 117 | 04 | unrun-verify | src/service/safety.rs |  | Whether provider spam headers arrive in the shapes from_headers expects. Every parser in it is tested against hand-written header blocks and no account has ever been used with this program, so X-Spam-Flag, X-Spam-Status, X-Forefront-Antispam-Report, X-Microsoft-Antispam and Authentication-Results are all unverified in the field. Gmail in particular tells an IMAP client almost nothing beyond moving the message, which is why the folder counts as a verdict. Unchanged by this plan and now more load-bearing, because a filter rule can act on the answer. | open |  | 2026-09-06T04:45:17.430Z |  |
+| 118 | 04 | stub | src/application/mail_sync.rs |  | A filter rule that deletes is not said out loud. say_what_the_rules_did produces '{n} sorted by your rules' and carry_out counts a delete in that number alongside a rule that only marked something read, so nothing anywhere says a message was deleted by a rule. Found while adding the safety verdict as a rule field, which is what makes it worth recording now: T-04-19 is a user rule filing wanted mail out of sight on a verdict a sender can shift, and the mitigation the plan asked for was that the rule says what it did. The deletion is local only, cache.delete_message, not a server delete, so mail is hidden rather than destroyed; that lowers the severity and does not close it. Recorded as a finding rather than fixed, as 04-05-PLAN asked. The fix is a count of its own in Filtered and a sentence in say_what_the_rules_did. | open |  | 2026-09-06T04:45:31.615Z |  |
+| 119 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-05-PLAN.md |  | Five premises could not be followed as written, and the first changed the size of the job by an order of magnitude. The plan and 04-RESEARCH both said CachedMessage.safety was already on the struct the matcher is handed, citing messages.rs:357; that line is inside listing_row, which builds MessageListRow, whose own doc says 'Deliberately not CachedMessage' three lines above it. CachedMessage had no such field, so criterion 6 needed a new field, 36 construction sites, and two SQL reads that had never selected the column (get_message, which the arrival path uses, and scan_query, which saved searches use). Also: the quiet.len() assertion reddens at GREEN and can never be in a RED commit's trailers; the guard table says body_safety.rs has 0 records and 13 tests (really 1 and 20) and mail_sync.rs 8 and 134 (really 9 and 135); both verify commands are invalid cargo ('--lib' cannot be used multiple times); and premise 5 says the provider sentences end at a common phrase when three of them begin with it and the two Authentication-Results sentences named nobody at all. This is the fifth phase-04 plan carrying a wrong premise. All five are written into the plan file. | open |  | 2026-09-06T04:45:32.068Z |  |
 
 ````json
 [
@@ -1498,6 +1503,66 @@ last_updated: 2026-09-06T00:04:31.844Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T00:04:31.844Z",
+    "resolved_at": null
+  },
+  {
+    "id": 115,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/safety.rs",
+    "line": null,
+    "description": "Whether a warning bar carrying attributed sentences from two or three sources is heard as separate facts or as one run-on. Every sentence now names which of the four checks reached it, and this program's own reading says everything it found in one sentence so attribution does not become repetition. That the structure is right is asserted; that it is heard right is not, and only NVDA or Narrator on a real message settles it. Measured bar, three sources: 'This message was marked as spam. Your mail provider's filter marked it as spam. Your mail provider put it in the junk folder. Wixen Mail read this message on your computer and found a link that says it goes one place and goes somewhere else.'",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T04:45:08.263Z",
+    "resolved_at": null
+  },
+  {
+    "id": 116,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/filters.rs",
+    "line": null,
+    "description": "Whether 'Safety' is recognised as being about spam and phishing when it is read out as one of twelve field names in a rule editor. The words were chosen to match the message list's own column header rather than inventing a second name for one thing, which is the right trade if somebody has met that column and the wrong one if they have not. Only a screen reader run through the rule editor's field list settles it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T04:45:16.983Z",
+    "resolved_at": null
+  },
+  {
+    "id": 117,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/safety.rs",
+    "line": null,
+    "description": "Whether provider spam headers arrive in the shapes from_headers expects. Every parser in it is tested against hand-written header blocks and no account has ever been used with this program, so X-Spam-Flag, X-Spam-Status, X-Forefront-Antispam-Report, X-Microsoft-Antispam and Authentication-Results are all unverified in the field. Gmail in particular tells an IMAP client almost nothing beyond moving the message, which is why the folder counts as a verdict. Unchanged by this plan and now more load-bearing, because a filter rule can act on the answer.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T04:45:17.430Z",
+    "resolved_at": null
+  },
+  {
+    "id": 118,
+    "kind": "stub",
+    "phase": "04",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "A filter rule that deletes is not said out loud. say_what_the_rules_did produces '{n} sorted by your rules' and carry_out counts a delete in that number alongside a rule that only marked something read, so nothing anywhere says a message was deleted by a rule. Found while adding the safety verdict as a rule field, which is what makes it worth recording now: T-04-19 is a user rule filing wanted mail out of sight on a verdict a sender can shift, and the mitigation the plan asked for was that the rule says what it did. The deletion is local only, cache.delete_message, not a server delete, so mail is hidden rather than destroyed; that lowers the severity and does not close it. Recorded as a finding rather than fixed, as 04-05-PLAN asked. The fix is a count of its own in Filtered and a sentence in say_what_the_rules_did.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T04:45:31.615Z",
+    "resolved_at": null
+  },
+  {
+    "id": 119,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-05-PLAN.md",
+    "line": null,
+    "description": "Five premises could not be followed as written, and the first changed the size of the job by an order of magnitude. The plan and 04-RESEARCH both said CachedMessage.safety was already on the struct the matcher is handed, citing messages.rs:357; that line is inside listing_row, which builds MessageListRow, whose own doc says 'Deliberately not CachedMessage' three lines above it. CachedMessage had no such field, so criterion 6 needed a new field, 36 construction sites, and two SQL reads that had never selected the column (get_message, which the arrival path uses, and scan_query, which saved searches use). Also: the quiet.len() assertion reddens at GREEN and can never be in a RED commit's trailers; the guard table says body_safety.rs has 0 records and 13 tests (really 1 and 20) and mail_sync.rs 8 and 134 (really 9 and 135); both verify commands are invalid cargo ('--lib' cannot be used multiple times); and premise 5 says the provider sentences end at a common phrase when three of them begin with it and the two Authentication-Results sentences named nobody at all. This is the fifth phase-04 plan carrying a wrong premise. All five are written into the plan file.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T04:45:32.068Z",
     "resolved_at": null
   }
 ]

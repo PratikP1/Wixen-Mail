@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: "Completed 04-02-PLAN.md on branch phase-04-02-list-unsubscribe, not merged and not pushed. Blocking a mailing list now warns first and names where to unsubscribe; MayBlock::YesButFirst has been returned by a shipped build for the first time. Two of the plan's premises were wrong: header_text strips the brackets the consumer parses for, and the census it says cannot be red was red. LIST-UNSUBSCRIBE was also missing from the IMAP header fetch, which the plan does not mention. Ledger 94 to 100. Owed after the merge: scripts/guards.sh --touched-by 976f16c."
-last_updated: "2026-09-05T17:20:00.000Z"
+stopped_at: "Completed 04-05-PLAN.md on branch phase-04-05-safety-as-a-rule-field, merged to main, not pushed. A filter rule and a saved search can now ask what the spam and phishing check made of a message, and one that asks fires on arriving mail through mail_sync::apply_rules; every sentence in the reader's warning bar now names which of the four checks reached it, and this program's own reading no longer sounds like the provider's verdict. Five of the plan's premises were wrong and the first changed the size of the job: CachedMessage had no safety field, the cited line pointed at MessageListRow, so this needed a new field, 36 construction sites and two SQL reads that had never selected the column. Ledger 115 to 119. Owed after the merge: scripts/guards.sh --touched-by 4e49f03, deferred to the phase-8 sweep since no file gained or lost a test."
+last_updated: "2026-09-06T04:46:09.054Z"
 last_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
-state_head: 585b9e9
+state_head: 08562892e1c7e79a93535f740257c517ef89445c
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 50
-  completed_plans: 43
+  completed_plans: 46
   percent: 0
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -205,6 +205,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02.1 P06 | about 2h30m, 90m of it guard runs | 3 tasks | 6 files |
 | Phase 02.1 P07 | about 1h | 2 tasks | 6 files |
 | Phase 02.1 P08 | about 5h, 1h50m of it guard runs | 3 tasks | 8 files |
+| Phase 04 P05 | 4h 0m | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -400,8 +401,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-05T17:20:00.000Z
-Stopped at: Completed 04-02-PLAN.md on branch phase-04-02-list-unsubscribe, not merged and not pushed. Blocking a mailing list now warns first and names where to unsubscribe; MayBlock::YesButFirst has been returned by a shipped build for the first time. Two of the plan's premises were wrong: header_text strips the brackets the consumer parses for, and the census it says cannot be red was red. LIST-UNSUBSCRIBE was also missing from the IMAP header fetch, which the plan does not mention. Ledger 94 to 100. Owed after the merge: scripts/guards.sh --touched-by 976f16c.
+Last session: 2026-09-06T04:46:08.824Z
+Stopped at: "Completed 04-05-PLAN.md on branch phase-04-05-safety-as-a-rule-field, merged to main, not pushed. A filter rule and a saved search can now ask what the spam and phishing check made of a message, and one that asks fires on arriving mail through mail_sync::apply_rules; every sentence in the reader's warning bar now names which of the four checks reached it, and this program's own reading no longer sounds like the provider's verdict. Five of the plan's premises were wrong and the first changed the size of the job: CachedMessage had no safety field, the cited line pointed at MessageListRow, so this needed a new field, 36 construction sites and two SQL reads that had never selected the column. Ledger 115 to 119. Owed after the merge: scripts/guards.sh --touched-by 4e49f03, deferred to the phase-8 sweep since no file gained or lost a test."
 
 Earlier: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 
