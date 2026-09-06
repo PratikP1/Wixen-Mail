@@ -6571,10 +6571,10 @@ mod tests {
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Google refused the change".to_string()));
             }
-            if let Some(held) = &self.the_copy_it_holds {
-                if person.etag != held.etag {
-                    return Err(googles_answer_to_a_marker_it_has_moved_past());
-                }
+            if let Some(held) = &self.the_copy_it_holds
+                && person.etag != held.etag
+            {
+                return Err(googles_answer_to_a_marker_it_has_moved_past());
             }
             Ok(GooglePerson {
                 resource_name: provider_contact_id.to_string(),
@@ -6701,10 +6701,10 @@ mod tests {
             if !self.accepts_a_change {
                 return Err(Error::Protocol("Microsoft refused the change".to_string()));
             }
-            if let Some(held) = &self.the_copy_it_holds {
-                if contact.odata_etag != held.odata_etag {
-                    return Err(outlooks_answer_to_a_marker_it_has_moved_past());
-                }
+            if let Some(held) = &self.the_copy_it_holds
+                && contact.odata_etag != held.odata_etag
+            {
+                return Err(outlooks_answer_to_a_marker_it_has_moved_past());
             }
             Ok(MsGraphContact {
                 id: provider_contact_id.to_string(),

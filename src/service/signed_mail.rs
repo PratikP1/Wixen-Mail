@@ -103,6 +103,56 @@ pub fn claims_a_signature(raw: &[u8]) -> bool {
     )
 }
 
+/// Whether a whole message says it is encrypted, from its headers alone.
+///
+/// The sibling of [`claims_a_signature`], answered from the same private
+/// reading of the same header so there is one answer to what a content type
+/// says and not two.
+///
+/// **Separate from it rather than folded into it**, for the reason that
+/// function's own comment gives: answering yes there for encrypted mail sends
+/// an enveloped message down the signature path, where `take_apart` refuses it
+/// and every surface downstream ends up saying "it says it is signed, but it
+/// carries no signature to check" about a message that never said anything of
+/// the kind.
+///
+/// Cheap in the same way and asked in the same place. Nearly no mail is
+/// encrypted, so this has to be able to say no without taking anything apart.
+pub fn claims_encryption(raw: &[u8]) -> bool {
+    let (headers, _) = split_headers_from_body(raw);
+    matches!(
+        header_value(headers, "content-type").and_then(|content_type| layout_of(&content_type)),
+        Some(SmimeLayout::Encrypted)
+    )
+}
+
+/// Whether one of a message's stored files is the S/MIME envelope it arrived
+/// as.
+///
+/// **Not a second opinion about whether a message is encrypted.** That answer
+/// comes from [`claims_encryption`], asked of the headers as the message
+/// arrived and recorded then, because by the time anybody opens a message the
+/// content type is gone. This says only which of the files a message carries
+/// is the envelope, and it is asked of a message already known to have arrived
+/// encrypted.
+///
+/// Both the name and the media type are read because neither is enough alone.
+/// A stored attachment keeps only `type/subtype`, so an envelope is recorded as
+/// `application/x-pkcs7-mime` with the `smime-type` parameter gone, which is
+/// the parameter that tells an envelope from a wrapped signature. The file name
+/// says which, and senders leave it off.
+pub fn is_an_smime_envelope(filename: &str, mime_type: &str) -> bool {
+    match file_suffix(filename).as_str() {
+        "p7m" => true,
+        // A signature, whatever the media type says, and the name wins because
+        // the media type is the one that lost the parameter telling them
+        // apart. A message can carry both, and picking the signature would
+        // report details that could not be read with the envelope beside it.
+        "p7s" => false,
+        _ => is_pkcs7(mime_type, "mime"),
+    }
+}
+
 pub fn layout_of(content_type: &str) -> Option<SmimeLayout> {
     let header = ContentType::read(content_type);
     match header.media_type.as_str() {
@@ -3157,8 +3207,8 @@ pub mod windows_store {
             // Code that looks like it decrypts and has never once decrypted
             // anything is the worst thing this file could contain.
             Err(Error::Security(
-                "Wixen Mail cannot open encrypted mail yet. Reading the message needs a private \
-                 key out of the Windows certificate store, and that part is not built."
+                "Wixen Mail cannot open an S/MIME encrypted message yet. Reading it needs a \
+                 private key out of the Windows certificate store, and that part is not built."
                     .to_string(),
             ))
         }
@@ -3700,9 +3750,18 @@ impl EncryptedMessage {
 
     /// What to say about an encrypted message before anything is opened.
     ///
-    /// Honest about the state of this: nothing here can open one yet, and a
-    /// person is better told that than shown an empty message body with no
+    /// Honest about the state of this: nothing here can open one, and a person
+    /// is better told that than shown an empty message body with no
     /// explanation.
+    ///
+    /// **About this message, not about the program.** It used to end "Wixen
+    /// Mail cannot open encrypted mail yet", and 04-03 named that sentence when
+    /// it wrote a narrower one of its own: a claim about the program "stops
+    /// being true the moment anything here learns to open one kind". It has.
+    /// `service::pgp` opens PGP mail. This says what is true of the message in
+    /// front of somebody, which was always the stronger thing to say, and
+    /// `test_what_is_said_is_about_this_message_and_not_about_the_program`
+    /// holds it there.
     pub fn spoken(&self, addressed_to_us: Option<bool>) -> String {
         let who = match addressed_to_us {
             Some(true) => {
@@ -3718,8 +3777,8 @@ impl EncryptedMessage {
             ),
         };
         format!(
-            "This message is encrypted. {who} Wixen Mail cannot open encrypted mail yet, so \
-             nothing of it can be read here."
+            "This message is encrypted. {who} Wixen Mail cannot open it, so nothing of it can \
+             be read here."
         )
     }
 }
@@ -3779,6 +3838,27 @@ pub(crate) mod for_tests {
     /// good from 2020 to 2040.
     pub(crate) fn signed_beside() -> Vec<u8> {
         super::tests::message(super::tests::SIGNED_BESIDE)
+    }
+
+    /// The same words encrypted to the certificate for alice@example.com.
+    ///
+    /// One part, `application/x-pkcs7-mime` with `smime-type=enveloped-data`,
+    /// marked as an attachment called `smime.p7m`. There is no `text/*` part in
+    /// it at all, which is the whole reason a reader shows it as a message with
+    /// nothing in it.
+    pub(crate) fn encrypted_to_alice() -> Vec<u8> {
+        super::tests::message(super::tests::ENCRYPTED_TO_ALICE)
+    }
+
+    /// The PKCS #7 envelope out of that message, decoded as a store holds it.
+    ///
+    /// The same bytes the cache keeps as the message's one attachment, so a
+    /// caller testing what is said about an envelope is testing it against the
+    /// thing that really arrives rather than against something built to suit.
+    pub(crate) fn the_envelope_alices_message_carried() -> Vec<u8> {
+        let raw = encrypted_to_alice();
+        let (headers, body) = super::split_headers_from_body(&raw);
+        super::decode_body(headers, body).expect("a fixture that decodes")
     }
 }
 
@@ -4001,7 +4081,7 @@ mod tests {
         LQ0KDQo=";
 
     /// The same words encrypted to the certificate for alice@example.com.
-    const ENCRYPTED_TO_ALICE: &str = "
+    pub(super) const ENCRYPTED_TO_ALICE: &str = "
         TUlNRS1WZXJzaW9uOiAxLjANCkNvbnRlbnQtRGlzcG9zaXRpb246IGF0dGFjaG1lbnQ7IGZpbGVu
         YW1lPSJzbWltZS5wN20iDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL3gtcGtjczctbWltZTsg
         c21pbWUtdHlwZT1lbnZlbG9wZWQtZGF0YTsgbmFtZT0ic21pbWUucDdtIg0KQ29udGVudC1UcmFu
@@ -5430,7 +5510,7 @@ mod tests {
         for asked in [Some(true), Some(false), None] {
             let said = envelope.spoken(asked);
             assert!(said.contains("encrypted"), "{said}");
-            assert!(said.contains("cannot open encrypted mail yet"), "{said}");
+            assert!(said.contains("cannot open it"), "{said}");
         }
         assert!(envelope.spoken(Some(true)).contains("holds a certificate"));
         assert!(
@@ -5439,6 +5519,30 @@ mod tests {
                 .contains("not encrypted to any")
         );
         assert!(envelope.spoken(None).contains("1 certificate"));
+    }
+
+    #[test]
+    fn test_what_is_said_is_about_this_message_and_not_about_the_program() {
+        // 04-03 made this argument about its own sentence and named this one as
+        // the sentence it was arguing with. Its doc comment over
+        // `ENCRYPTED_AND_NOT_OPENED_HERE` says that this one "goes on to say
+        // Wixen Mail cannot open encrypted mail *at all*, which is a claim
+        // about the program rather than about the message in front of
+        // somebody, and it is a claim that stops being true the moment
+        // anything here learns to open one kind".
+        //
+        // It has stopped being true. `service::pgp` opens PGP mail, in the
+        // same plan as this. So the sentence says what is true of the message
+        // in front of somebody, which was always the stronger thing to say.
+        let envelope = envelope_of(ENCRYPTED_TO_ALICE);
+
+        for asked in [Some(true), Some(false), None] {
+            let said = envelope.spoken(asked);
+            assert!(
+                !said.contains("encrypted mail"),
+                "a claim about every encrypted message, not this one: {said}"
+            );
+        }
     }
 
     #[test]
@@ -5460,7 +5564,7 @@ mod tests {
         assert!(
             refused
                 .to_string()
-                .contains("cannot open encrypted mail yet"),
+                .contains("cannot open an S/MIME encrypted message yet"),
             "{refused}"
         );
     }
@@ -6634,6 +6738,111 @@ mod the_cheap_first_question {
                           smime-type=enveloped-data; name=\"smime.p7m\"\r\n\r\nx\r\n";
 
         assert!(!claims_a_signature(encrypted));
+    }
+
+    #[test]
+    fn test_an_enveloped_message_says_it_claims_encryption() {
+        // The ordinary spelling, and the one this whole path exists for: an
+        // enveloped message has no text part at all, so without this answer it
+        // opens as a blank message with nothing said about it.
+        let encrypted = b"From: a@example.com\r\nContent-Type: application/pkcs7-mime; \
+                          smime-type=enveloped-data; name=\"smime.p7m\"\r\n\r\nx\r\n";
+
+        assert!(claims_encryption(encrypted));
+    }
+
+    #[test]
+    fn test_a_message_naming_a_p7m_file_and_nothing_else_still_claims_encryption() {
+        // Senders do leave `smime-type` off. The file name is then the only
+        // thing that says which of the two PKCS #7 shapes this is, and reading
+        // it wrong means trying to read a signature as an envelope.
+        let encrypted = b"From: a@example.com\r\nContent-Type: application/x-pkcs7-mime; \
+                          name=\"smime.p7m\"\r\n\r\nx\r\n";
+
+        assert!(claims_encryption(encrypted));
+    }
+
+    #[test]
+    fn test_capitals_in_enveloped_data_still_claim_encryption() {
+        // The silent way to be wrong, and it has happened here once already
+        // with `Signed-Data`: a sender writing the value with capitals had
+        // their message read as not S/MIME at all.
+        let shouted = b"From: a@example.com\r\nContent-Type: application/pkcs7-mime; \
+                        smime-type=Enveloped-Data\r\n\r\nx\r\n";
+
+        assert!(claims_encryption(shouted));
+    }
+
+    #[test]
+    fn test_a_signed_message_does_not_claim_encryption() {
+        // The other direction of the pair. A signed message that read as
+        // encrypted would be told it cannot be opened while its words sat
+        // there in front of somebody.
+        assert!(!claims_encryption(&message(SIGNED_BESIDE)));
+
+        let wrapped = b"From: a@example.com\r\nContent-Type: application/pkcs7-mime; \
+                        smime-type=signed-data; name=\"smime.p7s\"\r\n\r\nx\r\n";
+        assert!(!claims_encryption(wrapped));
+    }
+
+    #[test]
+    fn test_ordinary_mail_claims_no_encryption() {
+        // Nearly every message, and this is asked of every one of them.
+        let plain =
+            b"From: a@example.com\r\nSubject: Hello\r\nContent-Type: text/plain\r\n\r\nBody\r\n";
+
+        assert!(!claims_encryption(plain));
+        assert!(!claims_encryption(b"From: a@example.com\r\n\r\nBody\r\n"));
+    }
+
+    #[test]
+    fn test_no_message_claims_both_a_signature_and_encryption() {
+        // The invariant the two questions are split to keep. A message that
+        // answered yes to both would take the signature path as well as the
+        // encrypted one, and the signature path's own comment says what it
+        // then tells somebody about a message that never claimed a signature.
+        for raw in [
+            message(SIGNED_BESIDE),
+            b"From: a@example.com\r\nContent-Type: application/pkcs7-mime; \
+              smime-type=enveloped-data\r\n\r\nx\r\n"
+                .to_vec(),
+            b"From: a@example.com\r\nContent-Type: text/plain\r\n\r\nBody\r\n".to_vec(),
+        ] {
+            assert!(
+                !(claims_a_signature(&raw) && claims_encryption(&raw)),
+                "one message claimed both"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_envelope_among_a_messages_files_is_found_by_name_or_by_type() {
+        // What a stored attachment keeps: `type/subtype` and a file name. The
+        // `smime-type` parameter is gone by then, so the media type alone
+        // cannot tell an envelope from a wrapped signature and the name has to
+        // be read as well.
+        assert!(is_an_smime_envelope(
+            "smime.p7m",
+            "application/x-pkcs7-mime"
+        ));
+        assert!(is_an_smime_envelope(
+            "SMIME.P7M",
+            "application/octet-stream"
+        ));
+        assert!(is_an_smime_envelope("", "application/pkcs7-mime"));
+    }
+
+    #[test]
+    fn test_a_signature_file_is_never_taken_for_the_envelope() {
+        // A message can carry both, and picking the signature would report
+        // details that could not be read with the envelope sitting beside it.
+        // The name wins over the media type here, because the media type is
+        // the one that lost the parameter telling them apart.
+        assert!(!is_an_smime_envelope(
+            "smime.p7s",
+            "application/x-pkcs7-mime"
+        ));
+        assert!(!is_an_smime_envelope("notes.pdf", "application/pdf"));
     }
 
     #[test]

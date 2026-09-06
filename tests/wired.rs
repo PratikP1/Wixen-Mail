@@ -3075,12 +3075,20 @@ fn test_opening_a_message_works_out_what_its_signature_is_worth() {
     );
 }
 
-/// The bytes a signed message arrived in are kept when one arrives.
+/// The form a message arrived in is recorded when one arrives.
 ///
-/// The other half of the same wiring. A signature can only be checked against
-/// the exact bytes that were signed, so without this call the verdict above is
-/// worked out once as the message comes off the wire and never again, and every
-/// later opening of the message says the signature could not be checked.
+/// The other half of the same wiring, and it is now two facts rather than one.
+/// A signature can only be checked against the exact bytes that were signed, so
+/// without this call the verdict above is worked out once as the message comes
+/// off the wire and never again, and every later opening of the message says
+/// the signature could not be checked. And an S/MIME enveloped message has no
+/// text part at all, so without the mark this call also writes, one opens as a
+/// blank message with nothing said about it.
+///
+/// `note_the_form_it_arrived_in` asks both questions itself, which is why this
+/// names one call rather than two: a path that made one of them and forgot the
+/// other is exactly the drift this is here to notice, and
+/// `data::message_cache::how_it_arrived` holds the whole tree to it.
 ///
 /// What this cannot see: whether the bytes stored are the right ones, or
 /// whether anything reads them back. `data::message_cache::signed_original`
@@ -3090,17 +3098,18 @@ fn test_opening_a_message_works_out_what_its_signature_is_worth() {
 fn test_a_signed_message_has_its_arrived_in_form_kept_when_it_arrives() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     assert!(
-        body_of(&app, "fn spawn_body_fetch(").contains("keep_signed_original("),
-        "a message downloaded over IMAP no longer has the form it arrived in kept, so its \
-         signature can never be checked again after the first time"
+        body_of(&app, "fn spawn_body_fetch(").contains("note_the_form_it_arrived_in("),
+        "a message downloaded over IMAP no longer has the form it arrived in recorded, so its \
+         signature can never be checked again after the first time and an encrypted one opens \
+         blank"
     );
 
     // The download loop and not the whole file, which a comment naming the call
     // was enough to satisfy.
     let pop = fs::read_to_string("src/application/pop_sync.rs").expect("the POP sync");
     assert!(
-        body_of(&pop, "async fn sync<M: PopMailbox>(").contains("keep_signed_original("),
-        "a message collected over POP no longer has the form it arrived in kept, and POP has \
+        body_of(&pop, "async fn sync<M: PopMailbox>(").contains("note_the_form_it_arrived_in("),
+        "a message collected over POP no longer has the form it arrived in recorded, and POP has \
          no server to ask again, so its signature could never be checked at all"
     );
 }
@@ -3126,8 +3135,9 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
     let importing =
         fs::read_to_string("src/application/importing_messages.rs").expect("the mail import");
     assert!(
-        body_of(&importing, "pub fn file_one_imported_message(").contains("keep_signed_original("),
-        "mail brought in from a file no longer has the form it arrived in kept, so a signed \
+        body_of(&importing, "pub fn file_one_imported_message(")
+            .contains("note_the_form_it_arrived_in("),
+        "mail brought in from a file no longer has the form it arrived in recorded, so a signed \
          message imported from an archive reads as one that never claimed a signature"
     );
 
@@ -3487,5 +3497,111 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {
         !what_the_vanished_folders_question_asks(written_down_late).raised_before_the_window,
         "the question is written down after the window opens and the reading still said it was \
          written down first"
+    );
+}
+
+/// The command that imports a PGP private key is on a menu and does something.
+///
+/// A key nobody can import is a decryption path nobody can reach, and every
+/// PGP message would go on saying there is no key here for ever. That is the
+/// exact shape guardrail 1 is about: written, tested, and reachable from
+/// nothing.
+///
+/// Both halves, because the first without the second is this project's own
+/// recorded defect: a command on a menu, an arm that catches its id, and
+/// nothing behind it.
+///
+/// What this cannot see: whether the import works. `service::pgp::keys`
+/// measures that against a key GnuPG made.
+#[test]
+fn test_importing_a_pgp_private_key_is_on_a_menu_and_reaches_the_importer() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let squashed = without_whitespace(&what_ships(&app));
+
+    assert!(
+        squashed.contains("append_item(ID_IMPORT_PGP_KEY,"),
+        "importing a PGP private key is on no menu, so there is no way to reach the \
+         decryption path at all and every PGP message says there is no key here"
+    );
+
+    let at = squashed
+        .find("_ifid==ID_IMPORT_PGP_KEY=>")
+        .expect("a menu arm for importing a PGP key");
+    // As far as the next arm, so a call sitting in the one below cannot answer
+    // for this one.
+    let arm = &squashed[at..];
+    let ends = arm[1..].find("_ifid==").map_or(arm.len(), |next| next + 1);
+    assert!(
+        arm[..ends].contains("import_a_pgp_private_key("),
+        "the menu item is caught by an arm that does not import anything"
+    );
+}
+
+/// The menu says reading PGP mail is experimental before it is chosen.
+///
+/// Nothing on this path has met a real correspondent's key or a real
+/// correspondent's message. Guardrail: anything that will produce bug reports
+/// says so where the person using it will see it, and a warning that exists
+/// only in a chat message is a warning nobody gets.
+///
+/// On the label as well as in the help line, the same as the bulk fetch above:
+/// the help line is what Windows hands a screen reader as the item's
+/// description, and the label is read whatever anybody's settings say.
+#[test]
+fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let squashed = without_whitespace(&what_ships(&app));
+
+    let at = squashed
+        .find("append_item(ID_IMPORT_PGP_KEY,")
+        .expect("importing a PGP key on a menu");
+    let item = &squashed[at..squashed.len().min(at + 400)];
+    assert!(
+        item.contains("(experimental)"),
+        "the menu item does not say it is experimental, so somebody choosing it from \
+         the menu is never told: {item}"
+    );
+    assert!(
+        item.contains("READING_PGP_MAIL_IS_EXPERIMENTAL"),
+        "the menu item's description does not carry the sentence saying what could go \
+         wrong: {item}"
+    );
+}
+
+/// A PGP message is opened before the reader's document is built.
+///
+/// Two halves and both are needed. The armour has to be handed to the opener,
+/// and the reason it did not open has to reach the bar. Wiring the first alone
+/// decrypts messages nobody sees the result of; wiring the second alone leaves
+/// every message saying the general sentence.
+///
+/// The order matters too and is not checked here: the words replace the armour
+/// before `single_message` reads the body, which is what stops the reader
+/// saying both. `presentation::reader_text` measures that.
+///
+/// What this cannot see: whether the message really opens.
+/// `service::pgp::keys` measures that.
+#[test]
+fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    for opening in ["fn open_in_the_text_reader(", "fn read_the_whole_message("] {
+        let body = body_of(&app, opening);
+        assert!(
+            body.contains("opening_pgp::"),
+            "{opening} builds a message without ever offering its armour to the \
+             private key on this computer, so a PGP message never opens there"
+        );
+    }
+
+    assert!(
+        body_of(&app, "fn whole_message_reading(").contains("with_pgp("),
+        "reading a message aloud never says why a PGP message did not open, so the \
+         quickest way to read a message is the one that explains nothing"
+    );
+    assert!(
+        body_of(&app, "fn open_in_the_text_reader(").contains("with_pgp("),
+        "the reader never says why a PGP message did not open, so all four reasons \
+         arrive as the one general sentence"
     );
 }

@@ -1,14 +1,18 @@
 [package]
 name = "wixen-mail"
-version = "0.73.0"
+version = "0.75.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
-# 1.85; the real floor is 1.87, because the vendored converter uses
+# 1.85; 1.87 was the floor for a while, because the vendored converter uses
 # `char::is_whitespace` in a `const fn` and that only became const-stable then.
 # Clippy's incompatible_msrv check is what found that, after 1.85 was claimed
 # here on the strength of the edition alone.
-rust-version = "1.87"
+#
+# It is 1.88 now because `pgp` declares 1.88. A dependency's floor is this
+# project's floor, and it moved in the commit that added the dependency rather
+# than being noticed later by somebody on an older toolchain.
+rust-version = "1.88"
 authors = ["Pratik Patel"]
 description = "A fully accessible, light-weight mail client built with Rust and WXDragon"
 license = "MIT"
@@ -278,6 +282,40 @@ x509-parser = { version = "0.18", default-features = false }
 # to put under a security decision people will read as an answer. The ASN.1 is
 # written out longhand in `service::signed_mail` instead.
 ring = "0.17"
+# Reading OpenPGP mail: parsing an armoured message, reading an imported
+# private key, and decrypting a message encrypted to it. The same argument
+# `ring` makes above, for the same reason: an OpenPGP implementation
+# hand-rolled for a shipped product handling other people's mail is code
+# nobody should write twice.
+#
+# rPGP over `sequoia-openpgp`, and the licence decides it. This project is MIT
+# and ships a statically linked Windows installer; sequoia is
+# LGPL-2.0-or-later, which puts a relinking obligation on that binary that MIT
+# does not, and that is a decision about how the product may be distributed
+# rather than about a library. rPGP is MIT OR Apache-2.0 and pure Rust, so the
+# installer gains no C toolchain. Sequoia's dependency count looks five times
+# better and is not: the cheap figure belongs to a Nettle backend needing a C
+# library at build time, and its pure-Rust backend costs within a few crates of
+# rPGP's and has to be turned on with `allow-experimental-crypto`.
+#
+# Two costs carried openly rather than smoothed over, because guardrail 9 says
+# an upstream weakness this papers over has to stay visible.
+#
+# It depends on `rsa`, which is vulnerable to the Marvin timing attack. That is
+# unfixed, tracked at RustCrypto/RSA issue 19, and named in rPGP's own security
+# notes. It is a timing side channel against RSA decryption, so it matters to
+# an attacker who can both send this program messages and measure how long it
+# takes to open them.
+#
+# And its platform list checks `x86_64-pc-windows-gnu`. The MSVC target this
+# project builds is marked as expected to work and is not in its CI, so the
+# toolchain shipped here is not one upstream tests.
+#
+# It declares Rust 1.88, which is why `rust-version` above moved from 1.87.
+# The whole comparison, the criteria written before any candidate was looked
+# at, and the legitimacy audit of all 78 crates are in
+# `docs/development/pgp-implementation-choice.md`.
+pgp = "0.20"
 
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 127
+open_count: 133
 waived_count: 0
 fixed_count: 13
-total_count: 140
-last_updated: 2026-09-06T13:51:20.786Z
+total_count: 146
+last_updated: 2026-09-06T19:22:32.974Z
 ---
 
 # Broken Windows Ledger
@@ -155,6 +155,12 @@ last_updated: 2026-09-06T13:51:20.786Z
 | 138 | 04 | unrun-verify | src/application/pictures.rs |  | Nobody has heard a mailing with thirty spacers in it. Announcing decorative pictures ships on, and guardrail 5 forbids feedback that floods. The words are short and go into the document rather than into the announcement queue, so they are passed over rather than spoken at, but whether a bulk mail template that marks twenty layout images decorative turns a message into a wall of the same phrase is unmeasured. | open |  | 2026-09-06T13:51:19.876Z |  |
 | 139 | 04 | unrun-verify | src/application/pictures.rs |  | The furniture threshold is a judgement with no field data behind it. A shorter side of 200 pixels and 100 KB on disk were chosen from what furniture is, not from measuring real mail. Nobody has run it over a real mailbox to see how often the decorative question is offered over something that is not furniture, or refused over something that is. | open |  | 2026-09-06T13:51:20.326Z |  |
 | 140 | 04 | unrun-verify | src/application/pictures.rs |  | No decorative picture has been sent to a real recipient. Whether an inline picture sent as multipart/related with an empty alt arrives at Gmail or Outlook with that alt intact, and whether their readers then skip it, has never been tested, because no message from this program has ever reached anybody. | open |  | 2026-09-06T13:51:20.786Z |  |
+| 141 | 04 | unrun-verify | src/service/signed_mail.rs |  | EncryptedMessage::read has never met a real envelope from a real sender. Its fixture is real OpenSSL output, which is more than hand-built DER and is not mail: nobody has put an enveloped message from Outlook or Thunderbird through it. If one does not parse, the reader says the message is encrypted and its details could not be read, which is a wrong message rather than an absent one, and that is worse than the blank body it replaces. The refusal path is what bounds it and it is tested against every seventh-byte prefix of the fixture. | open |  | 2026-09-06T17:25:10.804Z |  |
+| 142 | 04 | unrun-verify | src/presentation/reader_text.rs |  | Nobody has heard an encrypted message open. Three things only a screen reader run settles: whether the sentence in the body is reached before somebody concludes the message is broken, whether hearing the same sentence in the bar as the message opens and again in the body is heard as thoroughness or as repetition, and whether the count in it addressed to 1 certificate is understood at all by somebody who has never been told what a certificate is. | open |  | 2026-09-06T17:25:20.115Z |  |
+| 143 | 04 | unrun-verify | src/service/signed_mail.rs |  | Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them. | open |  | 2026-09-06T17:25:20.633Z |  |
+| 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. | open |  | 2026-09-06T19:22:31.977Z |  |
+| 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | open |  | 2026-09-06T19:22:32.467Z |  |
+| 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
 
 ````json
 [
@@ -1836,6 +1842,78 @@ last_updated: 2026-09-06T13:51:20.786Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T13:51:20.786Z",
+    "resolved_at": null
+  },
+  {
+    "id": 141,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/signed_mail.rs",
+    "line": null,
+    "description": "EncryptedMessage::read has never met a real envelope from a real sender. Its fixture is real OpenSSL output, which is more than hand-built DER and is not mail: nobody has put an enveloped message from Outlook or Thunderbird through it. If one does not parse, the reader says the message is encrypted and its details could not be read, which is a wrong message rather than an absent one, and that is worse than the blank body it replaces. The refusal path is what bounds it and it is tested against every seventh-byte prefix of the fixture.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T17:25:10.804Z",
+    "resolved_at": null
+  },
+  {
+    "id": 142,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Nobody has heard an encrypted message open. Three things only a screen reader run settles: whether the sentence in the body is reached before somebody concludes the message is broken, whether hearing the same sentence in the bar as the message opens and again in the body is heard as thoroughness or as repetition, and whether the count in it addressed to 1 certificate is understood at all by somebody who has never been told what a certificate is.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T17:25:20.115Z",
+    "resolved_at": null
+  },
+  {
+    "id": 143,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/signed_mail.rs",
+    "line": null,
+    "description": "Whether this computer holds a certificate an encrypted message was addressed to has never been asked of a real Windows certificate store holding a real S/MIME certificate. which_recipient_is_us is exercised against a store held in memory, so the three answers are tested and the Windows path that produces them is not. A store that answered wrongly rather than failing would tell somebody a private message was not meant for them.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T17:25:20.633Z",
+    "resolved_at": null
+  },
+  {
+    "id": 144,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/service/pgp/keys.rs",
+    "line": null,
+    "description": "No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T19:22:31.977Z",
+    "resolved_at": null
+  },
+  {
+    "id": 145,
+    "kind": "stub",
+    "phase": "04",
+    "file": "src/application/opening_pgp.rs",
+    "line": null,
+    "description": "PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T19:22:32.467Z",
+    "resolved_at": null
+  },
+  {
+    "id": 146,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T19:22:32.974Z",
     "resolved_at": null
   }
 ]

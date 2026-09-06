@@ -13,6 +13,7 @@ mod drafts;
 mod filters;
 mod folders;
 pub mod held_conflicts;
+pub mod how_it_arrived;
 mod messages;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
@@ -2395,6 +2396,18 @@ impl MessageCache {
         self.ensure_column_exists("tags", "keyword", "TEXT")?;
         self.ensure_column_exists("messages", "snippet", "TEXT")?;
         self.ensure_column_exists("messages", "size_bytes", "INTEGER")?;
+        // Whether the message's own Content-Type said it was S/MIME encrypted.
+        // Recorded where the raw bytes still exist, because the header is gone
+        // by the time anybody opens the message and an enveloped message has no
+        // text part at all, so without this it opens blank with nothing said.
+        // Defaulted rather than left null: a message that arrived before this
+        // column existed reads as ordinary, which is what it read as before.
+        // See `how_it_arrived`.
+        self.ensure_column_exists(
+            "messages",
+            "arrived_encrypted",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // The References and In-Reply-To headers, space separated. Threading
         // reads them and nothing else; storing them is what makes conversations
         // cost no extra fetch.

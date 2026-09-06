@@ -468,6 +468,49 @@ const WHAT_A_SIGNATURE_IS_WORTH: &str = "What a signature does and does not show
 const ENCRYPTED_AND_NOT_OPENED_HERE: &str = "This message is encrypted. Wixen Mail cannot open it, so what is shown below \
      is the encrypted form rather than the message.";
 
+/// What is said above a PGP message when there is no private key here at all.
+///
+/// [`ENCRYPTED_AND_NOT_OPENED_HERE`] narrowed, once this build learned to open
+/// PGP mail. That sentence is still right for a message nobody can do anything
+/// about; this one is right when the reason is that the program has not been
+/// set up, and it says what to do about it.
+///
+/// It carries the same closing clause as its siblings, because the body below
+/// really is still the armour, and without that a body full of armour reads as
+/// the reader having failed.
+const NO_PGP_KEY_ON_THIS_COMPUTER: &str = "This message is encrypted with PGP and there is no private key on this \
+     computer, so nothing could be tried. Import your key from the File menu. \
+     What is shown below is the encrypted form rather than the message.";
+
+/// What is said when the key here is not the one the message was encrypted to.
+///
+/// A different piece of news from having no key and a different thing to do:
+/// this message was meant for somebody else, and importing a key will not
+/// change that. Collapsing the two would send somebody looking for a key they
+/// already have.
+const THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT: &str = "This message is encrypted with PGP and the private key on this computer is \
+     not the one it was encrypted to, so it was meant for somebody else. What \
+     is shown below is the encrypted form rather than the message.";
+
+/// What is said when the key is here and could not be read back.
+///
+/// The rare one, and it is neither of the two above: there is a key, so saying
+/// there is none would be a lie about the one thing somebody has already done.
+/// What went wrong is between this program and the credential store.
+const THE_PGP_KEY_HERE_COULD_NOT_BE_READ: &str = "This message is encrypted with PGP and the private key on this computer \
+     could not be read back, so nothing could be tried. Importing your key \
+     again may fix it. What is shown below is the encrypted form rather than \
+     the message.";
+
+/// What is said when the encrypted part will not read as PGP at all.
+///
+/// About the message rather than about this computer, which is the whole reason
+/// it is not one of the three above. Nothing somebody does here will help, and
+/// the sentence says so rather than sending them to look at their key.
+const THE_PGP_MESSAGE_IS_DAMAGED: &str = "This message is encrypted with PGP and the encrypted part is damaged, so it \
+     cannot be opened even with the right key. Ask whoever sent it to send it \
+     again. What is shown below is the damaged form rather than the message.";
+
 /// What is said above a message carrying a signature nothing here has checked.
 ///
 /// Worded from [`crate::service::signed_mail::Finding::SignatureKindNotUnderstood`],
@@ -1538,6 +1581,132 @@ impl ReaderDocument {
             None => sentence.to_string(),
         });
         self
+    }
+
+    /// Say why an S/MIME encrypted message has nothing in it.
+    ///
+    /// [`WhatTheEnvelopeSays::NotEncrypted`] for nearly all mail, and then
+    /// nothing changes anywhere, which is [`with_encryption`](Self::with_encryption)'s
+    /// reasoning unchanged.
+    ///
+    /// # Why this is not the PGP path under another name
+    ///
+    /// A PGP message's armour is a text part, so the body shows the armour and
+    /// [`ENCRYPTED_AND_NOT_OPENED_HERE`] explains it. An S/MIME enveloped
+    /// message has no text part at all, so the body is
+    /// [`nothing_to_read`]: "This message has no text, or it has not been
+    /// downloaded yet." That sentence is false about this message. It has text,
+    /// and the text is encrypted, and saying it was not downloaded sends
+    /// somebody to fetch it again.
+    ///
+    /// # One sentence, in two places, and why not two sentences
+    ///
+    /// The same string goes into the bar and into the body, and both are
+    /// needed. The bar is what [`crate::presentation::wx_reader`] speaks as the
+    /// message opens, so without it the fact arrives only after somebody has
+    /// listened past the whole header block. The body is where the falsehood
+    /// is, so without it a message that really is encrypted goes on saying it
+    /// might not have been downloaded.
+    ///
+    /// Two differently worded sentences were the other option and were refused.
+    /// A listener meeting two near-identical sentences has to work out whether
+    /// the second one added anything; meeting the same sentence twice, they
+    /// recognise a fact restated. It is also one place to change the wording
+    /// rather than two that can drift.
+    ///
+    /// # Why this must be folded in before a signature verdict
+    ///
+    /// [`with_encryption`](Self::with_encryption)'s reason exactly, and the
+    /// same for `looks_unsafe` being left alone: an encrypted message is not an
+    /// unsafe one.
+    pub fn with_smime_envelope(
+        mut self,
+        says: &crate::application::encrypted_mail::WhatTheEnvelopeSays,
+    ) -> Self {
+        let Some(sentence) = says.said() else {
+            return self;
+        };
+        self.text = instead_of_nothing_to_read(&self.text, sentence);
+        self.warning = Some(match self.warning.take() {
+            // Under what the filter said, the way a signature verdict goes
+            // under it. A bar that reshuffles itself by how bad the news is has
+            // to be read from the top every time to find out what is in it.
+            Some(already) => format!("{already}\n{sentence}"),
+            None => sentence.to_string(),
+        });
+        self
+    }
+
+    /// Say why a PGP message did not open, in the words of the reason.
+    ///
+    /// # Why this narrows a sentence rather than adding one
+    ///
+    /// [`with_encryption`](Self::with_encryption) has already put
+    /// [`ENCRYPTED_AND_NOT_OPENED_HERE`] into the bar by the time this runs,
+    /// because `single_message` reads the form of the message itself and does
+    /// not know whether a key was tried. That sentence says Wixen Mail cannot
+    /// open this message, which was the whole truth until this build learned to
+    /// open PGP mail and is now only the headline. This replaces it with the
+    /// reason.
+    ///
+    /// Replaced rather than appended, and that is the point. Appending would
+    /// leave the reader saying both, and the two together read as two separate
+    /// things having gone wrong.
+    ///
+    /// A message that opened does not come through here at all. Its armour is
+    /// gone by the time the document is built, because
+    /// `application::opening_pgp` put the decrypted words in its place, so
+    /// `single_message` finds no armour and adds no sentence.
+    pub fn with_pgp(mut self, found: Option<&crate::service::pgp::WhatOpeningItFound>) -> Self {
+        use crate::service::pgp::WhatOpeningItFound;
+
+        // Nothing offered the message to a key, because its body carries no
+        // armour. Nearly every message, and nothing changes for any of them.
+        let Some(found) = found else {
+            return self;
+        };
+        let sentence = match found {
+            // Nothing to narrow: the document was built from the words rather
+            // than from the armour.
+            WhatOpeningItFound::Opened(_) => return self,
+            WhatOpeningItFound::NoKeyHere => NO_PGP_KEY_ON_THIS_COMPUTER,
+            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,
+            WhatOpeningItFound::TheKeyHereCouldNotBeRead => THE_PGP_KEY_HERE_COULD_NOT_BE_READ,
+            WhatOpeningItFound::Damaged => THE_PGP_MESSAGE_IS_DAMAGED,
+        };
+        self.warning = self.warning.take().map(|bar| {
+            // A replacement rather than an append, so the reader never says
+            // both. If the general sentence is not in the bar, this is a
+            // caller asking about a message whose body carries no armour, and
+            // nothing is invented: a sentence about a message nothing here has
+            // looked at would be a claim on no evidence.
+            bar.replace(ENCRYPTED_AND_NOT_OPENED_HERE, sentence)
+        });
+        self
+    }
+}
+
+/// Put a sentence where the reader would otherwise say there is no text.
+///
+/// The document is the header block, a blank line, the body and a newline, so a
+/// message with nothing in it ends with exactly [`nothing_to_read`]. That is
+/// the case this replaces, and it is the case every enveloped message lands in.
+///
+/// A message that arrived encrypted and has a body anyway is a shape nothing
+/// here has met: an enveloped message has no `text/*` part, so there is nothing
+/// for `mime::parse` to find. If one turns up, the sentence goes after what is
+/// there rather than over it. Dropping a stranger's words to make room for ours
+/// is the worse of the two mistakes, and it is the one reading further cannot
+/// undo.
+///
+/// Nothing moves the landmarks. In the case this is for there are none below
+/// the header block, because there was no body to find headings in; in the
+/// other the sentence is appended past everything they point at.
+fn instead_of_nothing_to_read(text: &str, sentence: &str) -> String {
+    let empty = format!("{}\n", nothing_to_read());
+    match text.strip_suffix(&empty) {
+        Some(above) => format!("{above}{sentence}\n"),
+        None => format!("{}\n\n{sentence}\n", text.trim_end()),
     }
 }
 
@@ -2893,13 +3062,13 @@ mod signature_tests {
     }
 
     /// A report as the reader is handed it.
-    fn checked(report: &SignatureReport) -> SignatureCheck {
+    pub(super) fn checked(report: &SignatureReport) -> SignatureCheck {
         SignatureCheck::Checked(Box::new(report.clone()))
     }
 
     /// The everyday good case: it adds up, for the address it came from, and
     /// every question that could have been asked was asked and came back well.
-    fn a_signature_that_holds() -> SignatureReport {
+    pub(super) fn a_signature_that_holds() -> SignatureReport {
         report(
             SignatureOutcome::Matches,
             vec![
@@ -3310,6 +3479,247 @@ mod encryption_tests {
         assert!(
             !ENCRYPTED_AND_NOT_OPENED_HERE.contains("cannot open encrypted mail"),
             "{ENCRYPTED_AND_NOT_OPENED_HERE}"
+        );
+    }
+
+    // ── The S/MIME case, where there is no armour to explain ─────────────
+
+    /// A message with no text at all, which is what an enveloped one is.
+    fn opened_with_nothing_in_it() -> ReaderDocument {
+        single_message(
+            &super::tests::message(),
+            &MessageBody::Plain(String::new()),
+            super::tests::aloud(),
+        )
+    }
+
+    fn addressed_to_one_certificate() -> crate::application::encrypted_mail::WhatTheEnvelopeSays {
+        crate::application::encrypted_mail::from_what_was_kept(
+            true,
+            Some(&crate::service::signed_mail::for_tests::the_envelope_alices_message_carried()),
+            crate::service::signed_mail::this_computers_certificates().as_ref(),
+        )
+    }
+
+    #[test]
+    fn test_an_encrypted_message_reads_as_the_sentence_rather_than_as_nothing_to_read() {
+        // The defect. An enveloped message has no text part, so `mime::parse`
+        // finds no body of either kind and the reader says "This message has no
+        // text, or it has not been downloaded yet" about a message that has
+        // text and was downloaded. Somebody acting on that goes and fetches it
+        // again, and gets the same nothing.
+        let document =
+            opened_with_nothing_in_it().with_smime_envelope(&addressed_to_one_certificate());
+
+        assert!(
+            !document.text.contains(&nothing_to_read()),
+            "the body still claims the message may not have arrived:\n{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("This message is encrypted"),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_the_same_sentence_is_spoken_as_the_message_opens() {
+        // The body is not announced; the top of the bar is. Without this the
+        // fact reaches somebody only after they have listened past the whole
+        // header block, on the one kind of message where the header block is
+        // all there is.
+        let document =
+            opened_with_nothing_in_it().with_smime_envelope(&addressed_to_one_certificate());
+        let bar = document.warning.as_deref().expect("something to say");
+
+        assert_eq!(
+            said_before_the_message(bar),
+            bar,
+            "the sentence has to be above the line the reader cuts at"
+        );
+        assert!(bar.contains("This message is encrypted"), "{bar}");
+        assert!(
+            document.text.contains(bar),
+            "the bar and the body should carry one sentence, not two"
+        );
+    }
+
+    #[test]
+    fn test_it_still_reaches_the_spoken_half_when_a_signature_verdict_follows() {
+        // The ordering trap `with_encryption` already carries. A signature
+        // verdict puts `HOW_IT_WAS_CHECKED` into the bar and
+        // `said_before_the_message` cuts there, so a sentence folded in
+        // afterwards is on screen and never spoken.
+        let holds = super::signature_tests::a_signature_that_holds();
+        let document = opened_with_nothing_in_it()
+            .with_smime_envelope(&addressed_to_one_certificate())
+            .with_signature(&super::signature_tests::checked(&holds));
+        let bar = document.warning.as_deref().expect("something to say");
+
+        assert!(
+            said_before_the_message(bar).contains("This message is encrypted"),
+            "spoken half was {:?}",
+            said_before_the_message(bar)
+        );
+    }
+
+    #[test]
+    fn test_an_envelope_that_could_not_be_read_still_says_the_message_is_encrypted() {
+        // The path the whole feature rests on. If a real envelope will not
+        // parse, this is what somebody meets, and it must not be the blank
+        // message it replaced.
+        let document = opened_with_nothing_in_it().with_smime_envelope(
+            &crate::application::encrypted_mail::WhatTheEnvelopeSays::EncryptedAndTheDetailsCouldNotBeRead,
+        );
+
+        assert!(
+            !document.text.contains(&nothing_to_read()),
+            "{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("This message is encrypted"),
+            "{}",
+            document.text
+        );
+        assert!(
+            document.text.contains("could not read"),
+            "{}",
+            document.text
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_message_is_left_exactly_as_it_was() {
+        // Nearly all mail. A bar where there was none is a line to tab past on
+        // every message, and then the one that matters is tabbed past too.
+        let before = opened(Safety::Ordinary, "One o'clock?");
+        let after = before.clone().with_smime_envelope(
+            &crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
+        );
+
+        assert_eq!(before, after);
+    }
+
+    // ── The PGP case, once this build can open one ───────────────────────
+
+    /// The bar of an armoured message, with a reason folded in.
+    fn armoured_bar(found: crate::service::pgp::WhatOpeningItFound) -> String {
+        opened(Safety::Ordinary, &an_armoured_message())
+            .with_pgp(Some(&found))
+            .warning
+            .expect("an encrypted message has something to say")
+    }
+
+    #[test]
+    fn test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words() {
+        // Four different pieces of news and four different things to do next:
+        // set the program up, accept that the message was meant for somebody
+        // else, import the key again, or ask the sender to send it again. A
+        // reader that heard one sentence for all four learns nothing it can
+        // act on.
+        use crate::service::pgp::WhatOpeningItFound;
+
+        let no_key = armoured_bar(WhatOpeningItFound::NoKeyHere);
+        assert!(
+            no_key.contains("no private key on this computer"),
+            "{no_key}"
+        );
+        assert!(no_key.contains("Import your key"), "{no_key}");
+
+        let wrong_key = armoured_bar(WhatOpeningItFound::TheKeyHereDoesNotOpenIt);
+        assert!(wrong_key.contains("meant for somebody else"), "{wrong_key}");
+
+        let unreadable_key = armoured_bar(WhatOpeningItFound::TheKeyHereCouldNotBeRead);
+        assert!(
+            unreadable_key.contains("could not be read back"),
+            "{unreadable_key}"
+        );
+
+        let damaged = armoured_bar(WhatOpeningItFound::Damaged);
+        assert!(damaged.contains("is damaged"), "{damaged}");
+    }
+
+    #[test]
+    fn test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence() {
+        // They will be written on different days and the way they collide is
+        // that somebody reuses a helper. Six comparisons and then four more
+        // against the S/MIME sentence, which is about a message that cannot be
+        // opened at all rather than about a key.
+        use crate::service::pgp::WhatOpeningItFound;
+
+        let said: Vec<String> = [
+            WhatOpeningItFound::NoKeyHere,
+            WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+            WhatOpeningItFound::TheKeyHereCouldNotBeRead,
+            WhatOpeningItFound::Damaged,
+        ]
+        .into_iter()
+        .map(armoured_bar)
+        .collect();
+
+        for (which, one) in said.iter().enumerate() {
+            for other in &said[which + 1..] {
+                assert_ne!(one, other);
+            }
+            assert_ne!(one.as_str(), ENCRYPTED_AND_NOT_OPENED_HERE);
+            assert_ne!(
+                one.as_str(),
+                crate::application::encrypted_mail::ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ
+            );
+            assert!(
+                !one.contains(ENCRYPTED_AND_NOT_OPENED_HERE),
+                "the reader says both the general sentence and the reason:\n{one}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_that_opened_has_nothing_said_over_it_at_all() {
+        // Its armour was replaced by its words before the document was built,
+        // so there is no sentence about armour to take back out and none to
+        // add. A message that opened is a message, and a bar over it would say
+        // something had gone wrong.
+        use crate::service::pgp::WhatOpeningItFound;
+
+        let document = opened(Safety::Ordinary, "See you Thursday.").with_pgp(Some(
+            &WhatOpeningItFound::Opened("See you Thursday.".to_string()),
+        ));
+
+        assert_eq!(document.warning, None);
+        assert!(document.text.contains("See you Thursday."));
+    }
+
+    #[test]
+    fn test_a_message_carrying_no_armour_has_nothing_invented_over_it() {
+        // A caller asking about a body with no armour in it. Nothing here has
+        // looked at such a message, so a sentence about it would be a claim on
+        // no evidence, and the bar has to come out exactly as it went in.
+        use crate::service::pgp::WhatOpeningItFound;
+
+        let before = opened(Safety::Ordinary, "One o'clock?");
+        let after = before
+            .clone()
+            .with_pgp(Some(&WhatOpeningItFound::NoKeyHere));
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn test_the_smime_sentence_and_the_pgp_one_are_not_the_same_sentence() {
+        // They are opposite situations and they were written on different
+        // days. A PGP message shows its armour, so its sentence explains what
+        // is below; an S/MIME one shows nothing, so its sentence is what is
+        // below. The way these collide is somebody reusing a helper.
+        let smime = addressed_to_one_certificate();
+        let smime = smime.said().expect("a sentence");
+
+        assert_ne!(smime, ENCRYPTED_AND_NOT_OPENED_HERE);
+        assert_ne!(smime, SIGNED_AND_NOT_CHECKED_HERE);
+        assert_ne!(
+            smime,
+            crate::application::encrypted_mail::ENCRYPTED_AND_THE_DETAILS_COULD_NOT_BE_READ
         );
     }
 

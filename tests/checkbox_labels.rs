@@ -127,13 +127,13 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                     container: None,
                 }),
             ) {
-                if let Some((_, pinned)) = widgets.tick_fields.first() {
-                    if !pinned.get_value() {
-                        wrong.push((
-                            "a pinned note opens ticked".to_string(),
-                            "it opened unticked, so moving the label broke the prefill".to_string(),
-                        ));
-                    }
+                if let Some((_, pinned)) = widgets.tick_fields.first()
+                    && !pinned.get_value()
+                {
+                    wrong.push((
+                        "a pinned note opens ticked".to_string(),
+                        "it opened unticked, so moving the label broke the prefill".to_string(),
+                    ));
                 }
                 widgets.dialog.destroy();
             }

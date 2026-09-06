@@ -23,6 +23,7 @@ pub mod oauth_credentials;
 pub mod outlook_data_file;
 pub mod outward;
 pub mod pdf;
+pub mod pgp;
 pub mod picture;
 pub mod plain_text;
 pub mod protocols;

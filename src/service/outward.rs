@@ -1505,7 +1505,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 48] = [
+    const A_CRATE_THAT_CANNOT: [&str; 49] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1566,6 +1566,11 @@ mod completeness {
         // Does the arithmetic a signature check is made of. Numbers in,
         // an answer out; it opens nothing.
         "ring",
+        // Reads an OpenPGP key and opens an OpenPGP message. Bytes in, bytes
+        // out. OpenPGP does have a notion of somewhere to go, in the key
+        // servers a key can name, and nothing here calls that half: this
+        // project holds one key imported from a file and never looks a key up.
+        "pgp",
         // Reads what this machine calls its own time zone, out of a registry
         // key on Windows and a file on the other two. It asks nobody: the
         // whole point of it is that the answer is already on the computer.
@@ -2242,10 +2247,10 @@ mod completeness {
         let mut inside: Option<&str> = None;
         let mut body = String::new();
         for line in production.lines() {
-            if let Some((name, _)) = method_named(line) {
-                if let Some(name) = inside.replace(name) {
-                    chunks.push((name, std::mem::take(&mut body)));
-                }
+            if let Some((name, _)) = method_named(line)
+                && let Some(name) = inside.replace(name)
+            {
+                chunks.push((name, std::mem::take(&mut body)));
             }
             if inside.is_some() {
                 body.push_str(line);
