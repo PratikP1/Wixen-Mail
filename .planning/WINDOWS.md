@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 112
+open_count: 118
 waived_count: 0
 fixed_count: 13
-total_count: 125
-last_updated: 2026-09-06T07:00:20.122Z
+total_count: 131
+last_updated: 2026-09-06T08:33:16.753Z
 ---
 
 # Broken Windows Ledger
@@ -140,6 +140,12 @@ last_updated: 2026-09-06T07:00:20.122Z
 | 123 | 04 | unrun-verify | src/application/spell_session.rs |  | Whether three suggestions is heard as helpful or as a list to sit through, and whether '7 suggestions in all' is heard as useful or as noise. The bound is a judgement written into SUGGESTIONS_SAID with its reasoning; only listening settles whether it is the right number. | open |  | 2026-09-06T07:00:19.316Z |  |
 | 124 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-06-PLAN.md |  | The plan's two tasks are not separable as written: a forward key and the same key with Shift are one if, one message field and one match with two arms, so task 1's minimum finishes task 2 and task 2's required inverse property test cannot be red. Task 1 was narrowed to have no direction parameter anywhere before task 2 could carry one. Also: both verify commands are invalid cargo, repeated from 04-05 after that summary reported them; premise 2 is right that enumeration and the caret move ship, and misses that nothing could report where the caret is, which is new page code; and the sentence for a word with more suggestions than the bound is unreachable unless the speller is asked for more than the bound, which the plan does not name. Premise 8's guard table is right in every row, the first time in two phases. | open |  | 2026-09-06T07:00:19.717Z |  |
 | 125 | 04 | stub | tests/wired.rs |  | documented_combinations only collects a backticked key that starts with Ctrl+ or Alt+, so a documented combination spelled Shift+Alt+F7 rather than Alt+Shift+F7 is skipped in silence: no exception entry is needed for it and no protection is given either. The check exists because three documented keys were dead at once, and the order somebody writes the modifiers in decides whether it looks at all. | open |  | 2026-09-06T07:00:20.122Z |  |
+| 126 | 04 | unrun-verify | src/application/attaching.rs |  | Whether a batch announcement naming six files is heard as a confirmation or as something too long to sit through. NAMED_ALOUD is 6 on the reasoning that six names is about ten seconds of speech; nothing here can say whether ten seconds is right, or whether the names should be dropped entirely in favour of the count and the total. | open |  | 2026-09-06T08:32:55.803Z |  |
+| 127 | 04 | unrun-verify | src/application/attaching.rs |  | Whether the refusal for a folder among five files is told apart from the names of the four that went on. Two sentences arrive one after the other, the first naming what is attached and the second naming what is not, and only listening says whether that reads as two facts or as one long list. | open |  | 2026-09-06T08:33:15.056Z |  |
+| 128 | 04 | unrun-verify | src/presentation/wx_compose.rs |  | Whether Ctrl+V on the attachments list or the toolbar is discoverable at all by somebody who has never read the shortcuts document. Nothing in the composer says the key exists: it is not on a button label, not in an accessible name and not announced. The picker is discoverable and this is the quicker route, so a key nobody finds is a keyboard equivalent that only exists on paper. | open |  | 2026-09-06T08:33:15.494Z |  |
+| 129 | 04 | unrun-verify | src/presentation/wx_compose.rs |  | Whether a file dropped on the composer attaches at all. The drop target is installed on the dialog and hands its paths to the same door the picker uses, and whether a drop over the message body reaches it is unknown: the body is a WebView2 control that handles drops in its own window. Task 3 of plan 04-07 is a person dragging a file to settle it, and the answer goes in the product either way. | open |  | 2026-09-06T08:33:15.932Z |  |
+| 130 | 04 | stub | src/common/error.rs | 58 | Error::Other displays as 'Error: {message}', so every refusal this program says out loud opens with the word Error before the sentence. Found by a test pinning the composer's single-file refusal against the old code rather than against a copy of it. Poor wording for a screen reader and unchanged here, because it is a change to common::Error and to every announcement that goes through it. | open |  | 2026-09-06T08:33:16.343Z |  |
+| 131 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-07-PLAN.md |  | Four premises corrected. Premise 5 says the paste key needs a second home because the attachments list is hidden when empty; it needs no second home, because wxWidgets passes an unhandled key up the parent chain and the composer already uses one dialog-level handler for exactly this, so Ctrl+V is bound once there. The plan's tests/wired.rs change is unnecessary: Ctrl+V is already documented and already bound as a menu accelerator in the main window, so bound_somewhere finds it and no exception entry is needed, which also means that check gives the composer's Ctrl+V no protection at all. The threat register asks for fixtures with a traversing name and a reserved Windows device name; neither can exist as a real file on Windows, and what protects those cases is Chosen::at asking for the last component and safe_file_name prefixing a device name, both tested where they live. No version bump in task 2: there is nothing true to write in a changelog entry until task 3 answers whether a drop lands, and this project pairs a bump with an entry. Premise 8's guard table is right in every row: 617 records, attaching 0, wx_compose 2, wired 8, attachment_name 0. | open |  | 2026-09-06T08:33:16.753Z |  |
 
 ````json
 [
@@ -1641,6 +1647,78 @@ last_updated: 2026-09-06T07:00:20.122Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T07:00:20.122Z",
+    "resolved_at": null
+  },
+  {
+    "id": 126,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/attaching.rs",
+    "line": null,
+    "description": "Whether a batch announcement naming six files is heard as a confirmation or as something too long to sit through. NAMED_ALOUD is 6 on the reasoning that six names is about ten seconds of speech; nothing here can say whether ten seconds is right, or whether the names should be dropped entirely in favour of the count and the total.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:32:55.803Z",
+    "resolved_at": null
+  },
+  {
+    "id": 127,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/attaching.rs",
+    "line": null,
+    "description": "Whether the refusal for a folder among five files is told apart from the names of the four that went on. Two sentences arrive one after the other, the first naming what is attached and the second naming what is not, and only listening says whether that reads as two facts or as one long list.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:33:15.056Z",
+    "resolved_at": null
+  },
+  {
+    "id": 128,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "Whether Ctrl+V on the attachments list or the toolbar is discoverable at all by somebody who has never read the shortcuts document. Nothing in the composer says the key exists: it is not on a button label, not in an accessible name and not announced. The picker is discoverable and this is the quicker route, so a key nobody finds is a keyboard equivalent that only exists on paper.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:33:15.494Z",
+    "resolved_at": null
+  },
+  {
+    "id": 129,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "Whether a file dropped on the composer attaches at all. The drop target is installed on the dialog and hands its paths to the same door the picker uses, and whether a drop over the message body reaches it is unknown: the body is a WebView2 control that handles drops in its own window. Task 3 of plan 04-07 is a person dragging a file to settle it, and the answer goes in the product either way.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:33:15.932Z",
+    "resolved_at": null
+  },
+  {
+    "id": 130,
+    "kind": "stub",
+    "phase": "04",
+    "file": "src/common/error.rs",
+    "line": 58,
+    "description": "Error::Other displays as 'Error: {message}', so every refusal this program says out loud opens with the word Error before the sentence. Found by a test pinning the composer's single-file refusal against the old code rather than against a copy of it. Poor wording for a screen reader and unchanged here, because it is a change to common::Error and to every announcement that goes through it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:33:16.343Z",
+    "resolved_at": null
+  },
+  {
+    "id": 131,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-07-PLAN.md",
+    "line": null,
+    "description": "Four premises corrected. Premise 5 says the paste key needs a second home because the attachments list is hidden when empty; it needs no second home, because wxWidgets passes an unhandled key up the parent chain and the composer already uses one dialog-level handler for exactly this, so Ctrl+V is bound once there. The plan's tests/wired.rs change is unnecessary: Ctrl+V is already documented and already bound as a menu accelerator in the main window, so bound_somewhere finds it and no exception entry is needed, which also means that check gives the composer's Ctrl+V no protection at all. The threat register asks for fixtures with a traversing name and a reserved Windows device name; neither can exist as a real file on Windows, and what protects those cases is Chosen::at asking for the last component and safe_file_name prefixing a device name, both tested where they live. No version bump in task 2: there is nothing true to write in a changelog entry until task 3 answers whether a drop lands, and this project pairs a bump with an entry. Premise 8's guard table is right in every row: 617 records, attaching 0, wx_compose 2, wired 8, attachment_name 0.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:33:16.753Z",
     "resolved_at": null
   }
 ]

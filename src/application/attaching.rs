@@ -848,6 +848,29 @@ mod tests {
     }
 
     #[test]
+    fn test_one_bad_path_among_several_is_named_rather_than_pathed() {
+        // The other half of the test above, and it took writing the summary to
+        // see that they are different questions. Handing over one path is
+        // picking a file and keeps the sentence picking a file has always had,
+        // whole path and all. Handing over three is a batch, and a batch says
+        // names: the whole path of one file read out in the middle of a list of
+        // the ones that did go on is not a sentence anybody can follow, and it
+        // opens with the word "Error" because that is how `common::Error`
+        // formats itself.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+
+        let batch = choose_all(&[files[0].clone(), inner, files[1].clone()]);
+
+        assert_eq!(
+            batch.refused,
+            Some("holiday photos is a folder, and a folder cannot be attached".to_string())
+        );
+    }
+
+    #[test]
     fn test_a_batch_names_the_files_that_went_on_rather_than_only_counting_them() {
         // A batch that said only "3 attachments" would lose the one thing
         // somebody who cannot see the window needs: whether the files that
