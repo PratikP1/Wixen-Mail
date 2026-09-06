@@ -671,6 +671,31 @@ fills the field. You can also type your own correction. A repeated word offers
 Delete instead of Change, because "the the" is two correctly spelled words and
 the fix is to remove one.
 
+**Moving between misspellings without the dialog.** `Alt+F7` moves the caret to
+the next misspelled word and leaves it there, so the next thing you do is type.
+It is the key Word uses for the same thing. `Alt+Shift+F7` goes the other way,
+so overshooting is one key press to undo rather than a walk through the whole
+message again.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Next misspelling | `Alt+F7` | Move the caret to the next misspelled word and say what it could be instead |
+| Previous misspelling | `Alt+Shift+F7` | The same, going back towards the start of the message |
+
+Landing on a word says the word, what is wrong with it, and up to three things
+it could be instead. When there are more than three it says how many there are
+altogether, so you know the list did not stop where the speaking did. It says
+the same thing whichever direction you arrived from. `F7` and its dialog are
+unchanged, and nothing opens.
+
+At either end of the message it says there are no more that way and moves
+nothing, rather than starting again at the other end without telling you. In a
+message with nothing wrong it says that.
+
+Neither key is affected by anything you told `F7` to ignore. An ignore lasts for
+the pass you made it in, and there is no Ignore to press here, so a word you
+passed over in the dialog is still a word these keys will take you to.
+
 Misspelled words are also marked as you write, and your screen reader announces
 them as you move over a marked word. That marking is the browser engine's, not
 this program's, which is why it sounds the way it does in your browser. Turn it

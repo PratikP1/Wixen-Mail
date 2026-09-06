@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 423 records have arrived since and have not been through it.
+# 425 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15419,4 +15419,101 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/safety.rs", tests = 34 },
+]
+
+# ── Landing on a misspelling offers more than one thing to try ──────────────
+#
+# The sentence said when the caret lands on a misspelled word is the only thing
+# that happens: no dialog opens and there is no list of suggestions to arrow
+# into. So one suggestion is one guess, which is exactly what F7's dialog
+# already says and what this key exists to improve on. Somebody who disagrees
+# with the first guess has been told nothing.
+#
+# The break is the bound cut back to one. It is the version somebody would
+# write who had read the constant as a tidy limit rather than as the feature:
+# every other word of the sentence is untouched, and the count clause is left
+# alone, so the only thing that changes is how many things somebody is offered.
+#
+# Measured by hand 2026-09-06 with `cargo test --all-targets --no-fail-fast`
+# against a tree with no other failure in it, 33 targets. Two tests went red
+# and nothing else did. Both are in the module the constant lives in: the one
+# that asks for more than one suggestion by name, and the one that pins the
+# whole sentence for a word with more suggestions than the bound.
+#
+# What stays green under it, and is worth knowing. The two sentence tests that
+# do not involve the bound at all: a word with no suggestions, which never
+# reaches the take, and the pair asserting the dialog's sentence and this one
+# are different, which they still are. So nothing outside `spell_session`
+# notices, which is the finding: the bound is asserted in one place.
+#
+# The fixtures do not move with the constant. Both hold literal suggestion
+# lists of two and seven, so widening or narrowing the break cannot carry the
+# fixture with it, which is the way plan 03-07's bound test passed through the
+# defect it was written for.
+
+[[guard]]
+name = "landing on a misspelling offers more than one thing to try"
+file = "src/application/spell_session.rs"
+before = """pub const SUGGESTIONS_SAID: usize = 3;"""
+after = """pub const SUGGESTIONS_SAID: usize = 1;"""
+red = [
+    "application::spell_session::tests::test_a_word_with_more_suggestions_than_are_said_says_how_many_there_are",
+    "application::spell_session::tests::test_landing_on_a_word_offers_more_than_one_thing_to_try",
+]
+tests_last_seen = [
+    { file = "src/application/spell_session.rs", tests = 36 },
+]
+
+# ── The two walk keys are inverses of each other ────────────────────────────
+#
+# Alt+F7 goes to the next misspelling and Alt+Shift+F7 to the one before it,
+# and the thing that makes the pair worth having is that the second undoes the
+# first. Somebody who goes one word too far presses the other key once.
+#
+# The break is dropping `.rev()`, which is not a slip: it is what a backwards
+# search reads like when it is written from the forward one. `find` over a list
+# in reading order answers "the earliest word before here", so pressing the
+# backward key at the end of a message goes to its first misspelling and the
+# next press says there are no more. The message is walked backwards in one
+# stride and nothing reports anything wrong.
+#
+# Measured by hand 2026-09-06 with `cargo test --all-targets --no-fail-fast`
+# against a tree with no other failure in it, 33 targets. Four tests went red
+# and nothing else did:
+#
+#   the inverse property, which is the one written for this
+#   landing on the last misspelling from the end of the message
+#   pressing the backward key again reaching the one before that
+#   the sentence being the same whichever direction somebody arrived from
+#
+# That last one is red for a reason worth writing down, because it is not what
+# the test is about: it reaches a different word, so it compares the wrong two
+# sentences. It counts as red here and it is not a second guard on the pair.
+#
+# What stays green: both boundary sentences, because a message walked in one
+# stride still stops at both ends, and the ignored-word assertion, because the
+# word it reaches happens to be the same one either way.
+#
+# The property test cannot pass through this. Measured before the real answer
+# was written, by running the naive version against it: the forward walk
+# collects five words and the backward walk collects one.
+
+[[guard]]
+name = "the two walk keys are inverses of each other"
+file = "src/application/spell_session.rs"
+before = """    found
+        .iter()
+        .rev()
+        .find(|finding| from.is_none_or(|from| finding.at < from))"""
+after = """    found
+        .iter()
+        .find(|finding| from.is_none_or(|from| finding.at < from))"""
+red = [
+    "application::spell_session::tests::test_landing_on_a_word_backwards_says_what_landing_on_it_forwards_says",
+    "application::spell_session::tests::test_pressing_the_backward_key_again_moves_to_the_one_before_that",
+    "application::spell_session::tests::test_the_backward_key_from_the_end_lands_on_the_last_misspelling",
+    "application::spell_session::tests::test_the_two_directions_are_inverses_over_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/spell_session.rs", tests = 36 },
 ]

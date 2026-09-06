@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 106
+open_count: 112
 waived_count: 0
 fixed_count: 13
-total_count: 119
-last_updated: 2026-09-06T04:45:32.068Z
+total_count: 125
+last_updated: 2026-09-06T07:00:20.122Z
 ---
 
 # Broken Windows Ledger
@@ -134,6 +134,12 @@ last_updated: 2026-09-06T04:45:32.068Z
 | 117 | 04 | unrun-verify | src/service/safety.rs |  | Whether provider spam headers arrive in the shapes from_headers expects. Every parser in it is tested against hand-written header blocks and no account has ever been used with this program, so X-Spam-Flag, X-Spam-Status, X-Forefront-Antispam-Report, X-Microsoft-Antispam and Authentication-Results are all unverified in the field. Gmail in particular tells an IMAP client almost nothing beyond moving the message, which is why the folder counts as a verdict. Unchanged by this plan and now more load-bearing, because a filter rule can act on the answer. | open |  | 2026-09-06T04:45:17.430Z |  |
 | 118 | 04 | stub | src/application/mail_sync.rs |  | A filter rule that deletes is not said out loud. say_what_the_rules_did produces '{n} sorted by your rules' and carry_out counts a delete in that number alongside a rule that only marked something read, so nothing anywhere says a message was deleted by a rule. Found while adding the safety verdict as a rule field, which is what makes it worth recording now: T-04-19 is a user rule filing wanted mail out of sight on a verdict a sender can shift, and the mitigation the plan asked for was that the rule says what it did. The deletion is local only, cache.delete_message, not a server delete, so mail is hidden rather than destroyed; that lowers the severity and does not close it. Recorded as a finding rather than fixed, as 04-05-PLAN asked. The fix is a count of its own in Filtered and a sentence in say_what_the_rules_did. | open |  | 2026-09-06T04:45:31.615Z |  |
 | 119 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-05-PLAN.md |  | Five premises could not be followed as written, and the first changed the size of the job by an order of magnitude. The plan and 04-RESEARCH both said CachedMessage.safety was already on the struct the matcher is handed, citing messages.rs:357; that line is inside listing_row, which builds MessageListRow, whose own doc says 'Deliberately not CachedMessage' three lines above it. CachedMessage had no such field, so criterion 6 needed a new field, 36 construction sites, and two SQL reads that had never selected the column (get_message, which the arrival path uses, and scan_query, which saved searches use). Also: the quiet.len() assertion reddens at GREEN and can never be in a RED commit's trailers; the guard table says body_safety.rs has 0 records and 13 tests (really 1 and 20) and mail_sync.rs 8 and 134 (really 9 and 135); both verify commands are invalid cargo ('--lib' cannot be used multiple times); and premise 5 says the provider sentences end at a common phrase when three of them begin with it and the two Authentication-Results sentences named nobody at all. This is the fifth phase-04 plan carrying a wrong premise. All five are written into the plan file. | open |  | 2026-09-06T04:45:32.068Z |  |
+| 120 | 04 | unrun-verify | src/presentation/editor_document.rs |  | Whether NVDA announces the browser engine's spelling marks in a WebView2 contenteditable in this application at all. That is the premise of the two clauses of criterion 3 that already shipped before this plan, and nothing in this tree can test it. If it does not, marking as you type is decorative and the walk keys are the only spelling check that reaches a screen reader. | open |  | 2026-09-06T07:00:00.122Z |  |
+| 121 | 04 | unrun-verify | src/presentation/wx_compose.rs |  | Whether this program's landing sentence and the screen reader's own announcement of the marked word collide when the caret lands on a misspelling. Two voices for one fact, arriving in the same instant: the selection change is what makes the reader speak the word, and walk_to_a_misspelling speaks its own sentence immediately afterwards. Whether that is heard as one answer or as an interruption is not testable here. | open |  | 2026-09-06T07:00:18.344Z |  |
+| 122 | 04 | unrun-verify | src/presentation/accessibility/feedback.rs |  | Whether the earcon at the end of a mistyped word and the landing announcement of the walk keys are told apart. Both are about a misspelling and both fire while somebody is working in the message body; guardrail 5 asks for feedback that is distinct, and nothing here can say whether these two are. | open |  | 2026-09-06T07:00:18.882Z |  |
+| 123 | 04 | unrun-verify | src/application/spell_session.rs |  | Whether three suggestions is heard as helpful or as a list to sit through, and whether '7 suggestions in all' is heard as useful or as noise. The bound is a judgement written into SUGGESTIONS_SAID with its reasoning; only listening settles whether it is the right number. | open |  | 2026-09-06T07:00:19.316Z |  |
+| 124 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-06-PLAN.md |  | The plan's two tasks are not separable as written: a forward key and the same key with Shift are one if, one message field and one match with two arms, so task 1's minimum finishes task 2 and task 2's required inverse property test cannot be red. Task 1 was narrowed to have no direction parameter anywhere before task 2 could carry one. Also: both verify commands are invalid cargo, repeated from 04-05 after that summary reported them; premise 2 is right that enumeration and the caret move ship, and misses that nothing could report where the caret is, which is new page code; and the sentence for a word with more suggestions than the bound is unreachable unless the speller is asked for more than the bound, which the plan does not name. Premise 8's guard table is right in every row, the first time in two phases. | open |  | 2026-09-06T07:00:19.717Z |  |
+| 125 | 04 | stub | tests/wired.rs |  | documented_combinations only collects a backticked key that starts with Ctrl+ or Alt+, so a documented combination spelled Shift+Alt+F7 rather than Alt+Shift+F7 is skipped in silence: no exception entry is needed for it and no protection is given either. The check exists because three documented keys were dead at once, and the order somebody writes the modifiers in decides whether it looks at all. | open |  | 2026-09-06T07:00:20.122Z |  |
 
 ````json
 [
@@ -1563,6 +1569,78 @@ last_updated: 2026-09-06T04:45:32.068Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T04:45:32.068Z",
+    "resolved_at": null
+  },
+  {
+    "id": 120,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/editor_document.rs",
+    "line": null,
+    "description": "Whether NVDA announces the browser engine's spelling marks in a WebView2 contenteditable in this application at all. That is the premise of the two clauses of criterion 3 that already shipped before this plan, and nothing in this tree can test it. If it does not, marking as you type is decorative and the walk keys are the only spelling check that reaches a screen reader.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:00.122Z",
+    "resolved_at": null
+  },
+  {
+    "id": 121,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "Whether this program's landing sentence and the screen reader's own announcement of the marked word collide when the caret lands on a misspelling. Two voices for one fact, arriving in the same instant: the selection change is what makes the reader speak the word, and walk_to_a_misspelling speaks its own sentence immediately afterwards. Whether that is heard as one answer or as an interruption is not testable here.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:18.344Z",
+    "resolved_at": null
+  },
+  {
+    "id": 122,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/presentation/accessibility/feedback.rs",
+    "line": null,
+    "description": "Whether the earcon at the end of a mistyped word and the landing announcement of the walk keys are told apart. Both are about a misspelling and both fire while somebody is working in the message body; guardrail 5 asks for feedback that is distinct, and nothing here can say whether these two are.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:18.882Z",
+    "resolved_at": null
+  },
+  {
+    "id": 123,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "src/application/spell_session.rs",
+    "line": null,
+    "description": "Whether three suggestions is heard as helpful or as a list to sit through, and whether '7 suggestions in all' is heard as useful or as noise. The bound is a judgement written into SUGGESTIONS_SAID with its reasoning; only listening settles whether it is the right number.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:19.316Z",
+    "resolved_at": null
+  },
+  {
+    "id": 124,
+    "kind": "deviation",
+    "phase": "04",
+    "file": ".planning/phases/04-writing-and-reading-a-message-in-full/04-06-PLAN.md",
+    "line": null,
+    "description": "The plan's two tasks are not separable as written: a forward key and the same key with Shift are one if, one message field and one match with two arms, so task 1's minimum finishes task 2 and task 2's required inverse property test cannot be red. Task 1 was narrowed to have no direction parameter anywhere before task 2 could carry one. Also: both verify commands are invalid cargo, repeated from 04-05 after that summary reported them; premise 2 is right that enumeration and the caret move ship, and misses that nothing could report where the caret is, which is new page code; and the sentence for a word with more suggestions than the bound is unreachable unless the speller is asked for more than the bound, which the plan does not name. Premise 8's guard table is right in every row, the first time in two phases.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:19.717Z",
+    "resolved_at": null
+  },
+  {
+    "id": 125,
+    "kind": "stub",
+    "phase": "04",
+    "file": "tests/wired.rs",
+    "line": null,
+    "description": "documented_combinations only collects a backticked key that starts with Ctrl+ or Alt+, so a documented combination spelled Shift+Alt+F7 rather than Alt+Shift+F7 is skipped in silence: no exception entry is needed for it and no protection is given either. The check exists because three documented keys were dead at once, and the order somebody writes the modifiers in decides whether it looks at all.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T07:00:20.122Z",
     "resolved_at": null
   }
 ]

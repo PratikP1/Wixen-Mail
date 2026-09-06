@@ -72,6 +72,148 @@ impl Finding {
         }
         said
     }
+
+    /// What is said when the caret lands on this word and nothing opens.
+    ///
+    /// A different sentence from [`Self::spoken`] because it is in a different
+    /// situation, not because the wording was improved. That one opens a
+    /// dialog whose next control is a list of suggestions somebody can arrow
+    /// into, so naming the first one is enough and the rest are a key away.
+    /// This one is the only thing that happens: there is no list, no dialog and
+    /// nothing to arrow into, so a single suggestion leaves somebody with one
+    /// guess and no way to hear the others.
+    ///
+    /// So it says more than one, and bounds how many, which is guardrail 5.
+    /// See [`SUGGESTIONS_SAID`] for the number and the reason.
+    pub fn spoken_without_a_dialog(&self) -> String {
+        let mut said = format!("{}, {}", self.word, self.problem.spoken());
+        if self.suggestions.is_empty() {
+            said.push_str(". No suggestions");
+            return said;
+        }
+        let a_few: Vec<&str> = self
+            .suggestions
+            .iter()
+            .take(SUGGESTIONS_SAID)
+            .map(String::as_str)
+            .collect();
+        said.push_str(&format!(". Try {}", one_or_another(&a_few)));
+        if self.suggestions.len() > SUGGESTIONS_SAID {
+            said.push_str(&format!(". {} suggestions in all", self.suggestions.len()));
+        }
+        said
+    }
+}
+
+/// A list said the way a person says one: "a, b or c".
+///
+/// The last one joined with "or" rather than a comma, because a comma before
+/// the last item is heard as another item and leaves somebody waiting for a
+/// fourth suggestion that never arrives.
+fn one_or_another(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [only] => (*only).to_string(),
+        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+    }
+}
+
+/// How many suggestions are said when the caret lands on a word.
+///
+/// Three, and the number is a judgement rather than a measurement. One is what
+/// the dialog says and is what this feature exists to improve on: a person who
+/// disagrees with the first guess has heard nothing useful. Fourteen is an
+/// announcement nobody can interrupt out of, and the words are gone by the time
+/// the fourth arrives. Three is about as many as anybody holds from one spoken
+/// sentence without asking for it again, and where there are more, the count
+/// says so, so nobody is left thinking three is all there was.
+pub const SUGGESTIONS_SAID: usize = 3;
+
+/// How many to ask the speller for.
+///
+/// More than are said, so [`SUGGESTIONS_SAID`] is a bound with something behind
+/// it rather than the whole list under another name: asking for three would
+/// make the count clause unreachable and it would never be heard.
+///
+/// It is also what the count in the sentence counts. That count is the number
+/// this program has, not a claim about how many the dictionary could produce,
+/// because the speller truncates to what it was asked for. Nine is generous
+/// enough that the difference almost never arises and small enough that nothing
+/// is spent finding suggestions nobody will hear.
+pub const SUGGESTIONS_TO_HAVE: usize = 9;
+
+/// What one press of a walk key comes to.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Step<'a> {
+    /// Go to this word, and say what it is.
+    Land(&'a Finding),
+    /// Move nothing, and say this.
+    ///
+    /// Said rather than nothing at all. A key that does nothing and says
+    /// nothing is indistinguishable from a key nobody bound, and somebody who
+    /// cannot see the caret has no other way to tell the two apart.
+    Stay(&'static str),
+}
+
+/// What is said when a walk key is pressed and the message has nothing wrong.
+pub const NOTHING_MISSPELLED: &str = "No misspellings in this message.";
+
+/// What is said at the end of the message.
+///
+/// Rather than going round to the top again. A walk that wraps silently means
+/// somebody who has been pressing a key has no way to tell they are on their
+/// second time through, and the words they hear are the same words either way.
+pub const NOTHING_AFTER_HERE: &str = "No more misspellings after here.";
+
+/// The next misspelling from where the caret is.
+///
+/// `from` is a place the page reported, and there is no arithmetic here for the
+/// same reason [`next_finding`] has none: a walk that works out where things
+/// have moved to gets it wrong by skipping a word and saying nothing about it.
+/// This is a comparison against a position the page named.
+///
+/// Nothing here consults [`Ignored`]. That set belongs to one F7 pass and ends
+/// with it, and this walk has no Ignore to press, so consulting it would mean
+/// keeping an ignore list alive that nobody can see, add to, or clear. A word
+/// somebody passed over in a dialog is still a word they can walk onto.
+pub fn next_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Step<'a> {
+    if found.is_empty() {
+        return Step::Stay(NOTHING_MISSPELLED);
+    }
+    found
+        .iter()
+        .find(|finding| from.is_none_or(|from| finding.at >= from))
+        .map_or(Step::Stay(NOTHING_AFTER_HERE), Step::Land)
+}
+
+/// What is said at the start of the message, going backwards.
+pub const NOTHING_BEFORE_HERE: &str = "No misspellings before here.";
+
+/// The misspelling before where the caret is.
+///
+/// The same shape as [`next_misspelling`] and under the same constraint: a
+/// comparison against a position the page reported, and no arithmetic over how
+/// far anything has moved. The temptation is stronger going backwards, because
+/// "the one before" reads like subtraction, and [`next_finding`]'s comment
+/// records what happened the time this was written as a sum: it skipped a
+/// misspelling and said nothing about having done so.
+///
+/// Ignored words are treated the way [`next_misspelling`] treats them, and for
+/// the same reason. Answering the two directions differently would mean a key
+/// that goes somewhere its opposite cannot bring you back from.
+pub fn previous_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Step<'a> {
+    if found.is_empty() {
+        return Step::Stay(NOTHING_MISSPELLED);
+    }
+    // The last one before here, not the first. Reversed rather than searched
+    // from the front, because `find` on a list in reading order answers "the
+    // earliest word before here", which walks from the end of a message to its
+    // beginning in one press and then says there are no more.
+    found
+        .iter()
+        .rev()
+        .find(|finding| from.is_none_or(|from| finding.at < from))
+        .map_or(Step::Stay(NOTHING_BEFORE_HERE), Step::Land)
 }
 
 /// The words worth stopping on, in the order they appear.
@@ -492,5 +634,296 @@ mod tests {
         assert!(finished(0).contains("Nothing to correct"));
         assert!(finished(1).contains("One word"));
         assert!(finished(4).contains('4'));
+    }
+
+    // ── Walking to a misspelling without a dialog ──────────────────────────
+
+    /// A message whose every word the made-up speller rejects.
+    ///
+    /// Through `findings` rather than by hand, so the positions are the ones
+    /// the real segmentation produces and a fixture cannot quietly disagree
+    /// with the code it is testing.
+    fn every_word_wrong(text: &str) -> Vec<Finding> {
+        findings(&words(text), |_| true, |_| vec!["fixed".to_string()])
+    }
+
+    #[test]
+    fn test_landing_on_a_word_offers_more_than_one_thing_to_try() {
+        // The whole point of the sentence. The dialog says one suggestion and
+        // follows it with a list somebody can arrow into; here there is no
+        // list, so one suggestion is one guess and no way to hear the others.
+        let finding = finding_at("wrold", 0, vec!["world".to_string(), "wold".to_string()]);
+
+        let said = finding.spoken_without_a_dialog();
+
+        assert!(said.contains("wrold"), "{said}");
+        assert!(said.contains("not in the dictionary"), "{said}");
+        assert!(said.contains("world"), "{said}");
+        assert!(said.contains("wold"), "{said}");
+    }
+
+    #[test]
+    fn test_a_word_with_more_suggestions_than_are_said_says_how_many_there_are() {
+        // Bounded, which is guardrail 5. Fourteen read out in full is an
+        // announcement nobody can interrupt out of. The count is what stops
+        // the bound turning into a quiet lie: without it, three suggestions
+        // and three of seven sound exactly the same.
+        let many: Vec<String> = (1..=7).map(|n| format!("guess{n}")).collect();
+        let finding = finding_at("wrold", 0, many);
+
+        let said = finding.spoken_without_a_dialog();
+
+        assert_eq!(
+            said,
+            "wrold, not in the dictionary. Try guess1, guess2 or guess3. \
+             7 suggestions in all"
+        );
+    }
+
+    #[test]
+    fn test_a_word_with_no_suggestions_at_all_says_that_rather_than_trailing_off() {
+        let finding = finding_at("Kowalczyk", 0, Vec::new());
+
+        assert_eq!(
+            finding.spoken_without_a_dialog(),
+            "Kowalczyk, not in the dictionary. No suggestions"
+        );
+    }
+
+    #[test]
+    fn test_the_dialogs_sentence_is_not_the_one_said_when_there_is_no_dialog() {
+        // Two situations, two sentences. Changing the shared one would make
+        // the dialog read its suggestions out and then show them in the list
+        // underneath, saying everything twice.
+        let finding = finding_at("wrold", 0, vec!["world".to_string(), "wold".to_string()]);
+
+        assert_eq!(
+            finding.spoken(),
+            "wrold, not in the dictionary. First suggestion, world"
+        );
+        assert_ne!(finding.spoken(), finding.spoken_without_a_dialog());
+    }
+
+    #[test]
+    fn test_the_first_press_lands_on_the_first_misspelling() {
+        let found = every_word_wrong("aaa bbb ccc");
+
+        assert_eq!(
+            next_misspelling(&found, Some(place(0))),
+            Step::Land(&found[0])
+        );
+    }
+
+    #[test]
+    fn test_pressing_it_again_moves_on_rather_than_offering_the_same_word_twice() {
+        // The caret is left at the end of the word it landed on, which is
+        // where the page puts it when a word is selected, so the next press
+        // starts past it. Offering the same word again would be a key that
+        // looks like it did nothing.
+        let found = every_word_wrong("aaa bbb ccc");
+        let landed_on_the_first = place(found[0].end);
+
+        assert_eq!(
+            next_misspelling(&found, Some(landed_on_the_first)),
+            Step::Land(&found[1])
+        );
+    }
+
+    #[test]
+    fn test_past_the_last_misspelling_it_says_so_and_wraps_nothing() {
+        let found = every_word_wrong("aaa bbb");
+        let past_them_all = place(100);
+
+        assert_eq!(
+            next_misspelling(&found, Some(past_them_all)),
+            Step::Stay("No more misspellings after here.")
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_wrong_says_so_rather_than_saying_nothing() {
+        // The case where a key really does have nothing to do. Silence here is
+        // indistinguishable from a key nobody bound, and somebody who cannot
+        // see the caret has no other way to tell.
+        let found = findings(
+            &words("all of these are fine"),
+            nothing_wrong,
+            no_suggestions,
+        );
+
+        assert_eq!(
+            next_misspelling(&found, None),
+            Step::Stay("No misspellings in this message.")
+        );
+    }
+
+    #[test]
+    fn test_the_walk_offers_a_word_an_f7_pass_would_have_ignored() {
+        // The decision, and both halves of it are asserted so the difference
+        // is the test rather than a comment. An `Ignored` set belongs to one
+        // F7 pass and ends with it; this walk has no Ignore to press, so
+        // consulting one would mean an ignore list nobody can see or clear.
+        let found = every_word_wrong("aaa bbb");
+        let mut ignored = Ignored::default();
+        ignored.add("bbb");
+
+        assert_eq!(
+            next_finding(&found, &ignored, Some(place(4))),
+            None,
+            "F7's walk should still skip a word it was told to ignore"
+        );
+        assert_eq!(
+            next_misspelling(&found, Some(place(4))),
+            Step::Land(&found[1])
+        );
+    }
+
+    // ── And backwards ──────────────────────────────────────────────────────
+
+    /// Every word a walk visits, from one end of the message to the other.
+    ///
+    /// The caret is modelled the way the page really reports it. Landing on a
+    /// word selects it, so a forward walk carries on from where that selection
+    /// ends and a backward one from where it begins. Those are the two
+    /// positions `walk_to_a_misspelling` hands in, and `check_spelling`
+    /// already works out the forward one the same way.
+    ///
+    /// Bounded rather than looped until it stops, because a walk that offers
+    /// the same word twice would otherwise hang the run instead of failing it,
+    /// and a test that hangs says nothing at all.
+    fn walked(found: &[Finding], backwards: bool) -> Vec<String> {
+        let mut visited: Vec<String> = Vec::new();
+        let mut from = None;
+        while visited.len() <= found.len() {
+            let step = if backwards {
+                previous_misspelling(found, from)
+            } else {
+                next_misspelling(found, from)
+            };
+            match step {
+                Step::Land(finding) => {
+                    visited.push(finding.word.clone());
+                    from = Some(if backwards {
+                        finding.at
+                    } else {
+                        Position {
+                            node: finding.at.node,
+                            offset: finding.end,
+                        }
+                    });
+                }
+                Step::Stay(_) => return visited,
+            }
+        }
+        panic!("the walk went round in circles: {visited:?}");
+    }
+
+    #[test]
+    fn test_the_two_directions_are_inverses_over_a_message() {
+        // Written as one property rather than as two hand-written walks,
+        // because two walks would each have to be right for the pair to
+        // disagree, and the mistake this is looking for is at a boundary:
+        // whether "the one before here" means the first earlier word or the
+        // last one. A backwards search that takes the first goes from the end
+        // of the message to the beginning in one press and stops.
+        let found = every_word_wrong("aaa bbb ccc ddd eee");
+
+        let there = walked(&found, false);
+        let mut back_again = walked(&found, true);
+        back_again.reverse();
+
+        assert_eq!(there, ["aaa", "bbb", "ccc", "ddd", "eee"]);
+        assert_eq!(there, back_again, "the two directions disagree");
+    }
+
+    #[test]
+    fn test_the_backward_key_from_the_end_lands_on_the_last_misspelling() {
+        let found = every_word_wrong("aaa bbb ccc");
+        let past_them_all = place(100);
+
+        assert_eq!(
+            previous_misspelling(&found, Some(past_them_all)),
+            Step::Land(&found[2])
+        );
+    }
+
+    #[test]
+    fn test_pressing_the_backward_key_again_moves_to_the_one_before_that() {
+        // Standing on the last one, which is selected, so the walk starts from
+        // where that selection begins. Starting from where it ends would offer
+        // the same word again.
+        let found = every_word_wrong("aaa bbb ccc");
+        let standing_on_the_last = found[2].at;
+
+        assert_eq!(
+            previous_misspelling(&found, Some(standing_on_the_last)),
+            Step::Land(&found[1])
+        );
+    }
+
+    #[test]
+    fn test_before_the_first_misspelling_it_says_so_and_moves_nothing() {
+        let found = every_word_wrong("aaa bbb");
+
+        assert_eq!(
+            previous_misspelling(&found, Some(place(0))),
+            Step::Stay("No misspellings before here.")
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_wrong_says_so_going_backwards_too() {
+        let found = findings(
+            &words("all of these are fine"),
+            nothing_wrong,
+            no_suggestions,
+        );
+
+        assert_eq!(
+            previous_misspelling(&found, None),
+            Step::Stay("No misspellings in this message.")
+        );
+    }
+
+    #[test]
+    fn test_landing_on_a_word_backwards_says_what_landing_on_it_forwards_says() {
+        // Which way somebody arrived is not a fact about the word, so it is
+        // not in the sentence. A "previous" in the announcement would also be
+        // the only thing in it that is not about the message.
+        let found = every_word_wrong("aaa bbb ccc");
+
+        let (Step::Land(forwards), Step::Land(backwards)) = (
+            next_misspelling(&found, Some(place(4))),
+            previous_misspelling(&found, Some(place(8))),
+        ) else {
+            panic!("both directions should have reached the middle word");
+        };
+
+        assert_eq!(forwards.word, "bbb");
+        assert_eq!(backwards.word, "bbb");
+        assert_eq!(
+            forwards.spoken_without_a_dialog(),
+            backwards.spoken_without_a_dialog()
+        );
+    }
+
+    #[test]
+    fn test_the_backward_walk_also_offers_a_word_an_f7_pass_would_have_ignored() {
+        // The same decision as the forward key, asserted rather than assumed
+        // to follow. Two keys that disagree about this would mean going
+        // somewhere the opposite key cannot bring you back from.
+        let found = every_word_wrong("aaa bbb");
+        let mut ignored = Ignored::default();
+        ignored.add("aaa");
+
+        assert_eq!(
+            next_finding(&found, &ignored, None).map(|finding| finding.word.as_str()),
+            Some("bbb"),
+            "F7's walk should still skip a word it was told to ignore"
+        );
+        assert_eq!(
+            previous_misspelling(&found, Some(place(4))),
+            Step::Land(&found[0])
+        );
     }
 }
