@@ -241,6 +241,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   counting down, one set for a time you chose, and one waiting on nothing are
   three different sentences instead of one.
 
+  How long the hold lasts is now a setting, under Sending on the Compose tab.
+  Anything from nought to sixty seconds, stepped with the arrow keys. Nought
+  means Send sends straight away, and the setting says so where you choose it:
+  "Send sends the message straight away, with no time to take it back."
+  Choosing a length says what that length will do. The changelog has claimed
+  since the hold was written that the length was adjustable, and there was no
+  such setting.
+
   Known limitation: none of this has met a real mail server. Whether a message
   that leaves after a hold arrives with the headers a recipient's program
   expects is not settled, and neither is whether ten seconds feels long or

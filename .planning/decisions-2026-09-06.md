@@ -72,3 +72,51 @@ still good; the split and the wave order are not.
 
 Phase 7 grows by a self-updater and a release channel setting, which `07-05` was
 explicitly written not to build.
+
+## Phase 7, second round, answered 2026-09-06
+
+**14. Success criterion 2 is widened to cover the download.** It was written when
+updating meant opening a web page, and it asks only that the program can say a
+newer version exists. It now fetches and runs an executable, so passing the old
+wording would prove nothing about the riskiest step in the milestone. The new
+wording must require that a downloaded installer is verified against this
+project's own publisher name before it runs, and that a failed check refuses
+rather than warns.
+
+**15. The release channel gets a line in SHIP-02** rather than a requirement of
+its own. Choosing a channel is part of what updating means for this product, not
+a separate capability.
+
+**16. One setting, not two, and it downloads before it asks.**
+
+The setting is a single control with three values: off, public releases,
+development releases. That removes the question of what a dependent control does
+when its parent is off, which is worth avoiding: a disabled control is skipped in
+the tab order, so for somebody moving by keyboard it does not read as
+unavailable, it simply is not there.
+
+With a channel chosen, the program checks, downloads and **verifies** the
+installer on its own, then **asks before running it**. So the fetch is
+unattended and the install is not.
+
+**And the update can be started by hand from the Help menu**, whatever the
+setting says. Pratik's addition, and it is the deliberate path criterion 2 asks
+for, independent of the automatic one.
+
+### Three things this shape now owes
+
+**`docs/privacy.md` needs more than the rewrite already planned.** The planned
+change was to say what the version check sends and that GitHub logs the address
+it came from. This decision adds a file arriving on somebody's disk without them
+asking, which is a different promise from the one about telemetry and has to be
+said in its own sentence.
+
+**Where the installer is kept, and when it is removed, is now a question.** An
+unattended download leaves a file somewhere. It needs a location, a rule for
+clearing it, and a line in whatever page says what this program leaves on the
+disk, which is criterion 4's territory.
+
+**Verifying before asking is the right order and should be stated as a rule.** A
+download that fails its signature check is refused before anybody is interrupted,
+so the person is never asked to approve something already known to be bad. The
+plan should say so rather than leaving the ordering to look incidental.

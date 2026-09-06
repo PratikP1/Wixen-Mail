@@ -2751,10 +2751,9 @@ const NOT_A_COMMAND: &[&str] = &[];
 /// satisfied, every symbol had a caller, and no automatic check in this tree
 /// could see that production only ever queued one of the three kinds.
 ///
-/// What this cannot see: whether the hold's length is the one somebody set, or
-/// whether the message really leaves when it runs out. Those are driven over a
-/// database in `data::message_cache::outbox`. This reads the source of the one
-/// function no test in that layer can reach.
+/// What this cannot see: whether the message really leaves when the hold runs
+/// out. That is driven over a database in `data::message_cache::outbox`. This
+/// reads the source of the one function no test in that layer can reach.
 #[test]
 fn test_the_composers_send_passes_the_hold_to_the_queue() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -2764,6 +2763,26 @@ fn test_the_composers_send_passes_the_hold_to_the_queue() {
         body.contains("GoAfter::held("),
         "the composer's Send no longer works out a hold, so nothing is ever held \
          and Undo Send refuses every time it is pressed"
+    );
+
+    // And the length is the one somebody set, not a constant. A hold pinned to
+    // its default here would leave the settings control storing an answer that
+    // nothing used, which is the shape of the ten settings this project already
+    // found saved, spoken back, and read by nobody.
+    assert!(
+        body.contains("the_hold_in_force()"),
+        "the composer's Send works out its own hold length instead of reading the \
+         setting, so the control on the Compose tab decides nothing"
+    );
+    let reader = body_of(&app, "fn the_hold_in_force(");
+    assert!(
+        reader.contains("undo_send_hold_seconds"),
+        "the one place the hold's length is read no longer reads the stored setting"
+    );
+    assert!(
+        reader.contains("Hold::of_seconds("),
+        "the stored hold is used without being clamped, so a hand-edited file can \
+         stop this program sending mail"
     );
 
     let worked_out = body

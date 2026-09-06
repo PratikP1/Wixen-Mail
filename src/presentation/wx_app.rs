@@ -14175,10 +14175,23 @@ fn spawn_draft_append(
 /// How long Send holds a message before anything hands it to a server.
 ///
 /// One place, so the length the composer uses and the length the settings
-/// screen says cannot come to differ, and so there is a single call site to
-/// change when the setting arrives.
+/// screen offers cannot come to differ.
+///
+/// Read through `Hold::of_seconds`, which clamps rather than refuses. The
+/// number has survived a restart and can hold whatever an older build, a
+/// hand-edited file or a typo left there, and its own doc gives the argument:
+/// there is no sensible way for a stored number to stop the program sending
+/// mail. A settings file that cannot be read at all falls back to the default
+/// hold rather than to no hold, because taking the only way back away from
+/// somebody is the worse of the two failures.
 fn the_hold_in_force() -> crate::application::sending_later::Hold {
-    crate::application::sending_later::Hold::DEFAULT
+    crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::sending_later::Hold::of_seconds(
+                stored.app_config().undo_send_hold_seconds,
+            )
+        })
+        .unwrap_or(crate::application::sending_later::Hold::DEFAULT)
 }
 
 fn queue_for_sending(
