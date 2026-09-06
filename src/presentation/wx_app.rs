@@ -5227,6 +5227,25 @@ impl WxMailApp {
                         to_begin_with(crate::service::network::whether_there_is_a_network()),
                 );
                 let asked_the_network_at = std::cell::Cell::new(std::time::Instant::now());
+                // When the outbox was last looked at for a hold that had run
+                // out, and the moment that look was measured against.
+                //
+                // Two clocks, because they answer different questions. The
+                // instant paces the looking and cannot move backwards, so a
+                // machine whose clock is corrected does not stop letting mail
+                // go. The moment is what a stored `send_after` is compared
+                // with, and that has to be the wall clock because that is what
+                // the column holds.
+                //
+                // `None` is "this program has not looked yet", which is every
+                // first look after it opens, and it is what catches a message
+                // held when it was last closed. Starting at the moment it
+                // opened would strand that message in the Outbox until
+                // somebody pressed Send Queued Mail.
+                let looked_for_held_mail_at = std::cell::Cell::new(std::time::Instant::now());
+                let held_mail_looked_at_up_to: std::cell::Cell<
+                    Option<chrono::DateTime<chrono::Local>>,
+                > = std::cell::Cell::new(None);
                 let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
                 // The same layout the menu handler and the paint callback hold,
                 // not a copy of it. An arriving conversation listing decides
@@ -5329,6 +5348,58 @@ impl WxMailApp {
                             .borrow_mut()
                             .told(crate::service::network::whether_there_is_a_network());
                         act_on_what_the_network_did(news, &ui_tx, &runtime);
+                    }
+
+                    // Held mail goes on its own. On this timer and on its own
+                    // interval, for the same reason the reminders and the
+                    // network check are here: a timer event reaches every
+                    // handler on the window it belongs to, so a second timer
+                    // would run this one as well.
+                    //
+                    // This is not a nicety on top of the hold, it is what
+                    // stops the hold being a worse defect than the one it
+                    // fixes. `flush_outbox` had three call sites and every one
+                    // of them was a person pressing something: Go Back Online,
+                    // Send Queued Mail, and the composer's own Send. Nothing
+                    // ran on a clock, so a message written with a hold would
+                    // wait ten seconds and then wait forever, having told
+                    // somebody it was going in ten seconds.
+                    //
+                    // The queue is asked first, and that is the whole of why
+                    // this can run about once a second. Asking is two small
+                    // columns for a handful of rows over the connection this
+                    // window already holds. Sending opens the database and
+                    // runs every migration pass, so calling it on every tick
+                    // would do that once a second forever, and would offer a
+                    // message that failed to send to the server again every
+                    // second. `anything_reached_its_moment` answers about the
+                    // edge rather than the level: each row asks for one pass,
+                    // at the moment its hold runs out.
+                    //
+                    // It calls `flush_outbox` rather than sending here, so
+                    // offline mode and `outbox_messages_that_may_go_now` go on
+                    // being asked in one place. That matters more than it
+                    // looks: 03-RESEARCH.md records wiring "something changed"
+                    // straight to a send as guardrail 7, and what makes this
+                    // safe is that the readiness filter still refuses anything
+                    // not ready.
+                    if looked_for_held_mail_at.get().elapsed() >= HOW_OFTEN_TO_LET_HELD_MAIL_GO {
+                        looked_for_held_mail_at.set(std::time::Instant::now());
+                        let up_to = chrono::Local::now();
+                        let since = held_mail_looked_at_up_to.replace(Some(up_to));
+                        let held_mail_is_due = {
+                            let s = lock_state(&state);
+                            s.active_account_id.clone()
+                        }
+                        .zip(message_cache.as_ref())
+                        .is_some_and(|(account_id, cache)| {
+                            cache
+                                .anything_reached_its_moment(&account_id, since, up_to)
+                                .unwrap_or(false)
+                        });
+                        if held_mail_is_due {
+                            flush_outbox(app);
+                        }
                     }
 
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
@@ -9537,6 +9608,19 @@ const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60
 /// inside one interval, and being told about that is worth less than not being
 /// told about it.
 const HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often the outbox is asked whether a hold has run out.
+///
+/// About a second, because the hold is counted in seconds and both sentences
+/// somebody hears about it name a whole number of them. A message that leaves
+/// within a second of its countdown reaching nought matches what it was told;
+/// one that leaves ten seconds later does not, and the person spent that time
+/// believing the program had stopped.
+///
+/// It is not the interval at which mail is sent. The question asked at this
+/// rate is two small columns over a connection the window already holds, and
+/// sending happens only when the answer is yes.
+const HOW_OFTEN_TO_LET_HELD_MAIL_GO: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Put the program into offline mode, or take it out, because somebody said so.
 ///
@@ -14088,6 +14172,15 @@ fn spawn_draft_append(
 /// would drift the first time this queued anything with a time on it, and the
 /// way that would show is a scheduled message going out the moment Send was
 /// pressed.
+/// How long Send holds a message before anything hands it to a server.
+///
+/// One place, so the length the composer uses and the length the settings
+/// screen says cannot come to differ, and so there is a single call site to
+/// change when the setting arrives.
+fn the_hold_in_force() -> crate::application::sending_later::Hold {
+    crate::application::sending_later::Hold::DEFAULT
+}
+
 fn queue_for_sending(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -14128,13 +14221,23 @@ fn queue_for_sending(
         created_at: chrono::Local::now().to_rfc3339(),
     };
 
-    // What the row is waiting for, named where it is written rather than read
-    // back out of the database a moment later. `queue_outbox_message` is the
-    // shorthand for this one, and it is the only thing the composer's Send has
-    // ever written.
-    let waiting_on = crate::application::sending_later::GoAfter::AsSoonAsPossible;
+    // What the row is waiting for, worked out here and written on the row, so
+    // the send loop reads back the same answer this returns to the caller.
+    //
+    // Both halves of that sentence were false until 04.2-01, and the second
+    // half is what made the whole of Undo Send unreachable. This worked the
+    // value out and then called `queue_outbox_message`, a wrapper whose entire
+    // body pinned the argument to "as soon as possible" and threw the answer
+    // away. The value was returned rather than passed, so the compiler was
+    // satisfied, `when_it_goes` below branched on it, and everything read as
+    // though a decision about waiting had reached storage. Nothing was ever
+    // held, so `take_back` answered TooLate for every row and Undo Send
+    // refused every single time it was pressed. The wrapper is gone, so a
+    // caller can no longer queue a message without saying what it waits for.
+    let waiting_on =
+        crate::application::sending_later::GoAfter::held(the_hold_in_force(), chrono::Local::now());
     cache
-        .queue_outbox_message(&queued)
+        .queue_outbox_message_to_go(&queued, &waiting_on)
         .map_err(|e| format!("Could not queue the message: {}", e))?;
     Ok((recipient.to_string(), waiting_on))
 }

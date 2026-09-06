@@ -536,7 +536,12 @@ fn test_message_cache_outbox_queue() {
         created_at: chrono::Utc::now().to_rfc3339(),
         body_html: None,
     };
-    cache.queue_outbox_message(&msg).unwrap();
+    cache
+        .queue_outbox_message_to_go(
+            &msg,
+            &wixen_mail::application::sending_later::GoAfter::AsSoonAsPossible,
+        )
+        .unwrap();
 
     let queued = cache.load_outbox_messages("acct-1").unwrap();
     assert_eq!(queued.len(), 1);
@@ -714,22 +719,25 @@ fn test_a_reply_reaches_the_outgoing_message_naming_what_it_answers() {
     account.smtp_port = "587".to_string();
 
     cache
-        .queue_outbox_message(&wixen_mail::data::message_cache::QueuedOutboxMessage {
-            id: "q-reply".to_string(),
-            account_id: "acct-1".to_string(),
-            to_addr: "sam@example.com".to_string(),
-            cc_addr: String::new(),
-            bcc_addr: String::new(),
-            subject: "Re: Notes".to_string(),
-            body: "Answering this".to_string(),
-            attachments: String::new(),
-            in_reply_to: Some("<c@x>".to_string()),
-            references: Some("<a@x> <b@x> <c@x>".to_string()),
-            attempt_count: 0,
-            last_error: None,
-            created_at: chrono::Utc::now().to_rfc3339(),
-            body_html: None,
-        })
+        .queue_outbox_message_to_go(
+            &wixen_mail::data::message_cache::QueuedOutboxMessage {
+                id: "q-reply".to_string(),
+                account_id: "acct-1".to_string(),
+                to_addr: "sam@example.com".to_string(),
+                cc_addr: String::new(),
+                bcc_addr: String::new(),
+                subject: "Re: Notes".to_string(),
+                body: "Answering this".to_string(),
+                attachments: String::new(),
+                in_reply_to: Some("<c@x>".to_string()),
+                references: Some("<a@x> <b@x> <c@x>".to_string()),
+                attempt_count: 0,
+                last_error: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                body_html: None,
+            },
+            &wixen_mail::application::sending_later::GoAfter::AsSoonAsPossible,
+        )
         .unwrap();
 
     let queued = cache.load_outbox_messages("acct-1").unwrap();

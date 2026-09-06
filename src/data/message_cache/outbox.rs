@@ -30,16 +30,41 @@ fn waiting_label(subject: &str, attempts: i64, last_error: Option<&str>) -> Stri
     }
 }
 
-impl MessageCache {
-    /// Queue message for later sending when offline
-    ///
-    /// With nothing holding it back, which is what Send has always meant: the
-    /// send loop takes it on its next pass.
-    pub fn queue_outbox_message(&self, item: &QueuedOutboxMessage) -> Result<()> {
-        self.queue_outbox_message_to_go(item, &GoAfter::AsSoonAsPossible)
+/// The whole sentence one row in the Outbox reads out.
+///
+/// Two facts joined, and they answer different questions. [`waiting_label`]
+/// says which message this is and how it has fared, which is why somebody
+/// opened the folder. [`Readiness::spoken`] says what it is waiting for, which
+/// is what tells a row counting down from one set for Friday.
+///
+/// A row with nothing holding it back says exactly what it has always said.
+/// `Readiness::spoken` answers "Waiting to send." for that case, which
+/// `waiting_label` has already said in its own words, so repeating it would
+/// make every ordinary row longer for nothing. Somebody arrowing down a queue
+/// of twenty hears the difference this way and does not hear it twice.
+fn what_this_row_is_doing(
+    label: &str,
+    when: &GoAfter,
+    now: DateTime<Local>,
+    dates: crate::presentation::date_display::DateSettings,
+) -> String {
+    match readiness(when, now) {
+        Readiness::MayGoNow => label.to_string(),
+        waiting => format!("{label}. {}", waiting.spoken(now, dates)),
     }
+}
 
+impl MessageCache {
     /// Queue a message to go no sooner than a given moment.
+    ///
+    /// The only way into the queue, and deliberately so. There used to be a
+    /// convenience wrapper beside it, `queue_outbox_message`, whose whole body
+    /// was this call with the moment pinned to [`GoAfter::AsSoonAsPossible`].
+    /// That wrapper is why the hold shipped unreachable for two phases and no
+    /// check here could see it: this function had a caller, its parameter had a
+    /// value, nothing was unused, and every other value of that parameter was
+    /// built only under `#[cfg(test)]`. Every caller now says what the message
+    /// is waiting for, so the question cannot be skipped by accident.
     ///
     /// The moment and who put it there are written as one pair by
     /// [`GoAfter::written_down`], so the reader and the writer cannot come to
@@ -174,13 +199,61 @@ impl MessageCache {
 
     /// Whether anything in this account's queue reached its moment since the
     /// clock last looked.
+    ///
+    /// What the poll timer asks before it wakes the send loop, and the reason
+    /// it can ask about once a second without cost: two small columns for a
+    /// handful of rows, over the connection the window already holds, rather
+    /// than opening the database and running every migration pass the way
+    /// sending does.
+    ///
+    /// Only the rows carrying a moment, because only those can come due. A row
+    /// with nothing on it either went on the pass it was queued in or is one a
+    /// send failed on, and retrying those on a clock would offer a failing
+    /// message to the server every second.
+    ///
+    /// Which rows came due is answered by [`its_moment_came`] and not by SQL,
+    /// for the reason [`Self::outbox_messages_that_may_go_now`] gives at
+    /// length: text that is not a time still compares, so a comparison in the
+    /// query reads a stray space as a moment already past.
+    ///
+    /// [`its_moment_came`]: crate::application::sending_later::its_moment_came
     pub fn anything_reached_its_moment(
         &self,
-        _account_id: &str,
-        _since: Option<DateTime<Local>>,
-        _now: DateTime<Local>,
+        account_id: &str,
+        since: Option<DateTime<Local>>,
+        now: DateTime<Local>,
     ) -> Result<bool> {
-        Ok(false)
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT send_after, somebody_chose_it FROM outbox_queue
+                 WHERE account_id = ?1 AND send_after IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare the outbox query: {}", e)))?;
+
+        let mut waiting = stmt
+            .query_map(params![account_id], |row| {
+                Ok(GoAfter::read(
+                    row.get::<_, Option<String>>(0)?.as_deref(),
+                    row.get(1)?,
+                ))
+            })
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to ask what the queue is waiting for: {}",
+                    e
+                ))
+            })?;
+
+        waiting.try_fold(false, |came, when| {
+            let when = when.map_err(|e| {
+                Error::Other(format!(
+                    "Failed to read what a queued message waits for: {}",
+                    e
+                ))
+            })?;
+            Ok(came || crate::application::sending_later::its_moment_came(&when, since, now))
+        })
     }
 
     /// The queue, as rows the message list can show.
@@ -197,16 +270,27 @@ impl MessageCache {
     /// The attempt count and the last error go in the subject line, because
     /// that is the column somebody reads and "tried 4 times" is the thing they
     /// need to know about a message that has not gone.
+    ///
+    /// What it is waiting for goes there too, through [`Readiness::spoken`].
+    /// This query used to select seven columns and neither of the two that say
+    /// when a message may go, so every row got [`waiting_label`] and nothing
+    /// else, and four rows doing four different things read identically: one
+    /// about to go, one counting down, one set for Friday, and one stuck on a
+    /// time nothing can read. Both columns are needed rather than just the
+    /// moment, because a hold and a chosen time are told apart by the flag and
+    /// nothing else, and reading only the moment would count down at somebody
+    /// from next Tuesday.
     pub fn outbox_rows(
         &self,
         account_id: &str,
-        _now: DateTime<Local>,
-        _dates: crate::presentation::date_display::DateSettings,
+        now: DateTime<Local>,
+        dates: crate::presentation::date_display::DateSettings,
     ) -> Result<Vec<super::MessageListRow>> {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT rowid, to_addr, subject, body, created_at, attempt_count, last_error
+                "SELECT rowid, to_addr, subject, body, created_at, attempt_count, last_error,
+                        send_after, somebody_chose_it
                  FROM outbox_queue
                  WHERE account_id = ?1
                  ORDER BY created_at ASC",
@@ -219,6 +303,7 @@ impl MessageCache {
                 let attempts: i64 = row.get(5)?;
                 let last_error: Option<String> = row.get(6)?;
                 let snippet: String = row.get(3)?;
+                let when = GoAfter::read(row.get::<_, Option<String>>(7)?.as_deref(), row.get(8)?);
                 Ok(super::MessageListRow {
                     // Negative, so it cannot be mistaken for a message id.
                     // Both count from one, and every reader of a list row
@@ -234,7 +319,12 @@ impl MessageCache {
                     account_id: account_id.to_string(),
                     message_id: String::new(),
                     refs_header: None,
-                    subject: waiting_label(&subject, attempts, last_error.as_deref()),
+                    subject: what_this_row_is_doing(
+                        &waiting_label(&subject, attempts, last_error.as_deref()),
+                        &when,
+                        now,
+                        dates,
+                    ),
                     // Where it is going, which is what identifies a message
                     // nobody has received yet. The From column would be your
                     // own address on every row.
@@ -333,22 +423,25 @@ mod tests {
         let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         cache
-            .queue_outbox_message(&QueuedOutboxMessage {
-                id: "outbox-1".to_string(),
-                account_id: "acc-1".to_string(),
-                to_addr: "user@example.com".to_string(),
-                cc_addr: String::new(),
-                bcc_addr: String::new(),
-                subject: "Waiting".to_string(),
-                body: "Body".to_string(),
-                in_reply_to: None,
-                references: None,
-                attempt_count: 0,
-                last_error: None,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                body_html: None,
-                attachments: String::new(),
-            })
+            .queue_outbox_message_to_go(
+                &QueuedOutboxMessage {
+                    id: "outbox-1".to_string(),
+                    account_id: "acc-1".to_string(),
+                    to_addr: "user@example.com".to_string(),
+                    cc_addr: String::new(),
+                    bcc_addr: String::new(),
+                    subject: "Waiting".to_string(),
+                    body: "Body".to_string(),
+                    in_reply_to: None,
+                    references: None,
+                    attempt_count: 0,
+                    last_error: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    body_html: None,
+                    attachments: String::new(),
+                },
+                &GoAfter::AsSoonAsPossible,
+            )
             .unwrap();
 
         let rows = cache
@@ -396,7 +489,9 @@ mod tests {
             body_html: None,
             attachments: String::new(),
         };
-        cache.queue_outbox_message(&item).unwrap();
+        cache
+            .queue_outbox_message_to_go(&item, &GoAfter::AsSoonAsPossible)
+            .unwrap();
 
         let loaded = cache.load_outbox_messages("acc-1").unwrap();
         assert_eq!(loaded.len(), 1);
@@ -484,13 +579,22 @@ mod tests {
         // reach across to it.
         let cache = a_cache("rows");
         cache
-            .queue_outbox_message(&queued("b", "acc-1", "Second", "2026-08-01T10:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("b", "acc-1", "Second", "2026-08-01T10:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
         cache
-            .queue_outbox_message(&queued("a", "acc-1", "First", "2026-08-01T09:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("a", "acc-1", "First", "2026-08-01T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
         cache
-            .queue_outbox_message(&queued("z", "acc-2", "Elsewhere", "2026-08-01T09:30:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("z", "acc-2", "Elsewhere", "2026-08-01T09:30:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
 
         let rows = cache
@@ -532,7 +636,10 @@ mod tests {
         // believing they stopped a message that is still on its way.
         let cache = a_cache("cancel");
         cache
-            .queue_outbox_message(&queued("a", "acc-1", "Going", "2026-08-01T09:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("a", "acc-1", "Going", "2026-08-01T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
         let row_id = cache
             .outbox_rows("acc-1", chrono::Local::now(), dates())
@@ -560,10 +667,16 @@ mod tests {
     fn test_a_failure_is_counted_against_the_message_it_happened_to() {
         let cache = a_cache("failure");
         cache
-            .queue_outbox_message(&queued("a", "acc-1", "Mine", "2026-08-01T09:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("a", "acc-1", "Mine", "2026-08-01T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
         cache
-            .queue_outbox_message(&queued("b", "acc-1", "Theirs", "2026-08-01T10:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("b", "acc-1", "Theirs", "2026-08-01T10:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
 
         cache
@@ -605,22 +718,25 @@ mod tests {
         let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
 
         cache
-            .queue_outbox_message(&QueuedOutboxMessage {
-                id: "outbox-cc".to_string(),
-                account_id: "acc-1".to_string(),
-                to_addr: "alice@example.com".to_string(),
-                cc_addr: "bob@example.com".to_string(),
-                bcc_addr: "carol@example.com".to_string(),
-                subject: "Reply to all".to_string(),
-                body: "Body".to_string(),
-                in_reply_to: None,
-                references: None,
-                attempt_count: 0,
-                last_error: None,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                body_html: None,
-                attachments: String::new(),
-            })
+            .queue_outbox_message_to_go(
+                &QueuedOutboxMessage {
+                    id: "outbox-cc".to_string(),
+                    account_id: "acc-1".to_string(),
+                    to_addr: "alice@example.com".to_string(),
+                    cc_addr: "bob@example.com".to_string(),
+                    bcc_addr: "carol@example.com".to_string(),
+                    subject: "Reply to all".to_string(),
+                    body: "Body".to_string(),
+                    in_reply_to: None,
+                    references: None,
+                    attempt_count: 0,
+                    last_error: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    body_html: None,
+                    attachments: String::new(),
+                },
+                &GoAfter::AsSoonAsPossible,
+            )
             .unwrap();
 
         let loaded = cache.load_outbox_messages("acc-1").unwrap();
@@ -636,22 +752,25 @@ mod tests {
         let cache = a_cache("outbox_thread");
 
         cache
-            .queue_outbox_message(&QueuedOutboxMessage {
-                id: "outbox-reply".to_string(),
-                account_id: "acc-1".to_string(),
-                to_addr: "alice@example.com".to_string(),
-                cc_addr: String::new(),
-                bcc_addr: String::new(),
-                subject: "Re: Notes".to_string(),
-                body: "Body".to_string(),
-                in_reply_to: Some("<c@x>".to_string()),
-                references: Some("<a@x> <b@x> <c@x>".to_string()),
-                attempt_count: 0,
-                last_error: None,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                body_html: None,
-                attachments: String::new(),
-            })
+            .queue_outbox_message_to_go(
+                &QueuedOutboxMessage {
+                    id: "outbox-reply".to_string(),
+                    account_id: "acc-1".to_string(),
+                    to_addr: "alice@example.com".to_string(),
+                    cc_addr: String::new(),
+                    bcc_addr: String::new(),
+                    subject: "Re: Notes".to_string(),
+                    body: "Body".to_string(),
+                    in_reply_to: Some("<c@x>".to_string()),
+                    references: Some("<a@x> <b@x> <c@x>".to_string()),
+                    attempt_count: 0,
+                    last_error: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    body_html: None,
+                    attachments: String::new(),
+                },
+                &GoAfter::AsSoonAsPossible,
+            )
             .unwrap();
 
         let loaded = cache.load_outbox_messages("acc-1").unwrap();
@@ -667,7 +786,10 @@ mod tests {
         {
             let cache = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
             cache
-                .queue_outbox_message(&queued("old-1", "acc-1", "Sent long ago", "2026-01-01"))
+                .queue_outbox_message_to_go(
+                    &queued("old-1", "acc-1", "Sent long ago", "2026-01-01"),
+                    &GoAfter::AsSoonAsPossible,
+                )
                 .unwrap();
             for column in ["in_reply_to", "references_header"] {
                 cache
@@ -708,12 +830,10 @@ mod tests {
             let older =
                 MessageCache::new(folder.path().to_path_buf(), None).expect("a cache to open");
             older
-                .queue_outbox_message(&queued(
-                    "old-1",
-                    "acc-1",
-                    "Queued long ago",
-                    "2026-01-01T09:00:00Z",
-                ))
+                .queue_outbox_message_to_go(
+                    &queued("old-1", "acc-1", "Queued long ago", "2026-01-01T09:00:00Z"),
+                    &GoAfter::AsSoonAsPossible,
+                )
                 .expect("a message to queue");
             for column in ["send_after", "somebody_chose_it"] {
                 older
@@ -760,7 +880,10 @@ mod tests {
         // the column arriving must not quietly change that.
         let cache = a_cache("outbox_no_time");
         cache
-            .queue_outbox_message(&queued("a", "acc-1", "Going", "2026-08-24T09:00:00Z"))
+            .queue_outbox_message_to_go(
+                &queued("a", "acc-1", "Going", "2026-08-24T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
             .expect("a message to queue");
 
         assert_eq!(
