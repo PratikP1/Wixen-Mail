@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 425 records have arrived since and have not been through it.
+# 427 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15516,4 +15516,105 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/spell_session.rs", tests = 36 },
+]
+
+# ── A batch of files is not all or nothing ─────────────────────────────────
+#
+# WRITE-01, and the rule that makes a drop or a paste of six files worth
+# having. `choose_all` calls `Chosen::at` per path and keeps whatever reads, so
+# a folder dropped among five photos is refused by name and the photos still go
+# on. The alternative, refusing the whole batch on the first bad path, is what
+# a `collect::<Result<Vec<_>, _>>()` gives for free and reads as the careful
+# answer: somebody who dropped six files and got none would have to work out
+# for themselves which one was the problem, with nothing on screen to say.
+#
+# The break is that shape exactly: the refusals are still gathered and still
+# said, so the announcement is unchanged and only the files are gone. A check
+# that asked whether a bad path is refused would pass on it.
+#
+# Measured by hand on 2026-09-06, every target with --no-fail-fast, from a tree
+# that was green first: 6,375 library tests passed and three failed in the whole
+# tree. Nothing outside this module noticed, which is the finding rather than an
+# aside: three tests are the whole defence of the rule, and every route that
+# attaches a file goes through the line they are about.
+#
+# Measured twice on the same day, and the second time is the point of the
+# `tests_last_seen` machinery. The first measurement was two tests. A test
+# pinning the whole sentence a batch says was added an hour later, for an
+# unrelated reason, and it reddens under this break as well; the commit that
+# added it was refused, `--remeasure` refused, and a plain run named the third
+# test. The record was two short of the truth for as long as it took to read
+# the message, rather than for three commits.
+
+[[guard]]
+name = "one path that cannot go on does not take the rest of the batch with it"
+file = "src/application/attaching.rs"
+before = """    Batch { chosen, refused }"""
+after = """    match refused {
+        Some(why) => Batch {
+            chosen: Vec::new(),
+            refused: Some(why),
+        },
+        None => Batch {
+            chosen,
+            refused: None,
+        },
+    }"""
+red = [
+    "application::attaching::tests::test_a_file_that_cannot_be_read_among_them_does_not_stop_the_others",
+    "application::attaching::tests::test_a_folder_among_them_is_refused_by_name_and_the_others_still_go_on",
+    "application::attaching::tests::test_what_a_batch_of_three_says_out_loud",
+]
+tests_last_seen = [
+    { file = "src/application/attaching.rs", tests = 30 },
+]
+
+# ── Every way a file goes on a message ends at one model ───────────────────
+#
+# WRITE-01. A file goes on a message three ways now: picked in a dialog, pasted
+# off the clipboard, and dropped on the window. `attach_from_paths` is what all
+# three call and `attaching::choose_all` is what it calls, so the folder
+# refusal, the unreadable refusal and `safe_file_name` are written once. The
+# paths a drop hands over were chosen by whoever did the dragging, which is a
+# stranger's input in exactly the sense the threat table means, so a route with
+# rules of its own is the defect the census is written against.
+#
+# The break is the door itself going by hand rather than a fourth route doing
+# it, because that is what compiles: a route building a chosen file needs the
+# attachment list in scope and the drop callback does not capture it. It is the
+# worse defect anyway. The door keeps its name and its three callers, and
+# underneath it every path becomes an attachment with no folder refused, no
+# name cleaned and every size reported as zero.
+#
+# Measured by hand on 2026-09-06, every target with --no-fail-fast, from a tree
+# that was green first: 6,376 library tests passed and one test failed in the
+# whole tree.
+#
+# That one test is the finding rather than an aside. Nothing in the library can
+# reach this: it needs a window, a dialog and a web view. The single
+# source-reading test named below is the whole defence of the rule, which is the
+# same shape 03-02 found for the sign-in census and 03-08 for the outbox.
+
+[[guard]]
+name = "every route that attaches a file goes through the one model"
+file = "src/presentation/wx_compose.rs"
+suite = "every_way_a_file_goes_on_a_message"
+before = """            let batch = crate::application::attaching::choose_all(&paths);"""
+after = """            let batch = crate::application::attaching::Batch {
+                chosen: paths
+                    .iter()
+                    .map(|path| crate::application::attaching::Chosen {
+                        name: path.display().to_string(),
+                        bytes: 0,
+                        path: path.clone(),
+                    })
+                    .collect(),
+                refused: None,
+            };"""
+red = [
+    "test_the_one_door_is_the_only_place_a_path_becomes_an_attachment",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/every_way_a_file_goes_on_a_message.rs", tests = 7 },
 ]

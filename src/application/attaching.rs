@@ -52,13 +52,19 @@ impl Chosen {
     /// cannot be read now will not read at Send either, and finding that out
     /// then means finding it out after the rest of the message has gone.
     pub fn at(path: &Path) -> Result<Self> {
-        let data = std::fs::metadata(path)
-            .map_err(|e| Error::Other(format!("Could not read {}: {e}", path.display())))?;
+        Self::looked_at(path).map_err(|why| Error::Other(why.about(path)))
+    }
+
+    /// The same read, answering why rather than saying it.
+    ///
+    /// The one place a path is turned into an attachment. [`Self::at`] is this
+    /// with the reason written out as the sentence it has always given, and
+    /// [`choose_all`] is this with the reasons grouped, so neither of them
+    /// carries a rule of its own about what may go on a message.
+    fn looked_at(path: &Path) -> std::result::Result<Self, NotAttached> {
+        let data = std::fs::metadata(path).map_err(|e| NotAttached::Unreadable(e.to_string()))?;
         if data.is_dir() {
-            return Err(Error::Other(format!(
-                "{} is a folder, and a folder cannot be attached",
-                path.display()
-            )));
+            return Err(NotAttached::Folder);
         }
         Ok(Self {
             path: path.to_path_buf(),
@@ -83,6 +89,264 @@ impl Chosen {
             self.name,
             crate::presentation::reader_text::human_size(self.bytes as usize)
         )
+    }
+}
+
+/// The most files one announcement names before it starts counting them.
+///
+/// Guardrail 5: feedback has to be bounded. Six names is about ten seconds of
+/// speech, which is as long as a routine confirmation should ever be, and past
+/// that the total said at the end is the useful fact rather than the roll call.
+const NAMED_ALOUD: usize = 6;
+
+/// Why a path did not become an attachment.
+///
+/// A reason rather than a sentence, because a batch has to group them: five
+/// files that would not read, each said in its own sentence, is five
+/// interruptions for one thing that went wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NotAttached {
+    /// A folder has a size and a name, so everything downstream would work
+    /// until the read at Send, which is after the rest of the message went.
+    Folder,
+    /// What the operating system said. Kept, because for one file it is the
+    /// difference between a file that has moved and one this program is not
+    /// allowed to open, and those have different answers.
+    Unreadable(String),
+}
+
+impl NotAttached {
+    /// The sentence for this path on its own.
+    fn about(&self, path: &Path) -> String {
+        match self {
+            Self::Folder => format!(
+                "{} is a folder, and a folder cannot be attached",
+                path.display()
+            ),
+            Self::Unreadable(why) => format!("Could not read {}: {why}", path.display()),
+        }
+    }
+}
+
+/// What a handful of paths came to.
+///
+/// A batch is not all or nothing. Somebody who dropped six files and got none
+/// back would have to work out for themselves which one was the problem, so
+/// everything that reads goes on and everything that did not is said once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Batch {
+    /// The files that go on the message, in the order the paths arrived.
+    pub chosen: Vec<Chosen>,
+    /// Everything that did not go on, in one announcement, or `None` when
+    /// everything did.
+    pub refused: Option<String>,
+}
+
+/// Read several paths at once, keeping whatever reads.
+///
+/// The one door every route in. A file picked, a file pasted and a file dropped
+/// are the same file, so the picker, the paste key and the drop target all end
+/// here and here ends at [`Chosen::looked_at`], which is where the refusals and
+/// the name cleaning live. Anything building a [`Chosen`] of its own would be a
+/// second set of rules for a stranger's path.
+pub fn choose_all(paths: &[PathBuf]) -> Batch {
+    let mut chosen = Vec::new();
+    let mut folders = Vec::new();
+    let mut unreadable = Vec::new();
+    // The sentence a single refusal would have been given on its own, kept in
+    // case it turns out to be the only one.
+    let mut on_its_own = None;
+
+    for path in paths {
+        match Chosen::looked_at(path) {
+            Ok(file) => chosen.push(file),
+            Err(why) => {
+                // Through `Error` rather than straight from `about`, because
+                // the sentence a single refusal is given has to be the one it
+                // was given before there were batches, and that one came out
+                // of `Chosen::at` and was formatted as an error. It therefore
+                // opens with the word "Error", which is poor wording for a
+                // thing said out loud and is how every refusal in this program
+                // is worded; changing it is a change to `common::Error` and
+                // every announcement that goes through it, not to this.
+                on_its_own = Some(Error::Other(why.about(path)).to_string());
+                match why {
+                    NotAttached::Folder => folders.push(refused_name(path)),
+                    NotAttached::Unreadable(_) => unreadable.push(refused_name(path)),
+                }
+            }
+        }
+    }
+
+    let refused = match (folders.len() + unreadable.len(), paths.len()) {
+        (0, _) => None,
+        // One path handed over is somebody picking a file, and it keeps the
+        // sentence picking a file has always had: the whole path, and the
+        // reason the operating system gave, which is the difference between a
+        // file that has moved and one this program is not allowed to open.
+        //
+        // Keyed on how many paths arrived rather than on how many were
+        // refused, and the two are not the same question. Three paths with one
+        // folder among them is a batch: a whole path read out in the middle of
+        // a list of the files that did go on is not a sentence anybody can
+        // follow, and it opens with the word "Error" as well.
+        (_, 1) => on_its_own,
+        _ => Some(refusals(&folders, &unreadable)),
+    };
+
+    Batch { chosen, refused }
+}
+
+/// What to call a path that did not go on, in a list of several.
+///
+/// Through the same cleaner an attached name goes through. Nothing is written
+/// anywhere with this, so the filesystem rules do not apply, but the
+/// bidirectional overrides do: a name that reads backwards is read backwards
+/// aloud too, and a refusal is exactly the moment somebody is being asked to
+/// recognise a file by hearing its name.
+fn refused_name(path: &Path) -> String {
+    crate::service::attachment_name::safe_file_name(
+        &path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+    )
+}
+
+/// One announcement about everything in a batch that did not go on.
+///
+/// Grouped by the reason rather than listed by file, so six folders dropped
+/// among the photos say "these are folders" once instead of six times.
+fn refusals(folders: &[String], unreadable: &[String]) -> String {
+    let mut said = Vec::new();
+    match folders.len() {
+        0 => {}
+        1 => said.push(format!(
+            "{} is a folder, and a folder cannot be attached",
+            folders[0]
+        )),
+        _ => said.push(format!(
+            "{} are folders, and a folder cannot be attached",
+            named(folders)
+        )),
+    }
+    match unreadable.len() {
+        0 => {}
+        1 => said.push(format!(
+            "{} could not be read, so it is not attached",
+            unreadable[0]
+        )),
+        _ => said.push(format!(
+            "{} could not be read, so they are not attached",
+            named(unreadable)
+        )),
+    }
+    said.join(". ")
+}
+
+/// Several names, said as a list somebody can follow.
+///
+/// Bounded at [`NAMED_ALOUD`], after which it counts. The names past that point
+/// are not information: somebody who dropped forty files knows they dropped
+/// forty, and what they are waiting to hear is that forty went on.
+fn named(names: &[String]) -> String {
+    if names.len() > NAMED_ALOUD {
+        let (said, rest) = names.split_at(NAMED_ALOUD);
+        return format!("{} and {} others", said.join(", "), rest.len());
+    }
+    match names.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, first)) => format!("{} and {last}", first.join(", ")),
+    }
+}
+
+/// One thing said after a batch, and whether it is trouble.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announcement {
+    /// The words, as they are said and as they are shown.
+    pub words: String,
+    /// Whether this interrupts and is put in front of somebody as well as
+    /// said. A file that did not go on and a message that will not send are
+    /// both cases where hearing it once, quietly, is not enough.
+    pub trouble: bool,
+}
+
+/// Everything said after a batch of paths was handed over, in the order it is
+/// said.
+///
+/// A list rather than a loop that speaks as it goes, because "one announcement
+/// per batch" is a property of the list and a loop cannot have it: six files
+/// each announcing themselves is six interruptions, and six over-the-limit
+/// complaints for one message that is too big is worse than none.
+///
+/// `all` is every file on the message once this batch has gone on, which is
+/// what the running total and the limit are about. Whether anything was
+/// attached before this batch is read from it rather than passed in, so the two
+/// cannot disagree.
+pub fn what_to_say(batch: &Batch, all: &[Chosen]) -> Vec<Announcement> {
+    let mut said = Vec::new();
+    if let Some(words) = attached_sentence(&batch.chosen, all) {
+        said.push(Announcement {
+            words,
+            trouble: false,
+        });
+    }
+    if let Some(words) = batch.refused.clone() {
+        said.push(Announcement {
+            words,
+            trouble: true,
+        });
+    }
+    // Once, at the end, about the message rather than about a file. Asked
+    // after every file instead, three files that between them go over would
+    // complain three times and the third complaint would say what the first
+    // one said.
+    if let Some(words) = over_the_limit(all) {
+        said.push(Announcement {
+            words,
+            trouble: true,
+        });
+    }
+    said
+}
+
+/// What is said about the files that just went on, or `None` if none did.
+///
+/// The names, not only the count. A batch that said "3 attachments" and stopped
+/// would lose the one thing somebody who cannot see the window is waiting for,
+/// which is whether the files that went on are the files they meant.
+fn attached_sentence(added: &[Chosen], all: &[Chosen]) -> Option<String> {
+    let what = match added {
+        [] => return None,
+        // One file says exactly what it said before there were batches: the
+        // name and the size, which is the whole of what somebody needs to know
+        // it is the right file.
+        [only] => format!("Attached {}", only.label()),
+        several => format!(
+            "Attached {}, {} in total",
+            named(
+                &several
+                    .iter()
+                    .map(|file| file.name.clone())
+                    .collect::<Vec<_>>()
+            ),
+            crate::presentation::reader_text::human_size(total_bytes(several) as usize)
+        ),
+    };
+    // How to take one off is said once, with the first file to go on, and then
+    // not repeated. It belongs on the list, as the description of a control,
+    // and a description set that way does not reach the accessibility tree for
+    // a native list in this wxWidgets binding: what a screen reader reads there
+    // is the line above it. So it is said here, where it is heard.
+    //
+    // "Nothing was attached before this batch" is read from the message rather
+    // than passed in, so the two cannot disagree.
+    match all.len() == added.len() {
+        true => Some(format!(
+            "{what}. Press Delete in the attachments list to take one off"
+        )),
+        false => Some(what),
     }
 }
 
@@ -472,5 +736,315 @@ mod tests {
         assert_eq!(chosen.name, "report.pdf");
         assert_eq!(chosen.bytes, 2048);
         assert_eq!(chosen.label(), "report.pdf, 2 KB");
+    }
+
+    // ── Several files at once ──────────────────────────────────────────────
+    //
+    // A trap the plan named and it is worth naming again here: `Chosen::at`
+    // already refuses a folder and already refuses a file that will not read,
+    // so a test handing over one bad path and asserting it is refused would be
+    // green against any loop at all and would say nothing. What carries
+    // information is the batch: that the others still go on, that the refusals
+    // arrive as one announcement rather than one each, and that the running
+    // total and the complaint about size are asked once at the end.
+
+    /// A folder with `count` real files in it, named `file-0.txt` upwards.
+    fn some_files(folder: &std::path::Path, count: usize, each: usize) -> Vec<PathBuf> {
+        (0..count)
+            .map(|n| {
+                let path = folder.join(format!("file-{n}.txt"));
+                std::fs::write(&path, vec![0u8; each]).expect("write");
+                path
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_several_files_go_on_in_the_order_the_paths_arrived() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 10);
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(
+            batch
+                .chosen
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["file-0.txt", "file-1.txt", "file-2.txt"]
+        );
+        assert_eq!(batch.refused, None);
+    }
+
+    #[test]
+    fn test_a_folder_among_them_is_refused_by_name_and_the_others_still_go_on() {
+        // The half that matters is "and the others still go on". Somebody who
+        // dropped three files and got none would have to find out for
+        // themselves which one was the problem.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+        let paths = vec![files[0].clone(), inner, files[1].clone()];
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(
+            batch
+                .chosen
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["file-0.txt", "file-1.txt"]
+        );
+        let refusal = batch.refused.expect("the folder to be refused");
+        assert!(refusal.contains("holiday photos"), "{refusal}");
+        assert!(refusal.contains("folder"), "{refusal}");
+    }
+
+    #[test]
+    fn test_a_file_that_cannot_be_read_among_them_does_not_stop_the_others() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let missing = folder.path().join("gone.pdf");
+        let paths = vec![files[0].clone(), missing, files[1].clone()];
+
+        let batch = choose_all(&paths);
+
+        assert_eq!(batch.chosen.len(), 2);
+        let refusal = batch.refused.expect("the missing file to be refused");
+        assert!(refusal.contains("gone.pdf"), "{refusal}");
+    }
+
+    #[test]
+    fn test_two_that_did_not_go_on_are_one_announcement_rather_than_two() {
+        // Six unreadable files should not be six interruptions. The list is
+        // one string for exactly that reason, and both names are in it.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("music");
+        std::fs::create_dir(&inner).expect("a folder");
+        let paths = vec![inner, folder.path().join("gone.pdf")];
+
+        let batch = choose_all(&paths);
+
+        assert!(batch.chosen.is_empty());
+        let refusal = batch.refused.expect("both to be refused");
+        assert!(refusal.contains("music"), "{refusal}");
+        assert!(refusal.contains("gone.pdf"), "{refusal}");
+    }
+
+    #[test]
+    fn test_one_path_is_refused_in_the_same_words_it_was_refused_in_before() {
+        // Picking one file has to behave exactly as it did before this, and
+        // the refusal is the part most easily lost: the full path and the
+        // reason the operating system gave are worth more than a bare name
+        // when there is only one thing to say.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("photos");
+        std::fs::create_dir(&inner).expect("a folder");
+
+        let batch = choose_all(std::slice::from_ref(&inner));
+
+        let alone = format!(
+            "{}",
+            Chosen::at(&inner).expect_err("a folder is not a file")
+        );
+        assert_eq!(batch.refused, Some(alone));
+    }
+
+    #[test]
+    fn test_what_a_batch_of_three_says_out_loud() {
+        // The whole sentence, not the parts it contains. Everything else here
+        // asks whether a name is in the announcement, which cannot see the
+        // punctuation, the order, or a stray word between two of them, and
+        // this is a sentence somebody hears rather than reads: a comma where
+        // "and" belongs is heard.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 2048);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert_eq!(
+            said[0].words,
+            "Attached file-0.txt, file-1.txt and file-2.txt, 6 KB in total. \
+             Press Delete in the attachments list to take one off"
+        );
+        assert!(!said[0].trouble);
+
+        // And the same three with a folder in the middle, which is two
+        // announcements: what went on, then what did not.
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+        let mixed = choose_all(&[paths[0].clone(), inner, paths[1].clone()]);
+        let said = what_to_say(&mixed, &mixed.chosen);
+
+        assert_eq!(
+            said.iter()
+                .map(|words| (words.words.as_str(), words.trouble))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "Attached file-0.txt and file-1.txt, 4 KB in total. \
+                     Press Delete in the attachments list to take one off",
+                    false
+                ),
+                (
+                    "holiday photos is a folder, and a folder cannot be attached",
+                    true
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_one_bad_path_among_several_is_named_rather_than_pathed() {
+        // The other half of the test above, and it took writing the summary to
+        // see that they are different questions. Handing over one path is
+        // picking a file and keeps the sentence picking a file has always had,
+        // whole path and all. Handing over three is a batch, and a batch says
+        // names: the whole path of one file read out in the middle of a list of
+        // the ones that did go on is not a sentence anybody can follow, and it
+        // opens with the word "Error" because that is how `common::Error`
+        // formats itself.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let files = some_files(folder.path(), 2, 10);
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+
+        let batch = choose_all(&[files[0].clone(), inner, files[1].clone()]);
+
+        assert_eq!(
+            batch.refused,
+            Some("holiday photos is a folder, and a folder cannot be attached".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_batch_names_the_files_that_went_on_rather_than_only_counting_them() {
+        // A batch that said only "3 attachments" would lose the one thing
+        // somebody who cannot see the window needs: whether the files that
+        // went on are the files they meant.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 1024);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let words = said.first().expect("something said about a batch of three");
+        assert!(words.words.contains("file-0.txt"), "{}", words.words);
+        assert!(words.words.contains("file-1.txt"), "{}", words.words);
+        assert!(words.words.contains("file-2.txt"), "{}", words.words);
+        assert!(!words.trouble, "attaching three files is not trouble");
+    }
+
+    #[test]
+    fn test_how_to_take_one_off_is_said_with_the_first_batch_and_not_again() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 2, 1024);
+
+        let first = choose_all(&paths[..1]);
+        let opening = what_to_say(&first, &first.chosen);
+        assert!(
+            opening
+                .iter()
+                .any(|said| said.words.contains("Press Delete")),
+            "{opening:?}"
+        );
+
+        let second = choose_all(&paths[1..]);
+        let mut everything = first.chosen.clone();
+        everything.extend(second.chosen.clone());
+        let later = what_to_say(&second, &everything);
+        assert!(
+            !later.iter().any(|said| said.words.contains("Press Delete")),
+            "{later:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_batch_says_one_thing_about_being_too_big_rather_than_one_a_file() {
+        // The defect this is written against is a loop that asks
+        // `over_the_limit` after every file: three files that between them go
+        // over would complain three times, and the third complaint says the
+        // same thing as the first.
+        let over = LIMIT_BYTES; // Over once encoded, whatever the base64 does.
+        let batch = Batch {
+            chosen: vec![
+                sized("one.bin", over / 2),
+                sized("two.bin", over / 2),
+                sized("three.bin", over / 2),
+            ],
+            refused: None,
+        };
+
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let complaints: Vec<_> = said
+            .iter()
+            .filter(|words| words.words.contains("providers refuse"))
+            .collect();
+        assert_eq!(complaints.len(), 1, "{said:?}");
+        assert!(
+            complaints[0].trouble,
+            "a message that will not send is trouble"
+        );
+    }
+
+    #[test]
+    fn test_a_batch_too_long_to_sit_through_names_the_first_few_and_counts_the_rest() {
+        // Guardrail 5. Ten names is twenty seconds of speech for a
+        // confirmation, and a screen reader saying it is a screen reader that
+        // cannot be used for twenty seconds.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 10, 16);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        let words = &said.first().expect("something said").words;
+        assert!(words.contains("file-5.txt"), "{words}");
+        assert!(!words.contains("file-6.txt"), "{words}");
+        assert!(words.contains("4 others"), "{words}");
+    }
+
+    #[test]
+    fn test_nothing_going_on_says_only_what_did_not() {
+        let folder = tempfile::tempdir().expect("temp dir");
+        let inner = folder.path().join("photos");
+        std::fs::create_dir(&inner).expect("a folder");
+
+        let batch = choose_all(&[inner]);
+        let said = what_to_say(&batch, &[]);
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].words.contains("folder"), "{said:?}");
+        assert!(said[0].trouble, "a file that did not go on is trouble");
+    }
+
+    #[test]
+    fn test_a_dropped_name_written_backwards_reaches_the_recipient_forwards() {
+        // T-04-27. A path handed over by a drop or a paste was chosen by
+        // whoever did the dragging, and the name on it is written into
+        // somebody else's mailbox. The override is the case that matters most
+        // here: a synthesiser reading the reordered name aloud gives no hint
+        // at all that it was reordered.
+        //
+        // This is the one of the register's two fixtures that can be a real
+        // file on Windows. A path that walks out of its folder never reaches
+        // the cleaner as a path, because `Chosen::at` asks for the last
+        // component; and a file named for a device cannot be created at all,
+        // so no drop can produce one. Both rules are tested where they live,
+        // in service::attachment_name.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let odd = folder.path().join("annexe\u{202E}cod.exe");
+        std::fs::write(&odd, b"nothing much").expect("write");
+
+        let batch = choose_all(&[odd]);
+
+        assert_eq!(batch.chosen.len(), 1);
+        assert_eq!(batch.chosen[0].name, "annexecod.exe");
     }
 }

@@ -59,6 +59,11 @@ const ID_ATTACH: Id = ID_HIGHEST + 113;
 const KEY_DELETE: i32 = 127;
 /// `WXK_RETURN`, the key that acts on the row a list is sitting on.
 const KEY_ENTER: i32 = 13;
+/// `V`, which with Ctrl is what Windows uses for pasting everywhere else.
+///
+/// `GetKeyCode` gives the uppercase letter for a letter key, whatever Shift is
+/// doing, so this is `V` and not `v`.
+const KEY_PASTE: i32 = b'V' as i32;
 const ID_UNDO: Id = ID_HIGHEST + 114;
 const ID_REDO: Id = ID_HIGHEST + 115;
 
@@ -480,6 +485,47 @@ fn say_so(parent: &Dialog, title: &str, said: &str) {
         .build();
     box_.show_modal();
     box_.destroy();
+}
+
+/// What the clipboard turned out to hold when the paste key was pressed.
+///
+/// Three answers rather than a list that may be empty, because two of them are
+/// nothing and they have different remedies. Guardrail 4: when a check can fail
+/// two ways, it has to say which.
+enum OnTheClipboard {
+    /// Paths, which go on the message.
+    Files(Vec<String>),
+    /// Something that is not a list of files, or nothing at all. Copying files
+    /// in File Explorer is what fixes it.
+    NoFiles,
+    /// The clipboard would not open, which is not the same as it being empty:
+    /// another program holds it and a moment later it usually opens.
+    Unavailable,
+}
+
+/// The paths on the clipboard, if it is holding files rather than text.
+///
+/// A clipboard can be written by any process on this machine, so what comes
+/// back is a stranger's paths and goes through the same door a picked file
+/// does. Nothing here decides what may be attached.
+fn files_on_the_clipboard() -> OnTheClipboard {
+    let clipboard = Clipboard::get();
+    // Held open for the whole read and closed when this goes out of scope.
+    // Windows lets one process own the clipboard at a time.
+    let Some(_open) = clipboard.locker() else {
+        return OnTheClipboard::Unavailable;
+    };
+    if !clipboard.is_format_supported(DataFormat::FILENAME) {
+        return OnTheClipboard::NoFiles;
+    }
+    let held = FileDataObject::new();
+    if !clipboard.get_data(&held) {
+        return OnTheClipboard::NoFiles;
+    }
+    match held.get_files() {
+        paths if paths.is_empty() => OnTheClipboard::NoFiles,
+        paths => OnTheClipboard::Files(paths),
+    }
 }
 
 /// Every formatting command on one menu, raised where the caret is.
@@ -1405,13 +1451,70 @@ pub fn show_compose_dialog_full(
         }
     }
 
-    let attach_files = {
+    // Every way a file goes on a message ends here.
+    //
+    // Picked, pasted or dropped, a path is a path once it is a string, and what
+    // may become an attachment is decided in one place for all three:
+    // `attaching::choose_all`, which calls `Chosen::at` per path and so carries
+    // the folder refusal, the unreadable refusal and the name cleaning without
+    // any of them being written twice. A route that built a `Chosen` of its own
+    // would be a second set of rules for a stranger's path, and
+    // tests/every_way_a_file_goes_on_a_message.rs is what stops a fourth route
+    // growing one.
+    let attach_from_paths = {
         let attached = attached.clone();
         let refresh = refresh_attachments.clone();
+        move |paths: Vec<String>, a11y: &crate::presentation::accessibility::Accessibility| {
+            let paths: Vec<std::path::PathBuf> =
+                paths.iter().map(std::path::PathBuf::from).collect();
+            let batch = crate::application::attaching::choose_all(&paths);
+            // The list and the running total are put right before anything is
+            // said, so what a screen reader reads next is already true.
+            let said = {
+                let mut files = attached.borrow_mut();
+                files.extend(batch.chosen.iter().cloned());
+                crate::application::attaching::what_to_say(&batch, &files)
+            };
+            refresh(false, a11y);
+            for words in said {
+                let _ = a11y.announce(
+                    &words.words,
+                    match words.trouble {
+                        true => crate::presentation::accessibility::announcements::Priority::High,
+                        false => {
+                            crate::presentation::accessibility::announcements::Priority::Normal
+                        }
+                    },
+                );
+                if words.trouble {
+                    // Shown as well as said. A file that did not go on, and a
+                    // message that has grown too big to send, are both things
+                    // somebody who is not listening to a screen reader has no
+                    // other way of finding out.
+                    //
+                    // One heading over both, rather than the two this used to
+                    // have. The heading is not where the information is; the
+                    // sentence is, and it is unchanged in each case.
+                    say_so(&dialog, "Attaching files", &words.words);
+                }
+            }
+        }
+    };
+
+    let attach_files = {
+        let attach_from_paths = attach_from_paths.clone();
         move |a11y: &crate::presentation::accessibility::Accessibility| {
+            // `Multiple`, so the picker and the two routes that hand over
+            // several paths at once agree about how many files an attach is.
+            // Without it the drop target and the paste key could do something
+            // the button could not, which is the shape WCAG 2.5.7 is about.
             let picker = FileDialog::builder(&dialog)
                 .with_message("Attach files")
-                .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+                .with_style(
+                    FileDialogStyle::Open
+                        | FileDialogStyle::FileMustExist
+                        | FileDialogStyle::Multiple,
+                )
                 .build();
             if picker.show_modal() != ID_OK {
                 // Cancelling is a decision. There is no outcome to report, and
@@ -1419,62 +1522,15 @@ pub fn show_compose_dialog_full(
                 // mistake.
                 return;
             }
-            let Some(path) = picker.get_path() else {
+            let paths = picker.get_paths();
+            if paths.is_empty() {
                 let _ = a11y.announce(
                     "No file was chosen",
                     crate::presentation::accessibility::announcements::Priority::High,
                 );
                 return;
-            };
-            match crate::application::attaching::Chosen::at(std::path::Path::new(&path)) {
-                Ok(file) => {
-                    let name = file.label();
-                    let first = attached.borrow().is_empty();
-                    attached.borrow_mut().push(file);
-                    // Said before the summary, because the name of the file
-                    // that just went on is the thing being waited for.
-                    //
-                    // How to take one off again is said once, with the first
-                    // file, and then not repeated. It belongs on the list, as
-                    // the description of a control, and a description set that
-                    // way does not reach the accessibility tree for a native
-                    // list in this wxWidgets binding: what a screen reader
-                    // reads there is the line above it. So it is said here,
-                    // where it is heard, rather than left somewhere it is not.
-                    let said = if first {
-                        format!(
-                            "Attached {name}. Press Delete in the attachments list to take one off"
-                        )
-                    } else {
-                        format!("Attached {name}")
-                    };
-                    let _ = a11y.announce(
-                        &said,
-                        crate::presentation::accessibility::announcements::Priority::Normal,
-                    );
-                    refresh(false, a11y);
-                    if let Some(complaint) =
-                        crate::application::attaching::over_the_limit(&attached.borrow())
-                    {
-                        let _ = a11y.announce(
-                            &complaint,
-                            crate::presentation::accessibility::announcements::Priority::High,
-                        );
-                        say_so(&dialog, "Too much to send", &complaint);
-                    }
-                }
-                // Said out loud as well as shown. A file that could not be read
-                // is the case where somebody most needs to know nothing went on
-                // the message, and a dialog they have to find is not that.
-                Err(why) => {
-                    let why = format!("{why}");
-                    let _ = a11y.announce(
-                        &why,
-                        crate::presentation::accessibility::announcements::Priority::High,
-                    );
-                    say_so(&dialog, "That file could not be attached", &why);
-                }
             }
+            attach_from_paths(paths, a11y);
         }
     };
 
@@ -1483,6 +1539,49 @@ pub fn show_compose_dialog_full(
         let a11y = a11y.clone();
         move |_| attach(&a11y)
     });
+
+    // Files dropped on the window go on the message, through the same door the
+    // picker and the paste key use.
+    //
+    // ── Which window this is on, and why that one ──────────────────────────
+    //
+    // The dialog. Windows registers a drop target per window and sends a drop
+    // to the window under the pointer; it does not walk up to the parent when
+    // that window has none of its own. So this catches a drop on the dialog's
+    // own surface, which is the space around and between the controls, and it
+    // does not catch one on any child.
+    //
+    // The dialog rather than the attachments list, which would be the obvious
+    // place to drop a file: that list is hidden until there is something in it,
+    // so it cannot be the target for the first file, which is the drop somebody
+    // actually makes. The same reason the paste key is not bound there.
+    //
+    // ── What is not known ──────────────────────────────────────────────────
+    //
+    // Whether a drop over the message body reaches this at all. The body is a
+    // WebView2 control, which handles drag and drop inside its own window, and
+    // no amount of reading source settles what it does with a file. Task 3 of
+    // plan 04-07 is a person dragging a file onto a running composer to find
+    // out, and the answer goes in the product either way rather than in a
+    // report. Do not read this compiling as evidence that dropping works.
+    //
+    // If it turns out that the body swallows the drop, moving this to another
+    // wxWidgets window will not help, because the body is the window it lands
+    // on. The design that would is catching the drop in the page's own
+    // JavaScript and posting the path over the wixenEditor channel, which is a
+    // different security boundary: the page would then be handling a file path.
+    // That is its own plan and its own threat model.
+    let _files_dropped_here = FileDropTarget::builder(&dialog)
+        .with_on_drop_files({
+            let attach_from_paths = attach_from_paths.clone();
+            let a11y = a11y.clone();
+            move |paths, _x, _y| {
+                attach_from_paths(paths, &a11y);
+                // Accepted, so the sending program stops showing the drag.
+                true
+            }
+        })
+        .build();
 
     // Delete takes the selected file off the message. The key Windows uses for
     // removing a row from a list, so nothing new has to be learned, and the
@@ -2128,14 +2227,60 @@ pub fn show_compose_dialog_full(
         }
     });
 
-    // Ctrl+Enter → Send from any other focused control (dialog-level fallback)
+    // Ctrl+Enter → Send, and Ctrl+V → attach whatever files are on the
+    // clipboard, from any other focused control (dialog-level fallback).
+    //
+    // wxWidgets sends a key to the focused window and passes it up the parents
+    // until something handles it, which is why one handler here covers every
+    // control that does not want the key for itself. That is exactly what the
+    // paste key needs. `Ctrl+V` in the message body is paste into the editor,
+    // handled by the page, and `Ctrl+V` in the To, Cc, Bcc or Subject line is
+    // paste into the box, handled by Windows; neither reaches here. What does
+    // reach here is `Ctrl+V` on the attachments list, on the Attach button, and
+    // on anything else in the toolbar, and in all of those it can only mean one
+    // thing.
+    //
+    // The alternative was a handler on the attachments list, which is where the
+    // key most obviously belongs and which cannot be the whole answer: the list
+    // is hidden until there is something in it, so it can never have focus when
+    // the first file goes on. Two homes, one of them unreachable for the case
+    // that matters, is worse than one that covers both.
     dialog.on_key_down({
+        let attach_from_paths = attach_from_paths.clone();
+        let a11y = a11y.clone();
         move |event| {
-            if let WindowEventData::Keyboard(ref kb) = event
-                && kb.event.control_down()
-                && kb.event.get_key_code() == Some(13)
-            {
+            let WindowEventData::Keyboard(ref kb) = event else {
+                event.skip(true);
+                return;
+            };
+            if kb.event.control_down() && kb.event.get_key_code() == Some(KEY_ENTER) {
                 dialog.end_modal(ID_SEND);
+                return;
+            }
+            if kb.event.control_down()
+                && !kb.event.shift_down()
+                && !kb.event.alt_down()
+                && kb.event.get_key_code() == Some(KEY_PASTE)
+            {
+                match files_on_the_clipboard() {
+                    OnTheClipboard::Files(paths) => attach_from_paths(paths, &a11y),
+                    // Silence on a key press cannot be told apart from the key
+                    // not being bound at all, so both of the ways this can come
+                    // to nothing say which one it was.
+                    OnTheClipboard::NoFiles => {
+                        let _ = a11y.announce(
+                            "There are no files on the clipboard to attach. \
+                             Copy them in File Explorer first",
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                    }
+                    OnTheClipboard::Unavailable => {
+                        let _ = a11y.announce(
+                            "The clipboard is in use by another program. Try again in a moment",
+                            crate::presentation::accessibility::announcements::Priority::High,
+                        );
+                    }
+                }
                 return;
             }
             event.skip(true);

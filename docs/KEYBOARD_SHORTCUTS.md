@@ -608,6 +608,7 @@ from somebody spelling their way to a message about invoice 4021.
 | Send Message | `Ctrl+Enter` | Send the current message |
 | Save Draft | `Ctrl+S` | Save message as draft |
 | Go to the toolbar | `Ctrl+\` | Move to the Send button at the top of the window. The arrow keys move along the toolbar from there |
+| Attach the files on the clipboard | `Ctrl+V` | Attaches files you copied in File Explorer. Not in the message itself or in the address and subject lines, where it pastes text as usual |
 | Close Window | `Esc` | Close composition window without sending |
 
 **Moving around the window.** The toolbar is at the top, above the From line,
@@ -742,6 +743,27 @@ A signature is the one that becomes formatting somewhere else: what you type is
 what a plain text reader sees, and the formatted half of the message is made
 from it. So there is no need to write HTML by hand to get a bold name.
 
+**Attaching files.** `Alt+A`, or the Attach File button, opens a picker that
+takes several files at once. Hold `Ctrl` as you click to add files one at a
+time, or `Shift` to take a run of them.
+
+`Ctrl+V` attaches whatever files are on the clipboard, so there is a way to do
+this without a picker and without a mouse. Copy the files in File Explorer
+first. The key works while you are on the toolbar or on the attachments list,
+which `Ctrl+\` and `Tab` reach; in the message itself and in the From, To, Cc,
+Bcc and Subject lines it pastes text, as it always has. With nothing but text on
+the clipboard it says so rather than doing nothing.
+
+Every file that goes on is named as it is attached, and the line under the
+message says how many there are and what they come to altogether. Past six files
+it names the first six and counts the rest, because a list of forty names read
+out is not something anybody can sit through.
+
+A folder among the files is refused by name and the others still go on, so one
+wrong pick does not lose the rest. The same is true of a file that has moved or
+that this program is not allowed to open. Whatever did not go on is said once,
+naming all of it, rather than once per file.
+
 **Pictures.** Format, then Insert Picture, puts a picture in the message and
 asks you to describe it. The description is required: a picture nobody
 described cannot be read out to somebody who cannot see it. The picture travels
@@ -770,7 +792,7 @@ cell" while the caret is inside one.
 | Send | `Alt+N` |
 | Undo | `Alt+U` |
 | Redo | `Alt+R` |
-| Attach File | `Alt+I` |
+| Attach File | `Alt+A` |
 
 **Field accelerators (Alt+key):**
 
@@ -783,7 +805,7 @@ cell" while the caret is inside one.
 | Subject | `Alt+S` |
 | People found | `Alt+E` |
 | Save Draft | `Alt+D` |
-| Discard | `Alt+A` |
+| Discard | `Alt+I` |
 | Cancel | `Alt+L` |
 
 **Finding somebody to write to**
