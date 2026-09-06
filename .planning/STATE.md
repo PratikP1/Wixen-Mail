@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-09-06T20:35:00.000Z"
-last_activity: 2026-09-06, 04-09 done and merged to main. An S/MIME encrypted message says it is encrypted, how it is addressed and that it cannot be opened, instead of opening as a blank pane under a line saying it might not have been downloaded. A PGP message opens when a key imported from the File menu fits it, and says which of four things happened when it does not. Tested against a key pair and a message made by GnuPG rather than by the crate under test, so it is two implementations agreeing; no message from a correspondent has been through either path. First OpenPGP dependency, with the Marvin weakness in rsa and the untested MSVC target written into Cargo.toml and the changelog.
-state_head: da60c294376e5e9c3ae130cc51dfba1897a5bfba
+stopped_at: Completed 04.2-01-PLAN.md
+last_updated: "2026-09-06T23:23:14.434Z"
+last_activity: "2026-09-06, 04.2-01 done and merged to main at 146b104, version 0.77.0. Undo Send really has something to take back: a message is held, says \"Sending in 10 seconds. Undo Send takes it back.\", goes on its own when the hold runs out, and can be taken back while it waits. It refused every time it was pressed before this, because queue_outbox_message was a wrapper pinning the moment to AsSoonAsPossible and the composer worked out what its message was waiting for and never passed it to the queue. That wrapper is deleted, so every caller says what it waits for. How long the hold lasts is a top-level setting under Sending on the Compose tab; both settings checks were red about it before they were green. Two guard records added, both breaks measured by hand. Ledger 81 closed; 147 and 148 opened, both unrun-verify. Nothing here has met a real server and nobody has heard the countdown through a screen reader: 04.2-04's checkpoint item 4 asks that question. Owed but deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 9611b70, which is not on the critical path and belongs to the end-of-phase sweep. STATE.md's own current_phase still says 02, which was stale before this plan and is left alone as out of scope."
+state_head: 146b104f9ca35020ccddd2496ad80734a9b120eb
 progress:
   total_phases: 9
   completed_phases: 0
@@ -324,6 +324,9 @@ ahead:
 - [Phase 04]: 04-02: "this task has no red available" is a claim about the tree, not a property of the task. The plan said its census could not be red because it must name a construction task 1 creates; the construction already existed and only its argument changed, so the census was red before any implementation. Ask what specifically does not exist yet before accepting the claim.
 - [Phase 04]: The decorative mark is an explicit empty alt and nothing else. role=presentation does not survive ammonia and the sanitiser was not widened for it.
 - [Phase 04]: announce_decorative_pictures ships on: a line you did not need is noise you can switch off, a picture you were never told about cannot be asked about.
+- [Phase 04.2]: Undo Send: the clock asks about an edge, not a level, so a message that failed to send is never retried once a second, and turning the hold on cannot make more mail leave than turning it off would. That is what lets a timer flush past guardrail 7.
+- [Phase 04.2]: The held sentence is countdown() alone and does not name the recipient. Every word costs, because the announcement has to finish before somebody knows there is anything to undo and the hold is ten seconds.
+- [Phase 04.2]: The scheduled-send changelog sentence is left false on purpose for 04.2-02 rather than moved to Known limitations and moved back one plan later.
 
 ### Pending Todos
 
@@ -405,8 +408,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T14:43:16.715Z
-Stopped at: Completed 04-08-PLAN.md
+Last session: 2026-09-06T23:23:07.654Z
+Stopped at: Completed 04.2-01-PLAN.md
 
 Earlier: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 

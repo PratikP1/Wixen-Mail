@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 133
+open_count: 134
 waived_count: 0
-fixed_count: 13
-total_count: 146
-last_updated: 2026-09-06T19:22:32.974Z
+fixed_count: 14
+total_count: 148
+last_updated: 2026-09-06T23:12:00.392Z
 ---
 
 # Broken Windows Ledger
@@ -95,7 +95,7 @@ last_updated: 2026-09-06T19:22:32.974Z
 | 78 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether the status bar and the announcement being the same words reads as a repetition when somebody meets both. The network sentence is written once and handed to status field 0 and to the announcement queue, which is what stops a deaf user and a blind user being told different things. A deaf-blind user reading the status bar on a braille display and then hearing the queue speak, or a low vision user with speech on, meets the same sentence twice within a second. Whether that is reassuring or is noise is not something a test can ask. | open |  | 2026-09-05T05:19:48.464Z |  |
 | 79 | 03 | unrun-verify | src/presentation/wx_app.rs |  | Whether somebody who lets the offer go by can find their way back. Two routes exist and neither has been used by a person. The offer panel stays on screen until the mode changes some other way, so it is still there to be tabbed to, and the sentence names the View menu as the other way. What is unknown is whether either is reachable in practice for somebody who heard the sentence once, was reading a message at the time, and comes back to it twenty minutes later with nothing repeating it. There is nothing that says the offer again. | open |  | 2026-09-05T05:19:48.844Z |  |
 | 80 | 03 | unrun-verify | src/service/network.rs |  | Whether InternetGetConnectedState answers usefully on a real machine losing a real network. It reports whether this computer has a connection at all, which is what makes it right for a cable pulled out and a wifi dropped, and it says nothing about whether a mail server can be reached, so a network that is up and cannot route leaves the program believing it is online. It has never been run against a machine that lost its network while Wixen Mail was open. Two things a run would settle: how long Windows takes to change its answer after the cable goes, which is the real delay before somebody is told rather than the ten second interval this asks on, and whether a wifi that flaps produces a run of changes the queue then speaks. | open |  | 2026-09-05T05:20:01.150Z |  |
-| 81 | 03 | deviation | src/application/sending_later.rs |  | The ten second Undo Send hold is never applied to anything. Hold, GoAfter::held and queue_outbox_message_to_go have no caller outside sending_later.rs and its tests: the composer's Send queues through queue_outbox_message, which writes GoAfter::AsSoonAsPossible, so readiness answers MayGoNow at once and take_back answers TooLate for every message somebody has just sent. The module doc says all of it runs. Undo Send is on the Tools menu and can never catch a message from the composer. Found while wiring offline mode into the same decision and left alone as out of scope: it is a behaviour change of its own with its own countdown to show and its own version bump. | open |  | 2026-09-05T05:20:01.525Z |  |
+| 81 | 03 | deviation | src/application/sending_later.rs |  | The ten second Undo Send hold is never applied to anything. Hold, GoAfter::held and queue_outbox_message_to_go have no caller outside sending_later.rs and its tests: the composer's Send queues through queue_outbox_message, which writes GoAfter::AsSoonAsPossible, so readiness answers MayGoNow at once and take_back answers TooLate for every message somebody has just sent. The module doc says all of it runs. Undo Send is on the Tools menu and can never catch a message from the composer. Found while wiring offline mode into the same decision and left alone as out of scope: it is a behaviour change of its own with its own countdown to show and its own version bump. | fixed |  | 2026-09-05T05:20:01.525Z | 2026-09-06T23:12:00.392Z |
 | 82 | 03 | unrun-verify | src/presentation/wx_conflict_choice.rs |  | Whether the two copies of a contact or a calendar item are understood by ear as a labelled pair. Each list is headed by a static text and named through set_accessible_name with the same string, What is on this computer and What your address book has, and the arrangement chosen is one sentence on opening saying what is being asked and how many fields differ, then each copy introduced by its label as focus reaches it. Whether that beats reading both copies out on opening is a judgement only a screen reader run settles, and nobody has heard this window. Three things a run would settle: whether the two headings are heard as headings rather than as more list content, whether the opening sentence is heard before somebody starts arrowing through the first list, and whether the list of differing fields inside that sentence is useful or is a clause people learn to skip. | open |  | 2026-09-05T08:50:01.364Z |  |
 | 83 | 03 | unrun-verify | src/application/conflict_choice.rs |  | Whether the count of waiting choices is useful or is a sentence somebody stops hearing. Every sync that found a disagreement ends with a whole sentence naming how many are waiting and where to make the choice, on top of the counts the sync already reads out. Phase 2 entries 26 and 33 are the precedent and asked the same question about a tally read aloud. What a run would settle: whether a sentence arriving after five counts is still heard, and whether somebody who hears it on every sync until they act finds it a reminder or a nag. | open |  | 2026-09-05T08:50:14.084Z |  |
 | 84 | 03 | unrun-verify | src/application/contacts_sync.rs |  | The push still sends a change typed here over the address book's newer copy, and nobody is asked. When a push is refused for carrying a version marker the address book has moved past, and the copy here was typed here, the push reads the address book's current marker and sends the change again on top of it. That is a second both-changed state, resolved in this computer's favour, at the provider, with a sentence afterwards. It is the same shape as the defect plan 03-09 fixed on the read side and it was left alone: it is guarded by two records, its behaviour is deliberate and argued for in guards.toml, and changing it means changing what those guards are about. Found while executing 03-09, whose own key link named the counter for this path as the model for how the losing case was told, which it is not. | open |  | 2026-09-05T08:50:23.245Z |  |
@@ -161,6 +161,8 @@ last_updated: 2026-09-06T19:22:32.974Z
 | 144 | 04 | unrun-verify | src/service/pgp/keys.rs |  | No real key and no real PGP message have been through this. The fixtures are a key pair and a message made by GnuPG 2.4.9 rather than by rPGP, which is two implementations agreeing rather than one agreeing with itself and is the strongest evidence available here, and it is still not a message from a correspondent. What goes wrong if it is not enough runs both ways and both are worse than the armour this replaces: a message shown as opened that was not, or a message refused that another client opens. | open |  | 2026-09-06T19:22:31.977Z |  |
 | 145 | 04 | stub | src/application/opening_pgp.rs |  | PGP/MIME is not read. what_the_form_says reads the message's text parts, so only inline PGP, where the armour sits in the body, ever reaches the opener. A multipart/encrypted message puts the armour in a separate application/octet-stream part that never becomes body text, so such a message is neither opened nor reported as failing to open: nothing sees it. Thunderbird and most modern clients send PGP/MIME, so this is the common shape rather than a corner. Gated in the product by the experimental warning on the menu item and named in the changelog. | open |  | 2026-09-06T19:22:32.467Z |  |
 | 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
+| 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
+| 148 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | A message that leaves after a hold has never met a real server. Whether it arrives with the headers a recipient's client expects, and whether ten seconds feels long or short with a real mailbox syncing underneath, are both unsettled. | open |  | 2026-09-06T23:11:39.000Z |  |
 
 ````json
 [
@@ -1131,10 +1133,10 @@ last_updated: 2026-09-06T19:22:32.974Z
     "file": "src/application/sending_later.rs",
     "line": null,
     "description": "The ten second Undo Send hold is never applied to anything. Hold, GoAfter::held and queue_outbox_message_to_go have no caller outside sending_later.rs and its tests: the composer's Send queues through queue_outbox_message, which writes GoAfter::AsSoonAsPossible, so readiness answers MayGoNow at once and take_back answers TooLate for every message somebody has just sent. The module doc says all of it runs. Undo Send is on the Tools menu and can never catch a message from the composer. Found while wiring offline mode into the same decision and left alone as out of scope: it is a behaviour change of its own with its own countdown to show and its own version bump.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-05T05:20:01.525Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-06T23:12:00.392Z"
   },
   {
     "id": 82,
@@ -1914,6 +1916,30 @@ last_updated: 2026-09-06T19:22:32.974Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T19:22:32.974Z",
+    "resolved_at": null
+  },
+  {
+    "id": 147,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nobody has heard the hold announced. Pressing Send now says \"Sending in 10 seconds. Undo Send takes it back.\" and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T23:11:30.841Z",
+    "resolved_at": null
+  },
+  {
+    "id": 148,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "A message that leaves after a hold has never met a real server. Whether it arrives with the headers a recipient's client expects, and whether ten seconds feels long or short with a real mailbox syncing underneath, are both unsettled.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T23:11:39.000Z",
     "resolved_at": null
   }
 ]
