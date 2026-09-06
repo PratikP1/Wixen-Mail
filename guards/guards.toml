@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 426 records have arrived since and have not been through it.
+# 427 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15558,4 +15558,54 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/attaching.rs", tests = 28 },
+]
+
+# ── Every way a file goes on a message ends at one model ───────────────────
+#
+# WRITE-01. A file goes on a message three ways now: picked in a dialog, pasted
+# off the clipboard, and dropped on the window. `attach_from_paths` is what all
+# three call and `attaching::choose_all` is what it calls, so the folder
+# refusal, the unreadable refusal and `safe_file_name` are written once. The
+# paths a drop hands over were chosen by whoever did the dragging, which is a
+# stranger's input in exactly the sense the threat table means, so a route with
+# rules of its own is the defect the census is written against.
+#
+# The break is the door itself going by hand rather than a fourth route doing
+# it, because that is what compiles: a route building a chosen file needs the
+# attachment list in scope and the drop callback does not capture it. It is the
+# worse defect anyway. The door keeps its name and its three callers, and
+# underneath it every path becomes an attachment with no folder refused, no
+# name cleaned and every size reported as zero.
+#
+# Measured by hand on 2026-09-06, every target with --no-fail-fast, from a tree
+# that was green first: 6,376 library tests passed and one test failed in the
+# whole tree.
+#
+# That one test is the finding rather than an aside. Nothing in the library can
+# reach this: it needs a window, a dialog and a web view. The single
+# source-reading test named below is the whole defence of the rule, which is the
+# same shape 03-02 found for the sign-in census and 03-08 for the outbox.
+
+[[guard]]
+name = "every route that attaches a file goes through the one model"
+file = "src/presentation/wx_compose.rs"
+suite = "every_way_a_file_goes_on_a_message"
+before = """            let batch = crate::application::attaching::choose_all(&paths);"""
+after = """            let batch = crate::application::attaching::Batch {
+                chosen: paths
+                    .iter()
+                    .map(|path| crate::application::attaching::Chosen {
+                        name: path.display().to_string(),
+                        bytes: 0,
+                        path: path.clone(),
+                    })
+                    .collect(),
+                refused: None,
+            };"""
+red = [
+    "test_the_one_door_is_the_only_place_a_path_becomes_an_attachment",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/every_way_a_file_goes_on_a_message.rs", tests = 7 },
 ]
