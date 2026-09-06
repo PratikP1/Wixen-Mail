@@ -671,7 +671,7 @@ write path added by this milestone passes through that gate.
   - [D] Attaching announces the file name and size, and refusing a file says which file and
     why.
 
-- [ ] **WRITE-02**: Insert an image inline in an HTML message.
+- [x] **WRITE-02**: Insert an image inline in an HTML message.
   - Evidence: rewritten 2026-09-04. "No inline image insertion path exists" is false. It is
     built end to end and reached from a menu, and the first `[D]` line below is already
     satisfied in the stronger form: alt text is not merely asked for, it is compulsory.
@@ -1723,7 +1723,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-05 | Phase 3 | Complete |
 | SCALE-06 | Phase 3 | Pending |
 | WRITE-01 | Phase 4 | Pending |
-| WRITE-02 | Phase 4 | Pending |
+| WRITE-02 | Phase 4 | Complete |
 | WRITE-03 | Phase 4 | Complete |
 | READ-01 | Phase 4 | Pending |
 | READ-02 | Phase 4 | Pending |

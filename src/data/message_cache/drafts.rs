@@ -203,6 +203,80 @@ mod tests {
     }
 
     #[test]
+    fn test_a_picture_and_its_description_come_back_out_of_a_real_database() {
+        // The storage stage of the trip a picture takes between being inserted
+        // and being seen again. The other stages are unit-testable strings and
+        // live in `presentation::html_renderer`; this one needs a database,
+        // and the phase's criterion says "survives a draft save and reload",
+        // so a test that stopped at the sanitiser would be proving the wrong
+        // half.
+        //
+        // Both descriptions here are awkward on purpose. A quote and an angle
+        // bracket are what the escaping is for, and SQLite is the one stage
+        // that could return them as something else.
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
+
+        let bytes = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4];
+        let chart = a_picture_to_send(
+            "image/png",
+            &bytes,
+            &WhatThePictureSays::InWords(r#"A chart of "sales" < 2026"#.to_string()),
+        )
+        .expect("a described picture");
+        let furniture = format!(r#"<img src="data:image/png;base64,{}" alt="">"#, {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        });
+        let written = crate::presentation::editor_document::body_from_editor(
+            &serde_json::to_string(&format!("<p>{chart}</p><p>{furniture}</p>"))
+                .expect("a body a page could answer with"),
+        );
+
+        let cache = a_cache("draft_pictures");
+        cache
+            .save_draft(&CachedDraft {
+                id: "draft-with-pictures".to_string(),
+                account_id: "acc-1".to_string(),
+                to_addr: "ada@example.com".to_string(),
+                cc: None,
+                bcc: None,
+                subject: "Sales".to_string(),
+                body: "See the chart".to_string(),
+                body_html: Some(written.clone()),
+                attachments: Vec::new(),
+                in_reply_to: None,
+                references: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .expect("the draft to save");
+
+        let back = cache
+            .load_draft("draft-with-pictures")
+            .expect("the draft to load")
+            .expect("the draft to be there")
+            .body_html
+            .expect("the formatted half to come back");
+
+        assert_eq!(
+            back, written,
+            "the database did not give the body back as it was stored"
+        );
+        assert!(
+            back.contains("data:image/png;base64,"),
+            "the picture itself did not survive the database: {back}"
+        );
+        assert!(
+            back.contains("&quot;sales&quot;") && back.contains("&lt; 2026"),
+            "the escaped description did not survive the database: {back}"
+        );
+        assert!(
+            back.contains(r#"alt="""#),
+            "the decorative mark did not survive the database: {back}"
+        );
+    }
+
+    #[test]
     fn test_a_reply_saved_as_a_draft_still_knows_what_it_answers() {
         // Otherwise Save Draft on a reply loses its place in the thread
         // silently: it comes back looking complete and goes out as the start of

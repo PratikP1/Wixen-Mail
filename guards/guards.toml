@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 428 records have arrived since and have not been through it.
+# 434 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10993,9 +10993,12 @@ after = """    if is_a_picture_we_carried(address) {
         return None;
     }"""
 red = [
+    "application::pictures::tests::test_a_decorative_picture_goes_out_as_a_part_of_its_own",
     "application::pictures::tests::test_a_description_written_with_a_quote_in_it_reads_as_it_was_typed",
+    "application::pictures::tests::test_a_message_whose_pictures_are_all_decorative_says_nothing_about_pictures",
     "application::pictures::tests::test_a_picture_leaves_the_body_before_it_is_sent",
     "application::pictures::tests::test_every_picture_in_a_message_gets_a_name_of_its_own",
+    "application::pictures::tests::test_one_described_and_one_decorative_picture_leave_one_line_in_the_plain_half",
     "application::pictures::tests::test_the_body_points_at_the_part_that_was_taken_out_of_it",
     "application::pictures::tests::test_the_picture_is_carried_out_whole_and_still_described",
     "application::pictures::tests::test_the_plain_half_still_says_what_the_pictures_were",
@@ -11004,7 +11007,7 @@ red = [
     "service::protocols::smtp::tests::test_the_sent_body_and_the_sent_picture_name_each_other",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 36 },
+    { file = "src/application/pictures.rs", tests = 47 },
     { file = "src/service/protocols/smtp.rs", tests = 40 },
 ]
 
@@ -11015,11 +11018,12 @@ before = """    format!("\\n\\nPictures in this message:\\n{}", described.join("
 after = """    let _ = described;
     String::new()"""
 red = [
+    "application::pictures::tests::test_one_described_and_one_decorative_picture_leave_one_line_in_the_plain_half",
     "application::pictures::tests::test_the_plain_half_still_says_what_the_pictures_were",
     "service::protocols::smtp::tests::test_the_plain_half_of_a_sent_message_says_what_the_picture_was",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 36 },
+    { file = "src/application/pictures.rs", tests = 47 },
     { file = "src/service/protocols/smtp.rs", tests = 40 },
 ]
 
@@ -11893,7 +11897,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 52 },
+    { file = "src/data/config.rs", tests = 53 },
 ]
 
 [[guard]]
@@ -12745,7 +12749,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 25 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 52 },
+    { file = "src/data/config.rs", tests = 53 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -15256,7 +15260,7 @@ red = [
     "service::picture::tests::test_a_picture_declaring_more_than_the_bound_is_refused_on_its_declaration",
 ]
 tests_last_seen = [
-    { file = "src/service/picture.rs", tests = 10 },
+    { file = "src/service/picture.rs", tests = 14 },
 ]
 
 # ── A fault and a fact that sound the same ──────────────────────────────────
@@ -15654,4 +15658,220 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 80 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
+]
+
+# ── A description that is lost quietly ──────────────────────────────────────
+#
+# Criterion 2 of phase 4 says a picture inserted into a message keeps its
+# description across a draft save and a reload, and until 04-08 nothing
+# asserted any of it. The trip has four stages and the description can be lost
+# at any of them: the escaping when it is written, the sanitiser when the body
+# leaves the editor, the drafts table, and the sanitiser again when the body
+# goes back into the page.
+#
+# The break is the sanitiser forgetting `alt` on an `img`, because that is the
+# one that loses the description and keeps the picture. Somebody sighted sees
+# no change at all. The picture is still there, still shown, and the person it
+# was described for is told nothing, which is the exact defect this whole
+# module exists to prevent.
+#
+# It is written as a line added to `cleaner`, which is the shape of the real
+# mistake: somebody tightening the allowed attributes and taking `alt` with
+# them. Removing the whole attribute filter was tried first and is a much
+# larger break, reddening the security tests too, so it would go on passing if
+# somebody left the filter alone and narrowed the attribute list, which is the
+# likelier mistake.
+#
+# Measured by hand on 2026-09-06 with `WIXEN_TEST_THREADS=4 cargo test
+# --all-targets --no-fail-fast` against a tree where `scripts/check.sh all` had
+# just passed. Exactly nine tests went red in 6,401, six of them the new round
+# trip and three that already stood over `alt` from one end or the other.
+
+[[guard]]
+name = "a picture's description survives the trip from the composer to the page"
+file = "src/presentation/html_renderer.rs"
+before = """        let mut builder = ammonia::Builder::default();"""
+after = """        let mut builder = ammonia::Builder::default();
+        builder.rm_tag_attributes("img", ["alt"]);"""
+red = [
+    "data::message_cache::drafts::tests::test_a_picture_and_its_description_come_back_out_of_a_real_database",
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_said_to_be_there_when_the_reader_asked_for_that",
+    "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
+    "presentation::html_renderer::tests::test_a_described_picture_is_untouched_whatever_the_reader_chose",
+    "presentation::html_renderer::tests::test_a_held_back_picture_leaves_the_senders_words_in_its_place",
+    "presentation::html_renderer::tests::test_a_message_on_its_way_out_keeps_its_mark_whatever_this_reader_chose",
+    "presentation::html_renderer::tests::test_a_picture_and_its_description_survive_the_whole_trip",
+    "presentation::html_renderer::tests::test_a_picture_the_message_carries_is_shown",
+    "presentation::html_renderer::tests::test_an_awkward_description_survives_the_whole_trip_unmangled",
+    "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
+    "presentation::html_renderer::tests::test_image_alt_text_survives_sanitizing",
+    "presentation::html_renderer::tests::test_only_the_decorative_picture_changes_when_two_are_shown",
+    "presentation::html_renderer::tests::test_the_rewrite_is_anchored_to_the_attribute_and_not_to_a_substring",
+    "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/drafts.rs", tests = 6 },
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
+]
+
+# ── An empty description quietly becoming a decorative mark ─────────────────
+#
+# The defect the whole decorative design is arranged to avoid. There is one
+# writer of an `img` tag and it now has two answers, and the moment an empty
+# `InWords` reaches the arm that writes an empty `alt`, "somebody said there
+# is nothing to say" and "somebody typed nothing" become the same thing. The
+# picture goes out marked decorative, every other client's screen reader skips
+# it, and nobody is told.
+#
+# It is one character of a match arm, which is why it needs a guard: it reads
+# as tidying up two arms that do the same thing, and only one of them does.
+#
+# Measured by hand on 2026-09-06 with `WIXEN_TEST_THREADS=4 cargo test
+# --all-targets --no-fail-fast` from a tree green in the library. Exactly one
+# library test in 6,416.
+
+[[guard]]
+name = "an empty description does not become a decorative mark"
+file = "src/application/pictures.rs"
+before = """        WhatThePictureSays::Decorative => String::new(),"""
+after = """        WhatThePictureSays::InWords(_) | WhatThePictureSays::Decorative => String::new(),"""
+red = [
+    "application::pictures::tests::test_a_picture_being_sent_must_be_described",
+]
+tests_last_seen = [
+    { file = "src/application/pictures.rs", tests = 47 },
+]
+
+# ── A narrowing that has stopped narrowing ──────────────────────────────────
+#
+# `could_be_furniture` decides where the decorative question is asked. It is a
+# judgement about size and it exists to keep the question away from a
+# photograph, where the only honest answer is a description. A narrowing that
+# says yes to everything asks the question over every picture, and the question
+# has an answer on it that sends a photograph with nothing said.
+#
+# The break keeps the `None` guard, so a picture with no readable size is still
+# refused. That isolates the two bounds themselves, which is what this record
+# is about; a break removing the whole function would also redden the GIF test
+# and say less.
+#
+# Measured by hand on 2026-09-06 the same way. Four library tests in 6,416, and
+# the fourth is worth noting: the SVG case reddens because the break drops
+# `worth_carrying`, which is part of the same expression.
+
+[[guard]]
+name = "the decorative question is not offered over a photograph"
+file = "src/application/pictures.rs"
+before = """    worth_carrying(kind, how_big)
+        && how_big <= MOST_FURNITURE_MAY_BE
+        && width.min(height) <= MOST_FURNITURE_MAY_MEASURE"""
+after = """    let _ = (kind, how_big, width, height);
+    true"""
+red = [
+    "application::pictures::tests::test_a_kind_that_cannot_be_carried_at_all_is_never_offered_it",
+    "application::pictures::tests::test_a_photograph_and_a_screen_capture_are_never_offered_it",
+    "application::pictures::tests::test_the_furniture_bound_on_disk_is_a_bound_and_not_decoration",
+    "application::pictures::tests::test_the_furniture_bound_on_size_is_a_bound_and_not_decoration",
+]
+tests_last_seen = [
+    { file = "src/application/pictures.rs", tests = 47 },
+]
+
+# ── Enter answering the question that costs somebody else ───────────────────
+#
+# Enter is how a person working by keyboard answers everything, so it is
+# already on its way while a question is still being read out. On this one the
+# two answers do not cost the same. Describing a picture that turned out to be
+# a spacer costs a moment; marking a picture decorative that turned out to say
+# something costs the person receiving it the fact that it was there, and they
+# cannot ask about what they were never told.
+#
+# Both spellings compile and neither is obviously wrong in a diff, which is why
+# this is a guard rather than a comment. Nothing in the library can see it: the
+# composer's dialog code needs a person to answer it, so the census is the
+# suite, and the record names it.
+#
+# Measured by hand on 2026-09-06 the same way. One test in the census, nothing
+# else in 6,416.
+
+[[guard]]
+name = "enter does not mark a picture decorative"
+file = "src/presentation/wx_compose.rs"
+suite = "a_picture_is_only_decorative_because_somebody_said_so"
+before = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())"""
+after = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())"""
+red = [
+    "test_the_decorative_question_is_one_enter_answers_by_asking_for_a_description",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/a_picture_is_only_decorative_because_somebody_said_so.rs", tests = 14 },
+]
+
+# ── A setting that decides nothing ──────────────────────────────────────────
+#
+# `announce_decorative_pictures` moves the final say about a sender's
+# decorative mark to the person reading. A renderer that answers the same way
+# whatever the setting says is the shape that passes every test of the words
+# themselves: the line appears, it is worded correctly, it is escaped
+# correctly, and somebody who turned it off still hears it on every message
+# with a spacer in it.
+#
+# The break is the arm that returns early, not the field, because removing the
+# field would not compile and a compile error is a weaker red than a stubbed
+# body. It only breaks one direction, which is the honest one to break: a
+# setting stuck on is noise somebody can hear past, and a setting stuck off is
+# the loss this whole feature exists to prevent, so the noisy direction is the
+# one a test can be sure about on any machine.
+#
+# Measured by hand on 2026-09-06 with `WIXEN_TEST_THREADS=4 cargo test
+# --all-targets --no-fail-fast` from a tree green in the library. One test in
+# 6,427.
+
+[[guard]]
+name = "a reader who asked for silence about decorative pictures gets it"
+file = "src/presentation/html_renderer.rs"
+before = """        if self.announcing == Announcing::Silently {
+            return tag.to_string();
+        }"""
+after = """        let _ = self.announcing;"""
+red = [
+    "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
+]
+
+# ── This reader's words reaching somebody else's message ────────────────────
+#
+# `sanitize_html` is one call doing two jobs, and its own comment says so: it
+# cleans a stranger's message on the way in and it cleans this person's message
+# on the way out. Words written there would be sent to the recipient, and the
+# mark the composer just made would be overwritten by a sentence about it.
+#
+# That is why the announcing seam is in `hold_back_what_would_be_fetched`,
+# which only runs when a message is being read. The break is the version
+# somebody would write who had not read that comment: the same call, one layer
+# up, where it reads as tidier.
+#
+# Three tests notice and they notice differently. One puts a decorative picture
+# through the outgoing path and finds the mark gone. One runs the whole trip
+# from the composer to the page and finds the description changed on the way.
+# One is the sanitiser assertion the decorative mark rests on.
+#
+# Measured by hand on 2026-09-06 the same way. Three tests in 6,427.
+
+[[guard]]
+name = "a message on its way out does not pick up this reader's own words"
+file = "src/presentation/html_renderer.rs"
+before = """        cleaner().clean(html).to_string()"""
+after = """        self.say_where_a_decorative_picture_is(&cleaner().clean(html).to_string())"""
+red = [
+    "presentation::html_renderer::tests::test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried",
+    "presentation::html_renderer::tests::test_a_message_on_its_way_out_keeps_its_mark_whatever_this_reader_chose",
+    "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 77 },
 ]

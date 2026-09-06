@@ -123,6 +123,26 @@ pub fn read(bytes: &[u8]) -> Result<PictureReading> {
     })
 }
 
+/// The size a picture's own header declares, without decoding a pixel.
+///
+/// The same reading [`refuse_what_the_header_declares`] does, offered as an
+/// answer rather than as a refusal, because one caller wants to know how big a
+/// picture is rather than whether it is too big. It is what
+/// [`crate::application::pictures::could_be_furniture`] is handed, and it stays
+/// here rather than moving up a layer so that the decoding this program does
+/// over a stranger's bytes all happens in one file.
+///
+/// `None` whenever the size cannot be read at all, which covers three things
+/// worth telling apart in the head even though they answer the same: bytes that
+/// are not a picture, a truncated file, and a picture of a kind this build does
+/// not decode. That last is the ordinary case. `Cargo.toml` gives `image` the
+/// `ico`, `png`, `bmp` and `jpeg` features and not `gif` or `webp`, and this
+/// application will happily carry a GIF or a WebP in a message, so a caller
+/// must expect `None` for a real picture that is perfectly all right.
+pub fn how_big_it_says_it_is(bytes: &[u8]) -> Option<(u32, u32)> {
+    reader_over(bytes).ok()?.into_dimensions().ok()
+}
+
 /// Refuse a picture on the size its own header declares, before decoding.
 ///
 /// The error names the declared size, which is what tells a reader of the tests
@@ -226,6 +246,45 @@ mod tests {
         let read = read(&bytes).expect("a JPEG");
 
         assert_eq!((read.width, read.height), (40, 25));
+    }
+
+    #[test]
+    fn test_the_declared_size_can_be_read_without_decoding_the_picture() {
+        // What `could_be_furniture` is handed. The header only, so asking it
+        // over a photograph costs nothing.
+        assert_eq!(how_big_it_says_it_is(&a_png(120, 40)), Some((120, 40)));
+    }
+
+    #[test]
+    fn test_a_picture_too_big_to_read_still_says_how_big_it_says_it_is() {
+        // This answers a question rather than passing a judgement, and the two
+        // are next to each other in this file so it is worth pinning apart.
+        // `read` refuses this picture; this reports it.
+        let huge = a_png(WIDEST + 1, 1);
+
+        assert!(read(&huge).is_err());
+        assert_eq!(how_big_it_says_it_is(&huge), Some((WIDEST + 1, 1)));
+    }
+
+    #[test]
+    fn test_a_kind_this_build_does_not_decode_has_no_readable_size() {
+        // A real GIF, and this application will carry one in a message:
+        // `pictures::KINDS_WORTH_CARRYING` includes GIF and WebP and
+        // `Cargo.toml` gives `image` neither feature. So `None` here is the
+        // ordinary answer for a perfectly good picture, not a fault, and the
+        // caller has to treat it as "not measurable" rather than "not a
+        // picture".
+        let a_gif = b"GIF89a\x0a\x00\x0a\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff\
+                      \x21\xf9\x04\x00\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x0a\x00\
+                      \x0a\x00\x00\x02\x08\x8c\x8f\xa9\xcb\xed\x0f\x63\x2b\x00\x3b";
+
+        assert_eq!(how_big_it_says_it_is(a_gif), None);
+    }
+
+    #[test]
+    fn test_bytes_that_are_not_a_picture_have_no_readable_size() {
+        assert_eq!(how_big_it_says_it_is(b"not a picture at all"), None);
+        assert_eq!(how_big_it_says_it_is(b""), None);
     }
 
     #[test]

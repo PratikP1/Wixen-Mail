@@ -8,6 +8,70 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You decide whether a picture the sender called decorative is announced to
+  you.**
+
+  A sender can mark a picture as having nothing to say, and their mail program
+  then tells your screen reader to skip it. That mark can be wrong, and you are
+  the one who pays for it: a picture that actually said something arrives with
+  nothing said and nothing to ask about.
+
+  Settings, Reading now has **Say where a picture the sender marked decorative
+  is**. It ships on. With it on, a short line saying the sender marked the
+  picture decorative is put where the picture is, so you can judge that for
+  yourself. Turn it off and the mark is taken at face value and the picture is
+  passed over in silence.
+
+  It ships on because the two mistakes do not cost the same. A line you did not
+  need is noise you hear past and switch off in one place. A picture you were
+  never told about is something you cannot ask about.
+
+  The words say the sender marked it decorative rather than that it is
+  decorative, because the first is something this program knows and the second
+  is not.
+
+  Known limitations:
+
+  - It does nothing in the plain text reading path. There no picture says
+    anything at all, described or not, because every tag is stripped. That gap
+    is older than this setting and needs its own piece of work.
+  - It changes nothing about a message you send. A decorative picture you send
+    carries a correct empty description and is skipped by other mail programs,
+    whatever you have chosen here.
+  - Nobody has heard the line read aloud, and nobody has heard a mailing with
+    thirty spacers in it.
+
+- **A picture can now be marked decorative, and it is a question somebody
+  answers rather than a box left empty.**
+
+  Some pictures in a message carry nothing: a spacer, a rule, a line under a
+  signature. Describing one of those tells a person listening nothing they
+  wanted to know. Until now Insert Picture refused to go on without a
+  description, so the only way past was to type something meaningless.
+
+  When you insert a small picture, Wixen Mail now asks whether it is
+  decorative before it asks for a description. Answer Yes and the picture is
+  sent with no description at all, which is what tells another mail program's
+  screen reader to skip it. Answer No, or press Enter, and you are asked to
+  describe it exactly as before.
+
+  The question is only offered where furniture is plausible: the picture's
+  shorter side is 200 pixels or less and the file is 100 KB or less. Over a
+  photograph or a screen capture the question is not asked, because there the
+  only honest answer is a description.
+
+  Known limitations:
+
+  - A GIF or a WebP is never offered the question, even a tiny one. Wixen Mail
+    will carry both in a message and this build cannot read their size, so it
+    cannot tell whether one is small enough to be furniture. It asks for a
+    description rather than guessing.
+  - The rule is about size, and size is not meaning. A small screen capture of
+    an error message is exactly the size furniture is, so the question will be
+    offered over one. Nothing can tell what a picture is of, which is why this
+    is a question and not a decision.
+  - Nobody has heard the question read aloud by a screen reader.
+
 - **Files dragged onto the composer go on the message, except on the message
   area itself.**
 

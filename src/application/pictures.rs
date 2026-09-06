@@ -49,6 +49,57 @@ impl Fetching {
     }
 }
 
+/// Whether a picture the sender marked decorative is said to be there.
+///
+/// The sender's mark can be wrong, honestly or lazily, and the recipient is the
+/// one who pays for it. This is where the final say moves to the receiving
+/// side: a reader who does not trust senders hears that a picture was there,
+/// and one who wants furniture to be silent gets silence.
+///
+/// It changes nothing about a message on its way out. A decorative picture this
+/// program sends carries a correct empty `alt` whatever this reader has chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Announcing {
+    /// Say where it is, attributing the claim to the sender.
+    OutLoud,
+    /// Take the mark at face value and pass over it.
+    Silently,
+}
+
+impl Announcing {
+    /// What the setting means, read the way the setting is worded.
+    ///
+    /// The setting asks whether to announce, and announcing is what is on by
+    /// default, so somebody who does nothing is told a picture was there
+    /// rather than not told.
+    pub fn from_setting(announce: bool) -> Self {
+        if announce {
+            Announcing::OutLoud
+        } else {
+            Announcing::Silently
+        }
+    }
+}
+
+/// What to say where a picture the sender marked decorative is.
+///
+/// It attributes the claim rather than making it. "The sender marked this
+/// decorative" is something this program knows; "this picture is decorative"
+/// is something only the sender could know, and the whole reason there is a
+/// setting is that senders get it wrong. A reader who hears the first can
+/// decide the sender was careless; one who hears the second cannot.
+///
+/// Short on purpose. A mailing can carry thirty spacers, and thirty of these
+/// is a wall. It goes into the document, where a reader passes over it, rather
+/// than into the announcement queue, where it would be spoken at them.
+/// Guardrail 5.
+///
+/// Different from what a held-back picture says, which is about a picture that
+/// is not shown at all, and from what is said for a picture nobody described,
+/// which is a sender who said nothing rather than a sender who said there was
+/// nothing to say.
+pub const WHAT_A_DECORATIVE_PICTURE_SAYS: &str = "Picture the sender marked decorative";
+
 /// The picture kinds a message may carry inline.
 ///
 /// Raster formats only, and this is a security decision rather than a
@@ -336,26 +387,122 @@ pub fn what_the_plain_text_should_say(pictures: &[ToSend]) -> String {
     format!("\n\nPictures in this message:\n{}", described.join("\n"))
 }
 
+/// What a picture being put into a message says for itself.
+///
+/// Two states rather than a string, because "nothing to say" and "nobody said
+/// anything" are different facts and a string cannot hold the difference. An
+/// empty string is the second one, and it is still refused.
+///
+/// One writer either way. Two places that write an `img` tag would be two
+/// places for the escaping rule to live, and the escaping is what stands
+/// between somebody's own words and the markup they go into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatThePictureSays {
+    /// What it is, for somebody who cannot see it.
+    InWords(String),
+    /// Nothing, because there is nothing to say: a spacer, a rule, a flourish.
+    ///
+    /// A positive answer somebody gives on purpose. Never a description left
+    /// blank, never a prompt dismissed, and never the answer Enter gives on
+    /// its own. `presentation::wx_compose::insert_picture` is where that is
+    /// held to, and a census in `tests/` reads it.
+    Decorative,
+}
+
+/// The longest the shorter side of a picture may be and still be furniture.
+///
+/// A judgement, not a proof, and worth saying plainly because the code cannot
+/// tell what a picture is *of*. A spacer is one pixel, a rule sent as a
+/// picture is a few pixels tall, and a signature flourish is a small square.
+/// A photograph and a screen capture are both far past this on both sides.
+///
+/// **What it lets through: a small screen capture of an error message
+/// qualifies under any rule of this shape.** That is the false positive this
+/// heuristic buys, and there is no version of it that does not. What limits
+/// the cost is that the answer is still somebody's: the question is asked, it
+/// is answered No by Enter, and it says what a decorative picture means.
+///
+/// The shorter side rather than either one, so a rule 900 pixels wide and 3
+/// tall is still furniture.
+pub const MOST_FURNITURE_MAY_MEASURE: u32 = 200;
+
+/// The most furniture may cost on disk.
+///
+/// The second of two conditions, both required, and neither is enough alone.
+///
+/// Without this one, a photograph cropped to a small square qualifies: it is
+/// 200 pixels across and it is dense, and density is what tells a photograph
+/// from a drawing. Furniture is flat colours and straight edges, so it
+/// compresses to almost nothing, and a small picture that costs a hundred
+/// kilobytes is carrying detail somebody put there.
+///
+/// Without the other one, a whole page of mostly white screen capture
+/// qualifies: it is enormous and it compresses tiny. A size on disk says
+/// nothing about how much of the screen a picture takes up.
+pub const MOST_FURNITURE_MAY_BE: usize = 100 * 1024;
+
+/// Whether a picture is small enough that furniture is a plausible answer.
+///
+/// Only ever used to decide whether to *offer* the decorative question. It
+/// never answers it. Saying a picture is decorative is somebody's decision and
+/// this narrows where they are asked to make it, so that the question is not
+/// put over a photograph, where the only honest answer is a description.
+///
+/// The size is an argument rather than something read here, so the decision is
+/// testable without a picture and the decoding stays in `service::picture`,
+/// where the bounds that read a header already live.
+///
+/// Fails closed on a size that cannot be read at all. This build decodes PNG
+/// and JPEG, so a GIF or a WebP arrives here as `None`, and a person is then
+/// asked to describe it rather than handed a shortcut on a picture nothing
+/// could measure.
+pub fn could_be_furniture(kind: &str, how_big: usize, size: Option<(u32, u32)>) -> bool {
+    let Some((width, height)) = size else {
+        return false;
+    };
+    worth_carrying(kind, how_big)
+        && how_big <= MOST_FURNITURE_MAY_BE
+        && width.min(height) <= MOST_FURNITURE_MAY_MEASURE
+}
+
 /// A picture somebody is putting into a message they are writing.
 ///
 /// Carried, the same way a picture a message arrives with is carried, so the
 /// person receiving it sees it without fetching anything and without this
 /// application having to keep a file anywhere.
 ///
-/// The description is not optional and this is deliberate. Everything else in
-/// this module exists because a picture nobody described cannot be read out to
-/// somebody who cannot see it. Writing one that way, in an application built
-/// for exactly those people, would be the one place it could still be done.
-pub fn a_picture_to_send(kind: &str, bytes: &[u8], described: &str) -> Result<String, String> {
+/// A description is still not optional, and this is deliberate. Everything
+/// else in this module exists because a picture nobody described cannot be
+/// read out to somebody who cannot see it. What changed in 04-08 is that there
+/// is now a second answer, and it is an answer rather than an absence:
+/// [`WhatThePictureSays::Decorative`] writes an explicit empty `alt`, which is
+/// what WCAG says a decorative image carries and what every other client's
+/// reader acts on. An `InWords` with nothing readable in it is refused exactly
+/// as it was.
+pub fn a_picture_to_send(
+    kind: &str,
+    bytes: &[u8],
+    says: &WhatThePictureSays,
+) -> Result<String, String> {
     use base64::Engine as _;
 
-    if described.trim().is_empty() {
-        return Err(
-            "A picture needs a description, so somebody who cannot see it \
+    let described = match says {
+        WhatThePictureSays::InWords(words) if !words.trim().is_empty() => {
+            html_escape::encode_double_quoted_attribute(words.trim()).into_owned()
+        }
+        // The mark: an `alt` that is present and empty. Written as an empty
+        // string here rather than left out of the tag, because a missing `alt`
+        // is a sender who said nothing and this is a sender who said there is
+        // nothing to say. `presentation::html_renderer` holds the two apart.
+        WhatThePictureSays::Decorative => String::new(),
+        WhatThePictureSays::InWords(_) => {
+            return Err(
+                "A picture needs a description, so somebody who cannot see it \
                     still knows what you sent."
-                .to_string(),
-        );
-    }
+                    .to_string(),
+            );
+        }
+    };
     if !worth_carrying(kind, bytes.len()) {
         return Err(format!(
             "{kind} pictures cannot be put in a message here, or this one is \
@@ -367,7 +514,7 @@ pub fn a_picture_to_send(kind: &str, bytes: &[u8], described: &str) -> Result<St
         r#"<img src="data:{};base64,{}" alt="{}">"#,
         kind.trim().to_ascii_lowercase(),
         base64::engine::general_purpose::STANDARD.encode(bytes),
-        html_escape::encode_double_quoted_attribute(described.trim())
+        described
     ))
 }
 
@@ -460,12 +607,21 @@ pub fn what_was_held_back(held_back: usize) -> String {
 mod tests {
     use super::*;
 
+    /// A description, as somebody typed it.
+    ///
+    /// A fixture rather than a `From` on the type. Every shipping call site
+    /// says which of the two answers it is giving, in full, because that is
+    /// the decision this enum exists to make somebody take.
+    fn in_words(described: &str) -> WhatThePictureSays {
+        WhatThePictureSays::InWords(described.to_string())
+    }
+
     #[test]
     fn test_a_picture_being_sent_must_be_described() {
         // The one place somebody using this application could still make a
         // picture nobody can read out. Everything else in this module exists
         // because that is what a picture without a description costs.
-        let refused = a_picture_to_send("image/png", &a_tiny_png(), "   ");
+        let refused = a_picture_to_send("image/png", &a_tiny_png(), &in_words("   "));
 
         assert!(refused.is_err());
         assert!(refused.unwrap_err().contains("needs a description"));
@@ -475,7 +631,7 @@ mod tests {
     fn test_a_described_picture_is_carried_into_the_message() {
         // Carried rather than pointed at, so the person receiving it sees it
         // without fetching anything from anywhere.
-        let markup = a_picture_to_send("image/png", &a_tiny_png(), "A chart of sales")
+        let markup = a_picture_to_send("image/png", &a_tiny_png(), &in_words("A chart of sales"))
             .expect("a described picture");
 
         assert!(markup.contains("data:image/png;base64,"), "{markup}");
@@ -486,7 +642,7 @@ mod tests {
     fn test_a_description_with_a_quote_in_it_cannot_break_out_of_the_attribute() {
         // Somebody's own words, going straight into markup. A bare quote would
         // close the attribute and start writing tags.
-        let markup = a_picture_to_send("image/png", &a_tiny_png(), r#"The "big" chart"#)
+        let markup = a_picture_to_send("image/png", &a_tiny_png(), &in_words(r#"The "big" chart"#))
             .expect("a described picture");
 
         assert!(!markup.contains(r#"alt="The "big""#), "{markup}");
@@ -495,9 +651,198 @@ mod tests {
 
     #[test]
     fn test_a_kind_that_cannot_be_carried_says_to_attach_it_instead() {
-        let refused = a_picture_to_send("image/svg+xml", &a_tiny_png(), "A drawing");
+        let refused = a_picture_to_send("image/svg+xml", &a_tiny_png(), &in_words("A drawing"));
 
         assert!(refused.unwrap_err().contains("Attach it as a file"));
+    }
+
+    #[test]
+    fn test_a_decorative_picture_is_written_with_an_empty_description() {
+        // The second answer, and the whole of what makes it a mark rather than
+        // an absence: an `alt` that is present and empty. That is what WCAG
+        // says a decorative image carries and what every other client's reader
+        // acts on, and `presentation::html_renderer` proves the sanitiser
+        // keeps it and tells it apart from a picture carrying no `alt` at all.
+        let markup = a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+            .expect("a decorative picture");
+
+        assert!(
+            markup.contains(r#"alt="""#),
+            "a decorative picture was not marked as one: {markup}"
+        );
+        assert!(markup.contains("data:image/png;base64,"), "{markup}");
+    }
+
+    #[test]
+    fn test_a_decorative_picture_is_still_a_picture_this_program_carries() {
+        // Not a detail. The renderer's filter admits a `data:` address only on
+        // an `img` and only when this says yes, so a picture it stopped
+        // recognising would not be stripped of its mark, it would be deleted
+        // and the message would lose the picture with nothing said.
+        let markup = a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+            .expect("a decorative picture");
+
+        let address = attribute_of(&markup, "src").expect("an address");
+
+        assert!(is_a_picture_we_carried(&address), "{markup}");
+    }
+
+    #[test]
+    fn test_a_decorative_picture_goes_out_as_a_part_of_its_own() {
+        // The send path takes every carried picture back out and sends it as a
+        // `multipart/related` part, because Gmail and Outlook both drop a
+        // `data:` picture out of a message they receive. A decorative one has
+        // to make that trip too, or it is the one kind of picture that arrives
+        // as a blank.
+        let markup = a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+            .expect("a decorative picture");
+
+        let (rewritten, parts) = pictures_out_of(&markup);
+
+        assert_eq!(parts.len(), 1, "it stayed in the body: {rewritten}");
+        assert_eq!(parts[0].described, "", "it gained a description on the way");
+        assert!(rewritten.contains("cid:"), "{rewritten}");
+    }
+
+    #[test]
+    fn test_one_described_and_one_decorative_picture_leave_one_line_in_the_plain_half() {
+        // The plain half of an outgoing message lists what its pictures were,
+        // because a page reads an `img` as no text at all. A decorative
+        // picture has nothing to add to that list and must not add an empty
+        // line to it, which would read as a picture nobody described.
+        let described =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("A chart")).expect("one");
+        let furniture =
+            a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+                .expect("two");
+
+        let (_, parts) = pictures_out_of(&format!("{described}{furniture}"));
+        let said = what_the_plain_text_should_say(&parts);
+
+        assert_eq!(
+            parts.len(),
+            2,
+            "one of the two did not come out of the body"
+        );
+        assert!(said.contains("A chart"), "{said:?}");
+        assert_eq!(
+            said.lines().filter(|line| !line.trim().is_empty()).count(),
+            2,
+            "the heading and one description, and nothing for the decorative \
+             picture: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_pictures_are_all_decorative_says_nothing_about_pictures() {
+        // The other direction, and the one a test of the first case alone
+        // cannot see: a check that only looks at the mixed message passes
+        // against code that emits the heading whatever the list turns out to
+        // hold, and the reader gets a heading over nothing.
+        let furniture =
+            a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+                .expect("one");
+
+        let (_, parts) = pictures_out_of(&format!("{furniture}{furniture}"));
+
+        assert_eq!(parts.len(), 2);
+        assert_eq!(
+            what_the_plain_text_should_say(&parts),
+            "",
+            "a heading was written over an empty list"
+        );
+    }
+
+    #[test]
+    fn test_a_spacer_a_rule_and_a_flourish_are_offered_the_decorative_answer() {
+        // The three shapes furniture really takes in mail. A rule is the one
+        // that says why the *shorter* side is what is measured: it is wider
+        // than anything else in the message and three pixels tall.
+        for (what, size) in [
+            ("a one pixel spacer", (1, 1)),
+            ("a rule sent as a picture", (900, 3)),
+            ("a signature flourish", (120, 40)),
+        ] {
+            assert!(
+                could_be_furniture("image/png", 2 * 1024, Some(size)),
+                "{what} was not offered the decorative answer"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_photograph_and_a_screen_capture_are_never_offered_it() {
+        // The whole point of narrowing. Over a photograph the only honest
+        // answer is a description, so the question is not put at all.
+        for (what, size, how_big) in [
+            ("a photograph", (3024, 4032), 1_400_000),
+            ("a full screen capture", (1920, 1080), 240_000),
+        ] {
+            assert!(
+                !could_be_furniture("image/png", how_big, Some(size)),
+                "{what} was offered the decorative answer"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_picture_whose_size_cannot_be_read_is_never_offered_it() {
+        // Failing closed. This build decodes PNG and JPEG, so a GIF or a WebP
+        // arrives with no readable size, and the answer is to ask for a
+        // description rather than to hand somebody a shortcut on a picture
+        // nothing could measure.
+        for kind in ["image/gif", "image/webp"] {
+            assert!(
+                !could_be_furniture(kind, 2 * 1024, None),
+                "{kind} was offered the decorative answer with no size to judge it by"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_furniture_bound_on_size_is_a_bound_and_not_decoration() {
+        // One pixel either side. Without this the number could be anything.
+        let small_enough = MOST_FURNITURE_MAY_MEASURE;
+        assert!(could_be_furniture(
+            "image/png",
+            2 * 1024,
+            Some((900, small_enough))
+        ));
+        assert!(!could_be_furniture(
+            "image/png",
+            2 * 1024,
+            Some((900, small_enough + 1))
+        ));
+    }
+
+    #[test]
+    fn test_the_furniture_bound_on_disk_is_a_bound_and_not_decoration() {
+        // One byte either side, and the reason there are two bounds at all: a
+        // picture 200 pixels square that costs more than this is a photograph
+        // cropped small, and what it shows is what somebody put there.
+        assert!(could_be_furniture(
+            "image/png",
+            MOST_FURNITURE_MAY_BE,
+            Some((100, 100))
+        ));
+        assert!(!could_be_furniture(
+            "image/png",
+            MOST_FURNITURE_MAY_BE + 1,
+            Some((100, 100))
+        ));
+    }
+
+    #[test]
+    fn test_a_kind_that_cannot_be_carried_at_all_is_never_offered_it() {
+        // An SVG is a document and can carry a script, so it is refused
+        // outright a moment later. Offering the decorative answer over one
+        // first would ask a question whose every answer ends in a refusal.
+        assert!(!could_be_furniture(
+            "image/svg+xml",
+            2 * 1024,
+            Some((10, 10))
+        ));
+        assert!(!could_be_furniture("image/png", 0, Some((10, 10))));
     }
 
     #[test]
@@ -520,7 +865,8 @@ mod tests {
         // its pictures as `data:` addresses, which Gmail and Outlook both drop
         // out of a message they receive, so it arrives blank where every
         // picture was and the person who sent it is never told.
-        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+        let written =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("A cat")).expect("a picture");
 
         let (rewritten, parts) = pictures_out_of(&written);
 
@@ -541,7 +887,8 @@ mod tests {
         // name and a part carrying another is a message whose pictures are all
         // present and none of them shown, which is the same symptom as not
         // having done any of this.
-        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+        let written =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("A cat")).expect("a picture");
 
         let (rewritten, parts) = pictures_out_of(&written);
 
@@ -557,7 +904,8 @@ mod tests {
         // than the text they were written as. The description stays on the tag:
         // it is what a screen reader reads at the other end, and losing it here
         // would undo the one thing this module refuses to let anybody skip.
-        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+        let written =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("A cat")).expect("a picture");
 
         let (rewritten, parts) = pictures_out_of(&written);
 
@@ -575,8 +923,10 @@ mod tests {
         // Two pictures sharing one name is a message where the second replaces
         // the first everywhere it is shown. Nothing about one picture would
         // look wrong, so this is only ever found with more than one.
-        let one = a_picture_to_send("image/png", &a_tiny_png(), "First").expect("a picture");
-        let two = a_picture_to_send("image/jpeg", &a_tiny_png(), "Second").expect("a picture");
+        let one =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("First")).expect("a picture");
+        let two =
+            a_picture_to_send("image/jpeg", &a_tiny_png(), &in_words("Second")).expect("a picture");
 
         let (_, parts) = pictures_out_of(&format!("<p>{one}</p><p>{two}</p>"));
 
@@ -594,7 +944,8 @@ mod tests {
         // message goes out with a silent hole where each picture was. The
         // description is the one thing this module refuses to let anybody
         // skip, and dropping it here drops it for the people that rule is for.
-        let written = a_picture_to_send("image/png", &a_tiny_png(), "A cat").expect("a picture");
+        let written =
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words("A cat")).expect("a picture");
         let (_, parts) = pictures_out_of(&written);
 
         let said = what_the_plain_text_should_say(&parts);
@@ -607,7 +958,8 @@ mod tests {
         // It goes into the markup escaped, so reading it straight back out
         // would put `&quot;` in front of somebody in the plain half.
         let written =
-            a_picture_to_send("image/png", &a_tiny_png(), r#"Ada's "best" cat"#).expect("one");
+            a_picture_to_send("image/png", &a_tiny_png(), &in_words(r#"Ada's "best" cat"#))
+                .expect("one");
         let (_, parts) = pictures_out_of(&written);
 
         assert_eq!(parts[0].described, r#"Ada's "best" cat"#);

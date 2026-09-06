@@ -3,16 +3,17 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-09-06T07:03:09.105Z"
-last_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
-state_head: 2face1792a6cca742f00173bf0c031eb69653cf1
+stopped_at: Completed 04-08-PLAN.md
+last_updated: "2026-09-06T14:43:16.911Z"
+last_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
+state_head: a7869093e461198470f8cdf2e6ce34b4e0f7ced2
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 50
-  completed_plans: 47
+  completed_plans: 49
   percent: 0
+previous_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
 
@@ -321,6 +322,8 @@ ahead:
 - [Phase 04]: 04-02: a library's parsed form of a header and its raw form are different values, and which is right is decided by the consumer. mail-parser sends List-Unsubscribe to its address parser, which strips the angle brackets blocking::where_to_write_to_leave searches for. Reusing the accessor the neighbouring field uses would have shipped a feature that reported every mailing list as one that gave no way out, with everything green.
 - [Phase 04]: 04-02: a request that names the fields it wants is a hop no test on either side of it can see. IMAP's HEADER_FIELDS did not name LIST-UNSUBSCRIBE, so the whole feature would have been dead on IMAP with 6270 tests passing. Look for the same shape wherever a projection is narrowed: a SELECT column list, a GraphQL selection set, a fields= parameter.
 - [Phase 04]: 04-02: "this task has no red available" is a claim about the tree, not a property of the task. The plan said its census could not be red because it must name a construction task 1 creates; the construction already existed and only its argument changed, so the census was red before any implementation. Ask what specifically does not exist yet before accepting the claim.
+- [Phase 04]: The decorative mark is an explicit empty alt and nothing else. role=presentation does not survive ammonia and the sanitiser was not widened for it.
+- [Phase 04]: announce_decorative_pictures ships on: a line you did not need is noise you can switch off, a picture you were never told about cannot be asked about.
 
 ### Pending Todos
 
@@ -402,8 +405,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T07:03:08.920Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-09-06T14:43:16.715Z
+Stopped at: Completed 04-08-PLAN.md
 
 Earlier: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 

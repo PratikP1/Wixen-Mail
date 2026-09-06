@@ -87,6 +87,37 @@ pub struct AppConfig {
     /// showing it tells nobody anything.
     #[serde(default = "default_true")]
     pub hold_back_remote_pictures: bool,
+    /// Say where a picture the sender marked decorative is.
+    ///
+    /// A sender can mark a picture decorative, which means "there is nothing
+    /// to say about this" and tells a screen reader to skip it. This decides
+    /// whether that mark is taken at face value when a message is read here.
+    ///
+    /// On unless somebody turns it off, and the argument for that way round is
+    /// worth having written where somebody meets it, because the two errors do
+    /// not cost the same.
+    ///
+    /// Announcing furniture costs a short phrase per decorative picture. It is
+    /// noise a reader hears past, and it is switched off in one place. Hiding a
+    /// meaningful picture costs the reader the fact that a picture was there at
+    /// all, and they cannot ask about what they were never told. A cost that
+    /// can be turned off beats a loss that cannot be noticed.
+    ///
+    /// The mark is also least trustworthy exactly where it is commonest. Most
+    /// of the empty descriptions that arrive here are written by bulk mail
+    /// templates that emit one for everything they lay out, including the
+    /// picture carrying the message, and none of those senders answered a
+    /// question about it.
+    ///
+    /// It does not make the sending half pointless. A decorative picture this
+    /// program sends carries a correct empty `alt` and is skipped by every
+    /// other client, whatever this reader's own setting says.
+    ///
+    /// Nothing here reaches the plain text reading path, where no picture says
+    /// anything at all, described or not. That is older than this setting and
+    /// is recorded in `.planning/WINDOWS.md`.
+    #[serde(default = "default_true")]
+    pub announce_decorative_pictures: bool,
     /// The typeface the item lists are drawn in.
     ///
     /// Empty means whatever Windows uses, which is the default and is stored
@@ -572,6 +603,7 @@ impl Default for AppConfig {
             empty_reaches_subfolders: default_true(),
             mark_read_reaches_subfolders: default_true(),
             hold_back_remote_pictures: default_true(),
+            announce_decorative_pictures: default_true(),
             font_family: String::new(),
             check_default_programs_at_startup: false,
             keep_running_in_the_tray: false,
@@ -1171,6 +1203,7 @@ mod permission_tests {
             "draft_autosave_minutes",
             "default_reminder_minutes",
             "unread_on_a_parent",
+            "announce_decorative_pictures",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1197,6 +1230,11 @@ mod permission_tests {
         assert!(
             parsed.check_spelling_as_you_type,
             "spelling would stop being checked for everybody upgrading"
+        );
+        assert!(
+            parsed.announce_decorative_pictures,
+            "an absent key answered no, so every existing installation would \
+             silently take every sender's word that a picture said nothing"
         );
 
         // These belong to the module that owns the setting. What matters here
@@ -1876,6 +1914,46 @@ mod every_setting_is_acted_on {
         assert_ne!(
             crate::application::allowed::READING_SECTION,
             crate::application::allowed::SETTINGS_SECTION
+        );
+    }
+
+    #[test]
+    fn test_whether_a_decorative_picture_is_announced_is_offered_by_a_screen() {
+        // The companion the mirror guard below cannot be, and the reason is
+        // not the one its neighbour above gives. `announce_decorative_pictures`
+        // *is* a `pub` field on `AppConfig`, so the mirror guard does bind it
+        // and did fail the moment the field arrived, which is the whole reason
+        // it is a top level field rather than one nested inside another type.
+        //
+        // What the mirror guard cannot ask is whether the control does
+        // anything. It is satisfied by the name appearing anywhere in the
+        // settings screen, including in a comment. A check box built from the
+        // right label, showing a fixed value and read back into nothing would
+        // pass it and would take somebody's answer and ignore it, which is the
+        // exact defect ten settings in this file already had once.
+        let settings_screen = what_ships_in(THE_SETTINGS_SCREEN);
+        assert!(
+            !settings_screen.is_empty(),
+            "the settings screen could not be read, so this proves nothing"
+        );
+
+        // The label by its constant rather than its text, because the screen
+        // names the constant and the text exists once.
+        assert!(
+            settings_screen.contains("DECORATIVE_PICTURES_LABEL"),
+            "the settings screen does not name DECORATIVE_PICTURES_LABEL, so \
+             whether a sender's decorative mark is taken at face value is \
+             decided with no control anybody can see or reach"
+        );
+        assert!(
+            settings_screen.contains("set_value(config.announce_decorative_pictures)"),
+            "the control does not show the stored answer, so it shows whatever \
+             it was built with and somebody who turned it off is shown it on"
+        );
+        assert!(
+            settings_screen.contains("cfg.announce_decorative_pictures = w."),
+            "the control's value is not read back into the configuration, so \
+             ticking it changes nothing"
         );
     }
 

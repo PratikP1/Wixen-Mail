@@ -87,6 +87,16 @@ fn one_attribute(tag: &str, name: &str) -> Option<String> {
         .map(|found| found.as_str().to_string())
 }
 
+/// An `alt` attribute that is present and empty, which is the decorative mark.
+///
+/// Only ever run over a tag ammonia has written, where every value is in
+/// double quotes and an internal quote is an entity, so these six characters
+/// cannot occur anywhere but the attribute itself.
+fn empty_alt_re() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r#"(?i)\balt="""#).expect("valid empty alt regex"))
+}
+
 pub fn image_alt_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -169,11 +179,38 @@ fn cleaner() -> &'static ammonia::Builder<'static> {
 /// wrong: a message shown without its remote pictures is a message somebody can
 /// still read, and one shown with them is a message that has already reported
 /// them.
-fn fetching_from_settings() -> crate::application::pictures::Fetching {
-    crate::application::pictures::Fetching::from_setting(
-        crate::data::config::ConfigManager::load_stored()
-            .map(|stored| stored.app_config().hold_back_remote_pictures)
-            .unwrap_or(true),
+/// Both picture answers the stored settings hold, read in one go.
+///
+/// One read rather than two. [`HtmlRenderer::new`] is called from
+/// `editor_document::body_from_editor`, which runs every time the editor is
+/// read, and a second `load_stored` there doubles a file read on the path a
+/// message is autosaved and sent through.
+///
+/// Both fall back the safe way when the settings cannot be read at all, and
+/// "safe" is the opposite direction for the two. A message shown without its
+/// remote pictures is still readable and one shown with them has already
+/// reported the reader, so pictures stay blocked. A reader told a picture was
+/// there can ignore the line and one not told cannot ask, so announcing stays
+/// on.
+fn what_the_settings_say() -> (
+    crate::application::pictures::Fetching,
+    crate::application::pictures::Announcing,
+) {
+    use crate::application::pictures::{Announcing, Fetching};
+
+    let stored = crate::data::config::ConfigManager::load_stored();
+    let (blocked, announce) = stored
+        .map(|stored| {
+            let app = stored.app_config();
+            (
+                app.hold_back_remote_pictures,
+                app.announce_decorative_pictures,
+            )
+        })
+        .unwrap_or((true, true));
+    (
+        Fetching::from_setting(blocked),
+        Announcing::from_setting(announce),
     )
 }
 
@@ -187,6 +224,11 @@ pub struct HtmlRenderer {
     /// by this computer, at this moment, which is the whole of how mail
     /// tracking works. Held back unless somebody has said otherwise.
     fetching: crate::application::pictures::Fetching,
+    /// Whether a picture the sender marked decorative is said to be there.
+    ///
+    /// The reader's answer rather than the sender's. Read here rather than at
+    /// the seam that uses it, so the settings are read once per renderer.
+    announcing: crate::application::pictures::Announcing,
 }
 
 /// One message in a combined conversation document.
@@ -212,31 +254,53 @@ pub struct ThreadPart {
 impl HtmlRenderer {
     /// Create a new HTML renderer
     pub fn new() -> Self {
+        let (fetching, announcing) = what_the_settings_say();
         Self {
             plain_text_only: false,
-            fetching: fetching_from_settings(),
+            fetching,
+            announcing,
         }
     }
 
     /// Create a renderer that returns plain text only
     pub fn plain_text_only() -> Self {
+        let (fetching, announcing) = what_the_settings_say();
         Self {
             plain_text_only: true,
             // Nothing is fetched in plain text either way, since there is no
             // browser to fetch with, but the field decides what the words say
-            // where a picture would have been.
-            fetching: fetching_from_settings(),
+            // where a picture would have been. `announcing` reaches nothing at
+            // all here: `html_to_plain_text` strips every tag, so no picture
+            // says anything in that path, described or decorative.
+            fetching,
+            announcing,
         }
     }
 
     /// A renderer told outright whether pictures may be fetched.
     ///
     /// For tests, which must not depend on whatever this machine's settings
-    /// happen to say.
+    /// happen to say. Announcing takes the answer this ships with, so a test
+    /// about fetching does not have to know this setting exists.
     pub fn with_fetching(fetching: crate::application::pictures::Fetching) -> Self {
         Self {
             plain_text_only: false,
             fetching,
+            announcing: crate::application::pictures::Announcing::OutLoud,
+        }
+    }
+
+    /// A renderer told outright about both picture answers.
+    ///
+    /// For tests of the announcing seam, which have to drive both directions.
+    pub fn with_fetching_and_announcing(
+        fetching: crate::application::pictures::Fetching,
+        announcing: crate::application::pictures::Announcing,
+    ) -> Self {
+        Self {
+            plain_text_only: false,
+            fetching,
+            announcing,
         }
     }
 
@@ -332,7 +396,11 @@ impl HtmlRenderer {
                 let tag = &caught[0];
                 let address = one_attribute(tag, "src").unwrap_or_default();
                 match what_to_do_about(&address, self.fetching) {
-                    Showing::ItIsCarried | Showing::ItWillBeFetched => tag.to_string(),
+                    // The picture is shown, so it is not replaced. What may
+                    // change is one attribute on it.
+                    Showing::ItIsCarried | Showing::ItWillBeFetched => {
+                        self.say_where_a_decorative_picture_is(tag)
+                    }
                     Showing::HeldBack => {
                         held_back += 1;
                         let described = one_attribute(tag, "alt").unwrap_or_default();
@@ -345,6 +413,55 @@ impl HtmlRenderer {
             })
             .into_owned();
         (out, held_back)
+    }
+
+    /// Put words on a picture the sender marked decorative, if this reader
+    /// asked for them.
+    ///
+    /// The attribute is rewritten and the picture is not replaced. A held-back
+    /// picture becomes a span because it is not shown at all; a decorative one
+    /// is shown, so replacing it would take it away from a sighted reader to
+    /// serve somebody else, which is the trade this application exists not to
+    /// make.
+    ///
+    /// Only an `alt` that is present and empty. A picture with a description
+    /// is untouched, and so is one with no `alt` at all: that is a sender who
+    /// said nothing rather than a sender who said there was nothing to say,
+    /// and this program does not know the difference is safe to guess.
+    ///
+    /// It lives here rather than in `sanitize_html` on purpose, and the reason
+    /// is in that function's own comment: the same call sanitises a message on
+    /// its way out to somebody else, so words written there would be sent to
+    /// the recipient and would overwrite the mark this program just made.
+    fn say_where_a_decorative_picture_is(&self, tag: &str) -> String {
+        use crate::application::pictures::{Announcing, WHAT_A_DECORATIVE_PICTURE_SAYS};
+
+        if self.announcing == Announcing::Silently {
+            return tag.to_string();
+        }
+        // Present and empty, told apart from absent. `one_attribute` answers
+        // `None` for an attribute that is not there and `Some("")` for one
+        // that is there and empty, which is the whole distinction.
+        if one_attribute(tag, "alt").as_deref() != Some("") {
+            return tag.to_string();
+        }
+        // Anchored on the attribute. `a`, `l` and `t` are all base64
+        // characters, so a picture's own data can hold the letters, and a
+        // replacement over the whole tag would corrupt the picture rather than
+        // describe it. `\b` refuses a longer attribute name ending in `alt`,
+        // and a `"` cannot appear inside a value ammonia has written, so the
+        // six characters `alt=""` occur exactly where the empty description
+        // is.
+        empty_alt_re()
+            .replace(
+                tag,
+                format!(
+                    r#"alt="{}""#,
+                    html_escape::encode_double_quoted_attribute(WHAT_A_DECORATIVE_PICTURE_SAYS)
+                )
+                .as_str(),
+            )
+            .into_owned()
     }
 
     /// Extract alt text from images for accessibility
@@ -730,7 +847,512 @@ mod tests {
         assert_eq!(held_back, 0);
         assert!(shown.contains("cdn.example"), "{shown}");
     }
+
+    /// The trip a picture really takes between being inserted and being seen
+    /// again, one stage at a time so a failure says which stage lost it.
+    ///
+    /// Named for the functions rather than for the story, because the point of
+    /// this fixture is that every one of them is really called. A test that
+    /// sanitises a string twice and finds it unchanged is a test about the
+    /// sanitiser, and what can go wrong is a step somewhere else.
+    ///
+    /// The storage stage is not here. It needs a real database and it lives in
+    /// `data::message_cache::drafts`, where a fixture already opens one.
+    struct RoundTrip {
+        /// What `pictures::a_picture_to_send` wrote.
+        composed: String,
+        /// What `editor_document::body_from_editor` handed back, which is the
+        /// sanitiser over what the page returned. This is what a draft stores.
+        left_the_editor: String,
+        /// The same body put into the page again by
+        /// `editor_document::editor_document`, which sanitises a second time.
+        back_in_the_page: String,
+    }
+
+    impl RoundTrip {
+        /// Run the trip for a body somebody wrote in the composer.
+        fn of(composed: &str) -> Self {
+            use crate::presentation::editor_document::{body_from_editor, editor_document};
+
+            // As the page hands it back: a JSON string on some backends, which
+            // is what `body_from_editor` unwraps before anything looks at it.
+            let as_the_page_answers =
+                serde_json::to_string(composed).expect("a body a page could answer with");
+            let left_the_editor = body_from_editor(&as_the_page_answers);
+            let back_in_the_page =
+                editor_document(&MessageBody::Html(left_the_editor.clone()), "en-GB", false);
+            Self {
+                composed: composed.to_string(),
+                left_the_editor,
+                back_in_the_page,
+            }
+        }
+
+        /// The `img` tags at each stage, so an assertion can name the stage.
+        fn pictures_at_each_stage(&self) -> [(&'static str, Vec<String>); 3] {
+            let tags = |markup: &str| {
+                img_tag_whole_re()
+                    .find_iter(markup)
+                    .map(|found| found.as_str().to_string())
+                    .collect::<Vec<_>>()
+            };
+            [
+                ("as it was composed", tags(&self.composed)),
+                ("as it left the editor", tags(&self.left_the_editor)),
+                (
+                    "as it went back into the page",
+                    tags(&self.back_in_the_page),
+                ),
+            ]
+        }
+    }
+
+    #[test]
+    fn test_a_picture_and_its_description_survive_the_whole_trip() {
+        // Criterion 2 of this phase says a description survives a draft save
+        // and reload, and until now nothing asserted any of it. Every stage is
+        // named so a failure says which end lost it, rather than "the
+        // description is gone" about a trip with four stages in it.
+        use crate::application::pictures::{
+            WhatThePictureSays, a_picture_to_send, is_a_picture_we_carried,
+        };
+
+        let composed = a_picture_to_send(
+            "image/png",
+            &a_tiny_png(),
+            &WhatThePictureSays::InWords("A chart of sales".to_string()),
+        )
+        .expect("a described picture");
+        let trip = RoundTrip::of(&composed);
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(
+                pictures.len(),
+                1,
+                "the picture was lost {stage}: {}",
+                trip.back_in_the_page
+            );
+            let tag = &pictures[0];
+            let address = one_attribute(tag, "src").unwrap_or_default();
+            assert!(
+                is_a_picture_we_carried(&address),
+                "the picture stopped being one this program carried {stage}: {tag}"
+            );
+            assert_eq!(
+                one_attribute(tag, "alt").as_deref(),
+                Some("A chart of sales"),
+                "the description was lost {stage}: {tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_awkward_description_survives_the_whole_trip_unmangled() {
+        // Three characters the escaping and the sanitiser could each mangle in
+        // a different way, and the trip escapes and unescapes more than once.
+        // A quote would close the attribute, an angle bracket would start a
+        // tag, and a non-ASCII character is where an encoding mistake shows.
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
+
+        let awkward = r#"Ada's "3 < 4" café"#;
+        let composed = a_picture_to_send(
+            "image/png",
+            &a_tiny_png(),
+            &WhatThePictureSays::InWords(awkward.to_string()),
+        )
+        .expect("a described picture");
+        let trip = RoundTrip::of(&composed);
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            let tag = pictures
+                .first()
+                .unwrap_or_else(|| panic!("no picture {stage}"));
+            // Read back through the same decoding the send path uses, because
+            // what is stored is escaped and what a reader hears is not.
+            let stored = one_attribute(tag, "alt").unwrap_or_default();
+            let spoken = html_escape::decode_html_entities(&stored);
+            assert_eq!(
+                spoken, awkward,
+                "the description came back different {stage}: {tag}"
+            );
+            assert!(
+                !tag.contains(r#"alt="Ada's "3"#),
+                "the quote broke out of the attribute {stage}: {tag}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_two_pictures_keep_their_own_descriptions_in_order() {
+        // One picture cannot tell a swap from a survival. Two can, and a
+        // message with a signature under a chart is the ordinary case.
+        use crate::application::pictures::{WhatThePictureSays, a_picture_to_send};
+
+        let in_words = |words: &str| WhatThePictureSays::InWords(words.to_string());
+        let first = a_picture_to_send("image/png", &a_tiny_png(), &in_words("First, a chart"))
+            .expect("one");
+        let second = a_picture_to_send("image/jpeg", &a_tiny_png(), &in_words("Second, a photo"))
+            .expect("two");
+        let trip = RoundTrip::of(&format!("<p>{first}</p><p>{second}</p>"));
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(pictures.len(), 2, "a picture was lost {stage}");
+            assert_eq!(
+                pictures
+                    .iter()
+                    .map(|tag| one_attribute(tag, "alt").unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                vec!["First, a chart", "Second, a photo"],
+                "the descriptions did not come back in order {stage}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_data_address_that_is_not_a_carried_picture_is_still_removed() {
+        // So proving a picture survives has not widened what else does. An SVG
+        // is a document and can carry a script, and this is the exact address
+        // shape the filter exists to refuse.
+        let trip = RoundTrip::of(
+            r#"<img src="data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pjwvc2NyaXB0Pjwvc3ZnPg==" alt="A drawing">"#,
+        );
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            if stage == "as it was composed" {
+                continue;
+            }
+            let addresses: Vec<String> = pictures
+                .iter()
+                .filter_map(|tag| one_attribute(tag, "src"))
+                .collect();
+            assert!(
+                addresses.is_empty(),
+                "a data: address that is not a carried picture survived {stage}: {addresses:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_role_of_presentation_does_not_survive_the_sanitiser() {
+        // The finding the decorative design rests on, asserted here rather
+        // than read out of a crate's source. `role` is in neither of ammonia's
+        // allowed lists, so it is removed, and a decorative mark written that
+        // way would be lost the first time a draft was saved with nothing
+        // saying so.
+        let cleaned = HtmlRenderer::new().sanitize_html(&format!(
+            r#"<img src="data:image/png;base64,{}" alt="" role="presentation">"#,
+            a_tiny_encoded_png()
+        ));
+
+        assert!(
+            !cleaned.contains("role"),
+            "role survived the sanitiser, so the decorative mark had a second \
+             representation after all: {cleaned}"
+        );
+        assert!(
+            cleaned.contains("data:image/png;base64,"),
+            "the picture itself was removed: {cleaned}"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_description_is_kept_and_is_not_the_same_as_having_none() {
+        // The decorative mark is an explicit empty `alt`, which is what WCAG
+        // says a decorative image carries. It is only a mark if the sanitiser
+        // keeps it, and only a mark if a picture that carries it can be told
+        // apart from a picture whose sender said nothing at all. If ammonia
+        // added an empty `alt` to every picture, or dropped an empty one, the
+        // two would be the same string and there would be no mark here.
+        let renderer = HtmlRenderer::new();
+        let carried = a_tiny_encoded_png();
+
+        let marked = renderer.sanitize_html(&format!(
+            r#"<img src="data:image/png;base64,{carried}" alt="">"#
+        ));
+        let said_nothing =
+            renderer.sanitize_html(&format!(r#"<img src="data:image/png;base64,{carried}">"#));
+
+        assert_eq!(
+            one_attribute(&marked, "alt").as_deref(),
+            Some(""),
+            "the empty description did not survive, so the decorative mark has \
+             no representation: {marked}"
+        );
+        assert_eq!(
+            one_attribute(&said_nothing, "alt"),
+            None,
+            "a picture whose sender said nothing came back carrying an empty \
+             description, so the mark cannot be told from an absence: {said_nothing}"
+        );
+    }
+
+    #[test]
+    fn test_a_decorative_picture_survives_the_whole_trip_and_is_still_carried() {
+        // A picture it stops recognising is not stripped of its mark, it is
+        // deleted: the attribute filter admits a `data:` address only when
+        // `is_a_picture_we_carried` says yes, so an empty description that
+        // made that answer no would take the picture away with nothing said.
+        use crate::application::pictures::{
+            WhatThePictureSays, a_picture_to_send, is_a_picture_we_carried,
+        };
+
+        // Written by the real writer rather than by hand, so this is the trip
+        // a decorative picture somebody inserted really takes. Hand-built
+        // markup would prove the sanitiser keeps an empty `alt` and say
+        // nothing about whether anything produces one.
+        let trip = RoundTrip::of(
+            &a_picture_to_send("image/png", &a_tiny_png(), &WhatThePictureSays::Decorative)
+                .expect("a decorative picture"),
+        );
+
+        for (stage, pictures) in trip.pictures_at_each_stage() {
+            assert_eq!(pictures.len(), 1, "the decorative picture was lost {stage}");
+            let tag = &pictures[0];
+            assert!(
+                is_a_picture_we_carried(&one_attribute(tag, "src").unwrap_or_default()),
+                "an empty description stopped this being a carried picture {stage}: {tag}"
+            );
+            assert_eq!(
+                one_attribute(tag, "alt").as_deref(),
+                Some(""),
+                "the decorative mark was lost {stage}: {tag}"
+            );
+        }
+    }
+
+    /// A carried picture, described however the caller says.
+    ///
+    /// `None` writes no `alt` attribute at all, which is a sender who said
+    /// nothing. `Some("")` writes an empty one, which is the decorative mark.
+    fn a_carried_picture(described: Option<&str>) -> String {
+        let carried = a_tiny_encoded_png();
+        match described {
+            Some(words) => format!(r#"<img src="data:image/png;base64,{carried}" alt="{words}">"#),
+            None => format!(r#"<img src="data:image/png;base64,{carried}">"#),
+        }
+    }
+
+    /// The reading path, told outright what this reader has chosen.
+    fn read_with(announcing: Announcing, html: &str) -> String {
+        HtmlRenderer::with_fetching_and_announcing(Fetching::Blocked, announcing)
+            .sanitize_and_count_held_back(html)
+            .0
+    }
+
+    #[test]
+    fn test_a_decorative_picture_is_said_to_be_there_when_the_reader_asked_for_that() {
+        // The sender's mark can be wrong, honestly or lazily, and the reader
+        // is the one who pays. This is the final say moving to the receiving
+        // side.
+        let shown = read_with(Announcing::OutLoud, &a_carried_picture(Some("")));
+
+        assert_eq!(
+            one_attribute(&shown, "alt").as_deref(),
+            Some(WHAT_A_DECORATIVE_PICTURE_SAYS),
+            "the reader asked to be told a picture was there and was not: {shown}"
+        );
+        assert!(
+            shown.contains("data:image/png;base64,"),
+            "the picture itself was taken away rather than described: {shown}"
+        );
+    }
+
+    #[test]
+    fn test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence() {
+        // The other direction, and the one that makes the setting a setting.
+        // Somebody who wants furniture silent gets exactly what the sender
+        // meant.
+        let marked = a_carried_picture(Some(""));
+
+        assert_eq!(
+            read_with(Announcing::Silently, &marked),
+            marked,
+            "the mark was rewritten for a reader who asked for silence"
+        );
+    }
+
+    #[test]
+    fn test_a_described_picture_is_untouched_whatever_the_reader_chose() {
+        // The words go where the sender said nothing, never over what they
+        // did say. Overwriting a description would be this program deciding it
+        // knows better than somebody who took the trouble.
+        let described = a_carried_picture(Some("A chart of sales"));
+
+        for announcing in [Announcing::OutLoud, Announcing::Silently] {
+            assert_eq!(
+                read_with(announcing, &described),
+                described,
+                "a described picture was rewritten under {announcing:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_picture_with_no_description_at_all_is_untouched_whatever_the_reader_chose() {
+        // The distinction the whole mark rests on. A missing `alt` is a sender
+        // who said nothing; an empty one is a sender who said there is nothing
+        // to say. Writing "the sender marked this decorative" over the first
+        // would put words in the mouth of somebody who never opened it.
+        let silent = a_carried_picture(None);
+
+        for announcing in [Announcing::OutLoud, Announcing::Silently] {
+            let shown = read_with(announcing, &silent);
+            assert_eq!(
+                one_attribute(&shown, "alt"),
+                None,
+                "a picture whose sender said nothing was reported as marked \
+                 decorative under {announcing:?}: {shown}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_only_the_decorative_picture_changes_when_two_are_shown() {
+        // One picture cannot tell "the right one changed" from "everything
+        // changed". The ordinary message has both kinds in it.
+        let both = format!(
+            "<p>{}</p><p>{}</p>",
+            a_carried_picture(Some("A chart of sales")),
+            a_carried_picture(Some(""))
+        );
+
+        let shown = read_with(Announcing::OutLoud, &both);
+        let descriptions: Vec<String> = img_tag_whole_re()
+            .find_iter(&shown)
+            .map(|found| one_attribute(found.as_str(), "alt").unwrap_or_default())
+            .collect();
+
+        assert_eq!(
+            descriptions,
+            vec![
+                "A chart of sales".to_string(),
+                WHAT_A_DECORATIVE_PICTURE_SAYS.to_string()
+            ],
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn test_the_rewrite_is_anchored_to_the_attribute_and_not_to_a_substring() {
+        // `a`, `l` and `t` are all base64 characters, so a picture's own data
+        // can hold the letters this looks for. A rewrite done by searching the
+        // whole tag for text would corrupt the picture rather than describe
+        // it, and the picture would simply not appear.
+        let data = "YWx0YWx0YWx0YWx0";
+        let awkward = format!(r#"<img src="data:image/png;base64,{data}" alt="">"#);
+
+        let shown = read_with(Announcing::OutLoud, &awkward);
+
+        assert!(
+            shown.contains(&format!("base64,{data}")),
+            "the picture's own data was rewritten: {shown}"
+        );
+        assert_eq!(
+            one_attribute(&shown, "alt").as_deref(),
+            Some(WHAT_A_DECORATIVE_PICTURE_SAYS)
+        );
+    }
+
+    #[test]
+    fn test_the_words_are_not_the_ones_used_for_a_picture_that_was_not_shown() {
+        // Three different facts and three different sentences. A held-back
+        // picture is one nobody has seen; a picture nobody described is a
+        // sender who said nothing; this one is shown and its sender said there
+        // was nothing to say. A reader who heard the same words for all three
+        // would learn nothing from any of them.
+        assert_ne!(WHAT_A_DECORATIVE_PICTURE_SAYS, what_stands_in_for_it(""));
+        assert_ne!(
+            WHAT_A_DECORATIVE_PICTURE_SAYS,
+            what_stands_in_for_it(WHAT_A_DECORATIVE_PICTURE_SAYS)
+        );
+        assert!(
+            !what_stands_in_for_it("").contains(WHAT_A_DECORATIVE_PICTURE_SAYS),
+            "the held-back sentence swallowed this one"
+        );
+        // And it attributes the claim rather than making it, which is the
+        // whole reason a reader can weigh it.
+        assert!(WHAT_A_DECORATIVE_PICTURE_SAYS.contains("sender"));
+    }
+
+    #[test]
+    fn test_a_message_on_its_way_out_keeps_its_mark_whatever_this_reader_chose() {
+        // The trap this seam was placed to avoid. `sanitize_html` is the same
+        // call that runs over a message being composed and sent, so words
+        // written there would go to the recipient and would overwrite the mark
+        // this program made a moment earlier. The rewrite lives in the reading
+        // seam for that reason and this is what says it stayed there.
+        let marked = a_carried_picture(Some(""));
+
+        for announcing in [Announcing::OutLoud, Announcing::Silently] {
+            let renderer =
+                HtmlRenderer::with_fetching_and_announcing(Fetching::Blocked, announcing);
+            let going_out = renderer.sanitize_html(&marked);
+
+            assert_eq!(
+                one_attribute(&going_out, "alt").as_deref(),
+                Some(""),
+                "a message on its way out picked up this reader's own words \
+                 under {announcing:?}: {going_out}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_held_back_picture_still_says_what_it_always_said() {
+        // A remote picture that is never fetched already has a sentence for an
+        // empty description, and changing that would change what every blocked
+        // message reads like. Different question, and not this one's.
+        let (shown, held_back) =
+            HtmlRenderer::with_fetching_and_announcing(Fetching::Blocked, Announcing::OutLoud)
+                .sanitize_and_count_held_back(
+                    r#"<img src="https://cdn.example/pixel.gif" alt="">"#,
+                );
+
+        assert_eq!(held_back, 1);
+        assert!(shown.contains(&what_stands_in_for_it("")), "{shown}");
+        assert!(
+            !shown.contains(WHAT_A_DECORATIVE_PICTURE_SAYS),
+            "the decorative words reached the held-back path: {shown}"
+        );
+    }
+
+    #[test]
+    fn test_the_renderer_every_message_opens_through_takes_the_answer_from_the_settings() {
+        // `with_fetching_and_announcing` is a test door. `new` and
+        // `plain_text_only` are the ones every message really opens through,
+        // so an answer wired only into the test door would satisfy every test
+        // above and change nothing anybody reads.
+        //
+        // Compared with what the settings say rather than with a fixed value,
+        // because a test asserting `OutLoud` would pass on this machine for
+        // the wrong reason and fail on a machine where somebody had turned it
+        // off. What this pins is that the constructors ask, not what the
+        // answer happens to be here.
+        let (_, from_the_settings) = what_the_settings_say();
+
+        assert_eq!(HtmlRenderer::new().announcing, from_the_settings);
+        assert_eq!(
+            HtmlRenderer::plain_text_only().announcing,
+            from_the_settings
+        );
+    }
+
+    /// Bytes of a kind worth carrying, under the size limit. Not a real PNG:
+    /// nothing on this trip decodes one.
+    fn a_tiny_png() -> Vec<u8> {
+        vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4]
+    }
+
+    /// The same bytes as they appear inside a `data:` address.
+    fn a_tiny_encoded_png() -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(a_tiny_png())
+    }
+
     use super::*;
+    use crate::application::pictures::{
+        Announcing, Fetching, WHAT_A_DECORATIVE_PICTURE_SAYS, what_stands_in_for_it,
+    };
 
     #[test]
     fn test_a_preview_document_starts_with_a_focusable_way_out() {

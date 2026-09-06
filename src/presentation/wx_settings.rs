@@ -87,6 +87,7 @@ pub struct SettingsWidgets {
     empty_reaches_subfolders: CheckBox,
     mark_read_reaches_subfolders: CheckBox,
     hold_back_remote_pictures: CheckBox,
+    announce_decorative_pictures: CheckBox,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
     keep_running_in_the_tray: CheckBox,
@@ -237,6 +238,7 @@ pub fn build_settings_dialog(
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
+        announce_decorative_pictures,
     } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
 
@@ -377,6 +379,7 @@ pub fn build_settings_dialog(
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
+        announce_decorative_pictures,
         smooth_scrolling,
         keep_selected_message_in_view,
         keep_running_in_the_tray,
@@ -908,6 +911,23 @@ const SIGNATURE_LABEL: &str = "Start every message with my &signature";
 const SIGNATURE_WHEN_THIS_IS_OFF: &str = "Off: a message starts empty. Your signature stays on the account and can \
      still be added by hand.";
 
+/// What the box for decorative pictures says, with its keyboard letter.
+///
+/// A constant because two places name it: the label the box carries, which is
+/// what UI Automation and so Narrator reads, and the accessible name, which is
+/// what MSAA and so NVDA reads. Written once so the two cannot drift.
+const DECORATIVE_PICTURES_LABEL: &str = "Say where a picture the sender marked &decorative is";
+
+/// What the unticked state means, which a check box alone cannot say.
+///
+/// It says which way it ships as well as what off does, because a person
+/// meeting a box for the first time cannot tell a default from a choice
+/// somebody made.
+const DECORATIVE_PICTURES_WHEN_THIS_IS_OFF: &str = "On by default. A sender can mark a picture as having nothing to say, and \
+     then nothing is read out where it is. Off: that mark is taken at face \
+     value and the picture is passed over in silence. On: a short line says \
+     the sender marked it decorative, so you can judge that for yourself.";
+
 /// The controls `build_reading_tab` lays out, one field per choice, named
 /// for what it actually controls rather than by position.
 struct ReadingTabControls {
@@ -919,6 +939,7 @@ struct ReadingTabControls {
     a_conversation_reaches: Choice,
     deleting_a_conversation_row: Choice,
     hold_back_remote_pictures: CheckBox,
+    announce_decorative_pictures: CheckBox,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -1227,6 +1248,20 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     );
     read_sec.add(&hold_back_remote_pictures, 0, SizerFlag::All, 4);
 
+    // Next to the other picture switch, which is where somebody looking for
+    // what pictures do would look. Both are about what a picture does when a
+    // message is read here rather than about what is sent.
+    let announce_decorative_pictures = CheckBox::builder(panel)
+        .with_label(DECORATIVE_PICTURES_LABEL)
+        .build();
+    announce_decorative_pictures.set_value(config.announce_decorative_pictures);
+    set_accessible_name_and_description(
+        &announce_decorative_pictures,
+        &DECORATIVE_PICTURES_LABEL.replace('&', ""),
+        DECORATIVE_PICTURES_WHEN_THIS_IS_OFF,
+    );
+    read_sec.add(&announce_decorative_pictures, 0, SizerFlag::All, 4);
+
     let images_note = StaticText::builder(panel)
         .with_label(REMOTE_IMAGES_ARE_FETCHED)
         .build();
@@ -1356,6 +1391,7 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         empty_reaches_subfolders,
         mark_read_reaches_subfolders,
         hold_back_remote_pictures,
+        announce_decorative_pictures,
     }
 }
 
@@ -2172,6 +2208,7 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // Reading
     cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
     cfg.hold_back_remote_pictures = w.hold_back_remote_pictures.get_value();
+    cfg.announce_decorative_pictures = w.announce_decorative_pictures.get_value();
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
     // By the words shown rather than the row number. A row number needs the

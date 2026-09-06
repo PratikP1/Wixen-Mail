@@ -3197,13 +3197,80 @@ fn insert_table(
     }
 }
 
+/// What somebody answered when asked whether a picture is decorative.
+///
+/// Three, not two, and the third is what stops a dismissal being read as an
+/// answer. A box closed with Escape has told this program nothing, and the one
+/// thing it must not be taken to mean is the answer that sends a picture with
+/// no description.
+enum TheDecorativeAnswer {
+    /// Yes: there is nothing to say about this picture.
+    ItIsDecorative,
+    /// No, or Enter, which is the same thing here.
+    DescribeIt,
+    /// The question was dismissed. Not an answer, so nothing goes in.
+    NeverMind,
+}
+
+/// The question, as somebody hears it.
+///
+/// The buttons are Yes and No and `MessageDialog` cannot relabel them, so the
+/// question has to be one those two words answer and has to say what each one
+/// does. It also has to say what decorative *costs*, because the person
+/// answering is not the person who pays: the cost lands on somebody reading
+/// the message with a screen reader, who is told nothing.
+const THE_DECORATIVE_QUESTION: &str =
+    "This picture is small enough to be furniture: a spacer, a rule, a line under \
+     a signature.
+
+Yes: send it as decorative. It goes with no description at all, and a screen \
+reader skips over it. Choose this only when there is genuinely nothing to \
+tell somebody.
+
+No: describe it. This is what Enter does.";
+
+/// The title on that question.
+const THE_DECORATIVE_QUESTION_TITLE: &str = "Is this picture decorative?";
+
+/// Ask whether a picture is decorative.
+///
+/// Enter answers No, through
+/// [`crate::presentation::asking::yes_no_where_enter_answers_no`]. Enter is how
+/// somebody working by keyboard answers everything, so it is already on its
+/// way while the question is still being read out, and the answer it gives has
+/// to be the one that costs nothing. Describing a picture that turned out to
+/// be a spacer costs a moment. Marking a picture decorative that turned out to
+/// say something costs the person receiving it the fact that it was there.
+fn ask_whether_it_is_decorative(dialog: &Dialog) -> TheDecorativeAnswer {
+    let question = MessageDialog::builder(
+        dialog,
+        THE_DECORATIVE_QUESTION,
+        THE_DECORATIVE_QUESTION_TITLE,
+    )
+    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+    .build();
+    let answer = question.show_modal();
+    question.destroy();
+
+    if answer == ID_YES {
+        TheDecorativeAnswer::ItIsDecorative
+    } else if answer == ID_NO {
+        TheDecorativeAnswer::DescribeIt
+    } else {
+        TheDecorativeAnswer::NeverMind
+    }
+}
+
 /// Put a picture in the message, carried rather than pointed at.
 ///
-/// Two questions, and the second is not optional. A picture nobody described
-/// cannot be read out to somebody who cannot see it, which is the whole reason
-/// this application takes the trouble it does over alt text everywhere else.
-/// Letting one be written here without a description would be the one place
-/// this application still made the problem it exists to solve.
+/// A description is not optional and there is now a second answer, which is
+/// not the same thing as making it optional. A picture nobody described cannot
+/// be read out to somebody who cannot see it, which is the whole reason this
+/// application takes the trouble it does over alt text everywhere else.
+/// `WhatThePictureSays::Decorative` is a positive answer to a question, given
+/// on purpose, offered only where furniture is plausible, and neither a
+/// dismissal nor a stray Enter can give it. That is what stops it becoming the
+/// empty box this module was built to refuse.
 ///
 /// Carried, so the person receiving it sees it without fetching anything from
 /// anywhere, and without being told when they opened the message.
@@ -3212,7 +3279,9 @@ fn insert_picture(
     body_editor: WebView,
     a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
 ) {
-    use crate::application::pictures::{a_picture_to_send, kind_of_picture_file};
+    use crate::application::pictures::{
+        WhatThePictureSays, a_picture_to_send, could_be_furniture, kind_of_picture_file,
+    };
     use crate::presentation::accessibility::announcements::Priority;
 
     let picker = FileDialog::builder(dialog)
@@ -3246,31 +3315,62 @@ fn insert_picture(
         }
     };
 
-    // Asked after the file is chosen and read, so nobody describes a picture
-    // that then turns out to be too large to send.
-    let asking = TextEntryDialog::builder(
-        dialog,
-        "Describe the picture, for somebody who cannot see it:",
-        "Describe the picture",
-    )
-    .build();
-    let answered = asking.show_modal();
-    let described = asking.get_value().unwrap_or_default();
-    asking.destroy();
-    if answered != ID_OK {
-        return;
-    }
+    // Only where furniture is plausible. Over a photograph the question is not
+    // put at all, because the only honest answer there is a description and a
+    // question with a wrong answer on it is worse than no question.
+    //
+    // The size is read from the header without decoding a pixel, and comes
+    // back as nothing for a GIF or a WebP, which this build carries and does
+    // not decode. That fails closed: the question is not offered, and somebody
+    // is asked to describe a picture rather than handed a shortcut on one
+    // nothing could measure.
+    let asked_first = match could_be_furniture(
+        kind,
+        bytes.len(),
+        crate::service::picture::how_big_it_says_it_is(&bytes),
+    ) {
+        true => ask_whether_it_is_decorative(dialog),
+        false => TheDecorativeAnswer::DescribeIt,
+    };
 
-    match a_picture_to_send(kind, &bytes, &described) {
+    let (says, said) = match asked_first {
+        TheDecorativeAnswer::NeverMind => return,
+        TheDecorativeAnswer::ItIsDecorative => (
+            WhatThePictureSays::Decorative,
+            "Decorative picture added. It is sent with no description.".to_string(),
+        ),
+        TheDecorativeAnswer::DescribeIt => {
+            // Asked after the file is chosen and read, so nobody describes a
+            // picture that then turns out to be too large to send.
+            let asking = TextEntryDialog::builder(
+                dialog,
+                "Describe the picture, for somebody who cannot see it:",
+                "Describe the picture",
+            )
+            .build();
+            let answered = asking.show_modal();
+            let described = asking.get_value().unwrap_or_default();
+            asking.destroy();
+            if answered != ID_OK {
+                return;
+            }
+            (
+                WhatThePictureSays::InWords(described.clone()),
+                format!("Picture added: {}", described.trim()),
+            )
+        }
+    };
+
+    match a_picture_to_send(kind, &bytes, &says) {
         Ok(markup) => {
             run_in_editor(
                 &body_editor,
                 &editor_document::insert_markup_script(&markup),
             );
-            let _ = a11y.announce(
-                &format!("Picture added: {}", described.trim()),
-                Priority::Normal,
-            );
+            // Said differently for the two, and neither reads as a refusal.
+            // "Picture added" alone would leave somebody who chose decorative
+            // wondering whether the question had taken.
+            let _ = a11y.announce(&said, Priority::Normal);
         }
         // Said outright, naming what was wrong. A picture that silently does
         // not appear reads as the command being broken.
@@ -4022,7 +4122,7 @@ US Navy",
         let picture = crate::application::pictures::a_picture_to_send(
             "image/png",
             &[0x89, b'P', b'N', b'G', 1, 2],
-            "A cat",
+            &crate::application::pictures::WhatThePictureSays::InWords("A cat".to_string()),
         )
         .expect("one");
 
@@ -4046,7 +4146,7 @@ US Navy",
         let picture = crate::application::pictures::a_picture_to_send(
             "image/png",
             &[0x89, b'P', b'N', b'G', 1, 2],
-            "A cat",
+            &crate::application::pictures::WhatThePictureSays::InWords("A cat".to_string()),
         )
         .expect("one");
 

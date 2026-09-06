@@ -490,7 +490,7 @@ mod tests {
         let picture = crate::application::pictures::a_picture_to_send(
             "image/png",
             &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
-            "A cat",
+            &crate::application::pictures::WhatThePictureSays::InWords("A cat".to_string()),
         )
         .expect("a picture");
         Email {
