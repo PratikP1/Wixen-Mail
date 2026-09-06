@@ -1461,7 +1461,7 @@ pub fn show_compose_dialog_full(
     // would be a second set of rules for a stranger's path, and
     // tests/every_way_a_file_goes_on_a_message.rs is what stops a fourth route
     // growing one.
-    let attach_paths = {
+    let attach_from_paths = {
         let attached = attached.clone();
         let refresh = refresh_attachments.clone();
         move |paths: Vec<String>, a11y: &crate::presentation::accessibility::Accessibility| {
@@ -1502,7 +1502,7 @@ pub fn show_compose_dialog_full(
     };
 
     let attach_files = {
-        let attach = attach_paths.clone();
+        let attach_from_paths = attach_from_paths.clone();
         move |a11y: &crate::presentation::accessibility::Accessibility| {
             // `Multiple`, so the picker and the two routes that hand over
             // several paths at once agree about how many files an attach is.
@@ -1530,7 +1530,7 @@ pub fn show_compose_dialog_full(
                 );
                 return;
             }
-            attach(paths, a11y);
+            attach_from_paths(paths, a11y);
         }
     };
 
@@ -2203,7 +2203,7 @@ pub fn show_compose_dialog_full(
     // the first file goes on. Two homes, one of them unreachable for the case
     // that matters, is worse than one that covers both.
     dialog.on_key_down({
-        let attach = attach_paths.clone();
+        let attach_from_paths = attach_from_paths.clone();
         let a11y = a11y.clone();
         move |event| {
             let WindowEventData::Keyboard(ref kb) = event else {
@@ -2220,7 +2220,7 @@ pub fn show_compose_dialog_full(
                 && kb.event.get_key_code() == Some(KEY_PASTE)
             {
                 match files_on_the_clipboard() {
-                    OnTheClipboard::Files(paths) => attach(paths, &a11y),
+                    OnTheClipboard::Files(paths) => attach_from_paths(paths, &a11y),
                     // Silence on a key press cannot be told apart from the key
                     // not being bound at all, so both of the ways this can come
                     // to nothing say which one it was.
