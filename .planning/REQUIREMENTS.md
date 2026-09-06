@@ -703,7 +703,7 @@ write path added by this milestone passes through that gate.
   - [D] Guardrail 9 applies: where the sender cannot supply alt text, the message says so
     rather than the application quietly inserting an unlabelled image.
 
-- [ ] **WRITE-03**: Spell check while typing, with jumps between misspellings.
+- [x] **WRITE-03**: Spell check while typing, with jumps between misspellings.
   - Evidence: corrected 2026-09-04, and this one was dangerous rather than merely stale.
     **Both halves of the old evidence were wrong.** It said spell check runs on send only and
     that the feature waits on a rich editor control, helpfully noting that wxdragon ships with
@@ -1724,7 +1724,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-06 | Phase 3 | Pending |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Pending |
-| WRITE-03 | Phase 4 | Pending |
+| WRITE-03 | Phase 4 | Complete |
 | READ-01 | Phase 4 | Pending |
 | READ-02 | Phase 4 | Pending |
 | READ-03 | Phase 4 | Complete |
