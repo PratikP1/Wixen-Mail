@@ -49,6 +49,57 @@ impl Fetching {
     }
 }
 
+/// Whether a picture the sender marked decorative is said to be there.
+///
+/// The sender's mark can be wrong, honestly or lazily, and the recipient is the
+/// one who pays for it. This is where the final say moves to the receiving
+/// side: a reader who does not trust senders hears that a picture was there,
+/// and one who wants furniture to be silent gets silence.
+///
+/// It changes nothing about a message on its way out. A decorative picture this
+/// program sends carries a correct empty `alt` whatever this reader has chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Announcing {
+    /// Say where it is, attributing the claim to the sender.
+    OutLoud,
+    /// Take the mark at face value and pass over it.
+    Silently,
+}
+
+impl Announcing {
+    /// What the setting means, read the way the setting is worded.
+    ///
+    /// The setting asks whether to announce, and announcing is what is on by
+    /// default, so somebody who does nothing is told a picture was there
+    /// rather than not told.
+    pub fn from_setting(announce: bool) -> Self {
+        if announce {
+            Announcing::OutLoud
+        } else {
+            Announcing::Silently
+        }
+    }
+}
+
+/// What to say where a picture the sender marked decorative is.
+///
+/// It attributes the claim rather than making it. "The sender marked this
+/// decorative" is something this program knows; "this picture is decorative"
+/// is something only the sender could know, and the whole reason there is a
+/// setting is that senders get it wrong. A reader who hears the first can
+/// decide the sender was careless; one who hears the second cannot.
+///
+/// Short on purpose. A mailing can carry thirty spacers, and thirty of these
+/// is a wall. It goes into the document, where a reader passes over it, rather
+/// than into the announcement queue, where it would be spoken at them.
+/// Guardrail 5.
+///
+/// Different from what a held-back picture says, which is about a picture that
+/// is not shown at all, and from what is said for a picture nobody described,
+/// which is a sender who said nothing rather than a sender who said there was
+/// nothing to say.
+pub const WHAT_A_DECORATIVE_PICTURE_SAYS: &str = "Picture the sender marked decorative";
+
 /// The picture kinds a message may carry inline.
 ///
 /// Raster formats only, and this is a security decision rather than a
