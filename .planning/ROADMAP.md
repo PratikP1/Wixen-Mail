@@ -319,7 +319,7 @@ announcement topic a whole-folder fetch belongs on.
   5. A user reads a PGP-encrypted message they hold the key for, and a message that cannot be decrypted says why instead of reading as empty.
   6. A spam classifier verdict is available to the filter rules that already exist, shown with its source named, never as a silent deletion.
 
-**Plans**: 8/9 plans executed, one per wave. Three shared files, `guards/guards.toml`,
+**Plans**: 9/9 plans executed, one per wave. Three shared files, `guards/guards.toml`,
 
 - [x] 04-01-PLAN.md
 - [x] 04-02-PLAN.md
@@ -329,7 +329,7 @@ announcement topic a whole-folder fetch belongs on.
 - [x] 04-06-PLAN.md
 - [x] 04-07-PLAN.md
 - [x] 04-08-PLAN.md
-- [ ] 04-09-PLAN.md
+- [x] 04-09-PLAN.md
 
 `docs/changelog.md` and `Cargo.toml`, are touched by most plans under the
 same-commit rules, and `src/presentation/wx_app.rs` by six of them, so the plans
@@ -466,7 +466,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 2. Search that says what it covers | 9/9 | Executed, verification human_needed | - |
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 9/9 | Executed, all merged, verification human_needed | - |
-| 4. Writing and reading a message in full | 8/9 | In Progress|  |
+| 4. Writing and reading a message in full | 9/9 | In Progress|  |
 | 5. The other five modules keep up | 0/TBD | Not started | - |
 | 6. How the application speaks | 0/TBD | Not started | - |
 | 7. Installing, updating and what is stored | 0/TBD | Not started | - |

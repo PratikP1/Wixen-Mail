@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 current_phase: 02
 current_phase_name: Search that says what it covers
 status: executing
-stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-09-06T14:43:16.911Z"
-last_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
-state_head: a7869093e461198470f8cdf2e6ce34b4e0f7ced2
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-09-06T20:35:00.000Z"
+last_activity: 2026-09-06, 04-09 done and merged to main. An S/MIME encrypted message says it is encrypted, how it is addressed and that it cannot be opened, instead of opening as a blank pane under a line saying it might not have been downloaded. A PGP message opens when a key imported from the File menu fits it, and says which of four things happened when it does not. Tested against a key pair and a message made by GnuPG rather than by the crate under test, so it is two implementations agreeing; no message from a correspondent has been through either path. First OpenPGP dependency, with the Marvin weakness in rsa and the untested MSVC target written into Cargo.toml and the changelog.
+state_head: da60c294376e5e9c3ae130cc51dfba1897a5bfba
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 50
-  completed_plans: 49
+  completed_plans: 50
   percent: 0
-previous_activity: 2026-09-05, 03-08 done on a worktree branch, unmerged and unpushed. Offline mode queues outgoing mail, which it has been saying it does since it shipped; losing the network switches the program offline and says so once; the network coming back raises a button rather than emptying the Outbox.
+previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
 
