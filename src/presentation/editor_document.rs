@@ -1139,6 +1139,7 @@ pub enum Reached {
     Bcc,
     Subject,
     Send,
+    SendLater,
     Undo,
     Redo,
     Format,
@@ -1177,6 +1178,13 @@ impl Reached {
             Self::Bcc => "&Bcc:",
             Self::Subject => "&Subject:",
             Self::Send => "Se&nd",
+            // E, and it is the only letter in these two words that was free:
+            // S is Subject, N is Send, D is Save Draft, L is Cancel, A is
+            // Attach, T is To, R is Redo. It underlines the E in "Later"
+            // rather than the one in "Send", because Later is the word that
+            // tells this apart from the button beside it, and a mnemonic on
+            // the word somebody is listening for is one they can learn.
+            Self::SendLater => "Send Lat&er...",
             Self::Undo => "&Undo",
             Self::Redo => "&Redo",
             Self::Format => "F&ormat...",
@@ -1200,6 +1208,7 @@ impl Reached {
             Self::Bcc => 'b',
             Self::Subject => 's',
             Self::Send => 'n',
+            Self::SendLater => 'e',
             Self::Undo => 'u',
             Self::Redo => 'r',
             Self::Format => 'o',
@@ -2089,6 +2098,20 @@ mod tests {
                 reached.label(),
             );
         }
+    }
+
+    #[test]
+    fn test_send_later_can_be_reached_from_the_body() {
+        // A toolbar button that is not in this list is one the keyboard
+        // cannot get to from the message body, because the body is a web view
+        // and a web view keeps every key it is given. The page's key table is
+        // generated from `ALL`, so a variant left out of it has a label with
+        // an underlined letter that does nothing.
+        assert!(
+            Reached::ALL.contains(&Reached::SendLater),
+            "Send Later is not in the reach list, so Alt+{} does not leave the body",
+            Reached::SendLater.letter().to_ascii_uppercase(),
+        );
     }
 
     #[test]

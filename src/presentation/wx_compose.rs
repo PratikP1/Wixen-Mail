@@ -2220,6 +2220,8 @@ pub fn show_compose_dialog_full(
                         }
                         Reached::Subject => subject_field.set_focus(),
                         Reached::Send => dialog.end_modal(ID_SEND),
+                        // Not yet: the picker is not built.
+                        Reached::SendLater => {}
                         Reached::Undo => apply_undo(editor_document::Format::Undo),
                         Reached::Redo => apply_undo(editor_document::Format::Redo),
                         Reached::Format => show_format_menu(&dialog),
