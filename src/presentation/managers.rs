@@ -3381,6 +3381,7 @@ mod tests {
                 read: false,
                 starred: false,
                 deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
             })
             .expect("a message to search for");
         let state = Arc::new(StdMutex::new(WxUIState::default()));
@@ -3478,6 +3479,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         };
         let opened = cache
             .save_message(&message(1, "Quarterly figures"))
@@ -3720,6 +3722,7 @@ mod tests {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("a message with no text stored")
         };
@@ -3877,6 +3880,7 @@ mod tests {
                 read: false,
                 starred: false,
                 deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
             })
             .expect("a message");
         held.save_message_body(message, Some("the text is here"), None)

@@ -682,6 +682,7 @@ mod finding_things {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 

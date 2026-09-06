@@ -138,6 +138,76 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     form.** One bar over five messages cannot say which of them it is about.
     Opening that message on its own says it.
 
+- **A filter rule and a saved search can now ask what the spam and phishing
+  check made of a message.**
+
+  Pick Safety in the rule editor or in the saved search editor, the same place
+  every other field is picked. It is the column the message list already has,
+  and it holds one of four words: `ordinary`, `suspicious`, `spam` or
+  `phishing`. So "Safety is exactly spam, move to Junk" is a rule you can write,
+  and "Safety is not ordinary" is a saved search that collects everything
+  anything has flagged.
+
+  The verdict itself is not new. It has been read out of the message headers,
+  merged with the folder the message arrived in and with this program's own
+  reading of it, stored, sorted on and read out in the reader's warning bar for
+  some time. What was missing was the one thing that acts on it: no rule could
+  name it, so the answer was there and nothing could be done with it.
+
+  `ordinary` is a word a rule can ask for, not a blank. A message nothing was
+  said about does not read as a message with no verdict.
+
+  Nothing files or deletes anything on its own because of this. A rule that
+  moves or deletes is one you wrote, and it obeys the Allowed Changes setting
+  the same as any other rule.
+
+  Known limitations:
+
+  - **Whether a provider's spam headers arrive in the shapes this program
+    expects is unverified.** Every parser for them is tested against
+    hand-written header blocks, and no account has ever been used with this
+    program. Gmail in particular tells an IMAP client almost nothing about its
+    spam judgement beyond moving the message, which is why the folder a message
+    is in counts as a verdict too.
+  - **A rule that deletes says only that a message was "sorted by your
+    rules".** The sync summary counts it with every other rule that fired and
+    does not say a message was deleted. That is worth knowing before you write
+    one.
+
+### Changed
+
+- **Every sentence in a message's safety warning now says which check reached
+  it.**
+
+  Four things can judge a message here, and the warning bar used to quote them
+  unevenly. Your provider's filter named itself. The junk folder named your
+  provider. Google Safe Browsing named itself, because Google's terms require
+  it. Wixen Mail's own reading of the message named nobody at all, so "A link
+  points at a bare numeric address rather than a name" was a guess made on your
+  computer and it sounded exactly like a verdict your provider had reached.
+  Those are different kinds of fact and you could not tell them apart.
+
+  Now they say so:
+
+  - Your provider's filter still opens with "Your mail provider's filter".
+  - The junk folder still says your provider put it there.
+  - A message that fails the anti-forgery rules its own sender publishes now
+    says that, rather than describing a check without saying whose. This is not
+    your provider having an opinion, it is the sending domain's own published
+    rules saying this message does not look like its mail.
+  - Wixen Mail's own reading opens "Wixen Mail read this message on your
+    computer and found", which is the same wording as the setting that turns it
+    on.
+
+  It is not longer for it. Wixen Mail says everything it found in one sentence
+  however many things it found, and a filter that rated a message both a
+  phishing attempt and spam now says so once instead of twice. A warning bar
+  that repeats the same eight words five times is one people learn to talk past,
+  and then the sentence that mattered is talked past with it.
+
+  What this cannot say: whether four attributed sentences are heard as four
+  facts or as one run-on has not been tested with a screen reader.
+
 ### Fixed
 
 - **Marking a message read, or starring it, while the mail server cannot be

@@ -1375,6 +1375,7 @@ mod tests {
             read: false,
             starred: false,
             deleted: false,
+            safety: crate::service::safety::Safety::Ordinary,
         }
     }
 
@@ -2751,9 +2752,17 @@ mod tests {
                     && *field != THE_FIELD_A_SAVED_SEARCH_NEVER_SEES
             })
             .collect();
+        // Read again on 2026-09-05, when `safety` was added to the fields a
+        // rule may name. The nine are subject, from, to, cc, date,
+        // message_id, read, starred and safety. `safety` belongs here rather
+        // than with the two above it because the scan that gathers a search's
+        // messages selects the column with them
+        // (`data::message_cache::saved_searches::scan_query`), so a condition
+        // about the verdict searches every message the search reads and there
+        // is nothing to warn anybody about.
         assert_eq!(
             quiet.len(),
-            8,
+            9,
             "the fields with nothing to disclose changed in number, so this list wants \
              reading again rather than the count moving"
         );

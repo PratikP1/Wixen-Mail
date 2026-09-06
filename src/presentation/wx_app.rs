@@ -21525,6 +21525,7 @@ mod tests {
                         read: false,
                         starred: false,
                         deleted: false,
+                        safety: crate::service::safety::Safety::Ordinary,
                     })
                     .expect("seed tagged message");
                 let untagged = c
@@ -21543,6 +21544,7 @@ mod tests {
                         read: false,
                         starred: false,
                         deleted: false,
+                        safety: crate::service::safety::Safety::Ordinary,
                     })
                     .expect("seed untagged message");
                 c.create_tag(&crate::data::message_cache::Tag {
@@ -21632,6 +21634,7 @@ mod tests {
                             read: false,
                             starred: false,
                             deleted: false,
+                            safety: crate::service::safety::Safety::Ordinary,
                         })
                         .expect("seed message");
                     let references: Vec<String> =
@@ -21705,6 +21708,7 @@ mod tests {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("seed message");
                 id
@@ -22747,6 +22751,7 @@ mod tests {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("seed message");
                 id
@@ -23040,6 +23045,7 @@ mod tests {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("seed message");
                 id
@@ -23156,6 +23162,7 @@ mod tests {
                         read: false,
                         starred: false,
                         deleted: false,
+                        safety: crate::service::safety::Safety::Ordinary,
                     })
                     .expect("seed message");
                 }
@@ -25528,6 +25535,7 @@ mod what_an_export_holds {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("a message");
             // Text, because a message whose text is not on this computer is
@@ -25759,6 +25767,7 @@ mod opening_an_attachment_a_second_time {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("a message");
             cache
@@ -26966,6 +26975,7 @@ mod what_a_saved_search_says_before_it_runs {
                     read: false,
                     starred: false,
                     deleted: false,
+                    safety: crate::service::safety::Safety::Ordinary,
                 })
                 .expect("the message to be stored");
             if uid == 1 {

@@ -41,10 +41,12 @@ of them present in this document before 2026-09-04:
 - **A line number cannot be re-run.** THREAD-01 said "line 582 calls `item.enable(false)`",
   which was true when it was written. Line 582 is something else now, and a reader who looks
   cannot tell whether the document is stale or they mis-counted.
+
 - **A grep goes blind when the vocabulary moves.** FOLDER-01 searched `create_folder`. The
   feature shipped as `create_mailbox`, so that command still returns nothing and re-running the
   evidence reads as confirmation. It is the sharpest case here: five operations ship, and the
   check written to find them cannot see any of them.
+
 - **A bare assertion of absence names no method.** "no favourites path in `src/`", "Nothing
   joins the two", "has never been done". Re-checking one of those means inventing a search and
   hoping it is the same search.
@@ -176,6 +178,7 @@ write path added by this milestone passes through that gate.
     `src/application/favourites.rs` holds `Pin` (line 73), `PinnedBranch` (91),
     `what_each_account_has` (130), `in_account_order` (154) and the four announcement builders
     `now_pinned`, `already_pinned`, `now_unpinned` and `was_not_pinned` at 183, 193, 203 and
+
     208. The menu ids `ID_PIN_FOLDER` and `ID_UNPIN_FOLDER` are at
     `src/presentation/wx_app.rs:91` and 92 with the handler at 3613, and the group heading
     `FAVOURITES` is defined once at `favourites.rs:64` and read by
@@ -818,7 +821,7 @@ write path added by this milestone passes through that gate.
   - [D] Keys are secrets, so they follow the project's secrets rule: never in
     `message_cache.db`, never logged.
 
-- [ ] **READ-03**: Hook into an external spam classifier.
+- [x] **READ-03**: Hook into an external spam classifier.
   - Evidence: rewritten 2026-09-04. "No external spam classifier integration exists" is still
     true and it was the wrong question, because a spam verdict already exists, is stored, listed
     and shown. What the criteria ask for is one entry in one list.
@@ -888,6 +891,7 @@ write path added by this milestone passes through that gate.
     reached a provider, because no account has ever been used with this program. Until that
     correction both documents said moving and copying work for mail only, which is what the
     previous version of this line quoted.
+
   - [D] A user moves a task to another list by keyboard, and the task appears in the target
     list and is gone from the source list in one action, not two.
 
@@ -1516,6 +1520,7 @@ write path added by this milestone passes through that gate.
     success metric; `docs/development/requirements-backlog.md:82` carries it as Medium. Nothing
     in `src/` times process start against a usable list. The "under 2 seconds" is a target
     rather than a measurement and is correctly written as one.
+
   - [S] Roadmap Phase 8; `docs/development/requirements-backlog.md`.
   - [D] Cold start is measured from process start to the message list being usable, not to the
     window appearing, because an empty window is not a usable inbox.
@@ -1557,6 +1562,7 @@ write path added by this milestone passes through that gate.
 - [ ] **PERF-04**: Idle memory under 100 MB, measured.
   - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:254` reads
     `- Low memory footprint (< 100MB idle)` under success metrics, with no measurement anywhere.
+
   - [S] Roadmap success metrics.
   - [D] Idle memory is measured after startup with a cache present and no user activity, and
     recorded with the date, machine and build.
@@ -1721,7 +1727,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | WRITE-03 | Phase 4 | Pending |
 | READ-01 | Phase 4 | Pending |
 | READ-02 | Phase 4 | Pending |
-| READ-03 | Phase 4 | Pending |
+| READ-03 | Phase 4 | Complete |
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending |
