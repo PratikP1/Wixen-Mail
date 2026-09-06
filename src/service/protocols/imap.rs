@@ -2722,10 +2722,10 @@ pub(crate) mod against_a_server_that_answers {
         conversing("* OK loopback ready\r\n", move |line| {
             let tag = line.split_whitespace().next().unwrap_or("*").to_string();
             let said = line.to_uppercase();
-            if let Some(refusing) = refusing {
-                if said.contains(&refusing.to_uppercase()) {
-                    return Turn::Say(format!("{tag} NO the server would not do it\r\n"));
-                }
+            if let Some(refusing) = refusing
+                && said.contains(&refusing.to_uppercase())
+            {
+                return Turn::Say(format!("{tag} NO the server would not do it\r\n"));
             }
             let verb = said.split_whitespace().nth(1).unwrap_or_default();
             match verb {

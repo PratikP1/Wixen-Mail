@@ -68,6 +68,7 @@ pub mod messages;
 pub mod new_item;
 pub mod occurrences;
 pub mod opening;
+pub mod opening_pgp;
 pub mod other_items;
 pub mod pictures;
 pub mod pim_command;

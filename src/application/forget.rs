@@ -689,6 +689,20 @@ mod tests {
                 // anything kept in it.
                 !path.ends_with("secret_store.rs")
             })
+            .filter(|path| {
+                // `src/service/mod.rs` is the list of modules, so it names
+                // `secret_store` the way a table of contents names a chapter.
+                //
+                // It was never an owner and it was never reported as one,
+                // which was luck rather than design: the reading used to
+                // answer `service` for it, and `entries_for`'s body contains
+                // the word `service` because that is what a `CredentialEntry`
+                // field is called. So a file that should have been excluded
+                // was quietly excused by a word that has nothing to do with
+                // it. Narrowing the reading to the top-level module name is
+                // what made that visible.
+                *path != std::path::Path::new("src/service/mod.rs")
+            })
             .filter_map(|path| {
                 let source = std::fs::read_to_string(path).ok()?;
                 // The half that ships. Cutting at the first `#[cfg(test)]`
@@ -710,21 +724,24 @@ mod tests {
     /// What a module under `src/service/` is called in a path such as
     /// `service::caldav`, from the file it lives in.
     ///
-    /// `mod.rs` takes the name of its directory, which is how
-    /// `src/service/pgp/mod.rs` answers `pgp` rather than `mod`.
+    /// The top-level name, so `src/service/pgp/mod.rs` and
+    /// `src/service/pgp/keys.rs` both answer `pgp`. An owner of credential
+    /// store entries is a module `entries_for` can name, and `entries_for`
+    /// names `pgp` rather than any file inside it. A reading that answered
+    /// `keys` for the second of those would report an owner nobody could
+    /// register, since there is nothing there to register: the entries are
+    /// answered by the module as a whole.
     fn module_name(path: &std::path::Path) -> String {
-        let stem = path
-            .file_stem()
-            .and_then(|name| name.to_str())
+        let under_service = path
+            .components()
+            .skip_while(|part| part.as_os_str() != "service")
+            .nth(1)
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
             .unwrap_or_default();
-        if stem != "mod" {
-            return stem.to_string();
-        }
-        path.parent()
-            .and_then(|dir| dir.file_name())
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_string()
+        under_service
+            .strip_suffix(".rs")
+            .map(str::to_string)
+            .unwrap_or(under_service)
     }
 
     /// The body of `entries_for`, read out of this file.

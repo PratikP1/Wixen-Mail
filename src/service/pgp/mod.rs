@@ -10,10 +10,17 @@
 //! short notice, and a replacement that reaches every caller is one nobody
 //! makes in a hurry.
 //!
-//! **Nothing here decrypts anything yet.** What exists is the name a private
-//! key is filed under, the entries uninstalling has to erase, and the words for
-//! what happens when a message is opened. The implementation behind them is
-//! written separately, against these types.
+//! **What is here is the thinnest end-to-end path and not the whole of PGP.**
+//! One key, imported; one message, opened; four ways of failing, each said in
+//! its own words. Several keys, choosing between them, public keys, key
+//! servers, revocation, and anything outgoing are all outside it. That is
+//! deliberate: it proves the whole path rather than four layers with nothing
+//! wired.
+//!
+//! Inline PGP only. An armoured block in the message's text is what
+//! `application::body_safety::what_the_form_says` finds and what this opens.
+//! PGP/MIME, where the armour is a separate part under `multipart/encrypted`,
+//! is not read, and that gap is in the changelog rather than only here.
 //!
 //! # Which implementation sits behind this
 //!
@@ -25,10 +32,13 @@
 //! toolchain, and it has two independent security audits and a quarterly
 //! stable release history.
 //!
-//! **It is not in `Cargo.toml` yet.** This project requires a person to look at
-//! a package before it is added, and that check is answered before the
-//! dependency exists rather than after it has been building for a week. Until
-//! it is answered, this module is types and names only.
+//! It is in `Cargo.toml` now. A person looked at every crate it brings before
+//! it was added, which is what this project's rules ask, and the audit table
+//! that check was answered against is in the same document. Two costs are
+//! carried openly rather than smoothed over, in the `Cargo.toml` comment beside
+//! the dependency and in the changelog: rPGP depends on `rsa`, which is
+//! vulnerable to the unfixed Marvin timing attack, and its CI does not cover
+//! the MSVC Windows target this project builds.
 //!
 //! # Why the failures are variants and not one error string
 //!
@@ -40,6 +50,8 @@
 //! the crate's author wrote for a developer reading a stack trace.
 //!
 //! See [`WhatOpeningItFound`].
+
+mod keys;
 
 /// Credential store service name holding this program's OpenPGP private key.
 ///
@@ -110,6 +122,19 @@ pub enum WhatOpeningItFound {
     /// are two variants: one says set the program up, the other says this
     /// message was meant for somebody else.
     TheKeyHereDoesNotOpenIt,
+    /// There is a key here and this computer could not read it back out of the
+    /// credential store, so nothing could be tried.
+    ///
+    /// **A fifth variant, added when the implementation was written.** The four
+    /// above were chosen before there was anything behind them, and the case
+    /// they missed is the store refusing. Importing a key stores only what has
+    /// already parsed, so a stored key that will not parse means the credential
+    /// store handed back something other than what went in. Both of those are
+    /// rare and neither is any of the other four: there is a key here, so
+    /// [`Self::NoKeyHere`] would be a lie about the one thing somebody has
+    /// already done, and the message is fine, so [`Self::Damaged`] would blame
+    /// the sender.
+    TheKeyHereCouldNotBeRead,
     /// The armour is not readable as an OpenPGP message: truncated, corrupted
     /// in transit, or never an OpenPGP message at all.
     Damaged,
@@ -131,6 +156,18 @@ pub enum WhatImportingAKeyFound {
     NotAPrivateKey,
     /// It is not an OpenPGP key at all.
     NotAKey,
+    /// It is a private key and a passphrase is holding it shut.
+    ///
+    /// Refused rather than stored, for the reason [`Self::NotAPrivateKey`]
+    /// gives: a key that can never open anything is worse than no key at all,
+    /// because every message afterwards reports the wrong reason. Nothing here
+    /// asks for a passphrase, so an export made with one cannot be used, and
+    /// saying so at import is the only moment somebody can act on it.
+    ///
+    /// **A fifth variant, added when the implementation was written.** The four
+    /// below were chosen before there was anything behind them and this case
+    /// was not among them, which is what writing the implementation found.
+    TheKeyIsLockedWithAPassphrase,
     /// It is a private key and the credential store would not take it.
     ///
     /// The only variant carrying words, and they are the store's reason rather
@@ -138,6 +175,34 @@ pub enum WhatImportingAKeyFound {
     /// the like. `service::secret_store` already holds itself to reasons and
     /// never values, and this passes on what it said.
     CouldNotBeStored { reason: String },
+}
+
+/// Open an armoured PGP message with the private key this computer holds.
+///
+/// The one way in. Everything outside this module calls it and knows no crate
+/// name, and `test_no_caller_outside_this_module_names_the_crate` holds the
+/// tree to that.
+pub fn open_a_message(armour: &str) -> WhatOpeningItFound {
+    keys::open(armour)
+}
+
+/// Take an armoured private key file and put it in the credential store.
+///
+/// The file's bytes go in and one of [`WhatImportingAKeyFound`]'s answers comes
+/// back. Nothing about the file reaches a log, an error message or the message
+/// cache.
+pub fn import_a_private_key(armoured: &str) -> WhatImportingAKeyFound {
+    keys::import(armoured)
+}
+
+/// Whether a private key has been imported on this computer.
+///
+/// Asked by the surfaces that offer to import one, so they can say whether
+/// importing again replaces what is there. It answers from the credential store
+/// rather than from a stored flag, for the reason [`keyring_entries`] gives
+/// about deciding from a flag whether a secret exists.
+pub fn a_private_key_is_here() -> bool {
+    keys::a_key_is_here()
 }
 
 #[cfg(test)]
@@ -164,13 +229,14 @@ mod tests {
     }
 
     #[test]
-    fn test_the_three_ways_of_failing_are_three_different_answers() {
+    fn test_the_ways_of_failing_are_all_different_answers() {
         // Not a tautology about an enum. The failure this is about is somebody
         // later deciding two of these are close enough to merge, which is the
-        // shape the reader's three sentences collapse into one through.
+        // shape the reader's four sentences collapse into one through.
         let all = [
             WhatOpeningItFound::NoKeyHere,
             WhatOpeningItFound::TheKeyHereDoesNotOpenIt,
+            WhatOpeningItFound::TheKeyHereCouldNotBeRead,
             WhatOpeningItFound::Damaged,
         ];
 
@@ -183,17 +249,77 @@ mod tests {
 
     #[test]
     fn test_a_refusal_to_import_carries_no_words_from_the_file() {
-        // Three of the four refusals carry nothing at all, so there is nowhere
-        // for key material to travel. The fourth carries the credential
-        // store's reason, which is about the store rather than about the file.
+        // Four of the five refusals carry nothing at all, so there is nowhere
+        // for key material to travel. The fifth carries the credential store's
+        // reason, which is about the store rather than about the file.
         let refusals = [
             WhatImportingAKeyFound::NotAPrivateKey,
             WhatImportingAKeyFound::NotAKey,
+            WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase,
         ];
 
         for refusal in refusals {
             let said = format!("{refusal:?}");
             assert!(!said.contains('"'), "{said} carries text");
         }
+    }
+
+    #[test]
+    fn test_no_caller_outside_this_module_names_the_crate() {
+        // The whole reason this module exists. A cryptographic implementation
+        // is the one dependency here that may have to be replaced at short
+        // notice, and a replacement that reaches every caller is one nobody
+        // makes in a hurry.
+        //
+        // `use pgp::` rather than the bare word, because `service::pgp` is what
+        // this module is called: a search for `pgp` finds every mention of this
+        // module by name, in every file that opens a message, and would report
+        // the whole tree. What it cannot see in exchange is a fully qualified
+        // `::pgp::composed::Message` written without a `use`, which nothing
+        // here does.
+        fn walk(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    into.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(std::path::Path::new("src"), &mut files);
+
+        let mut reaching_past: Vec<String> = files
+            .iter()
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .filter(|path| !path.starts_with("src/service/pgp/"))
+            .filter(|path| {
+                std::fs::read_to_string(path).is_ok_and(|source| source.contains("use pgp::"))
+            })
+            .collect();
+        reaching_past.sort();
+
+        assert!(
+            reaching_past.is_empty(),
+            "these name the OpenPGP crate directly, so replacing it would reach them: \
+             {reaching_past:?}"
+        );
+    }
+
+    #[test]
+    fn test_this_reading_finds_the_one_file_that_does_name_the_crate() {
+        // The companion this project asks a source-reading guard to carry. Its
+        // neighbour above passes just as well against a reading that matches
+        // nothing at all, and a check that can only say yes is not a check.
+        let adapter = std::fs::read_to_string("src/service/pgp/keys.rs").expect("the adapter");
+
+        assert!(
+            adapter.contains("use pgp::"),
+            "the reading no longer finds the crate even where it really is"
+        );
     }
 }

@@ -1784,10 +1784,11 @@ fn one_person(
     // The kind is not used to turn an address away, only to say in the log that
     // one is not an internet address, because turning it away is what loses the
     // name with it.
-    if let Some(kind) = item.words(kind_at) {
-        if !kind.eq_ignore_ascii_case("SMTP") && !address.is_empty() {
-            tracing::debug!("an address of kind {kind} was kept as it was written");
-        }
+    if let Some(kind) = item.words(kind_at)
+        && !kind.eq_ignore_ascii_case("SMTP")
+        && !address.is_empty()
+    {
+        tracing::debug!("an address of kind {kind} was kept as it was written");
     }
 
     match (address.is_empty(), name) {

@@ -2965,13 +2965,12 @@ pub fn show_rule_edit(
     // name this build has no words for selects nothing, and a Choice with
     // nothing selected reads out as an unfilled combo box. Complaining about
     // that after opening would mean somebody had already been shown it.
-    if let Some(stored) = existing {
-        if let Some(said) =
+    if let Some(stored) = existing
+        && let Some(said) =
             what_stops_this_being_shown(manager_words::CONDITION, &stored.field, &stored.match_type)
-        {
-            a_sub_dialog_needs(parent, "Not opened", &said);
-            return None;
-        }
+    {
+        a_sub_dialog_needs(parent, "Not opened", &said);
+        return None;
     }
 
     let RuleEditWidgets {
@@ -3420,13 +3419,12 @@ fn show_filter_edit(
     // The same refusal the condition editor makes, before this dialog is
     // built. Two editors rather than one: this one has its own builder and its
     // own read-back, and the rewrite to the empty string was written out twice.
-    if let Some(stored) = existing {
-        if let Some(said) =
+    if let Some(stored) = existing
+        && let Some(said) =
             what_stops_this_being_shown(manager_words::FILTER, &stored.field, &stored.match_type)
-        {
-            a_sub_dialog_needs(parent, "Not opened", &said);
-            return None;
-        }
+    {
+        a_sub_dialog_needs(parent, "Not opened", &said);
+        return None;
     }
 
     let FilterEditWidgets {

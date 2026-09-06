@@ -101,6 +101,12 @@ menu_ids!(
     ID_OPEN_DRAFT,
     ID_IMPORT_MESSAGES,
     ID_EXPORT_MESSAGES,
+    // Reading a key file in from disk. On the File menu beside Import Mailbox,
+    // which is where bringing something in from a file already lives, and with
+    // no shortcut for Import Mailbox's reason: this is done once when somebody
+    // sets up, and a key nobody presses twice is a key in the way of one
+    // somebody presses daily.
+    ID_IMPORT_PGP_KEY,
     ID_GET_OLDER,
     ID_GET_WHOLE_FOLDER,
     ID_QUIT,
@@ -4447,6 +4453,9 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_IMPORT_PGP_KEY => {
+                            import_a_pgp_private_key(&frame, &a11y);
+                        }
                         _ if id == ID_EXPORT_MESSAGES => {
                             export_a_mailbox(
                                 &state,
@@ -5649,6 +5658,16 @@ impl WxMailApp {
                 ID_EXPORT_MESSAGES,
                 "&Export Mailbox...",
                 "Write this folder and everything inside it out to a file",
+            )
+            // Beside the mailbox import, because both are reading something in
+            // from a file, and with the same reasoning about shortcuts. The
+            // label says it is experimental as well as the description does:
+            // the description is what Windows hands a screen reader and the
+            // label is what is read whatever anybody's settings say.
+            .append_item(
+                ID_IMPORT_PGP_KEY,
+                "Import PGP Private &Key... (experimental)",
+                crate::application::allowed::READING_PGP_MAIL_IS_EXPERIMENTAL,
             )
             .append_separator()
             .append_item(ID_QUIT, "&Quit\tCtrl+Q", "Exit Wixen Mail")
@@ -10093,7 +10112,15 @@ fn read_the_whole_message(
     let envelope = envelope_check_for(cache, message);
     let body = cache
         .as_ref()
-        .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
+        .map(|body| body_as_written(Some(body)));
+    // The same order as the reader window: the words replace the armour before
+    // anything reads the body, so nothing downstream has a sentence about
+    // armour to take back out. Space and the reader have to say the same thing
+    // about the same message.
+    let opened = body
+        .as_ref()
+        .and_then(crate::application::opening_pgp::for_body);
     // An encrypted message has no body to fetch and is never going to have
     // one, so falling back to the row would answer the second press with the
     // row for ever, on the one kind of message that most needs a word about
@@ -10101,11 +10128,16 @@ fn read_the_whole_message(
     if body.is_none() && envelope.said().is_none() {
         return with_conversation_count(in_conversation, &message.read_full(out));
     }
+    let body = crate::application::opening_pgp::the_body_to_show(
+        body.unwrap_or_else(|| body_as_written(None)),
+        opened.as_ref(),
+    );
     whole_message_reading(
         message,
-        &body_as_written(body),
+        &body,
         signature_check_for(cache, message),
         envelope,
+        opened,
         in_conversation,
         out,
     )
@@ -10126,6 +10158,7 @@ fn whole_message_reading(
     body: &MessageBody,
     signature: crate::application::checking_signatures::SignatureCheck,
     envelope: crate::application::encrypted_mail::WhatTheEnvelopeSays,
+    opened: Option<crate::service::pgp::WhatOpeningItFound>,
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
@@ -10138,6 +10171,7 @@ fn whole_message_reading(
     // The envelope goes in first, for the ordering reason `with_encryption`
     // carries: everything above `HOW_IT_WAS_CHECKED` is what gets spoken.
     let document = reader_text::single_message(message, body, out)
+        .with_pgp(opened.as_ref())
         .with_smime_envelope(&envelope)
         .with_signature(&signature);
     let state = read_aloud::state_worth_saying(message);
@@ -11317,6 +11351,11 @@ fn open_in_the_text_reader(
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
     let body = body_as_written(body);
+    // Before the document is built, not after. A message that opens has its
+    // armour replaced by its words here, so `single_message` finds no armour
+    // and adds no sentence about any, and there is nothing to take back out.
+    let opened = crate::application::opening_pgp::for_body(&body);
+    let body = crate::application::opening_pgp::the_body_to_show(body, opened.as_ref());
     // The list row does not carry the attachments, only whether there are any,
     // because a folder listing that loaded them would do a query per row. The
     // reader is the one place that needs them.
@@ -11324,6 +11363,7 @@ fn open_in_the_text_reader(
     message.attachments = attachments_of(cache, message.message_id);
     reader.open(
         reader_text::single_message(&message, &body, out)
+            .with_pgp(opened.as_ref())
             // Before the signature verdict, and that ordering is load-bearing
             // rather than tidy: a verdict puts `HOW_IT_WAS_CHECKED` into the
             // bar and `said_before_the_message` cuts there, so a sentence
@@ -11627,6 +11667,72 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
 ///
 /// The first version of this command did the work here. It is the one shape
 /// the rest of this program goes out of its way to avoid.
+/// Read a PGP private key in from a file and put it in the credential store.
+///
+/// Everything about the file stops at [`crate::service::pgp`]. This reads the
+/// bytes, hands them over and says what came back. **What it never does is
+/// carry anything out of the file into a sentence, a log line or a status
+/// message**, which is why the outcomes it matches on carry no words except the
+/// credential store's own reason.
+///
+/// Said aloud as well as put in the status bar. Importing a key is a one-off
+/// somebody does deliberately and then wants to know the answer to, and a
+/// status bar nobody is looking at is not an answer.
+fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
+    use crate::presentation::accessibility::announcements::Priority;
+    use crate::service::pgp::{self, WhatImportingAKeyFound};
+
+    let picker = FileDialog::builder(frame)
+        .with_message("Import a PGP private key")
+        .with_wildcard("PGP key files (*.asc;*.key;*.gpg)|*.asc;*.key;*.gpg|All files (*.*)|*.*")
+        .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
+        .build();
+    if picker.show_modal() != ID_OK {
+        // Cancelling is a decision and needs no sentence: there is no outcome.
+        return;
+    }
+    let Some(chosen) = picker.get_path() else {
+        let _ = a11y.announce("No file was chosen.", Priority::High);
+        return;
+    };
+
+    // The path and never the contents. A key file's bytes are the highest
+    // value secret this program handles, and a read that failed must say which
+    // file rather than what was in it.
+    let Ok(armoured) = std::fs::read_to_string(&chosen) else {
+        let _ = a11y.announce(
+            "That file could not be read. A PGP key exported as text is what this wants.",
+            Priority::High,
+        );
+        return;
+    };
+
+    let said = match pgp::import_a_private_key(&armoured) {
+        WhatImportingAKeyFound::Imported => {
+            "Your PGP private key was imported. Messages encrypted to it will open from now on."
+                .to_string()
+        }
+        WhatImportingAKeyFound::NotAPrivateKey => {
+            "That is a public key rather than a private one. A public key cannot open anything, \
+             so nothing was stored. Export the private half instead."
+                .to_string()
+        }
+        WhatImportingAKeyFound::NotAKey => {
+            "That file is not a PGP key, so nothing was stored.".to_string()
+        }
+        WhatImportingAKeyFound::TheKeyIsLockedWithAPassphrase => {
+            "That key has a passphrase on it. Wixen Mail cannot ask you for one yet, so it \
+             would never open anything and nothing was stored. Export the key without a \
+             passphrase."
+                .to_string()
+        }
+        WhatImportingAKeyFound::CouldNotBeStored { reason } => {
+            format!("Your key could not be saved: {reason}. Nothing was stored.")
+        }
+    };
+    let _ = a11y.announce(&said, Priority::High);
+}
+
 fn import_a_mailbox(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -21300,6 +21406,7 @@ mod tests {
             &crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
             crate::application::checking_signatures::SignatureCheck::NotSigned,
             crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
+            None,
             None,
             aloud(),
         );

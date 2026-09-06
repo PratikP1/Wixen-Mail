@@ -363,6 +363,31 @@ pub const DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL: &str = "Downloading a whol
      folder is here or the server stops sending, which on a large mailbox is a long time. \
      Nothing is changed at the server and nothing is sent.";
 
+/// The warning shown beside the command that imports a PGP private key.
+///
+/// A third kind of experimental, and it is worth saying which because the two
+/// above are about what a mail server might do and this is not. Nothing here
+/// touches a server. What has never happened is the whole of it: no real
+/// correspondent has ever sent this program a PGP message and no real key has
+/// ever been imported, so every part of the path has only ever met a key and a
+/// message made for a test.
+///
+/// It says what could go wrong rather than only that the feature is new,
+/// because "experimental" on its own tells somebody to be careful and not what
+/// to be careful of. The two things that could go wrong are opposite and both
+/// matter: a message reported as unopenable that a working client opens, and a
+/// message shown as opened that was not.
+///
+/// And it says the two limits somebody meets first, because meeting either
+/// without warning reads as the feature being broken: one key at a time, and
+/// only a key with no passphrase on it.
+pub const READING_PGP_MAIL_IS_EXPERIMENTAL: &str = "Reading PGP mail is experimental. No message from a real correspondent has \
+     ever been through it and no real key has ever been imported, so it may \
+     say a message cannot be opened when another mail program opens it. \
+     Nothing is sent anywhere and nothing on your account is changed. Wixen \
+     Mail holds one key at a time, and it has to be exported without a \
+     passphrase, because nothing here asks you for one.";
+
 /// Everything that has an opinion about what may be changed.
 ///
 /// Kept as one value so the answer is worked out in one place and every
@@ -643,6 +668,42 @@ mod tests {
         assert!(
             EXPERIMENTAL_WARNING.contains("guest"),
             "{EXPERIMENTAL_WARNING}"
+        );
+    }
+
+    #[test]
+    fn test_reading_pgp_mail_says_it_is_experimental_and_says_what_could_go_wrong() {
+        // A third kind of experimental and it has to earn being a third
+        // sentence. The two above are about what a mail server may do; this
+        // touches no server, and what has never happened is the whole path.
+        // Both ways it can be wrong are worth naming and the sentence names
+        // the one somebody meets: a message it will not open that another
+        // program opens.
+        //
+        // And the two limits, because meeting either without warning reads as
+        // the feature being broken rather than as a boundary somebody drew.
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("experimental"),
+            "{READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("real correspondent"),
+            "it does not say what has never happened: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("another mail program opens it"),
+            "it does not say what could go wrong: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            READING_PGP_MAIL_IS_EXPERIMENTAL.contains("one key at a time")
+                && READING_PGP_MAIL_IS_EXPERIMENTAL.contains("passphrase"),
+            "it does not name the two limits somebody meets first: \
+             {READING_PGP_MAIL_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            !READING_PGP_MAIL_IS_EXPERIMENTAL.contains("  "),
+            "a wrapped literal lost its continuations, so this is read aloud \
+             with stray silences: {READING_PGP_MAIL_IS_EXPERIMENTAL}"
         );
     }
 
