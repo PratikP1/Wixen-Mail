@@ -186,6 +186,26 @@ pub fn next_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Ste
         .map_or(Step::Stay(NOTHING_AFTER_HERE), Step::Land)
 }
 
+/// What is said at the start of the message, going backwards.
+pub const NOTHING_BEFORE_HERE: &str = "No misspellings before here.";
+
+/// The misspelling before where the caret is.
+///
+/// The same shape as [`next_misspelling`] and under the same constraint: a
+/// comparison against a position the page reported, and no arithmetic over how
+/// far anything has moved. The temptation is stronger going backwards, because
+/// "the one before" reads like subtraction, and [`next_finding`]'s comment
+/// records what happened the time this was written as a sum: it skipped a
+/// misspelling and said nothing about having done so.
+///
+/// Ignored words are treated the way [`next_misspelling`] treats them, and for
+/// the same reason. Answering the two directions differently would mean a key
+/// that goes somewhere its opposite cannot bring you back from.
+pub fn previous_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Step<'a> {
+    let _ = (found, from);
+    todo!("which misspelling the backward walk key reaches")
+}
+
 /// The words worth stopping on, in the order they appear.
 ///
 /// `wrong` and `suggest` are the speller. Passing them in rather than taking a
@@ -745,6 +765,155 @@ mod tests {
         assert_eq!(
             next_misspelling(&found, Some(place(4))),
             Step::Land(&found[1])
+        );
+    }
+
+    // ── And backwards ──────────────────────────────────────────────────────
+
+    /// Every word a walk visits, from one end of the message to the other.
+    ///
+    /// The caret is modelled the way the page really reports it. Landing on a
+    /// word selects it, so a forward walk carries on from where that selection
+    /// ends and a backward one from where it begins. Those are the two
+    /// positions `walk_to_a_misspelling` hands in, and `check_spelling`
+    /// already works out the forward one the same way.
+    ///
+    /// Bounded rather than looped until it stops, because a walk that offers
+    /// the same word twice would otherwise hang the run instead of failing it,
+    /// and a test that hangs says nothing at all.
+    fn walked(found: &[Finding], backwards: bool) -> Vec<String> {
+        let mut visited: Vec<String> = Vec::new();
+        let mut from = None;
+        while visited.len() <= found.len() {
+            let step = if backwards {
+                previous_misspelling(found, from)
+            } else {
+                next_misspelling(found, from)
+            };
+            match step {
+                Step::Land(finding) => {
+                    visited.push(finding.word.clone());
+                    from = Some(if backwards {
+                        finding.at
+                    } else {
+                        Position {
+                            node: finding.at.node,
+                            offset: finding.end,
+                        }
+                    });
+                }
+                Step::Stay(_) => return visited,
+            }
+        }
+        panic!("the walk went round in circles: {visited:?}");
+    }
+
+    #[test]
+    fn test_the_two_directions_are_inverses_over_a_message() {
+        // Written as one property rather than as two hand-written walks,
+        // because two walks would each have to be right for the pair to
+        // disagree, and the mistake this is looking for is at a boundary:
+        // whether "the one before here" means the first earlier word or the
+        // last one. A backwards search that takes the first goes from the end
+        // of the message to the beginning in one press and stops.
+        let found = every_word_wrong("aaa bbb ccc ddd eee");
+
+        let there = walked(&found, false);
+        let mut back_again = walked(&found, true);
+        back_again.reverse();
+
+        assert_eq!(there, ["aaa", "bbb", "ccc", "ddd", "eee"]);
+        assert_eq!(there, back_again, "the two directions disagree");
+    }
+
+    #[test]
+    fn test_the_backward_key_from_the_end_lands_on_the_last_misspelling() {
+        let found = every_word_wrong("aaa bbb ccc");
+        let past_them_all = place(100);
+
+        assert_eq!(
+            previous_misspelling(&found, Some(past_them_all)),
+            Step::Land(&found[2])
+        );
+    }
+
+    #[test]
+    fn test_pressing_the_backward_key_again_moves_to_the_one_before_that() {
+        // Standing on the last one, which is selected, so the walk starts from
+        // where that selection begins. Starting from where it ends would offer
+        // the same word again.
+        let found = every_word_wrong("aaa bbb ccc");
+        let standing_on_the_last = found[2].at;
+
+        assert_eq!(
+            previous_misspelling(&found, Some(standing_on_the_last)),
+            Step::Land(&found[1])
+        );
+    }
+
+    #[test]
+    fn test_before_the_first_misspelling_it_says_so_and_moves_nothing() {
+        let found = every_word_wrong("aaa bbb");
+
+        assert_eq!(
+            previous_misspelling(&found, Some(place(0))),
+            Step::Stay("No misspellings before here.")
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_wrong_says_so_going_backwards_too() {
+        let found = findings(
+            &words("all of these are fine"),
+            nothing_wrong,
+            no_suggestions,
+        );
+
+        assert_eq!(
+            previous_misspelling(&found, None),
+            Step::Stay("No misspellings in this message.")
+        );
+    }
+
+    #[test]
+    fn test_landing_on_a_word_backwards_says_what_landing_on_it_forwards_says() {
+        // Which way somebody arrived is not a fact about the word, so it is
+        // not in the sentence. A "previous" in the announcement would also be
+        // the only thing in it that is not about the message.
+        let found = every_word_wrong("aaa bbb ccc");
+
+        let (Step::Land(forwards), Step::Land(backwards)) = (
+            next_misspelling(&found, Some(place(4))),
+            previous_misspelling(&found, Some(place(8))),
+        ) else {
+            panic!("both directions should have reached the middle word");
+        };
+
+        assert_eq!(forwards.word, "bbb");
+        assert_eq!(backwards.word, "bbb");
+        assert_eq!(
+            forwards.spoken_without_a_dialog(),
+            backwards.spoken_without_a_dialog()
+        );
+    }
+
+    #[test]
+    fn test_the_backward_walk_also_offers_a_word_an_f7_pass_would_have_ignored() {
+        // The same decision as the forward key, asserted rather than assumed
+        // to follow. Two keys that disagree about this would mean going
+        // somewhere the opposite key cannot bring you back from.
+        let found = every_word_wrong("aaa bbb");
+        let mut ignored = Ignored::default();
+        ignored.add("aaa");
+
+        assert_eq!(
+            next_finding(&found, &ignored, None).map(|finding| finding.word.as_str()),
+            Some("bbb"),
+            "F7's walk should still skip a word it was told to ignore"
+        );
+        assert_eq!(
+            previous_misspelling(&found, Some(place(4))),
+            Step::Land(&found[0])
         );
     }
 }

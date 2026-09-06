@@ -1550,8 +1550,13 @@ pub enum EditorMessage {
     TableRowAdded,
     /// F7: walk the spelling of the message.
     CheckSpelling,
-    /// Move the caret to the next misspelling. No dialog.
-    ToAMisspelling,
+    /// Move the caret to the next misspelling, or to the one before it.
+    ///
+    /// No dialog either way. `back` is the key held with Shift, the same way
+    /// [`Self::Leaving`] carries it.
+    ToAMisspelling {
+        back: bool,
+    },
     /// A word was finished, and wants checking.
     WordFinished(String),
     /// Alt and a letter were pressed, naming a control in the compose window.
@@ -1592,7 +1597,9 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         "link" => Some(EditorMessage::Link(value.get("url")?.as_str()?.to_string())),
         "row" => Some(EditorMessage::TableRowAdded),
         "spelling" => Some(EditorMessage::CheckSpelling),
-        "misspelling" => Some(EditorMessage::ToAMisspelling),
+        "misspelling" => Some(EditorMessage::ToAMisspelling {
+            back: value.get("back")?.as_bool()?,
+        }),
         "word" => Some(EditorMessage::WordFinished(
             value.get("text")?.as_str()?.to_string(),
         )),
@@ -1977,12 +1984,17 @@ mod tests {
         let page = editor_document(&blank(), "en", true);
 
         assert!(
-            page.contains(
-                "event.key === 'F7' && event.altKey && !event.ctrlKey && !event.shiftKey"
-            ),
+            page.contains("event.key === 'F7' && event.altKey && !event.ctrlKey"),
             "{page}"
         );
         assert!(page.contains("'misspelling'"), "{page}");
+        // Shift decides the direction rather than being refused, so one arm
+        // carries both keys. Held apart from the F7 arm above by Alt, which
+        // that one refuses.
+        assert!(
+            page.contains("post({ kind: 'misspelling', back: event.shiftKey })"),
+            "{page}"
+        );
         // And the plain F7 arm still refuses the key when Alt is held, or the
         // dialog opens as well as the caret moving.
         assert!(
@@ -2007,9 +2019,17 @@ mod tests {
         // The only step between the key and the caret moving. Dropping it
         // makes the key do nothing at all, silently.
         assert_eq!(
-            parse_message(r#"{"kind":"misspelling"}"#),
-            Some(EditorMessage::ToAMisspelling)
+            parse_message(r#"{"kind":"misspelling","back":false}"#),
+            Some(EditorMessage::ToAMisspelling { back: false })
         );
+        assert_eq!(
+            parse_message(r#"{"kind":"misspelling","back":true}"#),
+            Some(EditorMessage::ToAMisspelling { back: true })
+        );
+        // Which way is not optional. A message with no direction in it is one
+        // half of the pair having come apart, and guessing forward would make
+        // the backward key quietly do the wrong thing.
+        assert_eq!(parse_message(r#"{"kind":"misspelling"}"#), None);
     }
 
     #[test]

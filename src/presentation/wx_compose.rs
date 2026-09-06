@@ -2027,7 +2027,9 @@ pub fn show_compose_dialog_full(
                 // and starts no nested event loop: it runs two scripts and
                 // says a sentence, which is what the Markdown link arm below
                 // already does from inside this same callback.
-                Some(editor_document::EditorMessage::ToAMisspelling) => {
+                Some(editor_document::EditorMessage::ToAMisspelling { back: _ }) => {
+                    // The direction is ignored here while the backward answer
+                    // is still red. The commit that writes it passes it on.
                     walk_to_a_misspelling(&body_editor, &a11y);
                 }
                 // The sound at the end of a word that is wrong. Not spoken:
