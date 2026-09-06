@@ -86,7 +86,35 @@ impl Finding {
     /// So it says more than one, and bounds how many, which is guardrail 5.
     /// See [`SUGGESTIONS_SAID`] for the number and the reason.
     pub fn spoken_without_a_dialog(&self) -> String {
-        todo!("the sentence said when the caret lands on a word")
+        let mut said = format!("{}, {}", self.word, self.problem.spoken());
+        if self.suggestions.is_empty() {
+            said.push_str(". No suggestions");
+            return said;
+        }
+        let a_few: Vec<&str> = self
+            .suggestions
+            .iter()
+            .take(SUGGESTIONS_SAID)
+            .map(String::as_str)
+            .collect();
+        said.push_str(&format!(". Try {}", one_or_another(&a_few)));
+        if self.suggestions.len() > SUGGESTIONS_SAID {
+            said.push_str(&format!(". {} suggestions in all", self.suggestions.len()));
+        }
+        said
+    }
+}
+
+/// A list said the way a person says one: "a, b or c".
+///
+/// The last one joined with "or" rather than a comma, because a comma before
+/// the last item is heard as another item and leaves somebody waiting for a
+/// fourth suggestion that never arrives.
+fn one_or_another(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [only] => (*only).to_string(),
+        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
     }
 }
 
@@ -149,8 +177,13 @@ pub const NOTHING_AFTER_HERE: &str = "No more misspellings after here.";
 /// keeping an ignore list alive that nobody can see, add to, or clear. A word
 /// somebody passed over in a dialog is still a word they can walk onto.
 pub fn next_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Step<'a> {
-    let _ = (found, from);
-    todo!("which misspelling the walk key reaches")
+    if found.is_empty() {
+        return Step::Stay(NOTHING_MISSPELLED);
+    }
+    found
+        .iter()
+        .find(|finding| from.is_none_or(|from| finding.at >= from))
+        .map_or(Step::Stay(NOTHING_AFTER_HERE), Step::Land)
 }
 
 /// The words worth stopping on, in the order they appear.

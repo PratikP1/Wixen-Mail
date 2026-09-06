@@ -2023,9 +2023,13 @@ pub fn show_compose_dialog_full(
                     waiting.set(Some(Deferred::Spelling));
                     later.start(1, true);
                 }
-                // Named so the match stays exhaustive while the walk itself is
-                // still red. The commit that binds the key fills this in.
-                Some(editor_document::EditorMessage::ToAMisspelling) => {}
+                // Not through the timer, unlike F7 above. This opens no dialog
+                // and starts no nested event loop: it runs two scripts and
+                // says a sentence, which is what the Markdown link arm below
+                // already does from inside this same callback.
+                Some(editor_document::EditorMessage::ToAMisspelling) => {
+                    walk_to_a_misspelling(&body_editor, &a11y);
+                }
                 // The sound at the end of a word that is wrong. Not spoken:
                 // the engine has already marked the word, and the screen
                 // reader says it as the caret crosses it, which is better than
@@ -2570,6 +2574,84 @@ fn check_spelling(
     // is somebody about to carry on writing it.
     body_editor.set_focus();
     let _ = a11y.announce(&session::finished(corrected), Priority::High);
+}
+
+/// Move the caret to the next misspelling and say what it is.
+///
+/// The other half of the spelling check, and the half somebody writing a
+/// message actually wants. F7 walks the same words but opens a dialog on each
+/// one, so correcting a typo means leaving the message, answering a question
+/// and coming back. This leaves the caret in the message, so the next thing
+/// somebody does is type.
+///
+/// The engine has already marked the word and the screen reader announces the
+/// mark itself as the caret crosses it. What it cannot say is what the word
+/// could be instead, which is what the sentence here adds.
+fn walk_to_a_misspelling(
+    body_editor: &WebView,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    use crate::application::spell_session as session;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let language = crate::data::config::ConfigManager::load_stored()
+        .map(|config| config.app_config().language.clone())
+        .unwrap_or_else(|_| "en".to_string());
+    let speller = crate::service::spellcheck::for_language(&language);
+
+    let text = editor_document::text_from_editor(
+        &body_editor
+            .run_script(&editor_document::text_script())
+            .unwrap_or_default(),
+    );
+    let words = crate::application::words::words_in(&text);
+    let found = session::findings(
+        &words,
+        |word| !speller.check(word).is_empty(),
+        // More than are said, so the count in the sentence has something
+        // behind it. See `session::SUGGESTIONS_TO_HAVE`.
+        |word| speller.suggest(word, session::SUGGESTIONS_TO_HAVE),
+    );
+
+    // Asked afresh rather than remembered from the last press, because typing,
+    // clicking and arrowing all move the caret and none of them tells this
+    // side. From where the selection ends, because the word this landed on
+    // last time is selected and starting from its beginning would offer it
+    // again.
+    let caret = body_editor
+        .run_script(&editor_document::caret_script())
+        .as_deref()
+        .and_then(editor_document::caret_from_editor);
+
+    // On a topic, so a key held down leaves one sentence rather than a queue
+    // of them. Guardrail 5 asks for feedback that is bounded, and a walk in
+    // which every word supersedes the last is what somebody holding the key is
+    // asking for: they want to know where they are now.
+    //
+    // Through `announce_what_was_typed` rather than `announce` because the
+    // sentence carries a word out of the message, and the message is either
+    // what somebody typed or what a stranger sent them. It is spoken exactly
+    // like any other announcement; what it does not do is write that word into
+    // the log, which is a file people are asked to attach to bug reports.
+    //
+    // At the priority F7's own sentence uses, because it is the same kind of
+    // sentence: the answer to a key somebody pressed and is waiting for.
+    let say = |sentence: &str| {
+        let _ = a11y.announce_what_was_typed(sentence, Priority::High, "spelling-walk");
+    };
+
+    match session::next_misspelling(&found, caret.map(|at| at.end)) {
+        session::Step::Land(finding) => {
+            body_editor.run_script(&editor_document::select_word_script(
+                finding.at,
+                finding.end,
+            ));
+            say(&finding.spoken_without_a_dialog());
+        }
+        // Moves nothing, and says why. Silence here would be
+        // indistinguishable from a key nobody bound.
+        session::Step::Stay(sentence) => say(sentence),
+    }
 }
 
 /// Replace one word, and say where the page put the caret afterwards.

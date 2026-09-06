@@ -8,6 +8,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A key that moves to the next misspelled word and says what it could be
+  instead, without opening anything.**
+
+  In the message you are writing, `Alt+F7` moves the caret to the next
+  misspelled word and leaves it there, so the next thing you do is type. It is
+  the key Word uses for the same thing. Landing on a word says the word, what is
+  wrong with it, and up to three things it could be instead; where there are
+  more than three, it says how many there are altogether, so you know the list
+  did not stop where the speaking did.
+
+  This is the half of the spelling check that was missing. `F7` still walks the
+  message a word at a time and still opens its dialog on each one, unchanged,
+  and that is the right shape for checking a message you have finished. It is
+  the wrong shape for fixing one typo you know is there, because it takes you
+  out of the message to ask a question you already know the answer to.
+
+  At the end of the message it says there are no more and moves nothing, rather
+  than going quietly back to the top. In a message with nothing wrong it says
+  that, rather than doing nothing at all.
+
+  Known limitations:
+
+  - Nobody has heard this with a screen reader yet. Whether this program's
+    sentence and your screen reader's own announcement of the marked word talk
+    over each other as the caret lands is the sort of thing only listening can
+    settle.
+
 - **An image attachment now previews. It is described, and it is shown.**
 
   Choose a PNG, JPEG, GIF or WebP in the attachment list and press Enter, and it

@@ -5771,7 +5771,7 @@ dependencies = [
 
 [[package]]
 name = "wixen-mail"
-version = "0.67.0"
+version = "0.68.0"
 dependencies = [
  "aes-gcm",
  "ammonia",

@@ -231,6 +231,17 @@ img {{ max-width: 100%; height: auto; }}
       post({{ kind: 'spelling' }});
       return;
     }}
+    // Alt+F7 to the next misspelling, with no dialog: the caret moves and
+    // stays in the message. It is the key Word binds to the same thing, so it
+    // is one somebody may already know.
+    //
+    // The arm above takes plain F7 and refuses it when Alt is held, so the two
+    // cannot both fire and open a dialog behind a caret move.
+    if (event.key === 'F7' && event.altKey && !event.ctrlKey && !event.shiftKey) {{
+      event.preventDefault();
+      post({{ kind: 'misspelling' }});
+      return;
+    }}
     // Into the toolbar. The nine buttons are out of the tab order, because
     // nine stops between the subject line and the message is a cost paid on
     // the way somebody takes every time they write anything.
@@ -366,6 +377,41 @@ img {{ max-width: 100%; height: auto; }}
     var holder = range.startContainer.parentElement;
     if (holder && holder.scrollIntoView) {{ holder.scrollIntoView({{ block: 'nearest' }}); }}
     return true;
+  }};
+
+  // Where the caret is, at both ends of whatever is selected.
+  //
+  // In the same coordinates `wixenText` numbers its nodes in, because that is
+  // what everything on the Rust side works in. Both ends, because a walk
+  // forward has to start from where the selection ends: the word it just
+  // landed on is selected, and starting from where that selection begins would
+  // offer the same word again.
+  //
+  // From the range rather than from the anchor and the focus. A selection
+  // dragged backwards has its focus at the earlier end, so those two answer
+  // "which end did the mouse stop at", which is a different question.
+  //
+  // Nothing here is asserted. An editor nobody has clicked in has no selection
+  // at all, and a caret inside an element rather than inside text sits in a
+  // node the walker never hands back. Both answer null, and the walk then says
+  // where it can rather than reaching into something that is not there.
+  window.wixenCaret = function () {{
+    var selection = window.getSelection();
+    if (!selection || !selection.rangeCount) {{ return JSON.stringify(null); }}
+    var range = selection.getRangeAt(0);
+    if (!range) {{ return JSON.stringify(null); }}
+    var nodes = textNodes();
+    var from = -1;
+    var to = -1;
+    for (var n = 0; n < nodes.length; n++) {{
+      if (nodes[n] === range.startContainer) {{ from = n; }}
+      if (nodes[n] === range.endContainer) {{ to = n; }}
+    }}
+    if (from < 0 || to < 0) {{ return JSON.stringify(null); }}
+    return JSON.stringify({{
+      start: {{ node: from, offset: range.startOffset }},
+      end: {{ node: to, offset: range.endOffset }}
+    }});
   }};
 
   // Replace a word, and say where that left the caret.
@@ -974,8 +1020,10 @@ pub struct Caret {
 /// asked for: a walk that cannot tell where it is says so and moves nothing,
 /// which is better than a panic in the middle of writing a message.
 pub fn caret_from_editor(raw: &str) -> Option<Caret> {
-    let _ = raw;
-    todo!("reading the caret back out of what the page answered")
+    let unwrapped = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_string());
+    serde_json::from_str::<Option<Caret>>(&unwrapped)
+        .ok()
+        .flatten()
 }
 
 /// Where a replacement left the caret, as the page reported it.
@@ -1544,6 +1592,7 @@ pub fn parse_message(raw: &str) -> Option<EditorMessage> {
         "link" => Some(EditorMessage::Link(value.get("url")?.as_str()?.to_string())),
         "row" => Some(EditorMessage::TableRowAdded),
         "spelling" => Some(EditorMessage::CheckSpelling),
+        "misspelling" => Some(EditorMessage::ToAMisspelling),
         "word" => Some(EditorMessage::WordFinished(
             value.get("text")?.as_str()?.to_string(),
         )),
