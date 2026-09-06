@@ -854,6 +854,52 @@ mod tests {
     }
 
     #[test]
+    fn test_what_a_batch_of_three_says_out_loud() {
+        // The whole sentence, not the parts it contains. Everything else here
+        // asks whether a name is in the announcement, which cannot see the
+        // punctuation, the order, or a stray word between two of them, and
+        // this is a sentence somebody hears rather than reads: a comma where
+        // "and" belongs is heard.
+        let folder = tempfile::tempdir().expect("temp dir");
+        let paths = some_files(folder.path(), 3, 2048);
+
+        let batch = choose_all(&paths);
+        let said = what_to_say(&batch, &batch.chosen);
+
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert_eq!(
+            said[0].words,
+            "Attached file-0.txt, file-1.txt and file-2.txt, 6 KB in total. \
+             Press Delete in the attachments list to take one off"
+        );
+        assert!(!said[0].trouble);
+
+        // And the same three with a folder in the middle, which is two
+        // announcements: what went on, then what did not.
+        let inner = folder.path().join("holiday photos");
+        std::fs::create_dir(&inner).expect("a folder among the files");
+        let mixed = choose_all(&[paths[0].clone(), inner, paths[1].clone()]);
+        let said = what_to_say(&mixed, &mixed.chosen);
+
+        assert_eq!(
+            said.iter()
+                .map(|words| (words.words.as_str(), words.trouble))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    "Attached file-0.txt and file-1.txt, 4 KB in total. \
+                     Press Delete in the attachments list to take one off",
+                    false
+                ),
+                (
+                    "holiday photos is a folder, and a folder cannot be attached",
+                    true
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn test_one_bad_path_among_several_is_named_rather_than_pathed() {
         // The other half of the test above, and it took writing the summary to
         // see that they are different questions. Handing over one path is

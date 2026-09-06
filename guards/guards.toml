@@ -15533,10 +15533,18 @@ tests_last_seen = [
 # that asked whether a bad path is refused would pass on it.
 #
 # Measured by hand on 2026-09-06, every target with --no-fail-fast, from a tree
-# that was green first: 6,374 library tests passed and two failed in the whole
+# that was green first: 6,375 library tests passed and three failed in the whole
 # tree. Nothing outside this module noticed, which is the finding rather than an
-# aside: two tests are the whole defence of the rule, and every route that
+# aside: three tests are the whole defence of the rule, and every route that
 # attaches a file goes through the line they are about.
+#
+# Measured twice on the same day, and the second time is the point of the
+# `tests_last_seen` machinery. The first measurement was two tests. A test
+# pinning the whole sentence a batch says was added an hour later, for an
+# unrelated reason, and it reddens under this break as well; the commit that
+# added it was refused, `--remeasure` refused, and a plain run named the third
+# test. The record was two short of the truth for as long as it took to read
+# the message, rather than for three commits.
 
 [[guard]]
 name = "one path that cannot go on does not take the rest of the batch with it"
@@ -15555,9 +15563,10 @@ after = """    match refused {
 red = [
     "application::attaching::tests::test_a_file_that_cannot_be_read_among_them_does_not_stop_the_others",
     "application::attaching::tests::test_a_folder_among_them_is_refused_by_name_and_the_others_still_go_on",
+    "application::attaching::tests::test_what_a_batch_of_three_says_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/application/attaching.rs", tests = 29 },
+    { file = "src/application/attaching.rs", tests = 30 },
 ]
 
 # ── Every way a file goes on a message ends at one model ───────────────────
