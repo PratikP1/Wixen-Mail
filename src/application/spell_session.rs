@@ -202,8 +202,18 @@ pub const NOTHING_BEFORE_HERE: &str = "No misspellings before here.";
 /// the same reason. Answering the two directions differently would mean a key
 /// that goes somewhere its opposite cannot bring you back from.
 pub fn previous_misspelling<'a>(found: &'a [Finding], from: Option<Position>) -> Step<'a> {
-    let _ = (found, from);
-    todo!("which misspelling the backward walk key reaches")
+    if found.is_empty() {
+        return Step::Stay(NOTHING_MISSPELLED);
+    }
+    // The last one before here, not the first. Reversed rather than searched
+    // from the front, because `find` on a list in reading order answers "the
+    // earliest word before here", which walks from the end of a message to its
+    // beginning in one press and then says there are no more.
+    found
+        .iter()
+        .rev()
+        .find(|finding| from.is_none_or(|from| finding.at < from))
+        .map_or(Step::Stay(NOTHING_BEFORE_HERE), Step::Land)
 }
 
 /// The words worth stopping on, in the order they appear.

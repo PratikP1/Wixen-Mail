@@ -231,15 +231,18 @@ img {{ max-width: 100%; height: auto; }}
       post({{ kind: 'spelling' }});
       return;
     }}
-    // Alt+F7 to the next misspelling, with no dialog: the caret moves and
-    // stays in the message. It is the key Word binds to the same thing, so it
-    // is one somebody may already know.
+    // Alt+F7 to the next misspelling and Alt+Shift+F7 to the one before it,
+    // with no dialog: the caret moves and stays in the message. Alt+F7 is the
+    // key Word binds to the same thing, so it is one somebody may already
+    // know, and Shift for the other direction is what every other pair of
+    // walking keys on Windows does.
     //
-    // The arm above takes plain F7 and refuses it when Alt is held, so the two
-    // cannot both fire and open a dialog behind a caret move.
-    if (event.key === 'F7' && event.altKey && !event.ctrlKey && !event.shiftKey) {{
+    // One arm for both, so the two can never come apart. The arm above takes
+    // plain F7 and refuses it when Alt is held, so neither of these can open a
+    // dialog behind a caret move.
+    if (event.key === 'F7' && event.altKey && !event.ctrlKey) {{
       event.preventDefault();
-      post({{ kind: 'misspelling' }});
+      post({{ kind: 'misspelling', back: event.shiftKey }});
       return;
     }}
     // Into the toolbar. The nine buttons are out of the tab order, because

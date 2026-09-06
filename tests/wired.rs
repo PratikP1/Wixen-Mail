@@ -1036,11 +1036,13 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // ones that have to leave and hands them over; there is no wx-side
         // binding for this source to find.
         "Ctrl+\\",
-        // The same handler again, moving the caret to the next misspelling.
-        // The page tests for `event.key === 'F7' && event.altKey`, which is
-        // not the string `Alt+F7` and never will be.
+        // The same handler again, moving the caret between misspellings. The
+        // page tests for `event.key === 'F7' && event.altKey`, which is not
+        // the string `Alt+F7` and never will be, and takes the direction from
+        // `event.shiftKey` in the same arm.
         // src/presentation/editor_document.rs.
         "Alt+F7",
+        "Alt+Shift+F7",
         // The column list's key handler, which moves the selected column.
         // src/presentation/wx_columns.rs, the `key.alt_down()` arm.
         "Alt+Up",

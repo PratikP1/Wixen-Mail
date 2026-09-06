@@ -2027,10 +2027,8 @@ pub fn show_compose_dialog_full(
                 // and starts no nested event loop: it runs two scripts and
                 // says a sentence, which is what the Markdown link arm below
                 // already does from inside this same callback.
-                Some(editor_document::EditorMessage::ToAMisspelling { back: _ }) => {
-                    // The direction is ignored here while the backward answer
-                    // is still red. The commit that writes it passes it on.
-                    walk_to_a_misspelling(&body_editor, &a11y);
+                Some(editor_document::EditorMessage::ToAMisspelling { back }) => {
+                    walk_to_a_misspelling(&body_editor, back, &a11y);
                 }
                 // The sound at the end of a word that is wrong. Not spoken:
                 // the engine has already marked the word, and the screen
@@ -2578,7 +2576,8 @@ fn check_spelling(
     let _ = a11y.announce(&session::finished(corrected), Priority::High);
 }
 
-/// Move the caret to the next misspelling and say what it is.
+/// Move the caret to the next misspelling, or to the one before it, and say
+/// what it is.
 ///
 /// The other half of the spelling check, and the half somebody writing a
 /// message actually wants. F7 walks the same words but opens a dialog on each
@@ -2591,6 +2590,7 @@ fn check_spelling(
 /// could be instead, which is what the sentence here adds.
 fn walk_to_a_misspelling(
     body_editor: &WebView,
+    back: bool,
     a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
 ) {
     use crate::application::spell_session as session;
@@ -2617,9 +2617,13 @@ fn walk_to_a_misspelling(
 
     // Asked afresh rather than remembered from the last press, because typing,
     // clicking and arrowing all move the caret and none of them tells this
-    // side. From where the selection ends, because the word this landed on
-    // last time is selected and starting from its beginning would offer it
-    // again.
+    // side.
+    //
+    // The two directions start from opposite ends of what is selected. Landing
+    // on a word selects it, so going on from where that selection ends leaves
+    // the word behind, and going back from where it begins leaves it ahead.
+    // Either direction taking the other's end would offer the word somebody is
+    // already standing on, which is a key that looks like it did nothing.
     let caret = body_editor
         .run_script(&editor_document::caret_script())
         .as_deref()
@@ -2642,7 +2646,13 @@ fn walk_to_a_misspelling(
         let _ = a11y.announce_what_was_typed(sentence, Priority::High, "spelling-walk");
     };
 
-    match session::next_misspelling(&found, caret.map(|at| at.end)) {
+    let step = if back {
+        session::previous_misspelling(&found, caret.map(|at| at.start))
+    } else {
+        session::next_misspelling(&found, caret.map(|at| at.end))
+    };
+
+    match step {
         session::Step::Land(finding) => {
             body_editor.run_script(&editor_document::select_word_script(
                 finding.at,
