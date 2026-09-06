@@ -699,6 +699,28 @@ the gap stays visible.
 - **The cached mail is not encrypted, and the docs say so.** Do not claim otherwise anywhere.
   Encrypting it means encrypting the whole database, which is a decision with a build cost, not
   something to imply in a feature list.
+- **Every setting a user has is reachable from the settings screen, and sorted into a section
+  somebody would look in.** Not "the model supports it", not "it can be set by editing the stored
+  file". A setting nobody can find is a setting nobody has, and one buried where it does not belong
+  is nearly as bad for somebody moving by keyboard through a screen reader, because they meet the
+  sections in order and cannot skim. This binds a new setting in the plan that introduces it, rather
+  than as a later pass.
+
+  **Two settings break this rule today and neither is new.** Per-event feedback channels: `per_event`
+  and `set_event_channels` in `src/presentation/accessibility/feedback.rs` are both private, so no
+  screen *could* write one, and an override can only arrive by hand-editing the stored settings.
+  That is FEEDBACK-01 and it belongs to phase 6. And the per-account Allow Changes answer, which the
+  model holds and nothing offers. Phase 1's criterion 8 already said a phase must not add a third.
+
+  **This rule is not enforced by anything yet, and saying so is the point.**
+  `test_nothing_offers_a_setting_per_account_that_no_screen_writes` sounds like the check and is
+  not: it reads documents for a phrase and catches a *page* promising a control that does not exist.
+  Nothing compares what the model holds against what a screen offers. Writing that check means
+  enumerating the settings surface and the screen's sections and asserting every member of the first
+  appears in the second, the way `tests/one_sign_in_per_piece_of_work.rs` counts sign-in sites and
+  names each one. Until it exists, this paragraph is a rule somebody has to notice being broken,
+  which is the thing this file keeps saying does not work.
+
 - **Schema changes are additive.** `MessageCache` opens existing user databases, so add tables with
   `CREATE TABLE IF NOT EXISTS` and columns with `ensure_column_exists`. Never drop or rename a column
   that shipped. The one exception taken so far is dropping a table that held secrets nothing read;
