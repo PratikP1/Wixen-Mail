@@ -131,15 +131,15 @@ Three further findings shape the plan. `mailbox_name.rs` decodes modified UTF-7 
 | Capability | Primary Tier | Secondary Tier | Rationale |
 |------------|-------------|----------------|-----------|
 | CREATE / RENAME / DELETE mailbox | Service (`service/protocols/imap.rs`) | Application (`MailController`) | The wire verb and its permission gate belong beside every other verb, where `may_i` and `protocol_error` already live. |
-| Modified UTF-7 encoding of a new mailbox name | Service (`service/protocols/imap/mailbox_name.rs`) | — | Its decoding sibling is already there and its module comment says the encoder belongs there too. Encoding is a wire concern, not a UI one. |
-| Deciding local versus server for a folder operation | Application (`local_folders::is_local`) | — | FOLDER-01's own criterion says this is decided there "and nowhere else". |
+| Modified UTF-7 encoding of a new mailbox name | Service (`service/protocols/imap/mailbox_name.rs`) | none | Its decoding sibling is already there and its module comment says the encoder belongs there too. Encoding is a wire concern, not a UI one. |
+| Deciding local versus server for a folder operation | Application (`local_folders::is_local`) | none | FOLDER-01's own criterion says this is decided there "and nowhere else". |
 | Storing folder nesting (`parent_id`) | Data (`message_cache/folders.rs`) | Application (`mail_sync.rs` computes it) | D-22 says nesting is stored, not computed. The split happens once at sync; the tree reads a parent. |
-| Conversation identity across an account | Application (`threading.rs`) + Data (persisted) | — | Currently presentation-only and per-page. D-08 cannot be served from the presentation tier because a folder's page is not an account. |
+| Conversation identity across an account | Application (`threading.rs`) + Data (persisted) | none | Currently presentation-only and per-page. D-08 cannot be served from the presentation tier because a folder's page is not an account. |
 | Conversation column aggregation (D-02) | Data (SQL `GROUP BY`) | Presentation (`MessageColumn` supplies the expression) | The aggregate must drive both display and `ORDER BY` from one place, which is what `MessageColumn` already does for messages. |
-| Rendering a conversation row | Presentation (`message_rows::cell_text`, virtual callback) | — | The list holds no text; every cell is answered from memory during paint. |
-| Tree structure, level, expand state | Presentation (`wx_app.rs` `UIUpdate::FoldersLoaded`) | — | The level must come from the native `TreeCtrl`, per CLAUDE.md, not from label text. |
-| Folder identity across a rebuild (D-25) | Presentation state (`WxUIState`) | — | The tree control is rebuilt from scratch on every sync; identity has to survive outside it. |
-| The five new settings | Data (`AppConfig`) + Presentation (`wx_settings.rs`) | — | Both halves, or it is FEEDBACK-01 again. |
+| Rendering a conversation row | Presentation (`message_rows::cell_text`, virtual callback) | none | The list holds no text; every cell is answered from memory during paint. |
+| Tree structure, level, expand state | Presentation (`wx_app.rs` `UIUpdate::FoldersLoaded`) | none | The level must come from the native `TreeCtrl`, per CLAUDE.md, not from label text. |
+| Folder identity across a rebuild (D-25) | Presentation state (`WxUIState`) | none | The tree control is rebuilt from scratch on every sync; identity has to survive outside it. |
+| The five new settings | Data (`AppConfig`) + Presentation (`wx_settings.rs`) | none | Both halves, or it is FEEDBACK-01 again. |
 | The D-19 migration | Application, run once at open | Data (the message moves) | It rewrites `folder_id` on the user's only copy of that mail, so it belongs where it can be tested without a UI. |
 
 ---
@@ -613,8 +613,8 @@ pub async fn set_subscribed(&mut self, path: &str, subscribed: bool) -> Result<(
 
 The harness is `crate::common::answering::{Conversation, Turn, conversing, LONG_ENOUGH}` [VERIFIED: src/common/answering.rs:263, :330, :368], and the IMAP wrapper is `against_a_server_that_answers` [VERIFIED: src/service/protocols/imap.rs:2394]. Its two entry points, verbatim from their doc comments:
 
-- `a_server_that_can(capabilities: &'static str) -> Conversation` — "A mail server that says it can do exactly these things."
-- `a_server_that_refuses(capabilities, refusing) -> Conversation` — "`refusing` is matched against the whole line without case, so `\"UID STORE\"` turns down the flag and leaves the copy alone."
+- `a_server_that_can(capabilities: &'static str) -> Conversation`: "A mail server that says it can do exactly these things."
+- `a_server_that_refuses(capabilities, refusing) -> Conversation`: "`refusing` is matched against the whole line without case, so `\"UID STORE\"` turns down the flag and leaves the copy alone."
 
 Assertions read the transcript with `server.was_told(needle)` and `server.when_told(needle) -> Option<usize>` [VERIFIED: src/common/answering.rs:399, :408]. `when_told` returns a position, and its doc comment gives the reason: "Position rather than presence, because most of the questions here are about order".
 
@@ -952,13 +952,13 @@ enum FolderIdentity {
 
 | Dependency | Required by | Available | Version | Fallback |
 |---|---|---|---|---|
-| Rust toolchain and `cargo` | All work | Yes | Project builds today | — |
-| `async-imap` crate source | Q1, Q2, Q3 | Yes, vendored | 0.11.3 | — |
-| `wxdragon` crate source | Q5, Pitfall 2 | Yes, vendored | 0.9.17 | — |
-| `mail-parser` crate source | Q6 | Yes, vendored | 0.11.5 | — |
-| Loopback TCP for the test server | Every protocol test | Yes, in-process, already used by the existing suite | — | — |
-| A live IMAP account | Nothing in this phase | **No, and out of scope** | — | Loopback server for the wire, parsing tests for the shapes |
-| NVDA or Narrator | Nothing this agent or the executor does | Not applicable | — | The user runs screen reader testing and decides when |
+| Rust toolchain and `cargo` | All work | Yes | Project builds today | none |
+| `async-imap` crate source | Q1, Q2, Q3 | Yes, vendored | 0.11.3 | none |
+| `wxdragon` crate source | Q5, Pitfall 2 | Yes, vendored | 0.9.17 | none |
+| `mail-parser` crate source | Q6 | Yes, vendored | 0.11.5 | none |
+| Loopback TCP for the test server | Every protocol test | Yes, in-process, already used by the existing suite | not applicable | none |
+| A live IMAP account | Nothing in this phase | **No, and out of scope** | not applicable | Loopback server for the wire, parsing tests for the shapes |
+| NVDA or Narrator | Nothing this agent or the executor does | Not applicable | not applicable | The user runs screen reader testing and decides when |
 
 **Missing dependencies with no fallback:** none.
 
@@ -1015,11 +1015,11 @@ It cannot prove that a real server accepts the modified UTF-7 the encoder produc
 ### Wave 0 gaps
 
 - [ ] Decide which loopback harness the FOLDER-01 protocol tests use. `a_server_answering` needs no change; `a_server_that_can` needs `CREATE`, `RENAME` and `DELETE` added to its match arm first. Only the second is a Wave 0 task, and only if a capability line is needed.
-- [ ] `mailbox_name::encode` plus a round-trip guard — covers FOLDER-01, FOLDER-02.
-- [ ] A test module for the folder tree's shape and identity keying — covers FOLDER-02, D-25.
-- [ ] A test module for favourites — covers FOLDER-03.
-- [ ] The mirror settings guard in `src/data/config.rs`'s `every_setting_is_acted_on` module — covers the five settings and FEEDBACK-01.
-- [ ] A test that the incremental and batch thread ids agree — covers THREAD-02, Pitfall 6.
+- [ ] `mailbox_name::encode` plus a round-trip guard, covering FOLDER-01, FOLDER-02.
+- [ ] A test module for the folder tree's shape and identity keying, covering FOLDER-02, D-25.
+- [ ] A test module for favourites, covering FOLDER-03.
+- [ ] The mirror settings guard in `src/data/config.rs`'s `every_setting_is_acted_on` module, covering the five settings and FEEDBACK-01.
+- [ ] A test that the incremental and batch thread ids agree, covering THREAD-02, Pitfall 6.
 - [ ] A migration test module for D-19, including the `UNIQUE(folder_id, uid)` collision case.
 - [ ] Guard records in `guards/guards.toml` for each of the above, measured by hand per the file's own rule: "take the break by hand first and write down what really went red, all of it. Do not write down the tests you expected."
 
@@ -1096,13 +1096,13 @@ Everything else in this document is tagged `[VERIFIED: …]` with a path and lin
 
 ### Primary (HIGH confidence, read this session)
 
-- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-imap-0.11.3/src/client.rs` — `create` (578), `delete` (604), `rename` (636), `subscribe` (655), `list` (1003), `validate_str` (1510), `quote!` (25)
-- `async-imap-0.11.3/src/error.rs` — the `Error` enum, lines 11-36
-- `async-imap-0.11.3/src/types/name.rs` — `Name::delimiter()` returning `Option<&str>` per mailbox
-- `wxdragon-0.9.17/src/widgets/list_ctrl.rs` — 48 public methods enumerated; `set_item_count` (771), `refresh_item` (781), `refresh_items` (791), `set_virtual_text_callback` (806)
-- `wxdragon-0.9.17/src/widgets/treectrl.rs` — `append_item_with_data` (403), `delete_all_items` (967), `cleanup_all_custom_data` (1163), `clean_item_and_children` (1232)
-- `wxdragon-0.9.17/src/widgets/item_data.rs` — `store_item_data` (21), the global `ITEM_DATA_REGISTRY`
-- `mail-parser-0.11.5/src/parsers/fields/thread.rs` — `thread_name`, `is_re_prefix`, `is_fwd_prefix`
+- `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-imap-0.11.3/src/client.rs`: `create` (578), `delete` (604), `rename` (636), `subscribe` (655), `list` (1003), `validate_str` (1510), `quote!` (25)
+- `async-imap-0.11.3/src/error.rs`: the `Error` enum, lines 11-36
+- `async-imap-0.11.3/src/types/name.rs`: `Name::delimiter()` returning `Option<&str>` per mailbox
+- `wxdragon-0.9.17/src/widgets/list_ctrl.rs`: 48 public methods enumerated; `set_item_count` (771), `refresh_item` (781), `refresh_items` (791), `set_virtual_text_callback` (806)
+- `wxdragon-0.9.17/src/widgets/treectrl.rs`: `append_item_with_data` (403), `delete_all_items` (967), `cleanup_all_custom_data` (1163), `clean_item_and_children` (1232)
+- `wxdragon-0.9.17/src/widgets/item_data.rs`: `store_item_data` (21), the global `ITEM_DATA_REGISTRY`
+- `mail-parser-0.11.5/src/parsers/fields/thread.rs`: `thread_name`, `is_re_prefix`, `is_fwd_prefix`
 - Wixen Mail tree, all paths relative to the repository root: `src/service/protocols/imap.rs`, `src/service/protocols/imap/mailbox_name.rs`, `src/service/outward.rs`, `src/application/threading.rs`, `src/application/local_folders.rs`, `src/application/allowed.rs`, `src/application/import_tree.rs`, `src/data/message_cache/mod.rs`, `src/data/message_cache/messages.rs`, `src/data/message_cache/folders.rs`, `src/data/config.rs`, `src/presentation/wx_app.rs`, `src/presentation/message_columns.rs`, `src/presentation/message_rows.rs`, `src/presentation/wx_compose.rs`, `src/presentation/wx_settings.rs`, `src/common/answering.rs`, `tests/wired.rs`, `tests/checkbox_labels.rs`, `guards/guards.toml`, `CLAUDE.md`, `Cargo.toml`, `Cargo.lock`, `.planning/config.json`
 - `gsd-tools query package-legitimacy check --ecosystem crates` for the three crates
 

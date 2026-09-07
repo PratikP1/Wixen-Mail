@@ -262,9 +262,9 @@ menu items because on Windows a shortcut without one is not a shortcut.
 
 ## Task Commits
 
-1. **Task 1: the mirror guard, the group constant** — `136a954`
-2. **Task 2: how a parent counts its unread, offered and read** — `e55909e`
-3. **Task 3: move an account with the keyboard** — `33d0c8b`
+1. **Task 1: the mirror guard, the group constant**, `136a954`
+2. **Task 2: how a parent counts its unread, offered and read**, `e55909e`
+3. **Task 3: move an account with the keyboard**, `33d0c8b`
 
 ## On the RED and GREEN gates
 
@@ -275,7 +275,7 @@ missing symbol.
 | What | RED against a do-nothing body | GREEN |
 |---|---|---|
 | The mirror guard, against one deliberately added `AppConfig` field | 1 of 1, naming the field | green after the field was removed |
-| The same, against two added fields | reported both, not the first | — |
+| The same, against two added fields | reported both, not the first | covered by the row above |
 | The two exception checks, each broken in turn | 1 each, and the main guard then named `allowed_per_account` | green after both probes were reverted |
 | `UnreadOnAParent`, everything returning the default | 4 of 7 | 7 |
 | `unread_text` returning its own count and ignoring the rest | 9 of 13, then 11 of 13 | 42 in the module |
@@ -402,30 +402,30 @@ handler agree.
 
 ## Files Modified
 
-- `src/data/config.rs` — the mirror guard and its two exception checks, three
+- `src/data/config.rs`: the mirror guard and its two exception checks, three
   exception lists, `unread_on_a_parent` and its default, the older-settings-file
   case. The existing `test_every_setting_somebody_can_change_is_read_by_something`
   is untouched: `git diff` on task 1 shows 163 insertions and no deletions.
-- `src/application/folder_settings.rs` — new. `SETTINGS_SECTION` and
+- `src/application/folder_settings.rs`: new. `SETTINGS_SECTION` and
   `UnreadOnAParent` with 7 tests.
-- `src/application/account_order.rs` — new. `Move`, `Moved`, `moved`, 8 tests,
+- `src/application/account_order.rs`: new. `Move`, `Moved`, `moved`, 8 tests,
   and the three-test source read that says nothing here reaches a server.
-- `src/presentation/folder_tree.rs` — `unread_text`, `local_group_text`,
+- `src/presentation/folder_tree.rs`: `unread_text`, `local_group_text`,
   `TreeRow::worded`, `unread_underneath`, `plain_row`; `rows` and `nested` take
   the setting and what is closed; `folder_text` and `branch_text` take both
   counts. 14 tests added, 43 in the module.
-- `src/presentation/wx_settings.rs` — the group, the choice, the field on both
+- `src/presentation/wx_settings.rs`: the group, the choice, the field on both
   control structs, three destructurings, the write-back by the words shown.
-- `src/presentation/wx_app.rs` — `say_the_row_again`, `move_the_chosen_account`,
+- `src/presentation/wx_app.rs`: `say_the_row_again`, `move_the_chosen_account`,
   two command ids, two menu items, the dispatch, and the setting and collapsed
   set passed at the rebuild.
-- `src/data/message_cache/mod.rs` — the `tree_order` column.
-- `src/data/message_cache/accounts.rs` — `set_account_order`, the ordering, 3 tests.
-- `tests/house_style.rs` — the section-name check now covers every section constant.
-- `guards/guards.toml` — two records, header count 320 to 322.
-- `docs/KEYBOARD_SHORTCUTS.md` — both keys and the Alt+Shift warning, with two
+- `src/data/message_cache/mod.rs`: the `tree_order` column.
+- `src/data/message_cache/accounts.rs`: `set_account_order`, the ordering, 3 tests.
+- `tests/house_style.rs`: the section-name check now covers every section constant.
+- `guards/guards.toml`: two records, header count 320 to 322.
+- `docs/KEYBOARD_SHORTCUTS.md`: both keys and the Alt+Shift warning, with two
   ways round it and how to change the Windows key.
-- `docs/changelog.md` — two entries with their known limits.
+- `docs/changelog.md`: two entries with their known limits.
 
 ## The user-visible change
 
@@ -527,14 +527,14 @@ Commits claimed:
 
 Checks:
 
-- `bash scripts/check.sh` — formatting and clippy pass. The suite and the release
+- `bash scripts/check.sh`: formatting and clippy pass. The suite and the release
   build wait for the merge, as `which-checks.sh` decides for a branch.
-- `cargo test --lib` — 5,471 pass, 1 ignored, 0 fail.
-- `cargo test --test wired` — 58 pass, including both new ids raised and handled,
+- `cargo test --lib`: 5,471 pass, 1 ignored, 0 fail.
+- `cargo test --test wired`: 58 pass, including both new ids raised and handled,
   the no-two-items-claim-one-shortcut check, and the document agreeing with the
   menus.
-- `cargo test --test house_style` — 52 pass, including the guard header count.
+- `cargo test --test house_style`: 52 pass, including the guard header count.
 - `cargo test --test checkbox_labels`, `--test docs_links`,
-  `--test folder_tree_rows_pair_with_the_control` — all pass.
-- `bash scripts/guards.sh` for both new records — each reddens exactly the one
+  `--test folder_tree_rows_pair_with_the_control`: all pass.
+- `bash scripts/guards.sh` for both new records: each reddens exactly the one
   test it names and nothing else.

@@ -249,7 +249,7 @@ Records re-measured because this plan's tests sit beside them, all against the w
 | no row in the folder tree hangs data off the control | names 1, reddens 1 |
 | a pinned folder is still in its own account branch | names 3, reddens 3 |
 | pinning a folder never reaches a server | names 1, reddens 1 |
-| the row on screen is found by the words above it and not by its own | named 3, reddens 4 — corrected |
+| the row on screen is found by the words above it and not by its own | named 3, reddens 4, corrected |
 
 The sweep header at the top of `guards/guards.toml` is 192 swept and 341 arrived since, which adds to the 533 records the file holds.
 

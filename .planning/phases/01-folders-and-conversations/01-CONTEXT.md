@@ -44,8 +44,8 @@ phase's domain, and the phase is larger than it looked.
   - `Correspondent`: the distinct senders.
   - `Subject`: the conversation's, per D-04.
   - `Thread`: the counts, per D-03.
-  — **Reversibility:** costly — the rule is read by both the display path and
-  every column's sort expression, so changing it later means changing both in
+  - **Reversibility:** costly. The rule is read by both the display path and
+    every column's sort expression, so changing it later means changing both in
   step or reintroducing the disagreement this decision exists to prevent.
 
 - **D-03:** `MessageColumn::Thread`, which today holds a thread id no person
@@ -77,9 +77,9 @@ phase's domain, and the phase is larger than it looked.
   is standing. Folders whose `holds_all_mail` server fact is true (Gmail's All
   Mail) are excluded from the count, or every Gmail conversation doubles.
   This was flagged during discussion as larger than a clarification and chosen
-  deliberately. — **Reversibility:** costly — it needs a cross-folder query path
-  that does not exist, and every folder-scoped list query and count becomes
-  thread-aware.
+  deliberately.
+  - **Reversibility:** costly. It needs a cross-folder query path that does not
+    exist, and every folder-scoped list query and count becomes thread-aware.
 
 - **D-09:** Thread view is stored **per folder**, alongside whatever FOLDER-02
   stores for collapsed state, so both restore together. A folder never set is
@@ -103,9 +103,9 @@ phase's domain, and the phase is larger than it looked.
 
 - **D-13:** **One branch per account.** `ALL_INBOXES` keeps its place at the
   root. Folders inside a branch keep their existing `tree_position` order.
-  — **Reversibility:** costly — every path that finds a row in the tree, and the
-  cursor-restoring code in `UIUpdate::FoldersLoaded`, is written against a flat
-  list today.
+  - **Reversibility:** costly. Every path that finds a row in the tree, and the
+    cursor-restoring code in `UIUpdate::FoldersLoaded`, is written against a
+    flat list today.
 
 - **D-14:** Accounts appear in the order they were added and can be moved with
   **Alt+Shift+Up/Down**, position announced as it moves. One stored ordinal per
@@ -133,7 +133,7 @@ phase's domain, and the phase is larger than it looked.
 
 - **D-18:** **Only `Inbox` is per account.** `Sent`, `Outbox`, `Drafts`, `Junk`
   and `Trash` become one each, shared across every account, owned by a
-  **reserved "this computer" account id** — the same trick `LOCAL_PREFIX` plays
+  **reserved "this computer" account id**, the same trick `LOCAL_PREFIX` plays
   with paths, so `UNIQUE(account_id, path)` keeps working and no schema change
   is needed. An IMAP account uses the same shared `Outbox` and keeps its server
   `Sent`, `Drafts`, `Trash` and `Junk`, so **`FOR_IMAP` becomes empty**.
@@ -144,9 +144,9 @@ phase's domain, and the phase is larger than it looked.
   repetition this decision removes. The executor of 01-07 found it before
   writing anything and Pratik ruled: shared for everyone, one send queue on this
   computer, because a queued message already knows which account sends it.
-  — **Reversibility:** one-way — existing databases are migrated by D-19, which
-  moves messages between folder rows. Undoing it means knowing which account
-  each message came from after they have been merged.
+  - **Reversibility:** one-way. Existing databases are migrated by D-19, which
+    moves messages between folder rows. Undoing it means knowing which account
+    each message came from after they have been merged.
 
 - **D-19:** On first open of an existing database, each account's local `Sent`,
   `Outbox`, `Drafts`, `Junk` and `Trash` are **merged into the shared ones,
@@ -154,8 +154,8 @@ phase's domain, and the phase is larger than it looked.
   summary says how many moved and from where, spoken and written to the log.
   `importing_messages` opens by warning that this is how mail gets lost quietly;
   this migration is the same risk and needs the same care.
-  — **Reversibility:** one-way — it rewrites `folder_id` on messages in the
-  user's only copy of that mail.
+  - **Reversibility:** one-way. It rewrites `folder_id` on messages in the
+    user's only copy of that mail.
 
 - **D-20:** A folder a user creates under a POP account goes **under that
   account's branch, beside its Inbox**, not into "On this computer". It is still
@@ -174,8 +174,8 @@ phase's domain, and the phase is larger than it looked.
   comes back when the tree gains a hierarchy." IMAP returns a delimiter per
   mailbox in the LIST response, not per server, so it cannot be assumed. The
   non-selectable rows IMAP already returns are the intermediate nodes.
-  — **Reversibility:** costly — an additive column, but every folder-listing
-  path is rewritten against it.
+  - **Reversibility:** costly. It is an additive column, but every
+    folder-listing path is rewritten against it.
 
 - **D-23:** Local folders nest with `/`, which their paths already use. A name
   containing `/` is **escaped, not refused**. This was chosen over refusal after
@@ -209,7 +209,7 @@ phase's domain, and the phase is larger than it looked.
   background-sync risk was raised and the modal chosen deliberately. Two prior
   fixes in this codebase name the failure it must avoid, so the modal carries two
   constraints: **one at a time**, never one per folder or per concurrently
-  syncing account, and **not while an editor has focus** — it waits. Cached mail
+  syncing account, and **not while an editor has focus**. It waits. Cached mail
   in the folder is untouched until the user answers.
 
 ### Favourites
@@ -237,7 +237,7 @@ phase's domain, and the phase is larger than it looked.
 ### Emptying and marking read
 
 - **D-33:** `Empty Folder` deletes every message **through the same decision one
-  deletion uses** — `local_folders::deleting(from, protocol, asked, allowed)` per
+  deletion uses**: `local_folders::deleting(from, protocol, asked, allowed)` per
   message, and the server path for server folders. So emptying Trash removes,
   emptying Inbox moves to Trash, and the per-account "Let me delete mail on this
   computer" setting gates it without a second gate being written. The
@@ -302,53 +302,53 @@ because it has already happened here once.
 **Downstream agents MUST read these before planning or implementing.**
 
 ### The plan and its requirements
-- `.planning/REQUIREMENTS.md` — FOLDER-01, FOLDER-02, FOLDER-03, THREAD-01,
+- `.planning/REQUIREMENTS.md`: FOLDER-01, FOLDER-02, FOLDER-03, THREAD-01,
   THREAD-02 and their `[S]`/`[D]` criteria. All reviewed 2026-08-29.
-- `.planning/ROADMAP.md` §Phase 1 — the five success criteria. See the note in
+- `.planning/ROADMAP.md` §Phase 1: the five success criteria. See the note in
   `<domain>`: the discussion widened the phase past them.
-- `.planning/STATE.md` — the review record, and the standing constraint that
+- `.planning/STATE.md`: the review record, and the standing constraint that
   nothing has ever run against a real mail account.
 
 ### Threading
-- `docs/plans/20260726-mail-at-scale.md` §"Threading algorithm" — specifies the
+- `docs/plans/20260726-mail-at-scale.md` §"Threading algorithm": specifies the
   incremental assignment THREAD-02 needs, and names the two-tree merge as the
   case worth testing.
-- `src/application/threading.rs` — `thread_messages`, `ThreadInput`,
+- `src/application/threading.rs`: `thread_messages`, `ThreadInput`,
   `ThreadPlacement` (`parent_id` is already `Option`, for a root that is not
   present), `continuing`, `as_stored`, `heading_level`.
-- `src/presentation/wx_thread_view.rs` — the existing conversation `TreeCtrl`,
+- `src/presentation/wx_thread_view.rs`: the existing conversation `TreeCtrl`,
   and the module comment arguing for keeping the list flat, which D-01 honours.
 
 ### The folder tree and its data
-- `src/presentation/wx_app.rs` `UIUpdate::FoldersLoaded` (around line 10527) —
+- `src/presentation/wx_app.rs` `UIUpdate::FoldersLoaded` (around line 10527):
   the tree rebuild, `ALL_INBOXES`, the `Labels` and saved-search branches, and
   the stated convention of omitting an empty branch. Also `land_the_cursor` and
   the comment on why a rename broke cursor restoration.
-- `src/application/local_folders.rs` — `LOCAL_PREFIX`, `is_local`,
+- `src/application/local_folders.rs`: `LOCAL_PREFIX`, `is_local`,
   `for_account`, `FOR_POP`, `FOR_IMAP`, `LocalDelete`, `deleting`, and the two
   message constants for the local-delete setting.
-- `src/application/import_tree.rs` — `where_imported_folders_go`,
+- `src/application/import_tree.rs`: `where_imported_folders_go`,
   `IMPORTED_FOLDERS_ARE_UNDER`, `where_the_folders_land`,
   `is_a_name_that_can_be_used`, and the module's refuse-rather-than-repair
   rationale.
-- `src/service/protocols/imap.rs` `list_folders` (around line 763) — `ImapFolder`
+- `src/service/protocols/imap.rs` `list_folders` (around line 763): `ImapFolder`
   and its `name` / `display_path` / `path` split, `selectable`,
   `holds_all_mail`, `subscribed`, `set_subscribed` (line 840), and the comment
   at line 769 saying the delimiter "comes back when the tree gains a hierarchy".
-- `src/data/message_cache/mod.rs` line 1293 — the `folders` table and
+- `src/data/message_cache/mod.rs` line 1293: the `folders` table and
   `UNIQUE(account_id, path)`, which D-18 and D-22 both depend on.
-- `src/presentation/message_columns.rs` — `MessageColumn`, `heading`, the stored
+- `src/presentation/message_columns.rs`: `MessageColumn`, `heading`, the stored
   identifier, and the sort expression, all from one enum. D-02 turns on them
   staying that way.
 
 ### Rules this phase must not break
-- `CLAUDE.md` §"Project rules" — schema changes are additive; never drop or
+- `CLAUDE.md` §"Project rules": schema changes are additive; never drop or
   rename a shipped column. D-18, D-22 and D-25 all add rather than change.
-- `CLAUDE.md` §"Accessibility" — MSAA and UI Automation are two channels and
+- `CLAUDE.md` §"Accessibility": MSAA and UI Automation are two channels and
   both must be right; the level comes from the native `TreeCtrl`, not the label.
-- `CLAUDE.md` §"Documentation and writing" — `docs/KEYBOARD_SHORTCUTS.md` is
+- `CLAUDE.md` §"Documentation and writing": `docs/KEYBOARD_SHORTCUTS.md` is
   updated in the same commit as a shortcut (D-14, D-31).
-- `src/application/allowed.rs` — `Allowed::mail` gates server writes and is off
+- `src/application/allowed.rs`: `Allowed::mail` gates server writes and is off
   for a new install. `local_folders::is_local` is the only thing that decides
   which side a folder is on.
 
@@ -358,17 +358,17 @@ because it has already happened here once.
 ## Existing Code Insights
 
 ### Reusable assets
-- `wx_thread_view::ThreadNode` and its `TreeCtrl` — D-01 makes this the whole of
+- `wx_thread_view::ThreadNode` and its `TreeCtrl`: D-01 makes this the whole of
   what a conversation row opens into. It exists and announces levels natively.
-- `local_folders::deleting` — D-33 routes emptying through it rather than writing
+- `local_folders::deleting`: D-33 routes emptying through it rather than writing
   a second answer to what deleting means.
-- `import_tree::is_a_name_that_can_be_used` — already asks the one function that
+- `import_tree::is_a_name_that_can_be_used`: already asks the one function that
   knows what a name Windows will take. D-23 escapes rather than refuses, but the
   same validation is where a name is judged.
-- `ImapFolder.selectable` — already models "only a name in the hierarchy", which
+- `ImapFolder.selectable`: already models "only a name in the hierarchy", which
   is what D-22's intermediate parent nodes are.
-- `tree_position` — the existing sort, unchanged inside an account branch (D-13).
-- The `Labels` and saved-search branches — the pattern D-17 and D-28 follow:
+- `tree_position`: the existing sort, unchanged inside an account branch (D-13).
+- The `Labels` and saved-search branches, the pattern D-17 and D-28 follow:
   named branch, omitted when empty.
 
 ### Established patterns that constrain this
@@ -454,9 +454,9 @@ verified against the tree before it was written here.
   arriving message can lower it. A THREAD-02 implementation adopting a found
   thread's id would then disagree with the next batch recompute. That is the
   lenient-reader-strict-writer shape this project has been bitten by before.
-  — **Reversibility:** one-way — once ids are written, changing the derivation
-  means recomputing every stored row. It is free today only because the column
-  has never held a value.
+  - **Reversibility:** one-way. Once ids are written, changing the derivation
+    means recomputing every stored row. It is free today only because the
+    column has never held a value.
 
 - **D-40:** The D-19 migration assigns a **fresh uid unique within the shared
   folder** and records the original in an additive column beside it.
@@ -466,8 +466,8 @@ verified against the tree before it was written here.
   it is the likeliest way D-19 loses mail. Nothing that keys on
   `(folder_id, uid)` changes and the constraint is untouched, which keeps the
   additive-only schema rule.
-  — **Reversibility:** one-way — it rewrites uids on the user's only copy of
-  that mail. The original column is what makes the move traceable afterwards.
+  - **Reversibility:** one-way. It rewrites uids on the user's only copy of
+    that mail. The original column is what makes the move traceable afterwards.
 
 - **D-41:** A **modified UTF-7 encoder** is in scope, and FOLDER-01's create,
   rename and move cannot ship without it.

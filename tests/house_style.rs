@@ -30,10 +30,24 @@ fn banned() -> Vec<(char, &'static str)> {
 ///
 /// Source, our own documents, and the handful of configuration files that
 /// carry prose. Not `target`, not anything vendored.
+///
+/// `.planning` was outside this reading until 2026-09-07, and the gap was the
+/// ordinary kind: the list was written when the project had `docs` and no
+/// `.planning`, and nothing re-asked when a second body of prose arrived. By
+/// the time anyone looked it held 699 em dashes and 197 markdown files, all of
+/// them written by this project, none of them read by any check here.
+///
+/// It also made a comment in `scripts/which-checks.sh` false. That comment
+/// justified running the document-reading targets on a documents-only commit by
+/// saying the em-dash guard had caught a break "in a planning file", which it
+/// could not have, because no planning file was ever opened. The reasoning was
+/// right and its evidence was not, which is the harder shape to notice: nobody
+/// re-checks a citation that supports a conclusion they already agree with.
 fn ours() -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect(Path::new("src"), &["rs"], &mut found);
     collect(Path::new("docs"), &["md"], &mut found);
+    collect(Path::new(".planning"), &["md"], &mut found);
     collect(Path::new("tests"), &["rs"], &mut found);
     collect(Path::new("scripts"), &["sh", "py", "ps1"], &mut found);
     collect(Path::new("guards"), &["toml"], &mut found);
@@ -53,6 +67,50 @@ fn ours() -> Vec<PathBuf> {
         }
     }
     found
+}
+
+/// The files that speak for the product: `ours()`, without `.planning`.
+///
+/// Two kinds of rule read this tree and they want different files. A rule about
+/// **how prose is written** wants everything this project writes, because a
+/// dash is a dash wherever it sits. A rule about **what the product claims**
+/// wants only the pages somebody could read and believe, and a planning
+/// document is not one of those. It is a specification or a record, addressed
+/// to whoever builds the thing, and it says what a feature should do rather
+/// than what it does.
+///
+/// Measured rather than assumed, on 2026-09-07, by pointing every rule here at
+/// `.planning` and reading what came back. The two claim-reading rules produced
+/// eight findings and every one of them was a misreading:
+///
+///   * `codebase/STACK.md` lists `async-imap` with `default features off`. The
+///     reading saw an installation-time word beside a nothing-goes-out word and
+///     called it a claim about Allow Changes. It is a Cargo feature flag.
+///   * `intel/context.md` says link checking is "off by default" and that the
+///     preview pane is "off until switched on in the View menu". Both are true,
+///     and neither is about the setting the rule guards.
+///   * `ROADMAP.md` rows are checkboxes whose link text strips to nothing, so
+///     what the reading judged was punctuation.
+///   * `01-CONTEXT.md` says `Allowed::mail` "is off for a new install", which is
+///     exactly what the code does. It failed because backticks strip and the
+///     subject went with them.
+///   * `05.1-02-PLAN.md` fails the per-account rule four times by **quoting the
+///     forbidden phrases in order to tell its executor about the rule**. That is
+///     [`ours_apart_from_this_file`] at a distance: a document about a rule
+///     cannot be held to it, or saying what the rule forbids becomes the
+///     offence.
+///
+/// So the exclusion is by genre, decided once, here. It is not a list of files
+/// that happened to fail, which would go stale the first time a plan was
+/// written and nobody would notice. What it costs: a planning document really
+/// could promise a control nothing writes, and nothing would say so. That is
+/// accepted, because a plan promising a control is a plan, and the pages a
+/// person believes are still read.
+fn the_pages_that_speak_for_the_product() -> Vec<PathBuf> {
+    ours()
+        .into_iter()
+        .filter(|path| !path.starts_with(".planning"))
+        .collect()
 }
 
 fn collect(dir: &Path, extensions: &[&str], into: &mut Vec<PathBuf>) {
@@ -152,7 +210,10 @@ fn a_line_and_the_one_after_it(text: &str) -> Vec<(usize, String)> {
 fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
     let mut offered = Vec::new();
 
-    for path in ours() {
+    // The pages a person believes, not the planning files. A plan that
+    // specifies this very guard quotes the phrases it forbids, and the reason
+    // is on [`the_pages_that_speak_for_the_product`].
+    for path in the_pages_that_speak_for_the_product() {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
@@ -236,8 +297,13 @@ fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
 /// ordinary English, so there is no equivalent of building a dash from its code
 /// point. Anything that walks past this comment and quiets a failure by
 /// loosening the reading below has turned a check into decoration.
+/// Built on [`the_pages_that_speak_for_the_product`] rather than on [`ours`].
+/// All four rules reading this ask what the product claims, so they want the
+/// same narrowing, and three of them filter to `.rs` and would not have noticed
+/// either way. Taking the narrower list here keeps that a decision rather than
+/// an accident of which extension each rule happens to read.
 fn ours_apart_from_this_file() -> Vec<PathBuf> {
-    ours()
+    the_pages_that_speak_for_the_product()
         .into_iter()
         .filter(|path| !path.ends_with("house_style.rs"))
         .collect()
@@ -2551,6 +2617,30 @@ fn test_the_check_is_looking_at_the_whole_project() {
     assert!(
         files.iter().any(|f| f.ends_with("guards.toml")),
         "the guard record carries prose and is not being checked"
+    );
+    assert!(
+        files.iter().any(|f| f.starts_with(".planning")),
+        "the planning documents are not being checked. They were outside this \
+         walk until 2026-09-07 and held 699 em dashes while this file was \
+         green, which is what a rule reaching only some of the prose it is \
+         about looks like from outside: exactly like a rule being kept."
+    );
+
+    // And the narrower list is really narrower. Without this, a later edit
+    // could point everything back at one reading and the only sign would be
+    // eight false alarms nobody could explain, or none at all.
+    let speaking = the_pages_that_speak_for_the_product();
+    assert!(
+        !speaking.iter().any(|f| f.starts_with(".planning")),
+        "a planning file reached the rules about what the product claims. Those \
+         rules read pages a person believes, and a plan quoting a phrase one of \
+         them forbids would be reported as making the promise."
+    );
+    assert!(
+        speaking.iter().any(|f| f.ends_with("ALPHA_TESTING.md")),
+        "the narrower list dropped the documents as well as the planning files, \
+         so the rules about what the product claims have stopped reading the \
+         pages they exist for"
     );
 }
 

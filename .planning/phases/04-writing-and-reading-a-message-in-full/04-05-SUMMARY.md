@@ -202,12 +202,12 @@ constant, and `what_a_condition_row_says` words each row from
 `the_words_for_a_field`. So the field arrived in both editors by itself.
 Confirmed by running, not by reading:
 
-- `cargo test --lib -- presentation::wx_managers::` — 44 passed, 0 failed. Both
+- `cargo test --lib -- presentation::wx_managers::`: 44 passed, 0 failed. Both
   looping tests are in that set:
   `test_every_field_and_every_comparison_reaches_a_row_in_its_own_words` loops
   over all twelve, and `test_a_condition_this_build_can_show_stops_nothing` is
   the refusal side.
-- `cargo test --test manager_dialog_labels` — 1 passed. Not edited.
+- `cargo test --test manager_dialog_labels`: 1 passed. Not edited.
 
 ### The arrival path, and the function that evaluates it
 
@@ -289,7 +289,7 @@ tests cost nothing to re-measure.
 | the same filter, Microsoft's `SCL`/`PCL` | two sentences when both tripped: "…rated it a likely phishing attempt." and "…rated it as spam." | one: "Your mail provider's filter rated it a likely phishing attempt, and as spam." |
 | the sender's own published records, `Authentication-Results` | "The address it claims to be from failed that domain's own anti-forgery check." / "Neither of the sender's two anti-forgery checks passed." | "The sender's own domain publishes what its mail should look like, and this message does not match it." / "The sender's own domain publishes two anti-forgery records, and this message passed neither." |
 | the folder it arrived in | "Your mail provider put it in the junk folder." | unchanged |
-| this program's own reading | "A link points at a bare numeric address rather than a name." — **names nobody** | "Wixen Mail read this message on your computer and found a link pointing at a bare numeric address rather than a name." |
+| this program's own reading | "A link points at a bare numeric address rather than a name.", which **names nobody** | "Wixen Mail read this message on your computer and found a link pointing at a bare numeric address rather than a name." |
 | Google Safe Browsing | "…. Checked against Google Safe Browsing." | unchanged; Google's terms fix that wording |
 
 ### One whole bar, before and after
@@ -390,7 +390,7 @@ indicators now returns `Verdict::ordinary()` rather than a sentence that opens
 
 ## Deviations from the plan
 
-### [Rule 3 — blocker] `CachedMessage` gained a field and two queries gained a column
+### [Rule 3, blocker] `CachedMessage` gained a field and two queries gained a column
 
 - **Found during:** task 1, before the first test compiled.
 - **Issue:** the plan's central premise was false; see above.
@@ -402,7 +402,7 @@ indicators now returns `Verdict::ordinary()` rather than a sentence that opens
   simply never selected it.
 - **Commits:** 487a987 (RED, structural), 1b22386 (GREEN).
 
-### [Rule 2 — missing critical] the guards.toml sweep census
+### [Rule 2, missing critical] the guards.toml sweep census
 
 - **Found during:** task 1's GREEN commit, which the gate refused.
 - **Issue:** `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
@@ -411,7 +411,7 @@ indicators now returns `Verdict::ordinary()` rather than a sentence that opens
 - **Fix:** "records arrived since" from 420 to 423 across the two commits that
   added three records.
 
-### [Rule 1 — bug] the module header said three sources
+### [Rule 1, bug] the module header said three sources
 
 `safety.rs` opened by listing three sources feeding a verdict. Safe Browsing has
 been the fourth since link checking was built. Corrected in the same commit,

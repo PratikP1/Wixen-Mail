@@ -7,7 +7,7 @@ wave_0_complete: false
 created: 2026-08-29
 ---
 
-# Phase 1 — Validation Strategy
+# Phase 1: Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
 
@@ -158,6 +158,6 @@ that command. That gap is tracked as work, not as a hole in the tests.
 - [x] Wave 0 covers every module referenced but not yet present
 - [x] No watch-mode flags
 - [x] Feedback latency under 30 seconds for a per-task run
-- [ ] `nyquist_compliant: true` — set by `/gsd-validate-phase`, not here
+- [ ] `nyquist_compliant: true`, set by `/gsd-validate-phase`, not here
 
 **Approval:** pending

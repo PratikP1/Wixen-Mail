@@ -1,7 +1,7 @@
 # Phase 1: Folders and conversations - Discussion Log
 
 > **Audit trail only.** Do not use as input to planning, research, or execution
-> agents. Decisions are captured in CONTEXT.md — this log preserves the
+> agents. Decisions are captured in CONTEXT.md; this log preserves the
 > alternatives considered.
 
 **Date:** 2026-08-29

@@ -34,10 +34,10 @@ to fix. Written down at the moment they were found, so they stay visible.
 `presentation::wx_destination` and `presentation::wx_thread_view` key their tree
 rows on `wxdragon`'s tree item custom data:
 
-- `src/presentation/wx_destination.rs:150` — `append_item_with_data`
-- `src/presentation/wx_destination.rs:82` — `get_custom_data`
-- `src/presentation/wx_thread_view.rs:201` — `set_custom_data`
-- `src/presentation/wx_thread_view.rs:221` — `get_custom_data`
+- `src/presentation/wx_destination.rs:150`: `append_item_with_data`
+- `src/presentation/wx_destination.rs:82`: `get_custom_data`
+- `src/presentation/wx_thread_view.rs:201`: `set_custom_data`
+- `src/presentation/wx_thread_view.rs:221`: `get_custom_data`
 
 That data goes into a process-global map. `store_item_data` inserts into a
 static registry, `delete_all_items` calls the raw FFI and removes nothing from

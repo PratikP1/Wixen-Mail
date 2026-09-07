@@ -63,7 +63,7 @@
 ## Authentication & Identity
 
 **Auth Provider:**
-- No third-party identity/auth-as-a-service provider. Each mail/calendar account authenticates directly against its own server or provider (IMAP/SMTP password, or OAuth2 with the account's own provider — Google, Microsoft).
+- No third-party identity/auth-as-a-service provider. Each mail/calendar account authenticates directly against its own server or provider (IMAP/SMTP password, or OAuth2 with the account's own provider, Google or Microsoft).
 - OAuth 2.0 with PKCE implemented directly using the `oauth2` crate, `src/service/oauth.rs`. Components:
   - `OAuthProvider` - provider metadata (endpoints, scopes)
   - `OAuthTokenSet` - access/refresh tokens with expiry

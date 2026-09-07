@@ -194,26 +194,26 @@ the commit graph.
 
 ## Files Created/Modified
 
-- `src/service/protocols/imap/mailbox_name.rs` — gained `encode`, `encode_run`
+- `src/service/protocols/imap/mailbox_name.rs`: gained `encode`, `encode_run`
   and `is_printable_ascii`, sharing the one Base64 engine with `decode`. The
   module comment no longer says only decoding lives here.
-- `src/service/protocols/imap.rs` — gained `create_mailbox`; three new loopback
+- `src/service/protocols/imap.rs`: gained `create_mailbox`; three new loopback
   tests; `create_mailbox` added to the existing exhaustive gate test, which is
   named "every mailbox write" and would otherwise have been lying;
   `a_server_answering` made `pub(crate)` so the controller's tests drive the same
   script.
-- `src/application/mail_controller.rs` — gained the `create_mailbox` facade, its
+- `src/application/mail_controller.rs`: gained the `create_mailbox` facade, its
   controller-level test, and a row in the not-connected refusal list.
-- `src/presentation/wx_app.rs` — `ID_NEW_FOLDER`, its menu item under File then
+- `src/presentation/wx_app.rs`: `ID_NEW_FOLDER`, its menu item under File then
   New, its handler `make_a_new_folder`, the worker `spawn_the_folder_write`, the
   two pure decisions `the_path_of_a_new_folder` and `what_came_of_making`, their
   10 tests, and the `CommandAnswered` handling.
-- `src/presentation/ui_types.rs` — `UIUpdate::CommandAnswered`.
-- `src/service/outward.rs` — `create_mailbox` declared on `MAIL_MEASURED_ON_THE_WIRE`;
+- `src/presentation/ui_types.rs`: `UIUpdate::CommandAnswered`.
+- `src/service/outward.rs`: `create_mailbox` declared on `MAIL_MEASURED_ON_THE_WIRE`;
   the imap floor in `MAIL_TRANSPORTS` raised from 8 to 9.
-- `guards/guards.toml` — two records, the header count 309 to 311, 501 records
+- `guards/guards.toml`: two records, the header count 309 to 311, 501 records
   to 503.
-- `docs/changelog.md` — one entry under `[Unreleased]`, with its known limits.
+- `docs/changelog.md`: one entry under `[Unreleased]`, with its known limits.
 
 ## Decisions Made
 

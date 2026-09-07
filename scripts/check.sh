@@ -18,7 +18,12 @@ set -euo pipefail
 # summary lands as a `.planning` document beside the code it describes, which
 # answers `affected`, so without this the check that reads those documents would
 # run on every commit except the ones that write them.
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves)
+#
+# The fourth reads prose for the six words `CLAUDE.md` bans, and it is here for
+# the third one's reason exactly: a document lands beside the code it describes,
+# which answers `affected`, so without this it would run on every commit except
+# the ones that write prose.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing)
 
 # Which integration targets guard a changed source file.
 #
@@ -330,7 +335,7 @@ fi
 # these run rather than being skipped as "not code".
 if [ "$mode" = "docs_only" ]; then
     echo "== the targets that read documents =="
-    # Six, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
+    # Seven, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
     # help pages from inside the library, so a documents-only run that skipped
     # `--lib` would miss the guard that catches a dead link in a help page. That
     # guard has already caught one this month. `checkbox_labels` and
@@ -342,6 +347,10 @@ if [ "$mode" = "docs_only" ]; then
     # object, touches nothing but `.planning/*.md` and so earns this list and
     # nothing else. Without it here, the check written for that commit would be
     # the one thing that commit does not run.
+    #
+    # `the_words_that_say_nothing` is the seventh, and its case is the same: it
+    # reads prose for the six words `CLAUDE.md` bans, and a commit that writes
+    # prose and nothing else earns exactly this list.
     cargo test --lib help_page::
     # --no-fail-fast because this names six targets, and without it a red
     # `house_style` meant the other five never started. Found on 2026-09-03 by
@@ -351,7 +360,8 @@ if [ "$mode" = "docs_only" ]; then
     # the same shape, on a line the wider exemption could not see.
     cargo test --no-fail-fast --test house_style --test docs_links --test wired \
         --test checkbox_labels --test manager_delete_stays_open \
-        --test the_planning_files_agree_with_themselves
+        --test the_planning_files_agree_with_themselves \
+        --test the_words_that_say_nothing
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"

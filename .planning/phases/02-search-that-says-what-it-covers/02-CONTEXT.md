@@ -84,8 +84,8 @@ are filter rules with the action ignored. The only real gap is reach:
   `account_id`, the read is `WHERE account_id = ?1`, and `run_a_saved_search`
   takes the active account. Only the tree placement was global, which was
   invisible while one account showed at a time and is not now.
-  — **Reversibility:** reversible — a tree-shape change with the data already
-  scoped correctly underneath it.
+  - **Reversibility:** reversible. It is a tree-shape change with the data
+    already scoped correctly underneath it.
 
 ### Body text, and what gates a read
 
@@ -100,8 +100,8 @@ are filter rules with the action ignored. The only real gap is reach:
   `Allowed`'s doc comment says "What may be changed at a provider" and both its
   fields are writes, so **the type's own description stops being accurate** and
   has to be rewritten with the dimension.
-  — **Reversibility:** costly — three places must agree, and the struct is
-  serialised into stored configuration.
+  - **Reversibility:** costly. Three places must agree, and the struct is
+    serialised into stored configuration.
 
 - **D-2-07:** The read dimension is **on by default**, which is an exception to
   `Allowed`'s stated rule that `Default` is the safe end of every field, and the
@@ -254,39 +254,39 @@ severe enough that widening `Allowed` without them is worse than not widening it
 **Downstream agents MUST read these before planning or implementing.**
 
 ### The plan and its requirements
-- `.planning/REQUIREMENTS.md` — SEARCH-01, SEARCH-02, SEARCH-03. SEARCH-01 was
+- `.planning/REQUIREMENTS.md`: SEARCH-01, SEARCH-02, SEARCH-03. SEARCH-01 was
   rewritten on 2026-08-29 after its original evidence proved false; read the note
   in its evidence line before trusting anything about the scope selector.
-- `.planning/ROADMAP.md` §Phase 2 — four success criteria. Criterion 4 assumes
+- `.planning/ROADMAP.md` §Phase 2: four success criteria. Criterion 4 assumes
   smart folders are separate from saved searches and is corrected by D-2-01.
-- `.planning/phases/01-folders-and-conversations/01-CONTEXT.md` — D-29 is the
+- `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`: D-29 is the
   precedent D-2-05 follows; D-13 and D-25 are the tree this builds on.
 
 ### Saved searches and filters, which are one vocabulary
-- `src/application/saved_searches.rs` — `Question`, `Question::as_a_rule` (line
+- `src/application/saved_searches.rs`: `Question`, `Question::as_a_rule` (line
   116, and read its comment), `what_a_typed_search_asks` (350),
   `WHAT_A_TYPED_SEARCH_LOOKS_AT` (340), `SavedSearch.folder` (543), `Join`.
-- `src/application/filters.rs` — `FilterRule` (23), `A_FIELD_A_RULE_MAY_NAME`
+- `src/application/filters.rs`: `FilterRule` (23), `A_FIELD_A_RULE_MAY_NAME`
   (61, eleven fields), `A_WAY_A_RULE_MAY_MATCH`. Note the comment at line 28: the
   doc said three fields while the reading handled eleven, so a rule on the body
   read as unsupported to anyone who believed it.
-- `src/data/message_cache/saved_searches.rs` — the two tables, the per-position
+- `src/data/message_cache/saved_searches.rs`: the two tables, the per-position
   question write (101), and `WHERE account_id = ?1` (192).
 
 ### Search execution
-- `src/data/message_cache/searching.rs` — `WhereToSearch` (55), `search_messages`
+- `src/data/message_cache/searching.rs`: `WhereToSearch` (55), `search_messages`
   (389) and its column list, which reaches subject, from, to and snippet and
   never the bodies table.
-- `src/presentation/wx_app.rs` — `what_the_in_box_offers` (14776),
+- `src/presentation/wx_app.rs`: `what_the_in_box_offers` (14776),
   `run_a_saved_search` (6254).
-- `src/data/message_cache/bodies.rs` — the size budget and least-recently-read
+- `src/data/message_cache/bodies.rs`: the size budget and least-recently-read
   eviction that make the coverage question real.
 
 ### What this phase changes that is not search
-- `src/application/allowed.rs` — `Allowed` (38), its doc comment, `NOTHING`,
+- `src/application/allowed.rs`: `Allowed` (38), its doc comment, `NOTHING`,
   `EVERYTHING`, and the rule that `Default` is the safe end. D-2-06 and D-2-07
   both change what this type means.
-- `src/service/protocols/imap.rs` — every `may_i` call site, all of them writes.
+- `src/service/protocols/imap.rs`: every `may_i` call site, all of them writes.
 
 </canonical_refs>
 
@@ -294,11 +294,11 @@ severe enough that widening `Allowed` without them is worse than not widening it
 ## Existing Code Insights
 
 ### Reusable assets
-- `Question::as_a_rule` — the whole of why SEARCH-03 is an editor rather than a
+- `Question::as_a_rule`: the whole of why SEARCH-03 is an editor rather than a
   feature. One matcher already serves both.
-- `saved_search_questions` — already stores an arbitrary set with positions, so
+- `saved_search_questions`: already stores an arbitrary set with positions, so
   D-2-03 needs no schema work.
-- `folder_tree::rows` — multi-account since Phase 1, and already places the
+- `folder_tree::rows`: multi-account since Phase 1, and already places the
   saved-search branch; D-2-05 moves it rather than building it.
 - The five settings Phase 1 added, and the mirror guard that catches a setting
   stored and never offered. Anything D-2-06 adds inherits both.
@@ -322,7 +322,7 @@ severe enough that widening `Allowed` without them is worse than not widening it
 <specifics>
 ## Specific Ideas
 
-- "1 if 2 isn't different than 1" — the instruction that settled D-2-02. The
+- "1 if 2 isn't different than 1", the instruction that settled D-2-02. The
   answer was to check whether the alternative differed in behaviour rather than
   in description, and it did, in the direction that made it worse.
 - The read dimension being on by default was chosen with the struct's own rule in

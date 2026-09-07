@@ -57,7 +57,7 @@ evidence is still accurate, and what is true instead.
 | READ-02 | "`security.rs` does detection only… no PGP key handling, encryption or decryption path exists" | **Accurate for PGP, wrong about what exists beside it** | PGP is genuinely absent. S/MIME goes further than "verification" and six computed fields are dropped. |
 | READ-03 | "No external spam classifier integration exists" | **Accurate but the wrong question** | A spam verdict already exists, is stored, listed and shown. Only the filter vocabulary is missing. |
 
-### WRITE-01 — drag and drop, or paste, a file — evidence ACCURATE
+### WRITE-01 (drag and drop, or paste, a file): evidence ACCURATE
 
 The grep the requirement quotes still returns nothing outside two unrelated test names
 (`bodies.rs:1047`, `wx_app.rs:23408`). `src/application/attaching.rs` is 476 lines and is the
@@ -81,12 +81,12 @@ real `wxFileDataObject` (`wxdragon-sys-0.9.17/cpp/src/dataobject.cpp:59`). `Data
 is `4` (`data_object.rs:27`), which looks wrong against wxWidgets' own enum and is not: the C++
 shim translates case `4` to `wxDF_FILENAME` (`cpp/src/clipboard.cpp:79-80`).
 
-The unresolved part is that the composer's body is a WebView. The page does not intercept drops —
+The unresolved part is that the composer's body is a WebView. The page does not intercept drops.
 `insertFromDrop` appears only as an input type the *typing rules* decline to run for
-(`editor_page_harness.rs:424`, `editor_document.rs:624-627`) — so what WebView2 does with a file
+(`editor_page_harness.rs:424`, `editor_document.rs:624-627`), so what WebView2 does with a file
 dropped on the body is untested here and unknown. See "What cannot be settled here".
 
-### WRITE-02 — insert an image inline — evidence WRONG
+### WRITE-02 (insert an image inline): evidence WRONG
 
 The requirement says "no inline image insertion path exists". It is built, and reached from a
 non-test path.
@@ -119,7 +119,7 @@ Two gaps remain against success criterion 2.
    admits the shape at both ends, so it very likely survives; I found no test asserting it does.
    That is a cheap red/green pair, not a build.
 
-### WRITE-03 — spell check while typing — evidence WRONG IN BOTH CLAUSES
+### WRITE-03 (spell check while typing): evidence WRONG IN BOTH CLAUSES
 
 **"Checks on send only" is false.** Three separate as-you-type mechanisms ship:
 
@@ -156,7 +156,7 @@ not a fact, and it is on the decisions list.
 
 **Today's spellcheck change, read from current source rather than any description.**
 `WhatThisMachineOffers` (`spellcheck/mod.rs:235-243`) has two arms: `TheseLanguages(Vec<(String,
-String)>)` — asked and answered, possibly with an empty list — and `CouldNotAsk { reason: String }`.
+String)>)`, asked and answered, possibly with an empty list, and `CouldNotAsk { reason: String }`.
 `language_to_check_in(system, offers)` (`:269`) is pure: no system language at all gives `"en"`
 (`:270-275`); `CouldNotAsk` keeps the machine's own language and logs the reason (`:282-292`);
 `TheseLanguages` matches and falls back to `"en"` (`:293-297`). It is reached in production through
@@ -166,11 +166,11 @@ String)>)` — asked and answered, possibly with an empty list — and `CouldNot
 a failed platform question and a machine with no checkers were the same value, so a French user
 got English on a first run where the call happened to fail.
 
-`language_of_this_machine` (`:216`) is the older entry point and **has no production caller** —
+`language_of_this_machine` (`:216`) is the older entry point and **has no production caller**:
 its three occurrences outside its own definition are all in `#[cfg(test)]` (`:1162`, `:1176`,
 `:1557`). Bucket 2. Worth knowing before anything calls it by mistake.
 
-### READ-01 — preview an image or a text attachment — evidence ACCURATE, IMPLICATION WRONG
+### READ-01 (preview an image or a text attachment): evidence ACCURATE, IMPLICATION WRONG
 
 "`src/service/pdf.rs` is the only in-app reader" is true. What the requirement does not say is
 that **everything around that reader is generic and built**, so this requirement is a producer
@@ -197,10 +197,10 @@ on the `<img>` that references it. **Neither reaches the application.** `Attachm
 (`mime.rs:111-117`) constructs it from three accessors. `mail_parser 0.11.5` exposes
 `content_description()`, `content_disposition()`, `content_id()` and `content_language()` on
 `MimeHeaders` (`mail-parser-0.11.5/src/lib.rs:495-505`), and `MimeHeaders` is already imported in
-`mime.rs:16`. So this is a widening of one struct and one function, not a new capability — but it
+`mime.rs:16`. So this is a widening of one struct and one function, not a new capability, but it
 must happen before the image preview can say anything true.
 
-### READ-02 — full PGP encryption and decryption — ACCURATE FOR PGP, INCOMPLETE ABOUT ITS SURROUNDINGS
+### READ-02 (full PGP encryption and decryption): ACCURATE FOR PGP, INCOMPLETE ABOUT ITS SURROUNDINGS
 
 **PGP is genuinely absent.** The only occurrences in `src/` outside tests are four string checks:
 `detect_pgp_signed` looks for `-----BEGIN PGP SIGNED MESSAGE-----` and `-----BEGIN PGP
@@ -226,8 +226,8 @@ from `pop_sync.rs:518` and `wx_app.rs:18525`, so this is a live path dropping a 
 `checking_signatures::for_message` is called from `wx_app.rs:11181` and its result reaches the
 reader's warning bar (`reader_text.rs:1023-1030`).
 
-`EncryptedMessage` (`:3645`) reads the outside of a PKCS #7 `EnvelopedData` — who it is addressed
-to and under which cipher — and `spoken()` (`:3706`) already writes the exact sentence criterion 5
+`EncryptedMessage` (`:3645`) reads the outside of a PKCS #7 `EnvelopedData` (who it is addressed
+to and under which cipher), and `spoken()` (`:3706`) already writes the exact sentence criterion 5
 asks for, including "This computer holds a certificate this message was encrypted to." **It has no
 caller at all**: `grep -rn "EncryptedMessage" src/ tests/` matches only `signed_mail.rs` itself.
 Bucket 2, and the least-work half of criterion 5 is already written.
@@ -242,7 +242,7 @@ message reads as empty. A PGP-encrypted message is different: its armored block 
 it renders as the armor rather than as nothing. Those two need different handling and the
 requirement treats them as one.
 
-### READ-03 — hook into an external spam classifier — ACCURATE, BUT THE GAP IS ONE LIST ENTRY
+### READ-03 (hook into an external spam classifier): ACCURATE, BUT THE GAP IS ONE LIST ENTRY
 
 "No external spam classifier integration exists" is true. Everything around it is built.
 
@@ -261,8 +261,8 @@ with the folder's own signal, worst winning (`mail_sync.rs:454-458`), stored as 
 `:377`).
 
 **What criterion 6 asks for is one addition to one list.** `A_FIELD_A_RULE_MAY_NAME`
-(`filters.rs:61-71`) holds eleven names — `subject`, `from`, `to`, `cc`, `date`, `message_id`,
-`body_plain`, `body_html`, `read`, `starred`, `deleted` — and `safety` is not among them.
+(`filters.rs:61-71`) holds eleven names (`subject`, `from`, `to`, `cc`, `date`, `message_id`,
+`body_plain`, `body_html`, `read`, `starred` and `deleted`), and `safety` is not among them.
 `FilterEngine::matches` (`:302`) has a match arm per name (`:320-332`) and an unknown field
 returns `false` deliberately. `CachedMessage.safety` is right there on the struct the matcher is
 handed (`messages.rs:357`). The engine is reached (`wx_app.rs:17004`, `:18856` build
@@ -270,8 +270,8 @@ handed (`messages.rs:357`). The engine is reached (`wx_app.rs:17004`, `:18856` b
 
 The comment at `filters.rs:56-59` warns that the list and the match arms are held in agreement by
 a test in both directions. Adding one name touches both plus the spoken-words table. This is the
-shape observation 0022 in the log is about — a completeness guard turning its struct into a closed
-vocabulary — and here that guard is doing its job.
+shape observation 0022 in the log is about: a completeness guard turning its struct into a closed
+vocabulary, and here that guard is doing its job.
 
 Criterion 6's second clause, "shown with its source named", is partly done: `Verdict.summary()`
 (`safety.rs:131`) and `safety_reasons` already carry sentences into the warning bar. Whether they
@@ -286,8 +286,8 @@ single boundary (`parse` at `:124`, `described` at `:111`).
 |---|---|---|---|
 | `Content-Description` on a part | `mail_parser` `MimeHeaders::content_description` (`lib.rs:495`) | READ-01 criterion 4 cannot be honest about an image | 3 |
 | `Content-Disposition` (inline vs attachment) | `MimeHeaders::content_disposition` (`lib.rs:497`) | `is_embedded_in_the_body` (`mime.rs:298`) infers it; a sender's explicit `attachment` on a `cid:` part is not honoured | 3 |
-| `Content-ID` on an attachment part | `MimeHeaders::content_id` (`lib.rs:499`) — already used for pictures (`mime.rs:280`) but not stored on `AttachmentInfo` | An attachment cannot be tied back to the `<img>` that names it | 3 |
-| `Content-Language` / sender's `<html lang>` | `MimeHeaders::content_language` (`lib.rs:505`) | Stated WCAG 3.1.1 gap. `html_renderer.rs:14-20` says so outright: "no message carries a Content-Language header through this application, and a sender's own `<html lang="de">` is dropped on the way in". The renderer falls back to the machine's language and writes no attribute when it cannot say (`:31-41`) — a deliberate, documented choice not to guess | 3 |
+| `Content-ID` on an attachment part | `MimeHeaders::content_id` (`lib.rs:499`), already used for pictures (`mime.rs:280`) but not stored on `AttachmentInfo` | An attachment cannot be tied back to the `<img>` that names it | 3 |
+| `Content-Language` / sender's `<html lang>` | `MimeHeaders::content_language` (`lib.rs:505`) | Stated WCAG 3.1.1 gap. `html_renderer.rs:14-20` says so outright: "no message carries a Content-Language header through this application, and a sender's own `<html lang="de">` is dropped on the way in". The renderer falls back to the machine's language and writes no attribute when it cannot say (`:31-41`), a deliberate and documented choice not to guess | 3 |
 | `List-Unsubscribe` | `message.header(name)`, the same route `receipt_request` uses (`mime.rs:170-179`) | **`blocking::WhatIsAlreadyTrue.how_to_leave_the_list` (`blocking.rs:363-368`) exists, is read at `:403`, and its one production construction passes a hardcoded `None` (`wx_app.rs:24655`).** The mailing-list warning at `blocking.rs:518-528` can never fire | 2 |
 | `Bcc`, `Sender` | `Message::bcc` (`mail-parser core/message.rs:124`), `Message::sender` (`:360`) | A message this user sent, re-read from Sent, loses its Bcc list | 3 |
 | Second and later text bodies | `first_of_kind` (`mime.rs:143`) takes the first | A message with alternatives beyond the first pair loses them | 3 |
@@ -331,7 +331,7 @@ Kept strictly apart, because this project has been bitten by the difference.
 
 | Thing | Definition | Why it is unreached |
 |---|---|---|
-| `EncryptedMessage` + `spoken()` — the sentence criterion 5 wants | `signed_mail.rs:3645`, `:3706` | No caller anywhere in `src/` or `tests/` |
+| `EncryptedMessage` + `spoken()`, the sentence criterion 5 wants | `signed_mail.rs:3645`, `:3706` | No caller anywhere in `src/` or `tests/` |
 | The "you are on a mailing list, here is how to leave" warning | `blocking.rs:518-528`, read at `:403` | Its only production caller hardcodes `how_to_leave_the_list: None` (`wx_app.rs:24655`) because `List-Unsubscribe` is never parsed |
 | `pgp_encrypted`, `pgp_signed`, `smime_signed`, `smime_encrypted`, `signature_status` | `security.rs:75-79` | Computed on every message; the sole consumer reads two other fields (`body_safety.rs:65`) |
 | `language_of_this_machine` | `spellcheck/mod.rs:216` | Three callers, all `#[cfg(test)]` |
@@ -357,7 +357,7 @@ Kept strictly apart, because this project has been bitten by the difference.
 |---|---|---|
 | A1 | A `wxFileDropTarget` installed on the compose dialog receives files dropped over the WebView child. | The whole of WRITE-01's drop half. WebView2 handles drops in its own HWND; if it swallows them, the drop has to be caught in the page's JavaScript and posted over the existing `wixenEditor` channel, which is a different design with a different security boundary (the page would be handling a file path). Settle this with a throwaway build before planning tasks around it. |
 | A2 | A picture inserted as `data:` survives draft save and reload with its alt intact. | Criterion 2's second half. The sanitiser admits the shape at both ends (`html_renderer.rs:131-150`), so this is likely; nothing asserts it. Cheap to prove, expensive to assume. |
-| A3 | The modal F7 walk satisfies "a keyboard command moves between them". | If it does not, criterion 3 needs a new interaction in the page (caret movement between engine-marked ranges), which the DOM does not expose directly — the marks are the engine's, not the document's. That could be a large, uncertain piece of work sitting behind an innocuous-looking criterion. |
+| A3 | The modal F7 walk satisfies "a keyboard command moves between them". | If it does not, criterion 3 needs a new interaction in the page (caret movement between engine-marked ranges), which the DOM does not expose directly, because the marks are the engine's, not the document's. That could be a large, uncertain piece of work sitting behind an innocuous-looking criterion. |
 | A4 | Widening `AttachmentInfo` is additive for the cache. | `attachments` table columns are added with `ensure_column_exists` per the project rule; a new field that is only computed at parse time and never stored costs nothing, one that is stored needs a column. Which of the two is a design choice nobody has made. |
 | A5 | `Content-Description` is actually present on real senders' image parts. | READ-01 criterion 4 would then say "the sender supplied no description" on nearly every image. That is the honest answer and it is also a thin feature. No account has ever been used with this program, so this is unmeasurable here. |
 | A6 | `EncryptedMessage::read` parses a real S/MIME envelope from a real sender. | It is tested against constructed DER only. A parser that works on synthetic input and not on Outlook's output would make criterion 5's message wrong rather than absent. |
@@ -375,7 +375,7 @@ than glossing them, per guardrail 9.
    against hand-written header blocks. Gmail in particular tells an IMAP client almost nothing
    except the folder, which `mail_sync.rs:456-458` already accounts for.
 4. **Whether a real S/MIME encrypted message parses.** A6.
-5. **Whether the drop lands.** A1 — settleable locally with a build, but not by reading.
+5. **Whether the drop lands.** A1, settleable locally with a build, but not by reading.
 6. **Every accessibility criterion.** Whether NVDA announces the engine's spelling marks in a
    WebView2 `contenteditable` in this application; whether the earcon and the screen reader's own
    announcement collide; whether an image preview tab announces its description at the right
@@ -396,7 +396,7 @@ From `CLAUDE.md`, and each of these changes what a plan may contain.
   `tests/` for those needs a record, or the gate will not run it on the commits that could break
   it. Records perish: any change adding tests near a rule re-measures that rule's record, and the
   per-commit count check will name which.
-- **Guard re-measurement is off the critical path** as of 2026-09-03 — one sweep once the phase is
+- **Guard re-measurement is off the critical path** as of 2026-09-03: one sweep once the phase is
   complete, not per merge. Run the scoped remedy when a commit prints it; that is not optional.
 - **Schema changes are additive.** New attachment or message columns go in with
   `ensure_column_exists`; nothing that shipped is dropped or renamed.
@@ -410,7 +410,7 @@ From `CLAUDE.md`, and each of these changes what a plan may contain.
 - **No AI attribution in commits, branches, comments or documents.**
 - **A user-visible change gets a `docs/changelog.md` entry under `[Unreleased]` in the same
   commit**, honest "Known limitations" included.
-- **Anything experimental says so in the product**, not only in a report — `application::allowed`
+- **Anything experimental says so in the product**, not only in a report. `application::allowed`
   and `presentation::first_run` are how it is done here.
 - **`docs/KEYBOARD_SHORTCUTS.md` is updated in the same commit as a shortcut**, and a test checks
   it both ways. WRITE-01's "keyboard equivalent at least as quick to reach" lands there.
@@ -424,7 +424,7 @@ No new external dependency is needed by any part of this phase except PGP.
 | `wxdragon 0.9.17` drag-and-drop and clipboard | WRITE-01 | Yes | `src/dnd/`, `src/clipboard.rs`, `src/data_object.rs`; already a direct dependency, no feature flag needed |
 | `mail_parser 0.11.5` MIME header accessors | READ-01, the dropped-headers list | Yes | `content_description`, `content_disposition`, `content_id`, `content_language` all on `MimeHeaders`, already imported |
 | `ammonia` with `data:` and `cid:` admitted | WRITE-02 | Yes | `html_renderer.rs:131-150` |
-| An image decoder for preview | READ-01 | **Not present** | Nothing in `Cargo.toml` decodes PNG/JPEG. For a blind-first preview the description may matter more than the pixels, which may make a decoder unnecessary — that is a decision, below |
+| An image decoder for preview | READ-01 | **Not present** | Nothing in `Cargo.toml` decodes PNG/JPEG. For a blind-first preview the description may matter more than the pixels, which may make a decoder unnecessary. That is a decision, below |
 | An OpenPGP implementation | READ-02 | **Not present** | No candidate evaluated here. Adding one is a dependency-audit conversation of its own and is not something to slip into a plan |
 
 **Package legitimacy audit:** not applicable. This phase as scoped adds no package. If PGP is
@@ -439,15 +439,15 @@ taken on, the audit runs then, on whatever crate is proposed, and the choice is 
 | Framework | `cargo test` (`--all-targets`), `tokio-test` for async, `tempfile` for filesystem |
 | Config | none; unit tests in `#[cfg(test)] mod tests` beside the code, cross-layer in `tests/` |
 | Scoped run | `bash scripts/check.sh` (mode decided by `scripts/which-checks.sh`) |
-| Full suite | `bash scripts/check.sh all` — run by whoever merges |
+| Full suite | `bash scripts/check.sh all`, run by whoever merges |
 | Guard sweep | `scripts/guards.sh`, deferred to once per completed phase |
-| Env | `WIXEN_TEST_THREADS` defaults to 4 (guard runs only); `WIXEN_NO_AUDIO` where a sound device opens and does not work — it is not a way to skip sound tests |
+| Env | `WIXEN_TEST_THREADS` defaults to 4 (guard runs only); `WIXEN_NO_AUDIO` where a sound device opens and does not work. It is not a way to skip sound tests |
 
 Requirement-to-test map, with where each would live:
 
 | Req | Behaviour | Type | Where |
 |---|---|---|---|
-| WRITE-01 | A dropped path list becomes `Chosen` values, refusing a folder and an unreadable file by name | unit | `attaching.rs` — pure, no window |
+| WRITE-01 | A dropped path list becomes `Chosen` values, refusing a folder and an unreadable file by name | unit | `attaching.rs`, pure, no window |
 | WRITE-01 | Every drop action has a keyboard equivalent named in `docs/KEYBOARD_SHORTCUTS.md` | guard | `tests/`, needs a `guards.toml` record |
 | WRITE-02 | A described picture survives sanitise → store → reload with its `alt` | unit | `editor_document.rs` or `pictures.rs` |
 | WRITE-03 | Whatever the decision on "move between misspellings" turns out to be | unit | `spell_session.rs` |
@@ -498,7 +498,7 @@ These change what gets built and are not mine to settle.
 
 3. **READ-02's scope, given that PGP is a dependency decision and S/MIME is nearly there.**
    Three choices, and they are not the same size. (a) Take on an OpenPGP crate, key import, and
-   decryption — a large piece of work whose last mile cannot be tested here. (b) Reach the S/MIME
+   decryption, a large piece of work whose last mile cannot be tested here. (b) Reach the S/MIME
    half: call `EncryptedMessage::read`, say `spoken()`, and stop a message reading as empty. Small,
    provable, and closes the half of criterion 5 that is about honesty rather than about
    decryption. (c) Both. My reading is that (b) is the part that discharges the guardrail and (a)

@@ -123,12 +123,12 @@ human_verification:
       and two-account cases.
 ---
 
-# Phase 2: Search that says what it covers — Verification Report
+# Phase 2 Verification Report: Search that says what it covers
 
 **Phase Goal:** A search returns what the user asked for, and says plainly what it could not reach.
 **Verified:** 2026-09-01T15:12:00Z (against `main` at `93c59d7`)
 **Status:** human_needed
-**Re-verification:** Yes — after 02-09 closed the gap the first pass found
+**Re-verification:** Yes, after 02-09 closed the gap the first pass found
 
 ## The short answer
 
@@ -326,7 +326,7 @@ than introduced, which is why it is a warning and not a gap.
 | `managers::search_messages` | the status bar and the status topic | one `UIUpdate::StatusUpdated` carrying both halves | WIRED |
 | `index_message_for_search` | `messages.text_is_in_the_search_index` | `UPDATE ... WHERE id = ?2 AND {column} IS NOT ?1` | WIRED |
 | `run_a_saved_search` | `how_much_message_text_is_stored_here` | `coverage_before` | WIRED (unchanged) |
-| `managers::search_messages` | `UIUpdate::WhatCouldBeFetched` | nothing | NOT WIRED — carried open, ledger 13, outside criterion 4 |
+| `managers::search_messages` | `UIUpdate::WhatCouldBeFetched` | nothing | NOT WIRED, carried open, ledger 13, outside criterion 4 |
 
 ### Data-Flow Trace (Level 4)
 

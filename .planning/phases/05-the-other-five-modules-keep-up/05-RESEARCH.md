@@ -47,7 +47,7 @@ criterion the way phase 3 said it.
 Sorted strictly, as asked. "Reached" means a menu item, a key, or a button in the running program
 leads to it; the trail is given each time, and where the trail stops is named.
 
-### Bucket 1 — exists and is reached from a non-test path
+### Bucket 1: exists and is reached from a non-test path
 
 | What | Where | The trail |
 |---|---|---|
@@ -64,7 +64,7 @@ leads to it; the trail is given each time, and where the trail stops is named.
 | The four-armed contacts conflict model | `contacts_sync.rs:988` `whose_copy_wins` | two production call sites (`:2289`, `:2485`), reached from `wx_app.rs:18959`, `:18986` |
 | CalDAV discovery, listing, and event CRUD | `caldav.rs:228`, `:277`, `:386`, `:442`, `:486` | Add Calendar dialog (`wx_add_calendar.rs:52`) |
 
-### Bucket 2 — exists but only tests reach it
+### Bucket 2: exists but only tests reach it
 
 | What | Where | Why nothing reaches it |
 |---|---|---|
@@ -72,7 +72,7 @@ leads to it; the trail is given each time, and where the trail stops is named.
 | `AddressBook::Other("carddav")` | `contacts_sync.rs:4951-4954`, `contacts.rs:3997`, `:4009` | The only four occurrences of the word "carddav" in `src/` are in `#[cfg(test)]` blocks. The enum admits it; nothing writes it. |
 | The `notes.format` column | written as the literal `"plain"` at `managers.rs:3107`, `:5090`, `notes.rs:312`, `:351`, `:389`, `:421`, `:450`; read at `outlook_data_file.rs:3260` only | Written with a constant everywhere and read by no production code. Meanwhile the editor labels the box "Body, in Markdown" (`wx_notes_module.rs:83`) and the accessible description says Markdown is read back (`:94`), and `read_aloud.rs:351` does parse it as Markdown regardless of the column. The column is a stored answer nothing asks. |
 
-### Bucket 3 — does not exist
+### Bucket 3: does not exist
 
 | What | Verified by |
 |---|---|
@@ -88,7 +88,7 @@ leads to it; the trail is given each time, and where the trail stops is named.
 
 ## Requirement by requirement: is the stated evidence still true?
 
-### PIM-01 — Move a task from one list to another. **Evidence is wrong.**
+### PIM-01: Move a task from one list to another. **Evidence is wrong.**
 
 The requirement says "no move-between-lists path in `src/application/tasks_sync.rs`". Literally true
 and misleading: the path is not in `tasks_sync.rs` and never would be. It is in
@@ -117,13 +117,13 @@ item as waiting to be sent.
    sequence is the whole risk in this requirement.
 3. **The `Allowed::personal_information` criterion is not true as written.** `grep allowed
    src/presentation/managers.rs` returns nothing. The gate is applied where the HTTP client is
-   built — `tasks_api.rs:835`, `google_api.rs:545`, `microsoft_graph.rs:489`, `caldav.rs:203` — so a
+   built (`tasks_api.rs:835`, `google_api.rs:545`, `microsoft_graph.rs:489`, `caldav.rs:203`), so a
    move is written locally and marked pending whatever the gate says, and the gate bites at the
    push. Nobody is "refused with a reason" at move time. That is either a defect to fix or a
    criterion to reword, and it is a decision because the current behaviour is arguably right: a
    local file is not a change at a provider.
 
-### PIM-02 — Move and copy in the modules that are not mail. **Evidence is half right, and the requirement contradicts a design decision in the code.**
+### PIM-02: Move and copy in the modules that are not mail. **Evidence is half right, and the requirement contradicts a design decision in the code.**
 
 The evidence about mail is right: `imap.rs:1280` `copy_message` and `:1308` `move_message`. The
 sentence "The inventory records move and copy as missing for everything else" is half wrong: move
@@ -141,14 +141,14 @@ test that holds the five context menus to exactly `PimCommand::Move.applies_to`,
 requirement to contacts and reminders makes that test red and requires a new answer to "move it out
 of what, into what". **This is a decision for Pratik, not a plan detail.** For contacts there is a
 coherent answer (group membership, which `groups_in` at `managers.rs:6661` already enumerates); for
-reminders there is no container in the schema at all (`mod.rs:1916-1928` — a reminder has an
+reminders there is no container in the schema at all (`mod.rs:1916-1928`: a reminder has an
 account, a due time and an optional `related_event_id`, and nothing that holds it).
 
 The criterion "the same two keyboard commands in every module" is achievable for move today
 (`Ctrl+Shift+V` is already module-following) and for copy would mean routing `Ctrl+Shift+Y`
 (`wx_app.rs:5830-5833`) the same way `Ctrl+Shift+V` is routed at `:3531`.
 
-### PIM-06 — Week and month calendar views. **Evidence is correct.** The only one that is.
+### PIM-06: Week and month calendar views. **Evidence is correct.** The only one that is.
 
 `wx_calendar_module.rs:46-58` says exactly what the requirement quotes, at the lines it quotes.
 `docs/changelog.md:1424` matches.
@@ -168,17 +168,17 @@ Three things the requirement does not say that a plan needs.
   work through a view's events in date order without reconstructing the grid" needs a real NVDA run.
   The requirement already says so, and it is right to.
 
-### PIM-03 — Recurring events across date ranges. **Evidence understates what ships.**
+### PIM-03: Recurring events across date ranges. **Evidence understates what ships.**
 
 The requirement says `occurrences.rs` and `repeating.rs` "hold the recurrence model" and that the
 display is PIM-06's work. Both true. What it omits is that the expansion is already wired into the
 list the user actually sees, via `every_day_shown`, from two production call sites. So the first
-`[D]` — "a recurring event appears on every date it occurs in whichever view is showing" — is
+`[D]`, "a recurring event appears on every date it occurs in whichever view is showing", is
 already true of the only view that exists.
 
 **What is left is the second `[D]`: a moved occurrence.** EXDATE cancellation works
-(`occurrences.rs:98`, with a Google end-to-end test at `calendar.rs:4891-4903`). An override — a
-single occurrence moved to another date — is stored as its own row carrying
+(`occurrences.rs:98`, with a Google end-to-end test at `calendar.rs:4891-4903`). An override, a
+single occurrence moved to another date, is stored as its own row carrying
 `provider_recurrence_id` (`mod.rs:1029`), and `falls_on` knows nothing about it. So today a moved
 occurrence appears twice: once expanded from the series on its original date, and once as its own
 row on the new one. **I could not verify this by running it, only by reading: nothing subtracts a
@@ -189,7 +189,7 @@ The two "stated limitations" the requirement names are real and unchanged: `can_
 (`calendar.rs:1946`) refuses a one-day change where only half of it could be sent, and the doc
 comment above it explains that Google and Outlook are never told how an event repeats.
 
-### PIM-04 / PIM-07 / PIM-08 — Notes. **Evidence is correct, and the roadmap's blocker is stale.**
+### PIM-04 / PIM-07 / PIM-08: Notes. **Evidence is correct, and the roadmap's blocker is stale.**
 
 `.planning/ROADMAP.md:413` lists "PIM-04 needs a sync target chosen before anything can be built" as
 a blocker known at roadmap time. **`.planning/REQUIREMENTS.md` already carries the answer**, dated
@@ -202,12 +202,12 @@ be struck rather than treated as a gate.** (See "Decisions" below: what is still
 
 **PIM-04 is close to done and the requirement does not know it.** Of its six `[D]` items:
 
-- "A note is a Markdown document, reusing what signatures use" — the reuse already happened.
+- "A note is a Markdown document, reusing what signatures use". The reuse already happened.
   `long_text.rs` is the shared reader, `pulldown-cmark` is already imported there (`long_text.rs:17`),
   and the notes editor labels itself Markdown (`wx_notes_module.rs:83-94`).
-- "The stored form is the Markdown source" — true. `long_text.rs:13-15` states it as the module's
+- "The stored form is the Markdown source". True. `long_text.rs:13-15` states it as the module's
   rule, and `save_note` stores the body verbatim (`notes.rs:99`).
-- "A screen reader reads the rendered structure" — `read_aloud.rs:351` does exactly what
+- "A screen reader reads the rendered structure". `read_aloud.rs:351` does exactly what
   `read_aloud.rs:332` does for a contact's notes, which is the precedent the requirement names.
 - The remaining three are all about sync: the `Allowed` gate, the settings screen saying notes do not
   sync yet, and the seam. Those are PIM-07's.
@@ -217,8 +217,8 @@ by nothing, while the editor and the reader both treat the body as Markdown. Eit
 becomes meaningful, or it goes, or the phase records why it stays; leaving it is the shape of
 observation 0017 in this project's own log, a column that reads as a working feature and is not one.
 
-**PIM-07 is the phase's largest genuine build.** Its evidence — no VJOURNAL in `caldav.rs`, no
-OneNote in `microsoft_graph.rs` — I re-verified: neither string occurs anywhere in `src/`. What the
+**PIM-07 is the phase's largest genuine build.** I re-verified its evidence, no VJOURNAL in `caldav.rs` and no
+OneNote in `microsoft_graph.rs`: neither string occurs anywhere in `src/`. What the
 requirement does not carry, and a planner needs:
 
 - **The schema work is real.** `notes` and `note_folders` (`mod.rs:2028-2056`) have no `pending`, no
@@ -243,7 +243,7 @@ exists so a word this code does not recognise survives being read and written ba
 working, shipped example of "the seam does not forbid a later implementation" and it is the model to
 copy rather than invent.
 
-### PIM-05 — CardDAV. **Evidence is right about the gap and wrong about where the vCard code lives.**
+### PIM-05: CardDAV. **Evidence is right about the gap and wrong about where the vCard code lives.**
 
 Right: `caldav.rs` covers calendars only, CardDAV is not built, `docs/development/requirements-backlog.md`
 says so.
@@ -264,7 +264,7 @@ What CardDAV actually costs, from reading the CalDAV it must parallel:
   `addressbook-home-set` with a different namespace, then `addressbook-query` REPORT instead of
   `calendar-query`.
 - **The conflict half already exists on the contacts side**, and it is where PIM-05 collides with
-  phase 3 — see the next section.
+  phase 3. See the next section.
 - **`AddressBook::Other("carddav")` already round-trips**, so no schema change is needed to name the
   new address book. The version marker column (`ProviderIdentity::provider_version`, `mod.rs:451-462`)
   already exists per address book, which is exactly where a CardDAV ETag belongs.
@@ -281,7 +281,7 @@ What CardDAV actually costs, from reading the CalDAV it must parallel:
 
 `03-09-PLAN.md` is scheduled in phase 3, wave 9, and it builds:
 
-- `src/application/conflict_choice.rs` — a held conflict, the two versions, and the decision.
+- `src/application/conflict_choice.rs`: a held conflict, the two versions, and the decision.
 - The losing arm of `whose_copy_wins` (`contacts_sync.rs:988`) holding the conflict instead of
   writing over and apologising afterwards.
 - `caldav_sync.rs` raising the same question on an ETag disagreement, rather than resolving silently.
@@ -296,8 +296,8 @@ contacts flowing into the same `whose_copy_wins`, and its ETag is the same kind 
    itself would be exactly the duplicate `03-RESEARCH.md` warned about, and the two would disagree
    the first time either changed.
 2. **PIM-05 should depend on 03-09, or be planned to plug into `conflict_choice.rs` as a consumer.**
-   If phase 5 runs before phase 3 wave 9 — the roadmap says phase 5 "can run alongside Phases 1 to 4",
-   which does not include phase 3's last wave — then CardDAV has no conflict surface to plug into
+   If phase 5 runs before phase 3 wave 9, and the roadmap says phase 5 "can run alongside Phases 1
+   to 4", which does not include phase 3's last wave, then CardDAV has no conflict surface to plug into
    and will grow one. That ordering question is a decision, not a detail.
 3. **The overlap is only on contacts and CalDAV.** Nothing else in phase 5 touches it: notes have no
    backend to conflict with, tasks resolve through `resolution_for` (`tasks_sync.rs:1195`), and moves
@@ -332,7 +332,7 @@ new modules and add as few test functions as the work allows to `calendar.rs`, `
 
 ---
 
-## "The two that currently go nowhere" — which two, and what going somewhere means
+## "The two that currently go nowhere": which two, and what going somewhere means
 
 The goal (`ROADMAP.md:315`) says two of the five modules go nowhere. **The code names the same two,
 and it argues that one of them should stay that way.**
@@ -379,7 +379,7 @@ Naming the last miles precisely, rather than glossing them.
    close here, and the requirement's last `[D]` already says so. Follow phase 3's precedent and let
    this become an `unrun-verify` ledger entry rather than a criterion that reads as met.
 2. **Whether a provider accepts a task move done as delete-then-create** (PIM-01). The failure mode
-   the criterion is about — a task in two lists or none — occurs only when the second call fails
+   the criterion is about, a task in two lists or none, occurs only when the second call fails
    after the first succeeded, which is exactly what cannot be produced without a provider. The
    *local* half is testable: that the cache never holds the task under two list ids, and that a
    half-finished move is recoverable.
@@ -399,7 +399,7 @@ Naming the last miles precisely, rather than glossing them.
 
 | # | Assumption | How I would check it | Cost if wrong |
 |---|---|---|---|
-| A1 | A moved occurrence (`provider_recurrence_id` row) is currently shown twice — once from the series' expansion, once as itself. I read every line of `falls_on` and found only EXDATE filtering, but I did not run it. | One test: store a series and an override row, call `every_day_shown` over the range, count rows on the original date. | If it is already handled somewhere I did not find, PIM-03 is nearly closed and a plan would build a second de-duplication beside a working one. This is the exact shape of the mistake phase 3 avoided. Cheap to check; check it first. |
+| A1 | A moved occurrence (`provider_recurrence_id` row) is currently shown twice, once from the series' expansion and once as itself. I read every line of `falls_on` and found only EXDATE filtering, but I did not run it. | One test: store a series and an override row, call `every_day_shown` over the range, count rows on the original date. | If it is already handled somewhere I did not find, PIM-03 is nearly closed and a plan would build a second de-duplication beside a working one. This is the exact shape of the mistake phase 3 avoided. Cheap to check; check it first. |
 | A2 | `Ctrl+Shift+V` really reaches the handler in the non-mail modules, rather than only being in the menu label. `tests/wired.rs:1959-1973` asserts the dispatch source contains the arms, and the menu carries the accelerator, but `wired.rs:19-24` says in its own words that a bound key proves dispatch and says nothing about what the handler then does with the right thing on screen. | Press it in a running build with a task selected. | If the key does not reach it, PIM-01 and PIM-02 are much larger than this document says, and the whole "already built" finding shrinks to "built and unreached", which is bucket 2, not bucket 1. |
 | A3 | A CardDAV server's ETag can be carried in `ProviderIdentity::provider_version` without a schema change. The column is `Option<String>` and per-address-book, which fits. | Read `contacts.rs`'s identity read/write once more, against a written-out CardDAV flow. | A schema change mid-plan, which is additive here so it is a cost rather than a hazard. |
 | A4 | `outward.rs`'s HTTP client can issue PUT and DELETE with `If-Match`, not just PROPFIND and REPORT. CalDAV's `create_event`/`update_event`/`delete_event` (`caldav.rs:386`, `:442`, `:486`) must be doing this, but I read their signatures rather than their bodies. | Read `caldav.rs:386-530`. | Nothing structural; it would mean widening `AskWith`, whose doc comment (`outward.rs:96-103`) already explains how to add a verb safely. |
@@ -417,7 +417,7 @@ Naming the last miles precisely, rather than glossing them.
 |---|---|
 | Framework | `cargo test`, in-tree `#[cfg(test)] mod tests` plus 24 files under `tests/` |
 | Config file | none; `Cargo.toml` |
-| Quick run | `cargo test --lib <module path>::` — the scoped form `scripts/which-checks.sh` already uses |
+| Quick run | `cargo test --lib <module path>::`, the scoped form `scripts/which-checks.sh` already uses |
 | Full suite | `bash scripts/check.sh` (fmt, clippy `-D warnings`, tests, release build) |
 | Scale | roughly 5,200 test functions across `src/` and `tests/` |
 
@@ -432,7 +432,7 @@ Naming the last miles precisely, rather than glossing them.
 | PIM-06 | Screen reader order in a week view | manual | NVDA pass | manual-only |
 | PIM-04 | A note's Markdown round-trips unchanged | unit | `cargo test --lib application::long_text::` | ✅ partly (`:774`, `:866`) |
 | PIM-07 | An unsendable note stays local, is marked waiting, and the summary says why | unit, faked backend | `cargo test --lib application::notes_sync::` | ❌ Wave 0 |
-| PIM-07 | The note-folder menu offers sync exactly where a backend exists | unit | `cargo test --lib application::context_menu::` | ⚠️ exists and asserts the opposite (`:610`) — must invert |
+| PIM-07 | The note-folder menu offers sync exactly where a backend exists | unit | `cargo test --lib application::context_menu::` | ⚠️ exists and asserts the opposite (`:610`), so it must invert |
 | PIM-08 | The seam takes a hosted backend with no stored-form change | unit, second fake | `cargo test --lib application::notes_sync::` | ❌ Wave 0 |
 | PIM-05 | vCard and PROPFIND parsing, pure | unit | `cargo test --lib service::carddav::` | ❌ Wave 0 |
 | PIM-05 | The new file is covered by the case-folding guard | unit | `cargo test --lib service::caldav::tests::test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case` | ✅ exists; the new file must be added to `caldav.rs:4702` |
@@ -454,7 +454,7 @@ to fire often on `calendar.rs` and `managers.rs`.
 
 | ASVS category | Applies | Standard control here |
 |---|---|---|
-| V2 Authentication | yes, PIM-05 only | CardDAV basic auth via `keyring`, following `caldav::credentials` (`caldav.rs:109-160`) — one keyring service name per owner, per `CLAUDE.md` |
+| V2 Authentication | yes, PIM-05 only | CardDAV basic auth via `keyring`, following `caldav::credentials` (`caldav.rs:109-160`), with one keyring service name per owner, per `CLAUDE.md` |
 | V3 Session Management | no | no sessions |
 | V4 Access Control | yes | `Allowed::personal_information` gates every provider write; see the PIM-01 finding that it does not gate the local move |
 | V5 Input Validation | yes | a CardDAV server's vCard and XML are untrusted. `contacts.rs`'s existing reader already treats a card file that way (`:1190`, `:1991`) |

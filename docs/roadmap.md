@@ -34,7 +34,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 ### Accessibility Framework
 - [x] Native Windows controls with built-in Windows UIA
 - [x] Implement accessibility layer for screen reader support (NVDA, JAWS, Narrator)
-- [x] Define comprehensive keyboard shortcuts system (25+)
+- [x] Define a full keyboard shortcuts system (25+)
 - [x] Create accessibility testing framework. `.github/workflows/accessibility.yml`
       runs Axe.Windows and an MSAA name scan; `nvda.yml` drives a real copy of
       NVDA and checks what it said aloud. The wide manual pass with a screen

@@ -64,10 +64,10 @@
 
 **Key Characteristics:**
 - Single binary crate (`wixen_mail`), `src/lib.rs` re-exports the four layers plus `common` and `vendor`.
-- `src/application/` is flat and wide: 69 files, one manager/concern per file, named after the behavior rather than a noun (`answering.rs`, `closing.rs`, `filing.rs`, `handover.rs`) — see naming convention note in STRUCTURE.md.
+- `src/application/` is flat and wide: 69 files, one manager/concern per file, named after the behavior rather than a noun (`answering.rs`, `closing.rs`, `filing.rs`, `handover.rs`). See the naming convention note in STRUCTURE.md.
 - `src/presentation/` mixes generic UI infrastructure (`theme.rs`, `panes.rs`, `managers.rs`) with per-screen `wx_*.rs` modules (`wx_compose.rs`, `wx_settings.rs`, `wx_calendar_module.rs`) and a dedicated `accessibility/` subtree.
 - `src/service/` groups protocol clients (`protocols/imap`, `protocols/pop3`, `protocols/smtp.rs`), provider APIs (`google_api.rs`, `microsoft_graph.rs`), and cross-cutting services (`security.rs`, `safety.rs`, `secret_store.rs`).
-- One SQLite database for cached mail/PIM data; secrets never enter it — they go to the OS credential store through `service::credentials`, `service::oauth`, `service::caldav`.
+- One SQLite database for cached mail/PIM data. Secrets never enter it: they go to the OS credential store through `service::credentials`, `service::oauth` and `service::caldav`.
 
 ## Layers
 
@@ -78,7 +78,7 @@
 - Used by: `src/main.rs` only (nothing above it).
 
 **Application (`src/application/`):**
-- Purpose: business logic — account management, mail/PIM synchronization, composition, filtering, search, PIM item lifecycle.
+- Purpose: business logic, covering account management, mail and PIM synchronization, composition, filtering, search, and PIM item lifecycle.
 - Contains: one file per concern; `mail_controller.rs` is the hub that owns the live IMAP/SMTP/POP3 sessions and exposes typed operations (`SendEmailRequest`, address parsing) to the presentation layer.
 - Depends on: `service` (protocol clients), `data` (account/message storage), `common`.
 - Used by: `presentation`.
@@ -90,13 +90,13 @@
 - Used by: `application`.
 
 **Data (`src/data/`):**
-- Purpose: persistence — the one SQLite cache database, account records, app configuration, static email-provider metadata.
+- Purpose: persistence, covering the one SQLite cache database, account records, app configuration, and static email-provider metadata.
 - Contains: `message_cache/` (the database module, schema is additive-only per `docs/architecture.md`), `account.rs`, `config.rs`, `email_providers.rs`.
 - Depends on: `common`.
 - Used by: `application`, `presentation` (reads for display).
 
 **Common (`src/common/`):**
-- Purpose: shared types and utilities with no business logic — error type, path resolution, logging setup, version stamping.
+- Purpose: shared types and utilities with no business logic, covering the error type, path resolution, logging setup, and version stamping.
 - Contains: `error.rs` (the `Error`/`Result` used everywhere), `paths.rs` (single owner of the `%LOCALAPPDATA%\wixen-mail` root), `types.rs`, `logging.rs`, `version.rs`, `moment.rs`, plus test-only helpers gated behind `#[cfg(test)]` (`answering.rs`, `temp_home.rs`, `what_ships.rs`).
 - Depends on: nothing internal.
 - Used by: every other layer.
@@ -162,10 +162,10 @@
 ## Architectural Constraints
 
 - **Threading:** Single main UI thread for all wxdragon rendering and input; background work (sync, send, index) goes through `tokio` (full feature enabled in `Cargo.toml`) and channels (`async_channel::{Sender, Receiver}` is used in `wx_app.rs`) rather than blocking the UI thread. `MailController` uses `tokio::sync::Mutex`/`MappedMutexGuard` to serialize access to live protocol sessions across async tasks.
-- **Platform coupling:** the accessibility bridge is more Windows-only than the rest of the codebase looks — `wxAccessible` (backing `set_accessible_name`) and `UiaRaiseNotificationEvent` (backing spoken/brailled announcements) exist only on Windows; both compile and silently do nothing elsewhere. Windows-only code sits behind `#[cfg(target_os = "windows")]` with a non-Windows fallback that keeps the crate building. See `src/presentation/accessibility/`.
+- **Platform coupling:** the accessibility bridge is more Windows-only than the rest of the codebase looks. `wxAccessible` (backing `set_accessible_name`) and `UiaRaiseNotificationEvent` (backing spoken/brailled announcements) exist only on Windows, and both compile and silently do nothing elsewhere. Windows-only code sits behind `#[cfg(target_os = "windows")]` with a non-Windows fallback that keeps the crate building. See `src/presentation/accessibility/`.
 - **No secrets in the database:** `data::message_cache` never stores credentials. Passwords, OAuth tokens, and CalDAV sign-ins each have exactly one owner module (`service::credentials`, `service::oauth`, `service::caldav`) so the code that erases them on uninstall names the same entries as the code that wrote them.
 - **Additive-only schema:** `MessageCache` opens existing user databases in place; new tables use `CREATE TABLE IF NOT EXISTS`, new columns use `ensure_column_exists`. Nothing that has shipped is dropped or renamed (one documented exception: an unused OAuth-token table was dropped because leaving unrotated secrets in a copyable file was worse than the rule it broke).
-- **No compiler-enforced layer boundary:** layer separation (presentation/application/service/data) is a naming and file-location convention, not a `pub(crate)` visibility wall — any module can `use crate::<any layer>` directly. New code should still route presentation → application → service → data and not skip layers, to keep this convention meaningful.
+- **No compiler-enforced layer boundary:** layer separation (presentation/application/service/data) is a naming and file-location convention, not a `pub(crate)` visibility wall, so any module can `use crate::<any layer>` directly. New code should still route presentation → application → service → data and not skip layers, to keep this convention meaningful.
 
 ## Anti-Patterns
 
@@ -178,7 +178,7 @@
 ### Implemented but never wired
 
 **What happens:** A feature (storage, sync client, manager, and UI panel) is built end to end but no code path actually invokes it from the running application.
-**Why it's wrong:** Every layer compiles, unit tests pass, and the feature is still absent from the running app — historically true for all eight PIM update variants at once.
+**Why it's wrong:** Every layer compiles, unit tests pass, and the feature is still absent from the running app. That was historically true for all eight PIM update variants at once.
 **Do this instead:** Before calling a feature done, trace the call path from a real UI action (button press, menu item) through to the layer that was added, and confirm reachability, not just compilation. `tests/wired.rs` exists specifically to check this class of regression.
 
 ## Error Handling
@@ -194,7 +194,7 @@
 
 **Logging:** `tracing` + `tracing-subscriber`, initialized once in `main.rs` via `common::logging::init_logging`, with the level read from stored settings before the config manager's usual path is available. Log files rotate under `%LOCALAPPDATA%\wixen-mail\logs\`. Never log a token, password, or message body.
 
-**Validation:** untrusted input (message bodies, provider responses) is sanitized at the boundary where it enters — HTML message previews go through `ammonia` before rendering in the WebView (`presentation::html_renderer`), while preserving heading structure and link text for screen reader navigation.
+**Validation:** untrusted input (message bodies, provider responses) is sanitized at the boundary where it enters. HTML message previews go through `ammonia` before rendering in the WebView (`presentation::html_renderer`), while preserving heading structure and link text for screen reader navigation.
 
 **Authentication:** account passwords go to the Windows credential store via `service::credentials` (backed by `keyring`, DPAPI-encrypted, per-user); OAuth tokens via `service::oauth`; CalDAV sign-ins via `service::caldav`. No master key; nothing sensitive is ever written to `message_cache.db`.
 

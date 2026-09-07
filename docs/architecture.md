@@ -6,7 +6,7 @@
 2. **Modularity**: Clean separation of concerns with well-defined interfaces
 3. **Performance**: Efficient resource usage and responsive UI
 4. **Security**: Secure handling of credentials and email data
-5. **Testability**: Comprehensive testing at all levels
+5. **Testability**: testing at every level
 
 ## High-Level Architecture
 
@@ -352,7 +352,7 @@ struct Folder {
 ### Strategy
 - Use `anyhow::Result` for application errors
 - Use `thiserror` for library errors
-- Comprehensive error context
+- Full error context
 - User-friendly error messages
 - Screen reader-accessible error announcements
 
