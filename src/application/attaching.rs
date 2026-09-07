@@ -1004,6 +1004,104 @@ mod tests {
         );
     }
 
+    /// Every declaration a calendar document may be given, and nothing else.
+    ///
+    /// Written out here rather than reached for from the module, so a test
+    /// asking what a stranger's document can produce is not asking the code
+    /// under test to confirm its own answer.
+    const EVERY_ANSWER_A_CALENDAR_DOCUMENT_CAN_GET: [&str; 4] = [
+        "text/calendar",
+        "text/calendar; charset=utf-8; method=REQUEST",
+        "text/calendar; charset=utf-8; method=CANCEL",
+        "text/calendar; charset=utf-8; method=REPLY",
+    ];
+
+    #[test]
+    fn test_an_invitation_passed_on_arrives_as_an_invitation_rather_than_as_a_file() {
+        // RFC 6047 requires the method on the header and the METHOD inside the
+        // document to say the same thing. Declaring nothing where the document
+        // says REQUEST is this program disagreeing with the file it is
+        // sending, and it costs the recipient the meeting: their client offers
+        // a file to save instead of a meeting to answer.
+        let invitation = an_invitation_that_arrived();
+
+        assert_eq!(
+            content_type_of("invite.ics", invitation.as_bytes()),
+            "text/calendar; charset=utf-8; method=REQUEST"
+        );
+    }
+
+    #[test]
+    fn test_a_cancellation_passed_on_arrives_as_a_cancellation() {
+        // The same rule, and the case where getting it wrong is worst: a
+        // meeting called off that the recipient's calendar never hears about
+        // leaves them turning up.
+        let called_off = an_invitation_that_arrived().replace("METHOD:REQUEST", "METHOD:CANCEL");
+
+        assert_eq!(
+            content_type_of("invite.ics", called_off.as_bytes()),
+            "text/calendar; charset=utf-8; method=CANCEL"
+        );
+    }
+
+    #[test]
+    fn test_a_file_named_as_a_calendar_and_holding_something_else_is_not_a_crash() {
+        // A name is not a promise. An `.ics` file can hold a truncated
+        // document, somebody's shopping list, or nothing at all, and the
+        // reader this asks runs over attacker-controlled mail on the way in
+        // as well, so it answers rather than failing.
+        for holding in [
+            "",
+            "not a calendar document at all",
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:x",
+            "METHOD",
+            "METHOD:",
+        ] {
+            assert_eq!(
+                content_type_of("whatever.ics", holding.as_bytes()),
+                "text/calendar",
+                "{holding:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nothing_a_stranger_wrote_reaches_the_declaration_except_by_choosing_one_of_four() {
+        // The threat this closed set exists for. A METHOD line comes out of a
+        // file somebody else wrote, and a declaration built by pasting that
+        // line into a string would let its author write a header of their
+        // choosing onto mail leaving somebody else's account. Every answer is
+        // a fixed string, so what a stranger wrote can select an answer and
+        // never become one.
+        for method in [
+            "REQUEST\r\nBcc: watcher@example.com",
+            "REPLY; boundary=\"--x\"",
+            "CANCEL\"; charset=\"windows-1252",
+            "REQUEST\nContent-Type: text/html",
+            "\u{202E}YLPER",
+            "request",
+        ] {
+            let document =
+                an_invitation_that_arrived().replace("METHOD:REQUEST", &format!("METHOD:{method}"));
+
+            let declared = content_type_of("invite.ics", document.as_bytes());
+
+            assert!(
+                EVERY_ANSWER_A_CALENDAR_DOCUMENT_CAN_GET.contains(&declared),
+                "a document naming {method:?} was declared {declared:?}, \
+                 which is not one of the four answers this may give"
+            );
+            assert!(
+                !declared.contains(['\r', '\n']),
+                "a document naming {method:?} put a line break on a header: {declared:?}"
+            );
+            assert!(
+                !declared.contains("watcher@example.com") && !declared.contains("text/html"),
+                "a document naming {method:?} wrote its own text onto the header: {declared:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_a_calendar_document_asking_nothing_is_declared_the_way_it_always_was() {
         // A published feed saved as a file and attached is a calendar document
