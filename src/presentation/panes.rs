@@ -18,11 +18,27 @@
 //! So the announcement is not decoration. Moving focus without saying where it
 //! went is the same experience as the key not working.
 //!
-//! # The preview is not one of these
+//! # The preview is not one of these, and focus lands in it anyway
 //!
-//! It never takes focus, so `F6` does not stop there. It is a WebView, which
-//! hosts a browser out of process: once focus is inside, `Escape`, `F6` and
-//! every menu accelerator are consumed there and reach nothing.
+//! `F6` does not stop at the preview. It is a WebView, which hosts a browser
+//! out of process: once focus is inside, `Escape`, `F6` and every menu
+//! accelerator are consumed there and reach nothing this application binds, so
+//! sending the cycle in would be sending it into a dead end.
+//!
+//! This used to say focus never goes there, and that was wrong for as long as
+//! it was written. A browser takes focus when a document finishes loading and
+//! does not ask first, and `set_can_focus(false)` does not stop it, which
+//! `focus_home` in `wx_app.rs` says in as many words and has an enum, a cell
+//! and a load handler built on. Two documents said the same false thing beside
+//! code that exists only because it is false.
+//!
+//! So focus arrives in the preview without being sent, this program puts it
+//! back when it can, and the page carries its own `Escape` and `F6` handlers
+//! for the times it cannot. [`leaving_the_preview`] is where those keys land.
+//! It is the one place in this program where `F6` and `Shift+F6` give different
+//! answers: [`Pane`] has two values, so [`Pane::next`] and [`Pane::previous`]
+//! agree everywhere else by construction, and the preview is the third stop
+//! that exists in practice without being a variant here.
 
 use crate::common::types::PimModule;
 

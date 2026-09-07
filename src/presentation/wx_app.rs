@@ -1202,19 +1202,28 @@ impl WxMailApp {
                 .with_backend(WebViewBackend::Edge)
                 .build();
             set_accessible_name(&preview, "Email preview");
-            // The preview never takes focus.
+            // Focus is kept off the preview wherever this application decides
+            // it, and the browser overrules that, which is why the rest of
+            // this exists.
             //
             // A WebView hosts an out of process browser. Once focus is inside
             // it, Escape, F6 and every menu accelerator are consumed there and
             // never reach this application, and if the browser has the host
             // window rather than the document, the keys reach nothing at all:
             // no screen reader output, no keyboard route back, and the system
-            // menu the only way out. Keeping focus off it is the only fix that
-            // does not depend on the browser cooperating.
+            // menu the only way out. So the cycle does not stop here, and this
+            // call says so.
             //
-            // Nothing is lost by this. The preview is a visual surface; the
-            // way this application reads a message aloud is Space and
-            // Shift+Space on the list, which is where focus stays.
+            // It does not say focus never arrives. set_can_focus governs this
+            // application's own tab traversal, and the browser takes focus for
+            // itself when a document finishes loading, which focus_home and the
+            // load handler beside it exist to undo. For the times that is not
+            // enough, wire_the_way_out injects Escape, F6 and Shift+F6 into the
+            // page and the host moves focus back out.
+            //
+            // Little is lost by keeping the cycle out. The way this
+            // application reads a message aloud is Space and Shift+Space on
+            // the list, which is where focus stays.
             preview.set_can_focus(false);
             tracing::info!("WebView widget created");
 
