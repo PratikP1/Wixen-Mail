@@ -181,6 +181,11 @@ pub fn file_the_answer(
         Some(where_it_already_is) => where_it_already_is,
         None => cache.ensure_default_calendar(account_id)?.id,
     };
+    // The identity the row already has, not a fresh one. A fresh identity would
+    // still reach the right row on the way in, because the save also matches on
+    // the account, the calendar and the meeting's own name together. It would
+    // not reach it on the way out: the version answered is written by identity,
+    // and written against one no row carries it records nothing at all.
     let id = match already.as_ref() {
         Some(row) => row.id.clone(),
         None => uuid::Uuid::new_v4().to_string(),
@@ -190,7 +195,7 @@ pub fn file_the_answer(
         None => "confirmed".to_string(),
     };
 
-    let entry = the_row_an_answer_leaves(
+    let the_row = the_row_an_answer_leaves(
         &holding,
         invitation,
         WhereItGoes {
@@ -200,10 +205,10 @@ pub fn file_the_answer(
             status: &status,
         },
     );
-    cache.save_calendar_event(&entry)?;
+    cache.save_calendar_event(&the_row)?;
     // After the save, because a version written against a row that is not there
     // records an answer to a meeting nobody can see.
-    cache.remember_the_version_answered(&entry.id, holding.version)?;
+    cache.remember_the_version_answered(&the_row.id, holding.version)?;
     Ok(())
 }
 
@@ -427,6 +432,47 @@ mod tests {
         assert_eq!(
             after.summary, "Somebody edited this afterwards",
             "answering the version already answered wrote over the row anyway"
+        );
+    }
+
+    #[test]
+    fn test_the_version_answered_is_written_against_the_row_the_calendar_already_holds() {
+        // The row an answer replaces keeps the identity it already had, so the
+        // version has to be written against that one and not against a fresh
+        // identity the answer minted for itself. Written against a fresh one it
+        // reaches no row at all, the calendar goes on saying the version before
+        // last was the one answered, and the next invitation for that version
+        // is taken for a change and writes over whatever is there.
+        //
+        // Nothing else here can see that. Two answers at the same version stop
+        // at "nothing new" before any of this is reached, and two at different
+        // versions leave one row either way. It takes three.
+        let cache = a_calendar_on_this_computer("the_version_against_the_right_row");
+
+        answer_it(&cache, &an_invitation_that_arrived(), Answer::Accepted);
+        answer_it(
+            &cache,
+            &the_same_meeting_moved(3, "20260305T140000Z"),
+            Answer::Accepted,
+        );
+
+        let mut edited = the_meeting_on_the_calendar(&cache).expect("the meeting to be here");
+        edited.summary = "Somebody edited this afterwards".to_string();
+        cache
+            .save_calendar_event(&edited)
+            .expect("the edit to be saved");
+
+        answer_it(
+            &cache,
+            &the_same_meeting_moved(3, "20260305T140000Z"),
+            Answer::Accepted,
+        );
+
+        let after = the_meeting_on_the_calendar(&cache).expect("the meeting to still be here");
+        assert_eq!(
+            after.summary, "Somebody edited this afterwards",
+            "the version answered was written against a row that does not \
+             exist, so answering the same version again was taken for a change"
         );
     }
 

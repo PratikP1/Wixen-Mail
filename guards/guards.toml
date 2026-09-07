@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 444 records have arrived since and have not been through it.
+# 446 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16272,3 +16272,80 @@ red = [
     "application::attaching::tests::test_a_reply_arrives_declared_as_a_reply_so_the_organisers_client_records_it",
 ]
 tests_last_seen = [{ file = "src/application/attaching.rs", tests = 42 }]
+
+# ── An answer worked out for the calendar is really put on the calendar ─────
+#
+# The defect this plan closed, in the exact shape it had for three months.
+# `what_the_calendar_should_hold` worked out the whole entry, correctly, and
+# was called by nothing at all, so accepting a meeting sent the answer and left
+# the calendar empty. Nothing anywhere said so, in either direction, which is
+# what made it worse than a documented limit.
+#
+# So the break is not deleting the working out. That only asks whether the call
+# exists, which the compiler would answer anyway. It keeps the whole working
+# out, every field of it, and drops the row on the floor instead of saving it,
+# which is precisely what shipped.
+#
+# The red list is twelve tests and all twelve are the measurement rather than a
+# net cast wide. Each one reads a row back out of a real database, so every one
+# of them can see the row not being there. The three that stay green are the
+# three that are not about a row arriving: an answer that never left the
+# machine, a database written before this shipped, and the stored vocabulary.
+# Measured by hand with --all-targets --no-fail-fast from a green tree of 6,534
+# library tests.
+
+[[guard]]
+name = "an answer worked out for the calendar is really put on the calendar"
+file = "src/application/answered_meetings.rs"
+before = """    cache.save_calendar_event(&the_row)?;"""
+after = """    let _ = &the_row;"""
+red = [
+    "application::answered_meetings::tests::test_accepting_puts_the_meeting_on_the_calendar_taking_up_its_time",
+    "application::answered_meetings::tests::test_each_answer_decides_whether_the_time_is_taken_and_says_it_in_the_stored_word",
+    "application::answered_meetings::tests::test_a_change_to_a_meeting_already_accepted_is_answered_as_a_change_to_it",
+    "application::answered_meetings::tests::test_answering_the_same_meeting_three_times_leaves_one_entry",
+    "application::answered_meetings::tests::test_an_invitation_older_than_the_one_answered_does_not_move_the_meeting_back",
+    "application::answered_meetings::tests::test_answering_the_same_version_again_writes_nothing_at_all",
+    "application::answered_meetings::tests::test_the_entry_is_marked_as_a_change_this_computer_has_made",
+    "application::answered_meetings::tests::test_the_meetings_own_status_is_not_the_guests_answer",
+    "application::answered_meetings::tests::test_the_meeting_is_filed_under_a_calendar_made_for_an_account_that_has_none",
+    "application::answered_meetings::tests::test_a_meeting_named_after_one_on_another_accounts_calendar_leaves_that_one_alone",
+    "application::answered_meetings::tests::test_an_invitation_that_names_no_end_is_stored_with_one_rather_than_a_blank",
+    "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
+]
+tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
+
+# ── The version answered is written against the row that is really here ─────
+#
+# This record exists because measuring the one above found the tests could not
+# tell two implementations apart. The plan said a second answer minting a fresh
+# identity would write a second row. It does not: `save_calendar_event` matches
+# on the account, the calendar and the meeting's own name as well as on the
+# identity, so the row is found either way. Every test in the module passed with
+# a fresh identity minted every time.
+#
+# What a fresh identity really breaks is one step later and invisible. The
+# version answered is written by identity, so written against one no row
+# carries, it records nothing. The calendar goes on saying the version before
+# last was the one answered, and the next invitation at that version is taken
+# for a change and writes over whatever is there.
+#
+# Seeing that takes three answers. Two at one version stop at "nothing new"
+# before any of this is reached, and two at different versions leave one row
+# either way. The red list is one test because one test is what discriminates,
+# and it was written after the break was measured rather than before.
+# Measured by hand with --all-targets --no-fail-fast from a green tree of 6,534
+# library tests: 6,533 passed, one failed.
+
+[[guard]]
+name = "the version answered is written against the row the calendar already holds"
+file = "src/application/answered_meetings.rs"
+before = """    let id = match already.as_ref() {
+        Some(row) => row.id.clone(),
+        None => uuid::Uuid::new_v4().to_string(),
+    };"""
+after = """    let id = uuid::Uuid::new_v4().to_string();"""
+red = [
+    "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+]
+tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
