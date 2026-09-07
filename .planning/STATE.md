@@ -29,11 +29,13 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 04.2 (What was built and never reached) — EXECUTING, 5 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply, 04.2-04 the meeting reaching the calendar, 04.2-05 the count of held-back pictures. Next is 04.2-06, Blocked Senders, which carries a screen reader checkpoint at the end.
+Phase: 04.2 (What was built and never reached) — EXECUTING, 6 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply, 04.2-04 the meeting reaching the calendar, 04.2-05 the count of held-back pictures, 04.2-06 Blocked Senders. Next is 04.2-07, `Shift+F6`.
 
-`current_plan` was 4 when 04.2-05 finished, because 04.2-04 completed without running the state update. It was set to 6 by hand for that reason: `state.advance-plan` only increments, and one increment from 4 would have said the next plan was 05, which is done.
+**04.2-06 owes a screen reader pass that was not run.** The window, the menu item, the scan target and the wiring are all in and green, and nothing has been heard. Both Windows accessibility channels and five listening checks are written out step by step in `04.2-06-SUMMARY.md` under "Deferred: the screen reader pass, not attempted", and as ledger entries 159 to 163. That is deferred by decision, not missed.
 
-Current Plan: 6
+`current_plan` was 4 when 04.2-05 finished, because 04.2-04 completed without running the state update. It was set to 6 by hand for that reason: `state.advance-plan` only increments, and one increment from 4 would have said the next plan was 05, which is done. It was set to 7 by hand when 04.2-06 finished, for the same reason and by the same route.
+
+Current Plan: 7
 Total Plans in Phase: 9
 
 **Do not run `gsd-tools query state.advance-plan` to find out where things are.** Despite the `query` prefix it is not a read: it advances the counter and rewrites six fields. Running it once on 2026-09-07 to test whether this section parsed moved the plan from 4 to 5 with nothing executed, and it had to be put back by hand because there is no `state-set` command to undo it.

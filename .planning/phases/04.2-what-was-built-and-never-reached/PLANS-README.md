@@ -875,9 +875,9 @@ carry a blocking screen reader checkpoint and neither is autonomous.
 - [x] `04.2-01-PLAN.md` — A message is really held, so Undo Send takes something back
 - [x] `04.2-02-PLAN.md` — A message can be set to go at a chosen time, and a time that will not do is refused with a reason
 - [x] `04.2-03-PLAN.md` — A meeting reply arrives declared as a reply, named `reply.ics`
-- [ ] `04.2-04-PLAN.md` — Accepting a meeting puts it on the calendar, once, taking up its time
-- [ ] `04.2-05-PLAN.md` — A reader is told how many pictures were held back, why, and where the switch is
-- [ ] `04.2-06-PLAN.md` — Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first
+- [x] `04.2-04-PLAN.md` — Accepting a meeting puts it on the calendar, once, taking up its time
+- [x] `04.2-05-PLAN.md` — A reader is told how many pictures were held back, why, and where the switch is
+- [x] `04.2-06-PLAN.md` — Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first (structurally; its screen reader pass is deferred and is ledger 159 to 163)
 - [ ] `04.2-07-PLAN.md` — `Shift+F6` keeps its direction crossing the message preview
 - [ ] `04.2-08-PLAN.md` — A column layout belongs to the kind of folder it was made in
 - [ ] `04.2-09-PLAN.md` — The documents name the keys that work, and five sentences stop overclaiming
