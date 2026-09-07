@@ -569,6 +569,7 @@ fn check_send_preview(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
         account_index: None,
         attachments: Vec::new(),
         answering: None,
+        send_at: None,
     };
     let (dialog, _send_btn, _back_btn) =
         wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));

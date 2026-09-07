@@ -163,6 +163,9 @@ last_updated: 2026-09-06T23:12:00.392Z
 | 146 | 04 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the PGP import or any of its five answers read aloud. The import is a file picker followed by one announcement at High priority, and whether the sentence for a public key, a locked key, a file that is not a key, a refused credential store or a successful import is understood on hearing it once, with no dialog to go back to, is a thing only a real screen reader run settles. | open |  | 2026-09-06T19:22:32.974Z |  |
 | 147 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has heard the hold announced. Pressing Send now says "Sending in 10 seconds. Undo Send takes it back." and whether that sentence finishes in time for somebody to hear it, decide and press Ctrl+Shift+Z inside ten seconds is the whole argument in Hold::DEFAULT's doc and no test can measure it. Plan 04.2-04's checkpoint, item 4, asks this question in the flow it matters most in. | open |  | 2026-09-06T23:11:30.841Z |  |
 | 148 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | A message that leaves after a hold has never met a real server. Whether it arrives with the headers a recipient's client expects, and whether ten seconds feels long or short with a real mailbox syncing underneath, are both unsettled. | open |  | 2026-09-06T23:11:39.000Z |  |
+| 149 | 04.2 | unrun-verify | src/presentation/wx_send_later.rs |  | Nobody has heard the Schedule window. Whether a month choice, a day spinner, a year spinner, an hour spinner, a minute spinner and sometimes a morning-or-afternoon choice are heard as six separate named controls, each saying its own value as it changes, is the question wx_item_form.rs's module doc settled with a real screen reader session for that dialog and which has not been settled for this one. The control shape is the same and the names are set with set_accessible_name rather than set_name, so the expectation is that it carries over. That is an expectation, not a measurement. | open |  | 2026-09-06T23:59:00.000Z |  |
+| 150 | 04.2 | unrun-verify | src/presentation/wx_send_later.rs |  | Nobody has heard a refusal in the Schedule window. When a time will not do the window stays open, the reason is put in its problem line and announced at High priority through said_and_shown, and focus moves to the month control. Whether the sentence is actually heard, or is lost under whatever the screen reader says about the control focus just landed on, is the failure mode this pairing exists to avoid and only a real run settles it. | open |  | 2026-09-06T23:59:10.000Z |  |
+| 151 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | No message has ever waited hours for its time and then gone. Every test moves the clock; nothing runs the program for an afternoon. Whether a scheduled message really leaves when its moment arrives with the program left running, whether the poll timer is still asking after hours, and whether a message written on Monday and sent on Tuesday carries headers a recipient's client accepts, are all unsettled and none of them can be tested here. | open |  | 2026-09-06T23:59:20.000Z |  |
 
 ````json
 [
@@ -1940,6 +1943,42 @@ last_updated: 2026-09-06T23:12:00.392Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T23:11:39.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 149,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Nobody has heard the Schedule window. Whether a month choice, a day spinner, a year spinner, an hour spinner, a minute spinner and sometimes a morning-or-afternoon choice are heard as six separate named controls, each saying its own value as it changes, is the question wx_item_form.rs's module doc settled with a real screen reader session for that dialog and which has not been settled for this one. The control shape is the same and the names are set with set_accessible_name rather than set_name, so the expectation is that it carries over. That is an expectation, not a measurement.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T23:59:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 150,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Nobody has heard a refusal in the Schedule window. When a time will not do the window stays open, the reason is put in its problem line and announced at High priority through said_and_shown, and focus moves to the month control. Whether the sentence is actually heard, or is lost under whatever the screen reader says about the control focus just landed on, is the failure mode this pairing exists to avoid and only a real run settles it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T23:59:10.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 151,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "No message has ever waited hours for its time and then gone. Every test moves the clock; nothing runs the program for an afternoon. Whether a scheduled message really leaves when its moment arrives with the program left running, whether the poll timer is still asking after hours, and whether a message written on Monday and sent on Tuesday carries headers a recipient's client accepts, are all unsettled and none of them can be tested here.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T23:59:20.000Z",
     "resolved_at": null
   }
 ]

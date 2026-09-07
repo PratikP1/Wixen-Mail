@@ -60,10 +60,19 @@ pub struct Group {
 pub const GROUPS: &[Group] = &[
     Group {
         name: "Message",
-        keys: &[Key {
-            spoken: "Send",
-            shortcut: "Ctrl+Enter",
-        }],
+        keys: &[
+            Key {
+                spoken: "Send",
+                shortcut: "Ctrl+Enter",
+            },
+            // Beside Send rather than in Tools, because it is a way of
+            // sending and not a thing done to the message. Somebody arriving
+            // at the toolbar to send meets both without leaving the group.
+            Key {
+                spoken: "Schedule, opens a window",
+                shortcut: "Alt+H",
+            },
+        ],
     },
     Group {
         name: "Edit",

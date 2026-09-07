@@ -606,6 +606,7 @@ from somebody spelling their way to a message about invoice 4021.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Send Message | `Ctrl+Enter` | Send the current message |
+| Schedule | `Alt+H` | Ask for a date and a time for this message to go. It waits in the Outbox until then and goes on its own. There is no `Ctrl` key for this one: `Alt+H` and the Schedule button on the toolbar are the two ways in |
 | Save Draft | `Ctrl+S` | Save message as draft |
 | Go to the toolbar | `Ctrl+\` | Move to the Send button at the top of the window. The arrow keys move along the toolbar from there |
 | Attach the files on the clipboard | `Ctrl+V` | Attaches files you copied in File Explorer. Not in the message itself or in the address and subject lines, where it pastes text as usual |
@@ -613,7 +614,7 @@ from somebody spelling their way to a message about invoice 4021.
 
 **Moving around the window.** The toolbar is at the top, above the From line,
 so `Tab` runs From, To, Cc, Bcc, Subject, and then the message itself. It does
-not stop at the nine toolbar buttons on the way, and `Shift+Tab` out of the
+not stop at the ten toolbar buttons on the way, and `Shift+Tab` out of the
 message goes back to Subject. To reach the toolbar, press `Ctrl+\` from
 anywhere, or `Shift+Tab` from the From line. Each button says what it is and
 which key does the same thing, so you can hear your way along it.
@@ -790,6 +791,7 @@ cell" while the caret is inside one.
 | Button | Shortcut |
 |--------|----------|
 | Send | `Alt+N` |
+| Schedule | `Alt+H` |
 | Undo | `Alt+U` |
 | Redo | `Alt+R` |
 | Attach File | `Alt+A` |

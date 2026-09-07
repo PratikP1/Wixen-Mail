@@ -8,6 +8,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can set a message to go at a time you choose.** Schedule, on the
+  composer toolbar and on `Alt+H`, asks for a date and a time. The message
+  waits in the Outbox until then and goes on its own, with nobody pressing
+  anything. The Outbox row says the time it is set for, rather than the
+  countdown a briefly held message gets, because they are different waits and
+  the way out of each is different. Undo Send takes it back at any point while
+  it is still waiting.
+
+  The date is a month, a day and a year, and the time is an hour and a minute,
+  each a separate control with its own name. That is not a layout preference:
+  the single packed date picker Windows offers says nothing at all as you move
+  between its parts with the arrow keys, which was found with a real screen
+  reader and is the control's own limitation.
+
+  A time that will not do is refused, and the window stays open with the
+  reason said out loud as well as shown: a time that has gone, a time more
+  than a year ahead, or something that is not a date and time at all. Each one
+  says what to do next rather than only saying no. Nothing is sent and nothing
+  is queued by a refusal, and a time you picked is never quietly moved to one
+  that would be accepted. A time that has only just gone by, within the last
+  minute, is taken as the time you meant, because the minute you pick is the
+  smallest thing the controls can say.
+
+  **The entry two releases below this one already told you this worked.** It
+  did not. Every part of it was written and tested and nothing joined them up,
+  so no message could ever be set for a time. That sentence is true from this
+  release and was false when it was written.
+
 - **Wixen Mail can read a PGP encrypted message you hold the key for.**
   Experimental, and the rest of this entry is what that word is standing for.
 
@@ -2015,8 +2043,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   because it is what the release it sits under actually claimed.
 
   A message can also be set to go at a chosen time. A time in the past is
-  refused rather than sent immediately, and one more than a year ahead is
-  refused as a likely mistake.
+  refused rather than sent immediately, unless it has only just gone by, and
+  one more than a year ahead is refused as a likely mistake.
+
+  This paragraph described nothing at all until the Schedule entry at the top
+  of Unreleased. Every part of it was written and tested and none of it was
+  joined up, so there was no way to set a message for a time. The clause about
+  a time in the past is the one that needed correcting rather than only
+  connecting: a time within the last minute is taken as the time you meant,
+  because a minute is the smallest gap the controls can express.
 
 - **Undo Send is on the Tools menu, and on `Ctrl+Shift+Z`.** It takes back the
   message you sent most recently and opens it again so you can fix it, rather

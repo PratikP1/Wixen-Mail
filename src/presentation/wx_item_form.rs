@@ -821,7 +821,12 @@ const LATEST_YEAR: i32 = 2100;
 /// `existing` is the stored `YYYY-MM-DD` this date already holds, when it
 /// already holds one. Unparseable or absent, the controls open on `now`, the
 /// same as before there was anything to prefill from.
-fn build_date_fields(
+/// `pub` so the Schedule picker builds its date the same way this dialog
+/// does rather than restating the answer. It needs nothing from
+/// [`crate::application::item_fields`], which is what makes sharing it clean:
+/// that module describes things a person makes and keeps, and a send time is
+/// not one.
+pub fn build_date_fields(
     parent: &dyn WxWidget,
     order: DateOrder,
     now: chrono::DateTime<chrono::Local>,
@@ -883,7 +888,8 @@ fn build_date_fields(
 /// `existing` is the stored `HH:MM` this time already holds, when it already
 /// holds one. Unparseable or absent, the controls open on `now`, the same as
 /// before there was anything to prefill from.
-fn build_time_fields(
+/// `pub` for the same reason [`build_date_fields`] is.
+pub fn build_time_fields(
     parent: &dyn WxWidget,
     clock: Clock,
     now: chrono::DateTime<chrono::Local>,
@@ -1511,13 +1517,13 @@ fn focus(control: &Control) {
 
 /// A date read from the month, day and year controls, in the form everything
 /// downstream stores.
-fn as_stored_date(year: i32, month: u32, day: u32) -> String {
+pub fn as_stored_date(year: i32, month: u32, day: u32) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
 /// A time read from the hour and minute controls, in the form everything
 /// downstream stores.
-fn as_stored_time(hour: u32, minute: u32) -> String {
+pub fn as_stored_time(hour: u32, minute: u32) -> String {
     format!("{hour:02}:{minute:02}")
 }
 
@@ -1537,7 +1543,12 @@ fn hour_24(displayed: u32, is_pm: bool) -> u32 {
 }
 
 /// The hour a time's controls hold, already in twenty-four hour form.
-fn hour_from(fields: &TimeFields) -> u32 {
+///
+/// `pub` alongside [`build_time_fields`]: a caller that builds the controls
+/// from here has to read them back through here too, or the twelve-hour
+/// conversion is written twice and the two copies drift. What that looks like
+/// is a message set for nine in the morning going at nine at night.
+pub fn hour_from(fields: &TimeFields) -> u32 {
     match fields.am_pm {
         None => fields.hour.value().max(0) as u32,
         Some(am_pm) => hour_24(

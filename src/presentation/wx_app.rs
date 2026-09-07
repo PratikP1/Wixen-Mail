@@ -10144,6 +10144,18 @@ pub(crate) fn date_settings_from(
     }
 }
 
+/// The stored date choices, for a window that has to load them itself.
+///
+/// The pair of [`crate::presentation::theme::current_from_stored_config`], and
+/// there for the same reason: a dialog opened from another dialog is not
+/// handed the settings the main window already holds, and reading them here
+/// is better than each such window inventing its own defaults.
+pub(crate) fn date_settings_from_stored_config() -> date_display::DateSettings {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|mgr| date_settings_from(mgr.app_config()))
+        .unwrap_or_default()
+}
+
 /// The reading settings for a surface that has to load them itself.
 ///
 /// `now` is taken once here, because one reading is one utterance and every
@@ -12129,6 +12141,10 @@ fn send_the_answer(
         account_index: None,
         attachments: vec![written],
         answering: None,
+        // An answer to a meeting invitation goes as soon as the hold lets it.
+        // Nothing offers to delay one and nothing should: the person who sent
+        // the invitation is waiting on the answer.
+        send_at: None,
     };
     match queue_for_sending(state, &Some(cache.clone()), &data) {
         Ok(_) => HowItWent::Sent,
@@ -14254,8 +14270,18 @@ fn queue_for_sending(
     // held, so `take_back` answered TooLate for every row and Undo Send
     // refused every single time it was pressed. The wrapper is gone, so a
     // caller can no longer queue a message without saying what it waits for.
-    let waiting_on =
-        crate::application::sending_later::GoAfter::held(the_hold_in_force(), chrono::Local::now());
+    //
+    // The chosen time is asked about first, because it is a decision somebody
+    // made about this message and the hold is what happens when they made
+    // none. A message set for Tuesday does not also want ten seconds of
+    // grace: it has all of Monday.
+    let waiting_on = match data.send_at.as_deref() {
+        Some(chosen) => crate::application::sending_later::GoAfter::Chosen(chosen.to_string()),
+        None => crate::application::sending_later::GoAfter::held(
+            the_hold_in_force(),
+            chrono::Local::now(),
+        ),
+    };
     cache
         .queue_outbox_message_to_go(&queued, &waiting_on)
         .map_err(|e| format!("Could not queue the message: {}", e))?;
@@ -16724,6 +16750,12 @@ fn a_message_taken_back(
         account_index: None,
         attachments: the_files_it_was_queued_with(message),
         answering: the_conversation_it_was_answering(message),
+        // Taking a message back undoes the time set on it as well, and this
+        // is the honest answer rather than an oversight. The message comes
+        // back into the composer, where nothing shows a time is still set on
+        // it, so carrying one through would be a schedule somebody cannot
+        // see and cannot cancel. Pressing Schedule again is one press.
+        send_at: None,
     }
 }
 
@@ -24823,6 +24855,7 @@ mod reply_recipients_reach_the_wire {
             account_index: None,
             attachments: Vec::new(),
             answering: None,
+            send_at: None,
         };
 
         // The existing test-only cache builder, not a second one: it already
@@ -24932,6 +24965,7 @@ mod reply_recipients_reach_the_wire {
             account_index: None,
             attachments: Vec::new(),
             answering: None,
+            send_at: None,
         };
 
         let cache = super::tests::test_cache();
@@ -25037,6 +25071,7 @@ mod reply_recipients_reach_the_wire {
             account_index: None,
             attachments: Vec::new(),
             answering: None,
+            send_at: None,
         };
 
         let cache = super::tests::test_cache();
@@ -25135,6 +25170,7 @@ mod reply_recipients_reach_the_wire {
             account_index: None,
             attachments: Vec::new(),
             answering: None,
+            send_at: None,
         };
 
         let cache = super::tests::test_cache();

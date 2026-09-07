@@ -1139,6 +1139,7 @@ pub enum Reached {
     Bcc,
     Subject,
     Send,
+    Schedule,
     Undo,
     Redo,
     Format,
@@ -1151,13 +1152,14 @@ pub enum Reached {
 
 impl Reached {
     /// Every one, in the order the page indexes them by.
-    pub const ALL: [Reached; 14] = [
+    pub const ALL: [Reached; 15] = [
         Reached::From,
         Reached::To,
         Reached::Cc,
         Reached::Bcc,
         Reached::Subject,
         Reached::Send,
+        Reached::Schedule,
         Reached::Undo,
         Reached::Redo,
         Reached::Format,
@@ -1177,6 +1179,15 @@ impl Reached {
             Self::Bcc => "&Bcc:",
             Self::Subject => "&Subject:",
             Self::Send => "Se&nd",
+            // "Send Later" was the first name and it could not have a key.
+            // Every letter in those two words was taken: S is Subject, N is
+            // Send, D is Save Draft, L is Cancel, A is Attach, T is To, R is
+            // Redo, and E is the People found list, which is a mnemonic in
+            // this window that is not on this list at all.
+            // `test_the_key_that_reaches_the_list_is_not_one_this_window_already_uses`
+            // is what said so. "Schedule" is the word every other mail
+            // program uses for this, and H was free.
+            Self::Schedule => "Sc&hedule...",
             Self::Undo => "&Undo",
             Self::Redo => "&Redo",
             Self::Format => "F&ormat...",
@@ -1200,6 +1211,7 @@ impl Reached {
             Self::Bcc => 'b',
             Self::Subject => 's',
             Self::Send => 'n',
+            Self::Schedule => 'h',
             Self::Undo => 'u',
             Self::Redo => 'r',
             Self::Format => 'o',
@@ -2089,6 +2101,20 @@ mod tests {
                 reached.label(),
             );
         }
+    }
+
+    #[test]
+    fn test_scheduling_a_message_can_be_reached_from_the_body() {
+        // A toolbar button that is not in this list is one the keyboard
+        // cannot get to from the message body, because the body is a web view
+        // and a web view keeps every key it is given. The page's key table is
+        // generated from `ALL`, so a variant left out of it has a label with
+        // an underlined letter that does nothing.
+        assert!(
+            Reached::ALL.contains(&Reached::Schedule),
+            "Schedule is not in the reach list, so Alt+{} does not leave the body",
+            Reached::Schedule.letter().to_ascii_uppercase(),
+        );
     }
 
     #[test]

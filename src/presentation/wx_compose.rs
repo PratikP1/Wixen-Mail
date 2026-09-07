@@ -52,6 +52,12 @@ const ID_SPELL_IGNORE_ALL: Id = ID_HIGHEST + 157;
 const ID_SPELL_ADD: Id = ID_HIGHEST + 158;
 const ID_FORMAT_MENU: Id = ID_HIGHEST + 151;
 const ID_SEND: Id = ID_HIGHEST + 110;
+/// Beside `ID_SEND` and outside the run kept for the formatting commands,
+/// which is `ID_FORMAT_FIRST..=ID_FORMAT_LAST`. Added to the list in
+/// `test_nothing_else_takes_an_id_the_formatting_run_needs` in the same
+/// change, because an id added without being added to that list is exactly
+/// the case that test's comment describes.
+const ID_SCHEDULE: Id = ID_HIGHEST + 116;
 const ID_SAVE_DRAFT: Id = ID_HIGHEST + 111;
 const ID_DISCARD: Id = ID_HIGHEST + 112;
 const ID_ATTACH: Id = ID_HIGHEST + 113;
@@ -106,6 +112,40 @@ pub struct ComposeData {
     /// somebody typed, so it survives every way out of the window: sending,
     /// saving a draft, and the automatic save.
     pub answering: Option<crate::application::threading::Continuing>,
+    /// The moment Schedule set, when somebody set one.
+    ///
+    /// Already written down by
+    /// [`crate::application::sending_later::stored`], because the picker is
+    /// where the choice was made and a moment turned into text twice is a
+    /// moment two pieces of code can disagree about. `None` is every ordinary
+    /// Send, which goes on being held for the length of the hold and nothing
+    /// else.
+    pub send_at: Option<String>,
+}
+
+/// Ask when this message should go, and close the composer if a time was set.
+///
+/// One routine for both ways in, the toolbar button and Alt+E out of the
+/// message body, so the two cannot come to behave differently. Cancelling the
+/// picker leaves the composer exactly as it was: nothing is written, nothing
+/// is sent, and Send goes on meaning what it always meant.
+fn ask_when_and_close(
+    dialog: &Dialog,
+    chosen_moment: &std::rc::Rc<std::cell::RefCell<Option<String>>>,
+    a11y: &std::sync::Arc<crate::presentation::accessibility::Accessibility>,
+) {
+    let Some(at) = crate::presentation::wx_send_later::ask_when_to_send(
+        dialog,
+        chrono::Local::now(),
+        crate::presentation::wx_app::date_settings_from_stored_config(),
+        a11y,
+    ) else {
+        return;
+    };
+    // Written down here rather than at the queue, so what the picker settled
+    // and what the row carries are one value that crossed one boundary.
+    *chosen_moment.borrow_mut() = Some(crate::application::sending_later::stored(at));
+    dialog.end_modal(ID_SCHEDULE);
 }
 
 /// Mode for opening the compose dialog
@@ -358,6 +398,8 @@ fn compose_title(mode: &ComposeMode) -> &'static str {
 enum Deferred {
     /// Walk the spelling of the message.
     Spelling,
+    /// Ask when this message should go.
+    Schedule,
     /// Leave the message body. `back` is Shift+Tab.
     Leaving { back: bool },
     /// Go to the toolbar, which sits ahead of the fields.
@@ -590,6 +632,7 @@ pub struct ComposeDialogWidgets {
     pub found_list: ListBox,
     pub subject_field: TextCtrl,
     pub send_toolbar_btn: Button,
+    pub schedule_btn: Button,
     pub undo_btn: Button,
     pub redo_btn: Button,
     pub bold_btn: Button,
@@ -644,6 +687,17 @@ pub fn build_compose_dialog(
         .build();
     set_accessible_name(&send_toolbar_btn, "Send message, Ctrl+Enter");
     toolbar_sizer.add(&send_toolbar_btn, 0, SizerFlag::All, 2);
+
+    // Beside Send, because that is where somebody looking for it will be.
+    // It has no accelerator of its own, only Alt+H and the toolbar cycle, so
+    // the name says that rather than naming a key that does not exist.
+    let schedule_btn = Button::builder(&dialog)
+        .with_label(Reached::Schedule.label())
+        .with_id(ID_SCHEDULE)
+        .with_size(Size::new(104, 30))
+        .build();
+    set_accessible_name(&schedule_btn, "Schedule when this message goes, Alt+H");
+    toolbar_sizer.add(&schedule_btn, 0, SizerFlag::All, 2);
     toolbar_sizer.add_spacer(12);
 
     // Undo / Redo
@@ -974,6 +1028,7 @@ pub fn build_compose_dialog(
         found_list,
         subject_field,
         send_toolbar_btn,
+        schedule_btn,
         undo_btn,
         redo_btn,
         bold_btn,
@@ -1035,6 +1090,7 @@ pub fn show_compose_dialog_full(
         found_list,
         subject_field,
         send_toolbar_btn,
+        schedule_btn,
         undo_btn,
         redo_btn,
         bold_btn,
@@ -1323,6 +1379,7 @@ pub fn show_compose_dialog_full(
     // it is written once, here, next to the comment saying so.
     let toolbar_buttons = [
         send_toolbar_btn,
+        schedule_btn,
         undo_btn,
         redo_btn,
         bold_btn,
@@ -1637,6 +1694,22 @@ pub fn show_compose_dialog_full(
         }
     });
 
+    // The time somebody set, held between the picker closing and this window
+    // closing. Written by whichever of the two routes into Schedule was
+    // taken, read once when the window ends. `None` is every other way out,
+    // including cancelling the picker, and it means Send goes on meaning what
+    // it always meant.
+    let chosen_moment: std::rc::Rc<std::cell::RefCell<Option<String>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
+
+    schedule_btn.on_click({
+        let chosen_moment = std::rc::Rc::clone(&chosen_moment);
+        let a11y = std::sync::Arc::clone(&a11y);
+        move |_| {
+            ask_when_and_close(&dialog, &chosen_moment, &a11y);
+        }
+    });
+
     // Ctrl+Enter, Ctrl+S and Escape come out of the page rather than from a
     // key handler on the control. A web view consumes keys once it has focus,
     // so the page binds the ones that have to leave and posts them here. The
@@ -1663,6 +1736,11 @@ pub fn show_compose_dialog_full(
 
     let read_compose_data = {
         let attached = attached.clone();
+        // Read here rather than at the one place that ends with Schedule,
+        // so every way out of the window carries it and none of them has to
+        // remember to. Saving a draft carries it too and drops it, which is
+        // right: a draft is not queued, so it is not waiting for anything.
+        let chosen_moment = std::rc::Rc::clone(&chosen_moment);
         move || {
             let (body, body_plain) = editor_document::message_from_editor(
                 body_editor.run_script(&editor_document::read_body_script()),
@@ -1688,6 +1766,7 @@ pub fn show_compose_dialog_full(
                     .map(|file| file.path.clone())
                     .collect(),
                 answering: answering.clone(),
+                send_at: chosen_moment.borrow().clone(),
             })
         }
     };
@@ -1994,6 +2073,9 @@ pub fn show_compose_dialog_full(
     later.on_tick({
         let waiting = waiting.clone();
         let a11y = a11y.clone();
+        // The same cell the toolbar button writes, so both routes into Send
+        // Later put the chosen time in one place and the window reads it once.
+        let chosen_moment_for_the_body = std::rc::Rc::clone(&chosen_moment);
         // Weak, deliberately. The handler this timer holds has to be able to
         // put the timer back on for the next look at the answers, and an owning
         // clone in here would be a timer holding a closure holding the timer:
@@ -2027,6 +2109,9 @@ pub fn show_compose_dialog_full(
             }
             match waiting.take() {
                 Some(Deferred::Spelling) => check_spelling(&dialog, body_editor, &a11y),
+                Some(Deferred::Schedule) => {
+                    ask_when_and_close(&dialog, &chosen_moment_for_the_body, &a11y)
+                }
                 // Where the toolbar was left, so leaving and coming back lands
                 // where somebody was. The group is named on arrival, always,
                 // because arriving is the moment nobody knows where they are.
@@ -2220,6 +2305,17 @@ pub fn show_compose_dialog_full(
                         }
                         Reached::Subject => subject_field.set_focus(),
                         Reached::Send => dialog.end_modal(ID_SEND),
+                        // Through the timer for the same reason F7 is: this
+                        // is the web view's own callback, and the picker is a
+                        // modal dialog, so opening it now starts a nested
+                        // event loop from inside a callback the browser
+                        // control has not finished making. The toolbar
+                        // button's version runs on the ordinary event loop
+                        // already, so this puts both routes on it.
+                        Reached::Schedule => {
+                            waiting.set(Some(Deferred::Schedule));
+                            later.start(1, true);
+                        }
                         Reached::Undo => apply_undo(editor_document::Format::Undo),
                         Reached::Redo => apply_undo(editor_document::Format::Redo),
                         Reached::Format => show_format_menu(&dialog),
@@ -2404,7 +2500,12 @@ pub fn show_compose_dialog_full(
             );
             break 'compose ComposeResult::SaveDraft(data);
         }
-        if result != ID_SEND && result != ID_SAVE_DRAFT {
+        // Schedule goes down every step Send goes down. It is the same
+        // message to the same people, checked the same way and previewed the
+        // same way; the only difference is the moment written on the row, and
+        // that is already in `send_at` by the time this runs. Giving it a
+        // path of its own would be a second Send that drifts from the first.
+        if result != ID_SEND && result != ID_SCHEDULE && result != ID_SAVE_DRAFT {
             break 'compose ComposeResult::Cancelled;
         }
 
@@ -2428,7 +2529,7 @@ pub fn show_compose_dialog_full(
         };
 
         match result {
-            _ if result == ID_SEND => {
+            _ if result == ID_SEND || result == ID_SCHEDULE => {
                 // Hand the window back rather than end the message. Breaking
                 // here with Cancelled threw away everything that had been
                 // written: the window was already down by the time this ran,
@@ -3685,6 +3786,7 @@ mod tests {
             ("ID_SPELL_IGNORE_ALL", ID_SPELL_IGNORE_ALL),
             ("ID_SPELL_ADD", ID_SPELL_ADD),
             ("ID_SEND", ID_SEND),
+            ("ID_SCHEDULE", ID_SCHEDULE),
             ("ID_SAVE_DRAFT", ID_SAVE_DRAFT),
             ("ID_DISCARD", ID_DISCARD),
             ("ID_ATTACH", ID_ATTACH),
@@ -3979,6 +4081,7 @@ mod tests {
             account_index: None,
             attachments: Vec::new(),
             answering: None,
+            send_at: None,
         }
     }
 

@@ -2802,6 +2802,54 @@ fn test_the_composers_send_passes_the_hold_to_the_queue() {
     );
 }
 
+/// Whether a time somebody picked reaches the row, rather than being worked
+/// out and dropped.
+///
+/// The same question as the guard above and about the other kind of wait, and
+/// it is asked because the answer was no for as long as the feature has
+/// existed. `sending_later::schedule` had no caller anywhere in `src/` until
+/// `04.2-02`, and `GoAfter::Chosen` was built only under `#[cfg(test)]`, while
+/// `docs/changelog.md` told people a message could be set to go at a chosen
+/// time. Every part worked; nothing joined them.
+///
+/// Read from the source because `queue_for_sending` lives in
+/// `src/presentation/wx_app.rs`, where a `#[test]` costs 83 guard records a
+/// rebuild apiece at the commit-time count check. What the source cannot see,
+/// whether such a row really waits and then goes, is driven over a real
+/// database in `data::message_cache::outbox`.
+#[test]
+fn test_the_composers_send_later_passes_the_chosen_time_to_the_queue() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let body = body_of(&app, "fn queue_for_sending(");
+
+    assert!(
+        body.contains("GoAfter::Chosen("),
+        "nothing in the send path ever writes a chosen time, so a message set for \
+         Tuesday is queued as one that goes now"
+    );
+
+    // And it is the time that was chosen, not one worked out here. A branch
+    // that built its own moment would leave the picker deciding nothing, which
+    // is the shape the hold had before 04.2-01.
+    assert!(
+        body.contains("send_at"),
+        "the send path builds a chosen time without reading the one the picker \
+         set, so what somebody picked reaches nothing"
+    );
+
+    let worked_out = body
+        .find("let waiting_on")
+        .expect("the send path no longer names what the message is waiting for");
+    let queued = body
+        .find("queue_outbox_message_to_go(")
+        .expect("the send path does not tell the queue what the message is waiting for");
+    assert!(
+        worked_out < queued && body[worked_out..queued].contains("send_at"),
+        "the chosen time is read somewhere other than where the row's wait is \
+         worked out, so it cannot be what the row carries"
+    );
+}
+
 /// Undo Send writes the draft before it takes the row out of the queue.
 ///
 /// The ordering is the whole safety of the command, and reversing it loses

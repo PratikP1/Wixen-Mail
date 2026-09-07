@@ -53,6 +53,7 @@ pub mod wx_notes_module;
 pub mod wx_reader;
 pub mod wx_reminder_alert;
 pub mod wx_reminders_module;
+pub mod wx_send_later;
 pub mod wx_settings;
 pub mod wx_tasks_module;
 pub mod wx_thread_view;
