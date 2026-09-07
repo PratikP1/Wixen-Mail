@@ -368,12 +368,27 @@ def with_its_counts(block: list[str], counts: list[tuple[str, int]]) -> list[str
 
     >>> with_its_counts(['red = ["a"]', "", "# about the next one"], [("src/a.rs", 1)])[-2:]
     ['', '# about the next one']
+
+    A count already written on one line closes on that line, so nothing after
+    it is swallowed. Read as an opening bracket waiting for a `]` of its own,
+    it eats the rest of the block: the blank line before the next record, and
+    for the last record in the file the empty string that the final newline
+    leaves behind. That really happened. Rewriting the last record dropped the
+    file's trailing newline, and what said so was a fixture-sanity case in
+    `check.test.sh` reporting that a copy of the record file differed by no
+    lines, which reads as a broken fixture rather than as this:
+
+    >>> with_its_counts(
+    ...     ['red = ["a"]', 'tests_last_seen = [{ file = "src/a.rs", tests = 2 }]', ""],
+    ...     [("src/a.rs", 3)],
+    ... )[-1:]
+    ['']
     """
     kept: list[str] = []
     dropping = False
     for line in block:
         if line.startswith("tests_last_seen = ["):
-            dropping = True
+            dropping = not line.rstrip().endswith("]")
             continue
         if dropping:
             dropping = line != "]"

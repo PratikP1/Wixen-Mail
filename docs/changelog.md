@@ -269,6 +269,39 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A message whose pictures were held back now says how many, why, and where
+  the switch is.**
+
+  Wixen Mail does not fetch the pictures a message only points at, because
+  fetching one tells the server it came from that you opened the message, on
+  this computer, at this moment. That is how mail tracking works and it is on
+  by default.
+
+  What you got until this release was a marker where each picture would have
+  been: "[Picture not shown: Our spring range]", or a note that the sender
+  described nothing. In a marketing message that is thirty markers in a row,
+  read out one after another, with nothing saying there were thirty, nothing
+  saying why, and nothing saying where to change it.
+
+  Now the message opens with one sentence above it: "30 pictures were not
+  shown, because fetching them would have told the senders you opened this.
+  Settings, Reading has the switch." It is above the message rather than under
+  it, so you meet the number before the markers it is about. A message that
+  held nothing back says nothing, so ordinary mail is unchanged. One held-back
+  picture is reported as one picture, not "1 pictures". A conversation says it
+  under each message that held pictures back, with that message's own number,
+  rather than one total for the page that would not say which message it meant.
+
+  A message you are writing yourself does not get the sentence, whatever the
+  setting says. Your composer preview holds the pictures back the same way, and
+  it should: the preview is a browser and would reach out to every server your
+  message points at before you had sent it. What it does not do is tell you
+  that the sender learned you opened this, because the sender is you.
+
+  The words and the count were written a while ago and were correct. Nothing
+  showed them to anybody. Both places that counted the held-back pictures threw
+  the number away.
+
 - **Answering a meeting now tells the organiser's calendar. Until this release
   it sent them a file to open by hand, and their guest list never learned your
   answer.**

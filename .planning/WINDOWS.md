@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 141
+open_count: 143
 waived_count: 0
-fixed_count: 14
-total_count: 155
-last_updated: 2026-09-07T05:52:58.235Z
+fixed_count: 15
+total_count: 158
+last_updated: 2026-09-07T07:21:59.339Z
 ---
 
 # Broken Windows Ledger
@@ -170,6 +170,9 @@ last_updated: 2026-09-07T05:52:58.235Z
 | 153 | 04.2 | unrun-verify | src/application/attaching.rs |  | Nobody has forwarded an invitation from this program to a real recipient. A .ics attachment is now declared method=REQUEST or method=CANCEL from what the document says, which changes what a recipient's client offers them, and no client has ever been shown one. Whether a forwarded invitation really presents as a meeting to answer, and whether the ORGANIZER inside it is attributed to whoever called the meeting rather than to the forwarder, are unsettled here. | open |  | 2026-09-07T03:43:43.233Z |  |
 | 154 | 04.2 | unrun-verify | src/application/answered_meetings.rs |  | The accepted meeting is written with pending set, which is what puts it in front of the push, and no push path in this project has ever run against a real account. Whether a CalDAV, Google or Microsoft calendar accepts an event this program created from an invitation, with the invitation's own UID as the provider identity and no etag, is unsettled. If a provider refuses it the meeting stays correct on this computer and never reaches any other device, which reads to the person exactly like it working. | open |  | 2026-09-07T05:52:49.797Z |  |
 | 155 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Answering a meeting has not been heard with a screen reader. Four things are unsettled by ear: whether accepting is announced once or twice now that the answer is filed as well as sent; whether the meeting is read out with its time and its busy state when the calendar is opened afterwards; whether a declined meeting is read as free rather than booked; and, since pressing Accept sends with no confirmation step by the decision of 2026-09-06, whether anything spoken in the seconds after pressing it by mistake points at Undo Send. The last is the one structure cannot show, and a finding of nothing pointed at Undo Send is a result worth having rather than a failed run. | open |  | 2026-09-07T05:52:58.235Z |  |
+| 156 | 04.2 | unrun-verify | src/presentation/html_renderer.rs |  | The sentence about held-back pictures has not been heard with a screen reader. It is placed above the message body, after the message's own heading in a conversation, and read in order it arrives before the thirty markers it is about. Whether it is heard as orientation or as one more thing in the way is the only question here that structure cannot answer, and the answer changes the placement rather than the words: under the heading instead of above the body, or at the end, or in the announcement path instead of the document. Thirty markers in a marketing message is the case to try it on. | open |  | 2026-09-07T07:03:59.342Z |  |
+| 157 | 04.2 | unrun-verify | src/presentation/wx_compose.rs |  | One hop is uncovered and it is the hop this plan is about. wx_compose's preview now asks for HtmlRenderer::for_a_message_being_written, and no test drives that window, so changing that one line back to new() reddens nothing. It was measured rather than assumed: the guard record breaking the constructor reddens a test, and a record breaking the call site would redden none. The constructor's own answer is pinned by a test, and the default a caller gets by saying nothing is the reading one, so a new call site that forgets is wrong in the direction that tells a reader too much rather than a writer something false. What is unverified is that this particular call site still asks. | open |  | 2026-09-07T07:04:11.587Z |  |
+| 158 | 04.2 | unrun-verify | src/presentation/html_renderer.rs |  | test_a_message_with_nothing_held_back_says_nothing was rewritten against the document and was green on arrival, because at the time of the rewrite no document said the sentence at all. It is the assertion that stops an ordinary message growing a line about pictures nobody held back, and it has never been red. Taking the emptiness check out of what_a_reader_is_told_was_held_back by hand would settle whether it would notice; it was not done. | fixed |  | 2026-09-07T07:04:12.210Z | 2026-09-07T07:21:59.339Z |
 
 ````json
 [
@@ -2032,6 +2035,42 @@ last_updated: 2026-09-07T05:52:58.235Z
     "reason": "",
     "recorded_at": "2026-09-07T05:52:58.235Z",
     "resolved_at": null
+  },
+  {
+    "id": 156,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/html_renderer.rs",
+    "line": null,
+    "description": "The sentence about held-back pictures has not been heard with a screen reader. It is placed above the message body, after the message's own heading in a conversation, and read in order it arrives before the thirty markers it is about. Whether it is heard as orientation or as one more thing in the way is the only question here that structure cannot answer, and the answer changes the placement rather than the words: under the heading instead of above the body, or at the end, or in the announcement path instead of the document. Thirty markers in a marketing message is the case to try it on.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T07:03:59.342Z",
+    "resolved_at": null
+  },
+  {
+    "id": 157,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "One hop is uncovered and it is the hop this plan is about. wx_compose's preview now asks for HtmlRenderer::for_a_message_being_written, and no test drives that window, so changing that one line back to new() reddens nothing. It was measured rather than assumed: the guard record breaking the constructor reddens a test, and a record breaking the call site would redden none. The constructor's own answer is pinned by a test, and the default a caller gets by saying nothing is the reading one, so a new call site that forgets is wrong in the direction that tells a reader too much rather than a writer something false. What is unverified is that this particular call site still asks.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T07:04:11.587Z",
+    "resolved_at": null
+  },
+  {
+    "id": 158,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/html_renderer.rs",
+    "line": null,
+    "description": "test_a_message_with_nothing_held_back_says_nothing was rewritten against the document and was green on arrival, because at the time of the rewrite no document said the sentence at all. It is the assertion that stops an ordinary message growing a line about pictures nobody held back, and it has never been red. Taking the emptiness check out of what_a_reader_is_told_was_held_back by hand would settle whether it would notice; it was not done.",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-07T07:04:12.210Z",
+    "resolved_at": "2026-09-07T07:21:59.339Z"
   }
 ]
 ````
