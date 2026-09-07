@@ -174,6 +174,22 @@ Four ledger entries, 175 to 178.
   `stopped_at` and `state_head` are also written twice and are unheld.
   `stopped_at` is the one that already went wrong.
 
+## No guard records, on purpose
+
+`guards/guards.toml` is unchanged at 649 records. The rule in `CLAUDE.md` binds
+an integration test that guards a `src/` module from outside, because without a
+record such a test runs only when its own file changes. This target guards no
+source module, and the "runs on the wrong commits" half is solved directly by
+naming it in both of `check.sh`'s lists, which is a stronger fix than a record
+would have been: it runs every time, not once a milestone.
+
+What a record would still add is a break applied to the real file rather than to
+a spliced copy of it. That was done once, by hand, seven times, and is the table
+above. What the record would buy on top is the sweep re-asking it later. That
+was judged not worth seven more records on a sweep already estimated at fifteen
+hours, when the six companions ask the same question on every commit. Written
+down here rather than left as an omission somebody has to notice.
+
 ## Where it lives and why
 
 A new integration target, not `tests/house_style.rs` and not `tests/wired.rs`.
