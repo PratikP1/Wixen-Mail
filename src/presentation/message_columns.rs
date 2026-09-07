@@ -943,16 +943,70 @@ mod tests {
     }
 
     #[test]
-    fn test_both_levels_survive_being_stored() {
-        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
-        layout.sort.then = Some(By {
+    fn test_a_sent_layout_and_both_its_levels_come_back_as_a_sent_layout() {
+        // Rewritten from `test_both_levels_survive_being_stored`, which built
+        // an inbox layout, handed `Inbox` back into `from_stored` and asserted
+        // the sort survived. The kind was supplied by the caller at both ends,
+        // so the test could not see that `to_stored` never wrote it, which is
+        // the whole of the defect: every read site in the program supplies
+        // `Inbox` the same way, so a layout arranged in Sent came back as the
+        // inbox's, and the inbox opened sorted by the date the sender claimed.
+        let mut sent = ColumnLayout::defaults_for(FolderKind::Sent);
+        sent.sort.then = Some(By {
             column: MessageColumn::Unread,
             direction: SortDirection::Ascending,
         });
 
-        let back = ColumnLayout::from_stored(&layout.to_stored(), FolderKind::Inbox);
+        let back = ColumnLayout::from_stored(&sent.to_stored(), FolderKind::Inbox);
 
-        assert_eq!(back.sort, layout.sort);
+        assert_eq!(
+            back.kind,
+            FolderKind::Sent,
+            "a layout arranged in Sent came back as an inbox one, so sorting a \
+             column in Sent decides how the inbox opens after a restart"
+        );
+        assert_eq!(back.sort, sent.sort);
+        assert_eq!(back.visible(), sent.visible());
+    }
+
+    #[test]
+    fn test_a_stored_kind_this_build_does_not_know_does_not_lose_the_layout() {
+        // The same forgiveness the column names and the second sort level
+        // already get. A newer build may know a kind of folder this one does
+        // not, and somebody's arrangement must not be the price of reading it.
+        let newer = "unread,subject|subject:asc@invented";
+
+        let back = ColumnLayout::from_stored(newer, FolderKind::Inbox);
+
+        assert_eq!(
+            back.visible(),
+            vec![MessageColumn::Unread, MessageColumn::Subject]
+        );
+        assert_eq!(back.sort.column, MessageColumn::Subject);
+        assert_eq!(back.sort.direction, SortDirection::Ascending);
+    }
+
+    #[test]
+    fn test_a_layout_stored_before_there_was_a_kind_still_reads() {
+        // On the disk of everybody who has ever arranged a column, because no
+        // build until now wrote which folder a layout was arranged in. Losing
+        // their columns and their sort over a format change would be the same
+        // poor trade the second sort level refused to make.
+        let old =
+            "unread,attachment,subject,correspondent,received,snippet|subject:asc;unread:desc";
+
+        let back = ColumnLayout::from_stored(old, FolderKind::Inbox);
+
+        assert_eq!(back.visible().len(), 6);
+        assert_eq!(back.sort.column, MessageColumn::Subject);
+        assert_eq!(back.sort.direction, SortDirection::Ascending);
+        assert_eq!(
+            back.sort.then,
+            Some(By {
+                column: MessageColumn::Unread,
+                direction: SortDirection::Descending
+            })
+        );
     }
 
     #[test]
