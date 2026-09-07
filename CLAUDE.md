@@ -291,6 +291,25 @@ branch it was learned on. Both cases it existed for are now handled: a branch
 defers the slow half, and a commit whose tests must fail says so in its message
 and is measured against what it said.
 
+**`cargo test` takes one `--lib`, and 55 plans have told their executor to
+pass several.** `cargo test --lib a:: --lib b::` is refused by cargo. It has
+been written into plans since phase 1, in `<verify><automated>` blocks and in
+acceptance criteria, and it went unnoticed until 2026-09-07 because nobody had
+ever run one. Each plan copied the shape from the plan before it.
+
+Several module paths need several runs, joined so a failure stops the line:
+
+```bash
+cargo test --lib application::sending_later:: && cargo test --lib data::config::
+```
+
+What it cost was not the typo. It is that a plan's verification command is
+written as evidence the plan can be checked, and for a year none of these could
+be run at all. **A command in a plan is a claim about that plan, and an untested
+one is the same kind of thing this file keeps warning about: a check nobody
+reads.** Two executors found it independently, three plans apart, because the
+finding could not reach a plan that was already written.
+
 **The scripts that decide all this have their own suites, and the gate runs
 them.** `scripts/*.test.sh` runs on every invocation of `check.sh`, in every
 mode, before anything else, and in CI. It costs milliseconds. For one day these
