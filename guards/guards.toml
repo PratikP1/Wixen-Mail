@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 456 records have arrived since and have not been through it.
+# 457 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16708,4 +16708,31 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs", tests = 3 },
+]
+
+[[guard]]
+# The Scrolling section of Settings asks whether Windows has overruled smooth
+# scrolling. It used to decide from the machine alone and then hand the question
+# a literal `true`, so somebody who had never ticked the box was told, under a
+# box they had left alone, that Windows had overruled them.
+#
+# The break is that literal, put back, and it is the only shape this defect
+# takes: the function itself was never wrong, and its three no-op answers were
+# tested and passing the whole time it could not be reached with the arguments
+# that produce one. So the tests on the function cannot tell the two
+# implementations apart and this is read out of the source instead, over what a
+# release build compiles.
+#
+# Measured by hand on 2026-09-07 with `cargo test --all-targets --no-fail-fast`:
+# one test, 6571 passed, and every other target green.
+name = "the settings screen asks about smooth scrolling with the setting somebody has"
+file = "src/presentation/wx_settings.rs"
+before = """    if let Some(said) = what_the_machine_has_overruled(config.smooth_scrolling, system_motion()) {"""
+after = """    if let Some(said) = what_the_machine_has_overruled(true, system_motion()) {"""
+red = [
+    "application::scrolling::tests::test_the_settings_screen_asks_about_the_setting_somebody_has",
+]
+tests_last_seen = [
+    { file = "src/application/scrolling.rs", tests = 10 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
