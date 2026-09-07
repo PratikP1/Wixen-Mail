@@ -872,9 +872,9 @@ by every plan under the same-commit rules and `src/presentation/wx_app.rs` by
 seven, so the plans are ordered rather than run in parallel. Plans 04 and 06 each
 carry a blocking screen reader checkpoint and neither is autonomous.
 
-- [ ] `04.2-01-PLAN.md` — A message is really held, so Undo Send takes something back
-- [ ] `04.2-02-PLAN.md` — A message can be set to go at a chosen time, and a time that will not do is refused with a reason
-- [ ] `04.2-03-PLAN.md` — A meeting reply arrives declared as a reply, named `reply.ics`
+- [x] `04.2-01-PLAN.md` — A message is really held, so Undo Send takes something back
+- [x] `04.2-02-PLAN.md` — A message can be set to go at a chosen time, and a time that will not do is refused with a reason
+- [x] `04.2-03-PLAN.md` — A meeting reply arrives declared as a reply, named `reply.ics`
 - [ ] `04.2-04-PLAN.md` — Accepting a meeting puts it on the calendar, once, taking up its time
 - [ ] `04.2-05-PLAN.md` — A reader is told how many pictures were held back, why, and where the switch is
 - [ ] `04.2-06-PLAN.md` — Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first
