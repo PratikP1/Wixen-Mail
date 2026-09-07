@@ -44,11 +44,11 @@ Wixen-Mail/
 
 **`src/data/`:**
 - Purpose: persistence layer.
-- Contains: `account.rs` (Account model/storage), `config.rs` (`ConfigManager`), `email_providers.rs` (static provider metadata for autodiscovery), `message_cache/` (the SQLite database module — schema, queries, migrations).
+- Contains: `account.rs` (Account model/storage), `config.rs` (`ConfigManager`), `email_providers.rs` (static provider metadata for autodiscovery), `message_cache/` (the SQLite database module: schema, queries, migrations).
 - Key files: `src/data/message_cache/`, `src/data/account.rs`, `src/data/config.rs`.
 
 **`src/application/`:**
-- Purpose: business logic — one file per concern, named after the behavior it implements (verb/gerund style) rather than a noun-plus-suffix.
+- Purpose: business logic, one file per concern, named after the behavior it implements (verb/gerund style) rather than a noun-plus-suffix.
 - Contains: mail send/receive orchestration (`mail_controller.rs`, `mail_session.rs`, `mail_sync.rs`, `mail_auth.rs`), sync per PIM domain (`caldav_sync.rs`, `contacts_sync.rs`, `tasks_sync.rs`, `collection_sync.rs`, `pop_sync.rs`), composition (`draft_message.rs`, `attaching.rs`, `sign_off.rs`, `sending_later.rs`), filtering/search (`filters.rs`, `search.rs`, `saved_searches.rs`, `categories.rs`), PIM item lifecycle (`new_item.rs`, `editing.rs`, `deletions.rs`, `occurrences.rs`, `repeating.rs`, `invitations.rs`).
 - Key files: `src/application/mail_controller.rs` (hub for live protocol sessions), `src/application/accounts.rs`.
 
@@ -111,7 +111,7 @@ Wixen-Mail/
 ## Naming Conventions
 
 **Files:**
-- `src/application/`: named after the behavior/verb, not a noun+suffix — `closing.rs`, `filing.rs`, `handover.rs`, `answering.rs`, not `CloseManager.rs` or `filing_service.rs`.
+- `src/application/`: named after the behavior/verb, not a noun+suffix, so `closing.rs`, `filing.rs`, `handover.rs` and `answering.rs`, not `CloseManager.rs` or `filing_service.rs`.
 - `src/presentation/`: UI screens prefixed `wx_` (`wx_compose.rs`, `wx_settings.rs`); shared UI infrastructure has no prefix (`theme.rs`, `panes.rs`).
 - `src/service/`: named after the protocol or service directly (`caldav.rs`, `oauth.rs`, `security.rs`).
 - Sync modules end in `_sync.rs` (`mail_sync.rs`, `caldav_sync.rs`, `contacts_sync.rs`, `tasks_sync.rs`, `collection_sync.rs`, `pop_sync.rs`).
@@ -136,8 +136,8 @@ Wixen-Mail/
 - Accessibility names must go through `presentation::accessibility::names::set_accessible_name` (never `wxWindow::set_name()`), and any dynamic announcement through `presentation::accessibility::screen_reader`/feedback events.
 
 **New data stored persistently:**
-- If it's cacheable mail/PIM data: extend `src/data/message_cache/` with `CREATE TABLE IF NOT EXISTS` / `ensure_column_exists` — never drop or rename a shipped column.
-- If it's a secret: route through `service::credentials`, `service::oauth`, or `service::caldav` (one owner per secret name) — never into `message_cache.db`.
+- If it's cacheable mail/PIM data: extend `src/data/message_cache/` with `CREATE TABLE IF NOT EXISTS` / `ensure_column_exists`. Never drop or rename a shipped column.
+- If it's a secret: route through `service::credentials`, `service::oauth`, or `service::caldav` (one owner per secret name). Never into `message_cache.db`.
 
 **Utilities:**
 - Shared, business-logic-free helpers: `src/common/`.

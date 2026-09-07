@@ -114,9 +114,9 @@ Full detail: `.planning/INGEST-CONFLICTS.md`
 
 ## Files
 
-- `.planning/intel/decisions.md` — 11 entries from 2 ADRs
-- `.planning/intel/requirements.md` — 30 entries from 1 PRD
-- `.planning/intel/constraints.md` — 29 entries from 1 SPEC
-- `.planning/intel/context.md` — 22 topics from 22 DOCs
-- `.planning/INGEST-CONFLICTS.md` — conflict report, three buckets
-- `.planning/intel/classifications/` — the 26 per-document classification files
+- `.planning/intel/decisions.md`: 11 entries from 2 ADRs
+- `.planning/intel/requirements.md`: 30 entries from 1 PRD
+- `.planning/intel/constraints.md`: 29 entries from 1 SPEC
+- `.planning/intel/context.md`: 22 topics from 22 DOCs
+- `.planning/INGEST-CONFLICTS.md`: conflict report, three buckets
+- `.planning/intel/classifications/`: the 26 per-document classification files

@@ -36,7 +36,7 @@
 
 **Build/Dev:**
 - `winresource = "0.1"` (Windows build-dependency) - embeds the executable's manifest, icon, and version metadata via `build.rs`
-- `clippy` lints enforced at the crate level (`[lints.clippy]` in `Cargo.toml`): `significant_drop_in_scrutinee = "deny"`, `await_holding_lock = "deny"` — guards against a specific UI-thread deadlock class documented inline in `Cargo.toml`
+- `clippy` lints enforced at the crate level (`[lints.clippy]` in `Cargo.toml`): `significant_drop_in_scrutinee = "deny"`, `await_holding_lock = "deny"`. These guard against a specific UI-thread deadlock class documented inline in `Cargo.toml`
 
 ## Key Dependencies
 
