@@ -431,7 +431,7 @@ pub fn make_shell(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Contact Manager: Comprehensive Google Contacts-style fields
+// Contact Manager: the full Google Contacts-style field set
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Phone number with type label
@@ -534,7 +534,7 @@ const ADDRESS_LABELS: &[&str] = &["Home", "Work", "Other"];
 
 // ── Country Data ────────────────────────────────────────────────────────────
 
-/// Comprehensive country list for address entry (alphabetical)
+/// Every country, for address entry, in alphabetical order
 const COUNTRIES: &[&str] = &[
     "Afghanistan",
     "Albania",

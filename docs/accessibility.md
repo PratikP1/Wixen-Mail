@@ -40,7 +40,7 @@ Screen reader support:
   non-blocking, and says nothing about any control, dialog, or sentence
   those tests do not reach. Most of the application has not had a full
   manual pass with NVDA, and that is the honest state of it.
-- **Windows Narrator** is spot-checked, not comprehensively verified.
+- **Windows Narrator** is spot-checked, not verified in full.
 - **JAWS** has not been run against this application. Nothing here claims
   JAWS support until that has actually happened.
 

@@ -146,7 +146,7 @@ egui = "0.29"
 3. Add basic semantic labels to existing UI
 
 ### Phase 2: Full Accessibility Implementation
-1. Comprehensive semantic labeling
+1. Full semantic labeling
 2. ARIA roles for all components
 3. Screen reader announcement system
 4. Keyboard shortcut integration
@@ -224,7 +224,7 @@ If egui + AccessKit proves insufficient, we have a clean architecture:
 **Proceed with egui + AccessKit enhancement**
 
 This approach:
-- ✅ Leverages existing codebase
+- ✅ Uses the existing codebase
 - ✅ Provides excellent screen reader support
 - ✅ Maintains cross-platform compatibility
 - ✅ Has active development and support

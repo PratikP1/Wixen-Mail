@@ -18,9 +18,19 @@
 # The obvious version of that second rule is wrong here, and it is worth saying
 # why, because it looks right. **A markdown change can break a Rust test in this
 # repository**: `tests/house_style.rs` reads documents, and its em-dash guard
-# caught two real breaks on 2026-08-31, one in `CLAUDE.md` and one in a planning
-# file. A rule that skipped tests for documents would have let both through. So
-# a document change still runs the targets that read documents.
+# caught two real breaks on 2026-08-31, one in `CLAUDE.md` and one under `docs/`.
+# A rule that skipped tests for documents would have let both through. So a
+# document change still runs the targets that read documents.
+#
+# That sentence said "one in a planning file" until 2026-09-07, and it was
+# false: `ours()` did not collect `.planning` until that day, so no planning
+# file had ever been opened by the guard being credited. Both breaks were under
+# the paths it really read. Worth leaving the correction visible, because the
+# claim was load-bearing for the rule underneath it and read as evidence for
+# years; a citation supporting a conclusion everybody already agrees with is
+# the one nobody re-checks. `.planning` is now genuinely in that walk, so the
+# sentence would be true if it were written today, which is exactly why it had
+# to be corrected rather than quietly left to become right.
 #
 # Answers, spelled out rather than boolean so a fifth can be added without every
 # caller having to guess what the fourth meant:

@@ -1,6 +1,6 @@
 # Wixen Mail Troubleshooting Guide
 
-Comprehensive solutions for common issues with Wixen Mail.
+Solutions for common issues with Wixen Mail.
 
 ## Table of Contents
 

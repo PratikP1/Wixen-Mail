@@ -367,7 +367,7 @@ crate in the same test prove only that the crate agrees with itself.
 **An image previews, which means described and shown.** Accessibility first is
 not accessibility only. `04-04` says what is known about a picture first, so the
 accessible half is not hostage to the decoding, and then shows it. That ordering
-is for robustness and is not a ranking. The decoding turned out far smaller than
+protects the accessible half and is not a ranking. The decoding turned out far smaller than
 feared: `image` is already a direct dependency and already decodes ICO, PNG and
 BMP in this binary, so JPEG is a feature flag rather than a new adoption, and
 only the transitive crates the flags add are audited.

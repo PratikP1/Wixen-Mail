@@ -1338,7 +1338,15 @@ fn test_the_reading_of_what_the_gate_runs_can_see_a_target_that_is_missing() {
         "the documents-only reading still finds {ME} after it was taken out of \
          the script, so it is not reading the script"
     );
-    let without = script.replace(&format!(" {ME})"), ")");
+    // Taking the name out wherever it sits, rather than only where it sat when
+    // this was written. This used to break the script by replacing
+    // `" {ME})"` with `")"`, which silently stopped breaking anything the day a
+    // fourth target was appended and this name was no longer last: the
+    // replacement matched nothing, the reading went on finding the name, and
+    // the assertion failed for a reason that had nothing to do with the script.
+    // A companion whose break depends on where a name sits in a list is a
+    // companion that expires the next time the list grows.
+    let without = script.replace(&format!(" {ME}"), "");
     assert!(
         !the_whole_tree_targets(&without)
             .iter()
