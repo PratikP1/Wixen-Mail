@@ -529,7 +529,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 2.1 What phase 1 found on its way past | 9/9 | Executed, verification gaps_found (12/13) | - |
 | 3. Mail at scale on the wire | 9/9 | Executed, all merged, verification human_needed | - |
 | 4. Writing and reading a message in full | 9/9 | Executed, all merged, verification human_needed | 2026-09-06 |
-| 4.1 Mail moves between accounts | 0/TBD | Context written, not planned | - |
+| 4.1 Mail moves between accounts | 0/4 | Planned, not started | - |
 | 4.2 What was built and never reached | 9/9 | Executed, all merged, verification human_needed | 2026-09-07 |
 | 5. The other five modules keep up | 0/8 | Planned, not started | - |
 | 5.1 Notes and contacts reach a server | 0/6 | Planned, not started | - |
