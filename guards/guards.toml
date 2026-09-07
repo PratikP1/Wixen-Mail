@@ -16286,13 +16286,20 @@ tests_last_seen = [{ file = "src/application/attaching.rs", tests = 42 }]
 # out, every field of it, and drops the row on the floor instead of saving it,
 # which is precisely what shipped.
 #
-# The red list is twelve tests and all twelve are the measurement rather than a
-# net cast wide. Each one reads a row back out of a real database, so every one
-# of them can see the row not being there. The three that stay green are the
-# three that are not about a row arriving: an answer that never left the
+# The red list is thirteen tests and all thirteen are the measurement rather
+# than a net cast wide. Each one reads a row back out of a real database, so
+# every one of them can see the row not being there. The three that stay green
+# are the three that are not about a row arriving: an answer that never left the
 # machine, a database written before this shipped, and the stored vocabulary.
 # Measured by hand with --all-targets --no-fail-fast from a green tree of 6,534
 # library tests.
+#
+# It was measured as twelve, and it was twelve when it was measured. The
+# thirteenth is the test the record below needed, which was written later in the
+# same session, and a test written after a record is measured is exactly how a
+# record comes to name too few. `tests_last_seen` could not have caught it: the
+# count was written down after the test was added, so the number matched.
+# `scripts/guards.sh` caught it, which is the only thing that can.
 
 [[guard]]
 name = "an answer worked out for the calendar is really put on the calendar"
@@ -16312,6 +16319,7 @@ red = [
     "application::answered_meetings::tests::test_a_meeting_named_after_one_on_another_accounts_calendar_leaves_that_one_alone",
     "application::answered_meetings::tests::test_an_invitation_that_names_no_end_is_stored_with_one_rather_than_a_blank",
     "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
+    "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
 ]
 tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
 
