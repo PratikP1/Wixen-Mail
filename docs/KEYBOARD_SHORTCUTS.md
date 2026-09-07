@@ -279,21 +279,38 @@ nothing extra to tab past on ordinary mail.
 
 ### The Preview Pane
 
-The preview is a visual pane. It never takes focus, and `F6` does not stop
-there. `F6` moves between the sidebar and the list of whichever module is open:
-folders and messages in Mail, task lists and tasks in Tasks, and so on. It says
-which pane it arrived at.
+`F6` does not stop at the preview. It moves between the sidebar and the list of
+whichever module is open: folders and messages in Mail, task lists and tasks in
+Tasks, and so on. It says which pane it arrived at.
 
 That is deliberate. The preview is a WebView, which hosts a browser: once focus
 is inside it, the browser consumes `Esc`, `F6` and every menu accelerator, and
 when it holds its host window rather than the page, those keys reach nothing at
-all. There is no way for this application to intercept them first, so the only
-reliable answer is to keep focus out.
+all. There is no way for this application to intercept them first, so the cycle
+does not send you there.
 
-To read a message, use `Space` on the message list: once for the summary, again
-for the whole message, or `Shift+Space` for the whole message outright. That
-path works with the screen reader you already have configured, and you never
-leave the list.
+### Getting out of the preview
+
+Focus can still end up in the preview. A browser takes focus when a document
+finishes loading and does not ask first, so opening a message can put you in
+it, and so can clicking. Wixen Mail puts focus back where it was when it can.
+When it cannot, three keys get you out, and the page itself listens for them:
+
+| Action | Shortcut | Where focus lands |
+|--------|----------|-------------------|
+| Leave the preview | `Esc` | The message list |
+| Leave the preview, going on round | `F6` | The folder tree |
+| Leave the preview, going back | `Shift+F6` | The message list |
+
+`Shift+F6` goes back to the message list because that is where you opened the
+message from. `Esc` lands there too, since it is a way out rather than a
+direction. Each one says which pane it arrived at and what is in it, the same
+way `F6` does anywhere else in the window.
+
+To read a message without going near the preview, use `Space` on the message
+list: once for the summary, again for the whole message, or `Shift+Space` for
+the whole message outright. That path works with the screen reader you already
+have configured, and you never leave the list.
 
 A readable, focusable text view of the message body is the proper long-term
 answer and is not built yet.

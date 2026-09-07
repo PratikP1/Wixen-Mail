@@ -1202,19 +1202,28 @@ impl WxMailApp {
                 .with_backend(WebViewBackend::Edge)
                 .build();
             set_accessible_name(&preview, "Email preview");
-            // The preview never takes focus.
+            // Focus is kept off the preview wherever this application decides
+            // it, and the browser overrules that, which is why the rest of
+            // this exists.
             //
             // A WebView hosts an out of process browser. Once focus is inside
             // it, Escape, F6 and every menu accelerator are consumed there and
             // never reach this application, and if the browser has the host
             // window rather than the document, the keys reach nothing at all:
             // no screen reader output, no keyboard route back, and the system
-            // menu the only way out. Keeping focus off it is the only fix that
-            // does not depend on the browser cooperating.
+            // menu the only way out. So the cycle does not stop here, and this
+            // call says so.
             //
-            // Nothing is lost by this. The preview is a visual surface; the
-            // way this application reads a message aloud is Space and
-            // Shift+Space on the list, which is where focus stays.
+            // It does not say focus never arrives. set_can_focus governs this
+            // application's own tab traversal, and the browser takes focus for
+            // itself when a document finishes loading, which focus_home and the
+            // load handler beside it exist to undo. For the times that is not
+            // enough, wire_the_way_out injects Escape, F6 and Shift+F6 into the
+            // page and the host moves focus back out.
+            //
+            // Little is lost by keeping the cycle out. The way this
+            // application reads a message aloud is Space and Shift+Space on
+            // the list, which is where focus stays.
             preview.set_can_focus(false);
             tracing::info!("WebView widget created");
 
@@ -1297,10 +1306,27 @@ impl WxMailApp {
                     let a11y = a11y.clone();
                     move |event: WebViewEventData| {
                         if let Some(json) = event.get_string() {
-                            if is_leaving(&json) {
+                            use crate::presentation::panes;
+
+                            if let Some(going) = panes::leaving_which_way(&json) {
                                 use crate::presentation::panes::Pane;
 
-                                msg_list.set_focus();
+                                // Which way, not just whether. The page says
+                                // which key it was and this is where that is
+                                // spent: Shift+F6 used to arrive here as F6,
+                                // because the payload carried no direction and
+                                // focus went to the message list whatever had
+                                // been pressed.
+                                //
+                                // Where each direction lands is decided in
+                                // panes.rs beside the rest of the F6 cycle, so
+                                // leaving the preview and moving round the
+                                // main window cannot come to disagree.
+                                let arriving = panes::leaving_the_preview(going);
+                                match arriving {
+                                    Pane::Sidebar => folder_tree.set_focus(),
+                                    Pane::List => msg_list.set_focus(),
+                                }
                                 // What F6 says anywhere else, so leaving the
                                 // preview and arriving by any other route
                                 // sound the same. Landing in an empty list
@@ -1309,10 +1335,10 @@ impl WxMailApp {
                                 let (module, holding) = {
                                     let s = lock_state(&state);
                                     let module = s.active_module;
-                                    (module, holding_of(&s, module, Pane::List))
+                                    (module, holding_of(&s, module, arriving))
                                 };
                                 let _ = a11y.announce_topic(
-                                    &Pane::List.arrival(module, holding),
+                                    &arriving.arrival(module, holding),
                                     crate::presentation::accessibility::announcements::Priority::Normal,
                                     "pane",
                                 );
@@ -10960,12 +10986,22 @@ fn wire_the_way_out(view: &WebView, surface: &str) -> bool {
     window.contextMenu.postMessage(JSON.stringify(data));
 });
 document.addEventListener('keydown', function(e) {
-    // F6 matches whether or not Shift is held, so Shift+F6 leaves too. Where
-    // it lands is the host's decision, which is why the key is not named here.
+    // F6 matches whether or not Shift is held, so Shift+F6 leaves too, and it
+    // has to say which it was. Where each one lands is still the host's
+    // decision, which is why no pane is named here, but the host cannot make
+    // that decision from a payload that does not carry the key: it used to
+    // read `kind` and nothing else, so Shift+F6 silently became F6 the moment
+    // focus was inside this page.
+    //
+    // Read off the shift key only for F6. Escape is not a direction and
+    // Shift+Escape must not invent one, so its payload carries no `back` at
+    // all and the host answers with its default.
     if (e.key === 'Escape' || e.key === 'F6') {
         e.preventDefault();
         e.stopPropagation();
-        window.contextMenu.postMessage(JSON.stringify({ kind: 'leave' }));
+        var data = { kind: 'leave' };
+        if (e.key === 'F6') { data.back = e.shiftKey; }
+        window.contextMenu.postMessage(JSON.stringify(data));
     }
 }, true);"#,
         WebViewUserScriptInjectionTime::AtDocumentStart,
@@ -10974,23 +11010,6 @@ document.addEventListener('keydown', function(e) {
         tracing::error!("{surface}: user script refused, Escape will not leave the page");
     }
     channel && script
-}
-
-/// Whether a message from a page is asking to leave it.
-///
-/// Read before anything else wherever this arrives, so a malformed context menu
-/// payload can never swallow the one keystroke that frees somebody who is
-/// stuck.
-fn is_leaving(json: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(json)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("kind")
-                .and_then(|kind| kind.as_str())
-                .map(|kind| kind == "leave")
-        })
-        .unwrap_or(false)
 }
 
 /// A stored body as the thing it is, rather than whichever column was filled.
@@ -18827,11 +18846,20 @@ fn show_conversation_as_page(
     wire_the_way_out(&page, "conversation window");
     page.on_script_message_received({
         move |event: WebViewEventData| {
-            if event.get_string().is_some_and(|json| is_leaving(&json)) {
+            if event
+                .get_string()
+                .is_some_and(|json| crate::presentation::panes::leaving_which_way(&json).is_some())
+            {
                 // Closing is what going back means here. The close handler
                 // below hides the window and hands control back to whatever
                 // opened it, so there is one way out and not two that could
                 // come to disagree.
+                //
+                // The direction the page sends is dropped here on purpose,
+                // and that is not an oversight to tidy up. wire_the_way_out
+                // injects one script into two surfaces, and closing is
+                // closing whichever key was pressed. Only the preview has two
+                // places to land, so only the preview reads which way.
                 frame.close(false);
             }
         }
@@ -21716,13 +21744,25 @@ mod tests {
         // What the browser hands to the host, once it has parsed the attribute.
         let payload = onclick.replace("&quot;", "\"");
 
-        assert!(super::is_leaving(&payload), "{payload}");
+        // A button has no shift key, so it carries no direction and the reader
+        // has to answer one anyway. Answering nothing would be the button
+        // doing nothing, which is what it did when these two came apart.
+        assert_eq!(
+            crate::presentation::panes::leaving_which_way(&payload),
+            Some(crate::presentation::panes::Direction::Back),
+            "{payload}"
+        );
     }
 
     #[test]
     fn test_a_context_menu_payload_is_not_mistaken_for_leaving() {
-        assert!(!super::is_leaving(r#"{"kind":"context","x":10,"y":20}"#));
-        assert!(!super::is_leaving("not json at all"));
+        use crate::presentation::panes::leaving_which_way;
+
+        assert_eq!(
+            leaving_which_way(r#"{"kind":"context","x":10,"y":20}"#),
+            None
+        );
+        assert_eq!(leaving_which_way("not json at all"), None);
     }
 
     #[test]

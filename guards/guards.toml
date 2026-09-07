@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 451 records have arrived since and have not been through it.
+# 452 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16529,4 +16529,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/blocking.rs", tests = 67 },
+]
+
+# ── The direction a page sends is read, rather than posted and dropped ──────
+#
+# The shape this defect really had, rather than the one that is easy to write.
+# Two things can break here. Deleting `back` from the script injected into the
+# preview is caught by the source read in tests/wired.rs, which reads that line
+# out of wx_app.rs. Keeping the field and ignoring it at the reader is caught by
+# nothing that reads source, because the source still says everything it should:
+# the page posts the direction, the host asks for it, and the answer is a
+# constant. That is exactly what `is_leaving` was for as long as the preview has
+# existed, and it is why Shift+F6 silently became F6 the moment focus was inside
+# the page.
+#
+# So the break keeps the field and fixes the answer to one direction.
+#
+# Measured by hand on 2026-09-07 with `cargo test --all-targets --no-fail-fast`
+# against ec2a5f0: 6563 passed, one failed, every other target green. One test
+# is the whole red list, and that is worth saying rather than hiding. The three
+# other tests of this reader all pass against the break by construction: two pin
+# the property that a leave message with no direction still leaves, which the
+# break preserves, and one pins that nothing else is read as leaving, which it
+# also preserves. Only the payload carrying `back: false` tells the two apart.
+
+[[guard]]
+name = "the direction a page sends is read rather than posted and dropped"
+file = "src/presentation/panes.rs"
+before = """    match value.get("back").and_then(serde_json::Value::as_bool) {
+        Some(false) => Some(Direction::Forward),
+        Some(true) | None => Some(Direction::Back),
+    }"""
+after = """    Some(Direction::Back)"""
+red = [
+    "presentation::panes::tests::test_which_key_left_the_preview_survives_the_crossing",
+]
+tests_last_seen = [
+    { file = "src/presentation/panes.rs", tests = 13 },
 ]

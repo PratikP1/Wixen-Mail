@@ -306,6 +306,41 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **`Shift+F6` now goes back from the message preview, and the shortcuts page
+  says how to get out of it.**
+
+  `F6` moves to the next pane and `Shift+F6` moves to the previous one. That is
+  what the shortcuts page has always said. Inside the message preview it was
+  not true: both keys did the same thing, and `Shift+F6` quietly became `F6`.
+
+  The preview is a browser embedded in the window, so the keys that leave it are
+  handled by the page rather than by the menu bar, and the page was not telling
+  the window which key had been pressed. So the key did the wrong thing in the
+  one place somebody working by keyboard is most likely to be stuck, which is
+  the worst place for it.
+
+  Now `Shift+F6` goes back to the message list, which is where you opened the
+  message from, and `F6` goes on round to the folder tree. `Esc` still leaves
+  and still lands on the message list, because it is a way out rather than a
+  direction, and holding shift with it does not change that. Each one says which
+  pane it arrived at and what is in it, the same as arriving by any other route.
+
+  Three pages said the preview never takes focus, and one of them sat beside the
+  code written to put focus back after the browser had taken it. A browser takes
+  focus when a document finishes loading and does not ask first. The shortcuts
+  page and the accessibility notes now say so, and say which three keys get you
+  out and where each one lands.
+
+  The preview is still not a stop on the `F6` cycle, and that is on purpose:
+  `Space` and `Shift+Space` on the message list read a message aloud without
+  going near it, so a stop costing a keypress every time round the cycle would
+  buy nothing. What it costs is that anybody who does want a caret in the
+  preview still arrives there by accident or by clicking.
+
+  Known limitation: this changes the preview only. Elsewhere in the window there
+  are two panes, so `F6` and `Shift+F6` reach the same place either way, and
+  nothing here changes that.
+
 - **A message whose pictures were held back now says how many, why, and where
   the switch is.**
 

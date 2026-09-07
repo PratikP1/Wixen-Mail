@@ -156,8 +156,14 @@ the application flashes more than three times a second.
 
 The preview pane renders untrusted HTML in a WebView, which is a browser
 embedded in the window. Once focus is inside it, the browser consumes
-`Esc`, `F6`, and every menu accelerator, so the preview never takes focus:
-`F6` moves between the sidebar and whichever list is open, and stops there.
+`Esc`, `F6`, and every menu accelerator, so `F6` does not stop at the preview:
+it moves between the sidebar and whichever list is open, and stops there.
+Focus can still land in the preview, because a browser takes it when a document
+finishes loading and does not ask first. Wixen Mail puts it back where it was
+when it can, and the page listens for `Esc`, `F6` and `Shift+F6` itself for the
+times it cannot. `Shift+F6` goes back to the message list and `F6` goes on to
+the folder tree, which is set out in
+[the shortcuts page](KEYBOARD_SHORTCUTS.md).
 To read a message, `Space` on the message list reads it without leaving the
 list, and that path works with whatever screen reader you already have
 configured. A full, readable, focusable view of a message body outside the
