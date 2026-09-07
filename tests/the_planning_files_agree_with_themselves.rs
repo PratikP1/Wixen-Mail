@@ -1218,3 +1218,132 @@ fn test_a_phase_is_the_same_phase_however_it_is_spelled() {
     assert_eq!(phase_key(""), None);
     assert_eq!(phase_key("-------"), None);
 }
+
+// ---------------------------------------------------------------------------
+// And that this target runs on the commits that could break it
+// ---------------------------------------------------------------------------
+
+/// This file's own target name, which is what `cargo test --test` is given.
+const ME: &str = "the_planning_files_agree_with_themselves";
+
+/// The targets a documents-only commit earns, read from the gate script.
+fn the_documents_only_targets(script: &str) -> Vec<String> {
+    let mut inside = false;
+    let mut found = Vec::new();
+    for line in script.lines() {
+        if line.starts_with("if [ \"$mode\" = \"docs_only\" ]; then") {
+            inside = true;
+            continue;
+        }
+        if inside && line.starts_with("fi") {
+            break;
+        }
+        if !inside || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let mut rest = line;
+        while let Some(at) = rest.find("--test ") {
+            rest = &rest[at + "--test ".len()..];
+            if let Some(name) = rest.split_whitespace().next() {
+                found.push(name.to_string());
+            }
+        }
+    }
+    found
+}
+
+/// The targets every scoped run ends with, read from the gate script.
+fn the_whole_tree_targets(script: &str) -> Vec<String> {
+    script
+        .lines()
+        .find_map(|line| line.strip_prefix("guards_that_read_the_whole_tree=("))
+        .and_then(|rest| rest.split(')').next())
+        .map(|inner| inner.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn test_this_target_runs_on_the_commits_that_could_break_it() {
+    // A guard that runs on every commit except the ones that could break it
+    // is the shape `CLAUDE.md` names twice, and it is the shape this target
+    // would have by default. `scripts/which-checks.sh` answers `docs_only`
+    // for a commit that touches only `.planning/*.md`, which is exactly the
+    // commit that pulls these files apart, and `affected` for a planning file
+    // committed beside code, which is how every plan summary lands. So this
+    // has to be in both of `check.sh`'s lists, and neither list is derived
+    // from anything: they are written out by hand and nothing else would say
+    // if this fell out of one.
+    let script = fs::read_to_string("scripts/check.sh").expect("the gate script to be readable");
+
+    let documents = the_documents_only_targets(&script);
+    assert!(
+        documents.iter().any(|target| target == ME),
+        "a commit touching only .planning/*.md runs {documents:?} and not \
+         {ME}, so the check that reads those files does not run on the commits \
+         that change them"
+    );
+
+    let whole_tree = the_whole_tree_targets(&script);
+    assert!(
+        whole_tree.iter().any(|target| target == ME),
+        "a commit touching a planning file beside code runs {whole_tree:?} at \
+         the end of its scoped run and not {ME}, which is how every plan \
+         summary lands"
+    );
+}
+
+#[test]
+fn test_the_reading_of_what_the_gate_runs_can_see_a_target_that_is_missing() {
+    // The companion, because both readings above are the kind that quietly
+    // find nothing: a mistake in either would return an empty list, and an
+    // empty list fails the assertions above for the wrong reason while
+    // reading like the right one.
+    let script = fs::read_to_string("scripts/check.sh").expect("the gate script to be readable");
+
+    let documents = the_documents_only_targets(&script);
+    assert!(
+        documents.len() > 1,
+        "the documents-only reading found {documents:?}, which is not the \
+         list of targets that run on a documents commit"
+    );
+    assert!(
+        documents.iter().any(|target| target == "house_style"),
+        "the documents-only reading did not find house_style, which has read \
+         documents since before this file existed"
+    );
+    assert!(
+        !documents.iter().any(|target| target == "no_such_target"),
+        "the documents-only reading answers with names that are not there"
+    );
+
+    let whole_tree = the_whole_tree_targets(&script);
+    assert!(
+        whole_tree.iter().any(|target| target == "wired"),
+        "the whole-tree reading did not find wired, so it is not reading the \
+         list it is about"
+    );
+    assert!(
+        !whole_tree.iter().any(|target| target == "no_such_target"),
+        "the whole-tree reading answers with names that are not there"
+    );
+
+    // And that each reading really would notice this file's own name going
+    // missing, asked of the script with that name taken out rather than of a
+    // list built here.
+    let without = script.replace(&format!("--test {ME}"), "--test something_else");
+    assert!(
+        !the_documents_only_targets(&without)
+            .iter()
+            .any(|target| target == ME),
+        "the documents-only reading still finds {ME} after it was taken out of \
+         the script, so it is not reading the script"
+    );
+    let without = script.replace(&format!(" {ME})"), ")");
+    assert!(
+        !the_whole_tree_targets(&without)
+            .iter()
+            .any(|target| target == ME),
+        "the whole-tree reading still finds {ME} after it was taken out of the \
+         script, so it is not reading the script"
+    );
+}
