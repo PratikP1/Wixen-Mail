@@ -12,7 +12,13 @@ set -euo pipefail
 # because two things decide about them: the scoped run, which always adds them,
 # and the registry mapping below, which must not answer one of them and make the
 # run pay for the same target twice.
-guards_that_read_the_whole_tree=(house_style wired)
+#
+# The third one reads `.planning` rather than `src`, and it is here for the same
+# reason as the other two: nothing about a changed file predicts it. A plan
+# summary lands as a `.planning` document beside the code it describes, which
+# answers `affected`, so without this the check that reads those documents would
+# run on every commit except the ones that write them.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves)
 
 # Which integration targets guard a changed source file.
 #
@@ -324,20 +330,28 @@ fi
 # these run rather than being skipped as "not code".
 if [ "$mode" = "docs_only" ]; then
     echo "== the targets that read documents =="
-    # Five, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
+    # Six, not three. `help_page` reads `docs/ALPHA_TESTING.md` and the shipped
     # help pages from inside the library, so a documents-only run that skipped
     # `--lib` would miss the guard that catches a dead link in a help page. That
     # guard has already caught one this month. `checkbox_labels` and
     # `manager_delete_stays_open` read documents too.
+    #
+    # `the_planning_files_agree_with_themselves` is the sixth and it is the one
+    # this mode exists for. A commit that pulls STATE.md's frontmatter apart
+    # from its Current Position heading, or edits a ledger row and not its JSON
+    # object, touches nothing but `.planning/*.md` and so earns this list and
+    # nothing else. Without it here, the check written for that commit would be
+    # the one thing that commit does not run.
     cargo test --lib help_page::
-    # --no-fail-fast because this names five targets, and without it a red
-    # `house_style` meant the other four never started. Found on 2026-09-03 by
+    # --no-fail-fast because this names six targets, and without it a red
+    # `house_style` meant the other five never started. Found on 2026-09-03 by
     # `test_one_failing_target_does_not_hide_the_rest`, the moment its exemption
     # was narrowed from "the line names a target" to "the line names exactly
     # one". This is the same defect that was fixed in the scoped run below, in
     # the same shape, on a line the wider exemption could not see.
     cargo test --no-fail-fast --test house_style --test docs_links --test wired \
-        --test checkbox_labels --test manager_delete_stays_open
+        --test checkbox_labels --test manager_delete_stays_open \
+        --test the_planning_files_agree_with_themselves
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"
