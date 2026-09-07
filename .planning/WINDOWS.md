@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 148
+open_count: 151
 waived_count: 0
 fixed_count: 15
-total_count: 163
-last_updated: 2026-09-07T09:09:27.449Z
+total_count: 166
+last_updated: 2026-09-07T12:38:02.044Z
 ---
 
 # Broken Windows Ledger
@@ -178,6 +178,9 @@ last_updated: 2026-09-07T09:09:27.449Z
 | 161 | 04.2 | unrun-verify | src/presentation/wx_blocked_senders.rs |  | Whether a switched-off block is distinguishable by ear from a working one. The state is a third column reading Working or Switched off, so it is catching nothing. Looking at the screen makes the difference obvious; hearing a row read cell by cell may not, and still_on's own doc says a list showing a switched-off block as working would be worse than no list. Also unheard: whether an account with nothing blocked is heard as empty on purpose rather than as a window that failed to load, which is what the sentence and the focus going to Close are for. | open |  | 2026-09-07T09:09:17.667Z |  |
 | 162 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Whether the sentence saying what blocking will do is heard before the block is made, and whether it and the may_block mailing-list warning together read as one thing or two. Both are said through the same told at Priority::High, one after the other, and this is the only place in this feature where somebody hears two sentences before a block. Guardrail 5 is what it is about: feedback must be distinct and bounded, and a sentence added before a block is the easiest place here to flood somebody. Announcements go out through UiaRaiseNotificationEvent, which reaches speech and braille at once, so a braille display should be checked as well. | open |  | 2026-09-07T09:09:18.186Z |  |
 | 163 | 04.2 | unrun-verify | src/presentation/scan_target.rs |  | Neither automated accessibility channel has been run over the new blocked-senders window. The plan's checkpoint asks for two, separately: Axe.Windows over UI Automation with the new blocked-senders scan target, confirming the scan really opened the window rather than reporting nothing about one it could not reach, and scripts/msaa-names.ps1 over the same window, which is what NVDA reads for native controls and the only channel set_accessible_name writes to. A name failing on either is a name somebody does not hear. There is also a trap in the other direction: a control with a visible label beside it inherits that label as its MSAA name even when nothing set one, so for each control the run has to say whether the name that came back is the one this code set or one Windows supplied. Deferred by decision, not attempted. | open |  | 2026-09-07T09:09:27.449Z |  |
+| 164 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Whether Shift+F6 reaches the script injected into the message preview with shiftKey set. Nothing here has run the preview: the direction is proved from the payload inward, by tests over panes::leaving_which_way and panes::leaving_the_preview, and by a source read of the script and the handler. What no test can reach is the browser delivering the keystroke. The composer's own measurement in editor_document.rs records that Ctrl+backslash never arrives at its page handler on this machine while Ctrl+Shift+L and Ctrl+Enter beside it arrive every time, so a key being kept between the window and the page is a thing that happens here. F6 leaving the preview is known to work; Shift+F6 arriving as F6 with shiftKey true is not. | open |  | 2026-09-07T12:37:49.096Z |  |
+| 165 | 04.2 | unrun-verify | src/presentation/panes.rs |  | Whether landing back on the folder tree with Shift+F6 is heard as going back, or only as going somewhere. Arrival is announced with panes::arrival, which names the pane and what is in it and says nothing about direction, so F6 to the folder tree and Shift+F6 to the message list are announced the same way as any other arrival. Somebody who cannot see the layout may not be able to tell that the key went the way they asked, which would leave the fix invisible even though it works. Announcements go out through UiaRaiseNotificationEvent, reaching speech and braille at once, so a braille display wants checking too. This decides whether an arrival should say a direction, which would be a change to every route rather than to this one. | open |  | 2026-09-07T12:38:01.449Z |  |
+| 166 | 04.2 | deviation | .planning/phases/04.2-what-was-built-and-never-reached/04.2-07-PLAN.md |  | Task 3 carried two acceptance criteria that cannot both hold. One requires grep -rn 'never takes focus' src/ docs/ to return nothing; the other requires docs/accessibility.md to be unchanged by the plan, and that file held the phrase at line 159. The plan's prose counted three places and the tree held four. The exclusion was written for a different sentence in that file, a braille one belonging to phase 6, so it was written without knowing the file also carried the phrase being swept. Resolved in favour of the grep: the false sentence was corrected and the braille sentence left alone. | open |  | 2026-09-07T12:38:02.044Z |  |
 
 ````json
 [
@@ -2135,6 +2138,42 @@ last_updated: 2026-09-07T09:09:27.449Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T09:09:27.449Z",
+    "resolved_at": null
+  },
+  {
+    "id": 164,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether Shift+F6 reaches the script injected into the message preview with shiftKey set. Nothing here has run the preview: the direction is proved from the payload inward, by tests over panes::leaving_which_way and panes::leaving_the_preview, and by a source read of the script and the handler. What no test can reach is the browser delivering the keystroke. The composer's own measurement in editor_document.rs records that Ctrl+backslash never arrives at its page handler on this machine while Ctrl+Shift+L and Ctrl+Enter beside it arrive every time, so a key being kept between the window and the page is a thing that happens here. F6 leaving the preview is known to work; Shift+F6 arriving as F6 with shiftKey true is not.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T12:37:49.096Z",
+    "resolved_at": null
+  },
+  {
+    "id": 165,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/panes.rs",
+    "line": null,
+    "description": "Whether landing back on the folder tree with Shift+F6 is heard as going back, or only as going somewhere. Arrival is announced with panes::arrival, which names the pane and what is in it and says nothing about direction, so F6 to the folder tree and Shift+F6 to the message list are announced the same way as any other arrival. Somebody who cannot see the layout may not be able to tell that the key went the way they asked, which would leave the fix invisible even though it works. Announcements go out through UiaRaiseNotificationEvent, reaching speech and braille at once, so a braille display wants checking too. This decides whether an arrival should say a direction, which would be a change to every route rather than to this one.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T12:38:01.449Z",
+    "resolved_at": null
+  },
+  {
+    "id": 166,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": ".planning/phases/04.2-what-was-built-and-never-reached/04.2-07-PLAN.md",
+    "line": null,
+    "description": "Task 3 carried two acceptance criteria that cannot both hold. One requires grep -rn 'never takes focus' src/ docs/ to return nothing; the other requires docs/accessibility.md to be unchanged by the plan, and that file held the phrase at line 159. The plan's prose counted three places and the tree held four. The exclusion was written for a different sentence in that file, a braille one belonging to phase 6, so it was written without knowing the file also carried the phrase being swept. Resolved in favour of the grep: the false sentence was corrected and the braille sentence left alone.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T12:38:02.044Z",
     "resolved_at": null
   }
 ]
