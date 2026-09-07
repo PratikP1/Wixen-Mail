@@ -708,6 +708,56 @@ pub fn everyone_blocked(account_id: &str, rules: &[MessageFilterRule]) -> Vec<Bl
         .collect()
 }
 
+/// What one row of the list of who is blocked says.
+///
+/// Three cells rather than one sentence, because the list is a report and
+/// somebody moving across a row hears each cell introduced by the heading
+/// above it. Built here rather than in the window, so the words can be read
+/// back by a test without one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatARowSays {
+    /// Who this block catches, phrased the way every other sentence about a
+    /// block phrases it.
+    pub who: String,
+    /// The folder this block files the mail it catches into.
+    pub goes_to: String,
+    /// Whether the block is working, in words.
+    pub working: String,
+}
+
+/// What a row says about a block that is doing its job.
+pub const WORKING: &str = "Working";
+
+/// What a row says about a block somebody has switched off.
+///
+/// Not just "Off". A rule can be switched off in the rule editor, and the
+/// thing somebody has to understand from the row is not the state but what
+/// the state costs them: mail they think is being filed away is arriving.
+pub const SWITCHED_OFF: &str = "Switched off, so it is catching nothing";
+
+/// What to say when this account has nothing blocked on it.
+///
+/// A sentence rather than an empty list, because an empty list read by a
+/// screen reader is silence, and silence is also what a window that failed to
+/// load sounds like. It names the way in as well, so somebody who opened this
+/// looking for the feature is not left at a dead end.
+pub const NOBODY_IS_BLOCKED: &str = "You have not blocked anybody on this account. To block somebody, open a message from \
+     them and use Action, Block.";
+
+/// The words for one row of the list of who is blocked.
+pub fn what_a_row_says(_blocked: &Blocked) -> WhatARowSays {
+    WhatARowSays {
+        who: String::new(),
+        goes_to: String::new(),
+        working: String::new(),
+    }
+}
+
+/// The sentence said when the list of who is blocked opens.
+pub fn what_the_list_holds(_blocks: &[Blocked]) -> String {
+    String::new()
+}
+
 /// The stored rule that is exactly this block, for undoing it.
 ///
 /// Exactly this block, and never a wider one that happens to cover it.
@@ -1798,5 +1848,111 @@ mod tests {
             ),
             MayBlock::Yes
         );
+    }
+
+    // ── How the list of who is blocked reads ────────────────────────────
+
+    /// One block on this account, switched on and filing into `Junk`.
+    fn blocked(who: &str, still_on: bool) -> Blocked {
+        let block = just_this_sender(who).expect("an address");
+        let mut rule = a_rule_that_blocks("acct", &block, "Junk", "t");
+        rule.enabled = still_on;
+        everyone_blocked("acct", &[rule])
+            .pop()
+            .expect("one block back")
+    }
+
+    #[test]
+    fn test_a_row_says_who_is_blocked_and_where_their_mail_goes() {
+        // The two facts a row exists to carry. Without the destination a row
+        // says somebody is blocked and not where to look for what was
+        // caught, which is the half of a block people actually go hunting
+        // for.
+        let row = what_a_row_says(&blocked("ada@example.com", true));
+
+        assert_eq!(row.who, "Mail from ada@example.com");
+        assert_eq!(row.goes_to, "Junk");
+    }
+
+    #[test]
+    fn test_a_row_for_a_domain_block_says_everyone_at_it() {
+        // The two kinds of block are matched differently and cost differently
+        // when they are wrong, so a row must not read the same for both.
+        let domain = everyone_at_the_senders_domain("x@noisy.example").expect("a domain");
+        let rule = a_rule_that_blocks("acct", &domain, "Junk", "t");
+        let listed = everyone_blocked("acct", &[rule]);
+
+        assert_eq!(
+            what_a_row_says(&listed[0]).who,
+            "Mail from everyone at noisy.example"
+        );
+    }
+
+    #[test]
+    fn test_a_row_for_a_switched_off_block_says_it_is_catching_nothing() {
+        // `still_on`'s own doc: a list showing a switched-off block as though
+        // it were working would be worse than no list. Somebody looking at it
+        // would believe mail was being filed away that is arriving in their
+        // inbox.
+        let row = what_a_row_says(&blocked("ada@example.com", false));
+
+        assert_eq!(row.working, SWITCHED_OFF);
+        assert!(
+            row.working.contains("catching nothing"),
+            "a switched-off row does not say what being switched off costs: {}",
+            row.working
+        );
+    }
+
+    #[test]
+    fn test_a_working_block_and_a_switched_off_one_do_not_read_the_same() {
+        // Both directions in one assertion, because a row wording that
+        // collapsed the two would satisfy either test above on its own.
+        let on = what_a_row_says(&blocked("ada@example.com", true));
+        let off = what_a_row_says(&blocked("ada@example.com", false));
+
+        assert_ne!(on.working, off.working);
+        assert_eq!(on.working, WORKING);
+    }
+
+    #[test]
+    fn test_an_account_with_nothing_blocked_gets_a_sentence_rather_than_silence() {
+        // An empty list read by a screen reader is silence, and silence is
+        // also what a window that failed to load sounds like.
+        let said = what_the_list_holds(&[]);
+
+        assert_eq!(said, NOBODY_IS_BLOCKED);
+        assert!(
+            said.contains("Action, Block"),
+            "the empty sentence does not say how somebody would put anything here: {said}"
+        );
+    }
+
+    #[test]
+    fn test_one_block_is_not_counted_in_the_plural() {
+        let said = what_the_list_holds(&[blocked("ada@example.com", true)]);
+
+        assert!(said.starts_with("One block"), "{said}");
+        assert!(!said.contains("1 blocks"), "{said}");
+    }
+
+    #[test]
+    fn test_the_opening_sentence_counts_every_block() {
+        let held = [
+            blocked("ada@example.com", true),
+            blocked("bob@example.com", false),
+        ];
+
+        assert!(what_the_list_holds(&held).starts_with("2 blocks"));
+    }
+
+    #[test]
+    fn test_the_opening_sentence_says_how_to_take_a_block_off() {
+        // The window's one destructive action, named in the sentence somebody
+        // hears on opening, because a list with no stated verb is a list
+        // somebody reads and closes again.
+        let said = what_the_list_holds(&[blocked("ada@example.com", true)]);
+
+        assert!(said.contains("Unblock"), "{said}");
     }
 }

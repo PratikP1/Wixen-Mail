@@ -37,6 +37,7 @@ pub mod view_state;
 pub mod wx_account_manager;
 pub mod wx_add_calendar;
 pub mod wx_app;
+pub mod wx_blocked_senders;
 pub mod wx_calendar;
 pub mod wx_calendar_module;
 pub mod wx_columns;
