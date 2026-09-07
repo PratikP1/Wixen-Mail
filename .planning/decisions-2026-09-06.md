@@ -120,3 +120,43 @@ disk, which is criterion 4's territory.
 download that fails its signature check is refused before anybody is interrupted,
 so the person is never asked to approve something already known to be bad. The
 plan should say so rather than leaving the ordering to look incidental.
+
+## Phase 4.1, answered 2026-09-07
+
+**17. An upload with no answer is handled two ways at once: ask the destination
+server, and keep the bytes in the cache.** Pratik: "a combination of 1 and 2 by
+using the cache."
+
+Asking the destination is the cheap half and needs nothing new:
+`uids_with_message_id` already exists, so after an upload whose answer never
+arrived, the destination is asked whether it now holds a message with that
+identifier.
+
+**Keeping the bytes is not free, and "use the cache" should not be read as
+free.** Measured 2026-09-07: the message cache does **not** hold raw bytes for
+ordinary mail. `signed_original` keeps whole messages, and its own module doc
+says a row exists there exactly when a message claimed a signature. Everything
+else is stored parsed, and a parsed message cannot be uploaded with APPEND.
+
+So this half means extending an existing shape rather than inventing one, which
+is the right reading of the decision and still carries three of the costs the
+rejected option carried:
+
+- A schema addition, done the additive way, `CREATE TABLE IF NOT EXISTS` and
+  `ensure_column_exists`, never dropping or renaming a shipped column.
+- **A whole message sitting unencrypted in a new place.** The cached mail is not
+  encrypted and the documents say so; this must not make that sentence less
+  true, and what it leaves on disk belongs on the page that says what this
+  program stores.
+- An eviction rule, so a message does not sit there after the move it was
+  written for has finished or been abandoned.
+
+What it buys is that the two halves fail differently. Asking the server fails
+against one that mangles the identifier; the stored bytes do not care what the
+server does. Neither can lose the message, because a mail move is
+append-then-remove and the source holds it throughout, so the worst case in
+every branch is a duplicate somebody can see rather than a message nobody can
+find.
+
+**Proceeding on this reading.** If "use the cache" meant only the parsed cache
+already on disk, that does not work and this note says why.
