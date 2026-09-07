@@ -1088,11 +1088,21 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
     ]
 }
 
-/// Every backticked `Ctrl+...` or `Alt+...` combination in the document.
+/// Every backticked key in the document that this can read a meaning into.
 ///
-/// Only the modified ones. A bare `Space` or `Home` in the document is a key
-/// this reads no meaning into, and looking for the word "Space" in the source
-/// would match anything.
+/// Two kinds. A combination beginning `Ctrl+` or `Alt+`, and a function key,
+/// `F1` to `F12`, held with anything or with nothing.
+///
+/// **Why not every key, and why the function keys are the exception.** A bare
+/// `Space` or `Home` in the document is a key this reads no meaning into,
+/// because looking for the word "Space" in the source would match anything: the
+/// word is prose as often as it is a key. That reasoning is right for `Space`
+/// and `Home` and it was wrong for `F8`, which is an unambiguous string that
+/// appears in this tree only where a key is meant. Reading only the modified
+/// keys left every unmodified function key outside the sweep, and three keys
+/// hid there at once: `F8` reaching the composer's toolbar and written nowhere,
+/// `Delete` taking a file off a message, and `F6` closing the conversation
+/// window.
 ///
 /// Modifiers on their own are not combinations either. The document writes "the
 /// six `Ctrl+Shift` keys" and "the heading keys use `Ctrl+Alt`", which name a
@@ -1106,7 +1116,7 @@ fn documented_combinations(doc: &str) -> Vec<String> {
         let all_modifiers = piece.split('+').all(|part| MODIFIERS.contains(&part));
         // One combination, not a sentence that happens to contain one, and not
         // a sequence like "Ctrl+N, M" whose halves are pressed separately.
-        if modified
+        if (modified || ends_in_a_function_key(piece))
             && !all_modifiers
             && !piece.contains(' ')
             && !piece.contains(',')
@@ -1116,6 +1126,19 @@ fn documented_combinations(doc: &str) -> Vec<String> {
         }
     }
     found
+}
+
+/// Whether the last part of a key name is `F1` through `F12`.
+///
+/// The last part, so `Shift+F6` and a bare `F6` are both function keys and
+/// `Ctrl+F` is not one. Bounded at twelve because a keyboard has twelve and
+/// because an open-ended `F` and digits would read `F1234` as a key.
+fn ends_in_a_function_key(piece: &str) -> bool {
+    let last = piece.rsplit('+').next().unwrap_or(piece);
+    let Some(number) = last.strip_prefix('F') else {
+        return false;
+    };
+    matches!(number.parse::<u8>(), Ok(1..=12))
 }
 
 /// Every accelerator a menu item carries, as it is written after the tab.
