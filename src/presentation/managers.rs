@@ -6354,7 +6354,9 @@ fn where_it_could_go(
     id: &str,
     name: &str,
 ) -> Option<Offered> {
-    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+    use crate::application::destinations::{
+        Branch, Destination, FolderInAnAccount, Moving, anywhere, offer,
+    };
 
     let holder = kind.kept_in()?;
     let (account_id, account_name) = {
@@ -6399,13 +6401,17 @@ fn where_it_could_go(
         .collect();
     // Where it already is, left out. Offering the container something is
     // already in is offering a move that does nothing.
+    let held = held_in(cache, kind, id, &account_for_lookup);
     let branches = offer(
         vec![Branch {
             account_id,
             account_name,
             places,
         }],
-        held_in(cache, kind, id, &account_for_lookup).as_deref(),
+        held.as_deref().map(|path| FolderInAnAccount {
+            account: &account_for_lookup,
+            path,
+        }),
     );
     if !anywhere(&branches) {
         return said(

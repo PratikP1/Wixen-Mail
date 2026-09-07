@@ -17182,7 +17182,9 @@ fn move_or_copy_message(
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+    use crate::application::destinations::{
+        Branch, Destination, FolderInAnAccount, Moving, anywhere, offer,
+    };
 
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "No message store is available");
@@ -17229,7 +17231,10 @@ fn move_or_copy_message(
             account_name,
             places,
         }],
-        from.as_deref(),
+        from.as_deref().map(|path| FolderInAnAccount {
+            account: &account_id,
+            path,
+        }),
     );
 
     if !anywhere(&branches) {
@@ -17251,7 +17256,10 @@ fn move_or_copy_message(
         Moving::Message,
         copying,
         &branches,
-        last_used.as_deref(),
+        last_used.as_deref().map(|path| FolderInAnAccount {
+            account: &account_id,
+            path,
+        }),
     ) else {
         return;
     };

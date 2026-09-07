@@ -16,7 +16,7 @@
 //! mouse and nothing needs a drag, which is what most mail clients make you do
 //! for exactly this.
 
-use crate::application::destinations::{Branch, Moving, nothing_to_offer};
+use crate::application::destinations::{Branch, FolderInAnAccount, Moving, nothing_to_offer};
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
@@ -78,7 +78,7 @@ pub fn ask(
     moving: Moving,
     copying: bool,
     branches: &[Branch],
-    last_used: Option<&str>,
+    last_used: Option<FolderInAnAccount<'_>>,
 ) -> Option<String> {
     if branches.is_empty() {
         return None;
@@ -123,7 +123,7 @@ pub fn build_destination_dialog(
     moving: Moving,
     copying: bool,
     branches: &[Branch],
-    last_used: Option<&str>,
+    last_used: Option<FolderInAnAccount<'_>>,
     palette: Option<theme::Palette>,
 ) -> (Dialog, TreeCtrl, Vec<Option<String>>) {
     let open_on = crate::application::destinations::open_on(branches, last_used)

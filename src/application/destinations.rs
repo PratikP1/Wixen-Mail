@@ -153,18 +153,38 @@ pub struct Branch {
     pub places: Vec<Destination>,
 }
 
+/// One folder, named the only way a folder can be named across accounts.
+///
+/// A path is unique inside one account and not across them: two accounts can
+/// both have an `Archive`, which is the first sentence of this module's own
+/// doc. So everything here that asks "which folder is this" asks for the pair,
+/// and the field names say which half is which because the two are both
+/// strings and swapping them compiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderInAnAccount<'a> {
+    /// The account's identifier, not its name. A name is what somebody hears
+    /// and two accounts can share one.
+    pub account: &'a str,
+    /// The path as the server spells it.
+    pub path: &'a str,
+}
+
 /// The tree, with the places you cannot use taken out.
 ///
 /// `already_in` is where the thing is now. It is removed, because offering
 /// somebody the place a thing already is is offering them a command that
 /// silently does nothing, and they will not know which of the two it was.
-pub fn offer(branches: Vec<Branch>, already_in: Option<&str>) -> Vec<Branch> {
+///
+/// Removed from that account's branch only. Another account that happens to
+/// hold a folder at the same path keeps it, because it is a different folder
+/// on a different server and the message is not in it.
+pub fn offer(branches: Vec<Branch>, already_in: Option<FolderInAnAccount<'_>>) -> Vec<Branch> {
     branches
         .into_iter()
         .map(|mut branch| {
             branch
                 .places
-                .retain(|place| Some(place.id.as_str()) != already_in);
+                .retain(|place| Some(place.id.as_str()) != already_in.map(|it| it.path));
             branch
         })
         // An account with nowhere left to put it is not shown. An empty
@@ -192,12 +212,20 @@ pub fn anywhere(branches: &[Branch]) -> bool {
 /// message is already in it, which is the ordinary case of moving something
 /// back out of the folder it was just put in, and a window that opened on a row
 /// which is not there would open on nothing.
-pub fn open_on<'a>(branches: &'a [Branch], last_used: Option<&str>) -> Option<&'a Destination> {
+///
+/// The account as well as the path, for the reason [`offer`] takes both: the
+/// window opens on the folder somebody last filed into, in the account they
+/// filed it into, rather than on whichever branch happens to hold a folder at
+/// that path first.
+pub fn open_on<'a>(
+    branches: &'a [Branch],
+    last_used: Option<FolderInAnAccount<'_>>,
+) -> Option<&'a Destination> {
     if let Some(last) = last_used
         && let Some(again) = branches
             .iter()
             .flat_map(|branch| branch.places.iter())
-            .find(|place| place.id == last)
+            .find(|place| place.id == last.path)
     {
         return Some(again);
     }
@@ -324,13 +352,76 @@ mod tests {
         }]
     }
 
+    /// A folder in the account these fixtures call `one`.
+    fn in_one(path: &str) -> Option<FolderInAnAccount<'_>> {
+        Some(FolderInAnAccount {
+            account: "one",
+            path,
+        })
+    }
+
+    /// A folder in the second account, which is the account `two_accounts`
+    /// adds.
+    fn in_two(path: &str) -> Option<FolderInAnAccount<'_>> {
+        Some(FolderInAnAccount {
+            account: "two",
+            path,
+        })
+    }
+
+    /// Two accounts, each holding a folder at the path `Archive`.
+    ///
+    /// The shared path is the whole point of this fixture and the reason it
+    /// replaced one that gave its two accounts `a-inbox` and `b-inbox`. A real
+    /// IMAP path is not prefixed with an account, so a fixture whose two
+    /// accounts cannot collide passes against a comparison that ignores the
+    /// account entirely, which is exactly the defect these tests are about.
+    ///
+    /// The first account has an `INBOX` as well, so removing its `Archive`
+    /// leaves it with somewhere to put things and the branch is not dropped
+    /// for being empty. Without that, "the other account kept its Archive"
+    /// and "both accounts lost theirs" are both one branch and the assertion
+    /// cannot tell them apart.
+    fn two_accounts() -> Vec<Branch> {
+        vec![
+            Branch {
+                account_id: "one".to_string(),
+                account_name: "me@example.com".to_string(),
+                places: vec![
+                    Destination {
+                        name: "Inbox".to_string(),
+                        id: "INBOX".to_string(),
+                        account_id: "one".to_string(),
+                        depth: 0,
+                    },
+                    Destination {
+                        name: "Archive".to_string(),
+                        id: "Archive".to_string(),
+                        account_id: "one".to_string(),
+                        depth: 0,
+                    },
+                ],
+            },
+            Branch {
+                account_id: "two".to_string(),
+                account_name: "work@example.com".to_string(),
+                places: vec![Destination {
+                    name: "Archive".to_string(),
+                    id: "Archive".to_string(),
+                    account_id: "two".to_string(),
+                    depth: 0,
+                }],
+            },
+        ]
+    }
+
     #[test]
     fn test_the_place_it_is_already_in_is_not_offered() {
         // Otherwise it is a command that silently does nothing, and nobody
         // can tell that from one that failed.
         let tree = offer(
             one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]),
-            Some("inbox"),
+            in_one("inbox"),
         );
 
         let names: Vec<&str> = tree[0].places.iter().map(|p| p.name.as_str()).collect();
@@ -341,7 +432,7 @@ mod tests {
     fn test_an_account_with_nowhere_left_is_not_shown() {
         // An empty branch is a row somebody opens, finds nothing in, and
         // closes, having learnt nothing.
-        let tree = offer(one_account(vec![place("inbox", "Inbox")]), Some("inbox"));
+        let tree = offer(one_account(vec![place("inbox", "Inbox")]), in_one("inbox"));
 
         assert!(tree.is_empty());
     }
@@ -350,22 +441,22 @@ mod tests {
     fn test_other_accounts_keep_their_places() {
         // Two accounts can both have an Archive, and removing the one you are
         // in must not remove the other account's.
-        let mut two = one_account(vec![place("a-inbox", "Inbox")]);
-        two.push(Branch {
-            account_id: "two".to_string(),
-            account_name: "work@example.com".to_string(),
-            places: vec![Destination {
-                name: "Inbox".to_string(),
-                id: "b-inbox".to_string(),
-                account_id: "two".to_string(),
-                depth: 0,
-            }],
-        });
+        //
+        // This test said that before and could not see it: its two accounts
+        // held `a-inbox` and `b-inbox`, which cannot collide, so it passed
+        // against an `offer` that ignored the account altogether.
+        let tree = offer(two_accounts(), in_one("Archive"));
 
-        let tree = offer(two, Some("a-inbox"));
-
-        assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].account_name, "work@example.com");
+        assert_eq!(
+            tree.len(),
+            2,
+            "the other account's Archive is a different folder on a different \
+             server, so its branch is still somewhere the message can go: {tree:?}"
+        );
+        let theirs: Vec<&str> = tree[1].places.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(theirs, ["Archive"], "{tree:?}");
+        let mine: Vec<&str> = tree[0].places.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(mine, ["INBOX"], "{tree:?}");
     }
 
     #[test]
@@ -378,9 +469,53 @@ mod tests {
             place("work", "Work"),
         ]);
 
-        let opens = open_on(&tree, Some("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work")).expect("a destination");
 
         assert_eq!(opens.id, "work");
+    }
+
+    #[test]
+    fn test_the_window_opens_on_the_account_it_was_filed_into() {
+        // Both accounts hold an `Archive`. Opening on the path alone opens on
+        // whichever branch comes first, which is a window that says it is
+        // about to file into the account somebody is looking at when they
+        // named a different one.
+        let tree = two_accounts();
+
+        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+
+        assert_eq!(opens.account_id, "two", "{opens:?}");
+        assert_eq!(opens.id, "Archive");
+    }
+
+    #[test]
+    fn test_a_last_destination_in_another_account_is_not_used() {
+        // The remembered folder is in an account this window is not showing,
+        // so it is not on offer here at all, whatever the first branch happens
+        // to hold at that path. Opening on it would open on a row about
+        // somewhere else.
+        let tree = vec![Branch {
+            account_id: "one".to_string(),
+            account_name: "me@example.com".to_string(),
+            places: vec![
+                Destination {
+                    name: "Inbox".to_string(),
+                    id: "INBOX".to_string(),
+                    account_id: "one".to_string(),
+                    depth: 0,
+                },
+                Destination {
+                    name: "Archive".to_string(),
+                    id: "Archive".to_string(),
+                    account_id: "one".to_string(),
+                    depth: 0,
+                },
+            ],
+        }];
+
+        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+
+        assert_eq!(opens.id, "INBOX", "falls back to the first: {opens:?}");
     }
 
     #[test]
@@ -390,7 +525,7 @@ mod tests {
         // so it is not on offer, and opening on it would open on nothing.
         let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
 
-        let opens = open_on(&tree, Some("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work")).expect("a destination");
 
         assert_eq!(opens.id, "inbox", "falls back to the first");
     }
@@ -404,12 +539,12 @@ mod tests {
 
     #[test]
     fn test_nothing_to_open_on_when_there_is_nowhere() {
-        assert!(open_on(&[], Some("work")).is_none());
+        assert!(open_on(&[], in_one("work")).is_none());
     }
 
     #[test]
     fn test_nowhere_to_go_is_known_before_a_window_opens() {
-        let nothing = offer(one_account(vec![place("inbox", "Inbox")]), Some("inbox"));
+        let nothing = offer(one_account(vec![place("inbox", "Inbox")]), in_one("inbox"));
 
         assert!(!anywhere(&nothing));
         assert!(anywhere(&one_account(vec![place("inbox", "Inbox")])));
@@ -529,7 +664,7 @@ mod tests {
     fn test_nothing_is_removed_when_it_is_not_in_anything_yet() {
         let tree = offer(
             one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]),
-            None,
+            None::<FolderInAnAccount<'_>>,
         );
 
         assert_eq!(tree[0].places.len(), 2);
