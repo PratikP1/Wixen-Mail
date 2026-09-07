@@ -120,6 +120,36 @@ column in the message list, and reads as a word: "unread", "starred", "has
 attachment". `Space` on a message reads its full status along with the rest
 of the item, once for a short summary and again for everything.
 
+### Choosing columns, and what is remembered
+
+`F8`, or View then Columns, opens the column chooser. `Space` shows or hides
+the column you are on, `Alt+Up` and `Alt+Down` move it, and `Alt+R` puts back
+the columns that folder starts with. Every column you turn on is another thing
+your screen reader reads on every row, so this is where you decide how much you
+hear.
+
+Three different things are remembered, and they are remembered for different
+lengths of time.
+
+**The Thread column, for each folder on its own.** It appears in folders where
+messages are grouped into conversations and stays out of folders where every
+message stands alone. If you show or hide it yourself, your choice wins in that
+folder from then on, and it is kept when you close the program.
+
+**The rest of the arrangement, for each kind of folder, while the program is
+running.** Which columns are shown, what order they are in, and how the list is
+sorted. There are two kinds of folder. Your inbox, junk, trash, archive and any
+folder you made yourself all hold mail that arrived, so they share one
+arrangement. Sent and Drafts hold mail you wrote, so they share another, without
+an Unread column and sorted by when a message went rather than when it turned
+up. Arrange your inbox, look in Sent, come back, and your inbox arrangement is
+still there.
+
+**One arrangement, saved when you close the program: the one you changed most
+recently.** If you last arranged columns in Sent, that is what comes back in
+Sent next time you start, and your inbox opens with its usual columns. Sorting a
+column counts as changing the arrangement.
+
 ### Message Actions
 
 **Using Context Menu (Right-Click):**
