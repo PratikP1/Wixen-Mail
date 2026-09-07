@@ -306,6 +306,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Nobody is told Windows overruled a setting they never turned on.**
+
+  On a machine set to reduce animation, the Scrolling section of Settings put a
+  note under the smooth scrolling box saying Windows had overruled it. It did
+  that whether or not the box was ticked, so somebody who had never asked for
+  sliding was told about a fight they were not in, under a box they had left
+  alone. The note now appears only for somebody who asked for sliding and did
+  not get it.
+
+- **The smooth scrolling box says what it reaches.** It said "Slide when a view
+  scrolls", which is every view, and it is the message body. The message list
+  jumps whatever the box says, and nothing this program can ask a Windows list
+  control would make it slide. The label and the changelog entry that
+  introduced the setting both say the message now.
+
 - **The shortcuts page gives `F8` for the composer's toolbar, which is the key
   that works.**
 
@@ -3315,14 +3330,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   that disappears is indistinguishable from a program that has ended if you
   cannot see the screen.
 
-- **Scrolling can slide rather than jump**, under Settings, General. Off by
-  default, which is what everything did before.
+- **The message you are reading can slide rather than jump**, under Settings,
+  General. Off by default, which is what everything did before.
+
+  The message body and nothing else. The message list jumps whatever this is
+  set to, because nothing this program can ask a Windows list control offers an
+  animated scroll at all.
 
   It can only ever be honoured, never forced. When Windows is set to reduce
   animation this setting is ignored and scrolling stays immediate, and the
-  settings screen says so on a machine where that is the case. Animated
-  movement makes some people ill, and somebody who has already told their
-  computer once should not have to find the same switch again in every
+  settings screen says so to somebody who asked for sliding and did not get it.
+  Animated movement makes some people ill, and somebody who has already told
+  their computer once should not have to find the same switch again in every
   program, least of all by being made unwell by the one that ignored them.
 
 - **The chosen message can be kept in view when the list reloads**, under

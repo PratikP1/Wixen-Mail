@@ -21,9 +21,24 @@
 //!
 //! # Why this is not in the presentation layer
 //!
-//! Two places need the answer and they are not near each other: the reader's
-//! web view, which scrolls with CSS, and the message list, which scrolls
-//! through wxWidgets. One decision, made here, read by both.
+//! Two questions are decided here and each has one reader, in a different part
+//! of the presentation layer: [`Motion`] is read by the reader's web view,
+//! which scrolls with CSS, and [`Following`] is read by the message list, which
+//! is asked whether to bring the chosen row back into view after a rebuild.
+//! Neither reader can see the other's answer, and both of them are the settings
+//! somebody made in one place, so the answering belongs above both.
+//!
+//! **[`Motion`] reaches the message body and nothing else, and that is a limit
+//! rather than an omission.** This module used to say two places read it, and
+//! the second one never could. Everything this program can ask a `wxListCtrl`
+//! about scrolling is `ensure_visible`, `show_position`, `scroll_into_view` and
+//! `is_position_visible`; none of them takes a motion, a duration or anything
+//! else animation-shaped, so there is no call here that would slide a list
+//! rather than jump it. Read from the binding this program has rather than from
+//! a running window: what a native list control might do under some other API
+//! is a different question and this program cannot reach it either way. So the
+//! checkbox in Settings names the message, because a general label over a
+//! setting that reaches one surface is a promise to everybody who reads it.
 
 /// How a view should move when it scrolls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
