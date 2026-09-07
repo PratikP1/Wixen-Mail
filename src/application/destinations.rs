@@ -141,6 +141,19 @@ pub struct Destination {
     pub account_id: String,
     /// How deep, so the tree can be built without a second pass. Nought is a
     /// child of the account.
+    ///
+    /// Read by [`crate::presentation::wx_destination::build_destination_dialog`]
+    /// since 04.1-01, and by nothing before it. This sentence and the one on
+    /// `test_how_deep_each_row_is_says_where_it_sits` both said the field built
+    /// the tree, and for as long as they said it every place was appended as a
+    /// direct child of its account whatever its depth. A passing test on a
+    /// field nothing read is what made them look checked.
+    ///
+    /// **A place attaches to the row above it**, so the places in a branch have
+    /// to arrive in the order a walk down the tree meets them: a folder after
+    /// the folder it is in, never before. Both producers here answer that way,
+    /// and [`where_a_folder_can_go`] sorts for it rather than trusting the
+    /// order the folders were stored in.
     pub depth: usize,
 }
 
@@ -245,37 +258,106 @@ pub fn open_on<'a>(
 
 /// Every account's mail folders, as branches the picker can be given.
 ///
-/// **This is the picker's own assembly as it stands, lifted here unchanged so
-/// that a test can put it beside the sidebar's.** It reads the folders itself,
-/// names each account by whatever it is called, and gives every folder a depth
-/// of nought. The sidebar answers all three differently, and
-/// `tests/one_hierarchy_two_views.rs` says where. The next commit replaces this
-/// body with the sidebar's own answer; nothing calls it until then.
+/// The picker's tree and the sidebar's tree are one hierarchy, and this is
+/// where that is made true: it asks
+/// [`crate::presentation::folder_tree::rows`] for the sidebar's own answer and
+/// translates it. Nothing here decides which folders exist, which account owns
+/// one, how deep it sits or what an account is called, because all four
+/// already have an answer and a second one is a divergence waiting to happen.
+/// A folder the sidebar shows and the picker does not, or the two disagreeing
+/// about which account a folder belongs to, would be invisible until somebody
+/// moved mail into the wrong place.
 ///
-/// It takes what [`crate::presentation::folder_tree::rows`] takes, which is
-/// what makes the two comparable at all. Application reaching into
-/// presentation is the arrangement this tree already has in thirty-one places.
+/// Application reaching into presentation is the arrangement this tree already
+/// has in thirty-one places. The alternative is a second builder, which is the
+/// thing being removed.
+///
+/// # What is translated rather than taken
+///
+/// Three things, and they are the whole of the difference between the two
+/// views. The sidebar draws an account as a row, so its folders start one deep
+/// and the picker's start at nought, where the account is the root. The
+/// sidebar's row reads out with its unread count on the end; the picker's is
+/// the bare name, because a destination is somewhere to put mail rather than
+/// somewhere to read it. And the sidebar's identity is the account and the
+/// path, which is what a [`Destination`] carries in two fields.
+///
+/// # What is left out, and why each
+///
+/// The rows that are not folders: Favourites, All Inboxes, Labels and the
+/// saved searches. None of them is somewhere a message can be put. Nothing is
+/// passed in for the first and the last two, so they do not arise, and All
+/// Inboxes is dropped by naming the two kinds of row this reads.
+///
+/// The folders kept on this computer, which the sidebar draws under their own
+/// heading rather than under an account. They belong to no account here, so
+/// they match no branch and are not offered, which is what the picker has
+/// always done.
+///
+/// # A folder the server has stopped listing
+///
+/// **Offered.** Decided here rather than left to be inferred later from what
+/// the code does. `gone` is a fact about the server's last answer (D-27) and
+/// not a verdict on the folder: it still holds its mail, the sidebar still
+/// draws it, and somebody can still open it and read what is in it. A picker
+/// that left it out would make the list saying where mail can go disagree with
+/// the list saying where mail is, for a reason nobody could hear. If the
+/// folder really has gone, the server refuses the command and says so, which
+/// is a failure somebody can act on; a folder silently missing from the tree
+/// is not.
 pub fn where_mail_can_go(
     accounts: &[crate::presentation::folder_tree::AccountInTheTree],
     folders: &[crate::presentation::folder_tree::FolderInTheTree],
 ) -> Vec<Branch> {
-    accounts
-        .iter()
-        .map(|account| Branch {
-            account_id: account.id.clone(),
-            account_name: account.name.clone(),
-            places: folders
-                .iter()
-                .filter(|folder| folder.account == account.id)
-                .map(|folder| Destination {
-                    name: folder.name.clone(),
-                    id: folder.path.clone(),
-                    account_id: account.id.clone(),
-                    depth: 0,
-                })
-                .collect(),
-        })
-        .collect()
+    use crate::application::folder_settings::UnreadOnAParent;
+    use crate::presentation::folder_tree::{WhichRow, rows};
+
+    let mut branches: Vec<Branch> = Vec::with_capacity(accounts.len());
+    // Nothing pinned, no labels, no saved searches, and nothing collapsed. The
+    // first three are other kinds of row and the fourth only changes how a row
+    // is worded, and the wording is the one thing here that is not used.
+    let drawn = rows(
+        accounts,
+        folders,
+        &[],
+        &[],
+        &[],
+        UnreadOnAParent::default(),
+        &std::collections::HashSet::new(),
+    );
+    for row in drawn {
+        match row.identity {
+            WhichRow::Account(id) => {
+                // What the sidebar decided to call it, which is the label with
+                // an address after it only where a second account reads the
+                // same. Named here rather than looked up again, because a
+                // second rule for when an address is read out is two accounts
+                // called Work reading as one row in one of the two windows.
+                let called = row.name;
+                branches.push(Branch {
+                    account_id: id,
+                    account_name: called,
+                    places: Vec::new(),
+                });
+            }
+            WhichRow::Folder { account, path } => {
+                let Some(branch) = branches
+                    .iter_mut()
+                    .find(|branch| branch.account_id == account)
+                else {
+                    continue;
+                };
+                branch.places.push(Destination {
+                    name: row.name,
+                    id: path,
+                    account_id: account,
+                    depth: row.depth.saturating_sub(1),
+                });
+            }
+            _ => {}
+        }
+    }
+    branches
 }
 
 /// What to say when there is nowhere to put it.
@@ -338,40 +420,63 @@ pub fn where_a_folder_can_go(
         });
     }
 
-    places.extend(
-        folders
-            .iter()
-            .filter(|other| !inside_it.contains(&other.id))
-            .filter(|other| Some(other.id) != folder.parent)
-            .map(|other| Destination {
-                name: other.name.clone(),
-                id: other.path.clone(),
-                account_id: account_id.to_string(),
-                depth: how_far_in(folders, other.id),
-            }),
-    );
+    // Parents before their children, which is what [`Destination::depth`]
+    // requires and what the stored order does not give. Folders come back
+    // `ORDER BY id`, which is the order they were first heard of, so `Archive`,
+    // `Work`, `Archive/2026` is an ordinary stored order once somebody makes a
+    // folder inside another one after making a folder beside it. Drawn in that
+    // order, `Archive/2026` would hang under `Work`.
+    //
+    // Sorted on the chain of folders each one sits inside, which puts every
+    // folder straight after the one it is in and leaves brothers and sisters in
+    // the order they arrived. The sort is stable, so nothing else moves.
+    let mut offered: Vec<(Vec<i64>, &crate::application::folders_underneath::Placed)> = folders
+        .iter()
+        .filter(|other| !inside_it.contains(&other.id))
+        .filter(|other| Some(other.id) != folder.parent)
+        .map(|other| (the_way_down_to(folders, other.id), other))
+        .collect();
+    offered.sort_by(|(one, _), (other, _)| one.cmp(other));
+
+    places.extend(offered.into_iter().map(|(chain, other)| Destination {
+        name: other.name.clone(),
+        id: other.path.clone(),
+        account_id: account_id.to_string(),
+        depth: chain.len().saturating_sub(1),
+    }));
     places
 }
 
-/// How many folders this one sits inside, for the row's indent.
+/// The folders this one sits inside, outermost first, ending with itself.
+///
+/// One walk answering two questions, because they are one question: how far in
+/// a folder sits is how long this is, and the order a tree is drawn in is this
+/// read as a sort key. Two walks would be two chances to disagree about what is
+/// under what.
 ///
 /// Bounded for the reason every walk over stored parents is: the column comes
 /// from a database an earlier version wrote, and a walk that does not return
-/// does not return while holding the window open.
-fn how_far_in(folders: &[crate::application::folders_underneath::Placed], of: i64) -> usize {
+/// does not return while holding the window open. Past the bound the chain is
+/// cut, which puts a folder in a cycle at the deepest a row can be drawn rather
+/// than leaving the window still.
+fn the_way_down_to(
+    folders: &[crate::application::folders_underneath::Placed],
+    of: i64,
+) -> Vec<i64> {
     use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
 
-    let mut deep = 0;
+    let mut chain = vec![of];
     let mut at = folders.iter().find(|folder| folder.id == of);
     while let Some(folder) = at {
         let Some(parent) = folder.parent else { break };
-        deep += 1;
-        if deep >= AS_DEEP_AS_A_TREE_GOES {
+        chain.push(parent);
+        if chain.len() >= AS_DEEP_AS_A_TREE_GOES {
             break;
         }
         at = folders.iter().find(|above| above.id == parent);
     }
-    deep
+    chain.reverse();
+    chain
 }
 
 #[cfg(test)]
@@ -803,6 +908,15 @@ mod tests {
         fn test_how_deep_each_row_is_says_where_it_sits() {
             // `Destination.depth` is what builds the tree in the window
             // without a second pass, and nought is a child of the account.
+            //
+            // That sentence was false for as long as it stood here: nothing in
+            // the program read the field, and the window drew every place as a
+            // direct child of its account. This test passed throughout, which
+            // is what made the claim look checked. What the window does with
+            // the number is checked in
+            // `tests/tree_dialogs_resolve_the_row_somebody_is_on.rs`, against a
+            // live control, because only a live control can say which of a
+            // tree and a list was built.
             let places = where_a_folder_can_go(&an_account(), 4, "acc");
             let archive = places
                 .iter()

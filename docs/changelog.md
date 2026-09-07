@@ -306,6 +306,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The window that asks where to move a message now shows folders inside the
+  folders they are in.** It used to show every folder as a row directly under
+  the account, so `Archive`, `2026` and `June` came one after another with
+  nothing saying that the second is inside the first and the third inside the
+  second. Two folders called `2026` in different places were two rows reading
+  the same word.
+
+  Arrow keys work as they do in the folder list on the left: Right opens a
+  folder to see what is inside it, Left closes it again.
+
+  The same window also names your accounts the way the folder list does. An
+  account nobody else is named after reads as its name alone, and two accounts
+  you have called the same thing each get their address after the name, so you
+  can tell them apart by ear. Before this, one of the two windows read out a
+  full address every time and the other read out neither.
+
+  What has not been checked: nobody has heard this window with a screen reader
+  since it changed.
+
 - **The window that asks where to move a message can no longer hand a folder
   from one account to a different account's server.** The window offers folders
   belonging to one account, and until now it answered with the folder's path

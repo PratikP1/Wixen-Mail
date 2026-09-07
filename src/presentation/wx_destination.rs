@@ -162,7 +162,13 @@ pub fn build_destination_dialog(
     let root = tree.add_root("Accounts", None, None);
     // Where focus starts: somewhere that is an answer, rather than on an
     // account name that is not one.
-    let mut start_on: Option<TreeItemId> = None;
+    //
+    // Held as a position in the walk rather than as the row itself, because a
+    // `TreeItemId` owns the pointer it wraps and cannot be copied, and a row
+    // that is a place is also a row other places hang under. The position is
+    // the same thing the answer is read back by, so focus starts on the row the
+    // vector says holds the remembered destination.
+    let mut start_on: Option<usize> = None;
     // What each row means, in the order the rows are appended, which for this
     // shape is also the order the built tree is walked: an account goes under
     // the root and its places go under it before the next account is reached.
@@ -195,16 +201,38 @@ pub fn build_destination_dialog(
                 continue;
             };
             destinations.push(None);
+            // What each depth's places hang under: the account for the places
+            // at nought, and for anything deeper the last row drawn one above
+            // it. `Destination::depth` says the places arrive in the order a
+            // walk down the tree meets them, so the row a place belongs under
+            // is always one this has already drawn.
+            //
+            // A place deeper than one below the place before it hangs under the
+            // deepest row there is, rather than being dropped or drawn as a
+            // sibling of the account. That is a folder whose own parent was not
+            // offered, which the folder move really produces: it leaves out the
+            // folder being moved and everything inside it, so a folder further
+            // down can be offered when the one it sits in is not.
+            let mut under: Vec<TreeItemId> = vec![account];
             for place in &branch.places {
-                let Some(row) = tree.append_item(&account, &place.name, None, None) else {
+                let depth = place.depth.min(under.len() - 1);
+                let Some(row) = tree.append_item(&under[depth], &place.name, None, None) else {
                     continue;
                 };
                 destinations.push(Some(place.clone()));
                 if open_on == Some(place) {
-                    start_on = Some(row);
+                    start_on = Some(destinations.len() - 1);
                 }
+                if depth > 0 {
+                    // Opened, or the rows inside it are drawn and unreachable:
+                    // a closed branch is rows a screen reader never meets and
+                    // arrow keys never enter.
+                    tree.expand(&under[depth]);
+                }
+                under.truncate(depth + 1);
+                under.push(row);
             }
-            tree.expand(&account);
+            tree.expand(&under[0]);
         }
     }
     sizer.add(&tree, 1, SizerFlag::All | SizerFlag::Expand, 8);
@@ -236,9 +264,11 @@ pub fn build_destination_dialog(
     // nothing selected, so the first thing announced is somewhere the message
     // could go, and on the last folder used so that filing the next one is a
     // single Enter.
-    if let Some(start_on) = start_on.as_ref() {
-        tree.select_item(start_on);
-        tree.ensure_visible(start_on);
+    if let Some(at) = start_on
+        && let Some(row) = tree_walk::rows_in_walk_order(&tree).get(at)
+    {
+        tree.select_item(row);
+        tree.ensure_visible(row);
     }
     tree.set_focus();
 

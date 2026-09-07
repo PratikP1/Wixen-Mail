@@ -135,11 +135,26 @@ fn what_the_sidebar_draws() -> Vec<Folder> {
 }
 
 /// What the picker says, in the same four terms.
+///
+/// The account is the branch the place is drawn under, not the one the place
+/// carries. Those two agree in working code and they are not the same claim,
+/// and this file said the second when it meant the first: a break that put
+/// every folder into the first account's branch left every place still
+/// carrying its own account, so the flattened list came out identical and the
+/// guard measurement found nothing red. The branch is the heading somebody
+/// hears above the row.
+///
+/// That the two agree is [`test_a_place_says_the_account_of_the_branch_it_is_drawn_under`].
 fn what_the_picker_offers() -> Vec<Folder> {
     where_mail_can_go(&accounts(), &folders())
         .into_iter()
-        .flat_map(|branch| branch.places)
-        .map(|place| (place.account_id, place.id, place.name, place.depth))
+        .flat_map(|branch| {
+            let under = branch.account_id;
+            branch
+                .places
+                .into_iter()
+                .map(move |place| (under.clone(), place.id, place.name, place.depth))
+        })
         .collect()
 }
 
@@ -308,6 +323,32 @@ fn test_two_accounts_that_read_alike_are_named_alike_in_both() {
         "Personal",
         "and an account nobody else is named after should not have an address \
          read out on every pass: {picker:?}"
+    );
+}
+
+#[test]
+fn test_a_place_says_the_account_of_the_branch_it_is_drawn_under() {
+    // Two facts about one folder, and the window uses both: the branch decides
+    // which heading the row is drawn under and so which account somebody hears
+    // above it, and the place's own account is what travels back with the
+    // answer and decides which server the command is sent to. They have to
+    // agree or the window says one account and files into another.
+    let wrong: Vec<String> = where_mail_can_go(&accounts(), &folders())
+        .into_iter()
+        .flat_map(|branch| {
+            let under = branch.account_id;
+            branch
+                .places
+                .into_iter()
+                .filter(move |place| place.account_id != under)
+                .map(|place| format!("{place:?}"))
+        })
+        .collect();
+
+    assert!(
+        wrong.is_empty(),
+        "a row drawn under one account and answering with another:\n  {}",
+        wrong.join("\n  ")
     );
 }
 

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 457 records have arrived since and have not been through it.
+# 461 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13465,13 +13465,23 @@ tests_last_seen = [
 # Measured by hand on 2026-09-02 against this target: one test, which is the
 # only test in it. The break leaves two entries behind for a two-folder account,
 # and the failure says which dialog left them.
+#
+# Re-measured on 2026-09-07. The row a place hangs under is no longer always
+# the account: since 04.1-01 a place at depth one hangs under the place above
+# it, so the break's first line moved and the record stopped naming any place
+# in the tree at all. What it defends is unchanged and it still reddens the one
+# test in that target.
 name = "the destination picker hangs its folder identifiers off the control"
 file = "src/presentation/wx_destination.rs"
 suite = "tree_rows_leave_no_registry_entry"
-before = """                let Some(row) = tree.append_item(&account, &place.name, None, None) else {"""
-after = """                let Some(row) =
-                    tree.append_item_with_data(&account, &place.name, place.id.clone(), None, None)
-                else {"""
+before = """                let Some(row) = tree.append_item(&under[depth], &place.name, None, None) else {"""
+after = """                let Some(row) = tree.append_item_with_data(
+                    &under[depth],
+                    &place.name,
+                    place.id.clone(),
+                    None,
+                    None,
+                ) else {"""
 red = [
     "test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry",
 ]
@@ -16738,4 +16748,118 @@ red = [
 tests_last_seen = [
     { file = "src/application/scrolling.rs", tests = 10 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+[[guard]]
+# The move window builds its own folder list again, and gives every folder a
+# depth of nought.
+#
+# That is what shipped until 04.1-01. The picker read the folders itself and
+# passed nought for every one, so `Archive/2026` and `Work/2026` were two rows
+# reading the same word under one heading, and `Destination.depth`'s own doc
+# said the field built the tree while nothing read it.
+#
+# Measured against `tests/one_hierarchy_two_views.rs`, which drives one fixture
+# through the sidebar's builder and through the picker's and requires the two
+# to agree.
+name = "the move window gives every folder a depth of nought"
+file = "src/application/destinations.rs"
+suite = "one_hierarchy_two_views"
+before = """                    depth: row.depth.saturating_sub(1),"""
+after = """                    depth: 0,"""
+red = [
+    "test_a_folder_sits_at_one_depth_and_not_two",
+    "test_the_picker_offers_the_folders_the_sidebar_shows",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 30 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 7 },
+]
+
+[[guard]]
+# The move window decides for itself what an account is called.
+#
+# The sidebar puts an address on an account only when a second account reads
+# the same, so somebody hears "Work" for an account nobody else is named after
+# and "Work <ada@example.com>" when two are. The picker used to call nothing:
+# the mail path passed the address always and the PIM path passed the label
+# always, so two accounts both called Work were one name in one of those two
+# windows and two in the other.
+#
+# The break is the plausible one, which is the picker answering the question
+# again from the accounts it was handed rather than taking the answer it was
+# given.
+name = "the move window decides for itself what an account is called"
+file = "src/application/destinations.rs"
+suite = "one_hierarchy_two_views"
+before = """                let called = row.name;"""
+after = """                let called = accounts
+                    .iter()
+                    .find(|account| account.id == id)
+                    .map_or_else(String::new, |account| account.name.clone());"""
+red = [
+    "test_two_accounts_that_read_alike_are_named_alike_in_both",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 30 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 7 },
+]
+
+[[guard]]
+# Every folder lands in the first account's branch.
+#
+# The worst thing this function can get wrong, and the one nothing in the tree
+# could see before this target existed: a folder filed under an account it does
+# not belong to is a path sent to a server that never had it.
+#
+# The break keeps the lookup and drops the only thing in it that is about
+# identity, which is the shape this defect really takes. It is the reason
+# `test_a_folder_belongs_to_one_account_in_both` exists, since that test is
+# green on arrival and this is where its red was taken.
+#
+# Measured twice, and the first measurement is the reason four tests are named
+# here rather than two. This break reddened *nothing* on the first run, because
+# the target flattened every branch away before comparing and read the account
+# off each place rather than off the branch it was drawn under. Those two agree
+# in working code and are not the same claim: the place still carried its own
+# account while sitting under the wrong heading, so the comparison came out
+# identical. The target now reads the branch, and
+# `test_a_place_says_the_account_of_the_branch_it_is_drawn_under` was written to
+# hold the two together. The second run reddens four.
+name = "every folder the move window offers lands in the first account's branch"
+file = "src/application/destinations.rs"
+suite = "one_hierarchy_two_views"
+before = """                    .find(|branch| branch.account_id == account)"""
+after = """                    .find(|branch| !branch.account_id.is_empty())"""
+red = [
+    "test_a_folder_belongs_to_one_account_in_both",
+    "test_a_folder_the_server_has_stopped_listing_is_still_somewhere_mail_can_go",
+    "test_a_place_says_the_account_of_the_branch_it_is_drawn_under",
+    "test_the_picker_offers_the_folders_the_sidebar_shows",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 30 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 7 },
+]
+
+[[guard]]
+# The move window draws its folders as a list under a heading.
+#
+# Every place appended as a direct child of its account, whatever its depth
+# said, which is what the window did for as long as `Destination.depth` existed.
+# The tests beside the dialog cannot see it: they ask what a position means
+# against a vector they write themselves, and the walk meets the same rows in
+# the same order whether the tree is nested or flat. Only a live control says
+# which of the two was built, which is what this target is for.
+name = "the move window draws its folders as a list under a heading"
+file = "src/presentation/wx_destination.rs"
+suite = "tree_dialogs_resolve_the_row_somebody_is_on"
+before = """                let depth = place.depth.min(under.len() - 1);"""
+after = """                let depth = 0;"""
+red = [
+    "test_choosing_a_row_in_either_dialog_resolves_to_that_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_destination.rs", tests = 6 },
+    { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
 ]
