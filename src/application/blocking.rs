@@ -775,6 +775,41 @@ pub fn the_rule_that_blocks<'a>(
         .find(|rule| the_block_in(rule).as_ref() == Some(block))
 }
 
+/// What to say when the rule behind a chosen row is not there any more.
+///
+/// The rules manager can be open at the same time as this list, and a rule
+/// deleted there leaves a row here standing for nothing. Saying somebody was
+/// unblocked when no rule was removed is the one sentence this window must
+/// never produce: it is a claim about somebody's mail that is not true.
+pub const IT_HAS_ALREADY_GONE: &str = "That block is not there any more. It may have been taken off in the rules list while \
+     this window was open. Nothing has been changed.";
+
+/// What pressing Unblock on a chosen row does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatUnblockingDoes {
+    /// Delete this rule, and then say this.
+    TakeOffTheRule {
+        /// The rule that is exactly this block, and never a wider one.
+        rule_id: String,
+        /// What to say once it is gone.
+        said: String,
+    },
+    /// Nothing. The rule is not there any more, and the sentence says so.
+    ItHasAlreadyGone(String),
+}
+
+/// What to do when somebody presses Unblock on a row.
+///
+/// `rules` are the rules as they stand at the moment of the press, not as
+/// they stood when the window opened.
+pub fn what_unblocking_a_row_does(
+    _account_id: &str,
+    _chosen: &Blocked,
+    _rules: &[MessageFilterRule],
+) -> WhatUnblockingDoes {
+    WhatUnblockingDoes::ItHasAlreadyGone(String::new())
+}
+
 /// The block a stored rule carries, when it carries one.
 ///
 /// Both the name and the shape have to agree. The name is what makes a block
@@ -1954,5 +1989,195 @@ mod tests {
         let said = what_the_list_holds(&[blocked("ada@example.com", true)]);
 
         assert!(said.contains("Unblock"), "{said}");
+    }
+
+    // ── Taking a block off, and only the one chosen ─────────────────────
+
+    /// An address block sitting underneath a domain block that also catches
+    /// it, which is the arrangement both directions of the rule are about.
+    fn one_under_a_domain() -> (Block, Block, [MessageFilterRule; 2]) {
+        let one = just_this_sender("ada@example.com").expect("an address");
+        let domain = everyone_at_the_senders_domain("x@example.com").expect("a domain");
+        let rules = [
+            a_rule_that_blocks("acct", &one, "Junk", "t"),
+            a_rule_that_blocks("acct", &domain, "Junk", "t"),
+        ];
+        (one, domain, rules)
+    }
+
+    #[test]
+    fn test_unblocking_one_address_leaves_the_domain_block_that_covers_it_alone() {
+        // `the_rule_that_blocks`'s own doc gives the reason, and it is worth
+        // quoting because the failure cannot be undone by asking again:
+        // "Unblocking one address by deleting the domain block that catches
+        // it would unblock everybody at that domain." Somebody who wanted one
+        // person back would silently have let a whole company back in, and
+        // nothing would say so.
+        let (one, _, rules) = one_under_a_domain();
+        let chosen = everyone_blocked("acct", &rules)
+            .into_iter()
+            .find(|listed| listed.what == one)
+            .expect("the address block is in the list");
+
+        let WhatUnblockingDoes::TakeOffTheRule { rule_id, .. } =
+            what_unblocking_a_row_does("acct", &chosen, &rules)
+        else {
+            panic!("unblocking an address that is blocked found no rule to take off");
+        };
+
+        assert_eq!(rule_id, rules[0].id, "it reached for the wrong rule");
+        assert_ne!(rule_id, rules[1].id, "it reached for the domain block");
+    }
+
+    #[test]
+    fn test_unblocking_a_domain_leaves_the_narrower_block_underneath_it_alone() {
+        // The other direction, and it fails differently: deleting the address
+        // rule leaves the domain block in place, so the person believes they
+        // have unblocked a whole domain and their mail goes on being filed
+        // away. One test would not have seen this.
+        let (_, domain, rules) = one_under_a_domain();
+        let chosen = everyone_blocked("acct", &rules)
+            .into_iter()
+            .find(|listed| listed.what == domain)
+            .expect("the domain block is in the list");
+
+        let WhatUnblockingDoes::TakeOffTheRule { rule_id, .. } =
+            what_unblocking_a_row_does("acct", &chosen, &rules)
+        else {
+            panic!("unblocking a domain that is blocked found no rule to take off");
+        };
+
+        assert_eq!(rule_id, rules[1].id, "it reached for the wrong rule");
+        assert_ne!(rule_id, rules[0].id, "it reached for the address block");
+    }
+
+    #[test]
+    fn test_unblocking_a_rule_that_has_already_gone_does_not_claim_a_removal() {
+        // The rules manager can be open at the same time as this window, so a
+        // row can be standing for a rule that was deleted a moment ago.
+        let ada = just_this_sender("ada@example.com").expect("an address");
+        let chosen = everyone_blocked("acct", &[a_rule_that_blocks("acct", &ada, "Junk", "t")])
+            .pop()
+            .expect("one block");
+
+        let answer = what_unblocking_a_row_does("acct", &chosen, &[]);
+
+        assert_eq!(
+            answer,
+            WhatUnblockingDoes::ItHasAlreadyGone(IT_HAS_ALREADY_GONE.to_string())
+        );
+        assert!(
+            !IT_HAS_ALREADY_GONE.contains("will arrive in your inbox again"),
+            "the already-gone sentence claims a removal that did not happen"
+        );
+    }
+
+    #[test]
+    fn test_unblocking_says_what_it_did_including_that_filed_mail_stays_put() {
+        // `what_unblocking_did` was written for this window and never called.
+        // Mail already in Junk does not come back on its own, and somebody who
+        // is not told that goes looking in an inbox that will not have it.
+        let ada = just_this_sender("ada@example.com").expect("an address");
+        let rules = [a_rule_that_blocks("acct", &ada, "Junk", "t")];
+        let chosen = everyone_blocked("acct", &rules).pop().expect("one block");
+
+        let WhatUnblockingDoes::TakeOffTheRule { said, .. } =
+            what_unblocking_a_row_does("acct", &chosen, &rules)
+        else {
+            panic!("a block that is there was reported as already gone");
+        };
+
+        assert_eq!(said, what_unblocking_did(&ada));
+        assert!(said.contains("stays where it is"), "{said}");
+    }
+
+    // ── What is said before a block is made ─────────────────────────────
+
+    #[test]
+    fn test_the_before_sentence_and_the_after_sentence_agree_about_the_junk_folder() {
+        // Two computations of one fact is the drift this codebase keeps
+        // finding. Here it would let the sentence said before a block and the
+        // one said after it disagree about which folder the mail went to.
+        let block = just_this_sender("ada@example.com").expect("an address");
+        let junk = TheJunkFolder::IsSwitchedOnByBlocking;
+
+        let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, junk);
+        let after = what_blocking_did(&block, "Junk", Allowed::EVERYTHING, junk);
+
+        assert!(before.contains("will switch it on"), "{before}");
+        assert!(after.contains("has been switched on"), "{after}");
+        assert!(
+            before.contains("Junk") && after.contains("Junk"),
+            "one of the two does not name the folder:\n{before}\n{after}"
+        );
+    }
+
+    #[test]
+    fn test_a_junk_folder_that_could_not_be_switched_on_is_reported_as_it_really_ended_up() {
+        // The case that breaks hoisting one value and using it twice. The
+        // making path asks what the junk folder needs, says the before
+        // sentence from that answer, then tries to switch the folder on and
+        // downgrades the answer when that fails. The after sentence has to
+        // read the downgraded value, or it repeats a promise that did not
+        // happen.
+        let block = just_this_sender("ada@example.com").expect("an address");
+
+        let promised = what_blocking_will_do(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            TheJunkFolder::IsSwitchedOnByBlocking,
+        );
+        let really = what_blocking_did(
+            &block,
+            "Junk",
+            Allowed::EVERYTHING,
+            TheJunkFolder::IsNotBeingDownloaded,
+        );
+
+        assert_ne!(promised, really);
+        assert!(
+            !really.contains("has been switched on"),
+            "the after sentence claims a switch that failed: {really}"
+        );
+        assert!(really.contains("is not being downloaded"), "{really}");
+    }
+
+    #[test]
+    fn test_a_block_that_carries_a_warning_produces_both_strings_one_after_the_other() {
+        // The case this wiring can make worse rather than better, because it
+        // is the only one where somebody hears two sentences before a block.
+        // Read one after the other, as they are said:
+        //
+        //   "This message came from a mailing list. Blocking files it into
+        //    Junk and the list carries on sending it. To stop it at the
+        //    source, unsubscribe by writing to leave@list.example."
+        //
+        //   "Mail from ada@list.example will go to Junk from now on. This
+        //    does not tell your mail provider anything, so the mail is still
+        //    accepted and still arrives here. Messages that already arrived
+        //    stay where they are."
+        //
+        // Two things, and they say different things: the first is about the
+        // list, the second about what a block does. Whether that is one clear
+        // answer or two competing ones is the checkpoint's job.
+        let block = just_this_sender("ada@list.example").expect("an address");
+        let own = mine(&["me@work.example"]);
+        let MayBlock::YesButFirst(warning) = may_block(
+            "acct",
+            &block,
+            &WhatIsAlreadyTrue {
+                how_to_leave_the_list: Some("<mailto:leave@list.example>"),
+                ..nothing_known(&own)
+            },
+        ) else {
+            panic!("a mailing list did not produce a warning");
+        };
+        let before = what_blocking_will_do(&block, "Junk", Allowed::EVERYTHING, ALREADY_THERE);
+
+        assert!(!warning.is_empty() && !before.is_empty());
+        assert_ne!(warning, before, "the two sentences are the same words");
+        assert!(warning.contains("mailing list"), "{warning}");
+        assert!(before.contains("will go to Junk"), "{before}");
     }
 }
