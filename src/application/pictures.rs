@@ -1244,26 +1244,10 @@ mod tests {
         assert!(said.contains("did not describe"), "{said}");
     }
 
-    #[test]
-    fn test_a_message_with_nothing_held_back_says_nothing() {
-        assert!(what_was_held_back(0).is_empty());
-    }
-
-    #[test]
-    fn test_one_held_back_picture_is_not_reported_in_the_plural() {
-        let said = what_was_held_back(1);
-
-        assert!(said.starts_with("1 picture was"), "{said}");
-        assert!(!said.contains("pictures"), "{said}");
-    }
-
-    #[test]
-    fn test_the_report_says_how_many_and_where_to_change_it() {
-        // The count tells a signature apart from a mailing, and naming the
-        // setting is the difference between a warning and a dead end.
-        let said = what_was_held_back(30);
-
-        assert!(said.starts_with("30 pictures"), "{said}");
-        assert!(said.contains("Settings, Reading"), "{said}");
-    }
+    // The three tests that used to be here asked `what_was_held_back` for a
+    // string and asserted the string. Every assertion was right, the function
+    // was right, and nothing showed the string to anybody, so they passed for
+    // as long as a reader heard none of it. They are now in
+    // `presentation::html_renderer`, asserted against the document a reader is
+    // given, which is the only place that can tell.
 }

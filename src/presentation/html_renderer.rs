@@ -848,6 +848,125 @@ mod tests {
         assert!(shown.contains("cdn.example"), "{shown}");
     }
 
+    // ── What a reader is told about the pictures that were held back ────────
+    //
+    // These four measure the document somebody is given. Three of them were
+    // in `application::pictures`, where they asked `what_was_held_back` for a
+    // string and asserted the string. The function was right, and both callers
+    // of the count threw it away, so the sentence reached nobody and the tests
+    // passed the whole time. The subject is what a reader hears, so the
+    // assertion belongs on the document.
+
+    /// A message body holding pictures a reader's machine would have to fetch
+    /// from a stranger's server, which is what gets held back.
+    fn pictures_from_a_stranger(how_many: usize) -> String {
+        let mut body = String::from("<p>Our spring range</p>");
+        for n in 0..how_many {
+            body.push_str(&format!(
+                r#"<img src="https://cdn.example/{n}.jpg" alt="Item {n}">"#
+            ));
+        }
+        body
+    }
+
+    #[test]
+    fn test_a_reader_is_told_how_many_were_held_back_and_where_the_switch_is() {
+        // The count tells a signature apart from a mailing, and naming the
+        // setting is the difference between a warning and a dead end. Both of
+        // those were written and neither reached a reader: somebody meeting a
+        // marketing message met "[Picture not shown: ...]" thirty times and
+        // was never told there were thirty.
+        use crate::application::pictures::Fetching;
+        let document = HtmlRenderer::with_fetching(Fetching::Blocked)
+            .wrap_body(&MessageBody::Html(pictures_from_a_stranger(30)));
+
+        let said = document
+            .find("30 pictures were not shown")
+            .unwrap_or_else(|| panic!("the document never says how many: {document}"));
+        assert!(document.contains("Settings, Reading"), "{document}");
+
+        // Orientation arrives before the thing it orients somebody in. A
+        // document is read in order, so a count under thirty markers is a
+        // count nobody reaches until they no longer need it.
+        let body_starts = document
+            .find("Our spring range")
+            .unwrap_or_else(|| panic!("the body itself is missing: {document}"));
+        assert!(
+            said < body_starts,
+            "the count is read after the message it is about: {document}"
+        );
+    }
+
+    #[test]
+    fn test_a_message_with_nothing_held_back_says_nothing() {
+        // The assertion that stops an ordinary message growing a line about
+        // pictures nobody held back.
+        //
+        // Green on arrival, and kept for that reason rather than as coverage:
+        // when it was rewritten no document said the sentence at all, so it
+        // passed before the sentence was placed as well as after.
+        use crate::application::pictures::Fetching;
+        let document = HtmlRenderer::with_fetching(Fetching::Blocked)
+            .wrap_body(&MessageBody::Html("<p>Lunch on Thursday?</p>".to_string()));
+
+        assert!(
+            !document.contains("not shown, because fetching"),
+            "{document}"
+        );
+        assert!(!document.contains("Settings, Reading"), "{document}");
+    }
+
+    #[test]
+    fn test_one_held_back_picture_is_not_reported_in_the_plural() {
+        // One held-back picture in a message from a person is usually their
+        // signature. "1 pictures were not shown" is read out in full by the
+        // thing this product exists for.
+        use crate::application::pictures::Fetching;
+        let document = HtmlRenderer::with_fetching(Fetching::Blocked)
+            .wrap_body(&MessageBody::Html(pictures_from_a_stranger(1)));
+
+        assert!(document.contains("1 picture was not shown"), "{document}");
+        assert!(!document.contains("1 pictures"), "{document}");
+    }
+
+    #[test]
+    fn test_a_conversation_says_it_under_each_message_that_held_pictures_back() {
+        // A total for the page would give a number and not say which message
+        // it is about, and a conversation is read in order rather than all at
+        // once. So each message carries its own count, under its own heading.
+        use crate::application::pictures::Fetching;
+        let document = HtmlRenderer::with_fetching(Fetching::Blocked).render_thread(
+            "Spring catalogue",
+            &[
+                part("Ada", 0, &pictures_from_a_stranger(30)),
+                part("Grace", 1, &pictures_from_a_stranger(2)),
+            ],
+        );
+
+        assert_eq!(
+            document.matches("Settings, Reading").count(),
+            2,
+            "said once for the page rather than once per message: {document}"
+        );
+
+        let ada = document
+            .find("from Ada")
+            .unwrap_or_else(|| panic!("no heading for Ada: {document}"));
+        let thirty = document
+            .find("30 pictures were not shown")
+            .unwrap_or_else(|| panic!("Ada's thirty are not counted: {document}"));
+        let grace = document
+            .find("from Grace")
+            .unwrap_or_else(|| panic!("no heading for Grace: {document}"));
+        let two = document
+            .find("2 pictures were not shown")
+            .unwrap_or_else(|| panic!("Grace's two are not counted: {document}"));
+        assert!(
+            ada < thirty && thirty < grace && grace < two,
+            "a count is not under the heading of the message it is about: {document}"
+        );
+    }
+
     /// The trip a picture really takes between being inserted and being seen
     /// again, one stage at a time so a failure says which stage lost it.
     ///
