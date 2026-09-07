@@ -478,6 +478,20 @@ const A_CALENDAR_DOCUMENT: &str = "text/calendar";
 /// never recorded against the meeting.
 const AN_ANSWER: &str = "text/calendar; charset=utf-8; method=REPLY";
 
+/// What an invitation passed on to somebody else says it is.
+///
+/// A meeting somebody is being asked to. Their client offers it as a meeting
+/// to answer rather than a file to save, and the `ORGANIZER` inside is
+/// untouched, so the answer they give goes back to whoever called the meeting
+/// rather than to whoever passed it on.
+const AN_INVITATION: &str = "text/calendar; charset=utf-8; method=REQUEST";
+
+/// What a cancellation passed on says it is.
+///
+/// A meeting called off. The case where declaring nothing costs the most: a
+/// cancellation a calendar never hears about leaves somebody turning up.
+const A_CANCELLATION: &str = "text/calendar; charset=utf-8; method=CANCEL";
+
 /// The content type to put on the part, from the name and from what is in it.
 ///
 /// The name decides for everything that is not a calendar document, because
@@ -514,11 +528,13 @@ pub fn content_type_of(name: &str, bytes: &[u8]) -> &'static str {
     };
     match crate::application::invitations::what_it_asks(document) {
         crate::application::invitations::WhatItAsks::SomebodysAnswer => AN_ANSWER,
-        // A document naming no method must not be given one, and the two that
-        // are left keep today's answer until the plan that writes theirs.
-        crate::application::invitations::WhatItAsks::Invitation
-        | crate::application::invitations::WhatItAsks::Cancellation
-        | crate::application::invitations::WhatItAsks::SomethingElse => from_the_name,
+        crate::application::invitations::WhatItAsks::Invitation => AN_INVITATION,
+        crate::application::invitations::WhatItAsks::Cancellation => A_CANCELLATION,
+        // A document naming no method must not be given one. A published feed,
+        // a free-busy query and a counter proposal all arrive here, and none of
+        // them is asking anything, so a method put on one would tell the
+        // recipient's client to act on something nobody asked.
+        crate::application::invitations::WhatItAsks::SomethingElse => from_the_name,
     }
 }
 

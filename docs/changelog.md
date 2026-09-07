@@ -272,6 +272,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   stands rather than only here, because a changelog is read backwards by
   somebody working out when a thing started working.
 
+- **Passing a meeting invitation on to somebody now offers their calendar the
+  meeting, where before it offered them a file.**
+
+  This is the same fault as the one above, met from the other direction, and it
+  changes something you may not have asked to have changed. If you attach a
+  `.ics` file to a message, Wixen Mail now reads what the file says it is and
+  declares it that way: an invitation goes out as an invitation, a meeting
+  called off goes out as a cancellation, and anything that is asking nothing,
+  such as a calendar you subscribe to and saved, goes out exactly as it did
+  before.
+
+  What that means in practice: forward an invitation to a colleague and their
+  mail program offers them the meeting, with Accept, Tentative and Decline,
+  rather than an attachment to open by hand. Whoever called the meeting is
+  still named as having called it, so the answer your colleague gives goes back
+  to them and not to you.
+
+  It works this way because the standard for calendar attachments requires the
+  file and the label on it to agree. Wixen Mail was labelling every calendar
+  file the same way whatever it held, which is this program contradicting the
+  file it is sending, and the recipient's program is entitled to believe
+  neither.
+
 - **Undo Send now has something to take back. Until this release it refused
   every single time it was pressed.**
 

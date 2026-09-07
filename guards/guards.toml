@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 443 records have arrived since and have not been through it.
+# 444 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -15597,7 +15597,7 @@ red = [
     "application::attaching::tests::test_what_a_batch_of_three_says_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/application/attaching.rs", tests = 38 },
+    { file = "src/application/attaching.rs", tests = 42 },
 ]
 
 # ── Every way a file goes on a message ends at one model ───────────────────
@@ -16239,3 +16239,36 @@ red = [
     "presentation::wx_send_later::tests::test_every_refusal_names_a_next_move_rather_than_only_saying_no",
 ]
 tests_last_seen = [{ file = "src/presentation/wx_send_later.rs", tests = 8 }]
+
+# ── The type on an outgoing part is worked out, not read off the name ───────
+#
+# The defect this whole plan exists to stop, in the exact shape it had. The
+# content type saying a meeting reply is a reply was written, tested and
+# correct, and the sending path never asked for it, so every answer went out
+# declared as a plain calendar file and no organiser's client recorded one.
+#
+# So the break is not deleting the call, which only asks whether the call
+# exists and which nobody doubts. It keeps the call and throws the answer
+# away, which is what a later change reaching for the simpler-looking
+# `content_type(&name)` would do, and which every check on the call site is
+# blind to.
+#
+# The red list is one test and that is the measurement rather than an
+# oversight. The four tests over the derivation itself call `content_type_of`
+# directly, so the break cannot touch them: it is at the call site, and only a
+# test that goes the whole way from a document to a `Ready` can see the answer
+# being discarded. That is exactly the discrimination wanted here. Measured
+# with --all-targets --no-fail-fast from a green tree of 6,521 tests.
+
+[[guard]]
+name = "the type on an outgoing part is worked out from the document, not read off the name"
+file = "src/application/attaching.rs"
+before = """                content_type: content_type_of(&name, &bytes),"""
+after = """                content_type: {
+                    let _ = content_type_of(&name, &bytes);
+                    content_type(&name)
+                },"""
+red = [
+    "application::attaching::tests::test_a_reply_arrives_declared_as_a_reply_so_the_organisers_client_records_it",
+]
+tests_last_seen = [{ file = "src/application/attaching.rs", tests = 42 }]
