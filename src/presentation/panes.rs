@@ -156,8 +156,11 @@ pub enum Direction {
 /// that carries no direction at all.
 ///
 /// Forward is the sidebar, which is the next stop round from the list.
-pub const fn leaving_the_preview(_going: Direction) -> Pane {
-    Pane::List
+pub const fn leaving_the_preview(going: Direction) -> Pane {
+    match going {
+        Direction::Forward => Pane::Sidebar,
+        Direction::Back => Pane::List,
+    }
 }
 
 /// Which way a page asked to leave, or nothing if it was not asking to leave.
@@ -175,16 +178,19 @@ pub const fn leaving_the_preview(_going: Direction) -> Pane {
 /// somebody inside a browser with no keyboard way out, which is the failure the
 /// whole escape route exists to prevent.
 pub fn leaving_which_way(json: &str) -> Option<Direction> {
-    serde_json::from_str::<serde_json::Value>(json)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("kind")
-                .and_then(|kind| kind.as_str())
-                .map(|kind| kind == "leave")
-        })
-        .unwrap_or(false)
-        .then_some(Direction::Back)
+    let value = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    if value.get("kind").and_then(serde_json::Value::as_str) != Some("leave") {
+        return None;
+    }
+    // Absent and false are different questions and get one answer here on
+    // purpose. `back: false` is F6, which is forward. Absent is Escape or the
+    // Back button, neither of which has a direction, and the default is the
+    // message list because that is where both landed before any of this
+    // carried one.
+    match value.get("back").and_then(serde_json::Value::as_bool) {
+        Some(false) => Some(Direction::Forward),
+        Some(true) | None => Some(Direction::Back),
+    }
 }
 
 #[cfg(test)]
