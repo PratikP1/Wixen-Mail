@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 155
+open_count: 159
 waived_count: 0
 fixed_count: 15
-total_count: 170
-last_updated: 2026-09-07T15:17:35.182Z
+total_count: 174
+last_updated: 2026-09-07T16:53:56.612Z
 ---
 
 # Broken Windows Ledger
@@ -185,6 +185,10 @@ last_updated: 2026-09-07T15:17:35.182Z
 | 168 | 04.2 | unrun-verify | src/presentation/wx_columns.rs |  | Restore Defaults still announces the fixed sentence 'Columns reset to the default', which does not say which folder's defaults arrived. It now really does restore the ones for the folder somebody is in, and the two kinds differ by a whole column and by which date the list is sorted on, so the same six words describe two different outcomes. Whether somebody who cannot see the list can tell which they got, and whether the sentence should name the folder kind, is unverified by ear. | open |  | 2026-09-07T15:17:23.347Z |  |
 | 169 | 04.2 | deviation | src/presentation/message_columns.rs |  | A build older than 0.85.0 reading a layout this build wrote keeps its columns and falls back to that folder's default sort. The kind is appended after an @ on the end of the stored string, which puts it inside the field an older build reads its sort from. The second sort level was free in both directions because a semicolon inside the sort field is what an older parser stops at; this field cannot be. Accepted rather than fixed, and written into to_stored's own doc. Putting the kind into the columns list instead would have cost nothing in either direction and was rejected as smuggling a non-column through a list of columns. | open |  | 2026-09-07T15:17:23.911Z |  |
 | 170 | 04.2 | deviation | .planning/phases/04.2-what-was-built-and-never-reached/04.2-08-PLAN.md |  | One RED assertion had to be respelled in the GREEN commit. test_a_sent_layout_and_both_its_levels_come_back_as_a_sent_layout asserted back.kind == FolderKind::Sent against a two-argument from_stored, because a test that does not compile is not a red and red-commit.sh refuses one. The fix changed ColumnLayout::kind to Option and from_stored to one argument, so the same claim is now spelled Some(FolderKind::Sent) against from_stored(..).expect(..). The claim did not change and the test was really red for the right reason; the bytes did. Inherent to any red written about a type that does not exist yet, and worth a name so the next plan does not read the diff as the test being edited to pass. | open |  | 2026-09-07T15:17:35.182Z |  |
+| 171 | 04.2 | unrun-verify | src/presentation/editor_document.rs |  | Whether F8 really reaches the composer's toolbar on a machine other than the one where it was watched working, and whether Ctrl+backslash fails everywhere or only here. The project measured both once, on one machine, and recorded it in editor_document.rs's own comment. docs/KEYBOARD_SHORTCUTS.md now gives F8 as the way in and marks Ctrl+backslash as bound and not seen to arrive, which raises what a second machine disagreeing would cost: a page giving the wrong key is the exact defect this plan closed, and it would be closed in the wrong direction. The check that pairs the page with the bindings cannot tell a key that arrives from one that does not, and says so in its own words. | open |  | 2026-09-07T16:53:28.127Z |  |
+| 172 | 04.2 | unrun-verify | src/presentation/wx_compose.rs |  | Neither key this plan wrote into the shortcuts page has been heard. Delete on the composer's attachments list announces Removed and the file's name at Priority::Normal, and whether that is heard over the list refilling under it, and whether the row cursor lands somewhere sensible after a row goes, is the same question ledger 160 asks of the blocked senders list. Closing the conversation window with F6 is the other: the frame is hidden and a timer hands control back to whatever opened it, and nothing here says where focus went or that the window closed at all, so somebody who pressed F6 expecting to move between panes may hear nothing and not know what happened. | open |  | 2026-09-07T16:53:37.371Z |  |
+| 173 | 04.2 | deviation | tests/wired.rs |  | The plan asked for the code-to-doc direction in tests/wired.rs to be widened to read editor_document.rs and wx_compose.rs as well as wx_app.rs. It was not, and the reason is a measurement rather than a preference: every key those two files bind is already written in docs/KEYBOARD_SHORTCUTS.md by name, F7 F8 F6 Escape Tab Enter and Delete, so that widening reports nothing at all today and would guard nothing. The class of key that hid F8, Delete and F6 is not one the document never names, it is one the document names for a different surface, and no whole-document reader can see that. The per-surface reading went into tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs instead, which was red on all three. | open |  | 2026-09-07T16:53:46.808Z |  |
+| 174 | 04.2 | deviation | tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs |  | The per-surface check covers two surfaces and the shortcuts document describes about thirty. The composer's page and the conversation window are the two that were wrong, and both are now held. Every other surface that gives a key its own meaning is unheld: the reader window's F8 for attachments, the View menu's F8 for the Columns dialog, Delete in the message list, F6 for panes in the main window. Any of those could lose its binding or its documentation and both directions of the pair in tests/wired.rs would stay green, because the key name is in the document for one of the others. Generalising means giving each surface a heading and a reader, which is a real piece of work and is not what this plan bought. | open |  | 2026-09-07T16:53:56.612Z |  |
 
 ````json
 [
@@ -2226,6 +2230,54 @@ last_updated: 2026-09-07T15:17:35.182Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T15:17:35.182Z",
+    "resolved_at": null
+  },
+  {
+    "id": 171,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/editor_document.rs",
+    "line": null,
+    "description": "Whether F8 really reaches the composer's toolbar on a machine other than the one where it was watched working, and whether Ctrl+backslash fails everywhere or only here. The project measured both once, on one machine, and recorded it in editor_document.rs's own comment. docs/KEYBOARD_SHORTCUTS.md now gives F8 as the way in and marks Ctrl+backslash as bound and not seen to arrive, which raises what a second machine disagreeing would cost: a page giving the wrong key is the exact defect this plan closed, and it would be closed in the wrong direction. The check that pairs the page with the bindings cannot tell a key that arrives from one that does not, and says so in its own words.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T16:53:28.127Z",
+    "resolved_at": null
+  },
+  {
+    "id": 172,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "Neither key this plan wrote into the shortcuts page has been heard. Delete on the composer's attachments list announces Removed and the file's name at Priority::Normal, and whether that is heard over the list refilling under it, and whether the row cursor lands somewhere sensible after a row goes, is the same question ledger 160 asks of the blocked senders list. Closing the conversation window with F6 is the other: the frame is hidden and a timer hands control back to whatever opened it, and nothing here says where focus went or that the window closed at all, so somebody who pressed F6 expecting to move between panes may hear nothing and not know what happened.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T16:53:37.371Z",
+    "resolved_at": null
+  },
+  {
+    "id": 173,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "tests/wired.rs",
+    "line": null,
+    "description": "The plan asked for the code-to-doc direction in tests/wired.rs to be widened to read editor_document.rs and wx_compose.rs as well as wx_app.rs. It was not, and the reason is a measurement rather than a preference: every key those two files bind is already written in docs/KEYBOARD_SHORTCUTS.md by name, F7 F8 F6 Escape Tab Enter and Delete, so that widening reports nothing at all today and would guard nothing. The class of key that hid F8, Delete and F6 is not one the document never names, it is one the document names for a different surface, and no whole-document reader can see that. The per-surface reading went into tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs instead, which was red on all three.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T16:53:46.808Z",
+    "resolved_at": null
+  },
+  {
+    "id": 174,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs",
+    "line": null,
+    "description": "The per-surface check covers two surfaces and the shortcuts document describes about thirty. The composer's page and the conversation window are the two that were wrong, and both are now held. Every other surface that gives a key its own meaning is unheld: the reader window's F8 for attachments, the View menu's F8 for the Columns dialog, Delete in the message list, F6 for panes in the main window. Any of those could lose its binding or its documentation and both directions of the pair in tests/wired.rs would stay green, because the key name is in the document for one of the others. Generalising means giving each surface a heading and a reader, which is a real piece of work and is not what this plan bought.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T16:53:56.612Z",
     "resolved_at": null
   }
 ]
