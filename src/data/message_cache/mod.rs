@@ -2694,6 +2694,12 @@ impl MessageCache {
         // right answer for all of them: until this shipped nothing recorded
         // this fact independently of whether the series was stored here too.
         self.ensure_column_exists("calendar_events", "provider_recurrence_id", "TEXT")?;
+        // Which version of the meeting an answer given on this computer last
+        // wrote here, so a second invitation for it can be told apart from the
+        // one already answered. Nothing for every event already stored, which
+        // is the right answer for all of them: until this shipped, answering a
+        // meeting wrote nothing to the calendar at all.
+        self.ensure_column_exists("calendar_events", "answered_version", "INTEGER")?;
         // Where an event was at the calendar server that held it. Nothing for
         // every note already written, which is the right answer for all of
         // them: until this shipped no deletion had ever been sent anywhere, so
@@ -3494,6 +3500,12 @@ impl MessageCache {
                 -- rebuild predates a calendar server ever sending one VEVENT
                 -- among several for one series, so there is nothing to copy.
                 provider_recurrence_id TEXT,
+                -- Left out of EVENT_COLUMNS for the same reason as the four
+                -- columns above, and named here for the same reason
+                -- `cut_from_event_id` is: a database old enough to need this
+                -- rebuild predates answering a meeting writing anything to the
+                -- calendar, so no event in it was ever answered here.
+                answered_version INTEGER,
                 UNIQUE(account_id, calendar_id, provider_event_id)
             )",
                 [],

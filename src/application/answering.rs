@@ -1312,62 +1312,12 @@ mod tests {
         assert_eq!(subject, "Accepted: Quarterly review");
     }
 
-    #[test]
-    fn test_accepting_puts_the_meeting_on_the_calendar_taking_up_its_time() {
-        // The other half of answering, and the half somebody actually lives
-        // with. An answer that goes to the organiser and leaves the calendar
-        // alone means the meeting is not there on the day.
-        let holding = ready_to_answer().what_the_calendar_should_hold(Answer::Accepted, None);
-
-        assert_eq!(holding.uid, "m-1@example.com");
-        assert_eq!(holding.version, 2);
-        assert_eq!(holding.answer, Answer::Accepted);
-        assert_eq!(holding.blocks_time, BlocksTime::Busy);
-        assert_eq!(holding.the_meeting_itself, WhatChanged::ANewMeeting);
-        assert_eq!(holding.answered_by.address, "sam@example.com");
-    }
-
-    #[test]
-    fn test_each_answer_decides_whether_the_time_is_taken_and_says_it_in_the_stored_word() {
-        // Declining and leaving the hour booked is the worst of the three:
-        // somebody is shown as busy at a meeting they are not going to, and
-        // anybody reading their free time is told the wrong thing. Each answer
-        // is checked as both the decision and the word the calendar stores,
-        // because a decision that reaches storage under the wrong word is the
-        // same fault one layer down.
-        for (answer, blocks_time, stored) in [
-            (Answer::Accepted, BlocksTime::Busy, "busy"),
-            (Answer::Tentative, BlocksTime::Tentative, "tentative"),
-            (Answer::Declined, BlocksTime::Free, "free"),
-        ] {
-            let holding = ready_to_answer().what_the_calendar_should_hold(answer, None);
-
-            assert_eq!(holding.blocks_time, blocks_time, "{answer:?}");
-            assert_eq!(holding.blocks_time.as_stored(), stored, "{answer:?}");
-            assert_eq!(
-                holding.the_meeting_itself,
-                WhatChanged::ANewMeeting,
-                "{answer:?} left nothing on the calendar to show for it"
-            );
-        }
-    }
-
-    #[test]
-    fn test_a_change_to_a_meeting_already_accepted_is_answered_as_a_change_to_it() {
-        // The organiser moved the meeting and sent it round again. Recorded as
-        // a new meeting, the calendar ends up holding it twice and the person
-        // is asked to accept something they already accepted.
-        let holding = ready_to_answer().what_the_calendar_should_hold(
-            Answer::Accepted,
-            Some(&AlreadyOnTheCalendar {
-                uid: "m-1@example.com".to_string(),
-                version: 1,
-            }),
-        );
-
-        assert_eq!(holding.the_meeting_itself, WhatChanged::AChange);
-        assert_eq!(holding.version, 2);
-    }
+    // The three tests that used to sit here asked
+    // `what_the_calendar_should_hold` what it returned. Every assertion in them
+    // was right, and nothing in the program read the value, so all three passed
+    // for as long as accepting a meeting left the calendar empty. They live in
+    // `application::answered_meetings` now, where they go through storage and
+    // ask the row that comes back out.
 
     #[test]
     fn test_before_answering_the_sentence_says_what_it_does_and_who_will_hear_it() {

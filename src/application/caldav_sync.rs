@@ -1292,17 +1292,34 @@ const WHOLE_DAY_DATE: &str = crate::common::moment::WHOLE_DAY;
 /// An event that gives a length instead of an end is not handled here. That is
 /// a different property with its own parsing.
 fn end_of(remote: &CalDavEvent) -> String {
-    if let Some(given) = remote.dtend.clone() {
-        return given;
+    the_end_a_calendar_did_not_give(&remote.dtstart, remote.dtend.as_deref(), remote.is_all_day)
+}
+
+/// The same rule, for anything that describes a meeting without being a
+/// [`CalDavEvent`].
+///
+/// A meeting invitation that arrives by mail is read into its own type and
+/// reaches the calendar by a different path, and it can name no end just as a
+/// calendar server can. The rule is the standard's rather than either caller's,
+/// so it is written once: two copies of it are two chances for a meeting filed
+/// from mail and the same meeting synced from a server to end at different
+/// times.
+pub(crate) fn the_end_a_calendar_did_not_give(
+    starts: &str,
+    ends: Option<&str>,
+    is_all_day: bool,
+) -> String {
+    if let Some(given) = ends {
+        return given.to_string();
     }
-    if !remote.is_all_day {
-        return remote.dtstart.clone();
+    if !is_all_day {
+        return starts.to_string();
     }
-    chrono::NaiveDate::parse_from_str(&remote.dtstart, WHOLE_DAY_DATE)
+    chrono::NaiveDate::parse_from_str(starts, WHOLE_DAY_DATE)
         .ok()
         .and_then(|day| day.succ_opt())
         .map(|next_day| next_day.format(WHOLE_DAY_DATE).to_string())
-        .unwrap_or_else(|| remote.dtstart.clone())
+        .unwrap_or_else(|| starts.to_string())
 }
 
 /// Convert a CalDavEvent to a local CalendarEventEntry.
