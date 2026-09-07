@@ -2,19 +2,18 @@
 gsd_state_version: 1.0
 current_phase: 04.2
 current_phase_name: What was built and never reached
+current_plan: 4
 status: executing
 stopped_at: Completed 04.2-03-PLAN.md
-last_updated: "2026-09-07T04:20:00.000Z"
-last_activity: "2026-09-07, 04.2-03 done and merged to main at 6cbbaeb, version 0.80.0. A meeting reply now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, so the organiser's client can fold it into the meeting instead of showing a file to open by hand. It went out as a plain calendar file before, while docs/changelog.md told users the organiser learned where they stood; that entry is corrected where it stands as well as under Unreleased. The type is worked out from the document at the moment the file is read, through invitations::what_it_asks, because a queued row carries file paths and bytes cannot cross that column. Every answer is a fixed &'static str from a closed match, which is what stops a stranger's METHOD line reaching an outgoing header. Every other calendar attachment is now declared by what its document says too, so a forwarded invitation reaches the recipient as an invitation. the_calendar_part is deleted: it was correct, tested, and called by nothing but its own test, which is exactly what let the bug live, so the test was rewritten to measure the shipping path rather than joined by a second one. One guard record added and measured by hand, reddening one test; the record naming attaching.rs re-measured twice, 34 to 38 to 42, still right both times. Records 635 to 636. Ledger 152 and 153 opened, both unrun-verify: no organiser's calendar has ever received one of these. The ledger's frontmatter counts were stale from 04.2-02 and are corrected. Owed and deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 5edc3e6, which belongs to the end-of-phase sweep. Note that 04.2-02 landed at 7d3e7ed without updating this file, so the entry below skips it. STATE.md's Current Position section is still written for phase 02 and cannot be parsed by state.advance-plan; that was stale before 04.2-01 and is still out of scope.
-
-  Previously, 2026-09-06, 04.2-01 done and merged to main at 146b104, version 0.77.0. Undo Send really has something to take back: a message is held, says \"Sending in 10 seconds. Undo Send takes it back.\", goes on its own when the hold runs out, and can be taken back while it waits. It refused every time it was pressed before this, because queue_outbox_message was a wrapper pinning the moment to AsSoonAsPossible and the composer worked out what its message was waiting for and never passed it to the queue. That wrapper is deleted, so every caller says what it waits for. How long the hold lasts is a top-level setting under Sending on the Compose tab; both settings checks were red about it before they were green. Two guard records added, both breaks measured by hand. Ledger 81 closed; 147 and 148 opened, both unrun-verify. Nothing here has met a real server and nobody has heard the countdown through a screen reader: 04.2-04's checkpoint item 4 asks that question. Owed but deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 9611b70, which is not on the critical path and belongs to the end-of-phase sweep. STATE.md's own current_phase still says 02, which was stale before this plan and is left alone as out of scope."
-state_head: 6cbbaeb95823fd182380b5c4ae5f95135add36e0
+last_updated: "2026-09-07T04:14:04.110Z"
+last_activity: "2026-09-07, 04.2-03 done and merged to main at 6cbbaeb, version 0.80.0. A meeting reply now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, so the organiser's client can fold it into the meeting instead of showing a file to open by hand. It went out as a plain calendar file before, while docs/changelog.md told users the organiser learned where they stood; that entry is corrected where it stands as well as under Unreleased. The type is worked out from the document at the moment the file is read, through invitations::what_it_asks, because a queued row carries file paths and bytes cannot cross that column. Every answer is a fixed &'static str from a closed match, which is what stops a stranger's METHOD line reaching an outgoing header. Every other calendar attachment is now declared by what its document says too, so a forwarded invitation reaches the recipient as an invitation. the_calendar_part is deleted: it was correct, tested, and called by nothing but its own test, which is exactly what let the bug live, so the test was rewritten to measure the shipping path rather than joined by a second one. One guard record added and measured by hand, reddening one test; the record naming attaching.rs re-measured twice, 34 to 38 to 42, still right both times. Records 635 to 636. Ledger 152 and 153 opened, both unrun-verify: no organiser's calendar has ever received one of these. The ledger's frontmatter counts were stale from 04.2-02 and are corrected. Owed and deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 5edc3e6, which belongs to the end-of-phase sweep. Note that 04.2-02 landed at 7d3e7ed without updating this file, so the entry below skips it. STATE.md's Current Position section is still written for phase 02 and cannot be parsed by state.advance-plan; that was stale before 04.2-01 and is still out of scope."
+state_head: ccd0fdfd40a52a5f41752b6ea0decb1aa4e23189
 progress:
   total_phases: 13
-  completed_phases: 5
-  total_plans: 85
+  completed_phases: 0
+  total_plans: 87
   completed_plans: 53
-  percent: 62
+  percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
 ---
@@ -26,11 +25,34 @@ last_activity_desc: "02-06 done: the writer and the condition dialog a rule edit
 See: .planning/PROJECT.md (updated 2026-08-29)
 
 **Core value:** Making correspondence and personal information legible to people who cannot see it.
-**Current focus:** Phase 02 — Search that says what it covers
+**Current focus:** Phase 04.2 — What was built and never reached
 
 ## Current Position
 
-Phase: 02 (Search that says what it covers) — EXECUTED, 9 of 9 plans done, awaiting re-verification. 02-07 is on branch gsd/plan-02-07, 02-08 on gsd/plan-02-08 and 02-09 on gsd/plan-02-09, none merged.
+Phase: 04.2 (What was built and never reached) — EXECUTING, 3 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply. Next is 04.2-04, which carries a screen reader checkpoint.
+
+Current Plan: 4
+Total Plans in Phase: 9
+
+**Do not run `gsd-tools query state.advance-plan` to find out where things are.** Despite the `query` prefix it is not a read: it advances the counter and rewrites six fields. Running it once on 2026-09-07 to test whether this section parsed moved the plan from 4 to 5 with nothing executed, and it had to be put back by hand because there is no `state-set` command to undo it.
+
+**This section was rewritten on 2026-09-07 and had been stale for five phases.** It said phase 02, EXECUTED, with 02-07, 02-08 and 02-09 sitting on unmerged branches. All three merged long ago and four phases have shipped since. Two executors read it, recorded it as stale and declared it out of scope, which was the right call for them and meant nobody fixed it. It is written down here because the frontmatter and this heading disagreeing is exactly what made `gsd-tools query state.advance-plan` fail once before, on 2026-09-01, and tag new decisions against the wrong phase.
+
+The history below this point is kept as a record and is not current. Read the frontmatter for what is true now.
+
+### Phases complete
+
+Phase 01 Folders and conversations, 14 plans. Phase 02 Search that says what it covers, 9 plans. Phase 02.1 What phase 1 found on its way past, 9 plans. Phase 03 Mail at scale on the wire, 9 plans. Phase 04 Writing and reading a message in full, 9 plans. All executed and merged; all awaiting the screen reader and live account verification that only Pratik can run.
+
+### Phases planned and not started
+
+04.1 Mail moves between accounts, context only. 05 The other five modules keep up, 8 plans. 05.1 Notes and contacts reach a server, 6 plans. 05.2 Notes in OneNote, 3 plans. 07 Installing, updating and what is stored, 9 plans. 06 and 08 are researched and deliberately not planned until the tree they measure exists.
+
+---
+
+## History below this line
+
+Everything that follows was written earlier and describes trees that have moved. It is kept because the reasoning in it is still worth having, not because the status lines are true.
 02-09 was added on 2026-09-01 after the phase verification recorded criterion 4
 as the one partial of six: the saved search said what it covered and the search
 box, which is the search people reach for first, said nothing. It closes that.
