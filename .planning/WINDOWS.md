@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 159
+open_count: 163
 waived_count: 0
 fixed_count: 15
-total_count: 174
-last_updated: 2026-09-07T16:53:56.612Z
+total_count: 178
+last_updated: 2026-09-07T21:40:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -189,6 +189,10 @@ last_updated: 2026-09-07T16:53:56.612Z
 | 172 | 04.2 | unrun-verify | src/presentation/wx_compose.rs |  | Neither key this plan wrote into the shortcuts page has been heard. Delete on the composer's attachments list announces Removed and the file's name at Priority::Normal, and whether that is heard over the list refilling under it, and whether the row cursor lands somewhere sensible after a row goes, is the same question ledger 160 asks of the blocked senders list. Closing the conversation window with F6 is the other: the frame is hidden and a timer hands control back to whatever opened it, and nothing here says where focus went or that the window closed at all, so somebody who pressed F6 expecting to move between panes may hear nothing and not know what happened. | open |  | 2026-09-07T16:53:37.371Z |  |
 | 173 | 04.2 | deviation | tests/wired.rs |  | The plan asked for the code-to-doc direction in tests/wired.rs to be widened to read editor_document.rs and wx_compose.rs as well as wx_app.rs. It was not, and the reason is a measurement rather than a preference: every key those two files bind is already written in docs/KEYBOARD_SHORTCUTS.md by name, F7 F8 F6 Escape Tab Enter and Delete, so that widening reports nothing at all today and would guard nothing. The class of key that hid F8, Delete and F6 is not one the document never names, it is one the document names for a different surface, and no whole-document reader can see that. The per-surface reading went into tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs instead, which was red on all three. | open |  | 2026-09-07T16:53:46.808Z |  |
 | 174 | 04.2 | deviation | tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs |  | The per-surface check covers two surfaces and the shortcuts document describes about thirty. The composer's page and the conversation window are the two that were wrong, and both are now held. Every other surface that gives a key its own meaning is unheld: the reader window's F8 for attachments, the View menu's F8 for the Columns dialog, Delete in the message list, F6 for panes in the main window. Any of those could lose its binding or its documentation and both directions of the pair in tests/wired.rs would stay green, because the key name is in the document for one of the others. Generalising means giving each surface a heading and a reader, which is a real piece of work and is not what this plan bought. | open |  | 2026-09-07T16:53:56.612Z |  |
+| 175 | 04.2 | deviation | tests/the_planning_files_agree_with_themselves.rs |  | The roadmap check reads one direction only: every progress-table row must match the phase directory it names. A phase directory holding plans with no row in that table at all is not seen, so the roadmap can go quiet about a phase rather than wrong about it and nothing says so. Closing it means deciding what a directory with no row means, which is not always drift: a scratch directory, or a phase split after the roadmap was written, would both fire. | open |  | 2026-09-07T21:40:00.000Z |  |
+| 176 | 04.2 | deviation | .planning/STATE.md |  | progress.total_plans says 87 and there are 85 *-PLAN.md files. It is deliberately not asserted because what it counts could not be established. The roadmap's progress denominators sum to 85, deriveProgressFromRoadmap in the vendored tooling sums exactly those denominators, and a second writer in state-transition.cjs sets the field to whatever an argument passes it. The 87 arrived at b998dfaf on 2026-09-07, in the commit whose message records state.advance-plan being run by accident, over a roadmap whose denominators already summed to 85. So the observed value matches neither reading and the field has at least two writers with different meanings. | open |  | 2026-09-07T21:40:00.000Z |  |
+| 177 | 04.2 | deviation | tests/the_planning_files_agree_with_themselves.rs |  | The ledger check compares two of the ten columns each entry carries twice: status and description. A table row whose phase, kind, file, line, reason or either timestamp was edited alone still reverts silently on the next tool write and nothing says so. Two columns were chosen because they are what a person reads and what a repair changes, and the check was measured against the real defect of closing an entry in the table only. Widening it is cheap and was not done, so the limit is written down rather than assumed away. | open |  | 2026-09-07T21:40:00.000Z |  |
+| 178 | 04.2 | deviation | tests/the_planning_files_agree_with_themselves.rs |  | The state check holds four facts. current_phase_name, status, stopped_at and state_head are also written in the frontmatter and described in the Current Position prose, and no check pairs them. stopped_at is the one that already went wrong: at c6e08a9 it said 04.2-05 while the heading described plan 7, and only the current_plan half of that divergence is now held. It is not obvious how to pair a prose sentence with a field, which is why the four that are held are the four that are written as numbers or as one token. | open |  | 2026-09-07T21:40:00.000Z |  |
 
 ````json
 [
@@ -2278,6 +2282,54 @@ last_updated: 2026-09-07T16:53:56.612Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T16:53:56.612Z",
+    "resolved_at": null
+  },
+  {
+    "id": 175,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "tests/the_planning_files_agree_with_themselves.rs",
+    "line": null,
+    "description": "The roadmap check reads one direction only: every progress-table row must match the phase directory it names. A phase directory holding plans with no row in that table at all is not seen, so the roadmap can go quiet about a phase rather than wrong about it and nothing says so. Closing it means deciding what a directory with no row means, which is not always drift: a scratch directory, or a phase split after the roadmap was written, would both fire.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T21:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 176,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": ".planning/STATE.md",
+    "line": null,
+    "description": "progress.total_plans says 87 and there are 85 *-PLAN.md files. It is deliberately not asserted because what it counts could not be established. The roadmap's progress denominators sum to 85, deriveProgressFromRoadmap in the vendored tooling sums exactly those denominators, and a second writer in state-transition.cjs sets the field to whatever an argument passes it. The 87 arrived at b998dfaf on 2026-09-07, in the commit whose message records state.advance-plan being run by accident, over a roadmap whose denominators already summed to 85. So the observed value matches neither reading and the field has at least two writers with different meanings.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T21:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 177,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "tests/the_planning_files_agree_with_themselves.rs",
+    "line": null,
+    "description": "The ledger check compares two of the ten columns each entry carries twice: status and description. A table row whose phase, kind, file, line, reason or either timestamp was edited alone still reverts silently on the next tool write and nothing says so. Two columns were chosen because they are what a person reads and what a repair changes, and the check was measured against the real defect of closing an entry in the table only. Widening it is cheap and was not done, so the limit is written down rather than assumed away.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T21:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 178,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "tests/the_planning_files_agree_with_themselves.rs",
+    "line": null,
+    "description": "The state check holds four facts. current_phase_name, status, stopped_at and state_head are also written in the frontmatter and described in the Current Position prose, and no check pairs them. stopped_at is the one that already went wrong: at c6e08a9 it said 04.2-05 while the heading described plan 7, and only the current_plan half of that divergence is now held. It is not obvious how to pair a prose sentence with a field, which is why the four that are held are the four that are written as numbers or as one token.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T21:40:00.000Z",
     "resolved_at": null
   }
 ]
