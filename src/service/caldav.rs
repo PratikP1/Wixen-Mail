@@ -708,9 +708,17 @@ pub(crate) fn how_many(count: usize, thing: &str) -> String {
 /// The first event the document holds, and only the first. A resource holding
 /// a series and the days somebody changed out of it carries one VEVENT for the
 /// series and one per changed day, all under one UID, and this reads the
-/// series alone: two of this function's three callers see one VEVENT per
-/// document and have no second one to miss. [`parse_report_events`] is the
-/// caller that does, and it asks [`every_event_in_the_resource`] instead.
+/// series alone.
+///
+/// One caller in the program, [`crate::service::ical_subscription`], and it has
+/// no second event to miss: it splits the feed itself with
+/// [`events_in`] and hands this one event's own lines at a time. Whoever needs
+/// every event in a resource in one call asks
+/// [`every_event_in_the_resource`], which is what the calendar sync does.
+///
+/// This doc used to name three callers and say [`parse_report_events`] was the
+/// one that sees several events per resource. That function does not call this
+/// at all, and the other two were tests.
 pub fn parse_ical_vevent(ical_data: &str, url: &str, etag: Option<&str>) -> Option<CalDavEvent> {
     // Put the lines the server broke up back together first, the way the
     // write path already does before it reads the document it is changing. A

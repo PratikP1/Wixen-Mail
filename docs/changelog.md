@@ -306,6 +306,26 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Three entries in this changelog said you could turn speech off and still
+  get braille, and that has never worked.** They are corrected where they stand,
+  because somebody reads a changelog backwards to work out when something
+  started working, and a false sentence left in place misleads exactly that
+  person.
+
+  What is true is in `docs/accessibility.md` and always was. Braille follows
+  speech rather than needing its own path: an announcement goes through one
+  Windows call, `UiaRaiseNotificationEvent`, and that is how Windows both speaks
+  it and sends it to a connected braille display. Which of the two it reaches is
+  the screen reader's setting, not this application's. So the Speech and Braille
+  tick boxes in Settings, Feedback move together whatever you set them to, and
+  the two entries that offered "braille-only" as a way to run this program were
+  describing a setup that does not exist.
+
+  The tick boxes themselves are not changed here. What to do about them, whether
+  to merge them into one that says what it does or keep two and say in the tab
+  that they move together on Windows, is a decision with its own work behind it
+  and it has not been taken.
+
 - **Nobody is told Windows overruled a setting they never turned on.**
 
   On a machine set to reduce animation, the Scrolling section of Settings put a
@@ -3903,7 +3923,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **Flagging a message, marking it read, marking a task or reminder done,
   and pinning a note can now each play a tone.** All four already said
   which way they went, in the status line or read aloud, but none of them
-  reached the sound channel, so an earcons-only or braille-only setup heard
+  reached the sound channel, so an earcons-only setup heard
   nothing for any of them. They now share one sound rather than four
   near-identical ones, since four near-identical "did it" tones is exactly
   the noise this feedback system exists to avoid. The sentence spoken aloud
@@ -3917,7 +3937,7 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   computer has no credentials set up for the provider or the attempt itself
   failed, used to reach only speech and the status line. Both of those
   outcomes now go through the same signal every other event uses, so
-  earcons-only and braille-only setups learn this too, distinct from the
+  an earcons-only setup learns this too, distinct from the
   tone a dropped connection plays: that one asks somebody to wait, this one
   asks them to act.
 
@@ -9628,7 +9648,7 @@ be added by its address, and an event read aloud says its category.
 - **`F5` reads the current folder again** and `F6` moves between the folder, message, and preview panes, skipping the preview when it is hidden rather than focusing something invisible.
 - **Space reads the item under the cursor, in all six modules.** A list row is read as its visible columns and nothing else, so a task's description, a contact's phone number, or a message's recipients were invisible until you opened the item. `Space` reads the short form, pressing it again reads everything the record holds, and a third press goes back. `Shift+Space` reads everything outright. Moving to another row starts again at the short form. There is no double-press timing window: the second press does the second thing however long you took, because a timing window locks out anyone who types slowly.
 - **Landing on a conversation is signalled**, so it can be a short tone rather than another sentence on every row. Which channel it uses is a setting, not a decision made in the code.
-- **Feedback on four channels: speech, braille, sound, and the status bar.** Events such as new mail, a sent message, a lost connection, or a failed send are now facts the application signals rather than sentences it speaks. A new Feedback tab in Settings decides which channels each one reaches. This matters most to two groups pulling in opposite directions: a deaf-blind user can switch speech off and keep braille, and someone working in an open office can swap a spoken sentence for a short tone.
+- **Feedback on four channels: speech, braille, sound, and the status bar.** Events such as new mail, a sent message, a lost connection, or a failed send are now facts the application signals rather than sentences it speaks. A new Feedback tab in Settings decides which channels each one reaches. This matters most to someone working in an open office, who can swap a spoken sentence for a short tone. **Corrected on 2026-09-07:** this entry said a deaf-blind user could turn speech off and still get braille, and that has never been true. Braille follows speech rather than needing its own path: announcements go through `UiaRaiseNotificationEvent`, which is how Windows both speaks a notification and sends it to a connected braille display through whichever screen reader is running. The screen reader decides which mediums it reaches, not this application, so the Speech and Braille tick boxes move together whatever they are set to.
 - **Nothing is ever signalled by sound alone.** If sounds are the only channel left on, a written equivalent is added automatically, unless you switched every text channel off yourself. The rule lives in the routing rather than at each call site, so no future event can bypass it by forgetting.
 - **Each event has its own tone**, and tones are spaced out so a syncing mailbox does not run them together. An earcon that cannot be told apart from its sibling carries no information.
 - **Attachment records are stored and read back.** The attachments table existed and nothing ever wrote to it, so the attachment column could never have been true. Listing a folder now reports attachment presence without loading the attachments.

@@ -40,12 +40,12 @@ parsing or loopback servers.
 | Meeting invitations: guest list, replies, and working out when everyone is free | `src/application/who_is_coming.rs`, `asking_when_free.rs`, `when_people_are_free.rs`, `src/service/free_busy.rs` | changelog `[Unreleased]` Added, lines 56 and 153 |
 | Organisation directory lookup from the account settings | `src/service/directory.rs`, `src/application/looking_people_up.rs` | changelog `[Unreleased]` Added, lines 95 and 110 |
 | Tagging with colour, message filters with regex and rule actions, filter management UI | `src/application/tagging.rs`, `src/application/filters.rs` | roadmap Phase 5; backlog marks colour-coded tags Done |
-| Full-text search (FTS) with advanced filters | `src/data/message_cache/mod.rs`, `src/application/search.rs` | roadmap Phase 5 |
+| Full-text search (FTS) with advanced filters | `src/data/message_cache/mod.rs`, `src/data/message_cache/searching.rs` | roadmap Phase 5 |
 | Address book CRUD, fuzzy search, groups, vCard 3.0 import and export, recipient autocomplete | `src/application/contacts_sync.rs`, `src/application/contact_groups.rs`, `src/application/importing_contacts.rs` | requirements-backlog "Contact Management: Done" |
 | Conversation view: press Enter on a message to see the surrounding messages as a tree, threading from `References` headers | `src/presentation/wx_thread_view.rs`, `src/application/threading.rs` | changelog Known limitations, "Half closed further up this same release" |
 | HTML rendering with everything runnable stripped (ammonia), plain-text fallback, attachment metadata, save to disk, PDFs read in-app | `src/application/body_safety.rs`, `src/service/pdf.rs`, `src/application/attaching.rs` | roadmap Phase 3; requirements-backlog "HTML Rendering & Attachment Pipeline" |
 | PGP and S/MIME signature detection, S/MIME verification, phishing risk scoring | `src/service/security.rs`, `src/service/signed_mail.rs` | roadmap Phase 5; backlog "S/MIME signature checking has since been built" |
-| Multi-account: add, update, delete, enable, active-account switch, provider presets, per-account isolation, unified inbox | `src/application/accounts.rs` | roadmap Phase 6 |
+| Multi-account: add, update, delete, enable, active-account switch, provider presets, per-account isolation, unified inbox | `src/data/message_cache/accounts.rs` | roadmap Phase 6 |
 | Offline mode toggle, outbox queue with CRUD, flush to SMTP on reconnect, outbox and sync indicators in the status bar | `src/application/mail_controller.rs`, `src/application/mail_session.rs` | roadmap Phase 7; requirements-backlog "Offline Mode & Queued Send: Done" |
 | Accessibility layer: accessible names via `wxAccessible`, prioritised and deduplicated announcements bounded to four per second, mute with `Ctrl+M` | `src/presentation/accessibility/announcements.rs`, `names.rs`, `automation.rs`, `screen_reader.rs` | IMPLEMENTATION_STATUS "Accessibility" |
 | Earcons and importable sound schemes; speech and braille ride one screen reader notification | `src/presentation/accessibility/feedback.rs`, `sound_scheme.rs`, `sound_scheme_import.rs` | mail-at-scale "Feedback channels, revisited" |
@@ -112,7 +112,7 @@ Present and reached, never run against the real thing. This is the section where
 | CardDAV | `src/service/caldav.rs` covers calendars only | requirements-backlog: "CardDAV not built" |
 | JMAP; plugin and extension system | — | requirements-backlog Future, Low |
 | Linux and macOS validation | — | roadmap Cross-Platform, unticked |
-| The Search "In box" scope selector is read by nothing, so a saved search always covers the whole account | `src/application/search.rs`, `saved_searches.rs` | changelog Saved Searches section; CONCERNS |
+| ~~The Search "In box" scope selector is read by nothing, so a saved search always covers the whole account~~ **No longer true, checked 2026-09-07.** `what_a_typed_search_asks` carries both halves of the scope out of one value, the window calls it when a search is saved, and the folder is written and read back by `data::message_cache::saved_searches`. The evidence cell also named `src/application/search.rs`, which holds no scope selector and is never instantiated in production | `src/application/saved_searches.rs`, `src/data/message_cache/saved_searches.rs` | changelog Saved Searches section; CONCERNS |
 | Saving a search over message text that eviction has cleared | `src/data/message_cache/mod.rs` | changelog; CONCERNS |
 | Setting Wixen Mail as the actual Windows default mail client. Windows does not allow it | `src/service/default_apps_registration.rs` | changelog lines 870-971 |
 
