@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 139
+open_count: 141
 waived_count: 0
 fixed_count: 14
-total_count: 153
-last_updated: 2026-09-07T03:43:43.233Z
+total_count: 155
+last_updated: 2026-09-07T05:52:58.235Z
 ---
 
 # Broken Windows Ledger
@@ -168,6 +168,8 @@ last_updated: 2026-09-07T03:43:43.233Z
 | 151 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | No message has ever waited hours for its time and then gone. Every test moves the clock; nothing runs the program for an afternoon. Whether a scheduled message really leaves when its moment arrives with the program left running, whether the poll timer is still asking after hours, and whether a message written on Monday and sent on Tuesday carries headers a recipient's client accepts, are all unsettled and none of them can be tested here. | open |  | 2026-09-06T23:59:20.000Z |  |
 | 152 | 04.2 | unrun-verify | src/application/attaching.rs |  | No organiser's calendar has ever received a reply from this program. The part now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, asserted over the whole path from the answer the window builds to the Ready the send loop puts on the wire, but nothing here has met a real mail server. Whether Outlook, Google Calendar or Thunderbird actually folds the answer into the meeting and updates the guest list is what the whole change is for and is the one thing no test in this repository can settle. | open |  | 2026-09-07T03:43:34.557Z |  |
 | 153 | 04.2 | unrun-verify | src/application/attaching.rs |  | Nobody has forwarded an invitation from this program to a real recipient. A .ics attachment is now declared method=REQUEST or method=CANCEL from what the document says, which changes what a recipient's client offers them, and no client has ever been shown one. Whether a forwarded invitation really presents as a meeting to answer, and whether the ORGANIZER inside it is attributed to whoever called the meeting rather than to the forwarder, are unsettled here. | open |  | 2026-09-07T03:43:43.233Z |  |
+| 154 | 04.2 | unrun-verify | src/application/answered_meetings.rs |  | The accepted meeting is written with pending set, which is what puts it in front of the push, and no push path in this project has ever run against a real account. Whether a CalDAV, Google or Microsoft calendar accepts an event this program created from an invitation, with the invitation's own UID as the provider identity and no etag, is unsettled. If a provider refuses it the meeting stays correct on this computer and never reaches any other device, which reads to the person exactly like it working. | open |  | 2026-09-07T05:52:49.797Z |  |
+| 155 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Answering a meeting has not been heard with a screen reader. Four things are unsettled by ear: whether accepting is announced once or twice now that the answer is filed as well as sent; whether the meeting is read out with its time and its busy state when the calendar is opened afterwards; whether a declined meeting is read as free rather than booked; and, since pressing Accept sends with no confirmation step by the decision of 2026-09-06, whether anything spoken in the seconds after pressing it by mistake points at Undo Send. The last is the one structure cannot show, and a finding of nothing pointed at Undo Send is a result worth having rather than a failed run. | open |  | 2026-09-07T05:52:58.235Z |  |
 
 ````json
 [
@@ -2005,6 +2007,30 @@ last_updated: 2026-09-07T03:43:43.233Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T03:43:43.233Z",
+    "resolved_at": null
+  },
+  {
+    "id": 154,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/application/answered_meetings.rs",
+    "line": null,
+    "description": "The accepted meeting is written with pending set, which is what puts it in front of the push, and no push path in this project has ever run against a real account. Whether a CalDAV, Google or Microsoft calendar accepts an event this program created from an invitation, with the invitation's own UID as the provider identity and no etag, is unsettled. If a provider refuses it the meeting stays correct on this computer and never reaches any other device, which reads to the person exactly like it working.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T05:52:49.797Z",
+    "resolved_at": null
+  },
+  {
+    "id": 155,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Answering a meeting has not been heard with a screen reader. Four things are unsettled by ear: whether accepting is announced once or twice now that the answer is filed as well as sent; whether the meeting is read out with its time and its busy state when the calendar is opened afterwards; whether a declined meeting is read as free rather than booked; and, since pressing Accept sends with no confirmation step by the decision of 2026-09-06, whether anything spoken in the seconds after pressing it by mistake points at Undo Send. The last is the one structure cannot show, and a finding of nothing pointed at Undo Send is a result worth having rather than a failed run.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T05:52:58.235Z",
     "resolved_at": null
   }
 ]

@@ -8,6 +8,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Accepting a meeting now puts it on your calendar.** Until this release it
+  did not. The reply went to the organiser, the program said the organiser
+  would be told, and that was true. The meeting was simply not there on the
+  day, and nothing anywhere told you so, in either direction.
+
+  What you say decides how the time shows. Accept takes the time up, Tentative
+  holds it without promising it, and Decline leaves the meeting on your
+  calendar with the time free, so you keep the record of what you turned down
+  without an hour booked out for a meeting you are not going to.
+
+  The meeting is filed under the account's default calendar, called
+  My Calendar, and that calendar is made for you if the account has none. A
+  meeting your calendar already holds stays in the calendar it is already in
+  rather than moving.
+
+  Answering the same meeting more than once leaves one entry, not one for each
+  answer. When the organiser moves a meeting and sends it round again,
+  answering the new invitation moves the entry you already have. An older
+  invitation that arrives after a newer one, which happens because mail
+  arrives out of order, does not move the meeting back to where it was.
+
+  The entry is marked as a change made on this computer, so it is queued for
+  the account's calendar server the same way any other change you make is.
+  Whether a real server accepts it has never been tried: no part of this
+  program has ever been run against a real account.
+
 - **You can set a message to go at a time you choose.** Schedule, on the
   composer toolbar and on `Alt+H`, asks for a date and a time. The message
   waits in the Outbox until then and goes on its own, with nobody pressing

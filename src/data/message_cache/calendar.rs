@@ -413,6 +413,65 @@ impl MessageCache {
         }
     }
 
+    /// Which version of the meeting an answer given on this computer last wrote
+    /// into this row, if anybody ever answered it here.
+    ///
+    /// Nothing for every event a calendar server sent and every event made in
+    /// this program, which is the whole calendar apart from the meetings
+    /// somebody has answered. That is the answer the caller wants for those:
+    /// a row nobody has ever answered here is not a row whose answer is out of
+    /// date, so the next invitation for it is filed rather than passed over.
+    ///
+    /// Kept off [`CalendarEventEntry`] on purpose. One subsystem asks this
+    /// question and the struct is built at a hundred places, so a field would
+    /// be a hundred edits to carry one fact none of them has an opinion about.
+    /// `save_calendar_event` names its columns, so a save leaves this one where
+    /// it was rather than clearing it.
+    pub fn the_version_answered_here(&self, event_id: &str) -> Result<Option<u32>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT answered_version FROM calendar_events WHERE id = ?1")
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to prepare the answered version lookup: {}",
+                    e
+                ))
+            })?;
+
+        let mut rows = stmt
+            .query_map(params![event_id], |row| row.get::<_, Option<u32>>(0))
+            .map_err(|e| Error::Other(format!("Failed to query the answered version: {}", e)))?;
+
+        match rows.next() {
+            Some(Ok(version)) => Ok(version),
+            Some(Err(e)) => Err(Error::Other(format!(
+                "Failed to read the answered version: {}",
+                e
+            ))),
+            None => Ok(None),
+        }
+    }
+
+    /// Write down which version of the meeting an answer just filed here.
+    ///
+    /// Its own statement rather than a column on the save, because the save is
+    /// how a calendar server's copy is written too and a server's copy says
+    /// nothing about what anybody on this computer answered.
+    pub fn remember_the_version_answered(&self, event_id: &str, version: u32) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET answered_version = ?2 WHERE id = ?1",
+                params![event_id, version],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record which version of the meeting was answered: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
     /// Get a single event by the identity it carries on this computer.
     pub fn get_event_by_id(&self, event_id: &str) -> Result<Option<CalendarEventEntry>> {
         let sql = format!("SELECT {} FROM calendar_events WHERE id = ?1", EVENT_COLS);
