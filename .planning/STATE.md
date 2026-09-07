@@ -25,11 +25,11 @@ last_activity_desc: "02-06 done: the writer and the condition dialog a rule edit
 See: .planning/PROJECT.md (updated 2026-08-29)
 
 **Core value:** Making correspondence and personal information legible to people who cannot see it.
-**Current focus:** Phase 04.2 — What was built and never reached
+**Current focus:** Phase 04.2 (What was built and never reached)
 
 ## Current Position
 
-Phase: 04.2 (What was built and never reached) — COMPLETE, 9 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply, 04.2-04 the meeting reaching the calendar, 04.2-05 the count of held-back pictures, 04.2-06 Blocked Senders, 04.2-07 `Shift+F6` out of the message preview, 04.2-08 a column layout belonging to the kind of folder it was arranged in, 04.2-09 the documents naming the keys that work. All fourteen success criteria are closed. `main` is at `3fc3ab2`, version `0.87.0`.
+Phase: 04.2 (What was built and never reached). COMPLETE, 9 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply, 04.2-04 the meeting reaching the calendar, 04.2-05 the count of held-back pictures, 04.2-06 Blocked Senders, 04.2-07 `Shift+F6` out of the message preview, 04.2-08 a column layout belonging to the kind of folder it was arranged in, 04.2-09 the documents naming the keys that work. All fourteen success criteria are closed. `main` is at `3fc3ab2`, version `0.87.0`.
 
 **What the phase left open is written out in one place**, in `04.2-09-SUMMARY.md` under "Closing out phase 4.2": every one of the twenty-eight ledger entries the phase opened, none of which has been answered; the two screen reader checkpoints that were deferred by decision and never attempted; the braille defect, whose honest half is done and whose durable fix belongs to phase 6 along with two tests whose names promise something that cannot be built through the call this program uses; and the one guard sweep the phase owes.
 
@@ -96,7 +96,7 @@ while five phase 02 plans had shipped, which is what made
 Phase 01 is complete and awaiting re-verification, recorded below; that is what
 `current_phase` was being used to remember, and it is not what the field means.
 
-Phase: 01 (Folders and conversations) — EXECUTED, awaiting re-verification
+Phase: 01 (Folders and conversations). EXECUTED, awaiting re-verification
 Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
 37 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the

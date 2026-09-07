@@ -65,59 +65,59 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [x] 01-01-PLAN.md — Tracer: create a folder end to end, encoder included (D-41)
+- [x] 01-01-PLAN.md: A tracer that creates a folder end to end, encoder included (D-41)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [x] 01-02-PLAN.md — A conversation identity that is stored, and the two indexes (D-39)
+- [x] 01-02-PLAN.md: A conversation identity that is stored, and the two indexes (D-39)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [x] 01-03-PLAN.md — Nesting stored as a parent link, and local names that contain the separator (D-22, D-23)
+- [x] 01-03-PLAN.md: Nesting stored as a parent link, and local names that contain the separator (D-22, D-23)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [x] 01-04-PLAN.md — Rename the leaf, move the subtree, delete deepest first (D-26)
+- [x] 01-04-PLAN.md: Rename the leaf, move the subtree, delete deepest first (D-26)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [x] 01-05-PLAN.md — The tree's shape: account branches, "On this computer", identity keying (D-13, D-15 to D-17, D-21, D-25)
+- [x] 01-05-PLAN.md: The tree's shape, with account branches, "On this computer" and identity keying (D-13, D-15 to D-17, D-21, D-25)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [x] 01-06-PLAN.md — Moving accounts, counting unread, and the settings guard (D-14, D-24, D-42, D-43)
+- [x] 01-06-PLAN.md: Moving accounts, counting unread, and the settings guard (D-14, D-24, D-42, D-43)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [x] 01-07-PLAN.md — Five local folders shared, and the migration that gets there (D-18 to D-20, D-40)
+- [x] 01-07-PLAN.md: Five local folders shared, and the migration that gets there (D-18 to D-20, D-40)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [x] 01-08-PLAN.md — Favourites (D-28 to D-32)
+- [x] 01-08-PLAN.md: Favourites (D-28 to D-32)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [x] 01-09-PLAN.md — Empty a folder and mark one read (D-33 to D-38)
+- [x] 01-09-PLAN.md: Empty a folder and mark one read (D-33 to D-38)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [x] 01-10-PLAN.md — A folder the server stopped listing (D-27)
+- [x] 01-10-PLAN.md: A folder the server stopped listing (D-27)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [x] 01-11-PLAN.md — What a conversation is and what its row says (D-02 to D-04, D-08)
+- [x] 01-11-PLAN.md: What a conversation is and what its row says (D-02 to D-04, D-08)
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [x] 01-12-PLAN.md — Switching the view, and what survives it (D-01, D-05 to D-07, D-09 to D-12)
+- [x] 01-12-PLAN.md: Switching the view, and what survives it (D-01, D-05 to D-07, D-09 to D-12)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [x] 01-13-PLAN.md — Rethread as mail arrives, including the two-tree merge (THREAD-02)
+- [x] 01-13-PLAN.md: Rethread as mail arrives, including the two-tree merge (THREAD-02)
 
 **Wave 14** *(added 2026-08-31, after phase verification found criterion 3 undelivered)*
 
-- [x] 01-14-PLAN.md — The tree holds every account, and moving between them is a selection (criterion 3)
+- [x] 01-14-PLAN.md: The tree holds every account, and moving between them is a selection (criterion 3)
 
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-29 after the phase discussion. The original five described nesting a flat tree. What the discussion decided is in `.planning/phases/01-folders-and-conversations/01-CONTEXT.md`, which is the authority on the detail; these criteria are what the phase is verified against. The phase also needs three IMAP verbs that do not exist in `src/service/protocols/imap.rs` today: CREATE, RENAME and DELETE mailbox.
@@ -144,35 +144,35 @@ Plans:
 
 **Wave 1**
 
-- [x] 02-01-PLAN.md — Tracer: a read dimension on `Allowed`, end to end from the stored settings file to the one fetch that already exists (D-2-06, D-2-07, D-2-11, D-2-12)
+- [x] 02-01-PLAN.md: A tracer for the read dimension on `Allowed`, end to end from the stored settings file to the one fetch that already exists (D-2-06, D-2-07, D-2-11, D-2-12)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [x] 02-02-PLAN.md — What a body-reading saved search covers, said before it runs, naming which search it is about (D-2-08, D-2-13)
+- [x] 02-02-PLAN.md: What a body-reading saved search covers, said before it runs, naming which search it is about (D-2-08, D-2-13)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [x] 02-03-PLAN.md — Fetching the missing text, behind the gate, marked experimental where somebody meets it (D-2-08)
+- [x] 02-03-PLAN.md: Fetching the missing text, behind the gate, marked experimental where somebody meets it (D-2-08)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [x] 02-04-PLAN.md — One vocabulary: the filter dialog offers the eleven fields and eleven match types the engine answers, in words
+- [x] 02-04-PLAN.md: One vocabulary, so the filter dialog offers the eleven fields and eleven match types the engine answers, in words
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [x] 02-05-PLAN.md — A saved search keeps both halves of its scope, and says what it asks (D-2-03, D-2-04, D-2-14)
+- [x] 02-05-PLAN.md: A saved search keeps both halves of its scope, and says what it asks (D-2-03, D-2-04, D-2-14)
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [x] 02-06-PLAN.md — Writing a whole question list back atomically, and a dialog for one condition (D-2-01)
+- [x] 02-06-PLAN.md: Writing a whole question list back atomically, and a dialog for one condition (D-2-01)
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [x] 02-07-PLAN.md — The rule editor: a manager over one search's conditions, reached from the tree, one group however a search was made (D-2-01, D-2-02)
+- [x] 02-07-PLAN.md: The rule editor, a manager over one search's conditions, reached from the tree, one group however a search was made (D-2-01, D-2-02)
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [x] 02-08-PLAN.md — Saved searches inside the account structure, and a search that runs against its own account (D-2-05)
+- [x] 02-08-PLAN.md: Saved searches inside the account structure, and a search that runs against its own account (D-2-05)
 
 **UI hint**: yes
 **Scope note**: These criteria were rewritten 2026-08-31 after the phase discussion, from four to six. The original criterion 4 assumed a smart folder was a separate object from a saved search; `Question::as_a_rule` converts a saved-search question into a `FilterRule` to evaluate it, so they are one vocabulary and the gap is only reach. `.planning/phases/02-search-that-says-what-it-covers/02-CONTEXT.md` is the authority on the detail. The largest thing here is not search: widening `Allowed` to cover reads touches a model three places must agree on, and if it ripples further it is a candidate for its own phase rather than something to absorb quietly.
@@ -215,39 +215,39 @@ Plans:
 
 **Wave 1**
 
-- [x] 02.1-01-PLAN.md — The checks that read the main window read all of it, and what that finds is reported before it is fixed (criterion 4, D-2.1-01)
+- [x] 02.1-01-PLAN.md: The checks that read the main window read all of it, and what that finds is reported before it is fixed (criterion 4, D-2.1-01)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [x] 02.1-02-PLAN.md — A guard that reads documents can see a violation, and nothing says a test cannot build a window (criteria 7, 8)
+- [x] 02.1-02-PLAN.md: A guard that reads documents can see a violation, and nothing says a test cannot build a window (criteria 7, 8)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [x] 02.1-03-PLAN.md — Every page that says folder management is missing (criterion 5)
+- [x] 02.1-03-PLAN.md: Every page that says folder management is missing (criterion 5)
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [x] 02.1-04-PLAN.md — A guard under `tests/` runs on the commits that could break it (criterion 9)
+- [x] 02.1-04-PLAN.md: A guard under `tests/` runs on the commits that could break it (criterion 9)
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [x] 02.1-05-PLAN.md — Two dialogs stop leaking a registry entry per row (criterion 1)
+- [x] 02.1-05-PLAN.md: Two dialogs stop leaking a registry entry per row (criterion 1)
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [x] 02.1-06-PLAN.md — Safety sorts by how bad it is, and one spelling of a message identifier (criteria 2, 3)
+- [x] 02.1-06-PLAN.md: Safety sorts by how bad it is, and one spelling of a message identifier (criteria 2, 3)
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [x] 02.1-07-PLAN.md — Two decisions nothing was asking about (criteria 6, 13)
+- [x] 02.1-07-PLAN.md: Two decisions nothing was asking about (criteria 6, 13)
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [x] 02.1-08-PLAN.md — A branch row offers a menu that fits it, and two accounts of one name are two rows (criteria 11, 12, D-2.1-03)
+- [x] 02.1-08-PLAN.md: A branch row offers a menu that fits it, and two accounts of one name are two rows (criteria 11, 12, D-2.1-03)
 
 **Wave 9** *(blocked on Wave 8)*
 
-- [x] 02.1-09-PLAN.md — A dialog refuses a value it cannot show rather than rewriting it (criterion 10, D-2.1-02)
+- [x] 02.1-09-PLAN.md: A dialog refuses a value it cannot show rather than rewriting it (criterion 10, D-2.1-02)
 
 **UI hint**: yes
 **Scope note**: Inserted 2026-08-31 after routing phase 1's deferred items by subject. Three items went to phase 3 and two to phase 6, where somebody planning those subjects will meet them. Criteria 1 to 6 belong to no phase, which is why they were deferred and why they would otherwise stay deferred.
@@ -293,15 +293,15 @@ and build the conflict choice for contacts and CalDAV plus a fix for the mail
 defect that is not a conflict. One question is still open, in 03-07: which
 announcement topic a whole-folder fetch belongs on.
 
-- [ ] `03-01-PLAN.md` — Nothing deletes cached mail on the strength of a partial listing, and a renumbered folder says what it discarded
-- [ ] `03-02-PLAN.md` — Count, in a test, the sign-ins that go round the helper, so the number stops going stale in a document
-- [ ] `03-03-PLAN.md` — Prove the storage split that already ships, stop a migrated database paying for the migration on every open, and pin the numbering rule a dispatcher currently holds
-- [ ] `03-04-PLAN.md` — Gmail mail archived with no label counts toward its conversation, by identity rather than by folder
-- [x] `03-05-PLAN.md` — A conversation root that arrives late merges, and the backfill that makes the fix visible on mail already stored
-- [ ] `03-06-PLAN.md` — One session held open per account, one reconnect, and a budget with a number
-- [ ] `03-07-PLAN.md` — Resume a folder instead of re-listing it, behind a seam over how deletions are found, and let somebody ask for a whole one
-- [ ] `03-08-PLAN.md` — Offline mode does what it says, the network is noticed, and coming back is offered rather than done
-- [ ] `03-09-PLAN.md` — The conflict choice is built where the state occurs, contacts and CalDAV, and the flag change lost to an unreachable server is kept instead of undone
+- [ ] `03-01-PLAN.md`: Nothing deletes cached mail on the strength of a partial listing, and a renumbered folder says what it discarded
+- [ ] `03-02-PLAN.md`: Count, in a test, the sign-ins that go round the helper, so the number stops going stale in a document
+- [ ] `03-03-PLAN.md`: Prove the storage split that already ships, stop a migrated database paying for the migration on every open, and pin the numbering rule a dispatcher currently holds
+- [ ] `03-04-PLAN.md`: Gmail mail archived with no label counts toward its conversation, by identity rather than by folder
+- [x] `03-05-PLAN.md`: A conversation root that arrives late merges, and the backfill that makes the fix visible on mail already stored
+- [ ] `03-06-PLAN.md`: One session held open per account, one reconnect, and a budget with a number
+- [ ] `03-07-PLAN.md`: Resume a folder instead of re-listing it, behind a seam over how deletions are found, and let somebody ask for a whole one
+- [ ] `03-08-PLAN.md`: Offline mode does what it says, the network is noticed, and coming back is offered rather than done
+- [ ] `03-09-PLAN.md`: The conflict choice is built where the state occurs, contacts and CalDAV, and the flag change lost to an unreachable server is kept instead of undone
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
 
@@ -341,15 +341,15 @@ are ordered rather than run in parallel. Plans 07 and 09 carry blocking
 checkpoints and are not autonomous. Plan 08 carried one until 2026-09-06, when
 the decision it held was settled and the plan became a build.
 
-- [ ] `04-01-PLAN.md` — An attachment's own description arrives and is spoken, and an image with none borrows the alt on the `<img>` that names it
-- [ ] `04-02-PLAN.md` — `List-Unsubscribe` arrives, so the mailing-list warning that ships and has never fired reaches somebody
-- [ ] `04-03-PLAN.md` — The encryption facts computed on every message read stop being thrown away, so armour has an explanation beside it
-- [ ] `04-04-PLAN.md` — A text attachment opens as text, and a picture says what is known about it and is then shown
-- [ ] `04-05-PLAN.md` — A filter rule may name the safety verdict, and every sentence in the warning bar says who said it
-- [ ] `04-06-PLAN.md` — A key moves between misspellings in both directions without a dialog, and says what a word could be instead
-- [ ] `04-07-PLAN.md` — Several files at once by dropping, pasting or picking, with an honest answer about whether a drop on a web view lands
-- [ ] `04-08-PLAN.md` — The inline picture draft round trip is proved, a picture may be marked decorative on purpose, and the reader decides whether they hear about it
-- [ ] `04-09-PLAN.md` — An S/MIME encrypted message says why it cannot be read instead of opening blank, then an OpenPGP crate is chosen and PGP reading is built on it
+- [ ] `04-01-PLAN.md`: An attachment's own description arrives and is spoken, and an image with none borrows the alt on the `<img>` that names it
+- [ ] `04-02-PLAN.md`: `List-Unsubscribe` arrives, so the mailing-list warning that ships and has never fired reaches somebody
+- [ ] `04-03-PLAN.md`: The encryption facts computed on every message read stop being thrown away, so armour has an explanation beside it
+- [ ] `04-04-PLAN.md`: A text attachment opens as text, and a picture says what is known about it and is then shown
+- [ ] `04-05-PLAN.md`: A filter rule may name the safety verdict, and every sentence in the warning bar says who said it
+- [ ] `04-06-PLAN.md`: A key moves between misspellings in both directions without a dialog, and says what a word could be instead
+- [ ] `04-07-PLAN.md`: Several files at once by dropping, pasting or picking, with an honest answer about whether a drop on a web view lands
+- [ ] `04-08-PLAN.md`: The inline picture draft round trip is proved, a picture may be marked decorative on purpose, and the reader decides whether they hear about it
+- [ ] `04-09-PLAN.md`: An S/MIME encrypted message says why it cannot be read instead of opening blank, then an OpenPGP crate is chosen and PGP reading is built on it
 
 Two of the four decisions from `04-RESEARCH.md` were answered on 2026-09-05 and
 are built in rather than assumed.
@@ -413,15 +413,15 @@ lifts out whole if it is not.
 
 **Plans**: 9/9 plans executed, one per wave. `docs/changelog.md` and `Cargo.toml` were touched by every plan under the same-commit rules and `src/presentation/wx_app.rs` by seven, so the plans ran in order rather than in parallel.
 
-- [x] 04.2-01-PLAN.md — A message is really held, so Undo Send takes something back
-- [x] 04.2-02-PLAN.md — A message can be set to go at a chosen time, and a time that will not do is refused with a reason
-- [x] 04.2-03-PLAN.md — A meeting reply arrives declared as a reply, named `reply.ics`
-- [x] 04.2-04-PLAN.md — Accepting a meeting puts it on the calendar, once, taking up its time
-- [x] 04.2-05-PLAN.md — A reader is told how many pictures were held back, why, and where the switch is
-- [x] 04.2-06-PLAN.md — Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first
-- [x] 04.2-07-PLAN.md — `Shift+F6` keeps its direction crossing the message preview
-- [x] 04.2-08-PLAN.md — A column layout belongs to the kind of folder it was made in
-- [x] 04.2-09-PLAN.md — The documents name the keys that work, and five sentences stop overclaiming
+- [x] 04.2-01-PLAN.md: A message is really held, so Undo Send takes something back
+- [x] 04.2-02-PLAN.md: A message can be set to go at a chosen time, and a time that will not do is refused with a reason
+- [x] 04.2-03-PLAN.md: A meeting reply arrives declared as a reply, named `reply.ics`
+- [x] 04.2-04-PLAN.md: Accepting a meeting puts it on the calendar, once, taking up its time
+- [x] 04.2-05-PLAN.md: A reader is told how many pictures were held back, why, and where the switch is
+- [x] 04.2-06-PLAN.md: Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first
+- [x] 04.2-07-PLAN.md: `Shift+F6` keeps its direction crossing the message preview
+- [x] 04.2-08-PLAN.md: A column layout belongs to the kind of folder it was made in
+- [x] 04.2-09-PLAN.md: The documents name the keys that work, and five sentences stop overclaiming
 
 **This section was written when the phase finished, not when it was planned.**
 The ready-to-paste block sat in `PLANS-README.md` for the whole phase and only
