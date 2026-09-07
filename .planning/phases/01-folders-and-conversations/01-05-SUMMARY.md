@@ -237,10 +237,10 @@ identity, the map is keyed on it, and the tree nests.
 
 ## Task Commits
 
-1. **Task 1: A pure module that decides the rows** — `4efef25`
-2. **Task 2: Remember what was collapsed, by identity** — `9c901e6`
-3. **Task 3: Rebuild `FoldersLoaded` from the new shape** — `aefb623`
-4. **The D-16 guard, split out because it needed its own measurement** — `a255e3b`
+1. **Task 1: A pure module that decides the rows**, `4efef25`
+2. **Task 2: Remember what was collapsed, by identity**, `9c901e6`
+3. **Task 3: Rebuild `FoldersLoaded` from the new shape**, `aefb623`
+4. **The D-16 guard, split out because it needed its own measurement**, `a255e3b`
 
 Task 2's storage half and its presentation half are in two different commits.
 The `tree_state` table and its read/write pair stand alone and are in `9c901e6`.
@@ -292,10 +292,10 @@ limit is written into the test rather than left implied.
 
 ## Files Modified
 
-- `src/presentation/folder_tree.rs` — new. `WhichRow`, `TreeRow`, `rows`,
+- `src/presentation/folder_tree.rs`: new. `WhichRow`, `TreeRow`, `rows`,
   `nested`, `where_a_row_sits`, `branch_text`, `folder_text`, `label_text`,
   `ALL_INBOXES`, and 29 tests including the source read.
-- `src/presentation/wx_app.rs` — `WxUIState::tree_rows`, `selected_folder`
+- `src/presentation/wx_app.rs`: `WxUIState::tree_rows`, `selected_folder`
   becomes `WhichRow`, `folder_ids` keyed on the identity, `fill_the_tree`,
   `the_row_on_screen`, `which_row`, `remember_the_row`, `select_row`,
   `land_the_folder_cursor`, `the_folder_row_the_cursor_was_on`,
@@ -304,16 +304,16 @@ limit is written into the test rather than left implied.
   the expand and collapse handlers. `folder_label`, `label_row`,
   `saved_search_rows`, `ChosenSearch::path` and `ALL_INBOXES` removed: the
   identity replaced all five.
-- `src/presentation/ui_types.rs` — `FoldersLoaded` carries `Vec<TreeRow>`.
-- `src/data/message_cache/mod.rs` — the `tree_state` table.
-- `src/data/message_cache/folders.rs` — `set_row_collapsed`, `collapsed_rows`, 7 tests.
-- `src/application/local_folders.rs` — `ON_THIS_COMPUTER`. **Outside the plan's
+- `src/presentation/ui_types.rs`: `FoldersLoaded` carries `Vec<TreeRow>`.
+- `src/data/message_cache/mod.rs`: the `tree_state` table.
+- `src/data/message_cache/folders.rs`: `set_row_collapsed`, `collapsed_rows`, 7 tests.
+- `src/application/local_folders.rs`: `ON_THIS_COMPUTER`. **Outside the plan's
   `files_modified`.** See Deviations.
-- `src/application/new_item.rs` — reads that constant instead of its own copy.
+- `src/application/new_item.rs`: reads that constant instead of its own copy.
   **Also outside.**
-- `tests/wired.rs` — two guards updated to the new mechanism, one added.
-- `guards/guards.toml` — two records, header count 318 to 320.
-- `docs/changelog.md` — the entry, and 01-03's "still one flat level" limit
+- `tests/wired.rs`: two guards updated to the new mechanism, one added.
+- `guards/guards.toml`: two records, header count 318 to 320.
+- `docs/changelog.md`: the entry, and 01-03's "still one flat level" limit
   removed because it stopped being true here.
 
 ## The user-visible change
@@ -533,7 +533,7 @@ D-17 puts local folders in a group, and D-18 makes `Sent`, `Outbox`, `Drafts`,
 `Junk` and `Trash` one each shared across accounts, owned by a reserved account
 id. D-18 is not built and is not in this plan; today every account has its own
 `\u{1}Local/Drafts` row. Drawing every account at once therefore puts one Drafts,
-one Sent and one Outbox per account under "On this computer" — several rows
+one Sent and one Outbox per account under "On this computer", several rows
 reading identically, which is precisely the fault this plan exists to remove.
 
 So the remaining step is small and blocked: the sender loops over the accounts
@@ -566,10 +566,10 @@ Commits claimed:
 
 Checks:
 
-- `bash scripts/check.sh` — formatting and clippy pass. The suite and release
+- `bash scripts/check.sh`: formatting and clippy pass. The suite and release
   build wait for the merge, as `which-checks.sh` decides for a branch.
-- `cargo test --all-targets` — 5596 pass, 1 ignored, 0 fail.
+- `cargo test --all-targets`: 5596 pass, 1 ignored, 0 fail.
 - `bash scripts/guards.sh` for both new records — each reddens exactly the tests
   it names and nothing else.
-- `cargo test --test house_style` — 52 pass, including the guard header count.
+- `cargo test --test house_style`: 52 pass, including the guard header count.
 - `--no-verify` was never used. No `.git/index.lock` was encountered.
