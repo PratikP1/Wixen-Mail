@@ -452,6 +452,26 @@ impl MessageCache {
         }
     }
 
+    /// Write down which version of the meeting an answer just filed here.
+    ///
+    /// Its own statement rather than a column on the save, because the save is
+    /// how a calendar server's copy is written too and a server's copy says
+    /// nothing about what anybody on this computer answered.
+    pub fn remember_the_version_answered(&self, event_id: &str, version: u32) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendar_events SET answered_version = ?2 WHERE id = ?1",
+                params![event_id, version],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record which version of the meeting was answered: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
     /// Get a single event by the identity it carries on this computer.
     pub fn get_event_by_id(&self, event_id: &str) -> Result<Option<CalendarEventEntry>> {
         let sql = format!("SELECT {} FROM calendar_events WHERE id = ?1", EVENT_COLS);

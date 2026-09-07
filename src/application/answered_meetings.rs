@@ -200,9 +200,10 @@ pub fn file_the_answer(
             status: &status,
         },
     );
-    // Worked out and thrown away, which is what this program has done since the
-    // answering layer was written. The commit after this one files it.
-    let _ = entry;
+    cache.save_calendar_event(&entry)?;
+    // After the save, because a version written against a row that is not there
+    // records an answer to a meeting nobody can see.
+    cache.remember_the_version_answered(&entry.id, holding.version)?;
     Ok(())
 }
 
@@ -287,8 +288,11 @@ mod tests {
             .expect("the meeting to be on the calendar after accepting it");
         assert_eq!(on_the_day.summary, "Quarterly review");
         assert_eq!(on_the_day.location.as_deref(), Some("Room 3"));
-        assert_eq!(on_the_day.start_datetime, "2026-03-05T09:00:00+00:00");
-        assert_eq!(on_the_day.end_datetime, "2026-03-05T10:00:00+00:00");
+        // Spelled the way the calendar sync spells a moment, because both go
+        // through the same reader. A column holding two spellings is a column
+        // whose comparisons are decided by which writer got there first.
+        assert_eq!(on_the_day.start_datetime, "2026-03-05T09:00:00Z");
+        assert_eq!(on_the_day.end_datetime, "2026-03-05T10:00:00Z");
         assert_eq!(
             on_the_day.show_as, "busy",
             "an accepted meeting has to take up the time it is at"
@@ -353,7 +357,7 @@ mod tests {
              replacing it: {held:?}"
         );
         assert_eq!(
-            held[0].start_datetime, "2026-03-05T14:00:00+00:00",
+            held[0].start_datetime, "2026-03-05T14:00:00Z",
             "the calendar still says the hour the meeting was moved away from"
         );
     }
@@ -394,7 +398,7 @@ mod tests {
 
         let on_the_day = the_meeting_on_the_calendar(&cache).expect("the meeting to still be here");
         assert_eq!(
-            on_the_day.start_datetime, "2026-03-05T14:00:00+00:00",
+            on_the_day.start_datetime, "2026-03-05T14:00:00Z",
             "an invitation older than the one already answered moved the \
              meeting back to the hour it had left"
         );

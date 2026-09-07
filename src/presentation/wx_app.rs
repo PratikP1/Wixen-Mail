@@ -12094,6 +12094,17 @@ fn answer_the_invitation(
         }
     };
     let went = send_the_answer(state, cache, &to_send);
+    // The other half of answering, and the half somebody lives with. Filing
+    // decides for itself that an answer which never left the machine is not
+    // written down as though it had, so the rule sits beside the writing rather
+    // than in this branch. A calendar that could not be written is not worth
+    // interrupting the answer's own sentence for: the reply has gone, which is
+    // what the person asked for, and the meeting can be added by hand.
+    if let Err(why) = crate::application::answered_meetings::file_the_answer(
+        cache, &account, &ready, answer, &went,
+    ) {
+        tracing::warn!("The answer was sent and could not be put on the calendar: {why}");
+    }
     told(&ready.what_answering_did(answer, &went), Priority::Normal);
 }
 
