@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 143
+open_count: 148
 waived_count: 0
 fixed_count: 15
-total_count: 158
-last_updated: 2026-09-07T07:21:59.339Z
+total_count: 163
+last_updated: 2026-09-07T09:09:27.449Z
 ---
 
 # Broken Windows Ledger
@@ -173,6 +173,11 @@ last_updated: 2026-09-07T07:21:59.339Z
 | 156 | 04.2 | unrun-verify | src/presentation/html_renderer.rs |  | The sentence about held-back pictures has not been heard with a screen reader. It is placed above the message body, after the message's own heading in a conversation, and read in order it arrives before the thirty markers it is about. Whether it is heard as orientation or as one more thing in the way is the only question here that structure cannot answer, and the answer changes the placement rather than the words: under the heading instead of above the body, or at the end, or in the announcement path instead of the document. Thirty markers in a marketing message is the case to try it on. | open |  | 2026-09-07T07:03:59.342Z |  |
 | 157 | 04.2 | unrun-verify | src/presentation/wx_compose.rs |  | One hop is uncovered and it is the hop this plan is about. wx_compose's preview now asks for HtmlRenderer::for_a_message_being_written, and no test drives that window, so changing that one line back to new() reddens nothing. It was measured rather than assumed: the guard record breaking the constructor reddens a test, and a record breaking the call site would redden none. The constructor's own answer is pinned by a test, and the default a caller gets by saying nothing is the reading one, so a new call site that forgets is wrong in the direction that tells a reader too much rather than a writer something false. What is unverified is that this particular call site still asks. | open |  | 2026-09-07T07:04:11.587Z |  |
 | 158 | 04.2 | unrun-verify | src/presentation/html_renderer.rs |  | test_a_message_with_nothing_held_back_says_nothing was rewritten against the document and was green on arrival, because at the time of the rewrite no document said the sentence at all. It is the assertion that stops an ordinary message growing a line about pictures nobody held back, and it has never been red. Taking the emptiness check out of what_a_reader_is_told_was_held_back by hand would settle whether it would notice; it was not done. | fixed |  | 2026-09-07T07:04:12.210Z | 2026-09-07T07:21:59.339Z |
+| 159 | 04.2 | unrun-verify | src/presentation/wx_blocked_senders.rs |  | Whether each row of the blocked list is read as a person, a destination and a state, or as one run-together string. This is a Report ListCtrl and wxdragon 0.9.17's get_item_text loses the last character of every cell and returns a NUL in its place, which is ledger 28 and is upstream and unfixed. If it shows here it is somebody else's defect and it still lands on the person using this. Nothing in this repository can answer it: only NVDA and Narrator on a running build can. | open |  | 2026-09-07T09:09:03.008Z |  |
+| 160 | 04.2 | unrun-verify | src/presentation/wx_blocked_senders.rs |  | Whether what unblocking did is heard over the list being re-read underneath it. The list is refilled and the row cursor is landed again before the sentence is announced, so a screen reader has a repainted control and a notification arriving close together. Whether the sentence is heard once, heard twice, or lost under the repaint is a question only a real run answers, and it decides whether the announcement should come before the refill rather than after. | open |  | 2026-09-07T09:09:17.147Z |  |
+| 161 | 04.2 | unrun-verify | src/presentation/wx_blocked_senders.rs |  | Whether a switched-off block is distinguishable by ear from a working one. The state is a third column reading Working or Switched off, so it is catching nothing. Looking at the screen makes the difference obvious; hearing a row read cell by cell may not, and still_on's own doc says a list showing a switched-off block as working would be worse than no list. Also unheard: whether an account with nothing blocked is heard as empty on purpose rather than as a window that failed to load, which is what the sentence and the focus going to Close are for. | open |  | 2026-09-07T09:09:17.667Z |  |
+| 162 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Whether the sentence saying what blocking will do is heard before the block is made, and whether it and the may_block mailing-list warning together read as one thing or two. Both are said through the same told at Priority::High, one after the other, and this is the only place in this feature where somebody hears two sentences before a block. Guardrail 5 is what it is about: feedback must be distinct and bounded, and a sentence added before a block is the easiest place here to flood somebody. Announcements go out through UiaRaiseNotificationEvent, which reaches speech and braille at once, so a braille display should be checked as well. | open |  | 2026-09-07T09:09:18.186Z |  |
+| 163 | 04.2 | unrun-verify | src/presentation/scan_target.rs |  | Neither automated accessibility channel has been run over the new blocked-senders window. The plan's checkpoint asks for two, separately: Axe.Windows over UI Automation with the new blocked-senders scan target, confirming the scan really opened the window rather than reporting nothing about one it could not reach, and scripts/msaa-names.ps1 over the same window, which is what NVDA reads for native controls and the only channel set_accessible_name writes to. A name failing on either is a name somebody does not hear. There is also a trap in the other direction: a control with a visible label beside it inherits that label as its MSAA name even when nothing set one, so for each control the run has to say whether the name that came back is the one this code set or one Windows supplied. Deferred by decision, not attempted. | open |  | 2026-09-07T09:09:27.449Z |  |
 
 ````json
 [
@@ -2071,6 +2076,66 @@ last_updated: 2026-09-07T07:21:59.339Z
     "reason": "",
     "recorded_at": "2026-09-07T07:04:12.210Z",
     "resolved_at": "2026-09-07T07:21:59.339Z"
+  },
+  {
+    "id": 159,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_blocked_senders.rs",
+    "line": null,
+    "description": "Whether each row of the blocked list is read as a person, a destination and a state, or as one run-together string. This is a Report ListCtrl and wxdragon 0.9.17's get_item_text loses the last character of every cell and returns a NUL in its place, which is ledger 28 and is upstream and unfixed. If it shows here it is somebody else's defect and it still lands on the person using this. Nothing in this repository can answer it: only NVDA and Narrator on a running build can.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T09:09:03.008Z",
+    "resolved_at": null
+  },
+  {
+    "id": 160,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_blocked_senders.rs",
+    "line": null,
+    "description": "Whether what unblocking did is heard over the list being re-read underneath it. The list is refilled and the row cursor is landed again before the sentence is announced, so a screen reader has a repainted control and a notification arriving close together. Whether the sentence is heard once, heard twice, or lost under the repaint is a question only a real run answers, and it decides whether the announcement should come before the refill rather than after.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T09:09:17.147Z",
+    "resolved_at": null
+  },
+  {
+    "id": 161,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_blocked_senders.rs",
+    "line": null,
+    "description": "Whether a switched-off block is distinguishable by ear from a working one. The state is a third column reading Working or Switched off, so it is catching nothing. Looking at the screen makes the difference obvious; hearing a row read cell by cell may not, and still_on's own doc says a list showing a switched-off block as working would be worse than no list. Also unheard: whether an account with nothing blocked is heard as empty on purpose rather than as a window that failed to load, which is what the sentence and the focus going to Close are for.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T09:09:17.667Z",
+    "resolved_at": null
+  },
+  {
+    "id": 162,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the sentence saying what blocking will do is heard before the block is made, and whether it and the may_block mailing-list warning together read as one thing or two. Both are said through the same told at Priority::High, one after the other, and this is the only place in this feature where somebody hears two sentences before a block. Guardrail 5 is what it is about: feedback must be distinct and bounded, and a sentence added before a block is the easiest place here to flood somebody. Announcements go out through UiaRaiseNotificationEvent, which reaches speech and braille at once, so a braille display should be checked as well.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T09:09:18.186Z",
+    "resolved_at": null
+  },
+  {
+    "id": 163,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/scan_target.rs",
+    "line": null,
+    "description": "Neither automated accessibility channel has been run over the new blocked-senders window. The plan's checkpoint asks for two, separately: Axe.Windows over UI Automation with the new blocked-senders scan target, confirming the scan really opened the window rather than reporting nothing about one it could not reach, and scripts/msaa-names.ps1 over the same window, which is what NVDA reads for native controls and the only channel set_accessible_name writes to. A name failing on either is a name somebody does not hear. There is also a trap in the other direction: a control with a visible label beside it inherits that label as its MSAA name even when nothing set one, so for each control the run has to say whether the name that came back is the one this code set or one Windows supplied. Deferred by decision, not attempted.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T09:09:27.449Z",
+    "resolved_at": null
   }
 ]
 ````
