@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Mail at scale on the wire** - Resume rather than re-list, hold one connection, fetch a whole mailbox, and never pick a conflict winner silently
 - [x] **Phase 4: Writing and reading a message in full** - Attachments in and out, inline images with alt text, spell check while typing, and PGP
 - [ ] **Phase 4.1: Mail moves between accounts** (INSERTED) - The move and copy window is a tree built for several accounts and fed one, so mail cannot cross an account and nothing says so. Goes before phase 5, because a reminder moving between accounts would otherwise be the first cross-account move in the program
-- [ ] **Phase 4.2: What was built and never reached** (INSERTED) - Thirteen findings from the sweep of 2026-09-06, all of them code that runs, is tested, and is quietly narrower in production than its own design. Undo Send, scheduled send, meeting replies that reach the organiser, accepting an invitation reaching the calendar, the Blocked Senders screen
+- [x] **Phase 4.2: What was built and never reached** (INSERTED) - Thirteen findings from the sweep of 2026-09-06, all of them code that runs, is tested, and is quietly narrower in production than its own design. Undo Send, scheduled send, meeting replies that reach the organiser, accepting an invitation reaching the calendar, the Blocked Senders screen
 - [ ] **Phase 5: The other five modules keep up** - Move and copy everywhere including contacts and reminders, recurring events across weeks and months, and a provider task move that survives being half finished
 - [ ] **Phase 5.1: Notes and contacts reach a server** (INSERTED) - The notes seam and its first backend, and CardDAV. Cut from phase 5 at the boundary between moving what is already here and reaching a server for the first time
 - [ ] **Phase 5.2: Notes in OneNote** (INSERTED) - The second notes backend, separated because a OneNote page has no ETag and cannot come back character for character, so PIM-04's criterion has to be decided rather than met
@@ -386,6 +386,60 @@ a phase must not add another setting the model holds and no screen offers.
 
 One decision remains open. `04-02` assumes `List-Unsubscribe` is in scope and
 lifts out whole if it is not.
+
+**UI hint**: yes
+
+### Phase 4.2: What was built and never reached (INSERTED)
+
+**Goal**: Wire up the capabilities two sweeps found written, tested and reached by nothing, and correct the documents that describe them as working.
+**Depends on**: Phase 4, all of it. Plan 01 wrote a setting into `src/data/config.rs` and `src/presentation/wx_settings.rs` and every other plan chained off it.
+**Requirements**: none new; this closed recorded defects rather than adding capability, with two exceptions noted under criteria 3 and 10
+**Success Criteria** (what must be TRUE):
+
+  1. A message sent from the composer is held before anything hands it to a server, goes on its own when the hold runs out, says while it waits that it is waiting, and can be taken back with Undo Send.
+  2. How long the hold lasts is a setting on the Compose tab under Sending, described with what turning it off costs.
+  3. A message can be set from the composer to go at a date and time somebody chooses, it waits in the Outbox saying the time it is set for, and it goes on its own when that time comes.
+  4. A time that has gone by is refused with the reason and the next move, not sent and not quietly moved to now; so is a time more than a year ahead, and so is text that is not a date and time.
+  5. A meeting reply arrives at the organiser declared `text/calendar; charset=utf-8; method=REPLY`.
+  6. The part the organiser receives is called `reply.ics`.
+  7. Accepting a meeting puts it on the calendar, on the day, at the time it is at, taking up that time according to the answer given.
+  8. Answering the same meeting twice leaves one entry, and a changed meeting replaces the one already there.
+  9. Somebody reading a message with pictures held back is told how many, why, and where the switch is, once, in the document.
+  10. Somebody can find out who they have blocked, from the Tools menu, and take a block off there, and unblocking one address never removes a wider block that happens to catch it; and somebody making a block is told what blocking will do before the rule is written.
+  11. `Shift+F6` leaves the message preview in the opposite direction to `F6`, and nothing in the tree says the preview never takes focus.
+  12. A column layout made in Sent is stored as a Sent layout and does not become the inbox's, and Restore Defaults restores the defaults for the folder somebody is in.
+  13. Every key the shortcuts document promises is a key that arrives, and every key that is bound is documented.
+  14. Five sentences that describe something other than what ships are corrected: three changelog entries about braille, `parse_ical_vevent`'s doc comment, and two evidence cells in `.planning/intel/built-and-left.md`. Plus two code corrections: the settings screen telling somebody Windows overruled a setting they never turned on, and the scrolling module claiming two readers where there is one.
+
+**Plans**: 9/9 plans executed, one per wave. `docs/changelog.md` and `Cargo.toml` were touched by every plan under the same-commit rules and `src/presentation/wx_app.rs` by seven, so the plans ran in order rather than in parallel.
+
+- [x] 04.2-01-PLAN.md — A message is really held, so Undo Send takes something back
+- [x] 04.2-02-PLAN.md — A message can be set to go at a chosen time, and a time that will not do is refused with a reason
+- [x] 04.2-03-PLAN.md — A meeting reply arrives declared as a reply, named `reply.ics`
+- [x] 04.2-04-PLAN.md — Accepting a meeting puts it on the calendar, once, taking up its time
+- [x] 04.2-05-PLAN.md — A reader is told how many pictures were held back, why, and where the switch is
+- [x] 04.2-06-PLAN.md — Blocked Senders is on the Tools menu, a block can be taken off there, and making one says so first
+- [x] 04.2-07-PLAN.md — `Shift+F6` keeps its direction crossing the message preview
+- [x] 04.2-08-PLAN.md — A column layout belongs to the kind of folder it was made in
+- [x] 04.2-09-PLAN.md — The documents name the keys that work, and five sentences stop overclaiming
+
+**This section was written when the phase finished, not when it was planned.**
+The ready-to-paste block sat in `PLANS-README.md` for the whole phase and only
+the one-line entry above ever reached this file, so for nine plans the criteria
+being worked to were not in the roadmap at all. Recorded rather than quietly
+fixed, because a phase whose criteria live only in a planning README is a phase
+nobody can audit afterwards, and phase 8 is the audit.
+
+**What the phase did not close.** Nothing in it has been heard with a screen
+reader: two checkpoints were planned, in `04.2-04` and `04.2-06`, and both were
+deferred by decision and never attempted. Nothing in it has met a real server, a
+real organiser or a real provider. Twenty-eight ledger entries, 147 to 174, are
+open and none has been answered. The braille defect is closed only in the
+documents; the two tick boxes still say they control speech and braille
+separately and on Windows they do not, which belongs to phase 6 along with the
+two tests whose names promise the independence. `04.2-09-SUMMARY.md` carries all
+of it in one section, including the single command for the guard sweep the phase
+owes: `scripts/guards.sh --touched-by 9611b70`.
 
 **UI hint**: yes
 
