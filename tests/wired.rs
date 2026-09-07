@@ -3820,12 +3820,26 @@ fn test_blocking_says_what_it_will_do_before_it_writes_the_rule() {
     );
 }
 
-/// The list of who is blocked can be opened, and it reaches the two functions
-/// written for it.
+/// The list of who is blocked can be opened, and what it does reaches the
+/// functions written for it.
 ///
 /// The other half of the same failure. A screen that is never opened is a
 /// screen the accessibility scan cannot see either, which is why the scan
 /// target is checked here alongside the door.
+///
+/// The window is checked as well as the door, and the reason is worth stating
+/// because a grep for the wrong name would read as a pass. `the_rule_that_blocks`
+/// and `what_unblocking_did` are not called by the window: they are called by
+/// `what_unblocking_a_row_does`, which is where the deciding belongs, and which
+/// is in the same file as them. So looking for either name outside
+/// `blocking.rs` finds nothing, and finding nothing would be true of a build
+/// where the window did the deciding itself and of a build where nothing called
+/// any of it. What proves the chain is that the window reaches the one function
+/// that reaches both.
+///
+/// What this cannot see: whether pressing the button reaches that line. It
+/// reads source, because the window needs a message store and a running event
+/// loop.
 #[test]
 fn test_the_blocked_senders_list_is_opened_by_something() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -3840,5 +3854,19 @@ fn test_the_blocked_senders_list_is_opened_by_something() {
         shipped.contains("ScanTarget::BlockedSenders"),
         "the accessibility scan cannot open the blocked senders window, so a scan of \
          it would report nothing and read as a pass"
+    );
+
+    let window = fs::read_to_string("src/presentation/wx_blocked_senders.rs")
+        .expect("the blocked senders window");
+    let window = what_ships(&window);
+    assert!(
+        window.contains("what_unblocking_a_row_does"),
+        "the window never asks which rule a chosen row stands for, so unblocking \
+         reaches neither the_rule_that_blocks nor what_unblocking_did and both are \
+         still written and never called"
+    );
+    assert!(
+        window.contains("everyone_blocked"),
+        "the window never asks who is blocked, so it lists nothing"
     );
 }
