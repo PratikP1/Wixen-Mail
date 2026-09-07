@@ -8,6 +8,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can see who you have blocked, and take a block off.** Tools, Blocked
+  Senders, with the other managers and just under Message Filters. It lists
+  every block on the account you are looking at, saying who is blocked, which
+  folder their mail is being filed into, and whether the block is switched on.
+
+  A block that is switched off says so, because a block that is switched off
+  catches nothing, and a list that showed it as working would be worse than no
+  list at all.
+
+  Choose a row and press Unblock to take that block off. Only the block you
+  chose is taken off. If you have blocked one address and also blocked the
+  whole domain it is at, unblocking the address leaves the domain block alone,
+  because letting a whole company's mail back in is not what was asked and is
+  not something you could undo by asking again. Unblocking says what it did,
+  including that mail already filed away stays where it is until you move it
+  back.
+
+  An account with nothing blocked says so in words rather than showing an empty
+  list, and tells you how to block somebody. An empty list read by a screen
+  reader is silence, and so is a window that failed to load.
+
+  What has not been checked: nobody has heard this window with a screen reader.
+  Whether each row reads as a person, a destination and a state rather than as
+  one run-together string is the open question, and it is written down as such
+  rather than claimed.
+
+- **Blocking a sender now says what it will do before it does it.** You already
+  heard what blocking had done afterwards. Now you also hear, first, which
+  folder the mail will go to, whether that folder is about to be switched on so
+  you can read what is filed there, and whether Allowed Changes will hold the
+  move back.
+
+  This is not a question and nothing waits for an answer. The sentence is said
+  and the block is made. Where blocking already warned you about something, for
+  instance that the message came from a mailing list that will carry on sending,
+  that warning is still said and this is said beside it.
+
 - **Accepting a meeting now puts it on your calendar.** Until this release it
   did not. The reply went to the organiser, the program said the organiser
   would be told, and that was true. The meeting was simply not there on the
@@ -2136,10 +2173,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   whole domain catches a colleague sooner or later, and Junk is where people
   already look for mail that has gone missing.
 
-  A block is an ordinary rule, so it appears in your rules list where you
-  would look for it, and it can be found and undone there. What it does not
-  do is said as well: your provider is not told and goes on accepting the
-  mail, and messages already received stay where they are.
+  A block is an ordinary rule, so it appears in your rules list and can be
+  found and undone there. What it does not do is said as well: your provider is
+  not told and goes on accepting the mail, and messages already received stay
+  where they are.
+
+  This entry used to say the rules list was "where you would look for it". At
+  the time of this release it was the only place a block could be found, which
+  meant picking a block out of a list that holds every other rule too. The
+  screen meant to be the place to look was written and never offered. It is
+  offered now, under Unreleased above: Tools, Blocked Senders.
 
 - **A message can be held before it goes, and taken back.** Send now holds a
   message briefly rather than sending at once, so there is a moment to change

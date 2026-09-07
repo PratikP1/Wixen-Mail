@@ -745,17 +745,35 @@ pub const NOBODY_IS_BLOCKED: &str = "You have not blocked anybody on this accoun
      them and use Action, Block.";
 
 /// The words for one row of the list of who is blocked.
-pub fn what_a_row_says(_blocked: &Blocked) -> WhatARowSays {
+///
+/// `whose_mail` rather than a phrasing written for the list. It is what every
+/// other sentence about a block already says, and two phrasings of one fact
+/// drift apart.
+pub fn what_a_row_says(blocked: &Blocked) -> WhatARowSays {
     WhatARowSays {
-        who: String::new(),
-        goes_to: String::new(),
-        working: String::new(),
+        who: whose_mail(&blocked.what),
+        goes_to: blocked.goes_to.clone(),
+        working: if blocked.still_on {
+            WORKING
+        } else {
+            SWITCHED_OFF
+        }
+        .to_string(),
     }
 }
 
 /// The sentence said when the list of who is blocked opens.
-pub fn what_the_list_holds(_blocks: &[Blocked]) -> String {
-    String::new()
+///
+/// It counts, because a list read by ear gives no sense of how long it is, and
+/// it names the action, because a list with no stated verb is one somebody
+/// reads and closes again.
+pub fn what_the_list_holds(blocks: &[Blocked]) -> String {
+    let how_many = match blocks.len() {
+        0 => return NOBODY_IS_BLOCKED.to_string(),
+        1 => "One block".to_string(),
+        many => format!("{many} blocks"),
+    };
+    format!("{how_many} on this account. Choose one and press Unblock to take it off.")
 }
 
 /// The stored rule that is exactly this block, for undoing it.
@@ -800,14 +818,29 @@ pub enum WhatUnblockingDoes {
 
 /// What to do when somebody presses Unblock on a row.
 ///
-/// `rules` are the rules as they stand at the moment of the press, not as
-/// they stood when the window opened.
+/// `rules` are the rules as they stand at the moment of the press, not as they
+/// stood when the window opened. The rule is found again by asking
+/// [`the_rule_that_blocks`] rather than by the `rule_id` the row is carrying,
+/// which looks like the longer way round and is the right one: the row's id
+/// was read when the window opened, and the rules may have moved since. The
+/// question worth asking is which rule is this block now, not which rule was
+/// it then.
+///
+/// It never widens. Unblocking one address by deleting the domain block that
+/// happens to catch it would unblock everybody at that domain, which is not
+/// what was asked and cannot be undone by asking again.
 pub fn what_unblocking_a_row_does(
-    _account_id: &str,
-    _chosen: &Blocked,
-    _rules: &[MessageFilterRule],
+    account_id: &str,
+    chosen: &Blocked,
+    rules: &[MessageFilterRule],
 ) -> WhatUnblockingDoes {
-    WhatUnblockingDoes::ItHasAlreadyGone(String::new())
+    match the_rule_that_blocks(account_id, &chosen.what, rules) {
+        Some(rule) => WhatUnblockingDoes::TakeOffTheRule {
+            rule_id: rule.id.clone(),
+            said: what_unblocking_did(&chosen.what),
+        },
+        None => WhatUnblockingDoes::ItHasAlreadyGone(IT_HAS_ALREADY_GONE.to_string()),
+    }
 }
 
 /// The block a stored rule carries, when it carries one.
@@ -1993,16 +2026,57 @@ mod tests {
 
     // ── Taking a block off, and only the one chosen ─────────────────────
 
-    /// An address block sitting underneath a domain block that also catches
-    /// it, which is the arrangement both directions of the rule are about.
-    fn one_under_a_domain() -> (Block, Block, [MessageFilterRule; 2]) {
+    /// The rule the row stands for, out of a list, so a test names a block
+    /// rather than an index.
+    fn the_row_for(block: &Block, rules: &[MessageFilterRule]) -> Blocked {
+        everyone_blocked("acct", rules)
+            .into_iter()
+            .find(|listed| &listed.what == block)
+            .expect("that block is in the list")
+    }
+
+    /// Which rule a lookup finds first matters, and these two fixtures are
+    /// built so that it does.
+    ///
+    /// `get_filter_rules_for_account` orders by name, and a block's name is
+    /// `Blocked: ` followed by the address, or by `everyone at ` and the
+    /// domain. So whether the exact rule or the wider one comes first depends
+    /// on the address, and a lookup that takes the first rule which merely
+    /// catches this sender is only wrong when the wider rule is the one it
+    /// meets first.
+    ///
+    /// This was measured rather than reasoned about, and the first version of
+    /// both tests below was measured wrong. They used `ada@example.com`, which
+    /// sorts before `everyone at example.com`, so the exact rule came first,
+    /// so a widening lookup happened to return the right rule and both tests
+    /// passed against the defect they were written for. The break reddened
+    /// nothing. Taking it by hand is what said so.
+    ///
+    /// `zoe@example.com` sorts after `everyone at example.com`, which puts the
+    /// domain rule first, which is the arrangement where widening bites.
+    fn a_domain_rule_before_the_address_under_it() -> (Block, [MessageFilterRule; 2]) {
+        let one = just_this_sender("zoe@example.com").expect("an address");
+        let domain = everyone_at_the_senders_domain("x@example.com").expect("a domain");
+        // Sorted the way the database returns them: "Blocked: everyone at
+        // example.com" before "Blocked: zoe@example.com".
+        let rules = [
+            a_rule_that_blocks("acct", &domain, "Junk", "t"),
+            a_rule_that_blocks("acct", &one, "Junk", "t"),
+        ];
+        (one, rules)
+    }
+
+    /// The mirror of it: `ada@example.com` sorts first, so the narrower rule
+    /// is the one a first-match lookup meets, which is where unblocking a
+    /// domain can take the address rule off instead.
+    fn an_address_rule_before_the_domain_over_it() -> (Block, [MessageFilterRule; 2]) {
         let one = just_this_sender("ada@example.com").expect("an address");
         let domain = everyone_at_the_senders_domain("x@example.com").expect("a domain");
         let rules = [
             a_rule_that_blocks("acct", &one, "Junk", "t"),
             a_rule_that_blocks("acct", &domain, "Junk", "t"),
         ];
-        (one, domain, rules)
+        (domain, rules)
     }
 
     #[test]
@@ -2013,11 +2087,8 @@ mod tests {
         // it would unblock everybody at that domain." Somebody who wanted one
         // person back would silently have let a whole company back in, and
         // nothing would say so.
-        let (one, _, rules) = one_under_a_domain();
-        let chosen = everyone_blocked("acct", &rules)
-            .into_iter()
-            .find(|listed| listed.what == one)
-            .expect("the address block is in the list");
+        let (one, rules) = a_domain_rule_before_the_address_under_it();
+        let chosen = the_row_for(&one, &rules);
 
         let WhatUnblockingDoes::TakeOffTheRule { rule_id, .. } =
             what_unblocking_a_row_does("acct", &chosen, &rules)
@@ -2025,21 +2096,25 @@ mod tests {
             panic!("unblocking an address that is blocked found no rule to take off");
         };
 
-        assert_eq!(rule_id, rules[0].id, "it reached for the wrong rule");
-        assert_ne!(rule_id, rules[1].id, "it reached for the domain block");
+        assert_eq!(
+            rule_id, rules[1].id,
+            "it did not reach for the address rule"
+        );
+        assert_ne!(
+            rule_id, rules[0].id,
+            "it reached for the domain block, which unblocks everybody at that domain"
+        );
     }
 
     #[test]
     fn test_unblocking_a_domain_leaves_the_narrower_block_underneath_it_alone() {
-        // The other direction, and it fails differently: deleting the address
-        // rule leaves the domain block in place, so the person believes they
-        // have unblocked a whole domain and their mail goes on being filed
-        // away. One test would not have seen this.
-        let (_, domain, rules) = one_under_a_domain();
-        let chosen = everyone_blocked("acct", &rules)
-            .into_iter()
-            .find(|listed| listed.what == domain)
-            .expect("the domain block is in the list");
+        // The other direction, and it fails differently: taking the address
+        // rule off leaves the domain block in place, so the person believes
+        // they have unblocked a whole domain and their mail goes on being
+        // filed away. One test would not have seen this, and neither would one
+        // ordering.
+        let (domain, rules) = an_address_rule_before_the_domain_over_it();
+        let chosen = the_row_for(&domain, &rules);
 
         let WhatUnblockingDoes::TakeOffTheRule { rule_id, .. } =
             what_unblocking_a_row_does("acct", &chosen, &rules)
@@ -2047,8 +2122,11 @@ mod tests {
             panic!("unblocking a domain that is blocked found no rule to take off");
         };
 
-        assert_eq!(rule_id, rules[1].id, "it reached for the wrong rule");
-        assert_ne!(rule_id, rules[0].id, "it reached for the address block");
+        assert_eq!(rule_id, rules[1].id, "it did not reach for the domain rule");
+        assert_ne!(
+            rule_id, rules[0].id,
+            "it reached for the address block underneath, leaving the domain blocked"
+        );
     }
 
     #[test]
