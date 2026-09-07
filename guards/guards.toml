@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 454 records have arrived since and have not been through it.
+# 456 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16629,4 +16629,83 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/columns_belong_to_the_folder_they_were_arranged_in.rs", tests = 3 },
+]
+
+[[guard]]
+# The reader that pairs `docs/KEYBOARD_SHORTCUTS.md` with the bindings took keys
+# beginning `Ctrl+` or `Alt+` and nothing else, so no unmodified function key
+# was ever asked about. Three keys hid in that gap at once: `F8` reaching the
+# composer's toolbar, `Delete` taking a file off a message and `F6` closing the
+# conversation window. Its own comment gave the reason, and the reason is right
+# about `Space` and `Home` and wrong about `F8`, which is an unambiguous string.
+#
+# The break is the narrowing put back, which is the move that has to be caught
+# rather than a mistake somebody would make by accident. A widened check that
+# reports something is a check somebody is tempted to narrow, and `CLAUDE.md`
+# carries the worked example: `test_no_status_page_names_a_version_the_code_does
+# _not_ship` iterates over nothing, because a page took the advice that guard's
+# own comment gave. Narrowing here is silent in the same way. The whole check
+# still passes with the filter back, because the two keys it reports, `F7` and
+# `Shift+F10`, are allow-listed.
+#
+# So the allow list is what notices. Every entry on it has to be a key the
+# reader really reported, and narrowing takes `F7` and `Shift+F10` off that
+# report while leaving their entries behind, which is an allow list covering
+# nothing.
+#
+# Measured by hand on 2026-09-07 with `cargo test --all-targets --no-fail-fast`:
+# one test, and every other target green. That is the whole red list. The other
+# direction of the pair, `test_the_shortcuts_document_and_the_menus_agree`, does
+# not read this function at all, and the per-surface target added beside it
+# carries its own reader, so neither can tell the two implementations apart.
+name = "the reader of documented keys still sees a plain function key"
+file = "tests/wired.rs"
+suite = "wired"
+before = """    let last = piece.rsplit('+').next().unwrap_or(piece);
+    let Some(number) = last.strip_prefix('F') else {
+        return false;
+    };
+    matches!(number.parse::<u8>(), Ok(1..=12))"""
+after = """    let _ = piece;
+    false"""
+red = [
+    "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
+]
+tests_last_seen = [
+    { file = "tests/wired.rs", tests = 69 },
+]
+
+[[guard]]
+# `Delete` on the composer's attachments list takes the file somebody is on off
+# the message. It is bound on an ordinary wxWidgets control rather than in a
+# menu table or in the injected page, so no reader in `tests/wired.rs` could see
+# it, and it was undocumented until the shortcuts page gained it. Now that the
+# page promises it, the binding going away would leave the page promising a key
+# that does nothing, which is the defect this whole phase is about.
+#
+# The break inverts the comparison rather than deleting the arm, so nothing goes
+# unused and no warning stands in for the failure. With it applied, `Delete`
+# skips and every other key takes a file off the message.
+#
+# The record exists for a second reason as well, and it is the one `CLAUDE.md`
+# names: an integration target that guards a `src/` module from outside is run
+# by the scoped gate only when its own file changes, which is every commit
+# except the ones that could break it. This record is the coupling that gets it
+# run on a commit touching the composer.
+#
+# Measured by hand on 2026-09-07 with `cargo test --all-targets --no-fail-fast`:
+# one test, and every other target green. The target's other two cases are about
+# the composer's page and the conversation window and read different files, so
+# neither can see this.
+name = "delete on the attachments list still takes a file off the message"
+file = "src/presentation/wx_compose.rs"
+suite = "a_key_is_documented_where_the_surface_that_binds_it_is"
+before = """            if key.event.get_key_code() != Some(KEY_DELETE) {"""
+after = """            if key.event.get_key_code() == Some(KEY_DELETE) {"""
+red = [
+    "test_the_key_that_takes_a_file_off_a_message_is_in_the_composers_section",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs", tests = 3 },
 ]
