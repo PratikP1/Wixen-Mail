@@ -80,7 +80,7 @@ pub const NOTHING_IS_CHOSEN: &str =
 /// Derived from the label rather than written out a second time, because the
 /// two would drift and the one that drifts is the one nobody can see.
 pub fn what_the_label_says(label: &str) -> String {
-    label.to_string()
+    label.replace('&', "")
 }
 
 /// Where focus goes when the window opens.
@@ -188,12 +188,12 @@ pub fn show_who_is_blocked(
         .with_label(UNBLOCK)
         .with_id(ID_UNBLOCK)
         .build();
-    set_accessible_name(&unblock, UNBLOCK);
+    set_accessible_name(&unblock, &what_the_label_says(UNBLOCK));
     let close = Button::builder(&dialog)
         .with_label(CLOSE_THE_LIST)
         .with_id(ID_CLOSE_THE_LIST)
         .build();
-    set_accessible_name(&close, CLOSE_THE_LIST);
+    set_accessible_name(&close, &what_the_label_says(CLOSE_THE_LIST));
     buttons.add(&unblock, 0, SizerFlag::All, 4);
     buttons.add(&close, 0, SizerFlag::All, 4);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
