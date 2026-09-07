@@ -12153,24 +12153,22 @@ fn send_the_answer(
 }
 
 /// Write the reply document where it will still be when the queue drains.
+///
+/// Where on this computer is the only part of that decision this layer can
+/// make. What the file is called, and how two answers waiting at once are kept
+/// apart, belong beside the reading: `attaching::read_all` takes the part's
+/// name off the file, so the writer and the reader have to agree about it and
+/// there is one place they can both be looked at.
 fn a_place_for_the_reply(document: &str) -> std::result::Result<std::path::PathBuf, String> {
     let Ok(paths) = AppPaths::resolve() else {
         return Err("there is nowhere on this computer to put the answer".to_string());
     };
-    let folder = paths.cache_dir().join("answers");
-    std::fs::create_dir_all(&folder)
-        .map_err(|why| format!("the answer could not be written down: {why}"))?;
-    // A name nothing else will take, so two answers waiting in the queue at
-    // once do not land on one name and the second replace the first while the
-    // first is still waiting to go.
-    //
-    // Not the moment it was written. A date written out here is a date written
-    // in a second place, and this program keeps one writer for those on
-    // purpose; a guard in tests/house_style.rs says so and caught this.
-    let at = folder.join(format!("reply-{}.ics", uuid::Uuid::new_v4()));
-    std::fs::write(&at, document)
-        .map_err(|why| format!("the answer could not be written down: {why}"))?;
-    Ok(at)
+    crate::application::attaching::a_place_for_the_reply(
+        &paths.cache_dir(),
+        &uuid::Uuid::new_v4().to_string(),
+        document,
+    )
+    .map_err(|why| format!("the answer could not be written down: {why}"))
 }
 
 /// Write the folder being looked at, and everything inside it, out to a file.

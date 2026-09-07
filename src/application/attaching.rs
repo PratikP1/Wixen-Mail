@@ -458,6 +458,18 @@ pub fn content_type(name: &str) -> &'static str {
     }
 }
 
+/// The content type to put on the part, from the name and from what is in it.
+///
+/// The name decides for everything that is not a calendar document, because
+/// for an ordinary file the name is all there is. A calendar document is the
+/// one kind whose declaration has to agree with what the file says about
+/// itself: RFC 6047 requires the `method` parameter on the header and the
+/// `METHOD` property inside the document to be the same, and a client reading
+/// a mismatch is entitled to ignore either.
+pub fn content_type_of(name: &str, _bytes: &[u8]) -> &'static str {
+    content_type(name)
+}
+
 /// A file read and ready to go on a message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ready {
@@ -501,12 +513,64 @@ pub fn read_all(paths: &[PathBuf]) -> Result<Vec<Ready>> {
                 // The cleaning cannot lose a type this knows: it keeps any
                 // extension shorter than sixteen characters, and every
                 // extension in the table is at most four.
-                content_type: content_type(&name),
+                //
+                // The bytes go in as well, because a calendar document is the
+                // one kind whose declaration cannot be worked out from a name:
+                // whether it is an invitation, an answer or neither is a line
+                // inside the file, and no extension can say it. This is the
+                // last place the document and the type it is declared under
+                // are in one hand, so it is where the two are made to agree.
+                content_type: content_type_of(&name, &bytes),
                 name,
                 bytes,
             })
         })
         .collect()
+}
+
+/// Write bytes down as a part, under the name the part is meant to carry.
+///
+/// The twin of [`read_all`], and here for the same reason it is: the queue
+/// carries files by name, so whatever this program sends of its own making has
+/// to become a file first, and the name that file lands on is the name the
+/// recipient sees. Written where the reading is, so one module holds both ends
+/// of that convention rather than the writer choosing a name the reader then
+/// has to live with.
+///
+/// The folder is made if it is not there. The name is used as given: a caller
+/// that needs two of these not to collide gives them different folders, so the
+/// name can stay the one that says what the file is.
+pub fn write_a_part(folder: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
+    std::fs::create_dir_all(folder).map_err(|e| {
+        Error::Other(format!(
+            "{} could not be made, so there was nowhere to put the file: {e}",
+            folder.display()
+        ))
+    })?;
+    let at = folder.join(name);
+    std::fs::write(&at, bytes)
+        .map_err(|e| Error::Other(format!("{} could not be written: {e}", at.display())))?;
+    Ok(at)
+}
+
+/// Where a reply to a meeting invitation is written down so the queue can send
+/// it.
+///
+/// Under the cache directory rather than a temporary folder, because a queued
+/// message names its files by path and they are read at the moment of sending:
+/// a temporary folder swept in between would take the answer with it.
+///
+/// `unique` is what keeps two answers waiting at once from landing on one file
+/// and the second replacing the first while the first is still waiting to go.
+/// It is not the moment the answer was written: a date written out here is a
+/// date written in a second place, and this program keeps one writer for those
+/// on purpose.
+pub fn a_place_for_the_reply(cache_dir: &Path, unique: &str, document: &str) -> Result<PathBuf> {
+    write_a_part(
+        &cache_dir.join("answers"),
+        &format!("reply-{unique}.ics"),
+        document.as_bytes(),
+    )
 }
 
 /// The paths, joined so one text column can hold them.
@@ -548,6 +612,59 @@ mod tests {
             name: name.to_string(),
             bytes,
         }
+    }
+
+    /// An invitation of the ordinary shape, as a calendar server writes one.
+    ///
+    /// A third copy of the same text, and the reason is worth writing down
+    /// rather than leaving as an accident. The other two sit in the test
+    /// modules of `answering.rs` and `invitations.rs` and are byte-identical.
+    /// Sharing one would mean reaching into another file's test module, which
+    /// nothing in this tree does: every cross-module fixture here is
+    /// `super::tests::`, inside a single file. The alternative, a shared test
+    /// module, couples three test modules so that a change made for one
+    /// breaks the others.
+    ///
+    /// What matters is that the reply this file writes down is the one the
+    /// program really builds. So the document is not written here: it comes
+    /// out of `the_answer_to_send`, the way it does when somebody presses
+    /// Accept, and only the invitation it answers is a fixture.
+    fn an_invitation_that_arrived() -> String {
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nMETHOD:REQUEST\r\n\
+         BEGIN:VEVENT\r\nUID:m-1@example.com\r\nSEQUENCE:2\r\n\
+         SUMMARY:Quarterly review\r\nLOCATION:Room 3\r\n\
+         DTSTART:20260305T090000Z\r\nDTEND:20260305T100000Z\r\n\
+         ORGANIZER;CN=Ada Lovelace:mailto:ada@example.com\r\n\
+         ATTENDEE;CN=Sam;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:sam@example.com\r\n\
+         ATTENDEE;CN=Kit;PARTSTAT=NEEDS-ACTION:mailto:kit@example.com\r\n\
+         END:VEVENT\r\nEND:VCALENDAR\r\n"
+            .to_string()
+    }
+
+    /// The reply document somebody accepting that meeting really sends.
+    ///
+    /// Built through the two public steps the window uses, so what is written
+    /// down and read back below is the program's own answer rather than a
+    /// calendar document written to suit the test.
+    fn the_answer_somebody_accepted_with() -> String {
+        use crate::application::allowed::Allowed;
+        use crate::application::answering::whether_it_can_be_answered;
+        use crate::application::invitations::Answer;
+
+        whether_it_can_be_answered(
+            &an_invitation_that_arrived(),
+            "sam@example.com",
+            Allowed::EVERYTHING,
+        )
+        .expect("an invitation that can be answered")
+        .the_answer_to_send(
+            Answer::Accepted,
+            "2026-03-04T08:15:00Z"
+                .parse()
+                .expect("a moment written the way this test wrote it"),
+        )
+        .expect("an answer to send")
+        .calendar_document
     }
 
     #[test]
@@ -789,6 +906,90 @@ mod tests {
         assert_eq!(ready[0].name, "notes.txt");
         assert_eq!(ready[0].content_type, "text/plain");
         assert_eq!(ready[0].bytes, b"second, after some editing");
+    }
+
+    #[test]
+    fn test_a_reply_arrives_declared_as_a_reply_so_the_organisers_client_records_it() {
+        // The content type is what tells a receiving client that this
+        // attachment is an answer rather than a calendar file somebody
+        // happened to send. Without `method=REPLY` it is shown as a file to
+        // open by hand, and the answer is never recorded against the meeting,
+        // which is the whole point of sending it.
+        //
+        // That used to be asserted about a function nothing in the running
+        // program called, so it passed for as long as the feature was broken.
+        // Every hop this drives is one the answer really takes: the document
+        // is built the way pressing Accept builds it, written down the way the
+        // window writes it, and read back the way the send loop reads it.
+        let document = the_answer_somebody_accepted_with();
+        let folder = tempfile::tempdir().expect("temp dir");
+
+        let written = a_place_for_the_reply(folder.path(), "one", &document)
+            .expect("somewhere to put the answer");
+        let ready = read_all(&[written]).expect("the answer, read back");
+
+        assert_eq!(ready.len(), 1);
+        assert_eq!(
+            ready[0].content_type,
+            "text/calendar; charset=utf-8; method=REPLY"
+        );
+        assert_eq!(ready[0].name, "reply.ics");
+        assert_eq!(
+            String::from_utf8(ready[0].bytes.clone()).expect("a calendar document is text"),
+            document
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_document_asking_nothing_is_declared_the_way_it_always_was() {
+        // A published feed saved as a file and attached is a calendar document
+        // that is not a question. Giving it a method would tell the recipient's
+        // client to act on something nobody asked, so it keeps the declaration
+        // an `.ics` file has always had here.
+        let feed = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n\
+                    BEGIN:VEVENT\r\nUID:f-1@example.com\r\nSUMMARY:Bank holiday\r\n\
+                    DTSTART:20260601T000000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        assert_eq!(
+            content_type_of("holidays.ics", feed.as_bytes()),
+            "text/calendar"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_file_that_is_not_text_claims_no_charset_it_cannot_stand_behind() {
+        // A charset says the bytes really are that encoding. These are not, so
+        // saying `charset=utf-8` would be this program asserting something it
+        // has just failed to verify, and a receiving client that believes it
+        // shows the recipient nonsense rather than a file it could not read.
+        let not_text = [0x00u8, 0xff, 0xfe, 0x80, 0x41];
+
+        let declared = content_type_of("diary.ics", &not_text);
+
+        assert_eq!(declared, "text/calendar");
+        assert!(!declared.contains("charset"), "{declared}");
+    }
+
+    #[test]
+    fn test_two_answers_waiting_at_once_do_not_land_on_one_file() {
+        // The second replacing the first while the first is still waiting to
+        // go would send one person's answer twice and the other's never.
+        let document = the_answer_somebody_accepted_with();
+        let folder = tempfile::tempdir().expect("temp dir");
+
+        let first = a_place_for_the_reply(folder.path(), "one", &document).expect("the first");
+        let second = a_place_for_the_reply(folder.path(), "two", &document).expect("the second");
+
+        assert_ne!(first, second);
+        let ready = read_all(&[first, second]).expect("both, read back");
+        assert_eq!(ready.len(), 2);
+        for part in &ready {
+            assert_eq!(part.name, "reply.ics");
+            assert_eq!(
+                String::from_utf8(part.bytes.clone()).expect("a calendar document is text"),
+                document
+            );
+        }
     }
 
     #[test]

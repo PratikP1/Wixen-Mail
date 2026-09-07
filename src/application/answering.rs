@@ -1585,30 +1585,6 @@ mod tests {
     }
 
     #[test]
-    fn test_the_calendar_part_says_it_is_a_reply_so_the_organisers_client_reads_it_as_one() {
-        // The content type is what tells a receiving client that this
-        // attachment is an answer rather than a calendar file somebody
-        // happened to send. Without `method=REPLY` it is shown as a file to
-        // open by hand, and the answer is never recorded against the meeting,
-        // which is the whole point of sending it.
-        let sending = ready_to_answer()
-            .the_answer_to_send(Answer::Accepted, answered_at())
-            .expect("an answer to send");
-
-        let part = sending.the_calendar_part();
-
-        assert_eq!(
-            part.content_type,
-            "text/calendar; charset=utf-8; method=REPLY"
-        );
-        assert_eq!(part.name, "reply.ics");
-        assert_eq!(
-            String::from_utf8(part.bytes).expect("a calendar document is text"),
-            sending.calendar_document
-        );
-    }
-
-    #[test]
     fn test_the_subject_the_body_and_the_document_never_say_three_different_answers() {
         // Three statements of one fact, written in three places. Every
         // data-losing defect in this codebase has had the same shape: two
