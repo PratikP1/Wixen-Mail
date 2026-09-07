@@ -649,6 +649,21 @@ impl Default for AppConfig {
     }
 }
 
+/// A folder somewhere, as [`AppConfig::last_filed_into`] remembers one.
+///
+/// A folder and the account it is on, because a path says which folder only
+/// inside one account: two accounts can both have an `Archive` and both spell
+/// it `Archive`. The account the message was filed *from* is the key of the map
+/// this comes out of; the account here is the one it was filed *into*, and
+/// until mail can be moved between accounts those are always the same.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FiledInto {
+    /// The account the folder is on.
+    pub account: String,
+    /// The path as the server spells it.
+    pub path: String,
+}
+
 impl AppConfig {
     /// What this account may change, before the command line narrows it.
     ///
@@ -679,6 +694,28 @@ impl AppConfig {
         self.directories.get(account_id).filter(|directory| {
             !directory.url.trim().is_empty() || !directory.search_under.trim().is_empty()
         })
+    }
+
+    /// Where the last message filed from this account went.
+    ///
+    /// **RED half of 04.1-01 task 3: this reads a bare path and answers with
+    /// the account it is keyed under, which is what the value has always
+    /// meant.** It does not yet read a destination that names an account of its
+    /// own, which is what the commit after this one adds.
+    pub fn where_the_last_one_went(&self, filed_from: &str) -> Option<FiledInto> {
+        self.last_filed_into.get(filed_from).map(|path| FiledInto {
+            account: filed_from.to_string(),
+            path: path.clone(),
+        })
+    }
+
+    /// Remember where one has just gone, so the next opens on it.
+    ///
+    /// **RED half of 04.1-01 task 3: this writes the path alone**, so a
+    /// destination in another account comes back as one in this account.
+    pub fn remember_where_one_went(&mut self, filed_from: &str, went: &FiledInto) {
+        self.last_filed_into
+            .insert(filed_from.to_string(), went.path.clone());
     }
 
     /// Validate configuration values
@@ -1142,6 +1179,82 @@ mod tests {
         assert_eq!(deserialized.theme, config.theme);
         assert_eq!(deserialized.font_size, config.font_size);
         assert_eq!(deserialized.language, config.language);
+    }
+}
+
+#[cfg(test)]
+mod where_the_last_one_went {
+    use super::*;
+
+    /// The account identifiers this program really mints, which is what tells
+    /// a stored destination naming an account from one that is a path alone.
+    const ONE_ACCOUNT: &str = "6f1a2c9e-3b47-4d18-9a02-51c7e8b4d3f6";
+    const ANOTHER_ACCOUNT: &str = "b2d4f610-8c73-4a95-b1e0-7d3f5a92c8e1";
+
+    #[test]
+    fn test_a_destination_remembered_before_this_build_is_read_as_the_account_it_is_keyed_under() {
+        // Not a default chosen for safety. Before mail could be filed into
+        // another account, every remembered destination was in the account it
+        // was keyed under, so this is what the stored value has always meant.
+        let mut config = AppConfig::default();
+        config
+            .last_filed_into
+            .insert(ONE_ACCOUNT.to_string(), "Archive".to_string());
+
+        assert_eq!(
+            config.where_the_last_one_went(ONE_ACCOUNT),
+            Some(FiledInto {
+                account: ONE_ACCOUNT.to_string(),
+                path: "Archive".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_destination_reads_back_as_the_account_and_the_path_it_was_written_with() {
+        let mut config = AppConfig::default();
+        let went = FiledInto {
+            account: ANOTHER_ACCOUNT.to_string(),
+            path: "Archive".to_string(),
+        };
+
+        config.remember_where_one_went(ONE_ACCOUNT, &went);
+
+        assert_eq!(
+            config.where_the_last_one_went(ONE_ACCOUNT),
+            Some(went),
+            "the account it went to is half of which folder it was, and both \
+             accounts here have an Archive"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_whose_name_holds_the_separator_is_still_a_folder() {
+        // A server may call a mailbox anything, this one included, and a
+        // reading that split on the character alone would turn `Work` into an
+        // account nobody has and file the next message into `Old` on a server
+        // that was never asked. The half in front has to look like an account
+        // identifier before it is read as one.
+        let mut config = AppConfig::default();
+        config
+            .last_filed_into
+            .insert(ONE_ACCOUNT.to_string(), "Work|Old".to_string());
+
+        assert_eq!(
+            config.where_the_last_one_went(ONE_ACCOUNT),
+            Some(FiledInto {
+                account: ONE_ACCOUNT.to_string(),
+                path: "Work|Old".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_an_account_that_has_filed_nothing_yet_remembers_nothing() {
+        assert_eq!(
+            AppConfig::default().where_the_last_one_went(ONE_ACCOUNT),
+            None
+        );
     }
 }
 

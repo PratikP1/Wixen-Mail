@@ -360,6 +360,19 @@ pub fn where_mail_can_go(
     branches
 }
 
+/// Whose folders a move or copy is about.
+///
+/// **RED half of 04.1-01 task 3: this answers with the account that is open,
+/// which is what `move_or_copy_message` really did.** The commit after this one
+/// makes it the account the message is in.
+pub fn whose_folders_a_move_is_about<'a>(
+    the_message_is_in: Option<&'a str>,
+    the_account_that_is_open: Option<&'a str>,
+) -> Option<&'a str> {
+    let _ = the_message_is_in;
+    the_account_that_is_open
+}
+
 /// What to say when there is nowhere to put it.
 pub fn nothing_to_offer(moving: Moving) -> &'static str {
     match moving {

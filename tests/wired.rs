@@ -3450,6 +3450,13 @@ fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
 
     for aimed_at_a_row in [
         "fn spawn_folder_move(",
+        // Fourth time, and this one is about the folders offered rather than
+        // the command sent. The list of destinations came from the account on
+        // screen while the move went to the account the row belongs to, so in
+        // All Inboxes the path was chosen on one server and sent to another.
+        // This check named the sending half from the day it was written and
+        // not the choosing half, which is why nothing saw it.
+        "fn move_or_copy_message(",
         "fn delete_if_local(",
         "fn spawn_receipt(",
         "fn spawn_server_change(",

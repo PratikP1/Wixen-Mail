@@ -34,7 +34,7 @@
 //! this file.
 
 use std::collections::HashSet;
-use wixen_mail::application::destinations::where_mail_can_go;
+use wixen_mail::application::destinations::{where_mail_can_go, whose_folders_a_move_is_about};
 use wixen_mail::application::folder_settings::UnreadOnAParent;
 use wixen_mail::presentation::folder_tree::{AccountInTheTree, FolderInTheTree, WhichRow, rows};
 
@@ -324,6 +324,60 @@ fn test_two_accounts_that_read_alike_are_named_alike_in_both() {
         "and an account nobody else is named after should not have an address \
          read out on every pass: {picker:?}"
     );
+}
+
+#[test]
+fn test_the_window_offers_the_folders_of_the_account_the_message_is_in() {
+    // All Inboxes reads every account's inbox as one list, so the account on
+    // screen and the account a row belongs to are routinely different. The move
+    // window built its folder list from the account on screen and the move
+    // itself was sent to the account the row belongs to, so the path came from
+    // one server and the command went to another.
+    //
+    // The two accounts here hold different folders on purpose, which is the
+    // other way round from every other fixture in this file. A fixture whose
+    // accounts held the same folder names would come out the same whichever
+    // account was asked, which is exactly the defect.
+    let open = "a";
+    let the_message_is_in = "b";
+
+    let whose = whose_folders_a_move_is_about(Some(the_message_is_in), Some(open))
+        .expect("a message in an account this program knows");
+    let offered: Vec<String> = where_mail_can_go(&accounts(), &folders())
+        .into_iter()
+        .filter(|branch| branch.account_id == whose)
+        .flat_map(|branch| branch.places)
+        .map(|place| place.id)
+        .collect();
+
+    assert_eq!(
+        whose, the_message_is_in,
+        "the folders offered come from the account on screen"
+    );
+    assert!(
+        offered.contains(&"Old".to_string()),
+        "the second account's own folders are what should be on offer: {offered:?}"
+    );
+    assert!(
+        !offered.contains(&"Receipts".to_string()),
+        "a folder that only the account on screen has is a path the message's \
+         own server has never heard of: {offered:?}"
+    );
+}
+
+#[test]
+fn test_a_row_with_no_account_of_its_own_falls_back_to_the_one_on_screen() {
+    // A row that records no account of its own is the ordinary case outside
+    // All Inboxes, where every row belongs to the account being looked at.
+    // Whether the account then names one this program knows is a question the
+    // caller answers, and it refuses rather than reaching for another.
+    assert_eq!(whose_folders_a_move_is_about(None, Some("a")), Some("a"));
+    assert_eq!(
+        whose_folders_a_move_is_about(Some(""), Some("a")),
+        Some("a")
+    );
+    assert_eq!(whose_folders_a_move_is_about(Some("b"), None), Some("b"));
+    assert_eq!(whose_folders_a_move_is_about(None, None), None);
 }
 
 #[test]
