@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 446 records have arrived since and have not been through it.
+# 449 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11007,7 +11007,7 @@ red = [
     "service::protocols::smtp::tests::test_the_sent_body_and_the_sent_picture_name_each_other",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 47 },
+    { file = "src/application/pictures.rs", tests = 44 },
     { file = "src/service/protocols/smtp.rs", tests = 40 },
 ]
 
@@ -11023,7 +11023,7 @@ red = [
     "service::protocols::smtp::tests::test_the_plain_half_of_a_sent_message_says_what_the_picture_was",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 47 },
+    { file = "src/application/pictures.rs", tests = 44 },
     { file = "src/service/protocols/smtp.rs", tests = 40 },
 ]
 
@@ -15739,7 +15739,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 6 },
-    { file = "src/presentation/html_renderer.rs", tests = 77 },
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
 ]
 
 # ── An empty description quietly becoming a decorative mark ─────────────────
@@ -15767,7 +15767,7 @@ red = [
     "application::pictures::tests::test_a_picture_being_sent_must_be_described",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 47 },
+    { file = "src/application/pictures.rs", tests = 44 },
 ]
 
 # ── A narrowing that has stopped narrowing ──────────────────────────────────
@@ -15802,7 +15802,7 @@ red = [
     "application::pictures::tests::test_the_furniture_bound_on_size_is_a_bound_and_not_decoration",
 ]
 tests_last_seen = [
-    { file = "src/application/pictures.rs", tests = 47 },
+    { file = "src/application/pictures.rs", tests = 44 },
 ]
 
 # ── Enter answering the question that costs somebody else ───────────────────
@@ -15867,7 +15867,7 @@ red = [
     "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 77 },
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
 ]
 
 # ── This reader's words reaching somebody else's message ────────────────────
@@ -15900,7 +15900,7 @@ red = [
     "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 77 },
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
 ]
 
 # ── An owner of credential store entries that nobody registered ─────────────
@@ -16357,3 +16357,115 @@ red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
 ]
 tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
+
+# ── The count of held-back pictures, kept and said ──────────────────────────
+#
+# The break is not deleting the call to `sanitize_and_count_held_back`. Delete
+# that and there is no markup at all, everything falls over, and the run says
+# nothing about this. The break is the defect that really shipped and shipped
+# for as long as the function existed: keep the call and take `.0`, throwing
+# the count away. Both production callers did that while the function's own doc
+# described a caller that wanted both halves.
+#
+# A call-site check cannot see it. The function has a caller, the caller uses
+# what it returns, nothing is unused, and the whole suite was green.
+#
+# Only `wrap_body` is broken, not `render_thread`, so the run says which of the
+# two reading paths lost the count rather than both at once.
+#
+# Measured by hand with --all-targets --no-fail-fast from a green tree.
+
+[[guard]]
+name = "the count of held-back pictures reaches the reader"
+file = "src/presentation/html_renderer.rs"
+before = """            MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+                let (markup, held_back) = self.sanitize_and_count_held_back(html);
+                format!(
+                    "{}{markup}",
+                    self.what_a_reader_is_told_was_held_back(held_back)
+                )
+            }
+            MessageBody::Plain(text) => format!(
+                "<pre style=\\"white-space:pre-wrap;font-family:inherit\\">{}</pre>",
+                html_escape::encode_text(text)
+            ),
+        };
+        self.wrap_prepared(&content, "Back to message list (Escape)")"""
+after = """            MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
+                self.sanitize_and_count_held_back(html).0
+            }
+            MessageBody::Plain(text) => format!(
+                "<pre style=\\"white-space:pre-wrap;font-family:inherit\\">{}</pre>",
+                html_escape::encode_text(text)
+            ),
+        };
+        self.wrap_prepared(&content, "Back to message list (Escape)")"""
+red = [
+    "presentation::html_renderer::tests::test_a_reader_is_told_how_many_were_held_back_and_where_the_switch_is",
+    "presentation::html_renderer::tests::test_one_held_back_picture_is_not_reported_in_the_plural",
+    "presentation::html_renderer::tests::test_a_message_being_written_is_not_told_its_own_sender_would_have_learned",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
+]
+[[guard]]
+name = "the composer asks for the renderer that does not name a sender"
+file = "src/presentation/html_renderer.rs"
+before = """    pub fn for_a_message_being_written() -> Self {
+        let (fetching, announcing) = what_the_settings_say();
+        Self {
+            plain_text_only: false,
+            fetching,
+            announcing,
+            whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
+        }
+    }"""
+after = """    pub fn for_a_message_being_written() -> Self {
+        let (fetching, announcing) = what_the_settings_say();
+        Self {
+            plain_text_only: false,
+            fetching,
+            announcing,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
+        }
+    }"""
+red = [
+    "presentation::html_renderer::tests::test_the_constructor_the_composer_calls_is_the_one_that_stays_quiet",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
+]
+
+# ── An ordinary message grows nothing ───────────────────────────────────────
+#
+# The other half of saying it, and the half that would have gone unmeasured.
+# `test_a_message_with_nothing_held_back_says_nothing` was rewritten against
+# the document and was green on arrival, because at the time nothing said the
+# sentence at all. A test that has never been red proves nothing, so it was
+# taken red by hand and this is that measurement.
+#
+# It could not have been, as it stood. Its two assertions look for the two
+# phrases the sentence carries, and a sentence going out empty carries neither:
+# every message would have picked up an empty paragraph where the count goes
+# and the test would have passed on both sides of the break. A third assertion,
+# on the class rather than on the words, is what makes the break visible, and
+# it went in for this reason.
+#
+# Measured by hand with --all-targets --no-fail-fast from a green tree.
+
+[[guard]]
+name = "an ordinary message grows nothing where the count would be"
+file = "src/presentation/html_renderer.rs"
+before = """        let said = crate::application::pictures::what_was_held_back(held_back);
+        if said.is_empty() {
+            return String::new();
+        }
+        format!("""
+after = """        let said = crate::application::pictures::what_was_held_back(held_back);
+        format!("""
+red = [
+    "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 83 },
+]
