@@ -142,6 +142,51 @@ pub enum Direction {
     Back,
 }
 
+/// Where focus lands on leaving the message preview.
+///
+/// The preview is not a [`Pane`] and is not becoming one. `Pane` is where focus
+/// rests in the main window; the preview is a WebView, which hosts a browser in
+/// another process. Focus arrives there because the browser takes it when a
+/// document loads, not because the cycle sent it, so leaving it is a different
+/// question to [`from`] and gets its own answer.
+///
+/// Back is the message list. That is where somebody who opened a message came
+/// from, and it is where every key that leaves the preview landed for as long
+/// as the preview has existed, so it is also the answer for a leave message
+/// that carries no direction at all.
+///
+/// Forward is the sidebar, which is the next stop round from the list.
+pub const fn leaving_the_preview(_going: Direction) -> Pane {
+    Pane::List
+}
+
+/// Which way a page asked to leave, or nothing if it was not asking to leave.
+///
+/// Replaces `is_leaving`, which answered yes or no. Its doc said it was read
+/// before anything else wherever a page's message arrives, so a malformed
+/// context menu payload can never swallow the one keystroke that frees somebody
+/// who is stuck, and that property is kept here: every payload saying `leave`
+/// answers a direction, and only a payload that is not a leave message at all
+/// answers `None`.
+///
+/// So a bare `{"kind":"leave"}` is [`Direction::Back`] rather than a refusal.
+/// `Escape` posts that, and so does the Back button rendered at the top of
+/// every document, which has no shift key to read. Refusing either would leave
+/// somebody inside a browser with no keyboard way out, which is the failure the
+/// whole escape route exists to prevent.
+pub fn leaving_which_way(json: &str) -> Option<Direction> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("kind")
+                .and_then(|kind| kind.as_str())
+                .map(|kind| kind == "leave")
+        })
+        .unwrap_or(false)
+        .then_some(Direction::Back)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +250,71 @@ mod tests {
         // the work is, so it is the safe answer to "get me into the content".
         assert_eq!(from(None, Direction::Forward), Pane::List);
         assert_eq!(from(None, Direction::Back), Pane::List);
+    }
+
+    #[test]
+    fn test_the_two_keys_out_of_the_preview_land_in_different_places() {
+        // The whole of this defect. F6 and Shift+F6 both left the preview and
+        // both landed on the message list, because the direction was dropped
+        // crossing the WebView boundary and the handler moved focus to one
+        // control whatever had been pressed. Two keys with one outcome is one
+        // of them not working, silently, in the one place somebody working by
+        // keyboard is most likely to be stuck.
+        assert_eq!(leaving_the_preview(Direction::Back), Pane::List);
+        assert_eq!(leaving_the_preview(Direction::Forward), Pane::Sidebar);
+        assert_ne!(
+            leaving_the_preview(Direction::Forward),
+            leaving_the_preview(Direction::Back),
+            "both keys out of the preview land in the same pane"
+        );
+    }
+
+    #[test]
+    fn test_which_key_left_the_preview_survives_the_crossing() {
+        // The three payloads the injected script posts, copied out of it in
+        // `wire_the_way_out` rather than retyped. What this cannot see: whether
+        // the script really posts them. That end cannot be run from here, and
+        // the source read in `tests/wired.rs` is what holds it.
+        //
+        // `back: false` is the assertion that goes red on the defect. The
+        // reader used to look at `kind` and nothing else, so every payload
+        // meant the same thing however it arrived.
+        assert_eq!(
+            leaving_which_way(r#"{"kind":"leave","back":true}"#),
+            Some(Direction::Back)
+        );
+        assert_eq!(
+            leaving_which_way(r#"{"kind":"leave","back":false}"#),
+            Some(Direction::Forward)
+        );
+    }
+
+    #[test]
+    fn test_a_leave_message_with_no_direction_still_leaves() {
+        // Escape posts this, and so does the Back button at the top of every
+        // rendered document, which has no shift key to read. Answering `None`
+        // to either would leave somebody inside a browser with no keyboard way
+        // out, which is the failure the escape route exists to prevent.
+        //
+        // Green before this change as well as after, and named here for that
+        // reason: it pins the property `is_leaving`'s doc claimed rather than
+        // catching the defect.
+        assert_eq!(
+            leaving_which_way(r#"{"kind":"leave"}"#),
+            Some(Direction::Back)
+        );
+        assert_eq!(leaving_the_preview(Direction::Back), Pane::List);
+    }
+
+    #[test]
+    fn test_nothing_else_a_page_posts_is_read_as_leaving() {
+        // The other half of the same property. Green on both sides too.
+        assert_eq!(
+            leaving_which_way(r#"{"kind":"context","x":10,"y":20}"#),
+            None
+        );
+        assert_eq!(leaving_which_way("not json at all"), None);
+        assert_eq!(leaving_which_way(""), None);
     }
 
     #[test]

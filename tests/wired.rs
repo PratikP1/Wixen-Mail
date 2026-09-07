@@ -852,13 +852,23 @@ fn test_the_key_that_replies_to_the_author_alone_is_bound_to_a_menu_item() {
 }
 
 #[test]
-fn test_f6_and_shift_f6_reach_the_pane_handler() {
-    // What this cannot see: whether focus moves. It reads the binding out of
-    // the source. The handler could move focus nowhere, or somewhere that is
-    // never announced, and this passes either way.
-    // The specific one. Named separately from the sweep above because it is
-    // the shortcut somebody uses to get out of a pane they are stuck in, and
-    // "it is in the general test" is how it went unnoticed the first time.
+fn test_shift_f6_keeps_its_direction_on_the_way_out_of_the_preview() {
+    // Rewritten from `test_f6_and_shift_f6_reach_the_pane_handler`, which
+    // asserted that `\tF6` and `\tShift+F6` appeared in this file and said in
+    // its own comment that it could not see whether focus moved. Both strings
+    // were there. Both keys were bound. And `Shift+F6` silently became `F6` the
+    // moment focus was inside the message preview, because the script injected
+    // into that page matched `F6` whether or not shift was held and posted a
+    // payload carrying no direction, so the host had nothing to decide with.
+    // The old test could not have failed against that, which is why it is
+    // replaced rather than joined by a second one: a green test named for a
+    // thing that does not happen is worse than no test.
+    //
+    // What this still cannot see: whether the browser delivers the keystroke,
+    // and whether focus really moves. Those need a running window and a screen
+    // reader. The decision itself is run rather than read, in
+    // `presentation::panes`; the two ends nothing can run are the script's own
+    // text and the handler's call, and they are what this reads.
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
     assert!(
@@ -872,6 +882,34 @@ fn test_f6_and_shift_f6_reach_the_pane_handler() {
     assert!(
         app.contains("id == ID_CYCLE_PANES"),
         "the F6 command is raised and not handled"
+    );
+
+    // The page tells the host which key it was. Anchored on the whole line
+    // rather than on `shiftKey` alone: the shift key read anywhere in that
+    // handler would match, including read for `Escape`, which is the one
+    // reading that must not happen.
+    assert!(
+        app.contains("if (e.key === 'F6') { data.back = e.shiftKey; }"),
+        "the script injected into the preview posts no direction, so Shift+F6 \
+         becomes F6 the moment focus is inside it"
+    );
+    // And Escape does not get one. Shift held with Escape is not a direction,
+    // and a payload built unconditionally would invent one.
+    assert!(
+        !app.contains("{ kind: 'leave', back: e.shiftKey }"),
+        "Escape would carry a direction read off the shift key, which it does \
+         not have"
+    );
+
+    // The host reads it and acts on it. Reading the direction and then not
+    // branching on it is exactly the shape this defect had.
+    assert!(
+        app.contains("panes::leaving_which_way(&json)"),
+        "the preview's handler does not ask which way the page asked to leave"
+    );
+    assert!(
+        app.contains("panes::leaving_the_preview(going)"),
+        "the direction arrives and nothing decides where it lands"
     );
 }
 
