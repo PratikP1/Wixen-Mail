@@ -243,6 +243,41 @@ pub fn open_on<'a>(
         .next()
 }
 
+/// Every account's mail folders, as branches the picker can be given.
+///
+/// **This is the picker's own assembly as it stands, lifted here unchanged so
+/// that a test can put it beside the sidebar's.** It reads the folders itself,
+/// names each account by whatever it is called, and gives every folder a depth
+/// of nought. The sidebar answers all three differently, and
+/// `tests/one_hierarchy_two_views.rs` says where. The next commit replaces this
+/// body with the sidebar's own answer; nothing calls it until then.
+///
+/// It takes what [`crate::presentation::folder_tree::rows`] takes, which is
+/// what makes the two comparable at all. Application reaching into
+/// presentation is the arrangement this tree already has in thirty-one places.
+pub fn where_mail_can_go(
+    accounts: &[crate::presentation::folder_tree::AccountInTheTree],
+    folders: &[crate::presentation::folder_tree::FolderInTheTree],
+) -> Vec<Branch> {
+    accounts
+        .iter()
+        .map(|account| Branch {
+            account_id: account.id.clone(),
+            account_name: account.name.clone(),
+            places: folders
+                .iter()
+                .filter(|folder| folder.account == account.id)
+                .map(|folder| Destination {
+                    name: folder.name.clone(),
+                    id: folder.path.clone(),
+                    account_id: account.id.clone(),
+                    depth: 0,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 /// What to say when there is nowhere to put it.
 pub fn nothing_to_offer(moving: Moving) -> &'static str {
     match moving {

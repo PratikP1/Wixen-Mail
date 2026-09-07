@@ -43,23 +43,32 @@ use wxdragon::prelude::*;
 /// server spells and which nothing could ever confuse. Real paths make the
 /// account the only thing telling the two `Archive` rows apart, which is what
 /// this file is now checking a live control agrees about.
+///
+/// The first account's `2026` sits inside its `Archive`, one deep, so the tree
+/// this fixture builds is a tree rather than a list under a heading. Every
+/// place used to be a direct child of its account whatever its depth said, and
+/// only a live control can say which of those a build produced.
 fn branches() -> Vec<Branch> {
-    let place = |name: &str, account: &str| Destination {
+    let place = |name: &str, id: &str, account: &str, depth: usize| Destination {
         name: name.to_string(),
-        id: name.to_string(),
+        id: id.to_string(),
         account_id: account.to_string(),
-        depth: 0,
+        depth,
     };
     vec![
         Branch {
             account_id: "acct-1".to_string(),
             account_name: "person@example.com".to_string(),
-            places: vec![place("Archive", "acct-1"), place("Receipts", "acct-1")],
+            places: vec![
+                place("Archive", "Archive", "acct-1", 0),
+                place("2026", "Archive/2026", "acct-1", 1),
+                place("Receipts", "Receipts", "acct-1", 0),
+            ],
         },
         Branch {
             account_id: "acct-2".to_string(),
             account_name: "person@example.com".to_string(),
-            places: vec![place("Archive", "acct-2")],
+            places: vec![place("Archive", "Archive", "acct-2", 0)],
         },
     ]
 }
@@ -71,20 +80,21 @@ fn branches() -> Vec<Branch> {
 /// account. Derived from the fixture, the second and fourth rows would agree
 /// with a build that had put either account against both.
 fn the_rows_the_picker_should_hold() -> Vec<Option<Destination>> {
-    let place = |name: &str, account: &str| {
+    let place = |name: &str, id: &str, account: &str, depth: usize| {
         Some(Destination {
             name: name.to_string(),
-            id: name.to_string(),
+            id: id.to_string(),
             account_id: account.to_string(),
-            depth: 0,
+            depth,
         })
     };
     vec![
         None,
-        place("Archive", "acct-1"),
-        place("Receipts", "acct-1"),
+        place("Archive", "Archive", "acct-1", 0),
+        place("2026", "Archive/2026", "acct-1", 1),
+        place("Receipts", "Receipts", "acct-1", 0),
         None,
-        place("Archive", "acct-2"),
+        place("Archive", "Archive", "acct-2", 0),
     ]
 }
 
@@ -138,6 +148,20 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             said.push(answer("entries beside it", destinations.len()));
             said.push(answer("what the entries say", destinations.clone()));
 
+            // A tree rather than a list under a heading. Asked of the control,
+            // because the walk meets the same six rows in the same order
+            // either way and only the parentage says which was built. The
+            // first row is the first account and the second is its `Archive`,
+            // which is where `2026` belongs.
+            said.push(answer(
+                "folders directly under the first account",
+                tree.get_children_count(&rows[0], false),
+            ));
+            said.push(answer(
+                "folders directly under that account's Archive",
+                tree.get_children_count(&rows[1], false),
+            ));
+
             // Every row chosen in turn, the way a person moves through the
             // tree, and the answer read back through the same call `ask` makes.
             for (position, row) in rows.iter().enumerate() {
@@ -146,8 +170,9 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
                     match position {
                         0 => "picker on the first account",
                         1 => "picker on that account's Archive",
-                        2 => "picker on that account's Receipts",
-                        3 => "picker on the second account",
+                        2 => "picker on the year inside that Archive",
+                        3 => "picker on that account's Receipts",
+                        4 => "picker on the second account",
                         _ => "picker on the second account's Archive",
                     },
                     wx_destination::what_a_selection_means(
@@ -194,39 +219,48 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
     };
     assert!(result.is_ok(), "wxdragon::main returned {result:?}");
 
-    let picked = |name: &str, account: &str| {
+    let picked = |name: &str, id: &str, account: &str, depth: usize| {
         answer(
             "",
             Some(Destination {
                 name: name.to_string(),
-                id: name.to_string(),
+                id: id.to_string(),
                 account_id: account.to_string(),
-                depth: 0,
+                depth,
             }),
         )
         .1
     };
     let nothing = answer("", None::<Destination>).1;
     let expected: Vec<Answer> = vec![
-        ("rows the control walks", "5".to_string()),
-        ("entries beside it", "5".to_string()),
+        ("rows the control walks", "6".to_string()),
+        ("entries beside it", "6".to_string()),
         (
             "what the entries say",
             format!("{:?}", the_rows_the_picker_should_hold()),
         ),
+        ("folders directly under the first account", "2".to_string()),
+        (
+            "folders directly under that account's Archive",
+            "1".to_string(),
+        ),
         ("picker on the first account", nothing.clone()),
         (
             "picker on that account's Archive",
-            picked("Archive", "acct-1"),
+            picked("Archive", "Archive", "acct-1", 0),
+        ),
+        (
+            "picker on the year inside that Archive",
+            picked("2026", "Archive/2026", "acct-1", 1),
         ),
         (
             "picker on that account's Receipts",
-            picked("Receipts", "acct-1"),
+            picked("Receipts", "Receipts", "acct-1", 0),
         ),
         ("picker on the second account", nothing),
         (
             "picker on the second account's Archive",
-            picked("Archive", "acct-2"),
+            picked("Archive", "Archive", "acct-2", 0),
         ),
         ("rows the conversation walks", "3".to_string()),
         (
