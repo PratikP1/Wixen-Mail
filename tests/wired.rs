@@ -3768,3 +3768,77 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
          arrive as the one general sentence"
     );
 }
+
+/// Blocking says what it will do before it writes the rule, and what it did
+/// after.
+///
+/// The whole blocking family was written and tested and three quarters of it
+/// was never called: `everyone_blocked`, `the_rule_that_blocks` and
+/// `what_unblocking_did` had no production caller at all, and
+/// `what_blocking_will_do` had none either. A `pub fn` with no caller raises no
+/// warning in this crate, because it is a library with public modules, which is
+/// how all four survived from the commit that wrote them.
+///
+/// The order is the half worth checking rather than assuming. A sentence that
+/// says what blocking "will" do, said after the rule is already written, is not
+/// a warning, it is a mis-tensed report, and nothing about the call being
+/// present would say so.
+///
+/// What this cannot see: whether either sentence is heard. It reads the source
+/// of the main window, because reaching this path needs a window, an account
+/// and a message. Whether the two are one clear answer or two competing ones,
+/// where `may_block` also warns, is a screen reader question and is in the
+/// broken windows ledger.
+#[test]
+fn test_blocking_says_what_it_will_do_before_it_writes_the_rule() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let making = body_of(&app, "fn block_the_sender(");
+
+    let before = making
+        .find("what_blocking_will_do")
+        .expect("the making path never says what blocking will do, so the sentence written for that moment is still unreachable");
+    let writes_the_rule = making
+        .find("create_filter_rule")
+        .expect("the making path no longer writes a rule");
+    let after = making
+        .find("what_blocking_did")
+        .expect("the making path never says what blocking did");
+
+    assert!(
+        before < writes_the_rule,
+        "what blocking will do is said after the rule is already written, so it \
+         reports in the future tense something that has already happened"
+    );
+    assert!(
+        writes_the_rule < after,
+        "what blocking did is said before the rule is written"
+    );
+    assert!(
+        making.contains("MayBlock::YesButFirst"),
+        "the mailing list warning is gone from the making path, so the new sentence \
+         replaced it rather than being said beside it"
+    );
+}
+
+/// The list of who is blocked can be opened, and it reaches the two functions
+/// written for it.
+///
+/// The other half of the same failure. A screen that is never opened is a
+/// screen the accessibility scan cannot see either, which is why the scan
+/// target is checked here alongside the door.
+#[test]
+fn test_the_blocked_senders_list_is_opened_by_something() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let shipped = what_ships(&app);
+
+    assert!(
+        shipped.contains("wx_blocked_senders::"),
+        "nothing in the main window opens the list of who is blocked, so the screen \
+         everyone_blocked was written for is still not offered"
+    );
+    assert!(
+        shipped.contains("ScanTarget::BlockedSenders"),
+        "the accessibility scan cannot open the blocked senders window, so a scan of \
+         it would report nothing and read as a pass"
+    );
+}

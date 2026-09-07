@@ -502,6 +502,7 @@ group are being written to, so you can tell when somebody has been missed.
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Open Rules Manager | (menu only) | Open message filter rules manager |
+| Open Blocked Senders | (Tools menu) | Who you have blocked, and where their mail is being filed |
 
 ### View Menu
 
@@ -865,6 +866,17 @@ If you have only one keyboard layout installed, none of this affects you.
 | Edit contact | `Alt+E` | Edit selected contact |
 | Delete contact | `Alt+D` | Delete selected contact |
 | Close | `Alt+C` | Close Contact Manager |
+
+### Blocked Senders Dialog Accelerators
+
+Two keys, because the window has two buttons. Tab and the arrow keys reach the
+list, and the list is where the window opens unless nothing is blocked, in
+which case focus goes to Close.
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Unblock | `Alt+U` | Take off the block you have chosen in the list |
+| Close | `Alt+C` | Close Blocked Senders |
 
 ### Contact Edit Dialog Accelerators
 

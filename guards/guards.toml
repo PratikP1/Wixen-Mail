@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 449 records have arrived since and have not been through it.
+# 451 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -4084,7 +4084,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -4106,7 +4106,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11055,7 +11055,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -11071,7 +11071,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -11101,7 +11101,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -11115,7 +11115,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -13283,7 +13283,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -13767,7 +13767,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -16082,7 +16082,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -16111,7 +16111,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -16175,7 +16175,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -16202,7 +16202,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 67 },
+    { file = "tests/wired.rs", tests = 69 },
 ]
 
 [[guard]]
@@ -16468,4 +16468,65 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 83 },
+]
+
+# ── Unblocking one address, by taking off the domain block over it ──────────
+#
+# The mistake that cannot be undone by asking again. Somebody asks for one
+# person to be let back in, the wider rule catching them is deleted instead,
+# and everybody at that domain is unblocked with nothing said.
+#
+# The break is the lookup taking the first rule whose block merely catches this
+# sender, rather than the rule that is exactly this block.
+#
+# Which rule that finds depends on the order the rules come back in, and that
+# is the whole reason the fixture is written the way it is. Rules are ordered
+# by name, so "Blocked: everyone at example.com" comes before
+# "Blocked: zoe@example.com" and after "Blocked: ada@example.com". Measured
+# with `ada`, this break reddens nothing at all: the exact rule is the first
+# one a widening lookup meets, so it returns the right answer by accident. The
+# first version of both tests was written that way and passed against the
+# defect they were written for. `zoe` is what makes the widening bite.
+
+[[guard]]
+name = "unblocking one address never takes the domain block over it"
+file = "src/application/blocking.rs"
+before = """    match the_rule_that_blocks(account_id, &chosen.what, rules) {"""
+after = """    match rules
+        .iter()
+        .filter(|rule| rule.account_id == account_id)
+        .find(|rule| the_block_in(rule).is_some_and(|held| covers(&held, &chosen.what)))
+    {"""
+red = [
+    "application::blocking::tests::test_unblocking_one_address_leaves_the_domain_block_that_covers_it_alone",
+]
+tests_last_seen = [
+    { file = "src/application/blocking.rs", tests = 67 },
+]
+
+# ── Unblocking a domain, by taking off the address block under it ───────────
+#
+# The mirror, and it fails differently rather than less. The domain block stays
+# in place, so the person believes a whole domain is unblocked and their mail
+# goes on being filed into Junk. Its own record because the break above does
+# not redden it: the two are one rule and two failures, and a single record
+# would have left one of them guarded by nothing.
+#
+# The fixture is the other way round for the same reason: `ada` sorts before
+# "everyone at", so the narrower rule is the one a first-match lookup meets.
+
+[[guard]]
+name = "unblocking a domain never takes the address block under it"
+file = "src/application/blocking.rs"
+before = """    match the_rule_that_blocks(account_id, &chosen.what, rules) {"""
+after = """    match rules
+        .iter()
+        .filter(|rule| rule.account_id == account_id)
+        .find(|rule| the_block_in(rule).is_some_and(|held| covers(&chosen.what, &held)))
+    {"""
+red = [
+    "application::blocking::tests::test_unblocking_a_domain_leaves_the_narrower_block_underneath_it_alone",
+]
+tests_last_seen = [
+    { file = "src/application/blocking.rs", tests = 67 },
 ]

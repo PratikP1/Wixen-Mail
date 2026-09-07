@@ -238,6 +238,7 @@ menu_ids!(
     ID_RENAME_SEARCH,
     ID_DELETE_SEARCH,
     ID_EDIT_SEARCH_CONDITIONS,
+    ID_BLOCKED_SENDERS,
 );
 
 // Sort menu IDs
@@ -4838,6 +4839,16 @@ impl WxMailApp {
                             &runtime,
                             &a11y,
                         ),
+                        _ if id == ID_BLOCKED_SENDERS => {
+                            show_who_is_blocked(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                        }
                         _ if id == ID_TAG_MGR => managers::manage_tags(
                             &state,
                             &message_cache,
@@ -6476,6 +6487,24 @@ impl WxMailApp {
                 ID_FILTER_MGR,
                 "Message &Filters...",
                 "Rules that sort, mark or move messages as they arrive",
+            )
+            // A block is an ordinary filter rule, so this belongs with the
+            // managers and immediately after Message Filters, which is where
+            // somebody looking for a block would arrive first. Until now the
+            // rules list was the only place a block could be found, which
+            // meant reading rule names in a list that holds every other rule
+            // too.
+            //
+            // k, because W, C, F, i, g, b, U, O, S, A, n, d and T are already
+            // taken on this menu and Windows matches a mnemonic without
+            // regard to case, so both B and S collide. No shortcut key: this
+            // is opened once in a while, and a key nobody presses twice is a
+            // key in the way of one somebody presses daily. The same reasoning
+            // as Add a Calendar by Address, below.
+            .append_item(
+                ID_BLOCKED_SENDERS,
+                "Bloc&ked Senders...",
+                "Who you have blocked, and where their mail is being filed",
             )
             .append_item(
                 ID_SIG_MGR,
@@ -13295,6 +13324,51 @@ fn send_the_flag_changes_that_were_waiting(
     }
 }
 
+/// Open the list of who is blocked on the account being looked at.
+///
+/// The door `blocking`'s own doc names. Three functions were written for this
+/// window, tested, and never called from anything that ships: a block somebody
+/// cannot find is a trap, mail stops arriving, nothing says why, and the rule
+/// doing it is one row among however many rules they have.
+///
+/// The rules are read afresh each time the window asks, rather than handed in
+/// once, because the rules manager can be open at the same time and a rule it
+/// deletes leaves a row here standing for nothing.
+fn show_who_is_blocked(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    let Some(cache) = cache.clone() else {
+        send_refusal(tx, rt, "There is no mail on this computer to block.");
+        return;
+    };
+    let account = lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_else(|| crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
+
+    let reading = cache.clone();
+    let reading_account = account.clone();
+    let taking_off = cache;
+    crate::presentation::wx_blocked_senders::show_who_is_blocked(
+        frame,
+        crate::presentation::wx_blocked_senders::TheRulesUnderneath {
+            account_id: account,
+            read_rules: Box::new(move || {
+                reading
+                    .get_filter_rules_for_account(&reading_account)
+                    .unwrap_or_default()
+            }),
+            take_off: Box::new(move |rule_id| taking_off.delete_filter_rule(rule_id)),
+        },
+        a11y,
+    );
+}
+
 /// Work through the contacts waiting on somebody's choice, one window each.
 ///
 /// The door the contacts sync's own sentence names. A sync that says "open
@@ -14427,6 +14501,14 @@ fn open_for_scanning(
         }
         ScanTarget::Filters => managers::manage_filters(state, cache, frame, tx, rt, a11y),
         ScanTarget::Calendar => managers::manage_calendar(state, cache, frame, tx, rt, a11y),
+        ScanTarget::BlockedSenders => {
+            // A fresh profile has nothing blocked, so the scan meets this
+            // window empty. That is the state worth scanning: the sentence
+            // saying nobody is blocked, and the focus that goes to Close
+            // rather than into a list with no rows, are what stop an empty
+            // window sounding like one that failed to load.
+            show_who_is_blocked(state, cache, frame, tx, rt, a11y);
+        }
     }
 }
 
@@ -25787,17 +25869,13 @@ fn block_the_sender(
     let made_at = chrono::Utc::now().to_rfc3339();
     let rule = blocking::a_rule_that_blocks(&account, &block, &junk, &made_at);
     let allowed = crate::application::allowed::allowed_for(&account);
-    if let Err(why) = cache.create_filter_rule(&rule) {
-        told(
-            &format!("The block could not be saved, so nothing was blocked. {why}"),
-            Priority::High,
-        );
-        return;
-    }
     // Blocked mail is filed into the junk folder, and on a server account that
     // folder is not downloaded unless somebody says so, which files the mail
-    // where they cannot open it. Switched on here, and said in the sentence
-    // below. Never over the top of somebody who switched it off themselves.
+    // where they cannot open it. Worked out here, before the rule is written,
+    // because the sentence said before the block needs it too. Both this and
+    // `allowed_for` are pure reads, so hoisting them changes nothing except
+    // that one computation now serves both sentences: computed twice, the
+    // before sentence and the after sentence could disagree about the folder.
     let mut junk_folder = blocking::what_the_junk_folder_needs(
         &junk,
         cache
@@ -25806,6 +25884,29 @@ fn block_the_sender(
             .get(&junk)
             .copied(),
     );
+    // What blocking will do, said before the rule is written. Beside the
+    // mailing list warning above rather than instead of it, through the same
+    // `told` and at the same priority, so somebody hears one thing before the
+    // block and one after rather than two announcements competing.
+    //
+    // Nothing here becomes a question. The sentence is said and the block is
+    // made in the same pass, which is what the `YesButFirst` arm above already
+    // does and what its own comment already says.
+    told(
+        &blocking::what_blocking_will_do(&block, &junk, allowed, junk_folder),
+        Priority::High,
+    );
+    if let Err(why) = cache.create_filter_rule(&rule) {
+        told(
+            &format!("The block could not be saved, so nothing was blocked. {why}"),
+            Priority::High,
+        );
+        return;
+    }
+    // Switched on here, and said in the sentence below. Never over the top of
+    // somebody who switched it off themselves. The value is downgraded when
+    // the switch fails, so the sentence after the block reports what really
+    // happened rather than repeating what was about to.
     if junk_folder == blocking::TheJunkFolder::IsSwitchedOnByBlocking
         && let Err(why) = cache.set_folder_choice(&account, &junk, true)
     {

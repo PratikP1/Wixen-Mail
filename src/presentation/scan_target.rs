@@ -57,12 +57,19 @@ pub enum ScanTarget {
     /// somewhere other than a mail server, so what it says about its own
     /// controls matters more than most.
     AddCalendar,
+    /// The list of who is blocked. A report list read row by row, with a
+    /// destructive button beside it, which is the control shape where
+    /// structure being present and the experience being good come apart most
+    /// often. A fresh profile has nothing blocked, so the scan meets the
+    /// window in its empty state, which is the state that has to sound
+    /// deliberate rather than broken.
+    BlockedSenders,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 9] = [
+    pub const ALL: [ScanTarget; 10] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -72,6 +79,7 @@ impl ScanTarget {
         ScanTarget::Calendar,
         ScanTarget::FirstRun,
         ScanTarget::AddCalendar,
+        ScanTarget::BlockedSenders,
     ];
 
     /// The name used on the command line.
@@ -86,6 +94,7 @@ impl ScanTarget {
             Self::Calendar => "calendar",
             Self::FirstRun => "first-run",
             Self::AddCalendar => "add-calendar",
+            Self::BlockedSenders => "blocked-senders",
         }
     }
 
