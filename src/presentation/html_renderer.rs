@@ -229,6 +229,12 @@ pub struct HtmlRenderer {
     /// The reader's answer rather than the sender's. Read here rather than at
     /// the seam that uses it, so the settings are read once per renderer.
     announcing: crate::application::pictures::Announcing,
+    /// Whose message this renderer is making a document out of.
+    ///
+    /// Decides whether the count of held-back pictures is said, because the
+    /// sentence saying it names the sender as somebody who would have been
+    /// told. Not a setting: nothing about this is the reader's to choose.
+    whose: crate::application::pictures::WhoseMessage,
 }
 
 /// One message in a combined conversation document.
@@ -253,12 +259,39 @@ pub struct ThreadPart {
 
 impl HtmlRenderer {
     /// Create a new HTML renderer
+    ///
+    /// For reading mail, which is somebody else's message. That is the answer
+    /// a caller gets by saying nothing, and it is the safe way to be wrong: a
+    /// reader told a picture was held back can ignore the line, and one not
+    /// told cannot ask.
     pub fn new() -> Self {
         let (fetching, announcing) = what_the_settings_say();
         Self {
             plain_text_only: false,
             fetching,
             announcing,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
+        }
+    }
+
+    /// A renderer for a message the person at this keyboard is writing.
+    ///
+    /// The composer's preview. Its pictures are still held back, because the
+    /// preview is a browser and would fetch them, and the sender it would be
+    /// reporting to is the person looking at it. So the count is not said
+    /// here: "fetching them would have told the senders you opened this" is
+    /// about their own message.
+    ///
+    /// A constructor rather than a method to remember, because a caller who
+    /// says nothing gets [`Self::new`], which is wrong in the direction that
+    /// tells somebody too much rather than too little.
+    pub fn for_a_message_being_written() -> Self {
+        let (fetching, announcing) = what_the_settings_say();
+        Self {
+            plain_text_only: false,
+            fetching,
+            announcing,
+            whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
         }
     }
 
@@ -274,6 +307,15 @@ impl HtmlRenderer {
             // says anything in that path, described or decorative.
             fetching,
             announcing,
+            // `whose` reaches nothing here either, and deliberately.
+            // `sanitize_and_count_held_back` answers nought in plain text,
+            // because every tag went, pictures with them, so nothing was held
+            // back to report. Saying "30 pictures were not shown, because
+            // fetching them would have told the senders" would be false about
+            // the reason and would point at a switch that changes nothing
+            // while plain text is on, which is the dead end naming the setting
+            // exists to avoid.
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
     }
 
@@ -287,6 +329,26 @@ impl HtmlRenderer {
             plain_text_only: false,
             fetching,
             announcing: crate::application::pictures::Announcing::OutLoud,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
+        }
+    }
+
+    /// The same, for a message being written rather than one that arrived.
+    ///
+    /// The pair of [`Self::for_a_message_being_written`] with the settings
+    /// taken out of it, the way [`Self::with_fetching`] is the pair of
+    /// [`Self::new`]. For tests, which have to drive both sides of the
+    /// question to say the answer discriminates: one that only asserted the
+    /// composer says nothing would be satisfied by a program that says nothing
+    /// to anybody, which is the state this replaced.
+    pub fn with_fetching_for_a_message_being_written(
+        fetching: crate::application::pictures::Fetching,
+    ) -> Self {
+        Self {
+            plain_text_only: false,
+            fetching,
+            announcing: crate::application::pictures::Announcing::OutLoud,
+            whose: crate::application::pictures::WhoseMessage::BeingWrittenHere,
         }
     }
 
@@ -301,6 +363,7 @@ impl HtmlRenderer {
             plain_text_only: false,
             fetching,
             announcing,
+            whose: crate::application::pictures::WhoseMessage::SomebodyElseSent,
         }
     }
 
@@ -464,6 +527,36 @@ impl HtmlRenderer {
             .into_owned()
     }
 
+    /// The sentence about held-back pictures, ready to go into a document.
+    ///
+    /// Empty when nothing was held back, and empty for a message being written
+    /// here whatever the count: [`crate::application::pictures::WhoseMessage`]
+    /// carries the reason.
+    ///
+    /// Escaped, and worth saying why since nothing in it comes from a message.
+    /// It is this program's own words with a `usize` in them. It is escaped
+    /// because everything else placed in this document is, and an exception
+    /// here would be one somebody has to remember for as long as the sentence
+    /// lives.
+    ///
+    /// Its own paragraph rather than a heading. A heading here would land
+    /// between the message's heading and its body and give a screen reader
+    /// user navigating by `H` a stop that is not a message.
+    fn what_a_reader_is_told_was_held_back(&self, held_back: usize) -> String {
+        use crate::application::pictures::WhoseMessage;
+        if self.whose == WhoseMessage::BeingWrittenHere {
+            return String::new();
+        }
+        let said = crate::application::pictures::what_was_held_back(held_back);
+        if said.is_empty() {
+            return String::new();
+        }
+        format!(
+            "<p class=\"held-back-count\">{}</p>\n",
+            html_escape::encode_text(&said)
+        )
+    }
+
     /// Extract alt text from images for accessibility
     pub fn extract_image_alt_texts(&self, html: &str) -> Vec<String> {
         let mut alt_texts = Vec::new();
@@ -510,9 +603,16 @@ impl HtmlRenderer {
     pub fn wrap_body(&self, body: &MessageBody) -> String {
         let content = match body {
             // Read rather than written, so pictures that would have to be
-            // fetched are held back here.
+            // fetched are held back here. The count is kept and said: this
+            // document has no heading of its own, so the sentence is the first
+            // thing in it and a reader meets the number before the thirty
+            // markers it is about.
             MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-                self.sanitize_and_count_held_back(html).0
+                let (markup, held_back) = self.sanitize_and_count_held_back(html);
+                format!(
+                    "{}{markup}",
+                    self.what_a_reader_is_told_was_held_back(held_back)
+                )
             }
             MessageBody::Plain(text) => format!(
                 "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
@@ -673,9 +773,19 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                 date = html_escape::encode_text(&part.date),
             ));
             // The kind is taken, not worked out, for the reason on `ThreadPart`.
+            //
+            // The count goes under this message's heading rather than being
+            // totalled for the page. A total would give a number and not say
+            // which message it is about, and a conversation is read in order
+            // rather than all at once, so a reader arriving at Grace's reply
+            // needs Grace's number there.
             let content = match &part.body {
                 MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
-                    self.sanitize_and_count_held_back(html).0
+                    let (markup, held_back) = self.sanitize_and_count_held_back(html);
+                    format!(
+                        "{}{markup}",
+                        self.what_a_reader_is_told_was_held_back(held_back)
+                    )
                 }
                 MessageBody::Plain(text) => format!(
                     "<pre style=\"white-space:pre-wrap;font-family:inherit\">{}</pre>",
@@ -902,9 +1012,17 @@ mod tests {
         // The assertion that stops an ordinary message growing a line about
         // pictures nobody held back.
         //
-        // Green on arrival, and kept for that reason rather than as coverage:
-        // when it was rewritten no document said the sentence at all, so it
-        // passed before the sentence was placed as well as after.
+        // Green on arrival: when it was rewritten no document said the
+        // sentence at all, so it passed before the sentence was placed as well
+        // as after. It has since been taken red by hand and is recorded in
+        // `guards/guards.toml` as "an ordinary message grows nothing", because
+        // a test that has never been red proves nothing.
+        //
+        // The third assertion is what makes that possible and is the reason it
+        // is there. Without it the sentence going out empty on every message
+        // is invisible: an empty paragraph contains neither of the two phrases
+        // the first two look for, so the check that stops it would come out on
+        // both sides.
         use crate::application::pictures::Fetching;
         let document = HtmlRenderer::with_fetching(Fetching::Blocked)
             .wrap_body(&MessageBody::Html("<p>Lunch on Thursday?</p>".to_string()));
@@ -914,6 +1032,11 @@ mod tests {
             "{document}"
         );
         assert!(!document.contains("Settings, Reading"), "{document}");
+        assert!(
+            !document.contains("held-back-count"),
+            "an ordinary message carries an empty paragraph where the count \
+             would be: {document}"
+        );
     }
 
     #[test]
@@ -927,6 +1050,38 @@ mod tests {
 
         assert!(document.contains("1 picture was not shown"), "{document}");
         assert!(!document.contains("1 pictures"), "{document}");
+    }
+
+    #[test]
+    fn test_a_message_being_written_is_not_told_its_own_sender_would_have_learned() {
+        // The composer previews a message somebody is writing, through a
+        // renderer that holds remote pictures back like any other. Said there,
+        // the sentence tells them fetching would have told the sender they
+        // opened this, where the sender is them.
+        //
+        // Both halves of the question, because a test that only asserted the
+        // composer says nothing would be satisfied by a program that says
+        // nothing to anybody, which is exactly the state this replaced.
+        use crate::application::pictures::Fetching;
+        let body = MessageBody::Html(pictures_from_a_stranger(30));
+
+        let reading = HtmlRenderer::with_fetching(Fetching::Blocked).wrap_body(&body);
+        let writing = HtmlRenderer::with_fetching_for_a_message_being_written(Fetching::Blocked)
+            .wrap_body(&body);
+
+        assert!(reading.contains("30 pictures were not shown"), "{reading}");
+        assert!(
+            !writing.contains("not shown, because fetching"),
+            "somebody writing a message was told its sender would have learnt \
+             they opened it: {writing}"
+        );
+        // What changes is the sentence, not the fetching. A draft's preview is
+        // a browser too, and letting it reach out would report the reader to
+        // every server the message points at, before the message is even sent.
+        assert!(
+            !writing.contains("cdn.example"),
+            "the composer's preview would fetch from a stranger: {writing}"
+        );
     }
 
     #[test]
@@ -1453,6 +1608,37 @@ mod tests {
         assert_eq!(
             HtmlRenderer::plain_text_only().announcing,
             from_the_settings
+        );
+    }
+
+    #[test]
+    fn test_the_constructor_the_composer_calls_is_the_one_that_stays_quiet() {
+        // The same argument as the test above, about the other answer.
+        // `with_fetching_for_a_message_being_written` is a test door, and the
+        // test that renders a draft goes through it. `for_a_message_being_written`
+        // is the one `wx_compose` really calls, so an answer wired only into
+        // the test door would satisfy that test and change nothing anybody
+        // sees.
+        //
+        // Read off the field rather than off a document, and that is the
+        // point rather than a shortcut: this constructor takes fetching from
+        // this machine's settings, so on a machine that allows fetching
+        // nothing is held back and both renderers say the same nothing for
+        // the wrong reason. A document could not tell them apart there.
+        use crate::application::pictures::WhoseMessage;
+
+        assert_eq!(
+            HtmlRenderer::for_a_message_being_written().whose,
+            WhoseMessage::BeingWrittenHere
+        );
+        assert_eq!(
+            HtmlRenderer::new().whose,
+            WhoseMessage::SomebodyElseSent,
+            "reading mail stopped saying what was held back"
+        );
+        assert_eq!(
+            HtmlRenderer::plain_text_only().whose,
+            WhoseMessage::SomebodyElseSent
         );
     }
 

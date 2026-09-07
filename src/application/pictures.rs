@@ -585,11 +585,38 @@ pub fn what_stands_in_for_it(described: &str) -> String {
     }
 }
 
+/// Whose message a document is being made out of.
+///
+/// [`what_was_held_back`] says the sender would have learned you opened this.
+/// That is true of mail somebody else sent and false of a message being written
+/// at this keyboard, where the sender is the person reading it, so the two
+/// cannot be told the same thing.
+///
+/// A renderer is told which it is holding rather than asked to remember a
+/// method. The sentence was written and lost once already because keeping it
+/// was something a caller had to do rather than something a caller had to opt
+/// out of, and both callers dropped it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhoseMessage {
+    /// Mail that arrived here. The sender is somebody else and is a stranger
+    /// until proved otherwise, which is what holding the pictures back is
+    /// about.
+    SomebodyElseSent,
+    /// A message being written at this keyboard, shown back to the person
+    /// writing it. Its pictures are still held back, because the preview is a
+    /// browser and would fetch them; what is not said is that a sender learned
+    /// anything, because the sender is them.
+    BeingWrittenHere,
+}
+
 /// What to say about a whole message once its pictures have been counted.
 ///
 /// Empty when nothing was held back, so an ordinary message says nothing. The
 /// count matters more than it looks: one held-back picture in a message from a
 /// person is usually their signature, and thirty is a mailing.
+///
+/// Whether a reader is the right person to say this to is [`WhoseMessage`],
+/// and it is asked before this is.
 pub fn what_was_held_back(held_back: usize) -> String {
     match held_back {
         0 => String::new(),

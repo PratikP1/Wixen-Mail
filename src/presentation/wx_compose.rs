@@ -3600,7 +3600,11 @@ pub fn build_send_preview_dialog(
     body_preview.set_name("Message preview");
     body_preview.enable_context_menu(false);
     body_preview.enable_access_to_dev_tools(false);
-    let renderer = HtmlRenderer::new();
+    // Not `new()`. This is the one place a document is made out of a message
+    // the person looking at it wrote, and `new()` would tell them that
+    // fetching the pictures would have told the sender they opened it, where
+    // the sender is them.
+    let renderer = HtmlRenderer::for_a_message_being_written();
     // The editor's own markup coming back for a last look before it goes.
     let html = renderer.wrap_body(&MessageBody::Html(data.body.clone()));
     body_preview.set_page(&html, "about:blank");
