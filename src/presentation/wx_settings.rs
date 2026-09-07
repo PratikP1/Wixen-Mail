@@ -438,7 +438,7 @@ fn add_scrolling(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> (CheckB
     // that the people it applies to cannot pick out from the people it does
     // not. A ticked box doing nothing otherwise reads as a broken program.
     if system_motion() == SystemMotion::Reduced {
-        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced);
+        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced).unwrap_or_default();
         let note = StaticText::builder(panel).with_label(&said).build();
         set_accessible_name(&note, &said);
         scroll_sec.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 4);

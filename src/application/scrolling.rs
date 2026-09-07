@@ -75,18 +75,32 @@ pub fn how_to_scroll(asked_for_smooth: bool, system: SystemMotion) -> Motion {
 
 /// What to say in the settings screen about a switch the machine has overruled.
 ///
-/// Empty when nothing has been overruled. A setting that silently does nothing
-/// is worse than one that is absent, and somebody who ticks smooth scrolling
-/// and sees no change deserves to be told why rather than left to conclude the
-/// application is broken.
-pub fn what_the_machine_has_overruled(asked_for_smooth: bool, system: SystemMotion) -> String {
-    if asked_for_smooth && system == SystemMotion::Reduced {
+/// `None` when nothing of theirs has been overruled, which is the ordinary
+/// case. A setting that silently does nothing is worse than one that is absent,
+/// and somebody who ticks smooth scrolling and sees no change deserves to be
+/// told why rather than left to conclude the application is broken.
+///
+/// Both halves of the question, and the second half is the one that was being
+/// answered wrongly. It has to be true of the machine, and it has to be true of
+/// the person: telling somebody who never ticked the box that Windows has
+/// overruled them names a fight they were not in. The settings screen used to
+/// decide from the machine alone and hand this function a literal `true`, so
+/// this returned its no-op answer for nobody and the note went up for everybody
+/// on a machine set to reduce animation.
+///
+/// An `Option` rather than an empty string, so nothing has to remember to test
+/// for it. An empty string builds a label perfectly happily, which is what a
+/// caller that forgets would get: a blank line under the box, announced as a
+/// nameless piece of text.
+pub fn what_the_machine_has_overruled(
+    asked_for_smooth: bool,
+    system: SystemMotion,
+) -> Option<String> {
+    (asked_for_smooth && system == SystemMotion::Reduced).then(|| {
         "Windows is set to reduce animation, so scrolling stays immediate. \
          Change it in Windows Settings, Accessibility, Visual effects."
             .to_string()
-    } else {
-        String::new()
-    }
+    })
 }
 
 /// Whether the message list should bring the chosen row back into view when
@@ -232,7 +246,8 @@ mod tests {
     fn test_somebody_overruled_by_their_machine_is_told_why() {
         // A ticked box that does nothing reads as a broken application. The
         // sentence says which switch won and where to find it.
-        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced);
+        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced)
+            .expect("somebody whose choice was overruled to be told so");
 
         assert!(said.contains("reduce animation"), "{said}");
         assert!(said.contains("Windows Settings"), "{said}");
@@ -241,10 +256,46 @@ mod tests {
     #[test]
     fn test_nothing_is_said_when_nothing_has_been_overruled() {
         // Three ways to have nothing to report, and a sentence in any of them
-        // would be a warning about a problem somebody does not have.
-        assert!(what_the_machine_has_overruled(true, SystemMotion::Allowed).is_empty());
-        assert!(what_the_machine_has_overruled(false, SystemMotion::Reduced).is_empty());
-        assert!(what_the_machine_has_overruled(false, SystemMotion::Allowed).is_empty());
+        // would be a warning about a problem somebody does not have. The middle
+        // one is the case the settings screen could never reach: the box
+        // unticked on a machine set to reduce animation, where nothing of
+        // theirs has been overruled because they never asked for animation.
+        assert!(what_the_machine_has_overruled(true, SystemMotion::Allowed).is_none());
+        assert!(what_the_machine_has_overruled(false, SystemMotion::Reduced).is_none());
+        assert!(what_the_machine_has_overruled(false, SystemMotion::Allowed).is_none());
+    }
+
+    /// The settings screen asks this question about the setting somebody has.
+    ///
+    /// Read out of the source, because the Scrolling section builds wxWidgets
+    /// controls and reaching it needs a window. That is a real limit and it is
+    /// the whole reason this defect lasted: the two tests above pass and always
+    /// did, because the function was never wrong. What was wrong is that the
+    /// screen decided from the machine alone and then handed this a literal
+    /// `true`, so the answer above about somebody who never ticked the box was
+    /// an answer nobody could ever receive.
+    ///
+    /// Read over what a release build compiles, so a literal inside a test
+    /// module cannot answer for the screen.
+    #[test]
+    fn test_the_settings_screen_asks_about_the_setting_somebody_has() {
+        let screen = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string("src/presentation/wx_settings.rs")
+                .expect("the settings screen's source"),
+        );
+
+        assert!(
+            screen.contains("what_the_machine_has_overruled(config.smooth_scrolling"),
+            "the Scrolling section does not ask about the setting somebody \
+             actually has, so it is answering about a choice they may never \
+             have made"
+        );
+        assert!(
+            !screen.contains("what_the_machine_has_overruled(true"),
+            "the Scrolling section passes a literal `true`, so anybody on a \
+             machine set to reduce animation is told Windows overruled a \
+             setting they never turned on"
+        );
     }
 
     #[test]
