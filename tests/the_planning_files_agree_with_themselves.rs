@@ -167,6 +167,32 @@ fn frontmatter(text: &str) -> Vec<(usize, &str)> {
     Vec::new()
 }
 
+/// The same, for a key indented two spaces under a parent at column zero.
+///
+/// `progress:` opens a block and `completed_plans` lives inside it, so the
+/// parent has to be found first. The block ends at the first line that is not
+/// indented, which is how a later top-level key carrying the word in its text
+/// is not read as a second copy.
+fn frontmatter_nested_values(text: &str, parent: &str, key: &str) -> Vec<(usize, String)> {
+    let parent_line = format!("{parent}:");
+    let prefix = format!("  {key}:");
+    let mut inside = false;
+    let mut found = Vec::new();
+    for (number, line) in frontmatter(text) {
+        if line.starts_with(&parent_line) {
+            inside = true;
+            continue;
+        }
+        if inside && !line.starts_with(' ') {
+            inside = false;
+        }
+        if inside && line.starts_with(&prefix) {
+            found.push((number, line[prefix.len()..].trim().to_string()));
+        }
+    }
+    found
+}
+
 /// Every value a key at column zero of the frontmatter carries.
 ///
 /// A list rather than one answer, because "this fact is written twice and the
@@ -221,11 +247,11 @@ fn the_one_value(
     match found.len() {
         1 => Ok(found.into_iter().next().unwrap_or_default()),
         0 => Err(format!(
-            "{file}: there is no {what}, so there is nothing here to compare and \
+            "{file}: {what} is missing, so there is nothing here to compare and \
              this check would pass over an empty reading"
         )),
         _ => Err(format!(
-            "{file}: {what} is written {} times, on lines {}, and a fact written \
+            "{file}: {what} appears {} times, on lines {}, and a fact written \
              twice is what this file keeps getting wrong",
             found.len(),
             found
@@ -237,16 +263,81 @@ fn the_one_value(
     }
 }
 
+/// A whole number a planning file states, or the reason it is not one.
+fn the_one_number(file: &str, what: &str, found: Vec<(usize, String)>) -> Result<usize, String> {
+    let (_, raw) = the_one_value(file, what, found)?;
+    raw.parse::<usize>()
+        .map_err(|_| format!("{file}: {what} says {raw}, which is not a count of anything"))
+}
+
 /// Check 1. The phase the frontmatter names is the phase the heading names.
+///
+/// This is the one that failed on 2026-09-01, when both halves said phase 01
+/// and five phase 02 plans had already shipped.
 fn phase_disagreements(text: &str) -> Vec<String> {
-    let _ = text;
-    Vec::new()
+    let front = match the_one_value(
+        STATE,
+        "a current_phase in the frontmatter",
+        frontmatter_values(text, "current_phase"),
+    ) {
+        Ok((_, value)) => value,
+        Err(complaint) => return vec![complaint],
+    };
+    let heading = match the_one_value(
+        STATE,
+        "a Phase line in the Current Position section",
+        current_position_values(text, "Phase"),
+    ) {
+        Ok((_, value)) => value.split_whitespace().next().unwrap_or("").to_string(),
+        Err(complaint) => return vec![complaint],
+    };
+
+    // Compared as phase numbers rather than as bytes. The frontmatter writes
+    // `04.2` and a roadmap row writes `4.2` for the same phase, so a check
+    // demanding the same spelling would fire on a file that is right.
+    let (Some(front_key), Some(heading_key)) = (phase_key(&front), phase_key(&heading)) else {
+        return vec![format!(
+            "{STATE}: the frontmatter says phase {front} and the Current Position \
+             heading says {heading}, and at least one of those is not a phase number"
+        )];
+    };
+    if front_key == heading_key {
+        return Vec::new();
+    }
+    vec![format!(
+        "{STATE}: the frontmatter says phase {front} and the Current Position \
+         heading says {heading}"
+    )]
 }
 
 /// Check 2. `current_plan` in the frontmatter is `Current Plan:` in the body.
+///
+/// This is the one 04.2-06 left behind: it updated the heading to 7 and left
+/// the frontmatter saying 6, and the next plan found it by hand.
 fn plan_disagreements(text: &str) -> Vec<String> {
-    let _ = text;
-    Vec::new()
+    let front = match the_one_number(
+        STATE,
+        "a current_plan in the frontmatter",
+        frontmatter_values(text, "current_plan"),
+    ) {
+        Ok(number) => number,
+        Err(complaint) => return vec![complaint],
+    };
+    let body = match the_one_number(
+        STATE,
+        "a Current Plan line in the Current Position section",
+        current_position_values(text, "Current Plan"),
+    ) {
+        Ok(number) => number,
+        Err(complaint) => return vec![complaint],
+    };
+    if front == body {
+        return Vec::new();
+    }
+    vec![format!(
+        "{STATE}: the frontmatter says current_plan {front} and the body says \
+         Current Plan: {body}"
+    )]
 }
 
 /// Check 3. `Total Plans in Phase` is the `*-PLAN.md` files in that phase.
@@ -254,17 +345,71 @@ fn total_plans_in_phase_disagreements(
     text: &str,
     on_disk: &BTreeMap<String, PhaseFiles>,
 ) -> Vec<String> {
-    let _ = (text, on_disk);
-    Vec::new()
+    let key = match the_one_value(
+        STATE,
+        "a current_phase in the frontmatter",
+        frontmatter_values(text, "current_phase"),
+    ) {
+        Ok((_, value)) => match phase_key(&value) {
+            Some(key) => key,
+            None => {
+                return vec![format!(
+                    "{STATE}: the frontmatter says phase {value}, which is not a \
+                     phase number, so no directory can be counted for it"
+                )];
+            }
+        },
+        Err(complaint) => return vec![complaint],
+    };
+    let said = match the_one_number(
+        STATE,
+        "a Total Plans in Phase line in the Current Position section",
+        current_position_values(text, "Total Plans in Phase"),
+    ) {
+        Ok(number) => number,
+        Err(complaint) => return vec![complaint],
+    };
+    let Some(files) = on_disk.get(&key) else {
+        return vec![format!(
+            "{STATE}: the frontmatter says phase {key} and {PHASES} holds no \
+             directory for it"
+        )];
+    };
+    if said == files.plans {
+        return Vec::new();
+    }
+    vec![format!(
+        "{STATE}: Total Plans in Phase says {said} and phase {key} holds {} \
+         *-PLAN.md files on disk",
+        files.plans
+    )]
 }
 
 /// Check 4. `progress.completed_plans` is every `*-SUMMARY.md` on disk.
+///
+/// Across every phase, not just this one. The field is a milestone total, and
+/// every plan since 04.2-05 has set it by counting the files rather than by
+/// incrementing, because incrementing a stale number keeps it stale.
 fn completed_plans_disagreements(
     text: &str,
     on_disk: &BTreeMap<String, PhaseFiles>,
 ) -> Vec<String> {
-    let _ = (text, on_disk);
-    Vec::new()
+    let said = match the_one_number(
+        STATE,
+        "a completed_plans under progress in the frontmatter",
+        frontmatter_nested_values(text, "progress", "completed_plans"),
+    ) {
+        Ok(number) => number,
+        Err(complaint) => return vec![complaint],
+    };
+    let summaries: usize = on_disk.values().map(|files| files.summaries).sum();
+    if said == summaries {
+        return Vec::new();
+    }
+    vec![format!(
+        "{STATE}: progress.completed_plans says {said} and the phase \
+         directories hold {summaries} *-SUMMARY.md files"
+    )]
 }
 
 // ---------------------------------------------------------------------------
@@ -280,21 +425,321 @@ fn shortened(text: &str) -> String {
     taken
 }
 
+/// One ledger entry, in whichever half of the file it was read from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LedgerEntry {
+    status: String,
+    description: String,
+}
+
+/// The cells of one markdown table row, without the empty ends.
+fn table_cells(line: &str) -> Vec<String> {
+    let inner = line.trim().trim_start_matches('|').trim_end_matches('|');
+    inner
+        .split('|')
+        .map(|cell| cell.trim().to_string())
+        .collect()
+}
+
+/// Every entry the markdown table half holds, and what went wrong reading it.
+fn ledger_from_the_table(text: &str) -> (BTreeMap<u64, LedgerEntry>, Vec<String>) {
+    let mut found: BTreeMap<u64, LedgerEntry> = BTreeMap::new();
+    let mut wrong = Vec::new();
+
+    let Some(header) = text
+        .lines()
+        .find(|line| line.starts_with("| id |") || line.starts_with("|id|"))
+    else {
+        wrong.push(format!(
+            "{WINDOWS}: there is no ledger table, so the reading below compares \
+             one half of the file with nothing"
+        ));
+        return (found, wrong);
+    };
+    let columns = table_cells(header);
+    let at = |name: &str| columns.iter().position(|column| column == name);
+    let (Some(id_at), Some(status_at), Some(description_at)) =
+        (at("id"), at("status"), at("description"))
+    else {
+        wrong.push(format!(
+            "{WINDOWS}: the ledger table has no id, status or description column, \
+             so there is nothing here to compare with the JSON block"
+        ));
+        return (found, wrong);
+    };
+
+    for line in text.lines() {
+        if !line.starts_with('|') {
+            continue;
+        }
+        let cells = table_cells(line);
+        let Some(id) = cells.get(id_at).and_then(|cell| cell.parse::<u64>().ok()) else {
+            continue;
+        };
+        let entry = LedgerEntry {
+            status: cells.get(status_at).cloned().unwrap_or_default(),
+            description: cells.get(description_at).cloned().unwrap_or_default(),
+        };
+        if found.insert(id, entry).is_some() {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} has more than one table row, so which one \
+                 the JSON block is being compared with is undecided"
+            ));
+        }
+    }
+    if found.is_empty() {
+        wrong.push(format!(
+            "{WINDOWS}: the ledger table holds no numbered rows, so this check \
+             would pass over an empty reading"
+        ));
+    }
+    (found, wrong)
+}
+
+/// Every entry the JSON half holds, and what went wrong reading it.
+///
+/// The JSON is the authoritative half: the tool writes the table from it, so
+/// an entry that is in here and not in the table is the more serious of the
+/// two directions and is reported first.
+fn ledger_from_the_json(text: &str) -> (BTreeMap<u64, LedgerEntry>, Vec<String>) {
+    let mut found: BTreeMap<u64, LedgerEntry> = BTreeMap::new();
+    let mut wrong = Vec::new();
+
+    let lines: Vec<&str> = text.lines().collect();
+    let opening = lines.iter().position(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("```") && trimmed.trim_start_matches('`') == "json"
+    });
+    let Some(opening) = opening else {
+        wrong.push(format!(
+            "{WINDOWS}: there is no JSON block, so the reading above compares one \
+             half of the file with nothing"
+        ));
+        return (found, wrong);
+    };
+    let fence = lines[opening].trim().trim_end_matches("json").to_string();
+    let Some(closing) = lines
+        .iter()
+        .skip(opening + 1)
+        .position(|line| line.trim() == fence)
+        .map(|at| at + opening + 1)
+    else {
+        wrong.push(format!(
+            "{WINDOWS}: the JSON block opens on line {} and never closes",
+            opening + 1
+        ));
+        return (found, wrong);
+    };
+
+    let block = lines[opening + 1..closing].join("\n");
+    let parsed: serde_json::Value = match serde_json::from_str(&block) {
+        Ok(value) => value,
+        Err(error) => {
+            wrong.push(format!("{WINDOWS}: the JSON block does not parse: {error}"));
+            return (found, wrong);
+        }
+    };
+    let Some(entries) = parsed.as_array() else {
+        wrong.push(format!(
+            "{WINDOWS}: the JSON block is not a list of entries, so there is \
+             nothing here to compare with the table"
+        ));
+        return (found, wrong);
+    };
+
+    for entry in entries {
+        let Some(id) = entry.get("id").and_then(serde_json::Value::as_u64) else {
+            wrong.push(format!(
+                "{WINDOWS}: a JSON entry has no numeric id, so nothing in the \
+                 table can be matched with it"
+            ));
+            continue;
+        };
+        let text_of = |key: &str| {
+            entry
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let held = LedgerEntry {
+            status: text_of("status"),
+            description: text_of("description"),
+        };
+        if found.insert(id, held).is_some() {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} appears twice in the JSON block, so which \
+                 one the table is being compared with is undecided"
+            ));
+        }
+    }
+    if found.is_empty() {
+        wrong.push(format!(
+            "{WINDOWS}: the JSON block holds no entries, so this check would pass \
+             over an empty reading"
+        ));
+    }
+    (found, wrong)
+}
+
 /// Checks 5 and 6. The markdown table and the JSON block hold the same ids,
 /// and for every id in both, the same status and the same description.
 fn ledger_disagreements(text: &str) -> Vec<String> {
-    let _ = text;
-    Vec::new()
+    let (table, mut wrong) = ledger_from_the_table(text);
+    let (json, json_trouble) = ledger_from_the_json(text);
+    wrong.extend(json_trouble);
+    if !wrong.is_empty() {
+        return wrong;
+    }
+
+    for id in json.keys() {
+        if !table.contains_key(id) {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} is in the JSON block and has no table row"
+            ));
+        }
+    }
+    for id in table.keys() {
+        if !json.contains_key(id) {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} is a table row and is not in the JSON block"
+            ));
+        }
+    }
+    for (id, row) in &table {
+        let Some(object) = json.get(id) else {
+            continue;
+        };
+        if row.status != object.status {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} status: the table says {} and the JSON \
+                 block says {}",
+                row.status, object.status
+            ));
+        }
+        if row.description != object.description {
+            wrong.push(format!(
+                "{WINDOWS}: ledger {id} description: the table says {} and the \
+                 JSON block says {}",
+                shortened(&row.description),
+                shortened(&object.description)
+            ));
+        }
+    }
+    wrong
 }
 
 // ---------------------------------------------------------------------------
 // Reading ROADMAP.md
 // ---------------------------------------------------------------------------
 
+/// The lines of the `## Progress` section, which is where the table lives.
+///
+/// Scoped rather than searched for across the whole document, because the
+/// phase descriptions above it carry `n/m` figures of their own and a reading
+/// that swept the file would compare a sentence with a directory.
+fn progress_section(text: &str) -> Vec<&str> {
+    let mut inside = false;
+    let mut found = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("## ") {
+            inside = line.trim_end() == "## Progress";
+            continue;
+        }
+        if inside {
+            found.push(line);
+        }
+    }
+    found
+}
+
 /// Check 7. Every progress-table row says what is on disk for its phase.
+///
+/// One direction only. A phase directory with plans in it and no row at all
+/// is not seen here, and that gap is written into this file's own header
+/// rather than left to be found.
 fn roadmap_disagreements(text: &str, on_disk: &BTreeMap<String, PhaseFiles>) -> Vec<String> {
-    let _ = (text, on_disk);
-    Vec::new()
+    let section = progress_section(text);
+    let Some(header) = section
+        .iter()
+        .find(|line| line.starts_with('|') && line.contains("Plans Complete"))
+    else {
+        return vec![format!(
+            "{ROADMAP}: there is no progress table under a Progress heading, so \
+             this check would pass over an empty reading"
+        )];
+    };
+    let columns = table_cells(header);
+    let (Some(phase_at), Some(plans_at)) = (
+        columns.iter().position(|column| column == "Phase"),
+        columns.iter().position(|column| column == "Plans Complete"),
+    ) else {
+        return vec![format!(
+            "{ROADMAP}: the progress table has no Phase or Plans Complete \
+             column, so there is nothing here to compare with the disk"
+        )];
+    };
+
+    let mut wrong = Vec::new();
+    let mut rows = 0;
+    for line in &section {
+        if !line.starts_with('|') {
+            continue;
+        }
+        let cells = table_cells(line);
+        let Some(label) = cells.get(phase_at) else {
+            continue;
+        };
+        let Some(key) = phase_key(label) else {
+            continue;
+        };
+        rows += 1;
+        let cell = cells.get(plans_at).cloned().unwrap_or_default();
+        let Some(files) = on_disk.get(&key) else {
+            wrong.push(format!(
+                "{ROADMAP}: row {label} names phase {key} and {PHASES} holds no \
+                 directory for it"
+            ));
+            continue;
+        };
+
+        let mut halves = cell.split('/');
+        let done = halves.next().unwrap_or("").trim().parse::<usize>();
+        let total = halves.next().unwrap_or("").trim();
+        if halves.next().is_some() || done.is_err() {
+            wrong.push(format!(
+                "{ROADMAP}: row {label} says {cell}, which is not a count of \
+                 plans done out of plans written"
+            ));
+            continue;
+        }
+        let done = done.unwrap_or_default();
+
+        // `TBD` is a denominator nobody has decided, and it is honest only
+        // while the phase has no plans on disk. Once plans exist the number is
+        // knowable, and a row still saying TBD is the roadmap drifting from
+        // the directory exactly as an out-of-date number would be.
+        let agrees = match total.parse::<usize>() {
+            Ok(total) => done == files.summaries && total == files.plans,
+            Err(_) if total == "TBD" => done == files.summaries && files.plans == 0,
+            Err(_) => false,
+        };
+        if !agrees {
+            wrong.push(format!(
+                "{ROADMAP}: row {label} says {cell} and phase {key} holds {} \
+                 summaries and {} plans on disk",
+                files.summaries, files.plans
+            ));
+        }
+    }
+
+    if rows == 0 {
+        wrong.push(format!(
+            "{ROADMAP}: the progress table holds no phase rows, so this check \
+             would pass over an empty reading"
+        ));
+    }
+    wrong
 }
 
 // ---------------------------------------------------------------------------
