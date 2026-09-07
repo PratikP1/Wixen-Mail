@@ -425,41 +425,6 @@ pub struct TheAnswerToSend {
     pub calendar_document: String,
 }
 
-impl TheAnswerToSend {
-    /// The calendar document as the part that travels with the message.
-    ///
-    /// Built here rather than at the sending layer so that nothing there has
-    /// to know what an answer's content type is. `method=REPLY` is the whole
-    /// of it: it is what tells a receiving client this attachment is an answer
-    /// rather than a calendar file somebody happened to send, and without it
-    /// the answer is shown as a file to open by hand and never recorded
-    /// against the meeting.
-    ///
-    /// Worked out rather than stored, so it cannot come to disagree with the
-    /// document beside it.
-    pub fn the_calendar_part(&self) -> crate::application::attaching::Ready {
-        crate::application::attaching::Ready {
-            name: WHAT_THE_PART_IS_CALLED.to_string(),
-            content_type: WHAT_AN_ANSWER_IS,
-            bytes: self.calendar_document.clone().into_bytes(),
-        }
-    }
-}
-
-/// What a reply's calendar part says it is.
-///
-/// RFC 6047. The method is the part that matters and the charset is what makes
-/// a name that is not written in English survive the journey.
-const WHAT_AN_ANSWER_IS: &str = "text/calendar; charset=utf-8; method=REPLY";
-
-/// What the part is called for anybody whose client shows it as a file.
-///
-/// A client that understands the content type above never shows a name at all.
-/// One that does not shows this, so it says what the file is: "invite.ics",
-/// which is what most programs write whatever the method, would tell somebody
-/// they had been sent an invitation when they had been sent an answer.
-const WHAT_THE_PART_IS_CALLED: &str = "reply.ics";
-
 /// The subject an answer goes out under.
 ///
 /// The answer in front of the meeting's own name, which is the convention

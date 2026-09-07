@@ -440,7 +440,7 @@ pub fn content_type(name: &str) -> &'static str {
         "txt" | "log" | "md" => "text/plain",
         "html" | "htm" => "text/html",
         "csv" => "text/csv",
-        "ics" => "text/calendar",
+        "ics" => A_CALENDAR_DOCUMENT,
         "eml" => "message/rfc822",
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
@@ -458,16 +458,68 @@ pub fn content_type(name: &str) -> &'static str {
     }
 }
 
+/// A calendar document that is asking nothing.
+///
+/// The declaration every `.ics` file here has always carried, and the one a
+/// document with no `METHOD` keeps. Named rather than written out twice
+/// because [`content_type_of`] asks whether the name landed on this, and an
+/// extension table and a comparison against it are two readings of one
+/// question if the answer is spelled in both places.
+const A_CALENDAR_DOCUMENT: &str = "text/calendar";
+
+/// What a reply's calendar part says it is.
+///
+/// RFC 6047. The method is the part that matters and the charset is what makes
+/// a name that is not written in English survive the journey.
+///
+/// `method=REPLY` is the whole of it: it is what tells a receiving client this
+/// attachment is an answer rather than a calendar file somebody happened to
+/// send, and without it the answer is shown as a file to open by hand and
+/// never recorded against the meeting.
+const AN_ANSWER: &str = "text/calendar; charset=utf-8; method=REPLY";
+
 /// The content type to put on the part, from the name and from what is in it.
 ///
 /// The name decides for everything that is not a calendar document, because
-/// for an ordinary file the name is all there is. A calendar document is the
-/// one kind whose declaration has to agree with what the file says about
-/// itself: RFC 6047 requires the `method` parameter on the header and the
-/// `METHOD` property inside the document to be the same, and a client reading
-/// a mismatch is entitled to ignore either.
-pub fn content_type_of(name: &str, _bytes: &[u8]) -> &'static str {
-    content_type(name)
+/// for an ordinary file the name is all there is and nothing has declared what
+/// it holds. A calendar document is the one kind whose declaration has to
+/// agree with what the file says about itself: RFC 6047 requires the `method`
+/// parameter on the header and the `METHOD` property inside the document to be
+/// the same, and a client meeting a mismatch is entitled to believe neither.
+///
+/// Worked out here rather than stored, because this is the last place the
+/// document and the type it is declared under are in one hand. A queued
+/// message carries its files by path and they are read at the moment of
+/// sending, so a type settled any earlier is a type that can come to disagree
+/// with the document it travels on.
+///
+/// # Why the answers are fixed strings
+///
+/// The `METHOD` line comes out of a file somebody else wrote. Every answer
+/// here is a `&'static str` chosen from a closed set, so what a stranger wrote
+/// selects an answer and never becomes one. Build this with `format!` and the
+/// sender of a forwarded invitation controls text on a header line of mail
+/// leaving somebody's own account, which is a header of their choosing on a
+/// message signed with somebody else's name.
+pub fn content_type_of(name: &str, bytes: &[u8]) -> &'static str {
+    let from_the_name = content_type(name);
+    if from_the_name != A_CALENDAR_DOCUMENT {
+        return from_the_name;
+    }
+    // Bytes that are not text are not asked about. A charset says the bytes
+    // really are that encoding, and claiming one this program has just failed
+    // to decode is a claim it has no evidence for.
+    let Ok(document) = std::str::from_utf8(bytes) else {
+        return from_the_name;
+    };
+    match crate::application::invitations::what_it_asks(document) {
+        crate::application::invitations::WhatItAsks::SomebodysAnswer => AN_ANSWER,
+        // A document naming no method must not be given one, and the two that
+        // are left keep today's answer until the plan that writes theirs.
+        crate::application::invitations::WhatItAsks::Invitation
+        | crate::application::invitations::WhatItAsks::Cancellation
+        | crate::application::invitations::WhatItAsks::SomethingElse => from_the_name,
+    }
 }
 
 /// A file read and ready to go on a message.
@@ -553,6 +605,14 @@ pub fn write_a_part(folder: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> 
     Ok(at)
 }
 
+/// What the part is called for anybody whose client shows it as a file.
+///
+/// A client that understands the content type never shows a name at all. One
+/// that does not shows this, so it says what the file is: "invite.ics", which
+/// is what most programs write whatever the method, would tell somebody they
+/// had been sent an invitation when they had been sent an answer.
+pub const WHAT_THE_PART_IS_CALLED: &str = "reply.ics";
+
 /// Where a reply to a meeting invitation is written down so the queue can send
 /// it.
 ///
@@ -560,15 +620,19 @@ pub fn write_a_part(folder: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> 
 /// message names its files by path and they are read at the moment of sending:
 /// a temporary folder swept in between would take the answer with it.
 ///
-/// `unique` is what keeps two answers waiting at once from landing on one file
-/// and the second replacing the first while the first is still waiting to go.
-/// It is not the moment the answer was written: a date written out here is a
-/// date written in a second place, and this program keeps one writer for those
-/// on purpose.
+/// `unique` names the folder rather than the file. Two answers waiting at once
+/// must not land on one file and have the second replace the first while the
+/// first is still waiting to go, and a unique name in the file would buy that
+/// by giving the recipient the unique name to look at. So the uniqueness sits
+/// one level up and the file keeps the name that says what it is.
+///
+/// `unique` is not the moment the answer was written: a date written out here
+/// is a date written in a second place, and this program keeps one writer for
+/// those on purpose.
 pub fn a_place_for_the_reply(cache_dir: &Path, unique: &str, document: &str) -> Result<PathBuf> {
     write_a_part(
-        &cache_dir.join("answers"),
-        &format!("reply-{unique}.ics"),
+        &cache_dir.join("answers").join(unique),
+        WHAT_THE_PART_IS_CALLED,
         document.as_bytes(),
     )
 }

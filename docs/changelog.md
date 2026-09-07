@@ -243,6 +243,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Answering a meeting now tells the organiser's calendar. Until this release
+  it sent them a file to open by hand, and their guest list never learned your
+  answer.**
+
+  A reply has to say what it is. The standard for this puts `method=REPLY` on
+  the attachment, and that word is the whole of it: it is what tells the
+  organiser's mail program that the calendar file it just received is an answer
+  to their meeting rather than some calendar file you happened to send. Wixen
+  Mail worked out the right words and then attached the answer as a plain
+  calendar file with no method on it, the way it attaches any file you pick. So
+  a standards-conforming program on the other end had nothing to act on. The
+  organiser saw an attachment, and their meeting still showed you as not having
+  replied.
+
+  The attachment is also called `reply.ics` now. It was `reply-` followed by a
+  long string of letters and numbers, which is what kept two answers waiting at
+  once from overwriting each other. That job has moved to the folder the file
+  sits in, so the name the organiser sees is the one that says what it is. It
+  only shows at all for somebody whose mail program does not understand the
+  answer; for everybody else the answer is folded into the meeting and there is
+  no file to look at.
+
+  **The entry further down that introduced answering a meeting already told you
+  the organiser learns where you stand.** They did not. Every part of the
+  answer was right except the one line that made it an answer, and that line
+  was written down and never used. The older entry is corrected where it
+  stands rather than only here, because a changelog is read backwards by
+  somebody working out when a thing started working.
+
 - **Undo Send now has something to take back. Until this release it refused
   every single time it was pressed.**
 
@@ -2677,6 +2706,14 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 - **You can answer a meeting invitation.** Action, Answer Invitation, then
   Accept, Tentative or Decline. The answer goes back to whoever called the
   meeting, so they learn where you stand instead of waiting.
+
+  That last clause was wrong when it was written and stayed wrong until the
+  Unreleased section above. The answer really was sent, but it went as a plain
+  calendar file with nothing on it to say it was a reply, so the organiser's
+  program had no way to read it as one. They got an attachment to open by hand
+  and their meeting went on showing you as not having answered. The sentence is
+  left here rather than removed, because it is what the release it sits under
+  claimed.
 
   Sending mail is switched off in a new installation, so for most people
   pressing Accept will say so and name the setting that turns it on, rather
