@@ -71,6 +71,18 @@ pub const CLOSE_THE_LIST: &str = "&Close";
 pub const NOTHING_IS_CHOSEN: &str =
     "Choose the block you want to take off first, then press Unblock.";
 
+/// The words a label says, without the marker that makes a letter its key.
+///
+/// A visible label carries `&` so Windows underlines the next letter and binds
+/// Alt to it. An accessible name is never drawn, so the marker has no job
+/// there and a reader that takes the name literally says "ampersand Unblock".
+///
+/// Derived from the label rather than written out a second time, because the
+/// two would drift and the one that drifts is the one nobody can see.
+pub fn what_the_label_says(label: &str) -> String {
+    label.replace('&', "")
+}
+
 /// Where focus goes when the window opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhereFocusGoes {
@@ -176,12 +188,12 @@ pub fn show_who_is_blocked(
         .with_label(UNBLOCK)
         .with_id(ID_UNBLOCK)
         .build();
-    set_accessible_name(&unblock, UNBLOCK);
+    set_accessible_name(&unblock, &what_the_label_says(UNBLOCK));
     let close = Button::builder(&dialog)
         .with_label(CLOSE_THE_LIST)
         .with_id(ID_CLOSE_THE_LIST)
         .build();
-    set_accessible_name(&close, CLOSE_THE_LIST);
+    set_accessible_name(&close, &what_the_label_says(CLOSE_THE_LIST));
     buttons.add(&unblock, 0, SizerFlag::All, 4);
     buttons.add(&close, 0, SizerFlag::All, 4);
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
@@ -340,6 +352,27 @@ mod tests {
                 blocking::a_rule_that_blocks("acct", &bob, "Junk", "t"),
             ],
         )
+    }
+
+    #[test]
+    fn test_a_buttons_spoken_name_does_not_carry_the_key_marker() {
+        // The visible label needs the `&` so Windows underlines the letter and
+        // binds Alt to it. The accessible name is never drawn, so a reader
+        // taking it literally says "ampersand Unblock", and the two controls a
+        // person reaches by keyboard are the two this would land on.
+        //
+        // Both buttons, because a helper that stripped nothing would still
+        // satisfy a test written against a label that had no marker in it.
+        assert_eq!(what_the_label_says(UNBLOCK), "Unblock");
+        assert_eq!(what_the_label_says(CLOSE_THE_LIST), "Close");
+        assert!(!what_the_label_says(UNBLOCK).contains('&'));
+    }
+
+    #[test]
+    fn test_a_label_with_no_key_marker_is_left_alone() {
+        // The other direction, so the helper cannot be one that rewrites
+        // whatever it is handed.
+        assert_eq!(what_the_label_says(TITLE), TITLE);
     }
 
     #[test]
