@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 134
+open_count: 139
 waived_count: 0
 fixed_count: 14
-total_count: 148
-last_updated: 2026-09-06T23:12:00.392Z
+total_count: 153
+last_updated: 2026-09-07T03:43:43.233Z
 ---
 
 # Broken Windows Ledger
@@ -166,6 +166,8 @@ last_updated: 2026-09-06T23:12:00.392Z
 | 149 | 04.2 | unrun-verify | src/presentation/wx_send_later.rs |  | Nobody has heard the Schedule window. Whether a month choice, a day spinner, a year spinner, an hour spinner, a minute spinner and sometimes a morning-or-afternoon choice are heard as six separate named controls, each saying its own value as it changes, is the question wx_item_form.rs's module doc settled with a real screen reader session for that dialog and which has not been settled for this one. The control shape is the same and the names are set with set_accessible_name rather than set_name, so the expectation is that it carries over. That is an expectation, not a measurement. | open |  | 2026-09-06T23:59:00.000Z |  |
 | 150 | 04.2 | unrun-verify | src/presentation/wx_send_later.rs |  | Nobody has heard a refusal in the Schedule window. When a time will not do the window stays open, the reason is put in its problem line and announced at High priority through said_and_shown, and focus moves to the month control. Whether the sentence is actually heard, or is lost under whatever the screen reader says about the control focus just landed on, is the failure mode this pairing exists to avoid and only a real run settles it. | open |  | 2026-09-06T23:59:10.000Z |  |
 | 151 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | No message has ever waited hours for its time and then gone. Every test moves the clock; nothing runs the program for an afternoon. Whether a scheduled message really leaves when its moment arrives with the program left running, whether the poll timer is still asking after hours, and whether a message written on Monday and sent on Tuesday carries headers a recipient's client accepts, are all unsettled and none of them can be tested here. | open |  | 2026-09-06T23:59:20.000Z |  |
+| 152 | 04.2 | unrun-verify | src/application/attaching.rs |  | No organiser's calendar has ever received a reply from this program. The part now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, asserted over the whole path from the answer the window builds to the Ready the send loop puts on the wire, but nothing here has met a real mail server. Whether Outlook, Google Calendar or Thunderbird actually folds the answer into the meeting and updates the guest list is what the whole change is for and is the one thing no test in this repository can settle. | open |  | 2026-09-07T03:43:34.557Z |  |
+| 153 | 04.2 | unrun-verify | src/application/attaching.rs |  | Nobody has forwarded an invitation from this program to a real recipient. A .ics attachment is now declared method=REQUEST or method=CANCEL from what the document says, which changes what a recipient's client offers them, and no client has ever been shown one. Whether a forwarded invitation really presents as a meeting to answer, and whether the ORGANIZER inside it is attributed to whoever called the meeting rather than to the forwarder, are unsettled here. | open |  | 2026-09-07T03:43:43.233Z |  |
 
 ````json
 [
@@ -1979,6 +1981,30 @@ last_updated: 2026-09-06T23:12:00.392Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T23:59:20.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 152,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/application/attaching.rs",
+    "line": null,
+    "description": "No organiser's calendar has ever received a reply from this program. The part now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, asserted over the whole path from the answer the window builds to the Ready the send loop puts on the wire, but nothing here has met a real mail server. Whether Outlook, Google Calendar or Thunderbird actually folds the answer into the meeting and updates the guest list is what the whole change is for and is the one thing no test in this repository can settle.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T03:43:34.557Z",
+    "resolved_at": null
+  },
+  {
+    "id": 153,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/application/attaching.rs",
+    "line": null,
+    "description": "Nobody has forwarded an invitation from this program to a real recipient. A .ics attachment is now declared method=REQUEST or method=CANCEL from what the document says, which changes what a recipient's client offers them, and no client has ever been shown one. Whether a forwarded invitation really presents as a meeting to answer, and whether the ORGANIZER inside it is attributed to whoever called the meeting rather than to the forwarder, are unsettled here.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T03:43:43.233Z",
     "resolved_at": null
   }
 ]
