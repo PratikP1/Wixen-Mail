@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 151
+open_count: 155
 waived_count: 0
 fixed_count: 15
-total_count: 166
-last_updated: 2026-09-07T12:38:02.044Z
+total_count: 170
+last_updated: 2026-09-07T15:17:35.182Z
 ---
 
 # Broken Windows Ledger
@@ -181,6 +181,10 @@ last_updated: 2026-09-07T12:38:02.044Z
 | 164 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Whether Shift+F6 reaches the script injected into the message preview with shiftKey set. Nothing here has run the preview: the direction is proved from the payload inward, by tests over panes::leaving_which_way and panes::leaving_the_preview, and by a source read of the script and the handler. What no test can reach is the browser delivering the keystroke. The composer's own measurement in editor_document.rs records that Ctrl+backslash never arrives at its page handler on this machine while Ctrl+Shift+L and Ctrl+Enter beside it arrive every time, so a key being kept between the window and the page is a thing that happens here. F6 leaving the preview is known to work; Shift+F6 arriving as F6 with shiftKey true is not. | open |  | 2026-09-07T12:37:49.096Z |  |
 | 165 | 04.2 | unrun-verify | src/presentation/panes.rs |  | Whether landing back on the folder tree with Shift+F6 is heard as going back, or only as going somewhere. Arrival is announced with panes::arrival, which names the pane and what is in it and says nothing about direction, so F6 to the folder tree and Shift+F6 to the message list are announced the same way as any other arrival. Somebody who cannot see the layout may not be able to tell that the key went the way they asked, which would leave the fix invisible even though it works. Announcements go out through UiaRaiseNotificationEvent, reaching speech and braille at once, so a braille display wants checking too. This decides whether an arrival should say a direction, which would be a change to every route rather than to this one. | open |  | 2026-09-07T12:38:01.449Z |  |
 | 166 | 04.2 | deviation | .planning/phases/04.2-what-was-built-and-never-reached/04.2-07-PLAN.md |  | Task 3 carried two acceptance criteria that cannot both hold. One requires grep -rn 'never takes focus' src/ docs/ to return nothing; the other requires docs/accessibility.md to be unchanged by the plan, and that file held the phrase at line 159. The plan's prose counted three places and the tree held four. The exclusion was written for a different sentence in that file, a braille one belonging to phase 6, so it was written without knowing the file also carried the phrase being swept. Resolved in favour of the grep: the false sentence was corrected and the braille sentence left alone. | open |  | 2026-09-07T12:38:02.044Z |  |
+| 167 | 04.2 | unrun-verify | src/presentation/wx_app.rs |  | Whether a message list rearranging itself as somebody moves between folders is announced at all. Moving from the inbox to Sent now changes which columns are shown and how the list is sorted, and nothing says so: the columns are the control's own headers, which a screen reader reads from the control when asked rather than when they change, and no announcement is made. So a list may quietly become a different list under somebody who cannot see it. Whether that needs saying, and what it should say without flooding somebody arrowing through a folder tree, is a judgement only a screen reader run makes. | open |  | 2026-09-07T15:17:10.616Z |  |
+| 168 | 04.2 | unrun-verify | src/presentation/wx_columns.rs |  | Restore Defaults still announces the fixed sentence 'Columns reset to the default', which does not say which folder's defaults arrived. It now really does restore the ones for the folder somebody is in, and the two kinds differ by a whole column and by which date the list is sorted on, so the same six words describe two different outcomes. Whether somebody who cannot see the list can tell which they got, and whether the sentence should name the folder kind, is unverified by ear. | open |  | 2026-09-07T15:17:23.347Z |  |
+| 169 | 04.2 | deviation | src/presentation/message_columns.rs |  | A build older than 0.85.0 reading a layout this build wrote keeps its columns and falls back to that folder's default sort. The kind is appended after an @ on the end of the stored string, which puts it inside the field an older build reads its sort from. The second sort level was free in both directions because a semicolon inside the sort field is what an older parser stops at; this field cannot be. Accepted rather than fixed, and written into to_stored's own doc. Putting the kind into the columns list instead would have cost nothing in either direction and was rejected as smuggling a non-column through a list of columns. | open |  | 2026-09-07T15:17:23.911Z |  |
+| 170 | 04.2 | deviation | .planning/phases/04.2-what-was-built-and-never-reached/04.2-08-PLAN.md |  | One RED assertion had to be respelled in the GREEN commit. test_a_sent_layout_and_both_its_levels_come_back_as_a_sent_layout asserted back.kind == FolderKind::Sent against a two-argument from_stored, because a test that does not compile is not a red and red-commit.sh refuses one. The fix changed ColumnLayout::kind to Option and from_stored to one argument, so the same claim is now spelled Some(FolderKind::Sent) against from_stored(..).expect(..). The claim did not change and the test was really red for the right reason; the bytes did. Inherent to any red written about a type that does not exist yet, and worth a name so the next plan does not read the diff as the test being edited to pass. | open |  | 2026-09-07T15:17:35.182Z |  |
 
 ````json
 [
@@ -2174,6 +2178,54 @@ last_updated: 2026-09-07T12:38:02.044Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T12:38:02.044Z",
+    "resolved_at": null
+  },
+  {
+    "id": 167,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether a message list rearranging itself as somebody moves between folders is announced at all. Moving from the inbox to Sent now changes which columns are shown and how the list is sorted, and nothing says so: the columns are the control's own headers, which a screen reader reads from the control when asked rather than when they change, and no announcement is made. So a list may quietly become a different list under somebody who cannot see it. Whether that needs saying, and what it should say without flooding somebody arrowing through a folder tree, is a judgement only a screen reader run makes.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T15:17:10.616Z",
+    "resolved_at": null
+  },
+  {
+    "id": 168,
+    "kind": "unrun-verify",
+    "phase": "04.2",
+    "file": "src/presentation/wx_columns.rs",
+    "line": null,
+    "description": "Restore Defaults still announces the fixed sentence 'Columns reset to the default', which does not say which folder's defaults arrived. It now really does restore the ones for the folder somebody is in, and the two kinds differ by a whole column and by which date the list is sorted on, so the same six words describe two different outcomes. Whether somebody who cannot see the list can tell which they got, and whether the sentence should name the folder kind, is unverified by ear.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T15:17:23.347Z",
+    "resolved_at": null
+  },
+  {
+    "id": 169,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": "src/presentation/message_columns.rs",
+    "line": null,
+    "description": "A build older than 0.85.0 reading a layout this build wrote keeps its columns and falls back to that folder's default sort. The kind is appended after an @ on the end of the stored string, which puts it inside the field an older build reads its sort from. The second sort level was free in both directions because a semicolon inside the sort field is what an older parser stops at; this field cannot be. Accepted rather than fixed, and written into to_stored's own doc. Putting the kind into the columns list instead would have cost nothing in either direction and was rejected as smuggling a non-column through a list of columns.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T15:17:23.911Z",
+    "resolved_at": null
+  },
+  {
+    "id": 170,
+    "kind": "deviation",
+    "phase": "04.2",
+    "file": ".planning/phases/04.2-what-was-built-and-never-reached/04.2-08-PLAN.md",
+    "line": null,
+    "description": "One RED assertion had to be respelled in the GREEN commit. test_a_sent_layout_and_both_its_levels_come_back_as_a_sent_layout asserted back.kind == FolderKind::Sent against a two-argument from_stored, because a test that does not compile is not a red and red-commit.sh refuses one. The fix changed ColumnLayout::kind to Option and from_stored to one argument, so the same claim is now spelled Some(FolderKind::Sent) against from_stored(..).expect(..). The claim did not change and the test was really red for the right reason; the bytes did. Inherent to any red written about a type that does not exist yet, and worth a name so the next plan does not read the diff as the test being edited to pass.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-07T15:17:35.182Z",
     "resolved_at": null
   }
 ]
