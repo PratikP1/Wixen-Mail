@@ -687,8 +687,7 @@ fn check_columns(
     into: &mut Vec<SiteResult>,
 ) {
     let layout = ColumnLayout::defaults_for(FolderKind::Inbox);
-    let (dialog, _working) =
-        wx_columns::build_column_dialog(parent, &layout, FolderKind::Inbox, a11y, Some(palette));
+    let (dialog, _working) = wx_columns::build_column_dialog(parent, &layout, a11y, Some(palette));
     check("columns dialog", &dialog, palette.main_surface(), into);
 }
 

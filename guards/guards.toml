@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 452 records have arrived since and have not been through it.
+# 454 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13578,7 +13578,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
-    { file = "src/presentation/message_columns.rs", tests = 37 },
+    { file = "src/presentation/message_columns.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -16566,4 +16566,67 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/panes.rs", tests = 13 },
+]
+
+[[guard]]
+# `docs/KEYBOARD_SHORTCUTS.md` has promised since the key was documented that
+# `Alt+R` in the Columns dialog puts back "the default columns for this kind of
+# folder". It put back the inbox's in every folder, because the one production
+# caller passed `FolderKind::Inbox` as a literal. `98546f8` corrected the same
+# literal where a folder is switched and left this one, and
+# `message_columns.rs:517` is that commit's own note about what it had found.
+#
+# The break is the defect where it now lives. The parameter that carried the
+# literal is gone, so the mistake cannot be made at a call site any more; what
+# is left is this one function, and returning `Inbox` from it is exactly what
+# used to be passed.
+#
+# Measured by hand on 2026-09-07 with `cargo test --no-fail-fast` over every
+# target: one test. That is the whole red list and it is worth saying why. The
+# other four tests of this module are about the dialog's rows and its second
+# case pins the answer for a layout that does not say which folder it belongs
+# to, which is `Inbox` and which the break preserves. Only a layout that does
+# say tells the two apart.
+name = "restore defaults in the columns dialog asks the layout which folder it is in"
+file = "src/presentation/wx_columns.rs"
+before = """    current.kind.unwrap_or(FolderKind::Inbox)"""
+after = """    let _ = current;
+    FolderKind::Inbox"""
+red = [
+    "presentation::wx_columns::tests::test_restore_defaults_puts_back_the_columns_for_the_folder_somebody_is_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_columns.rs", tests = 5 },
+]
+
+[[guard]]
+# Moving to a folder that wants different columns used to call `defaults_for`,
+# so a hand-arranged inbox was thrown away by a look in Sent and a trip back.
+# That is the half of this defect somebody meets without restarting, and it is
+# separate from the stored string not saying which folder a layout was made in.
+#
+# The break is that call, put back. It is read out of the source because the
+# folder change sits inside a closure inside the window builder, where reaching
+# it needs a window, an account with stored credentials and a mail server. What
+# the source cannot see is whether the answer is right, and that is driven in
+# `presentation::message_columns::moving_between_folder_kinds`.
+#
+# Measured by hand on 2026-09-07 with `cargo test --no-fail-fast` over every
+# target: one test. The break also leaves an unused-variable warning on the
+# clone into the closure, which would fail the commit gate as well. That is a
+# second line of defence and not a substitute: dropping the `keep` call while
+# keeping `arriving_at` breaks the same feature and warns about nothing.
+name = "a change of folder kind restores the layout rather than rebuilding it"
+file = "src/presentation/wx_app.rs"
+suite = "columns_belong_to_the_folder_they_were_arranged_in"
+before = """                                let mut seen = layouts_per_kind.borrow_mut();
+                                seen.keep(&layout);
+                                *layout = seen.arriving_at(kind);"""
+after = """                                *layout = ColumnLayout::defaults_for(kind);"""
+red = [
+    "test_a_change_of_folder_kind_restores_the_layout_rather_than_rebuilding_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/columns_belong_to_the_folder_they_were_arranged_in.rs", tests = 3 },
 ]

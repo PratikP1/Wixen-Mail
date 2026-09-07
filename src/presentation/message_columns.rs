@@ -527,6 +527,25 @@ impl FolderKind {
             _ => FolderKind::Inbox,
         }
     }
+
+    /// How it is written in a stored layout.
+    fn key(&self) -> &'static str {
+        match self {
+            FolderKind::Inbox => "inbox",
+            FolderKind::Sent => "sent",
+            FolderKind::Drafts => "drafts",
+        }
+    }
+
+    /// Read one back, or nothing for a word this build has never heard of.
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "inbox" => Some(FolderKind::Inbox),
+            "sent" => Some(FolderKind::Sent),
+            "drafts" => Some(FolderKind::Drafts),
+            _ => None,
+        }
+    }
 }
 
 /// Something the caller asked for that cannot be done.
@@ -550,7 +569,15 @@ pub struct ColumnLayout {
     /// different set of columns, and leave the layout alone when it does
     /// not: rebuilding on every folder change would throw away whatever
     /// somebody had just sorted by.
-    pub kind: FolderKind,
+    ///
+    /// `None` only for a layout read out of a string written before layouts
+    /// said which folder they were arranged in, which is every string on a
+    /// disk today. A layout that does not know where it belongs must not be
+    /// taken for an inbox one: doing that is how somebody who sorted a column
+    /// in Sent got an inbox sorted by the date the sender claimed. It differs
+    /// from every folder on screen, so the first folder somebody opens rebuilds
+    /// it from that folder's defaults, and it costs them one arrangement once.
+    pub kind: Option<FolderKind>,
 }
 
 impl ColumnLayout {
@@ -585,7 +612,7 @@ impl ColumnLayout {
         };
 
         Self {
-            kind,
+            kind: Some(kind),
             order,
             sort: Sort {
                 column: sort_column,
@@ -656,7 +683,6 @@ impl ColumnLayout {
         ))
     }
 
-    /// Return to the default layout for a kind of folder.
     /// Adopt the sort chosen from the Sort Messages menu.
     ///
     /// Sender maps back to Correspondent rather than To, because that is the
@@ -736,55 +762,139 @@ impl ColumnLayout {
         self.sort.spoken()
     }
 
+    /// Return to the default layout for a kind of folder.
     pub fn reset(&mut self, kind: FolderKind) {
         *self = Self::defaults_for(kind);
     }
 
     /// The layout in its stored form.
+    ///
+    /// Grown twice by appending, for the same reason both times: the string is
+    /// on somebody's disk, and losing the arrangement they built by hand is a
+    /// poor price for whatever the new field buys.
+    ///
+    /// The second level of the sort is appended after a semicolon, so a layout
+    /// written before there was one still reads here and one written here still
+    /// reads in a build that only knows the first.
+    ///
+    /// Which kind of folder the layout was arranged in goes on the end after an
+    /// `@`, which is a separator none of the other three use. This one is not
+    /// free in both directions: it lands inside the field a build older than
+    /// this one reads its sort from, so such a build keeps the columns and
+    /// falls back to that folder's default sort. Said here rather than left to
+    /// be found, because the paragraph above promises the other direction and
+    /// this field cannot keep that promise.
     pub fn to_stored(&self) -> String {
         let columns: Vec<&str> = self.order.iter().map(|c| c.key()).collect();
-        // The second level is appended after a semicolon, so a layout written
-        // before there was one still reads here and one written here still
-        // reads in a build that only knows the first.
         let sort = match self.sort.then {
             Some(then) => format!("{};{}", self.sort.first().key(), then.key()),
             None => self.sort.first().key(),
         };
-        format!("{}|{}", columns.join(","), sort)
+        match self.kind {
+            Some(kind) => format!("{}|{}@{}", columns.join(","), sort, kind.key()),
+            // Read out of a string written before there was a kind and stored
+            // again untouched. Inventing one here would make up the very fact
+            // the caller is being made to face.
+            None => format!("{}|{}", columns.join(","), sort),
+        }
     }
 
-    /// Read a stored layout, falling back to the default for anything unusable.
+    /// Read a stored layout back, or nothing if the string does not hold one.
     ///
     /// Unknown column names are skipped rather than rejected, so a layout
     /// written by a newer version that knows more columns still restores the
-    /// ones this build understands instead of losing the lot.
-    pub fn from_stored(stored: &str, kind: FolderKind) -> Self {
-        let default = Self::defaults_for(kind);
-        let Some((columns, sort)) = stored.split_once('|') else {
-            return default;
-        };
+    /// ones this build understands instead of losing the lot. A kind of folder
+    /// this build has never heard of is forgiven the same way.
+    ///
+    /// There is no argument saying which folder to assume, and there was one.
+    /// Every caller in the program passed `Inbox`, so a layout arranged in Sent
+    /// came back as the inbox's and the inbox opened with no Unread column,
+    /// sorted by the date the sender claimed. The fix is not a better default
+    /// but no default: a string that names no kind comes back with
+    /// [`ColumnLayout::kind`] as `None`, which differs from every folder on
+    /// screen, so the window rebuilds it from the defaults of the folder
+    /// somebody is really in.
+    pub fn from_stored(stored: &str) -> Option<Self> {
+        let (columns, sort) = stored.split_once('|')?;
 
         let order: Vec<MessageColumn> = columns
             .split(',')
             .filter_map(MessageColumn::from_key)
             .collect();
         if order.is_empty() {
-            return default;
+            return None;
         }
 
+        let (sort, kind) = match sort.split_once('@') {
+            Some((sort, kind)) => (sort, FolderKind::from_key(kind)),
+            None => (sort, None),
+        };
         let (first, then) = match sort.split_once(';') {
             Some((first, then)) => (first, By::from_key(then)),
             None => (sort, None),
         };
-        let sort = By::from_key(first)
-            .map(|by| Sort {
+        let sort = match (By::from_key(first), kind) {
+            (Some(by), _) => Sort {
                 column: by.column,
                 direction: by.direction,
                 then,
-            })
-            .unwrap_or(default.sort);
+            },
+            // The sort is unreadable and the columns are not. The columns are
+            // the part somebody arranged by hand, so they are kept and the sort
+            // falls back to the one this kind of folder starts with.
+            (None, Some(kind)) => Self::defaults_for(kind).sort,
+            // No sort and no kind, so there is no fallback that would not be an
+            // assumption about which folder this belongs to. Let go instead.
+            (None, None) => return None,
+        };
 
-        Self { kind, order, sort }
+        Some(Self { kind, order, sort })
+    }
+}
+
+/// The layout each kind of folder was last seen with, while the program runs.
+///
+/// One layout survives a restart, because there is one stored string and
+/// [`ColumnLayout::to_stored`] writes whatever is in effect into it. Moving
+/// between folders happens far more often than restarting, and rebuilding from
+/// the defaults on every move threw away what somebody had just arranged:
+/// arrange the inbox, look in Sent, come back, and it was gone. So the layouts
+/// already seen are kept here for as long as the window is open.
+///
+/// The two cannot contradict each other. The stored string is read once, at
+/// startup, before anything has been kept here, and after that this is the
+/// answer and the string is written from it.
+#[derive(Debug, Clone, Default)]
+pub struct LayoutPerKind {
+    seen: Vec<(FolderKind, ColumnLayout)>,
+}
+
+impl LayoutPerKind {
+    /// Put away the layout in effect, under the kind of folder it was arranged
+    /// in.
+    ///
+    /// A layout that does not say which folder it was arranged in is dropped
+    /// rather than filed under a guess. Filing it would hand it back the next
+    /// time somebody opened a folder of whichever kind was guessed, which is
+    /// the same mistake the stored string used to make one restart at a time.
+    pub fn keep(&mut self, layout: &ColumnLayout) {
+        let Some(kind) = layout.kind else {
+            return;
+        };
+        match self.seen.iter_mut().find(|(seen, _)| *seen == kind) {
+            Some((_, held)) => *held = layout.clone(),
+            None => self.seen.push((kind, layout.clone())),
+        }
+    }
+
+    /// The layout to put in effect on arriving at a folder of this kind: the
+    /// one last seen there, or that kind's defaults if there has not been one.
+    pub fn arriving_at(&self, kind: FolderKind) -> ColumnLayout {
+        self.seen
+            .iter()
+            .find(|(seen, _)| *seen == kind)
+            .map(|(_, held)| held.clone())
+            .unwrap_or_else(|| ColumnLayout::defaults_for(kind))
     }
 }
 
@@ -943,16 +1053,79 @@ mod tests {
     }
 
     #[test]
-    fn test_both_levels_survive_being_stored() {
-        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
-        layout.sort.then = Some(By {
+    fn test_a_sent_layout_and_both_its_levels_come_back_as_a_sent_layout() {
+        // Rewritten from `test_both_levels_survive_being_stored`, which built
+        // an inbox layout, handed `Inbox` back into `from_stored` and asserted
+        // the sort survived. The kind was supplied by the caller at both ends,
+        // so the test could not see that `to_stored` never wrote it, which is
+        // the whole of the defect: every read site in the program supplies
+        // `Inbox` the same way, so a layout arranged in Sent came back as the
+        // inbox's, and the inbox opened sorted by the date the sender claimed.
+        let mut sent = ColumnLayout::defaults_for(FolderKind::Sent);
+        sent.sort.then = Some(By {
             column: MessageColumn::Unread,
             direction: SortDirection::Ascending,
         });
 
-        let back = ColumnLayout::from_stored(&layout.to_stored(), FolderKind::Inbox);
+        let back = ColumnLayout::from_stored(&sent.to_stored())
+            .expect("a layout this build has just written to be readable");
 
-        assert_eq!(back.sort, layout.sort);
+        assert_eq!(
+            back.kind,
+            Some(FolderKind::Sent),
+            "a layout arranged in Sent came back as an inbox one, so sorting a \
+             column in Sent decides how the inbox opens after a restart"
+        );
+        assert_eq!(back.sort, sent.sort);
+        assert_eq!(back.visible(), sent.visible());
+    }
+
+    #[test]
+    fn test_a_stored_kind_this_build_does_not_know_does_not_lose_the_layout() {
+        // The same forgiveness the column names and the second sort level
+        // already get. A newer build may know a kind of folder this one does
+        // not, and somebody's arrangement must not be the price of reading it.
+        let newer = "unread,subject|subject:asc@invented";
+
+        let back = ColumnLayout::from_stored(newer).expect("a layout with an unknown kind");
+
+        assert_eq!(
+            back.visible(),
+            vec![MessageColumn::Unread, MessageColumn::Subject]
+        );
+        assert_eq!(back.sort.column, MessageColumn::Subject);
+        assert_eq!(back.sort.direction, SortDirection::Ascending);
+        assert_eq!(
+            back.kind, None,
+            "a word this build cannot place was taken for a kind it can, which \
+             is the assumption the whole reader exists to stop making"
+        );
+    }
+
+    #[test]
+    fn test_a_layout_stored_before_there_was_a_kind_still_reads() {
+        // On the disk of everybody who has ever arranged a column, because no
+        // build until now wrote which folder a layout was arranged in. Losing
+        // their columns and their sort over a format change would be the same
+        // poor trade the second sort level refused to make.
+        let old =
+            "unread,attachment,subject,correspondent,received,snippet|subject:asc;unread:desc";
+
+        let back = ColumnLayout::from_stored(old).expect("a layout written by an older build");
+
+        assert_eq!(back.visible().len(), 6);
+        assert_eq!(back.sort.column, MessageColumn::Subject);
+        assert_eq!(back.sort.direction, SortDirection::Ascending);
+        assert_eq!(
+            back.sort.then,
+            Some(By {
+                column: MessageColumn::Unread,
+                direction: SortDirection::Descending
+            })
+        );
+        // And it does not claim to be an inbox layout, because it might not be.
+        // That is what makes the first folder somebody opens rebuild it.
+        assert_eq!(back.kind, None);
     }
 
     #[test]
@@ -962,7 +1135,7 @@ mod tests {
         // trade for a feature they had not asked for yet.
         let old = "unread,subject,received|received:desc";
 
-        let back = ColumnLayout::from_stored(old, FolderKind::Inbox);
+        let back = ColumnLayout::from_stored(old).expect("a layout with one sort level");
 
         assert_eq!(back.sort.column, MessageColumn::Received);
         assert_eq!(back.sort.direction, SortDirection::Descending);
@@ -976,7 +1149,7 @@ mod tests {
         // this one does not.
         let newer = "unread,subject|subject:asc;invented:desc";
 
-        let back = ColumnLayout::from_stored(newer, FolderKind::Inbox);
+        let back = ColumnLayout::from_stored(newer).expect("a layout with an unknown second level");
 
         assert_eq!(back.sort.column, MessageColumn::Subject);
         assert_eq!(back.sort.then, None);
@@ -1167,12 +1340,23 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_returns_to_the_folder_default() {
-        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
-        layout.set_visible(MessageColumn::Snippet, false).unwrap();
-        layout.move_by(MessageColumn::Subject, -2).unwrap();
-        layout.reset(FolderKind::Inbox);
-        assert_eq!(layout, ColumnLayout::defaults_for(FolderKind::Inbox));
+    fn test_reset_returns_to_the_default_of_every_kind_of_folder() {
+        // Rewritten from `test_reset_returns_to_the_folder_default`, which
+        // arranged an Inbox layout and reset it to the Inbox defaults. That is
+        // true for one of the three kinds and says nothing about the other two,
+        // which is exactly the blind spot the shipped defect lived in: every
+        // caller named Inbox, so the Sent and Drafts arm was never asked for.
+        // `reset` itself was always right; the name promised more than the body
+        // measured.
+        for kind in [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts] {
+            let mut layout = ColumnLayout::defaults_for(kind);
+            layout.set_visible(MessageColumn::Snippet, false).unwrap();
+            layout.move_by(MessageColumn::Subject, -2).unwrap();
+
+            layout.reset(kind);
+
+            assert_eq!(layout, ColumnLayout::defaults_for(kind), "{kind:?}");
+        }
     }
 
     #[test]
@@ -1200,25 +1384,25 @@ mod tests {
         };
 
         let stored = layout.to_stored();
-        let restored = ColumnLayout::from_stored(&stored, FolderKind::Sent);
+        let restored = ColumnLayout::from_stored(&stored).expect("a layout just written");
         assert_eq!(restored, layout);
     }
 
     #[test]
-    fn test_unreadable_stored_layout_falls_back_to_the_default() {
-        // A corrupted preference must not leave someone with an empty list.
-        let restored = ColumnLayout::from_stored("nonsense,,,", FolderKind::Inbox);
-        assert_eq!(restored, ColumnLayout::defaults_for(FolderKind::Inbox));
+    fn test_unreadable_stored_layout_is_not_read_at_all() {
+        // A corrupted preference must not leave someone with an empty list. It
+        // used to fall back to the defaults for the kind the caller named, and
+        // there is no caller naming a kind any more, so nothing comes back and
+        // the window falls back to the folder somebody is really in.
+        assert_eq!(ColumnLayout::from_stored("nonsense,,,"), None);
     }
 
     #[test]
     fn test_stored_form_ignores_columns_it_does_not_recognise() {
         // Forward compatibility: a newer version may have written a column this
         // build has never heard of, and that must not lose the rest.
-        let restored = ColumnLayout::from_stored(
-            "unread,invented_column,subject|received:desc",
-            FolderKind::Inbox,
-        );
+        let restored = ColumnLayout::from_stored("unread,invented_column,subject|received:desc")
+            .expect("a layout naming one column this build does not know");
         assert_eq!(
             restored.visible(),
             vec![MessageColumn::Unread, MessageColumn::Subject]
@@ -1332,5 +1516,73 @@ mod which_columns_a_folder_gets {
             !sent.visible().contains(&MessageColumn::Unread),
             "Unread is identical on every row in Sent and is pure verbosity spoken"
         );
+    }
+}
+
+/// Moving between folders that want different columns.
+///
+/// The window holds the state and cannot be reached by a test, so the decision
+/// it makes lives here instead: given the kinds seen so far and the kind being
+/// moved to, which layout should be in effect.
+#[cfg(test)]
+mod moving_between_folder_kinds {
+    use super::*;
+
+    #[test]
+    fn test_coming_back_to_a_folder_kind_finds_what_was_arranged_there() {
+        // The defect somebody meets first, and without restarting: arrange the
+        // inbox, look in Sent, come back, and the arrangement was gone, because
+        // a change of kind called `defaults_for` rather than remembering.
+        let mut arranged = ColumnLayout::defaults_for(FolderKind::Inbox);
+        arranged.set_visible(MessageColumn::Size, true).unwrap();
+        arranged.sort_by(MessageColumn::Subject);
+
+        let mut seen = LayoutPerKind::default();
+        seen.keep(&arranged);
+        let in_sent = seen.arriving_at(FolderKind::Sent);
+        seen.keep(&in_sent);
+
+        assert_eq!(
+            seen.arriving_at(FolderKind::Inbox),
+            arranged,
+            "a trip to Sent and back rebuilt the inbox from its defaults \
+             instead of giving back what somebody had arranged"
+        );
+    }
+
+    #[test]
+    fn test_a_kind_of_folder_nobody_has_arranged_yet_gets_its_own_defaults() {
+        let seen = LayoutPerKind::default();
+
+        assert_eq!(
+            seen.arriving_at(FolderKind::Sent),
+            ColumnLayout::defaults_for(FolderKind::Sent)
+        );
+        assert_eq!(
+            seen.arriving_at(FolderKind::Inbox),
+            ColumnLayout::defaults_for(FolderKind::Inbox)
+        );
+    }
+
+    #[test]
+    fn test_a_layout_that_does_not_say_where_it_belongs_is_not_filed_under_a_guess() {
+        // Read out of a string written before layouts said which folder they
+        // were arranged in. Filing it under a kind would hand it straight back
+        // at the next folder of that kind, which is the assumption this whole
+        // change exists to stop making.
+        let older = ColumnLayout::from_stored("unread,subject|subject:asc")
+            .expect("a layout written before there was a kind");
+        assert_eq!(older.kind, None);
+
+        let mut seen = LayoutPerKind::default();
+        seen.keep(&older);
+
+        for kind in [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts] {
+            assert_eq!(
+                seen.arriving_at(kind),
+                ColumnLayout::defaults_for(kind),
+                "{kind:?} was handed a layout that never said it belonged there"
+            );
+        }
     }
 }

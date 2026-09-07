@@ -1471,9 +1471,11 @@ const SECOND_LEVEL_LABELS: [&str; 4] = [
 
 /// The second level a stored layout holds, as a position in that list.
 fn second_level_index(stored: &str) -> u32 {
-    use crate::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
-    let layout = ColumnLayout::from_stored(stored, FolderKind::Inbox);
-    match layout.sort.then.map(|then| then.column) {
+    use crate::presentation::message_columns::{ColumnLayout, MessageColumn};
+    // Only the second level is wanted, so which folder the layout belongs to
+    // does not come into it, and a string nothing can read has none to offer.
+    let second = ColumnLayout::from_stored(stored).and_then(|layout| layout.sort.then);
+    match second.map(|then| then.column) {
         Some(MessageColumn::Unread) => 1,
         Some(MessageColumn::Correspondent) => 2,
         Some(MessageColumn::Subject) => 3,
@@ -1487,11 +1489,19 @@ fn second_level_index(stored: &str) -> u32 {
 /// changes the one part this control decides, and writes it out again. Writing
 /// a fresh layout instead would throw away the columns somebody arranged, which
 /// for anybody navigating a list by ear is real work.
+///
+/// Which folder the layout was arranged in is read from the string and written
+/// back with it, untouched. Stamping one on here would be this screen deciding
+/// something it cannot know, and the stored answer would then be believed on
+/// the next start.
 fn with_second_level(stored: &str, chosen: u32) -> String {
     use crate::presentation::message_columns::{
         By, ColumnLayout, FolderKind, MessageColumn, SortDirection,
     };
-    let mut layout = ColumnLayout::from_stored(stored, FolderKind::Inbox);
+    // Nothing readable means no columns to keep, so the inbox's defaults are
+    // what this writes, the same as the window would show.
+    let mut layout = ColumnLayout::from_stored(stored)
+        .unwrap_or_else(|| ColumnLayout::defaults_for(FolderKind::Inbox));
     layout.sort.then = match chosen {
         1 => Some(By {
             column: MessageColumn::Unread,
