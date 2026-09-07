@@ -417,28 +417,32 @@ pub fn build_settings_dialog(
 /// again in every program, and the way they would find out this one ignored
 /// them is by being made unwell.
 fn add_scrolling(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> (CheckBox, CheckBox) {
-    use crate::application::scrolling::{
-        SystemMotion, system_motion, what_the_machine_has_overruled,
-    };
+    use crate::application::scrolling::{system_motion, what_the_machine_has_overruled};
 
     let scroll_sec = section(panel, "Scrolling");
 
     let smooth = CheckBox::builder(panel)
-        .with_label("&Slide when a view scrolls, rather than jumping")
+        .with_label("&Slide when the message you are reading scrolls, rather than jumping")
         .build();
     set_accessible_name_and_description(
         &smooth,
-        "Slide when a view scrolls, rather than jumping",
-        "Windows overrules this when it is set to reduce animation",
+        "Slide when the message you are reading scrolls, rather than jumping",
+        "The message body only. Windows overrules this when it is set to \
+         reduce animation",
     );
     smooth.set_value(config.smooth_scrolling);
     scroll_sec.add(&smooth, 0, SizerFlag::All, 4);
 
-    // Said only on a machine it is true of, rather than as a permanent caveat
-    // that the people it applies to cannot pick out from the people it does
-    // not. A ticked box doing nothing otherwise reads as a broken program.
-    if system_motion() == SystemMotion::Reduced {
-        let said = what_the_machine_has_overruled(true, SystemMotion::Reduced);
+    // Said only on a machine it is true of, and only to somebody it is true
+    // of, rather than as a permanent caveat that the people it applies to
+    // cannot pick out from the people it does not. A ticked box doing nothing
+    // otherwise reads as a broken program; an unticked one being reported as
+    // overruled names a fight nobody was in.
+    //
+    // Both halves are the one question and it is asked in one place. This used
+    // to ask the machine here and then hand the answer a literal `true`, so the
+    // second half was decided by nobody and the note went up for everybody.
+    if let Some(said) = what_the_machine_has_overruled(config.smooth_scrolling, system_motion()) {
         let note = StaticText::builder(panel).with_label(&said).build();
         set_accessible_name(&note, &said);
         scroll_sec.add(&note, 0, SizerFlag::Expand | SizerFlag::All, 4);

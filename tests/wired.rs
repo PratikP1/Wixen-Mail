@@ -991,11 +991,36 @@ fn test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of() {
         }
         invented.push(key);
     }
-    invented.retain(|key| !bound_by_a_handler_rather_than_a_menu().contains(&key.as_str()));
+
+    // Every allow-list entry has to be a key this really reported, and that is
+    // the half that stops the list being used to make a failure go away.
+    //
+    // The way a check like this dies is by being narrowed until it cannot see
+    // what it was reporting, and `CLAUDE.md` carries the worked example:
+    // `test_no_status_page_names_a_version_the_code_does_not_ship` iterates over
+    // nothing because a document took the advice its own comment gave. Narrow
+    // `documented_combinations` back to modified keys only and `F7` and
+    // `Shift+F10` stop being reported, so their entries go dead and this says
+    // so rather than the whole check quietly passing.
+    let allowed = bound_by_a_handler_rather_than_a_menu();
+    let dead: Vec<&str> = allowed
+        .iter()
+        .copied()
+        .filter(|entry| !invented.iter().any(|found| found == entry))
+        .collect();
+    invented.retain(|key| !allowed.contains(&key.as_str()));
 
     assert!(
         invented.is_empty(),
         "docs/KEYBOARD_SHORTCUTS.md names these keys and nothing in src/presentation binds them: {invented:?}"
+    );
+    assert!(
+        dead.is_empty(),
+        "these keys are allow-listed as bound by a handler and this check no \
+         longer reports them, so the entry is covering nothing. Either the key \
+         left the document, or it gained a menu accelerator and the entry can \
+         go, or the reader above was narrowed until it stopped seeing the key: \
+         {dead:?}"
     );
 }
 
@@ -1073,6 +1098,16 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // A web view keeps every key once it has focus, so the page binds the
         // ones that have to leave and hands them over; there is no wx-side
         // binding for this source to find.
+        //
+        // Bound, and not a key that arrives. `editor_document.rs:296` records
+        // the measurement against the running composer: the page's handler
+        // never fires for it, by character or by physical key, whether the
+        // chord is typed or injected, while `Ctrl+Shift+L` and `Ctrl+Enter`
+        // beside it arrive every time. It is on this list because it is bound,
+        // and being on this list says nothing about whether pressing it does
+        // anything. `F8` is bound beside it and was watched working, and the
+        // document now gives `F8` as the way in and marks this one as not
+        // seen to arrive.
         "Ctrl+\\",
         // The same handler again, moving the caret between misspellings. The
         // page tests for `event.key === 'F7' && event.altKey`, which is not
@@ -1081,6 +1116,23 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // src/presentation/editor_document.rs.
         "Alt+F7",
         "Alt+Shift+F7",
+        // Plain F7, the spelling key, in two places and neither a menu. The
+        // page's own handler opens the dialog from the message body
+        // (src/presentation/editor_document.rs, the `event.key === 'F7'` arm
+        // with no modifier), and the reader window jumps to the security
+        // warning and back with it (src/presentation/wx_reader.rs, the `WXK_F7`
+        // arm). The composer's toolbar also carries it as a button label.
+        //
+        // Reported for the first time by the widening that made this reader see
+        // unmodified function keys. It was outside the sweep before that, along
+        // with `Shift+F10` below and with the three keys that were documented
+        // nowhere.
+        "F7",
+        // The context menu, for a keyboard without an Applications key. Bound
+        // by a key handler that reads `WXK_F10` with the shift key held, at
+        // src/presentation/wx_app.rs, and a key code is not a key name, so no
+        // reading of this source could match the string.
+        "Shift+F10",
         // The column list's key handler, which moves the selected column.
         // src/presentation/wx_columns.rs, the `key.alt_down()` arm.
         "Alt+Up",
@@ -1088,11 +1140,21 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
     ]
 }
 
-/// Every backticked `Ctrl+...` or `Alt+...` combination in the document.
+/// Every backticked key in the document that this can read a meaning into.
 ///
-/// Only the modified ones. A bare `Space` or `Home` in the document is a key
-/// this reads no meaning into, and looking for the word "Space" in the source
-/// would match anything.
+/// Two kinds. A combination beginning `Ctrl+` or `Alt+`, and a function key,
+/// `F1` to `F12`, held with anything or with nothing.
+///
+/// **Why not every key, and why the function keys are the exception.** A bare
+/// `Space` or `Home` in the document is a key this reads no meaning into,
+/// because looking for the word "Space" in the source would match anything: the
+/// word is prose as often as it is a key. That reasoning is right for `Space`
+/// and `Home` and it was wrong for `F8`, which is an unambiguous string that
+/// appears in this tree only where a key is meant. Reading only the modified
+/// keys left every unmodified function key outside the sweep, and three keys
+/// hid there at once: `F8` reaching the composer's toolbar and written nowhere,
+/// `Delete` taking a file off a message, and `F6` closing the conversation
+/// window.
 ///
 /// Modifiers on their own are not combinations either. The document writes "the
 /// six `Ctrl+Shift` keys" and "the heading keys use `Ctrl+Alt`", which name a
@@ -1106,7 +1168,7 @@ fn documented_combinations(doc: &str) -> Vec<String> {
         let all_modifiers = piece.split('+').all(|part| MODIFIERS.contains(&part));
         // One combination, not a sentence that happens to contain one, and not
         // a sequence like "Ctrl+N, M" whose halves are pressed separately.
-        if modified
+        if (modified || ends_in_a_function_key(piece))
             && !all_modifiers
             && !piece.contains(' ')
             && !piece.contains(',')
@@ -1116,6 +1178,19 @@ fn documented_combinations(doc: &str) -> Vec<String> {
         }
     }
     found
+}
+
+/// Whether the last part of a key name is `F1` through `F12`.
+///
+/// The last part, so `Shift+F6` and a bare `F6` are both function keys and
+/// `Ctrl+F` is not one. Bounded at twelve because a keyboard has twelve and
+/// because an open-ended `F` and digits would read `F1234` as a key.
+fn ends_in_a_function_key(piece: &str) -> bool {
+    let last = piece.rsplit('+').next().unwrap_or(piece);
+    let Some(number) = last.strip_prefix('F') else {
+        return false;
+    };
+    matches!(number.parse::<u8>(), Ok(1..=12))
 }
 
 /// Every accelerator a menu item carries, as it is written after the tab.
