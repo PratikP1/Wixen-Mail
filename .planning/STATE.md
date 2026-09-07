@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 04.2
 current_phase_name: What was built and never reached
-current_plan: 4
+current_plan: 6
 status: executing
-stopped_at: Completed 04.2-03-PLAN.md
-last_updated: "2026-09-07T04:14:04.110Z"
-last_activity: "2026-09-07, 04.2-03 done and merged to main at 6cbbaeb, version 0.80.0. A meeting reply now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, so the organiser's client can fold it into the meeting instead of showing a file to open by hand. It went out as a plain calendar file before, while docs/changelog.md told users the organiser learned where they stood; that entry is corrected where it stands as well as under Unreleased. The type is worked out from the document at the moment the file is read, through invitations::what_it_asks, because a queued row carries file paths and bytes cannot cross that column. Every answer is a fixed &'static str from a closed match, which is what stops a stranger's METHOD line reaching an outgoing header. Every other calendar attachment is now declared by what its document says too, so a forwarded invitation reaches the recipient as an invitation. the_calendar_part is deleted: it was correct, tested, and called by nothing but its own test, which is exactly what let the bug live, so the test was rewritten to measure the shipping path rather than joined by a second one. One guard record added and measured by hand, reddening one test; the record naming attaching.rs re-measured twice, 34 to 38 to 42, still right both times. Records 635 to 636. Ledger 152 and 153 opened, both unrun-verify: no organiser's calendar has ever received one of these. The ledger's frontmatter counts were stale from 04.2-02 and are corrected. Owed and deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 5edc3e6, which belongs to the end-of-phase sweep. Note that 04.2-02 landed at 7d3e7ed without updating this file, so the entry below skips it. STATE.md's Current Position section is still written for phase 02 and cannot be parsed by state.advance-plan; that was stale before 04.2-01 and is still out of scope."
-state_head: ccd0fdfd40a52a5f41752b6ea0decb1aa4e23189
+stopped_at: Completed 04.2-05-PLAN.md
+last_updated: "2026-09-07T08:00:37.608Z"
+last_activity: "2026-09-07, 04.2-05 done and merged to main at 94c1f17, version 0.82.0. A message whose remote pictures were held back now says so: one sentence above the body giving the number, the reason, and where the switch is, and under each message's own heading in a conversation. Nothing said it before. sanitize_and_count_held_back returned the markup and the count, both production callers took .0, and pictures::what_was_held_back had no production reference outside its own definition, so a screen reader user met thirty inline markers with no orientation. The renderer now carries whose message it is showing, because the composer previews a draft through the same call and would otherwise be told its own sender learned they opened it; the composer says so through a constructor, not a method to remember, so a caller who says nothing gets the reading answer. Nothing about holding pictures back changed and a test says so. Six tests measure the document; three were rewritten out of application::pictures and three are new. Three of the six were never red in the history and all three were taken red by hand: two need API the fix introduces, and one, the green-on-arrival case, could not have gone red as written because an empty sentence carries neither phrase it looked for. Three guard records added and measured, all right first time. Seven existing records went stale, not the five the plan implied, and all seven re-measured correct; records 638 to 641. A defect in scripts/guards.py was found and fixed: a tests_last_seen written on one line was read as an unterminated bracket and swallowed the rest of its block, which cost the record file its trailing newline and reddened a fixture-sanity case in check.test.sh. Ledger 156 and 157 opened, 158 opened and settled the same session. Owed and deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by ba11174. PRIOR ENTRY, kept because 04.2-04 never wrote one. 04.2-03 done and merged to main at 6cbbaeb, version 0.80.0. A meeting reply now leaves declared text/calendar; charset=utf-8; method=REPLY and named reply.ics, so the organiser's client can fold it into the meeting instead of showing a file to open by hand. It went out as a plain calendar file before, while docs/changelog.md told users the organiser learned where they stood; that entry is corrected where it stands as well as under Unreleased. The type is worked out from the document at the moment the file is read, through invitations::what_it_asks, because a queued row carries file paths and bytes cannot cross that column. Every answer is a fixed &'static str from a closed match, which is what stops a stranger's METHOD line reaching an outgoing header. Every other calendar attachment is now declared by what its document says too, so a forwarded invitation reaches the recipient as an invitation. the_calendar_part is deleted: it was correct, tested, and called by nothing but its own test, which is exactly what let the bug live, so the test was rewritten to measure the shipping path rather than joined by a second one. One guard record added and measured by hand, reddening one test; the record naming attaching.rs re-measured twice, 34 to 38 to 42, still right both times. Records 635 to 636. Ledger 152 and 153 opened, both unrun-verify: no organiser's calendar has ever received one of these. The ledger's frontmatter counts were stale from 04.2-02 and are corrected. Owed and deliberately deferred per CLAUDE.md: scripts/guards.sh --touched-by 5edc3e6, which belongs to the end-of-phase sweep. Note that 04.2-02 landed at 7d3e7ed without updating this file, so the entry below skips it. STATE.md's Current Position section is still written for phase 02 and cannot be parsed by state.advance-plan; that was stale before 04.2-01 and is still out of scope."
+state_head: 94c1f1772f8af21bd05c4632ac54a57f36b48978
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 87
-  completed_plans: 53
+  completed_plans: 55
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,9 +29,11 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 04.2 (What was built and never reached) — EXECUTING, 3 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply. Next is 04.2-04, which carries a screen reader checkpoint.
+Phase: 04.2 (What was built and never reached) — EXECUTING, 5 of 9 plans done and merged. 04.2-01 Undo Send, 04.2-02 scheduled send, 04.2-03 the meeting reply, 04.2-04 the meeting reaching the calendar, 04.2-05 the count of held-back pictures. Next is 04.2-06, Blocked Senders, which carries a screen reader checkpoint at the end.
 
-Current Plan: 4
+`current_plan` was 4 when 04.2-05 finished, because 04.2-04 completed without running the state update. It was set to 6 by hand for that reason: `state.advance-plan` only increments, and one increment from 4 would have said the next plan was 05, which is done.
+
+Current Plan: 6
 Total Plans in Phase: 9
 
 **Do not run `gsd-tools query state.advance-plan` to find out where things are.** Despite the `query` prefix it is not a read: it advances the counter and rewrites six fields. Running it once on 2026-09-07 to test whether this section parsed moved the plan from 4 to 5 with nothing executed, and it had to be put back by hand because there is no `state-set` command to undo it.
@@ -232,6 +234,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 02.1 P08 | about 5h, 1h50m of it guard runs | 3 tasks | 8 files |
 | Phase 04 P05 | 4h 0m | 2 tasks | 22 files |
 | Phase 04 P06 | about three hours | 2 tasks | 9 files |
+| Phase 04.2 P05 | one session | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -351,6 +354,9 @@ ahead:
 - [Phase 04.2]: Undo Send: the clock asks about an edge, not a level, so a message that failed to send is never retried once a second, and turning the hold on cannot make more mail leave than turning it off would. That is what lets a timer flush past guardrail 7.
 - [Phase 04.2]: The held sentence is countdown() alone and does not name the recipient. Every word costs, because the announcement has to finish before somebody knows there is anything to undo and the hold is ten seconds.
 - [Phase 04.2]: The scheduled-send changelog sentence is left false on purpose for 04.2-02 rather than moved to Known limitations and moved back one plan later.
+- [Phase 04.2]: The renderer carries whose message it is showing, and the composer says so through a constructor rather than by calling an extra method
+- [Phase 04.2]: The held-back count goes under each message's heading in a conversation, not once as a total for the page
+- [Phase 04.2]: The plain text reading path says nothing about held-back pictures, because nothing was held back there
 
 ### Pending Todos
 
@@ -432,8 +438,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T23:23:07.654Z
-Stopped at: Completed 04.2-01-PLAN.md
+Last session: 2026-09-07T08:00:37.401Z
+Stopped at: Completed 04.2-05-PLAN.md
 
 Earlier: Completed 04-01-PLAN.md on branch phase-04-01-attachment-descriptions, not merged and not pushed. An attachment says what the sender said it is, or says plainly they said nothing; an image with no header description takes the alt on the img that names it. READ-01 stays open, criterion 4's preview half is 04-03's. Ledger 89 to 93. Owed after the merge: scripts/guards.sh --touched-by 9c4dd39.
 
