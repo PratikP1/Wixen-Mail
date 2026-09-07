@@ -890,7 +890,11 @@ impl LayoutPerKind {
     /// The layout to put in effect on arriving at a folder of this kind: the
     /// one last seen there, or that kind's defaults if there has not been one.
     pub fn arriving_at(&self, kind: FolderKind) -> ColumnLayout {
-        ColumnLayout::defaults_for(kind)
+        self.seen
+            .iter()
+            .find(|(seen, _)| *seen == kind)
+            .map(|(_, held)| held.clone())
+            .unwrap_or_else(|| ColumnLayout::defaults_for(kind))
     }
 }
 

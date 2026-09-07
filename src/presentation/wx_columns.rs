@@ -57,8 +57,8 @@ fn row_label(column: MessageColumn, shown: bool, position: usize, total: usize) 
 /// and that is one keypress in one situation: a stored string written before
 /// layouts recorded a kind, before the first folder has been opened, which is
 /// what rebuilds it.
-fn what_reset_restores(_current: &ColumnLayout) -> FolderKind {
-    FolderKind::Inbox
+fn what_reset_restores(current: &ColumnLayout) -> FolderKind {
+    current.kind.unwrap_or(FolderKind::Inbox)
 }
 
 /// Every column in display order, visible ones first, then the rest.

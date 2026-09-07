@@ -334,6 +334,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   columns by hand, you will have to arrange them once more, and from then on
   they stay where you put them.
 
+- **Restore Defaults in the Columns dialog now restores the columns for the
+  folder you are in.**
+
+  `Alt+R` in that dialog is described on the shortcuts page as putting back the
+  default columns for this kind of folder. In Sent and Drafts it put back the
+  inbox's instead: an Unread column, which says the same thing on every row in a
+  folder of mail you sent, and a sort by when a message arrived rather than by
+  when it went.
+
+  It now puts back the columns that folder starts with. Nothing changes in your
+  inbox, where it was already right.
+
 - **`Shift+F6` now goes back from the message preview, and the shortcuts page
   says how to get out of it.**
 
