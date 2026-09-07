@@ -258,6 +258,20 @@ way out and there is nothing to escape from.
 The text reader is still what a single message opens into, and is still a
 button away for a whole conversation.
 
+#### Getting out of the conversation window
+
+| Action | Shortcut | What happens |
+|--------|----------|--------------|
+| Close the window | `Esc` | Back to where you opened it from |
+| Close the window | `F6` | The same |
+| Close the window | `Shift+F6` | The same |
+
+All three close it. That is worth saying plainly because `F6` moves between
+panes everywhere else in this application, so somebody who learned it in the
+main window will press it here and the window will go. There are no panes to
+move between in this one: it holds the conversation and nothing else, which is
+what makes it safe to use a browser control here at all.
+
 #### The security warning
 
 When your mail provider's filter marked a message as spam, or when the message
@@ -626,16 +640,25 @@ from somebody spelling their way to a message about invoice 4021.
 | Send Message | `Ctrl+Enter` | Send the current message |
 | Schedule | `Alt+H` | Ask for a date and a time for this message to go. It waits in the Outbox until then and goes on its own. There is no `Ctrl` key for this one: `Alt+H` and the Schedule button on the toolbar are the two ways in |
 | Save Draft | `Ctrl+S` | Save message as draft |
-| Go to the toolbar | `Ctrl+\` | Move to the Send button at the top of the window. The arrow keys move along the toolbar from there |
+| Go to the toolbar | `F8` | Move to the Send button at the top of the window. The arrow keys move along the toolbar from there |
 | Attach the files on the clipboard | `Ctrl+V` | Attaches files you copied in File Explorer. Not in the message itself or in the address and subject lines, where it pastes text as usual |
+| Take the chosen file off the message | `Delete` | On the attachments list. Says which file went |
 | Close Window | `Esc` | Close composition window without sending |
 
 **Moving around the window.** The toolbar is at the top, above the From line,
 so `Tab` runs From, To, Cc, Bcc, Subject, and then the message itself. It does
 not stop at the ten toolbar buttons on the way, and `Shift+Tab` out of the
-message goes back to Subject. To reach the toolbar, press `Ctrl+\` from
-anywhere, or `Shift+Tab` from the From line. Each button says what it is and
-which key does the same thing, so you can hear your way along it.
+message goes back to Subject. To reach the toolbar, press `F8` from anywhere,
+or `Shift+Tab` from the From line. Each button says what it is and which key
+does the same thing, so you can hear your way along it.
+
+`Ctrl+\` is bound to the same thing and has not been seen to arrive. It was the
+key asked for, and measured against the running composer it never reaches the
+message body's key handler, by character or by physical key, while `Ctrl+Enter`
+and `Ctrl+Shift+L` beside it arrive every time. Something between the window and
+the page keeps it. The binding is kept in case that is one machine rather than
+every machine, so the key is worth a try and it is not the way in. `F8` is the
+one that was watched working.
 
 **Formatting.** Every one of these is also on the Format menu, which the Format
 button opens, so none of them has to be memorised to be used. Each says what it
@@ -769,9 +792,15 @@ time, or `Shift` to take a run of them.
 `Ctrl+V` attaches whatever files are on the clipboard, so there is a way to do
 this without a picker and without a mouse. Copy the files in File Explorer
 first. The key works while you are on the toolbar or on the attachments list,
-which `Ctrl+\` and `Tab` reach; in the message itself and in the From, To, Cc,
+which `F8` and `Tab` reach; in the message itself and in the From, To, Cc,
 Bcc and Subject lines it pastes text, as it always has. With nothing but text on
 the clipboard it says so rather than doing nothing.
+
+`Delete` on the attachments list takes the file you are on off the message, the
+way `Delete` removes a row from a list anywhere in Windows. It says "Removed"
+and the file's name, so what went is what you hear rather than what is left.
+The list is hidden until there is something in it, so the key is there exactly
+when there is something for it to do.
 
 Every file that goes on is named as it is attached, and the line under the
 message says how many there are and what they come to altogether. Past six files

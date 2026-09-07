@@ -306,6 +306,41 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The shortcuts page gives `F8` for the composer's toolbar, which is the key
+  that works.**
+
+  It gave `Ctrl+\`, and that key does not arrive. The composer's message body is
+  a browser control, and something between the window and the page keeps that
+  chord: measured against the running composer it never reaches the handler,
+  typed or injected, while `Ctrl+Enter` and `Ctrl+Shift+L` beside it arrive
+  every time. `F8` was bound at the same time for exactly that reason, was
+  watched working, and was written nowhere. So somebody working entirely from
+  the keyboard read the page, pressed a key three times, heard nothing, and had
+  every reason to conclude the toolbar could not be reached at all.
+
+  `Ctrl+\` is still bound and the page now says what it is: a key that may work
+  on your machine and has not been seen to work here. Taking the binding away
+  would be guessing that the failure is every machine rather than this one.
+
+- **Two more keys that were bound and written nowhere are now on the shortcuts
+  page.** `Delete` on the composer's attachments list takes the file you are on
+  off the message and says which one went. `F6` closes the conversation window,
+  which is worth knowing because `F6` moves between panes everywhere else, so
+  the key you learned in the main window closes this one.
+
+- **The check that holds the page and the bindings together can see a plain
+  function key.** It read keys beginning `Ctrl+` or `Alt+` and nothing else, so
+  every unmodified function key was outside it, which is where all three of the
+  keys above were hiding. Widening it found two more the page names and no menu
+  binds: `F7` for spelling and `Shift+F10` for the context menu. Both are real
+  and both are now written down as bound by a key handler rather than by a menu.
+
+  There is a second check now for the question the first one cannot ask. `F8`,
+  `Delete` and `F6` were each already on the page for a different part of the
+  program, so a check asking "is this key written anywhere" was green while none
+  of the three was written where somebody would look for it. The new one asks
+  per window.
+
 - **Sorting a column in Sent no longer decides how your inbox opens.**
 
   There was one saved column arrangement for the whole program, and it did not
