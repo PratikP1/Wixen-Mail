@@ -1107,6 +1107,11 @@ impl WxMailApp {
             }
             let column_layout = Rc::new(RefCell::new(starting_layout));
             apply_columns(&msg_list, &column_layout.borrow());
+            // What each kind of folder was last arranged with, for as long as
+            // this window is open. One layout survives a restart and the rest
+            // live here, so a look in Sent stops costing somebody the inbox
+            // arrangement they had just made.
+            let layouts_per_kind = Rc::new(RefCell::new(message_columns::LayoutPerKind::default()));
 
             // Feedback channels are a per-person setting more than a
             // preference: someone reading braille with speech off has
@@ -2606,6 +2611,7 @@ impl WxMailApp {
                 let runtime = runtime.clone();
                 let folder_cache = message_cache.clone();
                 let column_layout = column_layout.clone();
+                let layouts_per_kind = layouts_per_kind.clone();
                 let a11y = a11y.clone();
                 move |event| {
                     use crate::presentation::folder_tree::WhichRow;
@@ -2779,10 +2785,13 @@ impl WxMailApp {
                             let kind = message_columns::FolderKind::for_folder(stored_kind);
                             let mut layout = column_layout.borrow_mut();
                             // A layout that does not say which folder it was
-                            // arranged in never matches, so it is rebuilt here
-                            // rather than shown in a folder it may not be for.
+                            // arranged in never matches, so it is put aside
+                            // here rather than shown in a folder it may not be
+                            // for.
                             if layout.kind != Some(kind) {
-                                *layout = ColumnLayout::defaults_for(kind);
+                                let mut seen = layouts_per_kind.borrow_mut();
+                                seen.keep(&layout);
+                                *layout = seen.arriving_at(kind);
                                 apply_columns(&msg_list, &layout);
                             }
                         }
@@ -4080,12 +4089,7 @@ impl WxMailApp {
                         _ if id == ID_VIEW_COLUMNS => {
                             let current = column_layout.borrow().clone();
                             if let wx_columns::ColumnDialogResult::Updated(chosen) =
-                                wx_columns::show_column_dialog(
-                                    &frame,
-                                    &current,
-                                    message_columns::FolderKind::Inbox,
-                                    &a11y,
-                                )
+                                wx_columns::show_column_dialog(&frame, &current, &a11y)
                             {
                                 let count = chosen.visible().len();
                                 // D-06: a hand choice here beats D-05's

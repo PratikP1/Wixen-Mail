@@ -42,6 +42,25 @@ fn row_label(column: MessageColumn, shown: bool, position: usize, total: usize) 
     )
 }
 
+/// Which kind of folder Restore Defaults puts back.
+///
+/// The layout's own, because the dialog is opened on the folder somebody is in
+/// and the layout in effect was built for that folder. `docs/KEYBOARD_SHORTCUTS.md`
+/// has promised "the default columns for this kind of folder" since the key was
+/// documented, and what it gave was the inbox's every time: the one production
+/// caller passed `FolderKind::Inbox` as a literal, so `Alt+R` in Sent put back
+/// the Unread column, which says the same thing on every row there, and the
+/// Received sort. `98546f8` corrected that literal where a folder is switched
+/// and left this one.
+///
+/// A layout that does not say which folder it was arranged in gets the inbox's,
+/// and that is one keypress in one situation: a stored string written before
+/// layouts recorded a kind, before the first folder has been opened, which is
+/// what rebuilds it.
+fn what_reset_restores(_current: &ColumnLayout) -> FolderKind {
+    FolderKind::Inbox
+}
+
 /// Every column in display order, visible ones first, then the rest.
 fn ordered(layout: &ColumnLayout) -> Vec<MessageColumn> {
     let mut columns = layout.visible();
@@ -68,16 +87,10 @@ fn fill(list: &CheckListBox, layout: &ColumnLayout) {
 pub fn show_column_dialog(
     parent: &Frame,
     current: &ColumnLayout,
-    kind: FolderKind,
     a11y: &Arc<Accessibility>,
 ) -> ColumnDialogResult {
-    let (dlg, working) = build_column_dialog(
-        parent,
-        current,
-        kind,
-        a11y,
-        theme::current_from_stored_config(),
-    );
+    let (dlg, working) =
+        build_column_dialog(parent, current, a11y, theme::current_from_stored_config());
 
     if dlg.show_modal() == ID_OK {
         let layout = working.borrow().clone();
@@ -98,13 +111,18 @@ pub fn show_column_dialog(
 /// `show_column_dialog` still needs after a real `.show_modal()`: the list
 /// keeps it current as somebody ticks and moves rows, so reading it back is
 /// all that is left to do once the dialog closes.
+///
+/// There is no parameter saying which kind of folder this is, and there was
+/// one. It was the only way to open this dialog and it was passed a literal, so
+/// deleting it is what stops the mistake rather than a comment asking nobody to
+/// make it again. [`what_reset_restores`] reads the layout instead.
 pub fn build_column_dialog(
     parent: &Frame,
     current: &ColumnLayout,
-    kind: FolderKind,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
 ) -> (Dialog, std::rc::Rc<std::cell::RefCell<ColumnLayout>>) {
+    let restores = what_reset_restores(current);
     let dlg = Dialog::builder(parent, "Columns")
         .with_size(460, 460)
         .build();
@@ -244,7 +262,7 @@ pub fn build_column_dialog(
         let working = working.clone();
         let a11y = a11y.clone();
         move |_| {
-            working.borrow_mut().reset(kind);
+            working.borrow_mut().reset(restores);
             fill(&list, &working.borrow());
             list.set_selection(0, true);
             let _ = a11y.announce("Columns reset to the default", Priority::Normal);
@@ -291,6 +309,35 @@ mod tests {
         let visible = layout.visible();
         assert_eq!(&columns[..visible.len()], &visible[..]);
         assert_eq!(columns.len(), MessageColumn::ALL.len());
+    }
+
+    #[test]
+    fn test_restore_defaults_puts_back_the_columns_for_the_folder_somebody_is_in() {
+        // `docs/KEYBOARD_SHORTCUTS.md` promises `Alt+R` puts back "the default
+        // columns for this kind of folder". In Sent it put back the inbox's,
+        // which is the Unread column reading the same word on every row and a
+        // sort by when a message arrived rather than when it went.
+        for kind in [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts] {
+            let mut arranged = ColumnLayout::defaults_for(kind);
+            arranged.set_visible(MessageColumn::Size, true).unwrap();
+
+            assert_eq!(
+                what_reset_restores(&arranged),
+                kind,
+                "Restore Defaults in a {kind:?} folder restores another folder's columns"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_layout_that_does_not_say_where_it_belongs_restores_the_inbox_columns() {
+        // The one case with no better answer: a layout read out of a string
+        // written before layouts said which folder they were arranged in, in a
+        // window where no folder has been opened yet. Opening one rebuilds it.
+        let older = ColumnLayout::from_stored("unread,subject|subject:asc")
+            .expect("a layout written before there was a kind");
+
+        assert_eq!(what_reset_restores(&older), FolderKind::Inbox);
     }
 
     #[test]

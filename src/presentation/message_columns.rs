@@ -852,6 +852,48 @@ impl ColumnLayout {
     }
 }
 
+/// The layout each kind of folder was last seen with, while the program runs.
+///
+/// One layout survives a restart, because there is one stored string and
+/// [`ColumnLayout::to_stored`] writes whatever is in effect into it. Moving
+/// between folders happens far more often than restarting, and rebuilding from
+/// the defaults on every move threw away what somebody had just arranged:
+/// arrange the inbox, look in Sent, come back, and it was gone. So the layouts
+/// already seen are kept here for as long as the window is open.
+///
+/// The two cannot contradict each other. The stored string is read once, at
+/// startup, before anything has been kept here, and after that this is the
+/// answer and the string is written from it.
+#[derive(Debug, Clone, Default)]
+pub struct LayoutPerKind {
+    seen: Vec<(FolderKind, ColumnLayout)>,
+}
+
+impl LayoutPerKind {
+    /// Put away the layout in effect, under the kind of folder it was arranged
+    /// in.
+    ///
+    /// A layout that does not say which folder it was arranged in is dropped
+    /// rather than filed under a guess. Filing it would hand it back the next
+    /// time somebody opened a folder of whichever kind was guessed, which is
+    /// the same mistake the stored string used to make one restart at a time.
+    pub fn keep(&mut self, layout: &ColumnLayout) {
+        let Some(kind) = layout.kind else {
+            return;
+        };
+        match self.seen.iter_mut().find(|(seen, _)| *seen == kind) {
+            Some((_, held)) => *held = layout.clone(),
+            None => self.seen.push((kind, layout.clone())),
+        }
+    }
+
+    /// The layout to put in effect on arriving at a folder of this kind: the
+    /// one last seen there, or that kind's defaults if there has not been one.
+    pub fn arriving_at(&self, kind: FolderKind) -> ColumnLayout {
+        ColumnLayout::defaults_for(kind)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1294,12 +1336,23 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_returns_to_the_folder_default() {
-        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
-        layout.set_visible(MessageColumn::Snippet, false).unwrap();
-        layout.move_by(MessageColumn::Subject, -2).unwrap();
-        layout.reset(FolderKind::Inbox);
-        assert_eq!(layout, ColumnLayout::defaults_for(FolderKind::Inbox));
+    fn test_reset_returns_to_the_default_of_every_kind_of_folder() {
+        // Rewritten from `test_reset_returns_to_the_folder_default`, which
+        // arranged an Inbox layout and reset it to the Inbox defaults. That is
+        // true for one of the three kinds and says nothing about the other two,
+        // which is exactly the blind spot the shipped defect lived in: every
+        // caller named Inbox, so the Sent and Drafts arm was never asked for.
+        // `reset` itself was always right; the name promised more than the body
+        // measured.
+        for kind in [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts] {
+            let mut layout = ColumnLayout::defaults_for(kind);
+            layout.set_visible(MessageColumn::Snippet, false).unwrap();
+            layout.move_by(MessageColumn::Subject, -2).unwrap();
+
+            layout.reset(kind);
+
+            assert_eq!(layout, ColumnLayout::defaults_for(kind), "{kind:?}");
+        }
     }
 
     #[test]
@@ -1459,5 +1512,73 @@ mod which_columns_a_folder_gets {
             !sent.visible().contains(&MessageColumn::Unread),
             "Unread is identical on every row in Sent and is pure verbosity spoken"
         );
+    }
+}
+
+/// Moving between folders that want different columns.
+///
+/// The window holds the state and cannot be reached by a test, so the decision
+/// it makes lives here instead: given the kinds seen so far and the kind being
+/// moved to, which layout should be in effect.
+#[cfg(test)]
+mod moving_between_folder_kinds {
+    use super::*;
+
+    #[test]
+    fn test_coming_back_to_a_folder_kind_finds_what_was_arranged_there() {
+        // The defect somebody meets first, and without restarting: arrange the
+        // inbox, look in Sent, come back, and the arrangement was gone, because
+        // a change of kind called `defaults_for` rather than remembering.
+        let mut arranged = ColumnLayout::defaults_for(FolderKind::Inbox);
+        arranged.set_visible(MessageColumn::Size, true).unwrap();
+        arranged.sort_by(MessageColumn::Subject);
+
+        let mut seen = LayoutPerKind::default();
+        seen.keep(&arranged);
+        let in_sent = seen.arriving_at(FolderKind::Sent);
+        seen.keep(&in_sent);
+
+        assert_eq!(
+            seen.arriving_at(FolderKind::Inbox),
+            arranged,
+            "a trip to Sent and back rebuilt the inbox from its defaults \
+             instead of giving back what somebody had arranged"
+        );
+    }
+
+    #[test]
+    fn test_a_kind_of_folder_nobody_has_arranged_yet_gets_its_own_defaults() {
+        let seen = LayoutPerKind::default();
+
+        assert_eq!(
+            seen.arriving_at(FolderKind::Sent),
+            ColumnLayout::defaults_for(FolderKind::Sent)
+        );
+        assert_eq!(
+            seen.arriving_at(FolderKind::Inbox),
+            ColumnLayout::defaults_for(FolderKind::Inbox)
+        );
+    }
+
+    #[test]
+    fn test_a_layout_that_does_not_say_where_it_belongs_is_not_filed_under_a_guess() {
+        // Read out of a string written before layouts said which folder they
+        // were arranged in. Filing it under a kind would hand it straight back
+        // at the next folder of that kind, which is the assumption this whole
+        // change exists to stop making.
+        let older = ColumnLayout::from_stored("unread,subject|subject:asc")
+            .expect("a layout written before there was a kind");
+        assert_eq!(older.kind, None);
+
+        let mut seen = LayoutPerKind::default();
+        seen.keep(&older);
+
+        for kind in [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts] {
+            assert_eq!(
+                seen.arriving_at(kind),
+                ColumnLayout::defaults_for(kind),
+                "{kind:?} was handed a layout that never said it belonged there"
+            );
+        }
     }
 }
