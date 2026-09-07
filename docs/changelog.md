@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can set a message to go at a time you choose.** Schedule, on the
+  composer toolbar and on `Alt+H`, asks for a date and a time. The message
+  waits in the Outbox until then and goes on its own, with nobody pressing
+  anything. The Outbox row says the time it is set for, rather than the
+  countdown a briefly held message gets, because they are different waits and
+  the way out of each is different. Undo Send takes it back at any point while
+  it is still waiting.
+
+  The date is a month, a day and a year, and the time is an hour and a minute,
+  each a separate control with its own name. That is not a layout preference:
+  the single packed date picker Windows offers says nothing at all as you move
+  between its parts with the arrow keys, which was found with a real screen
+  reader and is the control's own limitation.
+
+  **The entry two releases below this one already told you this worked.** It
+  did not. Every part of it was written and tested and nothing joined them up,
+  so no message could ever be set for a time. That sentence is true from this
+  release and was false when it was written.
+
 - **Wixen Mail can read a PGP encrypted message you hold the key for.**
   Experimental, and the rest of this entry is what that word is standing for.
 

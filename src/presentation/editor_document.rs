@@ -1139,7 +1139,7 @@ pub enum Reached {
     Bcc,
     Subject,
     Send,
-    SendLater,
+    Schedule,
     Undo,
     Redo,
     Format,
@@ -1152,13 +1152,14 @@ pub enum Reached {
 
 impl Reached {
     /// Every one, in the order the page indexes them by.
-    pub const ALL: [Reached; 14] = [
+    pub const ALL: [Reached; 15] = [
         Reached::From,
         Reached::To,
         Reached::Cc,
         Reached::Bcc,
         Reached::Subject,
         Reached::Send,
+        Reached::Schedule,
         Reached::Undo,
         Reached::Redo,
         Reached::Format,
@@ -1178,13 +1179,15 @@ impl Reached {
             Self::Bcc => "&Bcc:",
             Self::Subject => "&Subject:",
             Self::Send => "Se&nd",
-            // E, and it is the only letter in these two words that was free:
-            // S is Subject, N is Send, D is Save Draft, L is Cancel, A is
-            // Attach, T is To, R is Redo. It underlines the E in "Later"
-            // rather than the one in "Send", because Later is the word that
-            // tells this apart from the button beside it, and a mnemonic on
-            // the word somebody is listening for is one they can learn.
-            Self::SendLater => "Send Lat&er...",
+            // "Send Later" was the first name and it could not have a key.
+            // Every letter in those two words was taken: S is Subject, N is
+            // Send, D is Save Draft, L is Cancel, A is Attach, T is To, R is
+            // Redo, and E is the People found list, which is a mnemonic in
+            // this window that is not on this list at all.
+            // `test_the_key_that_reaches_the_list_is_not_one_this_window_already_uses`
+            // is what said so. "Schedule" is the word every other mail
+            // program uses for this, and H was free.
+            Self::Schedule => "Sc&hedule...",
             Self::Undo => "&Undo",
             Self::Redo => "&Redo",
             Self::Format => "F&ormat...",
@@ -1208,7 +1211,7 @@ impl Reached {
             Self::Bcc => 'b',
             Self::Subject => 's',
             Self::Send => 'n',
-            Self::SendLater => 'e',
+            Self::Schedule => 'h',
             Self::Undo => 'u',
             Self::Redo => 'r',
             Self::Format => 'o',
@@ -2101,16 +2104,16 @@ mod tests {
     }
 
     #[test]
-    fn test_send_later_can_be_reached_from_the_body() {
+    fn test_scheduling_a_message_can_be_reached_from_the_body() {
         // A toolbar button that is not in this list is one the keyboard
         // cannot get to from the message body, because the body is a web view
         // and a web view keeps every key it is given. The page's key table is
         // generated from `ALL`, so a variant left out of it has a label with
         // an underlined letter that does nothing.
         assert!(
-            Reached::ALL.contains(&Reached::SendLater),
-            "Send Later is not in the reach list, so Alt+{} does not leave the body",
-            Reached::SendLater.letter().to_ascii_uppercase(),
+            Reached::ALL.contains(&Reached::Schedule),
+            "Schedule is not in the reach list, so Alt+{} does not leave the body",
+            Reached::Schedule.letter().to_ascii_uppercase(),
         );
     }
 

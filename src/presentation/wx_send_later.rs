@@ -40,8 +40,222 @@
 //! heard when the dialog stays open. Both are in `.planning/WINDOWS.md` rather
 //! than claimed.
 
+use crate::application::sending_later::{Scheduling, schedule};
+use crate::presentation::accessibility::Accessibility;
+use crate::presentation::accessibility::announcements::Priority;
+use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::date_display::DateSettings;
-use chrono::{DateTime, Local};
+use crate::presentation::status_line::said_and_shown;
+use crate::presentation::theme;
+use crate::presentation::wx_item_form::{
+    as_stored_date, as_stored_time, build_date_fields, build_time_fields, clamp_day_to_month,
+    hour_from,
+};
+use chrono::{DateTime, Datelike, Local, Timelike};
+use std::rc::Rc;
+use std::sync::Arc;
+use wxdragon::prelude::*;
+
+/// What the button that sets the time is called.
+pub const SET_THE_TIME: &str = "&Set";
+
+/// What the button that leaves without setting one is called.
+pub const LEAVE_IT: &str = "&Cancel";
+
+/// What the window is called, which is the first thing anybody hears.
+pub const ASKING: &str = "When should this message go?";
+
+/// Ask when a message should go, and wait for an answer.
+///
+/// `None` when nothing was set: Cancel, Escape, and the close box are one
+/// answer, and it is the safe one. The message stays in the composer exactly
+/// as it was and Send goes on meaning what it always meant.
+pub fn ask_when_to_send(
+    parent: &Dialog,
+    now: DateTime<Local>,
+    dates: DateSettings,
+    a11y: &Arc<Accessibility>,
+) -> Option<DateTime<Local>> {
+    let chosen: Rc<std::cell::Cell<Option<DateTime<Local>>>> = Rc::new(std::cell::Cell::new(None));
+    let dialog = build_the_asking_dialog(
+        parent,
+        now,
+        dates,
+        a11y,
+        &chosen,
+        theme::current_from_stored_config(),
+    );
+    let answer = dialog.show_modal();
+    dialog.destroy();
+    match answer == ID_OK {
+        true => chosen.get(),
+        false => None,
+    }
+}
+
+/// Build the window without showing it, so the shape can be read without a
+/// modal loop.
+///
+/// The same split [`crate::presentation::wx_conflict_choice::build_the_choosing_dialog`]
+/// makes, and for the same reason.
+///
+/// `chosen` is where the answer is put when the time will do. It is written
+/// by the Set handler rather than returned, because a handler cannot return
+/// anything to the modal loop that called it and reading the controls again
+/// afterwards would be reading them a second time.
+fn build_the_asking_dialog(
+    parent: &Dialog,
+    now: DateTime<Local>,
+    dates: DateSettings,
+    a11y: &Arc<Accessibility>,
+    chosen: &Rc<std::cell::Cell<Option<DateTime<Local>>>>,
+    palette: Option<theme::Palette>,
+) -> Dialog {
+    let dialog = Dialog::builder(parent, ASKING)
+        .with_size(520, 300)
+        .with_style(DialogStyle::DefaultDialogStyle)
+        .build();
+    if let Some(palette) = palette {
+        theme::paint(&dialog, palette.main_surface());
+    }
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // Opened on a time still to come rather than on now, so the commonest
+    // thing this dialog does is not refuse the answer it offered.
+    let opens_on = the_default_moment(now);
+
+    let date = build_date_fields(
+        &dialog,
+        dates.order,
+        opens_on,
+        Some(&as_stored_date(
+            opens_on.year(),
+            opens_on.month(),
+            opens_on.day(),
+        )),
+    );
+    let time = build_time_fields(
+        &dialog,
+        dates.clock,
+        opens_on,
+        Some(&as_stored_time(opens_on.hour(), opens_on.minute())),
+    );
+
+    // Named one at a time, each saying which part of what it is. "Month" on
+    // its own is a name that has stopped naming anything once there is a date
+    // and a time in one window; "Send on Month" says both which group it
+    // belongs to and which part of it this is.
+    set_accessible_name(&date.month, "Send on Month");
+    set_accessible_name(&date.day, "Send on Day");
+    set_accessible_name(&date.year, "Send on Year");
+    set_accessible_name(&time.hour, "Send at Hour");
+    set_accessible_name(&time.minute, "Send at Minute");
+    if let Some(am_pm) = time.am_pm {
+        set_accessible_name(&am_pm, "Send at AM or PM");
+    }
+
+    // Laid out in the order they were built, which is the order the
+    // day-and-month setting asks for, because wxWidgets gives a window its
+    // place in the tab order when it is created and a date shown one way and
+    // tabbed another is worse than either.
+    let date_row = BoxSizer::builder(Orientation::Horizontal).build();
+    match date.day_first {
+        true => {
+            date_row.add(&date.day, 0, SizerFlag::All, 4);
+            date_row.add(&date.month, 0, SizerFlag::All, 4);
+        }
+        false => {
+            date_row.add(&date.month, 0, SizerFlag::All, 4);
+            date_row.add(&date.day, 0, SizerFlag::All, 4);
+        }
+    }
+    date_row.add(&date.year, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&date_row, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let time_row = BoxSizer::builder(Orientation::Horizontal).build();
+    time_row.add(&time.hour, 0, SizerFlag::All, 4);
+    time_row.add(&time.minute, 0, SizerFlag::All, 4);
+    if let Some(am_pm) = time.am_pm {
+        time_row.add(&am_pm, 0, SizerFlag::All, 4);
+    }
+    sizer.add_sizer(&time_row, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // Where a refusal is shown. Blank until there is one, so it is not a line
+    // of nothing being read out every time focus passes it.
+    let problem = StaticText::builder(&dialog).with_label("").build();
+    set_accessible_name(&problem, "Why that time will not do");
+    sizer.add(&problem, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    let buttons = BoxSizer::builder(Orientation::Horizontal).build();
+    let set = Button::builder(&dialog)
+        .with_label(SET_THE_TIME)
+        .with_id(ID_OK)
+        .build();
+    set_accessible_name(&set, "Set the time this message goes");
+    let leave = Button::builder(&dialog)
+        .with_label(LEAVE_IT)
+        .with_id(ID_CANCEL)
+        .build();
+    set_accessible_name(&leave, "Cancel, and send this message the usual way");
+    buttons.add(&set, 0, SizerFlag::All, 4);
+    buttons.add(&leave, 0, SizerFlag::All, 4);
+    sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+
+    // Enter presses Set, so the six controls can be answered and the dialog
+    // finished without going to find a button. Safe as the default because
+    // the other answer is Escape, which every dialog already understands, and
+    // because a time that will not do is refused rather than taken.
+    set.set_default();
+
+    // The day a month has depends on the month and on the year, and a spinner
+    // offering the thirty-first of February produces a time that cannot be
+    // read for a reason nobody can see. `build_date_fields` already binds
+    // this to its own two controls; bound again here would run it twice.
+    clamp_day_to_month(date);
+
+    let holding = Rc::clone(chosen);
+    let announcing = Arc::clone(a11y);
+    set.on_click(move |event| {
+        // Consuming the click, not merely declining to close. wxdragon sets
+        // Skip(true) before it calls a bound handler and only treats the
+        // event as consumed if the handler clears it, so a handler that
+        // returns without this lets the click carry on to
+        // wxDialogBase::OnButton, which sees wxID_OK and closes the dialog
+        // regardless of what was just decided. This application has shipped
+        // that exact bug once, in wx_item_form's Save. `.event.` because a
+        // button event wraps the command event that carries the flag.
+        event.event.skip(false);
+
+        let picked = chosen_as_text(
+            &as_stored_date(
+                date.year.value(),
+                date.month.get_selection().map_or(1, |i| i + 1),
+                date.day.value().max(1) as u32,
+            ),
+            &as_stored_time(hour_from(&time), time.minute.value().max(0) as u32),
+        );
+
+        match what_the_picker_does(&picked, Local::now(), dates) {
+            WhatThePickerDoes::Refuse(why) => {
+                // Said as well as shown. Somebody working by ear otherwise
+                // meets a Set button that does nothing, with the reason
+                // sitting in a line of text they have no cause to go and
+                // read.
+                said_and_shown(&problem, &announcing, &why, Priority::High);
+                date.month.set_focus();
+                return;
+            }
+            WhatThePickerDoes::SetFor(at) => holding.set(Some(at)),
+        }
+        dialog.end_modal(ID_OK);
+    });
+
+    dialog.set_sizer(sizer, true);
+    // The first thing to answer, rather than a button. Opening on Set turns
+    // an Enter pressed by reflex into an answer nobody read.
+    date.month.set_focus();
+    dialog
+}
 
 /// What the picker does with the time somebody chose.
 ///
@@ -69,11 +283,31 @@ pub fn what_the_picker_does(
     now: DateTime<Local>,
     dates: DateSettings,
 ) -> WhatThePickerDoes {
-    // Not yet: this answers as though every time somebody picks were the
-    // moment they picked it, which is the clamp, and the clamp is the one
-    // failure this dialog exists to avoid.
-    let _ = (chosen, dates);
-    WhatThePickerDoes::SetFor(now)
+    match schedule(chosen, now) {
+        Scheduling::SetFor(at) => WhatThePickerDoes::SetFor(at),
+        // Refused and explained, never moved to a time that would be
+        // accepted, and the contrast with the hold is worth writing down
+        // because the next person here will have just read
+        // `Hold::of_seconds`, which clamps, and will reasonably ask why one
+        // does and the other does not.
+        //
+        // The difference is where the value came from. A hold is read out of
+        // a settings file that has survived a restart and may hold anything
+        // an older build, a hand-edited file or a typo left there, and there
+        // is no sensible way for a stored number to stop this program sending
+        // mail, so it is brought inside what is offered. This is a time
+        // somebody picked seconds ago in a dialog that is still open and can
+        // still be corrected. Clamping it to now would send, immediately, a
+        // message they had just said they wanted delayed, and they would be
+        // told it had been set.
+        //
+        // The one softening is `JUST_MISSED`, which `schedule` already
+        // applies: a minute of grace, because the controls choose a minute
+        // and a dialog that refuses what it offered twenty seconds ago is a
+        // dialog nobody trusts. That is the whole of the grace and there is
+        // no second one here.
+        refused => WhatThePickerDoes::Refuse(refused.spoken(now, dates)),
+    }
 }
 
 /// The moment the picker opens on.
@@ -84,9 +318,20 @@ pub fn what_the_picker_does(
 /// commonest thing this dialog does. Tomorrow morning is both still to come
 /// and the likeliest thing somebody delaying a message means.
 pub fn the_default_moment(now: DateTime<Local>) -> DateTime<Local> {
-    // Not yet.
-    now
+    let tomorrow = now.date_naive() + chrono::Days::new(1);
+    tomorrow
+        .and_hms_opt(THE_HOUR_IT_OPENS_ON, 0, 0)
+        .and_then(|face| face.and_local_timezone(Local).earliest())
+        // Nine tomorrow does not exist on this computer's clock, which
+        // happens where the clocks go forward at exactly that hour. A day
+        // from now is still to come and is still tomorrow, which is all this
+        // has to be.
+        .unwrap_or(now + chrono::Duration::days(1))
 }
+
+/// The hour the picker opens on. Nine in the morning, on the twenty-four hour
+/// clock, whatever clock the controls are showing.
+const THE_HOUR_IT_OPENS_ON: u32 = 9;
 
 /// The date and time controls' two readings, joined into text
 /// [`crate::application::sending_later::schedule`] can read.
@@ -103,7 +348,6 @@ pub fn chosen_as_text(date: &str, time: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::sending_later::{Scheduling, schedule};
 
     /// The same reader every other test of this feature uses, so a moment
     /// written in a test and one written by the picker are read one way.

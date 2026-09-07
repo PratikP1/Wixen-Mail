@@ -1099,6 +1099,178 @@ mod tests {
     }
 
     #[test]
+    fn test_a_message_set_for_a_time_waits_until_it_and_then_goes_on_its_own() {
+        // The other half of the round trip above, and the half nothing in
+        // production could reach until `04.2-02`. Every part of it worked:
+        // the column, the reader, the readiness question and the clock. What
+        // had never happened was a row arriving with somebody's chosen time
+        // on it, because `schedule` had no caller anywhere in `src/` and
+        // `GoAfter::Chosen` was built only under `#[cfg(test)]`.
+        let cache = a_cache("outbox_chosen_round_trip");
+        let sent_at = at("2026-08-24 09:00:00");
+        let nine_tomorrow = at("2026-08-25 09:00:00");
+        let what_the_picker_writes =
+            GoAfter::Chosen(crate::application::sending_later::stored(nine_tomorrow));
+
+        cache
+            .queue_outbox_message_to_go(
+                &queued("set-for-nine", "acc-1", "Tomorrow", "2026-08-24T09:00:00Z"),
+                &what_the_picker_writes,
+            )
+            .expect("a message to queue");
+
+        assert!(
+            cache
+                .outbox_messages_that_may_go_now("acc-1", sent_at)
+                .expect("the queue to be read")
+                .is_empty(),
+            "a message set for tomorrow was handed to the server today"
+        );
+
+        // Still waiting a minute before its time, which is the assertion that
+        // would catch a comparison done the wrong way round.
+        assert!(
+            cache
+                .outbox_messages_that_may_go_now(
+                    "acc-1",
+                    nine_tomorrow - chrono::Duration::minutes(1)
+                )
+                .expect("the queue to be read")
+                .is_empty(),
+            "the message went a minute early"
+        );
+
+        // And nobody presses anything. The clock asks about the edge, so the
+        // row asks for one pass at the moment its time arrives and never
+        // again.
+        let after = nine_tomorrow + chrono::Duration::seconds(1);
+        assert!(
+            cache
+                .anything_reached_its_moment("acc-1", Some(sent_at), after)
+                .expect("the queue to be read"),
+            "nothing told the clock the time had come, so the message sat in the Outbox \
+             on the day it was set for"
+        );
+        assert!(
+            !cache
+                .anything_reached_its_moment(
+                    "acc-1",
+                    Some(after),
+                    after + chrono::Duration::seconds(1)
+                )
+                .expect("the queue to be read"),
+            "the same row asked for a second pass, which is a retry every second"
+        );
+
+        let going: Vec<String> = cache
+            .outbox_messages_that_may_go_now("acc-1", after)
+            .expect("the queue to be read")
+            .into_iter()
+            .map(|message| message.id)
+            .collect();
+        assert_eq!(going, vec!["set-for-nine".to_string()]);
+    }
+
+    #[test]
+    fn test_the_outbox_row_for_a_message_set_for_a_time_says_the_time_and_not_a_countdown() {
+        // Two rows doing two different things must not read the same. A hold
+        // is over in seconds and the way out of it is a key; a chosen time is
+        // a decision and the way out of it is the Outbox. `Readiness` already
+        // tells them apart and `Readiness::spoken` already words them
+        // differently; what this asserts is that a row somebody scheduled
+        // really takes the other arm.
+        let cache = a_cache("outbox_row_says_set_for");
+        let now = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("held", "acc-1", "Sorry", "2026-08-24T09:00:00Z"),
+                &GoAfter::held(crate::application::sending_later::Hold::DEFAULT, now),
+            )
+            .expect("a message to queue");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("chosen", "acc-1", "Tomorrow", "2026-08-24T09:00:01Z"),
+                &GoAfter::Chosen(crate::application::sending_later::stored(at(
+                    "2026-08-25 09:00:00",
+                ))),
+            )
+            .expect("a message to queue");
+
+        let rows = cache
+            .outbox_rows("acc-1", now, dates())
+            .expect("the outbox to be read");
+        assert_eq!(rows.len(), 2);
+
+        let held = rows
+            .iter()
+            .find(|row| row.subject.contains("Sorry"))
+            .expect("the held row");
+        let chosen = rows
+            .iter()
+            .find(|row| row.subject.contains("Tomorrow"))
+            .expect("the scheduled row");
+
+        assert!(
+            chosen.subject.contains("Set to send"),
+            "the row for a message set for a time does not say what it is set for: {}",
+            chosen.subject
+        );
+        assert!(
+            !chosen.subject.contains("Undo Send takes it back"),
+            "the row for a message set for tomorrow counts down at somebody like a \
+             hold that is about to run out: {}",
+            chosen.subject
+        );
+        assert_ne!(
+            held.subject.replace("Sorry", ""),
+            chosen.subject.replace("Tomorrow", ""),
+            "a held message and one set for a time say the same thing"
+        );
+    }
+
+    #[test]
+    fn test_undo_send_takes_back_a_message_set_for_a_time_while_it_is_still_waiting() {
+        // Undo Send needs no arm of its own for this. `take_back` asks
+        // `readiness`, and `readiness` refuses a chosen time that has not come
+        // for the same reason it refuses a hold that has not run out. What was
+        // missing was never the rule, it was a row that reached it.
+        let cache = a_cache("outbox_undo_a_scheduled_message");
+        let now = at("2026-08-24 09:00:00");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("set-for-nine", "acc-1", "Tomorrow", "2026-08-24T09:00:00Z"),
+                &GoAfter::Chosen(crate::application::sending_later::stored(at(
+                    "2026-08-25 09:00:00",
+                ))),
+            )
+            .expect("a message to queue");
+
+        let waiting = cache
+            .when_a_queued_message_may_go("set-for-nine")
+            .expect("the row to be read")
+            .expect("a row that is there");
+        assert_eq!(
+            crate::application::sending_later::take_back(&waiting, now),
+            crate::application::sending_later::TakingBack::Stopped,
+            "a message set for tomorrow could not be taken back today"
+        );
+
+        assert!(
+            cache
+                .delete_outbox_message("set-for-nine")
+                .expect("the row to be taken out"),
+            "the row was not taken out of the queue"
+        );
+        assert!(
+            cache
+                .outbox_rows("acc-1", now, dates())
+                .expect("the outbox to be read")
+                .is_empty(),
+            "the message is still in the Outbox after being taken back"
+        );
+    }
+
+    #[test]
     fn test_a_message_sent_with_the_hold_off_goes_on_the_very_next_pass() {
         // Somebody who turns the hold off gets what Send has always done, and
         // not a broken version of it. `GoAfter::held` answers
