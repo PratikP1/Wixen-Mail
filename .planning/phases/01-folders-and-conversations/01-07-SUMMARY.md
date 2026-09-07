@@ -197,7 +197,7 @@ Four wrong premises, one of them the plan's central justification. The first two
 ### 2. [Rule 1 - Bug] Shrinking the arrays turned Delete on a POP account into a permanent removal
 
 **Found during:** verification before Task 1, then measured in Task 2.
-**Issue:** The plan's Task 2 named two files and said to leave `is_local` alone so no existing decision changed its answer. `is_local` was not the seam. `local_sent` and `local_trash` are derived from `for_account` by searching it and returning `Option`, so taking the five out made them return `None` — which compiles, and which at `local_folders.rs` falls through to `LocalDelete::RemoveFromThisComputer`.
+**Issue:** The plan's Task 2 named two files and said to leave `is_local` alone so no existing decision changed its answer. `is_local` was not the seam. `local_sent` and `local_trash` are derived from `for_account` by searching it and returning `Option`, so taking the five out made them return `None`: which compiles, and which at `local_folders.rs` falls through to `LocalDelete::RemoveFromThisComputer`.
 
 The measured red, from `test_a_pop_delete_never_becomes_permanent_because_the_trash_was_not_found`:
 
@@ -212,7 +212,7 @@ its folders: Other("This account has no folders")
 ```
 
 That is every IMAP account, at startup.
-**Fix:** `used_by` and `stored_under`, and eight call sites moved onto whichever of the three questions they were actually asking. The three that resolve a local path to a folder row — `sent_copy::file_here`, `wx_app::replace_local_draft` and `local_delete::folder_here` — all looked the shared folder up under the account and would have found nothing.
+**Fix:** `used_by` and `stored_under`, and eight call sites moved onto whichever of the three questions they were actually asking. The three that resolve a local path to a folder row, `sent_copy::file_here`, `wx_app::replace_local_draft` and `local_delete::folder_here`: all looked the shared folder up under the account and would have found nothing.
 **Files:** `local_folders.rs`, `local_delete.rs`, `sent_copy.rs`, `blocking.rs`, `import_tree.rs`, `wx_app.rs`.
 **Commits:** `36ff777` (red), `8339950` (green).
 

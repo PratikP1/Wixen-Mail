@@ -175,10 +175,10 @@ section below.
 
 ## Task Commits
 
-1. **Task 1: the human gate** — no commit; stopped and returned as required.
-2. **Task 2: one function that names a conversation** — `5878dc5`
-3. **Task 3: write it, backfill it, index it** — `a7b0c09`
-4. **Task 4: this summary and the state** — see final commit
+1. **Task 1: the human gate**. No commit; stopped and returned as required.
+2. **Task 2: one function that names a conversation**, `5878dc5`
+3. **Task 3: write it, backfill it, index it**, `a7b0c09`
+4. **Task 4: this summary and the state**, see final commit
 
 ### On the RED and GREEN gates
 
@@ -211,26 +211,26 @@ assertion for the space case so the next reader is not caught the same way.
 
 ## Files Created/Modified
 
-- **`src/application/thread_identity.rs`** (new, 200 lines) — `conversation_root`,
+- **`src/application/thread_identity.rs`** (new, 200 lines): `conversation_root`,
   the private `bare`, and 10 tests. The module comment says what the failure was
   as well as what the code does, and says which of the two threading answers is
   authoritative for anything written down.
-- `src/application/mod.rs` — one line declaring the module.
-- `src/data/message_cache/messages.rs` — `thread_id` added to the INSERT column
+- `src/application/mod.rs`: one line declaring the module.
+- `src/data/message_cache/messages.rs`: `thread_id` added to the INSERT column
   list and to the `ON CONFLICT DO UPDATE SET` list, its value computed once;
   `backfill_thread_ids`; 8 new tests and 3 test helpers.
-- `src/data/message_cache/mod.rs` — the two indexes, and the backfill called
+- `src/data/message_cache/mod.rs`: the two indexes, and the backfill called
   non-fatally from `MessageCache::new` beside `migrate_inline_bodies`. No
   `ensure_column_exists` line was touched: `git diff` on this file has zero
   removed lines.
-- `src/presentation/ui_types.rs` — the stale comment, reworded. **Not in the
+- `src/presentation/ui_types.rs`: the stale comment, reworded. **Not in the
   plan's `files_modified`.** See Deviations.
-- `src/presentation/wx_app.rs` — the other stale comment, reworded. The menu
+- `src/presentation/wx_app.rs`: the other stale comment, reworded. The menu
   item is untouched and still disabled.
-- `guards/guards.toml` — three records, header count 311 to 314, 503 records to
+- `guards/guards.toml`: three records, header count 311 to 314, 503 records to
   506.
-- `docs/changelog.md` — one entry under `[Unreleased]`, with its known limits.
-- `Cargo.toml` — 0.45.0 to 0.46.0. See Issues Encountered.
+- `docs/changelog.md`: one entry under `[Unreleased]`, with its known limits.
+- `Cargo.toml`: 0.45.0 to 0.46.0. See Issues Encountered.
 
 **`src/presentation/message_columns.rs` is in the plan's `files_modified` and was
 deliberately not modified.** It has always returned `m.thread_id` for the Thread

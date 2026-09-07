@@ -415,7 +415,7 @@ can build: it is every diagnostic the old floor was suppressing.
 
 **Six wrong this run, on top of the six the first run found.** All measured.
 
-**1. Task 1's route does not exist** — the first run's finding, restated above
+**1. Task 1's route does not exist**, the first run's finding, restated above
 and now resolved by decision rather than ignored.
 
 **2. There are four arrival paths, not three.** The plan and my own first guard

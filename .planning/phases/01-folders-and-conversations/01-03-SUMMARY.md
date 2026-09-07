@@ -181,10 +181,10 @@ this plan was targeted, which is 1 second against 150.
 
 ## Task Commits
 
-1. **Task 1: A folder row that knows its parent** — `0ff4f42`
-2. **Task 2: Split the path once, at sync, using the delimiter the server sent** — `0ca0c5a`
-3. **Task 3: A local folder name that contains the separator** — `7cbdea2`
-4. **This summary and the state** — see final commit
+1. **Task 1: A folder row that knows its parent**, `0ff4f42`
+2. **Task 2: Split the path once, at sync, using the delimiter the server sent**, `0ca0c5a`
+3. **Task 3: A local folder name that contains the separator**, `7cbdea2`
+4. **This summary and the state**, see final commit
 
 ### On the RED and GREEN gates
 
@@ -218,28 +218,28 @@ commits for formatting, which is what it is for.
 
 ## Files Modified
 
-- `src/data/message_cache/mod.rs` — `parent_id` added through
+- `src/data/message_cache/mod.rs`: `parent_id` added through
   `ensure_column_exists` beside `holds_all_mail` and `subscribed`, `INTEGER`
   with no `NOT NULL` and no `DEFAULT`. Nothing inside `CREATE TABLE` changed.
   Also one stale doc comment, see Deviations.
-- `src/data/message_cache/folders.rs` — `set_folder_parent` and
+- `src/data/message_cache/folders.rs`: `set_folder_parent` and
   `folder_parents`, copying `set_folder_server_facts` and `folder_server_facts`
   in shape; the comment on `save_folder` saying why `parent_id` is not in the
   `ON CONFLICT DO UPDATE SET` list; 6 new tests.
-- `src/service/protocols/imap.rs` — `ImapFolder.delimiter` and its doc comment,
+- `src/service/protocols/imap.rs`: `ImapFolder.delimiter` and its doc comment,
   the replaced comment in `list_folders`, and 2 new loopback tests.
-- `src/application/mail_sync.rs` — the second pass in `store_folders`, the pure
+- `src/application/mail_sync.rs`: the second pass in `store_folders`, the pure
   `the_folder_above`, the stored name changed to the leaf, the doc comment
   rewritten, and 8 new tests with 4 helpers.
-- `src/application/local_folders.rs` — `NESTS_WITH`, `ESCAPES_THE_NEXT`,
+- `src/application/local_folders.rs`: `NESTS_WITH`, `ESCAPES_THE_NEXT`,
   `escape_leaf`, `unescape_leaf`, `NameRefused`, `naming_a_folder`, and 6 tests.
-- `src/application/import_tree.rs` — `is_a_name_that_can_be_used` made
+- `src/application/import_tree.rs`: `is_a_name_that_can_be_used` made
   `pub(crate)`, with two sentences saying who else asks it and why it is asked
   part by part there.
-- `src/presentation/wx_app.rs` — `delimiter: None` on the one `ImapFolder` built
+- `src/presentation/wx_app.rs`: `delimiter: None` on the one `ImapFolder` built
   there, with a comment. **Not in the plan's `files_modified`.** See Issues.
-- `guards/guards.toml` — two records, 506 to 508, header count 314 to 316.
-- `docs/changelog.md` — one `Changed` entry with its known limits, and one
+- `guards/guards.toml`: two records, 506 to 508, header count 314 to 316.
+- `docs/changelog.md`: one `Changed` entry with its known limits, and one
   correction to a standing limit whose stated reason this plan made false.
 
 ## The user-visible change

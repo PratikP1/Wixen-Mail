@@ -227,12 +227,12 @@ can read it, and has its own section below.
 
 ## Task Commits
 
-1. **Task 1: the merge, decided by one function** — RED `3aa0288`, GREEN `6ba1130`
-2. **Task 2: apply it when mail arrives** — RED `504b0f3`, GREEN `d49b8e0`
-3. **Task 3: repaint the row and say nothing about the others** — RED `a71da81`, GREEN `3f7946b`
-4. **01-02's guard record, re-measured** — `fdaf29e`
-5. **Four guard records** — `ad1a86d`
-6. **This summary and the state** — see final commit
+1. **Task 1: the merge, decided by one function**, RED `3aa0288`, GREEN `6ba1130`
+2. **Task 2: apply it when mail arrives**, RED `504b0f3`, GREEN `d49b8e0`
+3. **Task 3: repaint the row and say nothing about the others**, RED `a71da81`, GREEN `3f7946b`
+4. **01-02's guard record, re-measured**, `fdaf29e`
+5. **Four guard records**, `ad1a86d`
+6. **This summary and the state**, see final commit
 
 ### On the RED and GREEN gates
 

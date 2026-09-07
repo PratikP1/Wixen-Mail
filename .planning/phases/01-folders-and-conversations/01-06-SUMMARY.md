@@ -536,5 +536,5 @@ Checks:
 - `cargo test --test house_style`: 52 pass, including the guard header count.
 - `cargo test --test checkbox_labels`, `--test docs_links`,
   `--test folder_tree_rows_pair_with_the_control`: all pass.
-- `bash scripts/guards.sh` for both new records — each reddens exactly the one
+- `bash scripts/guards.sh` for both new records: each reddens exactly the one
   test it names and nothing else.

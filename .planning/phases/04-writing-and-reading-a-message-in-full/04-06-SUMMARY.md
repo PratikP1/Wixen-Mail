@@ -383,7 +383,7 @@ measured again from a clean tree. The four above are from that second run.
 
 ## Deviations from the plan
 
-### [Rule 3 — blocker] The first red commit was withdrawn and rewritten
+### [Rule 3, blocker] The first red commit was withdrawn and rewritten
 
 - **Found during:** task 2, before its first test was written.
 - **Issue:** task 1 as committed asserted `back: event.shiftKey`, which made
@@ -395,7 +395,7 @@ measured again from a clean tree. The four above are from that second run.
 - **Why not Rule 4:** no architectural change. The finished feature is the same
   in every respect; what changed is which commit each half arrives in.
 
-### [Rule 2 — missing critical] The guard-record count check inside a red commit
+### [Rule 2, missing critical] The guard-record count check inside a red commit
 
 - **Found during:** task 2's red commit, which the gate refused.
 - **Issue:** the seven new tests land in `spell_session.rs`, which task 1's own

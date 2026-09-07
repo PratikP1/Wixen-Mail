@@ -239,7 +239,7 @@ only this project's own sentence does, and removing the gate reddens it because
 second reaches the allocation cap alone, which is why it is sixteen bits a
 channel: at eight bits both axes and the final buffer are inside the other two
 bounds. **The first fixture written for that test was wrong and would have passed
-against its own break** — an ordinary 3600 by 3600 eight-bit PNG, which the third
+against its own break**, an ordinary 3600 by 3600 eight-bit PNG, which the third
 check also catches, so `max_alloc` could have been deleted with everything green.
 It was found by applying the break, not by reading the test.
 
@@ -332,7 +332,7 @@ commit to name both a new test saying a picture can be read here and the existin
 Those are opposite assertions about one function, so exactly one is red whichever
 way the code stands, and `red-commit.sh` requires every named test to really
 fail. The gate was therefore widened at the red rather than at the green, which
-makes the existing assertion the red one — the stronger of the two, since it is a
+makes the existing assertion the red one, the stronger of the two, since it is a
 test that had been passing for real reasons. The new gate test passed at its own
 red and was measured by hand at the green by removing the picture arm. Said in
 the commit and recorded as ledger entry 113.

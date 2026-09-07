@@ -569,7 +569,7 @@ Checks:
 - `bash scripts/check.sh`: formatting and clippy pass. The suite and release
   build wait for the merge, as `which-checks.sh` decides for a branch.
 - `cargo test --all-targets`: 5596 pass, 1 ignored, 0 fail.
-- `bash scripts/guards.sh` for both new records — each reddens exactly the tests
+- `bash scripts/guards.sh` for both new records: each reddens exactly the tests
   it names and nothing else.
 - `cargo test --test house_style`: 52 pass, including the guard header count.
 - `--no-verify` was never used. No `.git/index.lock` was encountered.

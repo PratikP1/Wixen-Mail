@@ -49,7 +49,7 @@ actuals:
   commits: 5
 ---
 
-# Phase 04 Plan 08: A picture is decorative because somebody said so — Summary
+# Phase 04 Plan 08 Summary: A picture is decorative because somebody said so
 
 ## Does it work
 
@@ -418,7 +418,7 @@ row.
 | `src/presentation/html_renderer.rs` | 60 | 77 | 0 → 3 |
 | `src/data/message_cache/drafts.rs` | 5 | 6 | 0 |
 | `src/data/config.rs` | 52 | 53 | 2 |
-| `tests/a_picture_is_only_decorative_because_somebody_said_so.rs` | — | 14 | 1 (as a suite) |
+| `tests/a_picture_is_only_decorative_because_somebody_said_so.rs` | did not exist | 14 | 1 (as a suite) |
 | `src/presentation/wx_compose.rs` | 43 | 43 | 3 |
 | `src/service/protocols/smtp.rs` | 40 | 40 | 4 |
 | `src/presentation/wx_settings.rs` | 0 | 0 | 1 |
@@ -510,12 +510,12 @@ sentence does not read as a refusal.
 
 Files created exist:
 
-- `tests/a_picture_is_only_decorative_because_somebody_said_so.rs` — FOUND
+- `tests/a_picture_is_only_decorative_because_somebody_said_so.rs`: FOUND
 
 Commits exist:
 
-- `90aff88` — FOUND
-- `6dce2ed` — FOUND
-- `5f57d3a` — FOUND
-- `33c38d3` — FOUND
-- `a786909` — FOUND
+- `90aff88`: FOUND
+- `6dce2ed`: FOUND
+- `5f57d3a`: FOUND
+- `33c38d3`: FOUND
+- `a786909`: FOUND
