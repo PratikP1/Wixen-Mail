@@ -8243,7 +8243,7 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
         .into_iter()
         .map(|under| under.path)
         .collect();
-    if inside_it.contains(&into) {
+    if inside_it.contains(&into.id) {
         return refuse_a_command(
             tx,
             &format!(
@@ -8254,11 +8254,11 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     }
 
     let name = chosen.readable_name().to_string();
-    let where_to = branches[0]
-        .places
-        .iter()
-        .find(|place| place.id == into)
-        .map_or_else(|| name.clone(), |place| place.name.clone());
+    // Read off the answer rather than looked up again in the branch this
+    // function built. The window hands back the whole destination, so the name
+    // it read out is the name the question repeats.
+    let where_to = into.name.clone();
+    let into = into.id;
     let question = if into.is_empty() {
         format!("Move {name} out of the folder it is in, so it sits on its own?")
     } else {
@@ -17270,7 +17270,7 @@ fn move_or_copy_message(
     if let Some(mgr) = settings.as_mut() {
         mgr.app_config_mut()
             .last_filed_into
-            .insert(account_id.clone(), into.clone());
+            .insert(account_id.clone(), into.id.clone());
         if let Err(e) = mgr.save() {
             tracing::warn!("Could not remember where that was filed: {e}");
         }
@@ -17287,7 +17287,7 @@ fn move_or_copy_message(
             if copying { "Copying" } else { "Moving" }
         ),
     );
-    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
+    spawn_folder_move(app, row_id, uid, subject, from, into.id, copying);
 }
 
 /// Do the move or copy on the server, and only then change the list.

@@ -3918,7 +3918,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/deleting_at_the_server.rs", tests = 5 },
-    { file = "src/application/destinations.rs", tests = 28 },
+    { file = "src/application/destinations.rs", tests = 30 },
     { file = "src/application/emptying.rs", tests = 23 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
@@ -13504,7 +13504,10 @@ name = "an account row in the destination picker answers with a folder"
 file = "src/presentation/wx_destination.rs"
 suite = "tree_dialogs_resolve_the_row_somebody_is_on"
 before = """            destinations.push(None);"""
-after = """            destinations.push(branch.places.first().map(|place| place.id.clone()));"""
+# The break used to push `place.id.clone()`, which is what the vector held
+# before 04.1-01. It now holds the whole destination, so the same break is the
+# whole place. The defect and the red list are unchanged; only the spelling is.
+after = """            destinations.push(branch.places.first().cloned());"""
 red = [
     "test_choosing_a_row_in_either_dialog_resolves_to_that_row",
 ]

@@ -31,16 +31,22 @@ use wixen_mail::presentation::{wx_destination, wx_thread_view};
 use wxdragon::prelude::*;
 
 /// Two accounts with folders under each, and the second account's folder named
-/// the same as the first's.
+/// the same as the first's, at the same path.
 ///
 /// The repeated name is the point. It is what a label chain cannot tell apart,
 /// and it is why the position is asked of the control rather than matched from
 /// text: two accounts called the same thing would collapse to one row and the
 /// message would go to whichever came first.
+///
+/// The repeated *path* is the second point, and it was missing until 04.1-01.
+/// These places used to be `acct-1/archive` and `acct-2/archive`, which no IMAP
+/// server spells and which nothing could ever confuse. Real paths make the
+/// account the only thing telling the two `Archive` rows apart, which is what
+/// this file is now checking a live control agrees about.
 fn branches() -> Vec<Branch> {
-    let place = |name: &str, id: &str, account: &str| Destination {
+    let place = |name: &str, account: &str| Destination {
         name: name.to_string(),
-        id: id.to_string(),
+        id: name.to_string(),
         account_id: account.to_string(),
         depth: 0,
     };
@@ -48,27 +54,37 @@ fn branches() -> Vec<Branch> {
         Branch {
             account_id: "acct-1".to_string(),
             account_name: "person@example.com".to_string(),
-            places: vec![
-                place("Archive", "acct-1/archive", "acct-1"),
-                place("Receipts", "acct-1/receipts", "acct-1"),
-            ],
+            places: vec![place("Archive", "acct-1"), place("Receipts", "acct-1")],
         },
         Branch {
             account_id: "acct-2".to_string(),
             account_name: "person@example.com".to_string(),
-            places: vec![place("Archive", "acct-2/archive", "acct-2")],
+            places: vec![place("Archive", "acct-2")],
         },
     ]
 }
 
 /// What the destination tree's rows mean, in the order the tree is walked.
-fn the_rows_the_picker_should_hold() -> Vec<Option<String>> {
+///
+/// Written out rather than folded back out of [`branches`], so the two
+/// `Archive` entries can be read side by side and seen to differ only in the
+/// account. Derived from the fixture, the second and fourth rows would agree
+/// with a build that had put either account against both.
+fn the_rows_the_picker_should_hold() -> Vec<Option<Destination>> {
+    let place = |name: &str, account: &str| {
+        Some(Destination {
+            name: name.to_string(),
+            id: name.to_string(),
+            account_id: account.to_string(),
+            depth: 0,
+        })
+    };
     vec![
         None,
-        Some("acct-1/archive".to_string()),
-        Some("acct-1/receipts".to_string()),
+        place("Archive", "acct-1"),
+        place("Receipts", "acct-1"),
         None,
-        Some("acct-2/archive".to_string()),
+        place("Archive", "acct-2"),
     ]
 }
 
@@ -178,8 +194,19 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
     };
     assert!(result.is_ok(), "wxdragon::main returned {result:?}");
 
-    let picked = |id: &str| answer("", Some(id.to_string())).1;
-    let nothing = answer("", None::<String>).1;
+    let picked = |name: &str, account: &str| {
+        answer(
+            "",
+            Some(Destination {
+                name: name.to_string(),
+                id: name.to_string(),
+                account_id: account.to_string(),
+                depth: 0,
+            }),
+        )
+        .1
+    };
+    let nothing = answer("", None::<Destination>).1;
     let expected: Vec<Answer> = vec![
         ("rows the control walks", "5".to_string()),
         ("entries beside it", "5".to_string()),
@@ -188,15 +215,18 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             format!("{:?}", the_rows_the_picker_should_hold()),
         ),
         ("picker on the first account", nothing.clone()),
-        ("picker on that account's Archive", picked("acct-1/archive")),
+        (
+            "picker on that account's Archive",
+            picked("Archive", "acct-1"),
+        ),
         (
             "picker on that account's Receipts",
-            picked("acct-1/receipts"),
+            picked("Receipts", "acct-1"),
         ),
         ("picker on the second account", nothing),
         (
             "picker on the second account's Archive",
-            picked("acct-2/archive"),
+            picked("Archive", "acct-2"),
         ),
         ("rows the conversation walks", "3".to_string()),
         (

@@ -46,6 +46,13 @@ fn what_was_left_between(dialog: &'static str, opened: u64, closed: u64) -> (&'s
 /// Two accounts, one of them with no places at all, which is the shape the
 /// destination picker has to keep answering correctly however it resolves a
 /// selection.
+///
+/// The paths are spelled the way a server spells them rather than prefixed
+/// with the account, which is how every fixture in this tree used to spell
+/// them and why nothing could ever have noticed a comparison that ignored the
+/// account (04.1-01). Nothing in this file turns on it, since what it counts
+/// is registry entries, but a fixture that spells a path in a way no server
+/// does is a fixture the next reader takes as the shape of the real thing.
 fn branches() -> Vec<Branch> {
     vec![
         Branch {
@@ -54,13 +61,13 @@ fn branches() -> Vec<Branch> {
             places: vec![
                 Destination {
                     name: "Archive".to_string(),
-                    id: "acct-1/archive".to_string(),
+                    id: "Archive".to_string(),
                     account_id: "acct-1".to_string(),
                     depth: 0,
                 },
                 Destination {
                     name: "Receipts".to_string(),
-                    id: "acct-1/receipts".to_string(),
+                    id: "Receipts".to_string(),
                     account_id: "acct-1".to_string(),
                     depth: 0,
                 },

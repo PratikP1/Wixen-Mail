@@ -306,6 +306,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The window that asks where to move a message can no longer hand a folder
+  from one account to a different account's server.** The window offers folders
+  belonging to one account, and until now it answered with the folder's path
+  and nothing else. A path says which folder only within one account: two
+  accounts can both have an Archive, and both spell it `Archive`.
+
+  Nothing you did could reach that yet, because the window has only ever been
+  given one account's folders at a time. What it means today is that the code
+  underneath is ready to be given more than one, which is the next piece of
+  work. Mail still does not move between accounts.
+
 - **Three entries in this changelog said you could turn speech off and still
   get braille, and that has never worked.** They are corrected where they stand,
   because somebody reads a changelog backwards to work out when something

@@ -16,7 +16,9 @@
 //! mouse and nothing needs a drag, which is what most mail clients make you do
 //! for exactly this.
 
-use crate::application::destinations::{Branch, FolderInAnAccount, Moving, nothing_to_offer};
+use crate::application::destinations::{
+    Branch, Destination, FolderInAnAccount, Moving, nothing_to_offer,
+};
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
 };
@@ -47,6 +49,13 @@ pub fn heading(moving: Moving, copying: bool) -> String {
 
 /// What choosing the row at `position` in the tree's walk means.
 ///
+/// The whole destination and not its identifier. A folder's path is unique
+/// inside one account and not across them, so a window drawing two accounts
+/// that answered with a path could draw the right rows and still not say which
+/// one was chosen. The account travels with the choice because it is a field of
+/// the thing chosen, rather than being inferred by the caller from which branch
+/// it believes it passed in.
+///
 /// `None` three ways, and all three mean the same thing: nothing was chosen.
 /// The root has no position because it is not a row. An account heading has a
 /// position and no destination, because it is somewhere to look rather than
@@ -55,9 +64,9 @@ pub fn heading(moving: Moving, copying: bool) -> String {
 /// they did not name. A position past the end is a row this cannot place, and
 /// the safe answer to that is nothing rather than a guess.
 pub fn what_a_selection_means(
-    destinations: &[Option<String>],
+    destinations: &[Option<Destination>],
     position: Option<usize>,
-) -> Option<String> {
+) -> Option<Destination> {
     position
         .and_then(|position| destinations.get(position))
         .cloned()
@@ -79,7 +88,7 @@ pub fn ask(
     copying: bool,
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
-) -> Option<String> {
+) -> Option<Destination> {
     if branches.is_empty() {
         return None;
     }
@@ -125,9 +134,11 @@ pub fn build_destination_dialog(
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
     palette: Option<theme::Palette>,
-) -> (Dialog, TreeCtrl, Vec<Option<String>>) {
-    let open_on = crate::application::destinations::open_on(branches, last_used)
-        .map(|place| place.id.clone());
+) -> (Dialog, TreeCtrl, Vec<Option<Destination>>) {
+    // Held whole rather than as its path, for the reason the answer is whole:
+    // two accounts can both hold an `Archive`, and a row matched on the path
+    // alone would put the cursor on whichever branch was drawn first.
+    let open_on = crate::application::destinations::open_on(branches, last_used);
 
     let title = heading(moving, copying);
     let dialog = Dialog::builder(parent, &title)
@@ -173,7 +184,7 @@ pub fn build_destination_dialog(
     // map in `wxdragon` that nothing ever takes anything out of, so every
     // opening of this dialog left one entry per folder behind for the life of
     // the program. `tests/tree_rows_leave_no_registry_entry.rs` counts them.
-    let mut destinations: Vec<Option<String>> = Vec::new();
+    let mut destinations: Vec<Option<Destination>> = Vec::new();
 
     if let Some(root) = root.as_ref() {
         for branch in branches {
@@ -188,8 +199,8 @@ pub fn build_destination_dialog(
                 let Some(row) = tree.append_item(&account, &place.name, None, None) else {
                     continue;
                 };
-                destinations.push(Some(place.id.clone()));
-                if open_on.as_deref() == Some(place.id.as_str()) {
+                destinations.push(Some(place.clone()));
+                if open_on == Some(place) {
                     start_on = Some(row);
                 }
             }
@@ -283,29 +294,43 @@ mod tests {
     /// were empty would let a resolution that reached forward for the first
     /// folder it could find answer `None` for that account by luck, and the
     /// account rows are the whole point of this vector.
-    fn two_accounts_with_folders() -> Vec<Option<String>> {
+    ///
+    /// Both accounts have an `Archive`, spelled the way a server spells one
+    /// rather than prefixed with the account. That is what makes the answer's
+    /// account load-bearing: with the paths made unique by hand, a resolution
+    /// that dropped the account would look right in every assertion below.
+    fn two_accounts_with_folders() -> Vec<Option<Destination>> {
+        let place = |name: &str, account: &str| {
+            Some(Destination {
+                name: name.to_string(),
+                id: name.to_string(),
+                account_id: account.to_string(),
+                depth: 0,
+            })
+        };
         vec![
             None,
-            Some("acct-1/archive".to_string()),
-            Some("acct-1/receipts".to_string()),
+            place("Archive", "acct-1"),
+            place("Receipts", "acct-1"),
             None,
-            Some("acct-2/archive".to_string()),
+            place("Archive", "acct-2"),
         ]
     }
 
     #[test]
-    fn test_choosing_a_folder_gives_that_folder() {
+    fn test_choosing_a_folder_gives_that_folder_in_that_account() {
         let rows = two_accounts_with_folders();
 
-        for (position, id) in [
-            (1, "acct-1/archive"),
-            (2, "acct-1/receipts"),
-            (4, "acct-2/archive"),
+        for (position, path, account) in [
+            (1, "Archive", "acct-1"),
+            (2, "Receipts", "acct-1"),
+            (4, "Archive", "acct-2"),
         ] {
+            let chosen = what_a_selection_means(&rows, Some(position)).expect("a destination");
+            assert_eq!(chosen.id, path, "row {position}");
             assert_eq!(
-                what_a_selection_means(&rows, Some(position)),
-                Some(id.to_string()),
-                "row {position}"
+                chosen.account_id, account,
+                "row {position} is the account's own Archive and not the other's"
             );
         }
     }

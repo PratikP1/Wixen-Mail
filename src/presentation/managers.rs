@@ -6288,14 +6288,12 @@ fn move_item(
         &branches,
         None,
     )?;
-    let landed = branches
-        .iter()
-        .flat_map(|branch| branch.places.iter())
-        .find(|place| place.id == into)
-        .map(|place| place.name.clone())
-        .unwrap_or_else(|| into.clone());
+    // Read off the answer rather than searched for in the branches this
+    // function passed in. The window hands back the whole destination, so what
+    // the sentence names is what the row read out.
+    let landed = into.name.clone();
 
-    Some(match file_under(cache, kind, id, &into, &account_id) {
+    Some(match file_under(cache, kind, id, &into.id, &account_id) {
         Ok(()) => Moved::Into(crate::application::pim_command::moved(name, &landed)),
         // The other route to the same refusals, taken when the chooser was
         // bypassed. It arrives as a failed write rather than as a refusal

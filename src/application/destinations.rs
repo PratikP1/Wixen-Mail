@@ -182,9 +182,17 @@ pub fn offer(branches: Vec<Branch>, already_in: Option<FolderInAnAccount<'_>>) -
     branches
         .into_iter()
         .map(|mut branch| {
-            branch
-                .places
-                .retain(|place| Some(place.id.as_str()) != already_in.map(|it| it.path));
+            // The account read off the place rather than off the branch it is
+            // in. Both say the same thing wherever a branch is built, and the
+            // one the place carries is the one that travels back with the
+            // answer, so it is the one an identity should be asked of.
+            branch.places.retain(|place| {
+                already_in
+                    != Some(FolderInAnAccount {
+                        account: place.account_id.as_str(),
+                        path: place.id.as_str(),
+                    })
+            });
             branch
         })
         // An account with nowhere left to put it is not shown. An empty
@@ -225,7 +233,7 @@ pub fn open_on<'a>(
         && let Some(again) = branches
             .iter()
             .flat_map(|branch| branch.places.iter())
-            .find(|place| place.id == last.path)
+            .find(|place| place.account_id == last.account && place.id == last.path)
     {
         return Some(again);
     }
