@@ -67,8 +67,20 @@
 //! [`what_undo_send_takes_back`] are asked by Undo Send on the Tools menu and
 //! on `Ctrl+Shift+Z`.
 //!
-//! [`schedule`] has no caller. Setting a message to go at a time somebody chose
-//! is not built, and `04.2-02` builds it.
+//! [`schedule`] is asked by the Schedule window in the composer, which is
+//! `Alt+H` and a button on the toolbar. It answers about the text five
+//! controls produced, and [`Scheduling::spoken`] words that answer, so the
+//! sentence somebody hears when a time will not do and the sentence on the
+//! Outbox row come from this module and not from the window. A [`SetFor`]
+//! becomes [`GoAfter::Chosen`] through [`stored`], which is the one line the
+//! composer's Send path gained.
+//!
+//! [`readiness`], [`take_back`], [`what_undo_send_takes_back`],
+//! [`when_it_goes`] and [`what_send_did`] all already answered about a chosen
+//! time and none of them changed. What they had never been given was a row
+//! carrying one.
+//!
+//! [`SetFor`]: Scheduling::SetFor
 //!
 //! # What was wrong here until 04.2-01
 //!

@@ -2043,8 +2043,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   because it is what the release it sits under actually claimed.
 
   A message can also be set to go at a chosen time. A time in the past is
-  refused rather than sent immediately, and one more than a year ahead is
-  refused as a likely mistake.
+  refused rather than sent immediately, unless it has only just gone by, and
+  one more than a year ahead is refused as a likely mistake.
+
+  This paragraph described nothing at all until the Schedule entry at the top
+  of Unreleased. Every part of it was written and tested and none of it was
+  joined up, so there was no way to set a message for a time. The clause about
+  a time in the past is the one that needed correcting rather than only
+  connecting: a time within the last minute is taken as the time you meant,
+  because a minute is the smallest gap the controls can express.
 
 - **Undo Send is on the Tools menu, and on `Ctrl+Shift+Z`.** It takes back the
   message you sent most recently and opens it again so you can fix it, rather
