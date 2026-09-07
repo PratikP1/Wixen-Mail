@@ -1078,13 +1078,18 @@ impl WxMailApp {
                     crate::application::reading_habits::MarkRead::from_setting(&cfg.mark_read_after)
                 })
                 .unwrap_or_default();
-            let mut starting_layout =
-                match stored_config.as_ref().map(|c| c.message_columns.as_str()) {
-                    Some(stored) if !stored.is_empty() => {
-                        ColumnLayout::from_stored(stored, message_columns::FolderKind::Inbox)
-                    }
-                    _ => ColumnLayout::defaults_for(message_columns::FolderKind::Inbox),
-                };
+            // The stored string decides which kind of folder its layout was
+            // arranged in, and it used to be told. Nothing to read, or nothing
+            // readable, falls back to the inbox's defaults because the inbox is
+            // what this window opens on. A layout written before there was a
+            // kind keeps its columns here and is rebuilt by the first folder
+            // somebody opens, which is the one arrangement this change costs.
+            let mut starting_layout = stored_config
+                .as_ref()
+                .map(|c| c.message_columns.as_str())
+                .filter(|stored| !stored.is_empty())
+                .and_then(ColumnLayout::from_stored)
+                .unwrap_or_else(|| ColumnLayout::defaults_for(message_columns::FolderKind::Inbox));
             // The order somebody asked for in Settings. Offered there since
             // Settings existed and read by nothing, so a list always opened
             // newest first and anybody wanting otherwise sorted by hand every
@@ -2773,7 +2778,10 @@ impl WxMailApp {
                         {
                             let kind = message_columns::FolderKind::for_folder(stored_kind);
                             let mut layout = column_layout.borrow_mut();
-                            if layout.kind != kind {
+                            // A layout that does not say which folder it was
+                            // arranged in never matches, so it is rebuilt here
+                            // rather than shown in a folder it may not be for.
+                            if layout.kind != Some(kind) {
                                 *layout = ColumnLayout::defaults_for(kind);
                                 apply_columns(&msg_list, &layout);
                             }
@@ -12616,13 +12624,11 @@ fn the_sort_as(showing: view_state::Showing) -> Option<String> {
         .ok()
         .map(|mgr| mgr.app_config().message_columns.clone())
         .filter(|stored| !stored.is_empty())
-        .map(|stored| {
-            let layout = crate::presentation::message_columns::ColumnLayout::from_stored(
-                &stored,
-                crate::presentation::message_columns::FolderKind::Inbox,
-            );
-            view_state::order_by(showing, &layout.sort)
-        })
+        // Only the sort is wanted here, so which folder the layout was arranged
+        // in does not come into it. A string nothing can read leaves the
+        // ordering to whatever asked, the same as an empty one.
+        .and_then(|stored| crate::presentation::message_columns::ColumnLayout::from_stored(&stored))
+        .map(|layout| view_state::order_by(showing, &layout.sort))
 }
 
 /// Read the open folder's conversations, one per collapsed row.

@@ -13578,7 +13578,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
-    { file = "src/presentation/message_columns.rs", tests = 37 },
+    { file = "src/presentation/message_columns.rs", tests = 39 },
 ]
 
 [[guard]]

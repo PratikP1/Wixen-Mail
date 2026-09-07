@@ -306,6 +306,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Sorting a column in Sent no longer decides how your inbox opens.**
+
+  There was one saved column arrangement for the whole program, and it did not
+  record which folder it was made in. So if you clicked a column heading in
+  Sent, that arrangement was saved over the one you had in your inbox. Next time
+  you started the program, your inbox opened with Sent's columns: no Unread
+  column, and sorted by the date the sender put on the message rather than by
+  when it arrived. That date is chosen by whoever sent the mail, and it is often
+  wrong, so a message with a made-up date sat at the top of the inbox and stayed
+  there.
+
+  Within one session the same fault was smaller and easier to meet. Arrange your
+  inbox columns, go to Sent, come back, and the arrangement was gone.
+
+  A saved arrangement now says which kind of folder it was made in. Folders that
+  hold mail you received are one kind, Sent and Drafts are another, and each
+  keeps its own arrangement while the program is running. What is saved between
+  runs is still one arrangement, the one you changed most recently; the others
+  go back to their starting columns when you next start up. The user guide says
+  which is which.
+
+  **What this costs you once.** No arrangement saved before this version says
+  which folder it was made in, so the program cannot tell whether the columns it
+  finds were arranged in your inbox or in Sent. Rather than guess, it starts the
+  first folder you open from that folder's usual columns. If you had arranged
+  columns by hand, you will have to arrange them once more, and from then on
+  they stay where you put them.
+
 - **`Shift+F6` now goes back from the message preview, and the shortcuts page
   says how to get out of it.**
 
