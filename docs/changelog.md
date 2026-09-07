@@ -22,6 +22,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   between its parts with the arrow keys, which was found with a real screen
   reader and is the control's own limitation.
 
+  A time that will not do is refused, and the window stays open with the
+  reason said out loud as well as shown: a time that has gone, a time more
+  than a year ahead, or something that is not a date and time at all. Each one
+  says what to do next rather than only saying no. Nothing is sent and nothing
+  is queued by a refusal, and a time you picked is never quietly moved to one
+  that would be accepted. A time that has only just gone by, within the last
+  minute, is taken as the time you meant, because the minute you pick is the
+  smallest thing the controls can say.
+
   **The entry two releases below this one already told you this worked.** It
   did not. Every part of it was written and tested and nothing joined them up,
   so no message could ever be set for a time. That sentence is true from this

@@ -397,6 +397,107 @@ mod tests {
         );
     }
 
+    /// The three refusals, each with the reason a person hears.
+    ///
+    /// Quoted from `Scheduling::spoken` rather than written again here, which
+    /// is the whole point: if a second phrasing were ever composed at the
+    /// dialog, this comparison is what would notice.
+    fn refusal_for(chosen: &str, now: DateTime<Local>) -> String {
+        match what_the_picker_does(chosen, now, dates()) {
+            WhatThePickerDoes::Refuse(why) => why,
+            WhatThePickerDoes::SetFor(at) => panic!(
+                "a time that should have been refused was accepted, and the message \
+                 would have been set for {at}"
+            ),
+        }
+    }
+
+    #[test]
+    fn test_a_time_that_has_gone_is_refused_with_the_reason_and_the_next_move() {
+        // Refused, and never moved to now. Clamping this the way a stored
+        // hold is clamped would send, at once, a message somebody had just
+        // said they wanted delayed, and would tell them it was set.
+        let now = at("2026-08-24 09:00:00");
+
+        assert_eq!(
+            refusal_for("2026-08-23 09:00", now),
+            "That time has gone. Pick a time still to come.",
+            "the refusal for a time that has gone is not the one already written"
+        );
+    }
+
+    #[test]
+    fn test_a_time_more_than_a_year_ahead_is_refused_as_a_likely_mistake() {
+        // The likeliest reading of a date that far out is a mistyped year,
+        // and nothing here sends while the program is closed, so taking it at
+        // its word is a promise this cannot keep.
+        let now = at("2026-08-24 09:00:00");
+
+        assert_eq!(
+            refusal_for("2030-08-24 09:00", now),
+            "That is more than a year ahead. Pick a time within the next year.",
+        );
+    }
+
+    #[test]
+    fn test_text_that_is_not_a_date_and_time_is_refused() {
+        // The controls cannot produce this, and the refusal exists anyway,
+        // because `schedule` also reads a time from a message being sent
+        // again or from an import.
+        let now = at("2026-08-24 09:00:00");
+
+        assert_eq!(
+            refusal_for("the day after the fair", now),
+            "That is not a date and time. Pick a date and a time of day.",
+        );
+    }
+
+    #[test]
+    fn test_every_refusal_names_a_next_move_rather_than_only_saying_no() {
+        // A refusal that only says no leaves somebody pressing the same
+        // button again. Asked of all three at once so a fourth added later
+        // cannot be worded as a bare refusal without this noticing.
+        let now = at("2026-08-24 09:00:00");
+
+        for gone_wrong in ["2026-08-23 09:00", "2030-08-24 09:00", "not a time"] {
+            let why = refusal_for(gone_wrong, now);
+            assert!(
+                why.contains("Pick a"),
+                "the refusal for {gone_wrong:?} says what is wrong and not what to do: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_time_only_just_missed_is_accepted_rather_than_refused() {
+        // Deliberate, and this is why, from `JUST_MISSED`'s own doc: "The
+        // picker chooses a minute, so a minute is the smallest gap it can
+        // mean. Somebody who picks nine o'clock and presses OK twenty seconds
+        // later has not made a mistake, and a dialog that refuses what it
+        // offered a moment ago is a dialog nobody trusts."
+        //
+        // So a passing test about a time in the past being accepted is not a
+        // hole in the refusal above it. There is one minute of grace, it is
+        // applied by `schedule`, and there is no second one here.
+        let nine = at("2026-08-24 09:00:00");
+        let twenty_seconds_later = nine + chrono::Duration::seconds(20);
+        let an_hour_later = nine + chrono::Duration::hours(1);
+
+        assert_eq!(
+            what_the_picker_does("2026-08-24 09:00", twenty_seconds_later, dates()),
+            WhatThePickerDoes::SetFor(nine),
+            "a time twenty seconds gone was refused, so the dialog turned down what \
+             it offered a moment earlier"
+        );
+        assert!(
+            matches!(
+                what_the_picker_does("2026-08-24 09:00", an_hour_later, dates()),
+                WhatThePickerDoes::Refuse(_)
+            ),
+            "a time an hour gone was accepted, so the grace period is not a minute"
+        );
+    }
+
     #[test]
     fn test_the_two_readings_join_into_something_schedule_can_read() {
         let joined = chosen_as_text("2026-08-25", "09:00");

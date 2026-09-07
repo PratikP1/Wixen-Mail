@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 442 records have arrived since and have not been through it.
+# 443 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16204,3 +16204,38 @@ tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/wired.rs", tests = 67 },
 ]
+
+[[guard]]
+# -- A time that has gone is refused, not moved to now ----------------------
+#
+# The break is the clamp, and the clamp is what a later change is most likely
+# to reintroduce, because it looks like a kindness. Somebody picks yesterday
+# by mistake; being helpful about it means sending, immediately, the message
+# they had just said they wanted delayed, and telling them it was set. There
+# is no way back from that: it is in a stranger's mailbox.
+#
+# The neighbouring inconsistency is the reason this needs a guard rather than
+# a comment. `Hold::of_seconds` clamps rather than refusing, deliberately, and
+# says so in its own doc. A reader who has just met that one will reasonably
+# ask why this one does not, and "make them consistent" is a one-line change
+# that passes every other check in this tree. What tells them apart is where
+# the value came from: a hold is read out of a settings file that survived a
+# restart and must never be able to stop this program sending mail, and this
+# is a time somebody chose seconds ago in a dialog that is still open.
+#
+# The third test in the red list is the one worth explaining. The clamp also
+# reddens the just-missed case, because that case asserts both halves of the
+# grace period: twenty seconds gone is accepted and an hour gone is refused.
+# Clamping makes the second half pass a time that should have been turned
+# down. Measured with --no-fail-fast over the whole library, not predicted.
+name = "a time that has gone is refused rather than quietly moved to now"
+file = "src/presentation/wx_send_later.rs"
+before = """        Scheduling::SetFor(at) => WhatThePickerDoes::SetFor(at),"""
+after = """        Scheduling::SetFor(at) => WhatThePickerDoes::SetFor(at),
+        Scheduling::AlreadyPast => WhatThePickerDoes::SetFor(now),"""
+red = [
+    "presentation::wx_send_later::tests::test_a_time_only_just_missed_is_accepted_rather_than_refused",
+    "presentation::wx_send_later::tests::test_a_time_that_has_gone_is_refused_with_the_reason_and_the_next_move",
+    "presentation::wx_send_later::tests::test_every_refusal_names_a_next_move_rather_than_only_saying_no",
+]
+tests_last_seen = [{ file = "src/presentation/wx_send_later.rs", tests = 8 }]
