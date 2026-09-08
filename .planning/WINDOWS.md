@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 183
+open_count: 184
 waived_count: 0
 fixed_count: 15
-total_count: 198
-last_updated: 2026-09-08T19:25:35.807Z
+total_count: 199
+last_updated: 2026-09-08T19:40:20.942Z
 ---
 
 # Broken Windows Ledger
@@ -213,6 +213,7 @@ last_updated: 2026-09-08T19:25:35.807Z
 | 196 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | Previous period and Next period carry the same name on both Windows accessibility channels by construction, and neither channel has been read. The button label is Previous period and Next period, which is what Windows gives UI Automation for a native button and therefore what Narrator says, and set_accessible_name writes the same words to MSAA, which is what NVDA says. Both were checked by reading the code, not by running Axe.Windows over UI Automation or scripts/msaa-names.ps1 over MSAA. The View box beside them is a Choice with a StaticText label of its own and an explicit accessible name of Calendar view, and is unread on both channels for the same reason | open |  | 2026-09-08T17:35:22.872Z |  |
 | 197 | 05 | deviation | src/presentation/managers.rs |  | The reload after an edit now asks for the window on screen rather than the whole eighteen months, so saving an event in a week view no longer puts somebody back in the agenda with nothing said. Nothing tests that it does. The window arithmetic it calls has eleven tests, and the wiring, one call to the_calendar_on_screen inside manage_calendar, has none: manage_calendar opens a wxWidgets dialog and needs a Frame, so a test would first have to extract the reload into a function of its own, and any test of it would live in managers.rs, which 41 guard records fingerprint, at roughly 80 minutes of remeasurement on the critical path for a one-line change. The plan offered fix-with-a-test or record-as-a-stub; this is the third thing, fixed without one, and it is here so that the gap is visible rather than implied by the absence of a test | open |  | 2026-09-08T17:35:23.552Z |  |
 | 198 | 05 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has chosen a view, closed this program and opened it again. The three pieces are each tested where they live: the settings screen writes the word, AppConfig round-trips it, and CalendarView::from_stored reads it back with a fallback for anything it does not recognise. What joins them is one line at startup that puts the stored view into WxUIState and one that sets the toolbar box to match, and neither has a test: they sit inside the frame builder, which needs a running wxWidgets window. So the claim that the view survives a restart rests on reading three tested pieces and one untested join. The same join decides what the box on the toolbar says when the window opens, which is what a screen reader reads for it | open |  | 2026-09-08T19:25:35.807Z |  |
+| 199 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | PIM-06's third D line cannot be closed by a test and is not closed here. It asks whether a screen reader user can work through a view's events in date order without reconstructing the grid from cell labels. What this plan does is remove the grid from the question by not building one: a month is the same virtual list the agenda uses, sorted by moment, so read from the top it is in date order by construction. That is the design decision which makes the answer likely, not evidence that it is right. Two questions only a real run settles. Whether a month of rows in one flat list, which is thirty to sixty rows for an ordinary calendar and several hundred for a busy one with series in it, is navigable as one list or wants sub-headings per day. And whether somebody can tell where one day ends and the next begins, given that the date is in the same joined time cell as the out-of-hours note and the changed-day clause 05-01 added | open |  | 2026-09-08T19:40:20.942Z |  |
 
 ````json
 [
@@ -2590,6 +2591,18 @@ last_updated: 2026-09-08T19:25:35.807Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T19:25:35.807Z",
+    "resolved_at": null
+  },
+  {
+    "id": 199,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/wx_calendar_module.rs",
+    "line": null,
+    "description": "PIM-06's third D line cannot be closed by a test and is not closed here. It asks whether a screen reader user can work through a view's events in date order without reconstructing the grid from cell labels. What this plan does is remove the grid from the question by not building one: a month is the same virtual list the agenda uses, sorted by moment, so read from the top it is in date order by construction. That is the design decision which makes the answer likely, not evidence that it is right. Two questions only a real run settles. Whether a month of rows in one flat list, which is thirty to sixty rows for an ordinary calendar and several hundred for a busy one with series in it, is navigable as one list or wants sub-headings per day. And whether somebody can tell where one day ends and the next begins, given that the date is in the same joined time cell as the out-of-hours note and the changed-day clause 05-01 added",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T19:40:20.942Z",
     "resolved_at": null
   }
 ]
