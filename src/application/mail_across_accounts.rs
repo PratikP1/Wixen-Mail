@@ -31,7 +31,7 @@
 //! arriving today, at the top of somebody's folder.
 
 use crate::common::Result;
-use crate::service::protocols::imap::{ImapMessage, flag};
+use crate::service::protocols::imap::{ImapMessage, LetGo, flag};
 
 /// Whether a chosen destination is at the same server the message is at.
 ///
@@ -147,6 +147,76 @@ pub(crate) trait TheAccountItIsGoingTo {
         arrived: Option<&str>,
         raw: &[u8],
     ) -> Result<()>;
+
+    /// Which messages in that folder carry this identifier.
+    ///
+    /// A read, and the only thing that can answer a question an `APPEND` left
+    /// open. The reply to an `APPEND` says where the message landed only on a
+    /// server with UIDPLUS, and a reply that never arrived says nothing at all.
+    async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>>;
+}
+
+/// The account the message is leaving, as the last step of a move needs it.
+///
+/// Separate from [`TheAccountItIsIn`] rather than a third method on it, and the
+/// separation is the safeguard rather than tidiness. [`copy_it_across`] takes
+/// only the reading trait, which has no write in it at all, so no body it could
+/// ever be given can send a change to the source. That is a stronger guarantee
+/// than the assertion in the test that watches the source's transcript, and it
+/// would be given up by widening the trait a copy is handed.
+pub(crate) trait TheAccountItIsLeaving {
+    /// Take the message off this account's server, and say what really
+    /// happened to it.
+    async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo>;
+}
+
+/// Whether the destination folder holds the message after all.
+///
+/// Three answers rather than two, because "it is not there" and "nobody could
+/// find out" lead to different things being done and to different sentences.
+/// Reading the second as the first is how a message gets removed from the only
+/// server that still has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhetherItLanded {
+    /// A message carrying that identifier is there now and was not before.
+    ItIsThere,
+    /// The folder was asked and holds nothing new carrying that identifier.
+    ItIsNotThere,
+    /// The question could not be put, or its answer could not be trusted.
+    ItCannotBeAsked(String),
+}
+
+/// Every way a move to a folder on another account can end.
+///
+/// Not a `Result`, for the reason [`crate::service::protocols::imap::Moved`] is
+/// not one: once the message is at the destination, nothing that goes wrong
+/// afterwards is a failure. It is a fact about where two copies now are, and
+/// the caller decides what to do with the row in the list on the strength of
+/// it. A bare failure left the list and the servers disagreeing.
+///
+/// The two endings that name an unanswered append are the ones this phase
+/// exists for. An append whose answer never arrived is not a refusal and is not
+/// a success: it is a question, and until it has been answered nothing may be
+/// removed at the source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovedAcross {
+    /// It is at the destination and gone from the source.
+    ItArrivedAndTheSourceLetItGo,
+    /// It is at the destination and still at the source, marked for removal.
+    ItArrivedAndIsStillHereMarked(crate::service::protocols::imap::StillHere),
+    /// It is at the destination and still at the source, not even marked,
+    /// because the source would not take the mark. Both copies are real and a
+    /// second try would make a third.
+    ItArrivedAndTheSourceWouldNotLetGo(String),
+    /// The destination answered and turned it down. Nothing was made there and
+    /// nothing was touched at the source.
+    TheDestinationRefusedIt(String),
+    /// The destination never answered, and asking it afterwards found nothing
+    /// new carrying the message's identifier. Nothing was removed.
+    ItNeverArrivedSoNothingWasRemoved(String),
+    /// The destination never answered and could not be asked. The message may
+    /// be in one place or in two, and nothing was removed either way.
+    ItIsNotKnownWhereItIs(String),
 }
 
 /// Copy one message from the account it is in to a folder on another account.
@@ -163,6 +233,26 @@ pub(crate) async fn copy_it_across(
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     into: &str,
 ) -> Result<()> {
+    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
+    the_account_it_is_going_to
+        .take_this_message(
+            into,
+            the_flags_that_travel(&filed.flags).as_deref(),
+            when_it_arrived(filed.internal_date.as_deref()).as_deref(),
+            &raw,
+        )
+        .await
+}
+
+/// What the source says about the message, and the message itself.
+///
+/// One place for the refusal, so a copy and a move cannot come to different
+/// conclusions about a folder that named no message.
+async fn the_message_itself(
+    the_account_it_is_in: &impl TheAccountItIsIn,
+    from: &str,
+    uid: u32,
+) -> Result<(ImapMessage, Vec<u8>)> {
     let headers = the_account_it_is_in.the_headers_of(from, &[uid]).await?;
     let Some(filed) = headers.into_iter().find(|message| message.uid == uid) else {
         // The server answered and named no message. Appending anyway would put
@@ -173,14 +263,43 @@ pub(crate) async fn copy_it_across(
         )));
     };
     let raw = the_account_it_is_in.the_bytes_of(from, uid).await?;
-    the_account_it_is_going_to
+    Ok((filed, raw))
+}
+
+/// Move one message from the account it is in to a folder on another account.
+///
+/// Append first, remove last, and nothing at the source is touched until the
+/// destination has answered that it holds the message.
+pub(crate) async fn move_it_across(
+    the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
+    from: &str,
+    uid: u32,
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    into: &str,
+) -> Result<MovedAcross> {
+    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
+    let sent = the_account_it_is_going_to
         .take_this_message(
             into,
             the_flags_that_travel(&filed.flags).as_deref(),
             when_it_arrived(filed.internal_date.as_deref()).as_deref(),
             &raw,
         )
-        .await
+        .await;
+
+    if let Err(why) = sent {
+        let found = the_account_it_is_going_to
+            .which_messages_carry(into, &filed.message_id.unwrap_or_default())
+            .await?;
+        if found.is_empty() {
+            return Ok(MovedAcross::TheDestinationRefusedIt(why.to_string()));
+        }
+    }
+
+    the_account_it_is_in
+        .take_it_off_the_server(from, uid)
+        .await?;
+    Ok(MovedAcross::ItArrivedAndTheSourceLetItGo)
 }
 
 impl TheAccountItIsIn for crate::application::mail_controller::MailController {
@@ -201,7 +320,20 @@ impl TheAccountItIsGoingTo for crate::application::mail_controller::MailControll
         arrived: Option<&str>,
         raw: &[u8],
     ) -> Result<()> {
-        self.append_message(into, flags, arrived, raw).await
+        // Sent once. The ordinary `append_message` signs in again and sends the
+        // whole message a second time when the connection went, which for this
+        // command is how one message becomes two.
+        self.append_message_once(into, flags, arrived, raw).await
+    }
+
+    async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+        self.uids_with_message_id(folder, message_id).await
+    }
+}
+
+impl TheAccountItIsLeaving for crate::application::mail_controller::MailController {
+    async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
+        self.take_this_one_off(folder, uid).await
     }
 }
 
@@ -224,33 +356,105 @@ mod tests {
     /// The headers the source server answers a header fetch with.
     const THE_HEADERS: &str = "Subject: Lunch\r\nFrom: Ada <ada@example.com>\r\n\r\n";
 
+    /// The `Message-ID` the message carries.
+    ///
+    /// A header a stranger wrote, which is the whole reason it is quoted before
+    /// it becomes a search key rather than pasted into one.
+    const THE_IDENTIFIER: &str = "<lunch.4@example.com>";
+
+    /// How the server holding the message behaves.
+    ///
+    /// A struct rather than five positional arguments, because four of the five
+    /// are strings and a test reading `("", "", "UIDPLUS", "")` says nothing
+    /// about which is which.
+    #[derive(Clone, Copy)]
+    struct ASourceServer {
+        /// The UID the one message it holds really has. Different from the one
+        /// being asked about is a folder the message has been taken out of.
+        uid: u32,
+        flags: &'static str,
+        /// Empty means the server names no date at all, which is a real answer
+        /// and a different one from a date that cannot be read.
+        internal_date: &'static str,
+        /// What it advertises. `UIDPLUS` is what lets one message be removed on
+        /// its own; without it the only expunge available takes every message
+        /// in the mailbox flagged for removal, which is other people's mail.
+        capabilities: &'static str,
+        /// One command it turns down, matched against the whole line without
+        /// case, so `"UID STORE"` refuses the mark and leaves the rest alone.
+        refusing: &'static str,
+        /// The `Message-ID` header the message carries, or empty for a message
+        /// that arrived without one. Real mail does: `mail_sync.rs:564` keeps
+        /// such a message with an empty identifier, and an empty identifier is
+        /// not something a destination can be asked about.
+        message_id: &'static str,
+    }
+
+    impl Default for ASourceServer {
+        fn default() -> Self {
+            Self {
+                uid: THE_UID,
+                flags: flag::SEEN,
+                internal_date: "01-Aug-2026 10:00:00 +0000",
+                capabilities: "UIDPLUS",
+                refusing: "",
+                message_id: THE_IDENTIFIER,
+            }
+        }
+    }
+
     /// A mail server holding one message, filed with these flags on this date.
     ///
     /// `a_server_that_can` cannot stand in for this. It answers a `UID FETCH`
     /// with `OK` and no data at all, which reads to the client as a message
     /// that is not there, so neither the flags nor the bytes a crossing needs
     /// could come back from it.
-    ///
-    /// `internal_date` empty means the server names no date, which is a real
-    /// answer and a different one from a date that cannot be read.
     async fn a_server_holding_the_message(
         flags: &'static str,
         internal_date: &'static str,
     ) -> Conversation {
-        a_server_holding_the_message_numbered(THE_UID, flags, internal_date).await
+        a_source_server(ASourceServer {
+            flags,
+            internal_date,
+            // What the copy tests have always had, so widening this fixture for
+            // the move does not quietly give them an extension they were
+            // written without.
+            capabilities: "",
+            ..ASourceServer::default()
+        })
+        .await
     }
 
     /// The same, for a server whose message is not the one being asked about.
-    async fn a_server_holding_the_message_numbered(
-        uid: u32,
-        flags: &'static str,
-        internal_date: &'static str,
-    ) -> Conversation {
+    async fn a_server_naming_a_different_message() -> Conversation {
+        a_source_server(ASourceServer {
+            uid: THE_UID + 1,
+            internal_date: "",
+            capabilities: "",
+            ..ASourceServer::default()
+        })
+        .await
+    }
+
+    async fn a_source_server(how: ASourceServer) -> Conversation {
+        let ASourceServer {
+            uid,
+            flags,
+            internal_date,
+            capabilities,
+            refusing,
+            message_id,
+        } = how;
         conversing("* OK loopback ready\r\n", move |line| {
             let tag = line.split_whitespace().next().unwrap_or("*").to_string();
             let said = line.to_uppercase();
+            if !refusing.is_empty() && said.contains(&refusing.to_uppercase()) {
+                return Turn::Say(format!("{tag} NO the server would not do it\r\n"));
+            }
             if said.contains("CAPABILITY") {
-                return Turn::Say(format!("* CAPABILITY IMAP4rev1\r\n{tag} OK done\r\n"));
+                return Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 {capabilities}\r\n{tag} OK done\r\n"
+                ));
             }
             if said.contains(" LOGIN") || said.contains(" AUTHENTICATE") {
                 return Turn::Say(format!("{tag} OK signed in\r\n"));
@@ -275,12 +479,20 @@ mod tests {
                 } else {
                     format!(" INTERNALDATE \"{internal_date}\"")
                 };
+                let headers = if message_id.is_empty() {
+                    THE_HEADERS.to_string()
+                } else {
+                    format!("Message-ID: {message_id}\r\n{THE_HEADERS}")
+                };
                 return Turn::Say(format!(
                     "* 1 FETCH (UID {uid} FLAGS ({flags}) RFC822.SIZE 120{dated} \
-                     BODY[HEADER.FIELDS (SUBJECT FROM)] {{{}}}\r\n{THE_HEADERS})\r\n\
+                     BODY[HEADER.FIELDS (SUBJECT FROM MESSAGE-ID)] {{{}}}\r\n{headers})\r\n\
                      {tag} OK done\r\n",
-                    THE_HEADERS.len()
+                    headers.len()
                 ));
+            }
+            if said.contains("UID STORE") || said.contains("UID EXPUNGE") {
+                return Turn::Say(format!("{tag} OK done\r\n"));
             }
             if said.contains("LOGOUT") {
                 return Turn::Say(format!("* BYE signing off\r\n{tag} OK done\r\n"));
@@ -291,14 +503,6 @@ mod tests {
             Turn::Say(format!("{tag} BAD unscripted\r\n"))
         })
         .await
-    }
-
-    /// A mail server that hands the bytes over but names a different message.
-    ///
-    /// What a folder looks like when the message has been taken out from
-    /// somewhere else between one command and the next.
-    async fn a_server_naming_a_different_message() -> Conversation {
-        a_server_holding_the_message_numbered(THE_UID + 1, flag::SEEN, "").await
     }
 
     /// One end of a crossing, behind the lock a shared session needs.
@@ -340,6 +544,24 @@ mod tests {
                 .append_message(into, flags, arrived, raw)
                 .await
         }
+
+        async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.uids_with_message_id(message_id).await
+        }
+    }
+
+    impl TheAccountItIsLeaving for AnAccountAt {
+        async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
+            let mut session = self.0.lock().await;
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.take_this_one_off(uid).await
+        }
     }
 
     /// A source account signed in to that server, allowed to read.
@@ -360,6 +582,118 @@ mod tests {
     /// A destination account this program may not change anything at.
     async fn a_destination_this_program_may_not_write_to(server: &Conversation) -> AnAccountAt {
         AnAccountAt(tokio::sync::Mutex::new(reading_only_on(server).await))
+    }
+
+    /// The account a message is moving out of, allowed to change things.
+    ///
+    /// A move needs the source's write permission and a copy does not, which is
+    /// the difference between the two acts stated where it is used. The copy
+    /// tests keep [`the_account_it_is_in`], which cannot write at all.
+    async fn the_account_it_is_leaving(server: &Conversation) -> AnAccountAt {
+        AnAccountAt(tokio::sync::Mutex::new(signed_in_to(server).await))
+    }
+
+    /// What the destination does with the append it is sent.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum TheAppend {
+        /// It lands and the server says so.
+        Lands,
+        /// The server answers and turns it down.
+        IsRefused,
+        /// The answer never arrives. The message may be there or may not.
+        IsNeverAnswered,
+    }
+
+    /// A destination that answers however the test says, without a server.
+    ///
+    /// Every other test here drives a real loopback server, and the three
+    /// endings about an unanswered append cannot be. The only way to make a
+    /// real connection stop answering is to close it, and a closed connection
+    /// cannot then be asked what the folder holds. That question is the whole
+    /// subject of those three tests, so what the destination says is scripted
+    /// here instead and what it was asked is recorded for the assertions.
+    struct ADestinationThat<'a> {
+        the_append: TheAppend,
+        /// What each successive search answers, oldest first. A move asks once
+        /// before the append and once after, so a test gives two.
+        searches: tokio::sync::Mutex<std::collections::VecDeque<Result<Vec<u32>>>>,
+        /// Every command it was asked for, in order.
+        asked: tokio::sync::Mutex<Vec<String>>,
+        /// The source server, read at the instant the append arrives.
+        ///
+        /// This is the ordering witness and there is no other. Two transcripts
+        /// are two separate lists with no shared clock, so the position of a
+        /// line in one says nothing about whether it came before a line in the
+        /// other, and an assertion comparing the two indices is arithmetic that
+        /// cannot fail. Reading the source's transcript from inside the append
+        /// is what really answers the question, because the answer is taken at
+        /// the moment that matters instead of afterwards.
+        watching: Option<&'a Conversation>,
+        /// What the source had been told when the append arrived.
+        the_source_had_been_told: tokio::sync::Mutex<Vec<String>>,
+    }
+
+    impl<'a> ADestinationThat<'a> {
+        fn takes_the_append(the_append: TheAppend, searches: Vec<Result<Vec<u32>>>) -> Self {
+            Self {
+                the_append,
+                searches: tokio::sync::Mutex::new(searches.into()),
+                asked: tokio::sync::Mutex::new(Vec::new()),
+                watching: None,
+                the_source_had_been_told: tokio::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn watching_the_source(mut self, source: &'a Conversation) -> Self {
+            self.watching = Some(source);
+            self
+        }
+
+        async fn everything_it_was_asked(&self) -> Vec<String> {
+            self.asked.lock().await.clone()
+        }
+
+        async fn what_the_source_had_been_told(&self) -> Vec<String> {
+            self.the_source_had_been_told.lock().await.clone()
+        }
+    }
+
+    impl TheAccountItIsGoingTo for ADestinationThat<'_> {
+        async fn take_this_message(
+            &self,
+            into: &str,
+            _flags: Option<&str>,
+            _arrived: Option<&str>,
+            _raw: &[u8],
+        ) -> Result<()> {
+            if let Some(source) = self.watching {
+                *self.the_source_had_been_told.lock().await = source.transcript().await;
+            }
+            self.asked.lock().await.push(format!("APPEND {into}"));
+            match self.the_append {
+                TheAppend::Lands => Ok(()),
+                TheAppend::IsRefused => Err(crate::common::Error::Protocol(
+                    "the server would not take it".to_string(),
+                )),
+                // The variant a dropped connection and a timeout both arrive
+                // as, and the only one this code may read as "nobody knows".
+                TheAppend::IsNeverAnswered => Err(crate::common::Error::Network(
+                    "the connection to the mail server failed".to_string(),
+                )),
+            }
+        }
+
+        async fn which_messages_carry(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            self.asked
+                .lock()
+                .await
+                .push(format!("SEARCH {folder} {message_id}"));
+            self.searches
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or_else(|| Ok(Vec::new()))
+        }
     }
 
     /// Wait for one crossing, and fail with a sentence rather than a timeout.
@@ -640,5 +974,379 @@ mod tests {
         assert!(refused.is_err(), "{refused:?}");
         let said = everything_said_to(&destination).await;
         assert!(!said.to_uppercase().contains("APPEND"), "{said}");
+    }
+
+    // ── The move, which is the copy with one command on the end ─────────────
+
+    /// Where in a transcript a line matching this first appears.
+    fn first_line_holding(transcript: &[String], word: &str) -> Option<usize> {
+        transcript
+            .iter()
+            .position(|line| line.to_uppercase().contains(word))
+    }
+
+    /// Where the source was first told to change something.
+    ///
+    /// `STORE` and `EXPUNGE` together, because which of the two comes first is
+    /// the server's business and neither may come before the append.
+    fn first_removal_line(transcript: &[String]) -> Option<usize> {
+        [
+            first_line_holding(transcript, "UID STORE"),
+            first_line_holding(transcript, "EXPUNGE"),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+
+    #[tokio::test]
+    async fn test_the_message_reaches_one_server_and_leaves_the_other() {
+        // Both ends of the act, each read off the server that did it. The order
+        // they happened in is the test below, which needs a witness this one
+        // does not have.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_can("UIDPLUS").await;
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &the_account_it_is_going_to(&destination).await,
+            "Archive",
+        ))
+        .await
+        .expect("the move to be made");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+
+        let at_the_destination = destination.transcript().await;
+        assert!(
+            first_line_holding(&at_the_destination, "APPEND").is_some(),
+            "nothing was appended: {at_the_destination:?}"
+        );
+        // The two commands as they go on the wire, spelled out. A substring
+        // would pass against a removal aimed at another message, and the UID is
+        // the whole of what says which message is being taken off.
+        let at_the_source = source.transcript().await;
+        assert!(
+            source.was_told("UID STORE 4 +FLAGS (\\Deleted)").await,
+            "the message was never marked for removal at the source: {at_the_source:?}"
+        );
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the message was never taken off the source: {at_the_source:?}"
+        );
+        assert!(
+            first_line_holding(&at_the_source, "APPEND").is_none(),
+            "the append was sent to the source: {at_the_source:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nothing_is_said_to_the_source_that_changes_it_until_the_append_has_gone_out() {
+        // The safeguard the whole phase exists for, asked at the one instant
+        // that can answer it: what had the source been told when the
+        // destination was handed the message? Anything at all in that snapshot
+        // that changes the source means the removal went first, and a failure
+        // between the two would then have left the message nowhere.
+        //
+        // Read from inside the destination rather than compared afterwards.
+        // Two transcripts have no shared clock, so an assertion comparing a
+        // line's position in one with a line's position in the other is
+        // arithmetic that cannot fail whatever the code does.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])])
+            .watching_the_source(&source);
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to be made");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        assert!(
+            !destination.everything_it_was_asked().await.is_empty(),
+            "the destination was never given the message, so the snapshot below \
+             is of a source nothing had happened to yet"
+        );
+
+        let when_the_append_went_out = destination.what_the_source_had_been_told().await;
+        assert!(
+            first_removal_line(&when_the_append_went_out).is_none(),
+            "the source had already been told to give the message up before the \
+             destination was handed it: {when_the_append_went_out:?}"
+        );
+        // And it really was told afterwards, so the snapshot above is a
+        // measurement of the order rather than of a move that never removed
+        // anything.
+        let at_the_source = source.transcript().await;
+        assert!(
+            first_removal_line(&at_the_source).is_some(),
+            "nothing was ever removed at the source: {at_the_source:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_that_refuses_the_append_leaves_the_source_untouched() {
+        // The assertion this whole phase exists for, and it is stated by an
+        // absence: no STORE and no EXPUNGE at all. An absence cannot fail
+        // against a build that never gets that far, so the outcome is asserted
+        // beside it: a refused append has to come back naming the refusal, not
+        // as a bare failure and not as a move.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &the_account_it_is_going_to(&destination).await,
+            "Archive",
+        ))
+        .await
+        .expect("a refused append is an ending, not a failure");
+
+        assert!(
+            matches!(across, MovedAcross::TheDestinationRefusedIt(_)),
+            "{across:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places() {
+        // The message really is at the destination, so this is not a failure.
+        // It is two copies, and the sentence has to say so, because trying
+        // again would make a third and nothing anywhere removes duplicates.
+        let source = a_source_server(ASourceServer {
+            refusing: "UID STORE",
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_server_that_can("UIDPLUS").await;
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &the_account_it_is_going_to(&destination).await,
+            "Archive",
+        ))
+        .await
+        .expect("a source that would not let go is an ending, not a failure");
+
+        assert!(
+            matches!(across, MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_)),
+            "{across:?}"
+        );
+        assert!(
+            everything_said_to(&destination)
+                .await
+                .to_uppercase()
+                .contains("APPEND"),
+            "the message never reached the destination, so this test is not \
+             about what it is named after"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_source_that_cannot_remove_one_message_says_it_is_here_and_marked() {
+        // No UIDPLUS. The only expunge available would take every message in
+        // the mailbox flagged for removal, including ones flagged from another
+        // client, so the message is marked and left. It is at the destination
+        // and it is here marked, which is a different fact from the one above
+        // and syncs back as a row marked deleted.
+        let source = a_source_server(ASourceServer {
+            capabilities: "",
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_server_that_can("UIDPLUS").await;
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &the_account_it_is_going_to(&destination).await,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert_eq!(
+            across,
+            MovedAcross::ItArrivedAndIsStillHereMarked(
+                crate::service::protocols::imap::StillHere::TheServerCannotRemoveOneMessage
+            ),
+            "a server that cannot remove one message reported the message as gone"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(said.to_uppercase().contains("UID STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_refusal_is_an_answer_so_a_message_already_there_is_not_read_as_an_arrival() {
+        // The destination said no, and the folder happens to already hold a
+        // message carrying the same identifier: an earlier copy of this one, or
+        // a message a stranger wrote that identifier onto. A refusal is an
+        // answer, so nothing needs asking, and asking anyway would read that
+        // older message as the one just sent and remove the only copy that
+        // really exists.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination =
+            ADestinationThat::takes_the_append(TheAppend::IsRefused, vec![Ok(vec![9])]);
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("a refused append is an ending, not a failure");
+
+        assert!(
+            matches!(across, MovedAcross::TheDestinationRefusedIt(_)),
+            "{across:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_an_append_with_no_answer_that_is_found_afterwards_is_removed_at_the_source() {
+        // The destination stopped answering and the message is there. Asking is
+        // what turns "nobody knows" into "it landed", and only then may
+        // anything be removed. The search answers nothing before the append and
+        // one message after it, which is what an arrival looks like.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(
+            TheAppend::IsNeverAnswered,
+            vec![Ok(vec![]), Ok(vec![9])],
+        );
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        let asked = destination.everything_it_was_asked().await;
+        assert!(
+            asked
+                .iter()
+                .any(|line| line.starts_with("SEARCH") && line.contains(THE_IDENTIFIER)),
+            "the destination was never asked whether it had the message: {asked:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(said.to_uppercase().contains("UID STORE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_an_append_with_no_answer_that_is_not_found_removes_nothing() {
+        // Asked, and the folder holds nothing new carrying that identifier. The
+        // message never arrived, so it is still exactly where it was and
+        // nothing at the source may be touched.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(
+            TheAppend::IsNeverAnswered,
+            vec![Ok(vec![]), Ok(vec![])],
+        );
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert!(
+            matches!(across, MovedAcross::ItNeverArrivedSoNothingWasRemoved(_)),
+            "{across:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing() {
+        // A message that arrived with no `Message-ID` cannot be asked about,
+        // and searching for an empty identifier is not a confirmation of
+        // anything: it matches whatever the server decides it matches.
+        // `mail_sync.rs:564` keeps such a message with an empty identifier, so
+        // this is a real message rather than an invented one.
+        let source = a_source_server(ASourceServer {
+            message_id: "",
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::IsNeverAnswered, vec![]);
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert!(
+            matches!(across, MovedAcross::ItIsNotKnownWhereItIs(_)),
+            "{across:?}"
+        );
+        let asked = destination.everything_it_was_asked().await;
+        assert!(
+            !asked.iter().any(|line| line.starts_with("SEARCH")),
+            "an empty identifier was sent to a server as a search key: {asked:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_move_that_crosses_never_sends_a_copy_or_a_move_to_the_source() {
+        // `COPY` and `MOVE` name a mailbox on the connection they are sent
+        // down. Sent at the source for a destination in another account they
+        // would look up the folder path on the wrong server, and on a server
+        // that happened to have a folder of that name the message would land in
+        // the wrong mailbox rather than failing.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_can("UIDPLUS").await;
+
+        waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &the_account_it_is_going_to(&destination).await,
+            "Archive",
+        ))
+        .await
+        .expect("the move to be made");
+
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("UID COPY"), "{said}");
+        assert!(!said.to_uppercase().contains("UID MOVE"), "{said}");
     }
 }

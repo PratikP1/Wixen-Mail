@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A message can be moved to a folder on another account.** Choose Move to,
+  pick a folder under a different account, and the message is put at that
+  account's server and then taken off the one it was in. Whether it has been
+  read, whether it is starred and whether it has been answered travel with it,
+  along with the date the first server filed it.
+
+  Nothing is taken off the first server until the second has answered that it
+  holds the message. That order is the whole of what makes this safe: if the
+  second server refuses, the message is exactly where it was and you are told
+  so, and nothing was made anywhere.
+
+  If the second server takes the message and the first will not let go, you are
+  told the message is now in both places, and it stays in the list rather than
+  disappearing from it. That is a message you can tidy up. A message removed
+  from the only server that had it is not.
+
+  If the second server stops answering part way through, the program asks it
+  afterwards whether it now holds the message, and only takes the original off
+  if the answer is yes. Where it cannot ask, nothing is taken off and you are
+  told the message may be in either place.
+
+  The moved message will not be in this program's list of the folder it went to
+  until that account next syncs that folder. The server it was appended to gives
+  out a number for it that nothing tells this program, so there is nothing to
+  write down until the folder is read again.
+
+  What has not been checked: none of this has run against a real mail account.
+  See the known limitations below.
+
 - **The Move to and Copy to window shows every account you have set up.** It
   used to show only the account the message was in, so a folder on another
   account was somewhere you could not choose. Any account with somewhere to put
@@ -347,6 +376,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
     shortcuts document and said nowhere in the window.
   - Reading each file takes a moment, so a very large batch from a network
     drive can make the window pause. Nothing bounds the number of files.
+
+### Known limitations
+
+- **Moving and copying a message between accounts has only ever met loopback
+  servers written for the tests.** Those prove which commands go out and in what
+  order, and they prove that nothing is taken off the first server until the
+  second has answered. They cannot answer three things, and only a real account
+  can:
+
+  - What a real provider does with an upload of a large message, say one
+    carrying a ten megabyte attachment.
+  - What Gmail does with a message uploaded from another account. Gmail treats
+    a copy as a label rather than a second message, and what it makes of one
+    arriving from outside is not known here.
+  - What a provider does when a message arrives carrying an identifier the
+    destination account already holds. That identifier is what the program asks
+    about when an upload's answer never arrives, so a provider that changes it
+    or refuses over it changes what the question can settle.
 
 ### Fixed
 

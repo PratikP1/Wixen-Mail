@@ -7,7 +7,7 @@ use crate::common::{Error, Result};
 use crate::data::account::Account;
 use crate::service::protocols::MailAuth;
 use crate::service::protocols::imap::{
-    Deletion, FolderCounts, ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession,
+    Deletion, FolderCounts, ImapClient, ImapConfig, ImapFolder, ImapMessage, ImapSession, LetGo,
     MailboxStatus, Moved,
 };
 use crate::service::protocols::pop3::{Pop3Client, Pop3Config, Pop3Session};
@@ -706,6 +706,45 @@ impl MailController {
     ) -> Result<()> {
         once_more_if_the_connection_went!(self, session, {
             session.append_message(into, flags, arrived, raw).await
+        })
+    }
+
+    /// The same command, sent once and never a second time.
+    ///
+    /// Deliberately outside `once_more_if_the_connection_went!`. That macro
+    /// signs in again and runs the work over when the connection went, which is
+    /// right for a read and wrong for this: a server that took the message and
+    /// whose answer was lost on the way back is sent the whole message again,
+    /// and the account ends up holding two copies with nothing anywhere saying
+    /// so. An `APPEND` is not safe to repeat, because nothing in the reply, and
+    /// nothing on a server without UIDPLUS, says whether the first one landed.
+    ///
+    /// So a dropped connection here is an answer nobody has, and the caller
+    /// asks the destination what it now holds rather than sending the message
+    /// a second time. That question is
+    /// [`crate::application::mail_across_accounts::whether_the_destination_has_it`].
+    pub async fn append_message_once(
+        &self,
+        into: &str,
+        flags: Option<&str>,
+        arrived: Option<&str>,
+        raw: &[u8],
+    ) -> Result<()> {
+        let mut session = self.require_imap().await?;
+        session.append_message(into, flags, arrived, raw).await
+    }
+
+    /// Take one message off this account's server, as the end of a move.
+    ///
+    /// Safe to send twice, unlike the append above, which is why this one keeps
+    /// the retry: the mark is the same mark whether it is set once or twice,
+    /// and an expunge of a message that has already gone finds nothing to do.
+    pub async fn take_this_one_off(&self, folder: &str, uid: u32) -> Result<LetGo> {
+        once_more_if_the_connection_went!(self, session, {
+            if session.selected_folder() != Some(folder) {
+                session.select_folder(folder).await?;
+            }
+            session.take_this_one_off(uid).await
         })
     }
 

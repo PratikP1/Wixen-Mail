@@ -306,6 +306,24 @@ impl Moved {
     }
 }
 
+/// What happened when a message was taken off the server it was on.
+///
+/// The removal half of a move, for a move whose other half happened at a
+/// different server. Three answers rather than a yes or no, and they are the
+/// same three [`Moved`] gives about its own removal, for the same reason: the
+/// caller takes the row out of the list on the strength of this, and a message
+/// still sitting in the folder unmarked must not be reported as one that left.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LetGo {
+    /// Gone from the folder.
+    ItIsGone,
+    /// Still in the folder, marked for removal.
+    StillHereMarked(StillHere),
+    /// Still in the folder and not even marked, because the server would not
+    /// take the mark.
+    StillHereUnmarked(String),
+}
+
 /// What actually happened when a message was deleted.
 ///
 /// Five outcomes rather than a yes or no, because they are five different facts
@@ -1495,6 +1513,45 @@ impl ImapSession {
         )
         .await?
         .map_err(protocol_error("Could not save a copy of the message"))
+    }
+
+    /// Take one message off this server, as the last step of a move.
+    ///
+    /// The removal half of [`Self::move_message`], split out for a move whose
+    /// copy landed at another account's server. The same two commands in the
+    /// same order, and the same three answers, so a move that crossed and a
+    /// move that did not are decided about in the same terms.
+    ///
+    /// Not [`Self::remove_these`], which sends the same two commands and is
+    /// refused in the words "replace a saved draft". That is the caller it was
+    /// written for, and somebody moving a message out of an account they may
+    /// not change would have been sent looking for a draft they never saved.
+    /// The delete handler already worked the same wording around rather than
+    /// reuse it.
+    ///
+    /// Nothing here says where the other copy is. The caller knows that and
+    /// this does not, which is why the answer names only what this server did.
+    pub async fn take_this_one_off(&mut self, uid: u32) -> Result<LetGo> {
+        self.may_i("move a message")?;
+        self.require_selected()?;
+
+        if let Err(refused) = self.set_flag(uid, flag::DELETED, true).await {
+            return Ok(LetGo::StillHereUnmarked(refused.to_string()));
+        }
+        if !self.abilities.uid_expunge {
+            // Without UIDPLUS the only expunge available removes every message
+            // in the mailbox flagged for removal, including ones flagged from
+            // another client. That is other people's mail.
+            return Ok(LetGo::StillHereMarked(
+                StillHere::TheServerCannotRemoveOneMessage,
+            ));
+        }
+        if let Err(refused) = self.expunge_one(uid).await {
+            return Ok(LetGo::StillHereMarked(StillHere::TheServerRefusedIt(
+                refused.to_string(),
+            )));
+        }
+        Ok(LetGo::ItIsGone)
     }
 
     /// Put a message in the trash, or remove it outright.

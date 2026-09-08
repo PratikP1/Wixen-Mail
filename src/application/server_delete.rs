@@ -19,6 +19,7 @@
 //! the row exactly as it is, because taking it out would be the list saying
 //! something the server does not.
 
+use crate::application::mail_across_accounts::MovedAcross;
 use crate::service::protocols::imap::{Deletion, Moved};
 
 /// What the list should do with the row now.
@@ -65,6 +66,21 @@ pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
     WhatToDoNext {
         then,
         said: format!("{}: {subject}", moved.spoken(into)),
+    }
+}
+
+/// What to do and what to say after a move to another account.
+pub fn after_a_move_across_accounts(
+    across: &MovedAcross,
+    into: &str,
+    _destination_account: &str,
+    _still_in: &str,
+    subject: &str,
+) -> WhatToDoNext {
+    let _ = across;
+    WhatToDoNext {
+        then: ThenWhat::MarkItDeletedHere,
+        said: format!("Moved to {into}: {subject}"),
     }
 }
 

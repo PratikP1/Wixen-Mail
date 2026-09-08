@@ -17484,11 +17484,45 @@ fn spawn_folder_move(
                 }
             }
             (crate::application::mail_across_accounts::Crossing::AnotherAccount, false) => {
-                // A move across accounts is an append and then a removal at the
-                // source, and the removal is 04.1-03. Refused in words rather
-                // than sent as a `MOVE` the source server would answer by
-                // naming a folder it does not have.
-                return fail("moving a message to another account is not built yet".to_string());
+                let Some(destination_account) = destination_account else {
+                    return fail(
+                        "the account that folder is on is not set up on this computer".to_string(),
+                    );
+                };
+                // The destination's own held session, exactly as the copy uses,
+                // so the append carries that account's permission and the
+                // removal carries the source account's. They are two different
+                // answers and a move needs both.
+                let taking = match handle.block_on(
+                    crate::application::mail_session::the_session_at(&destination_account),
+                ) {
+                    Ok(session) => session,
+                    Err(why) => return fail(why.to_string()),
+                };
+                match handle.block_on(crate::application::mail_across_accounts::move_it_across(
+                    controller.as_ref(),
+                    &from,
+                    uid,
+                    taking.as_ref(),
+                    &into.id,
+                )) {
+                    // Every ending, including the ones where something went
+                    // wrong after the message landed, is worded and decided
+                    // about in `server_delete` beside the other four.
+                    Ok(across) => Ok(
+                        crate::application::server_delete::after_a_move_across_accounts(
+                            &across,
+                            &into.id,
+                            &destination_account.name,
+                            &from,
+                            &subject,
+                        ),
+                    ),
+                    // Nothing reached either server, so the message is exactly
+                    // where it was. That is what `move_it_across` promises about
+                    // its failures and it is the only thing this arm means.
+                    Err(why) => Err(why),
+                }
             }
             (crate::application::mail_across_accounts::Crossing::TheSameAccount, true) => handle
                 .block_on(controller.copy_message(&from, uid, &into.id))
