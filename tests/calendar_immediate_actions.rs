@@ -94,6 +94,7 @@ fn a_non_repeating_event(id: &str, summary: &str) -> CalendarEventItem {
         categories: String::new(),
         show_as: String::new(),
         recurrence_rule: None,
+        changed_on_its_own: false,
     }
 }
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 177
+open_count: 179
 waived_count: 0
 fixed_count: 15
-total_count: 192
-last_updated: 2026-09-08T20:00:00.000Z
+total_count: 194
+last_updated: 2026-09-08T21:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -207,6 +207,8 @@ last_updated: 2026-09-08T20:00:00.000Z
 | 190 | 04.1 | deviation | src/service/protocols/imap.rs |  | ImapSession::remove_these is refused in the words "replace a saved draft", which is wrong for every caller but the one it was written for. The delete handler already worked around it rather than reuse it, and the cross-account move now does the same by way of a new take_this_one_off whose gate says "move a message". Three callers now avoid one function because of its refusal wording; the wording itself is still not fixed, and fixing it means deciding what a neutral sentence costs the draft path that has the specific one today | open |  | 2026-09-08T12:00:00.000Z |  |
 | 191 | 04.1 | unrun-verify | src/presentation/wx_app.rs |  | This program has never been killed part way through a move between two real accounts and started again, so the one case the kept bytes exist for has never happened outside a test. Nor has the question put on the next start ever been heard: whether it is read out at all, whether both answers are reachable by keyboard, whether focus lands sensibly, and whether it reads as something unfinished rather than as an error, when nothing was lost, are all questions only NVDA can answer. The seven steps are written out in 04.1-04-SUMMARY.md, and two of their outcomes stop the phase rather than continuing it: nothing said at all on the next start, and the message arriving twice at the destination | open |  | 2026-09-08T20:00:00.000Z |  |
 | 192 | 04.1 | deviation | src/presentation/wx_app.rs |  | The question about an unfinished move is a wxWidgets MessageDialog, which the binding builds from a title and a body and which offers no seam for set_accessible_name_and_description. What a screen reader reads for it is its title and its text, both written here, and this is the house pattern that ask_about_the_folders_that_have_gone already follows. The words are also announced through the announcement queue at high priority, so somebody whose reader was mid-sentence still hears them; whether that reads as the same thing said twice is unverified by ear | open |  | 2026-09-08T20:00:00.000Z |  |
+| 193 | 05 | unrun-verify | src/presentation/pim_rows.rs |  | The clause "changed just for this day" has never been heard. Three questions only a screen reader run answers, and the words were chosen against reasoning rather than against a listener. Whether it reads as useful or as clutter when fifty-two rows of one series go past and one of them carries it. Whether it is confused with the unreadable-rule sentence when both could apply to the same row, since both are about the same series and both arrive in the same breath. And whether the joined time cell, which can now carry the date, the out-of-hours note and this clause at once, is still one thing somebody can take in while arrowing rather than three | open |  | 2026-09-08T21:00:00.000Z |  |
+| 194 | 05 | unmet-truth | src/application/calendar.rs |  | Whether an override row arriving from Google or Outlook carries a repeat rule of its own is still unknown. If it did, that row would expand across the whole window and appear on every date, which is worse than the double-show this plan measured. 05-01 was written to settle it by asserting the stored row's recurrence_rule is None after a local write, and that assertion cannot fail: the fixture writes the constant itself and save_calendar_event only round-trips it. Both provider paths derive the rule from the payload, at google_event_to_local and ms_event_to_local, so no local round trip can reach either. Settling it needs a fixture built from a real provider payload carrying an override with a RRULE, or a live account | open |  | 2026-09-08T21:00:00.000Z |  |
 
 ````json
 [
@@ -2512,6 +2514,30 @@ last_updated: 2026-09-08T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 193,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/pim_rows.rs",
+    "line": null,
+    "description": "The clause \"changed just for this day\" has never been heard. Three questions only a screen reader run answers, and the words were chosen against reasoning rather than against a listener. Whether it reads as useful or as clutter when fifty-two rows of one series go past and one of them carries it. Whether it is confused with the unreadable-rule sentence when both could apply to the same row, since both are about the same series and both arrive in the same breath. And whether the joined time cell, which can now carry the date, the out-of-hours note and this clause at once, is still one thing somebody can take in while arrowing rather than three",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T21:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 194,
+    "kind": "unmet-truth",
+    "phase": "05",
+    "file": "src/application/calendar.rs",
+    "line": null,
+    "description": "Whether an override row arriving from Google or Outlook carries a repeat rule of its own is still unknown. If it did, that row would expand across the whole window and appear on every date, which is worse than the double-show this plan measured. 05-01 was written to settle it by asserting the stored row's recurrence_rule is None after a local write, and that assertion cannot fail: the fixture writes the constant itself and save_calendar_event only round-trips it. Both provider paths derive the rule from the payload, at google_event_to_local and ms_event_to_local, so no local round trip can reach either. Settling it needs a fixture built from a real provider payload carrying an override with a RRULE, or a live account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T21:00:00.000Z",
     "resolved_at": null
   }
 ]

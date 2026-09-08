@@ -19,7 +19,7 @@
 use crate::application::reading_habits::WorkingDay;
 
 use super::date_display::{DateSettings, spoken};
-use super::read_aloud::{priority_worth_saying, status_worth_saying};
+use super::read_aloud::{a_changed_day_worth_saying, priority_worth_saying, status_worth_saying};
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
 
 /// One stored date, written the way this reader asked for it.
@@ -71,20 +71,41 @@ pub fn event_cell(
 ) -> String {
     match column {
         0 => {
-            if event.is_all_day {
+            let when = if event.is_all_day {
                 "All day".to_string()
             } else {
-                // The time, and whether it falls outside the working day.
-                // Words rather than a colour, because a colour is not
-                // available to the person this is for, and nothing at all
-                // inside the day, so most rows in most calendars cost nothing
-                // to hear.
-                let when = date(&event.start, dates, now);
-                match hour_of(&event.start).map(|hour| day.note_for(hour)) {
-                    Some(note) if !note.is_empty() => format!("{when}, {note}"),
-                    _ => when,
-                }
-            }
+                date(&event.start, dates, now)
+            };
+            // Whether the hour falls outside the working day. Words rather
+            // than a colour, because a colour is not available to the person
+            // this is for, and nothing at all inside the day, so most rows in
+            // most calendars cost nothing to hear. A whole day has no hour to
+            // be outside anything.
+            let out_of_hours = match event.is_all_day {
+                true => "",
+                false => hour_of(&event.start).map_or("", |hour| day.note_for(hour)),
+            };
+            // Whether this is a day of a series that was changed on its own
+            // rides here too, and not in a column of its own: a new column
+            // changes the column set, the headers and every calendar list, for
+            // a fact that is empty on nearly every row. Not in the status
+            // column either, because status already means the meeting's own
+            // status, and two unrelated facts in one cell is worse to listen
+            // to than a longer first cell.
+            //
+            // Joined rather than nested, because both notes can apply at once:
+            // a meeting moved into the evening is out of hours and is a day
+            // changed on its own, and the arms this used to be written as
+            // dropped whichever one came second.
+            [
+                when.as_str(),
+                out_of_hours,
+                a_changed_day_worth_saying(event.changed_on_its_own),
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ")
         }
         1 => non_empty(&event.summary, "No title"),
         2 => event.calendar_name.clone().unwrap_or_default(),
@@ -215,6 +236,15 @@ fn non_empty(value: &str, fallback: &str) -> String {
 mod tests {
     use super::*;
 
+    /// What a row says when the day was changed on its own.
+    ///
+    /// Written out here rather than asked of the function that builds it, and
+    /// written out a second time in `read_aloud`'s tests, so the two are
+    /// independent statements of one wording. A test that asks the code what
+    /// it says agrees with the code whatever the code says, and two copies of
+    /// one sentence have already drifted apart in this codebase.
+    const A_CHANGED_DAY: &str = "changed just for this day";
+
     /// Fixed rather than read from the machine, so these read the same
     /// wherever they run.
     fn at_a_desk() -> DateSettings {
@@ -256,6 +286,62 @@ mod tests {
         let cell = event_cell(&morning, 0, at_a_desk(), midday(), WorkingDay::default());
 
         assert!(!cell.contains("working day"), "{cell}");
+    }
+
+    #[test]
+    fn test_a_day_changed_on_its_own_says_so_in_the_row_itself() {
+        // This is the reading a screen reader gives while somebody arrows down
+        // the list. `wx_app` answers the calendar's virtual list with
+        // `event_cell`, so a clause that lives anywhere else is a clause
+        // nobody hears without pressing a key first. Fifty-two Tuesdays go
+        // past and one of them was moved; the row is where that has to be
+        // said.
+        let mut moved = event();
+        moved.changed_on_its_own = true;
+
+        let cell = event_cell(&moved, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(cell.contains(A_CHANGED_DAY), "{cell}");
+        // Appended to the time rather than instead of it. A cell that says
+        // only that the day was changed has lost the one thing a calendar row
+        // is for.
+        assert!(
+            cell.starts_with(&event_cell(
+                &event(),
+                0,
+                at_a_desk(),
+                midday(),
+                WorkingDay::default()
+            )),
+            "{cell}"
+        );
+        assert!(
+            !event_cell(&event(), 0, at_a_desk(), midday(), WorkingDay::default())
+                .contains(A_CHANGED_DAY),
+            "an ordinary day is being told it was changed"
+        );
+    }
+
+    #[test]
+    fn test_a_changed_day_out_of_hours_is_told_both_things() {
+        // The time cell already carries one qualifying clause and it is
+        // written as a match with two arms, so the obvious way to add a second
+        // clause drops the first. Both are worth hearing and neither replaces
+        // the other.
+        let mut moved_to_the_evening = event();
+        moved_to_the_evening.changed_on_its_own = true;
+        moved_to_the_evening.start = "2026-07-27 19:00".to_string();
+
+        let cell = event_cell(
+            &moved_to_the_evening,
+            0,
+            at_a_desk(),
+            midday(),
+            WorkingDay::default(),
+        );
+
+        assert!(cell.contains("after the working day"), "{cell}");
+        assert!(cell.contains(A_CHANGED_DAY), "{cell}");
     }
 
     #[test]
@@ -367,6 +453,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         }
     }
 
