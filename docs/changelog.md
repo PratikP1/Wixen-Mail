@@ -20,6 +20,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Mail it puts a copy of the message in another folder, and in the calendar,
   Tasks or Notes it copies what you are on.
 
+  It is on the context menu too, next to Move, on the same three lists. Press
+  the Applications key or `Shift+F10` on an event, a task or a note and you
+  meet "Move to another calendar" and "Copy to another calendar" together,
+  rather than having to know the key.
+
   The list of places offered for a copy includes the one the item is already
   in. Two of the same thing on one list is a duplicate you may want, and it is
   the one destination a copy has that a move does not, so it is offered rather

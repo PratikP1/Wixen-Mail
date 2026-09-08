@@ -3741,6 +3741,7 @@ impl WxMailApp {
                             || id == ID_CONTEXT_TOGGLE_COMPLETE
                             || id == ID_CONTEXT_TOGGLE_PIN
                             || id == ID_CONTEXT_MOVE_ITEM
+                            || id == ID_CONTEXT_COPY_ITEM
                             || ((id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER)
                                 && showing != PimModule::Mail) =>
                         {
@@ -3765,7 +3766,7 @@ impl WxMailApp {
                                     PimCommand::ToggleComplete
                                 } else if id == ID_CONTEXT_MOVE_ITEM || id == ID_MOVE_TO_FOLDER {
                                     PimCommand::Move
-                                } else if id == ID_COPY_TO_FOLDER {
+                                } else if id == ID_CONTEXT_COPY_ITEM || id == ID_COPY_TO_FOLDER {
                                     PimCommand::Copy
                                 } else {
                                     PimCommand::TogglePin

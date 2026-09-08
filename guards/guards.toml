@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 479 records have arrived since and have not been through it.
+# 480 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17559,4 +17559,42 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+]
+
+# ── A copy line on a panel where copying means nothing ──────────────────────
+#
+# What it costs a person: they arrow down the menu on a reminder, meet "Copy to
+# another list", choose it, and are told to choose a task first. A reminder is
+# sorted into a bucket worked out from when it is due, and a bucket is not a
+# place, so there is nowhere for the copy to go. A line that does nothing is a
+# stop somebody lands on, hears, and learns nothing from, and it costs a moment
+# every time it is passed.
+#
+# The break is the one somebody adding a sixth module would make: the menu
+# widened and the command not. It is written on the reminders list because that
+# is the kind the command refuses and the menu is one line away from offering.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
+# --no-fail-fast` on a clean tree. One test, and not the ordering check beside
+# it: a reminder is offered no move either, so that one has nothing to sit
+# beside and steps over the kind.
+[[guard]]
+name = "the copy line is on exactly the menus whose command accepts one"
+file = "src/application/context_menu.rs"
+before = """    entry("Mar&k done or not done", Action::ToggleComplete),
+    entry("&Delete", Action::DeleteItem),
+];
+
+static TASKS: &[Entry] = &["""
+after = """    entry("Mar&k done or not done", Action::ToggleComplete),
+    entry("Cop&y to another list", Action::CopyItem),
+    entry("&Delete", Action::DeleteItem),
+];
+
+static TASKS: &[Entry] = &["""
+red = [
+    "application::context_menu::tests::test_a_copy_is_offered_exactly_where_it_means_something",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 17 },
 ]

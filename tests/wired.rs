@@ -2093,9 +2093,9 @@ fn test_move_and_copy_follow_the_module_rather_than_always_meaning_a_mail_folder
          handler and does something else there"
     );
     assert!(
-        squashed.contains("id==ID_COPY_TO_FOLDER{PimCommand::Copy"),
-        "the menu bar's Copy no longer asks for a copy, so Ctrl+Shift+Y in \
-         Tasks does whatever the arm below it does"
+        squashed.contains("id==ID_CONTEXT_COPY_ITEM||id==ID_COPY_TO_FOLDER{PimCommand::Copy"),
+        "the menu bar's Copy or the context menu's no longer asks for a copy, \
+         so it reaches the item handler and does something else there"
     );
 
     let pim_arm = squashed

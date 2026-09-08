@@ -368,9 +368,15 @@ static CONTACTS: &[Entry] = &[
     entry("&Delete", Action::DeleteItem),
 ];
 
+// Copy sits next to Move on all three, because they are the two acts on one
+// item and these lists are met in order by somebody who cannot skim. The
+// letter is y on each, which is the letter Copy to folder already claims on
+// the message menu and the one Ctrl+Shift+Y carries. None of these three menus
+// claimed it.
 static EVENTS: &[Entry] = &[
     entry("&New event", Action::NewItem),
     entry("Mo&ve to another calendar", Action::MoveItem),
+    entry("Cop&y to another calendar", Action::CopyItem),
     entry("&Delete", Action::DeleteItem),
 ];
 
@@ -383,6 +389,7 @@ static REMINDERS: &[Entry] = &[
 static TASKS: &[Entry] = &[
     entry("&New task", Action::NewItem),
     entry("Mo&ve to another list", Action::MoveItem),
+    entry("Cop&y to another list", Action::CopyItem),
     entry("Mar&k done or not done", Action::ToggleComplete),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -390,6 +397,7 @@ static TASKS: &[Entry] = &[
 static NOTES: &[Entry] = &[
     entry("&New note", Action::NewItem),
     entry("Mo&ve to another folder", Action::MoveItem),
+    entry("Cop&y to another folder", Action::CopyItem),
     entry("&Pin or unpin", Action::TogglePin),
     entry("&Delete", Action::DeleteItem),
 ];
