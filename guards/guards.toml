@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 470 records have arrived since and have not been through it.
+# 472 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17237,4 +17237,95 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
+]
+
+# ── A moved day of a series showing on both dates ────────────────────────────
+#
+# What it costs a person: a meeting that was moved from the Tuesday to the
+# Thursday is on the calendar on both days, and only one of them is real. They
+# either turn up to a meeting that is not happening or miss the one that is.
+#
+# The break is the half-fix rather than the deletion, because the deletion is
+# not the mistake anybody makes. `one_day_kept_out_of_the_series` does two
+# writes and the second one is the one that carries the de-duplication: it
+# saves the series with that day called off, which is the EXDATE
+# `occurrences::falls_on` filters the expansion by. Somebody writing the
+# obvious half of this stores the changed day and stops, and the calendar looks
+# right until the series is expanded over the date the day used to be on.
+#
+# `let _ = (series, the_day_it_was, who)` is in the break because the three
+# arguments are then unused and the gate lints with `-D warnings`, so the honest
+# half-fix does not build without it. It changes nothing about what the function
+# does.
+#
+# Two records rather than one, because the break reddens tests in two places
+# that cannot be measured together. A record carrying `suite` is scoped to that
+# one integration target: `scripts/guards.py` runs `--test <suite>` and nothing
+# else, and `tests/house_style.rs` resolves every name in its red list to
+# `tests/<suite>.rs`, so a library test path named here is looked for inside the
+# integration file and reported gone. The library half is the record below.
+#
+# Measured 2026-09-08 with `cargo test --test a_moved_day_is_shown_once`.
+
+[[guard]]
+name = "a day moved out of a series is still shown on the date it left"
+file = "src/application/calendar.rs"
+suite = "a_moved_day_is_shown_once"
+before = """    cache.save_calendar_event(that_day)?;
+    let called_off =
+        crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+    let (after, _) = with_one_more_day_called_off(series, &called_off);
+    cache.save_calendar_event(&CalendarEventEntry {
+        pending: series.pending || who == WhoTookTheDayOut::SomebodyHere,
+        ..after
+    })"""
+after = """    let _ = (series, the_day_it_was, who);
+    cache.save_calendar_event(that_day)"""
+red = [
+    "test_a_day_moved_out_of_a_series_is_on_the_calendar_once",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "tests/a_moved_day_is_shown_once.rs", tests = 2 },
+]
+
+# ── The same break, and everything in the library that answers to it ─────────
+#
+# The record above is scoped to one integration target and can say nothing
+# about the library. This one carries the rest of what the same break reddens,
+# measured on its own with `WIXEN_TEST_THREADS=4 cargo test --lib
+# --no-fail-fast` on a clean tree on 2026-09-08.
+#
+# Worth reading rather than skipping: seven tests across three modules answer
+# to one pair of writes. The CalDAV read, the Google read and the screen that
+# changes one day all reach this function, which is the point of it existing
+# once, and it is also why breaking it quietly would go wrong in three places
+# at once.
+
+[[guard]]
+name = "a day moved out of a series is still shown on the date it left, in the library"
+file = "src/application/calendar.rs"
+before = """    cache.save_calendar_event(that_day)?;
+    let called_off =
+        crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+    let (after, _) = with_one_more_day_called_off(series, &called_off);
+    cache.save_calendar_event(&CalendarEventEntry {
+        pending: series.pending || who == WhoTookTheDayOut::SomebodyHere,
+        ..after
+    })"""
+after = """    let _ = (series, the_day_it_was, who);
+    cache.save_calendar_event(that_day)"""
+red = [
+    "application::caldav_sync::tests::test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows",
+    "application::calendar::tests::test_a_day_moved_at_google_is_one_meeting_at_its_new_time",
+    "application::calendar::tests::test_a_day_of_a_series_is_folded_in_even_when_google_names_it_first",
+    "application::calendar::tests::test_who_took_the_day_out_decides_whether_the_series_is_still_waiting_to_be_sent",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_a_series_kept_only_here_is_not_refused_over_its_zone",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_a_series_is_no_longer_shown_and_the_others_still_are",
+    "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
+]
+tests_last_seen = [
+    { file = "src/application/caldav_sync.rs", tests = 67 },
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]

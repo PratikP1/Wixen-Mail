@@ -429,6 +429,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Known limitations
 
+- **A meeting moved to another day is on the calendar once, on the day it
+  really is, except where the calendar it came from does not say which day it
+  replaced.** When you move one day of a repeating meeting, or when a calendar
+  server or Google moves one for you, that day is taken off the series at the
+  same time as the moved appointment is saved. So the old date is empty and the
+  new one has the appointment, and the other weeks are untouched. That was
+  believed rather than measured until now, and there is a test that would
+  notice if it stopped being true.
+
+  The exception is a calendar that sends a moved appointment without saying
+  which day of the series it stands in for. There is then no day to take off,
+  and the meeting is on the calendar twice: once on the day the rule puts it
+  and once on the day it moved to. This is counted while the calendar syncs and
+  the sync says so, so it is not silent, but nothing removes the extra one for
+  you.
+
 - **Moving and copying a message between accounts has only ever met loopback
   servers written for the tests.** Those prove which commands go out and in what
   order, and they prove that nothing is taken off the first server until the
