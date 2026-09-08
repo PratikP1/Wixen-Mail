@@ -38,9 +38,9 @@ const ACCOUNT: &str = "acct";
 /// series either side of the day that moves.
 ///
 /// Fixed dates rather than a window counted from today, so this reads the same
-/// in a year as it does now. `CalendarEventItem::the_window_now` is what the
-/// panel uses and it is the clock; the arithmetic it does is already held to an
-/// exact pair of dates by a test of its own.
+/// in a year as it does now. `CalendarShowing::window` is what the panel uses
+/// and its anchor is the clock; the arithmetic it does is already held to exact
+/// pairs of dates by tests of its own.
 const WINDOW_OPENS: &str = "2026-07-01T00:00:00Z";
 const WINDOW_CLOSES: &str = "2026-09-30T23:59:59Z";
 

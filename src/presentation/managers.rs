@@ -16,7 +16,7 @@ use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::contact_convert;
-use crate::presentation::ui_types::{CalendarEventItem, UIUpdate};
+use crate::presentation::ui_types::{CalendarEventItem, CalendarShowing, UIUpdate};
 use crate::presentation::wx_app::{WxUIState, lock_state, send_refusal, send_status};
 use crate::presentation::{wx_calendar, wx_managers};
 use async_channel::Sender;
@@ -432,6 +432,7 @@ pub fn add_calendar_by_address(
                 &Some(cache),
                 Some(account.clone()),
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(said) => {
@@ -1175,17 +1176,21 @@ pub fn manage_calendar(
         // shows what is stored, which is the thing that has to be true.
         // Bounded to the stretch the panel shows, for the reason the first
         // load is: the whole account was being read to draw a year and a half
-        // of it.
-        let (from, to) = CalendarEventItem::the_window_now();
+        // of it. The stretch is whichever view is on screen, not the whole
+        // eighteen months: reading it back with the wide window was how saving
+        // an event in a week view put somebody in the agenda with no word said.
+        let showing = the_calendar_on_screen(state);
+        let (from, to) = showing.window();
         match cache.events_that_could_fall_between(
             &account,
             &from.format("%Y-%m-%dT00:00:00Z").to_string(),
             &to.format("%Y-%m-%dT23:59:59Z").to_string(),
         ) {
             Ok(events) => {
-                let _ = tx.try_send(UIUpdate::CalendarEventsLoaded(
-                    CalendarEventItem::every_day_shown(&events, from, to),
-                ));
+                let _ = tx.try_send(UIUpdate::CalendarEventsLoaded {
+                    events: CalendarEventItem::every_day_shown(&events, from, to),
+                    showing: Some(showing),
+                });
             }
             Err(e) => failures.push(format!("reload: {}", e)),
         }
@@ -2196,9 +2201,14 @@ pub fn search_calendar(
     match cache.search_calendar_events(&account, query, LIMIT) {
         Ok(events) => {
             let found = events.len();
-            let _ = tx.try_send(UIUpdate::CalendarEventsLoaded(
-                events.iter().map(CalendarEventItem::from_entry).collect(),
-            ));
+            let _ = tx.try_send(UIUpdate::CalendarEventsLoaded {
+                events: events.iter().map(CalendarEventItem::from_entry).collect(),
+                // No window was asked for, so the heading describes the rows.
+                // Naming a period over results from anywhere in the calendar
+                // would be a heading about something other than the list,
+                // which is the fault naming the window exists to prevent.
+                showing: None,
+            });
             if found == 0 {
                 let _ = a11y.signal(
                     crate::presentation::accessibility::feedback::Event::NothingFound,
@@ -2515,6 +2525,7 @@ pub fn new_pim_item(
                 &Some(cache),
                 Some(account_id),
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(e) => {
@@ -2697,6 +2708,7 @@ pub fn pim_command(
                 &Some(cache),
                 account_id,
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(e) => {
@@ -2823,6 +2835,7 @@ pub fn new_container(
                 &Some(cache),
                 Some(active_or_local(state)),
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(e) => {
@@ -3169,6 +3182,7 @@ pub fn copy_message_into(
                 &Some(cache),
                 Some(account_id),
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(e) => send_refusal(tx, rt, &format!("Could not copy it: {e}")),
@@ -4126,9 +4140,14 @@ mod tests {
 
         let sent = rx.try_recv().expect("the panel to be sent something");
         match sent {
-            UIUpdate::CalendarEventsLoaded(items) => {
-                assert_eq!(items.len(), 1, "{items:#?}");
-                assert_eq!(items[0].summary, "Quarterly planning");
+            UIUpdate::CalendarEventsLoaded { events, showing } => {
+                assert_eq!(events.len(), 1, "{events:#?}");
+                assert_eq!(events[0].summary, "Quarterly planning");
+                // No window was asked for, so the heading must keep describing
+                // the rows. A search shows events from anywhere in the
+                // calendar, and a period named over them would be a heading
+                // about a list that is not on screen.
+                assert_eq!(showing, None, "the search named a period");
             }
             other => panic!("the calendar search sent {other:?} rather than events"),
         }
@@ -6236,6 +6255,7 @@ pub fn delete_container(
                 &Some(cache),
                 Some(account_id),
                 tx,
+                the_calendar_on_screen(state),
             );
         }
         Err(e) => {
@@ -6882,6 +6902,16 @@ pub fn write_to_group(
 }
 
 /// The account being looked at, or this computer when there is none.
+/// The calendar window on screen, so that reading it back does not change it.
+///
+/// Every command that writes something reads its module back, and the
+/// calendar's read takes a window. Reading it back with the whole eighteen
+/// months would put somebody who was looking at a week into the agenda with
+/// nothing said, every time they saved an event.
+fn the_calendar_on_screen(state: &Arc<StdMutex<WxUIState>>) -> CalendarShowing {
+    lock_state(state).calendar_showing
+}
+
 fn active_or_local(state: &Arc<StdMutex<WxUIState>>) -> String {
     lock_state(state)
         .active_account_id
@@ -6900,6 +6930,10 @@ fn refill_the_contacts_panel(cache: &Arc<MessageCache>, account_id: &str, tx: &S
         &Some(cache.clone()),
         Some(account_id.to_string()),
         tx,
+        // Contacts, always, so the calendar window is never read. Named
+        // rather than left out, because the day a caller here starts loading
+        // a module chosen at runtime is the day this has to be the real one.
+        CalendarShowing::agenda_now(),
     );
 }
 

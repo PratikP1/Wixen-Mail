@@ -510,8 +510,16 @@ pub enum UIUpdate {
     /// It grows by a set of contacts each time a count is added, so the boxing
     /// is not a one-off.
     ContactsSyncComplete(Box<crate::application::contacts_sync::SyncResult>),
-    /// Calendar events loaded for display
-    CalendarEventsLoaded(Vec<CalendarEventItem>),
+    /// Calendar events loaded for display.
+    ///
+    /// `showing` is the window that was asked for, and `None` where none was.
+    /// The heading is written from it rather than from the rows, so an empty
+    /// week still says which week it is; see [`calendar_heading`] for why
+    /// search is the case that has to stay `None`.
+    CalendarEventsLoaded {
+        events: Vec<CalendarEventItem>,
+        showing: Option<CalendarShowing>,
+    },
     /// The working-day hours were saved in Settings.
     ///
     /// Carried as an update rather than applied where it was saved, because
@@ -924,7 +932,11 @@ impl CalendarView {
     /// The name the picker offers and a screen reader reads out.
     #[must_use]
     pub fn label(self) -> &'static str {
-        todo!("the name each view is offered under")
+        match self {
+            Self::Agenda => "Agenda",
+            Self::Week => "Week",
+            Self::Month => "Month",
+        }
     }
 
     /// Whether Prev and Next mean anything in this view.
@@ -936,9 +948,31 @@ impl CalendarView {
     /// and waits.
     #[must_use]
     pub fn moves_by_period(self) -> bool {
-        todo!("whether a period before and after this one exists")
+        match self {
+            Self::Agenda => false,
+            Self::Week | Self::Month => true,
+        }
     }
 }
+
+/// The day a week starts on here.
+///
+/// Fixed, and Monday, decided rather than defaulted. Windows knows which day
+/// this machine's locale starts a week on, and asking it would be the answer
+/// most people expect. It would also put a second locale-shaped question in
+/// the calendar, and this module's dates already carry one:
+/// [`crate::presentation::date_display::ENGLISH_ONLY`] records that the month
+/// names and the relative wording are English whatever the machine is set to,
+/// and FEEDBACK-02 in phase 6 is the requirement that changes it. A week that
+/// starts where the locale says while the month beside it is written in
+/// English is half an answer that reads as a bug rather than as a limitation.
+///
+/// So: one honest small answer now, and the locale question answered once, for
+/// dates and weeks together, when phase 6 opens it. What that costs somebody
+/// on a machine whose week starts on Sunday is one day of offset in which
+/// seven days a week view holds. It never hides an event: every day is in some
+/// week, and Prev and Next still move by exactly seven days.
+const THE_WEEK_STARTS_ON: chrono::Weekday = chrono::Weekday::Mon;
 
 /// Which way [`CalendarShowing::stepped`] moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -996,7 +1030,18 @@ impl CalendarShowing {
     /// week from one week and a day.
     #[must_use]
     pub fn window(self) -> (chrono::NaiveDate, chrono::NaiveDate) {
-        todo!("the window each view names around its day")
+        match self.view {
+            CalendarView::Agenda => CalendarEventItem::the_window_around(self.day),
+            CalendarView::Week => {
+                let first =
+                    self.day - chrono::Duration::days(days_since_the_week_started(self.day));
+                (first, first + chrono::Duration::days(6))
+            }
+            CalendarView::Month => {
+                let first = the_first_of_the_month_holding(self.day);
+                (first, the_last_day_of_the_month_holding(self.day))
+            }
+        }
     }
 
     /// The same view, one period earlier or later.
@@ -1007,9 +1052,70 @@ impl CalendarShowing {
     /// a different day would be a button that says it did something.
     #[must_use]
     pub fn stepped(self, step: Step) -> Self {
-        let _ = step;
-        todo!("the period before and after this one")
+        let day = match (self.view, step) {
+            (CalendarView::Agenda, _) => self.day,
+            (CalendarView::Week, Step::Back) => self.day - chrono::Duration::days(7),
+            (CalendarView::Week, Step::Forward) => self.day + chrono::Duration::days(7),
+            (CalendarView::Month, Step::Back) => the_same_day_of(
+                the_first_of_the_month_holding(self.day) - chrono::Duration::days(1),
+                self.day,
+            ),
+            (CalendarView::Month, Step::Forward) => the_same_day_of(
+                the_last_day_of_the_month_holding(self.day) + chrono::Duration::days(1),
+                self.day,
+            ),
+        };
+        Self { day, ..self }
     }
+}
+
+/// How far into its week a day is, counted from [`THE_WEEK_STARTS_ON`].
+fn days_since_the_week_started(day: chrono::NaiveDate) -> i64 {
+    use chrono::Datelike;
+    let from_monday = day.weekday().num_days_from_monday();
+    let starts = THE_WEEK_STARTS_ON.num_days_from_monday();
+    i64::from((from_monday + 7 - starts) % 7)
+}
+
+/// The first day of the calendar month a day falls in.
+fn the_first_of_the_month_holding(day: chrono::NaiveDate) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    day.with_day(1).unwrap_or(day)
+}
+
+/// The last day of the calendar month a day falls in.
+///
+/// Worked out as the day before the first of the next month, rather than from a
+/// table of lengths, so February in a leap year is right without anybody
+/// remembering it is a case.
+fn the_last_day_of_the_month_holding(day: chrono::NaiveDate) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    let first = the_first_of_the_month_holding(day);
+    let (year, month) = match first.month() {
+        12 => (first.year() + 1, 1),
+        month => (first.year(), month + 1),
+    };
+    chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .map_or(day, |next| next - chrono::Duration::days(1))
+}
+
+/// The same day of the month as `keeping`, inside the month `landed_in` falls
+/// in, moved back to the last of that month when it does not have that many
+/// days.
+///
+/// The thirty-first of March stepping back a month is the case that catches
+/// every naive version. Adding or taking thirty days lands in February and
+/// then, stepping forward again, back in a month that is not March. Clamping
+/// gives the twenty-eighth of February and then the twenty-eighth of March, so
+/// the round trip returns to the month it started in, which is what a person
+/// pressing Prev and then Next is asking for. It does not return to the same
+/// *day*, and nothing here claims it does: a month view shows a month, and
+/// which day inside it the anchor sits on is not something anybody sees.
+fn the_same_day_of(landed_in: chrono::NaiveDate, keeping: chrono::NaiveDate) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    landed_in
+        .with_day(keeping.day())
+        .unwrap_or_else(|| the_last_day_of_the_month_holding(landed_in))
 }
 
 /// The heading over the calendar list.
@@ -1034,8 +1140,19 @@ pub fn calendar_heading(
     events: &[CalendarEventItem],
     settings: crate::presentation::date_display::DateSettings,
 ) -> String {
-    let _ = (showing, events, settings);
-    todo!("name the window where one was asked for, and the rows where none was")
+    use crate::presentation::date_display;
+    use chrono::Datelike;
+
+    match showing.map(|showing| (showing.view, showing.window().0)) {
+        Some((CalendarView::Week, first)) => format!(
+            "Week of {}",
+            date_display::a_day_in_words(&first.format("%Y-%m-%d").to_string(), settings)
+        ),
+        Some((CalendarView::Month, first)) => {
+            date_display::a_month_in_words(first.year(), first.month(), settings)
+        }
+        Some((CalendarView::Agenda, _)) | None => calendar_range_label(events),
+    }
 }
 
 /// Task list item for UI display
@@ -1345,12 +1462,13 @@ impl CalendarEventItem {
         rows
     }
 
-    /// The stretch of calendar the list shows, counted from today.
-    pub fn the_window_now() -> (chrono::NaiveDate, chrono::NaiveDate) {
-        Self::the_window_around(chrono::Utc::now().date_naive())
-    }
-
-    /// The same stretch, counted from a day handed in.
+    /// The stretch of calendar the agenda shows, counted from a day handed in.
+    ///
+    /// There was a `the_window_now` beside this that read the clock and called
+    /// it. Every one of its callers now asks [`CalendarShowing::window`]
+    /// instead, because a window depends on the chosen view and not only on
+    /// today, so it was reached by nothing in the running program and is gone
+    /// rather than left looking used.
     ///
     /// Split from the clock the way `date_display::format_for_list` already
     /// takes `now`, so the arithmetic can be held to an exact pair of dates by
@@ -2164,7 +2282,7 @@ mod tests {
         // has no clock in it at all. Do not "improve" this one into that one.
         let today = chrono::Utc::now().date_naive();
 
-        let (from, to) = CalendarEventItem::the_window_now();
+        let (from, to) = CalendarShowing::agenda_now().window();
 
         assert_eq!(
             (to - from).num_days(),
@@ -2319,6 +2437,28 @@ mod tests {
                 dates_written(crate::presentation::date_display::DateOrder::MonthFirst),
             ),
             "Week of July 20, 2026",
+        );
+    }
+
+    #[test]
+    fn test_the_heading_names_a_different_week_after_a_step() {
+        // Written after measuring the guard on the week step, which reddened
+        // one test: the one asserting the dates. Nothing asked whether the
+        // *heading* moved, so a step that answered the same day would have
+        // redrawn the same week under the same words and only a hand-written
+        // comparison of two dates would have caught it. What somebody hears
+        // after pressing Prev is this string.
+        let empty: [CalendarEventItem; 0] = [];
+        let settings = dates_written(crate::presentation::date_display::DateOrder::DayFirst);
+        let heard = |showing| calendar_heading(Some(showing), &empty, settings);
+
+        let this_week = week_of("2026-07-22");
+
+        assert_eq!(heard(this_week), "Week of 20 July 2026");
+        assert_eq!(heard(this_week.stepped(Step::Back)), "Week of 13 July 2026");
+        assert_eq!(
+            heard(this_week.stepped(Step::Forward)),
+            "Week of 27 July 2026"
         );
     }
 

@@ -6,6 +6,7 @@
 
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::theme;
+use crate::presentation::ui_types::CalendarView;
 use wxdragon::prelude::*;
 
 /// Handles to interactive elements in the calendar content panel.
@@ -14,6 +15,7 @@ pub struct CalendarPanelHandles {
     pub btn_today: Button,
     pub btn_prev: Button,
     pub btn_next: Button,
+    pub view_picker: Choice,
     pub date_label: StaticText,
     pub event_list: ListCtrl,
 }
@@ -43,22 +45,60 @@ pub fn build_calendar_panel(
     // Toolbar row
     let toolbar_sizer = BoxSizer::builder(Orientation::Horizontal).build();
     let btn_today = Button::builder(&panel).with_label("&Today").build();
-    // Moving between weeks and months is not built: nothing here holds a
-    // period to move, and the event list is loaded by the account rather than
-    // by a date range. Both buttons used to announce "previous period" and
-    // "next period" and change nothing at all, which is worse than a button
-    // that says it cannot be used: a screen reader reports a disabled button
-    // as unavailable on arrival, so nobody presses it and waits for an answer
-    // that is not coming.
-    let btn_prev = Button::builder(&panel).with_label("&< Prev").build();
-    let btn_next = Button::builder(&panel).with_label("&Next >").build();
+    // The event list is loaded by a date range, and the range is whichever
+    // view the picker beside these buttons is on. In the agenda there is no
+    // period before or after, so both are disabled until a week or a month is
+    // chosen; the handler in `wx_app` turns them on with every load. A screen
+    // reader reports a disabled button as unavailable on arrival, so nobody
+    // presses one and waits for an answer that is not coming.
+    //
+    // The label and the accessible name are both real names, and they are the
+    // same name. They reach different places: Windows takes a native button's
+    // UI Automation name, which Narrator reads, from the button's own window
+    // text, while `set_accessible_name` writes MSAA, which is what NVDA reads.
+    // The labels used to be Prev and Next with an angle bracket either side, so
+    // Narrator read the punctuation aloud, and the accessible names both ended
+    // "not built yet". The old labels are described here rather than quoted:
+    // the accelerator check in tests/wired.rs reads this file for labels and
+    // counted a quoted one as a second control claiming Alt+N.
+    let btn_prev = Button::builder(&panel)
+        .with_label("&Previous period")
+        .build();
+    let btn_next = Button::builder(&panel).with_label("&Next period").build();
     btn_prev.enable(false);
     btn_next.enable(false);
-    set_accessible_name(&btn_prev, "Previous period, not built yet");
-    set_accessible_name(&btn_next, "Next period, not built yet");
+    set_accessible_name(&btn_prev, "Previous period");
+    set_accessible_name(&btn_next, "Next period");
+
+    // The view picker. Here rather than only in Settings, because a view is
+    // something somebody changes while looking at the calendar, and a control
+    // for it two dialogs away is a control nobody uses. Settings holds the
+    // one this opens on.
+    let view_label = StaticText::builder(&panel).with_label("&View:").build();
+    let view_picker = Choice::builder(&panel)
+        .with_choices(
+            CalendarView::OFFERED
+                .iter()
+                .map(|view| view.label().to_string())
+                .collect(),
+        )
+        // Something has to be selected, or the box opens blank and a screen
+        // reader reads a control with no value. Which one is the stored
+        // default, written over this by the caller once the config is read.
+        .with_selection(Some(0))
+        .build();
+    set_accessible_name(&view_picker, "Calendar view");
+
     toolbar_sizer.add(&btn_today, 0, SizerFlag::All, 4);
     toolbar_sizer.add(&btn_prev, 0, SizerFlag::All, 4);
     toolbar_sizer.add(&btn_next, 0, SizerFlag::All, 4);
+    toolbar_sizer.add(
+        &view_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    toolbar_sizer.add(&view_picker, 0, SizerFlag::All, 4);
 
     // Date heading
     let date_label = StaticText::builder(&panel)
@@ -104,6 +144,7 @@ pub fn build_calendar_panel(
         btn_today,
         btn_prev,
         btn_next,
+        view_picker,
         date_label,
         event_list,
     }

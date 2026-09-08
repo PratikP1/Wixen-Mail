@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 179
+open_count: 182
 waived_count: 0
 fixed_count: 15
-total_count: 194
-last_updated: 2026-09-08T21:00:00.000Z
+total_count: 197
+last_updated: 2026-09-08T17:35:23.552Z
 ---
 
 # Broken Windows Ledger
@@ -209,6 +209,9 @@ last_updated: 2026-09-08T21:00:00.000Z
 | 192 | 04.1 | deviation | src/presentation/wx_app.rs |  | The question about an unfinished move is a wxWidgets MessageDialog, which the binding builds from a title and a body and which offers no seam for set_accessible_name_and_description. What a screen reader reads for it is its title and its text, both written here, and this is the house pattern that ask_about_the_folders_that_have_gone already follows. The words are also announced through the announcement queue at high priority, so somebody whose reader was mid-sentence still hears them; whether that reads as the same thing said twice is unverified by ear | open |  | 2026-09-08T20:00:00.000Z |  |
 | 193 | 05 | unrun-verify | src/presentation/pim_rows.rs |  | The clause "changed just for this day" has never been heard. Three questions only a screen reader run answers, and the words were chosen against reasoning rather than against a listener. Whether it reads as useful or as clutter when fifty-two rows of one series go past and one of them carries it. Whether it is confused with the unreadable-rule sentence when both could apply to the same row, since both are about the same series and both arrive in the same breath. And whether the joined time cell, which can now carry the date, the out-of-hours note and this clause at once, is still one thing somebody can take in while arrowing rather than three | open |  | 2026-09-08T21:00:00.000Z |  |
 | 194 | 05 | unmet-truth | src/application/calendar.rs |  | Whether an override row arriving from Google or Outlook carries a repeat rule of its own is still unknown. If it did, that row would expand across the whole window and appear on every date, which is worse than the double-show this plan measured. 05-01 was written to settle it by asserting the stored row's recurrence_rule is None after a local write, and that assertion cannot fail: the fixture writes the constant itself and save_calendar_event only round-trips it. Both provider paths derive the rule from the payload, at google_event_to_local and ms_event_to_local, so no local round trip can reach either. Settling it needs a fixture built from a real provider payload carrying an override with a RRULE, or a live account | open |  | 2026-09-08T21:00:00.000Z |  |
+| 195 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | Nothing about the week view has been heard. Four questions only a screen reader run answers. Whether the heading, which is a StaticText the announcement queue also speaks on the calendar-period topic, is heard once or twice when Previous period is pressed. Whether Week of 20 July 2026 is the right amount of words to hear on every press, or whether it should shorten after the first. Whether the View box in the toolbar is reached and understood before somebody starts arrowing the list, since it is the fourth control on a row that starts with three buttons. And whether the announcement topic really suppresses a burst: five quick presses of Next should read the fifth week and no other, and the topic is the mechanism but nobody has heard it happen | open |  | 2026-09-08T17:35:12.582Z |  |
+| 196 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | Previous period and Next period carry the same name on both Windows accessibility channels by construction, and neither channel has been read. The button label is Previous period and Next period, which is what Windows gives UI Automation for a native button and therefore what Narrator says, and set_accessible_name writes the same words to MSAA, which is what NVDA says. Both were checked by reading the code, not by running Axe.Windows over UI Automation or scripts/msaa-names.ps1 over MSAA. The View box beside them is a Choice with a StaticText label of its own and an explicit accessible name of Calendar view, and is unread on both channels for the same reason | open |  | 2026-09-08T17:35:22.872Z |  |
+| 197 | 05 | deviation | src/presentation/managers.rs |  | The reload after an edit now asks for the window on screen rather than the whole eighteen months, so saving an event in a week view no longer puts somebody back in the agenda with nothing said. Nothing tests that it does. The window arithmetic it calls has eleven tests, and the wiring, one call to the_calendar_on_screen inside manage_calendar, has none: manage_calendar opens a wxWidgets dialog and needs a Frame, so a test would first have to extract the reload into a function of its own, and any test of it would live in managers.rs, which 41 guard records fingerprint, at roughly 80 minutes of remeasurement on the critical path for a one-line change. The plan offered fix-with-a-test or record-as-a-stub; this is the third thing, fixed without one, and it is here so that the gap is visible rather than implied by the absence of a test | open |  | 2026-09-08T17:35:23.552Z |  |
 
 ````json
 [
@@ -2538,6 +2541,42 @@ last_updated: 2026-09-08T21:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T21:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 195,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/wx_calendar_module.rs",
+    "line": null,
+    "description": "Nothing about the week view has been heard. Four questions only a screen reader run answers. Whether the heading, which is a StaticText the announcement queue also speaks on the calendar-period topic, is heard once or twice when Previous period is pressed. Whether Week of 20 July 2026 is the right amount of words to hear on every press, or whether it should shorten after the first. Whether the View box in the toolbar is reached and understood before somebody starts arrowing the list, since it is the fourth control on a row that starts with three buttons. And whether the announcement topic really suppresses a burst: five quick presses of Next should read the fifth week and no other, and the topic is the mechanism but nobody has heard it happen",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T17:35:12.582Z",
+    "resolved_at": null
+  },
+  {
+    "id": 196,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/wx_calendar_module.rs",
+    "line": null,
+    "description": "Previous period and Next period carry the same name on both Windows accessibility channels by construction, and neither channel has been read. The button label is Previous period and Next period, which is what Windows gives UI Automation for a native button and therefore what Narrator says, and set_accessible_name writes the same words to MSAA, which is what NVDA says. Both were checked by reading the code, not by running Axe.Windows over UI Automation or scripts/msaa-names.ps1 over MSAA. The View box beside them is a Choice with a StaticText label of its own and an explicit accessible name of Calendar view, and is unread on both channels for the same reason",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T17:35:22.872Z",
+    "resolved_at": null
+  },
+  {
+    "id": 197,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The reload after an edit now asks for the window on screen rather than the whole eighteen months, so saving an event in a week view no longer puts somebody back in the agenda with nothing said. Nothing tests that it does. The window arithmetic it calls has eleven tests, and the wiring, one call to the_calendar_on_screen inside manage_calendar, has none: manage_calendar opens a wxWidgets dialog and needs a Frame, so a test would first have to extract the reload into a function of its own, and any test of it would live in managers.rs, which 41 guard records fingerprint, at roughly 80 minutes of remeasurement on the critical path for a one-line change. The plan offered fix-with-a-test or record-as-a-stub; this is the third thing, fixed without one, and it is here so that the gap is visible rather than implied by the absence of a test",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T17:35:23.552Z",
     "resolved_at": null
   }
 ]

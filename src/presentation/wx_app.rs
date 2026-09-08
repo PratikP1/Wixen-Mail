@@ -422,6 +422,14 @@ pub struct WxUIState {
     /// In state rather than captured by the paint callback, so saving new
     /// hours in Settings changes what the rows say without a restart.
     pub working_day: crate::application::reading_habits::WorkingDay,
+    /// Which calendar view is on screen and the day it is anchored on.
+    ///
+    /// In state rather than captured by a handler, because four different
+    /// things read the calendar back: opening the module, hiding a calendar in
+    /// the sidebar, saving an event in the calendar window, and Prev or Next.
+    /// Every one of them has to ask for the same window, or saving an event in
+    /// a week view silently puts somebody back in the agenda.
+    pub calendar_showing: CalendarShowing,
 }
 
 impl Default for WxUIState {
@@ -467,6 +475,7 @@ impl Default for WxUIState {
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
+            calendar_showing: CalendarShowing::agenda_now(),
         }
     }
 }
@@ -476,6 +485,10 @@ struct PimPanelRefs {
     // Calendar
     cal_event_list: ListCtrl,
     cal_date_label: StaticText,
+    /// Held so that every load can say whether a period before and after this
+    /// one exists. In the agenda neither does.
+    cal_prev: Button,
+    cal_next: Button,
     cal_tree: TreeCtrl,
     // Contacts
     contact_list: ListCtrl,
@@ -1460,6 +1473,8 @@ impl WxMailApp {
             let pim_refs = PimPanelRefs {
                 cal_event_list: cal_cp.event_list,
                 cal_date_label: cal_cp.date_label,
+                cal_prev: cal_cp.btn_prev,
+                cal_next: cal_cp.btn_next,
                 cal_tree: cal_sb.tree,
                 contact_list: contacts_cp.contact_list,
                 contacts_tree: contacts_sb.tree,
@@ -1838,8 +1853,11 @@ impl WxMailApp {
 
                     // Fill the panel that was just shown. Without this the
                     // module opens empty however much is stored.
-                    let account_id = lock_state(&state).active_account_id.clone();
-                    load_module_data(module, &switch_cache, account_id, &switch_tx);
+                    let (account_id, showing) = {
+                        let s = lock_state(&state);
+                        (s.active_account_id.clone(), s.calendar_showing)
+                    };
+                    load_module_data(module, &switch_cache, account_id, &switch_tx, showing);
                 }
             };
 
@@ -1873,26 +1891,84 @@ impl WxMailApp {
             }
 
             // ── Calendar panel button handlers ──────────────────────────
-            // Today writes the date onto the heading, and said nothing while
-            // doing it: the one place in this window where something visible
-            // changed with no word spoken, so a screen reader user pressing it
-            // could not tell it from a button that did nothing.
             //
-            // Prev and Next are disabled where they are built, because they
-            // move nothing. They used to announce "previous period" and "next
-            // period" and change nothing at all, which is the worst of the
-            // three: an answer saying the thing happened.
-            cal_cp.btn_today.on_click({
-                let label = cal_cp.date_label;
+            // All four go through one closure: it writes the new view and day
+            // into the state, reads the calendar back for that window, and
+            // says where the person landed. Four separate handlers were how
+            // the heading and the list came to disagree, because the heading
+            // is written from the window and the list from the rows and only
+            // one of them was ever updated.
+            //
+            // The period is announced on a topic, so pressing Next five times
+            // quickly reads the fifth week and not five headings. `btn_today`
+            // already used the announcement queue and had no topic; it does
+            // now, the same one, so a Today after four Nexts also replaces
+            // rather than queues.
+            let show_the_calendar = {
+                let state = state.clone();
+                let cache = message_cache.clone();
+                let ui_tx = ui_tx.clone();
                 let a11y = a11y.clone();
-                move |_| {
-                    let today = chrono::Local::now().format("%A, %B %e, %Y").to_string();
-                    let said = format!("Today, {today}");
-                    label.set_label(&said);
-                    let _ = a11y.announce(
+                move |moved_to: CalendarShowing| {
+                    let account = {
+                        let mut s = lock_state(&state);
+                        s.calendar_showing = moved_to;
+                        s.active_account_id.clone()
+                    };
+                    load_module_data(PimModule::Calendar, &cache, account, &ui_tx, moved_to);
+                    // From the window rather than from the rows, and said even
+                    // when the window is empty, which is the case somebody most
+                    // needs told about: a week with nothing in it described by
+                    // its rows says "No events" and names no week.
+                    let said =
+                        calendar_heading(Some(moved_to), &[], date_settings_from_stored_config());
+                    let _ = a11y.announce_topic(
                         &said,
                         crate::presentation::accessibility::announcements::Priority::Normal,
+                        "calendar-period",
                     );
+                }
+            };
+
+            cal_cp.btn_today.on_click({
+                let show_the_calendar = show_the_calendar.clone();
+                let state = state.clone();
+                move |_| {
+                    let view = lock_state(&state).calendar_showing.view;
+                    show_the_calendar(CalendarShowing::now(view));
+                }
+            });
+
+            cal_cp.btn_prev.on_click({
+                let show_the_calendar = show_the_calendar.clone();
+                let state = state.clone();
+                move |_| {
+                    let showing = lock_state(&state).calendar_showing;
+                    show_the_calendar(showing.stepped(Step::Back));
+                }
+            });
+
+            cal_cp.btn_next.on_click({
+                let show_the_calendar = show_the_calendar.clone();
+                let state = state.clone();
+                move |_| {
+                    let showing = lock_state(&state).calendar_showing;
+                    show_the_calendar(showing.stepped(Step::Forward));
+                }
+            });
+
+            cal_cp.view_picker.on_selection_changed({
+                let show_the_calendar = show_the_calendar.clone();
+                let state = state.clone();
+                let picker = cal_cp.view_picker;
+                move |_| {
+                    let chosen = picker
+                        .get_selection()
+                        .and_then(|at| usize::try_from(at).ok())
+                        .and_then(|at| CalendarView::OFFERED.get(at).copied())
+                        .unwrap_or_default();
+                    let day = lock_state(&state).calendar_showing.day;
+                    show_the_calendar(CalendarShowing { view: chosen, day });
                 }
             });
 
@@ -2164,6 +2240,7 @@ impl WxMailApp {
                                 &message_cache,
                                 Some(account_id.clone()),
                                 &ui_tx,
+                                CalendarShowing::agenda_now(),
                             );
                         } else {
                             send_refusal(&ui_tx, &runtime, "No cache available for import");
@@ -2424,7 +2501,13 @@ impl WxMailApp {
                             );
                             // Refresh so the list shows the new title and time.
                             let account = lock_state(&state).active_account_id.clone();
-                            load_module_data(PimModule::Notes, &save_cache, account, &save_tx);
+                            load_module_data(
+                                PimModule::Notes,
+                                &save_cache,
+                                account,
+                                &save_tx,
+                                CalendarShowing::agenda_now(),
+                            );
                         }
                         Err(e) => {
                             tracing::error!("Failed to save note {}: {}", note.id, e);
@@ -3221,8 +3304,17 @@ impl WxMailApp {
                         // more or fewer is showing. Read back rather than
                         // patched in memory, so the panel shows what is
                         // stored, which is the thing that has to be true.
-                        let account = lock_state(&state).active_account_id.clone();
-                        load_module_data(PimModule::Calendar, &calendar_cache, account, &ui_tx);
+                        let (account, showing) = {
+                            let s = lock_state(&state);
+                            (s.active_account_id.clone(), s.calendar_showing)
+                        };
+                        load_module_data(
+                            PimModule::Calendar,
+                            &calendar_cache,
+                            account,
+                            &ui_tx,
+                            showing,
+                        );
                     }
                 });
                 wire_context_menu(&tasks_sb.tree, || {
@@ -11219,11 +11311,20 @@ pub(crate) fn persist_default_account(id: Option<&str>) {
     }
 }
 
+/// Read one module's stored rows and send them to the panel.
+///
+/// `showing` is which window the calendar is to be read for. It is a parameter
+/// rather than something worked out here for the same reason `account_id` is:
+/// this runs off the state and does not hold it, and every caller already
+/// knows. Passed by every caller including the ones loading another module, so
+/// that a path which forgets is a compile error rather than a calendar that
+/// silently springs back to the agenda.
 pub(crate) fn load_module_data(
     module: PimModule,
     cache: &Option<Arc<MessageCache>>,
     account_id: Option<String>,
     tx: &Sender<UIUpdate>,
+    showing: CalendarShowing,
 ) {
     let Some(cache) = cache.as_ref() else {
         return;
@@ -11269,7 +11370,7 @@ pub(crate) fn load_module_data(
             // by it. Reading every event in the account and then narrowing in
             // memory cost 277 ms against 68 ms on a six year calendar, and it
             // ran here, on the thread that has to keep answering.
-            let (from, to) = CalendarEventItem::the_window_now();
+            let (from, to) = showing.window();
             let events = from_every(&sources, &mut failures, "events", |id| {
                 cache.events_that_could_fall_between(
                     id,
@@ -11287,7 +11388,7 @@ pub(crate) fn load_module_data(
             // about it at all. So the boxes were real, always ticked, and
             // meant nothing.
             let hidden = CalendarContainerItem::hidden_among(&shown_calendars);
-            let showing: Vec<_> = events
+            let on_screen: Vec<_> = events
                 .into_iter()
                 .filter(|event| {
                     CalendarContainerItem::is_showing(event.calendar_id.as_deref(), &hidden)
@@ -11295,9 +11396,10 @@ pub(crate) fn load_module_data(
                 .collect();
             // Every day a series falls on, not one row per stored event. A
             // weekly meeting used to appear once, on the day it was set up.
-            updates.push(UIUpdate::CalendarEventsLoaded(
-                CalendarEventItem::every_day_shown(&showing, from, to),
-            ));
+            updates.push(UIUpdate::CalendarEventsLoaded {
+                events: CalendarEventItem::every_day_shown(&on_screen, from, to),
+                showing: Some(showing),
+            });
         }
         PimModule::Contacts => {
             let contacts = from_every(&sources, &mut failures, "contacts", |id| {
@@ -16377,9 +16479,23 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // because the row text is the announcement.
             pim.cal_event_list.set_item_count(rows as i64);
         }
-        UIUpdate::CalendarEventsLoaded(events) => {
+        UIUpdate::CalendarEventsLoaded { events, showing } => {
             lock_state(state).events = events.clone();
-            pim.cal_date_label.set_label(&calendar_range_label(events));
+            // The window that was asked for, not the rows that came back. An
+            // empty week described by its rows says "No events", and somebody
+            // who has just pressed Next is then told nothing about where they
+            // landed. Search asks for no window and keeps the older answer.
+            pim.cal_date_label.set_label(&calendar_heading(
+                *showing,
+                events,
+                date_settings_from_stored_config(),
+            ));
+            // Prev and Next only mean something in a period. In the agenda
+            // there is nothing before, so they are unavailable rather than
+            // present and inert.
+            let moves = showing.is_some_and(|showing| showing.view.moves_by_period());
+            pim.cal_prev.enable(moves);
+            pim.cal_next.enable(moves);
             // Virtual mode: the row count, and the callback answers for
             // each cell as it paints. Filling row by row is what put a
             // ceiling of a few thousand items on these lists.
@@ -21456,7 +21572,13 @@ mod tests {
             .expect("a group kept here");
 
         let (tx, rx) = async_channel::unbounded();
-        super::load_module_data(PimModule::Contacts, &cache, Some("acct-1".to_string()), &tx);
+        super::load_module_data(
+            PimModule::Contacts,
+            &cache,
+            Some("acct-1".to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         let names: Vec<String> = drain(&rx)
             .into_iter()
@@ -23241,7 +23363,13 @@ mod tests {
             })
             .unwrap();
 
-        load_module_data(PimModule::Notes, &cache, Some(account.to_string()), &tx);
+        load_module_data(
+            PimModule::Notes,
+            &cache,
+            Some(account.to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         let updates = drain(&rx);
         let notes = updates
@@ -23300,7 +23428,13 @@ mod tests {
             })
             .unwrap();
 
-        load_module_data(PimModule::Tasks, &cache, Some(account.to_string()), &tx);
+        load_module_data(
+            PimModule::Tasks,
+            &cache,
+            Some(account.to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         let updates = drain(&rx);
         assert!(
@@ -23338,7 +23472,13 @@ mod tests {
             })
             .unwrap();
 
-        load_module_data(PimModule::Reminders, &cache, Some(account.to_string()), &tx);
+        load_module_data(
+            PimModule::Reminders,
+            &cache,
+            Some(account.to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         assert!(
             drain(&rx)
@@ -23354,7 +23494,13 @@ mod tests {
         let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
 
-        load_module_data(PimModule::Calendar, &cache, Some("fresh".to_string()), &tx);
+        load_module_data(
+            PimModule::Calendar,
+            &cache,
+            Some("fresh".to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         assert!(
             drain(&rx).iter().any(
@@ -23383,7 +23529,13 @@ mod tests {
                 .expect("seed folder");
         }
 
-        load_module_data(PimModule::Mail, &cache, Some("acct-1".to_string()), &tx);
+        load_module_data(
+            PimModule::Mail,
+            &cache,
+            Some("acct-1".to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
 
         let updates = drain(&rx);
         assert!(
@@ -23895,14 +24047,26 @@ mod tests {
     fn test_no_account_means_no_updates_rather_than_a_panic() {
         let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
-        load_module_data(PimModule::Notes, &cache, None, &tx);
+        load_module_data(
+            PimModule::Notes,
+            &cache,
+            None,
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
         assert!(drain(&rx).is_empty());
     }
 
     #[test]
     fn test_missing_cache_means_no_updates_rather_than_a_panic() {
         let (tx, rx) = async_channel::unbounded();
-        load_module_data(PimModule::Notes, &None, Some("acct-1".to_string()), &tx);
+        load_module_data(
+            PimModule::Notes,
+            &None,
+            Some("acct-1".to_string()),
+            &tx,
+            CalendarShowing::agenda_now(),
+        );
         assert!(drain(&rx).is_empty());
     }
 
@@ -25967,7 +26131,7 @@ mod where_the_cursor_lands_after_a_rebuild {
 
 #[cfg(test)]
 mod hiding_a_calendar {
-    use super::{PimModule, UIUpdate, load_module_data};
+    use super::{CalendarShowing, PimModule, UIUpdate, load_module_data};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
     use std::sync::Arc;
@@ -26035,8 +26199,8 @@ mod hiding_a_calendar {
         updates
             .iter()
             .find_map(|update| match update {
-                UIUpdate::CalendarEventsLoaded(items) => {
-                    Some(items.iter().map(|i| i.summary.clone()).collect())
+                UIUpdate::CalendarEventsLoaded { events, .. } => {
+                    Some(events.iter().map(|i| i.summary.clone()).collect())
                 }
                 _ => None,
             })
@@ -26075,6 +26239,7 @@ mod hiding_a_calendar {
             &Some(Arc::clone(&home)),
             Some("acct".to_string()),
             &tx,
+            CalendarShowing::agenda_now(),
         );
 
         let mut updates = Vec::new();
@@ -26098,7 +26263,7 @@ mod hiding_a_calendar {
 
 #[cfg(test)]
 mod showing_the_mail_with_a_label {
-    use super::{PimModule, UIUpdate, load_module_data};
+    use super::{CalendarShowing, PimModule, UIUpdate, load_module_data};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, Tag};
     use std::sync::Arc;
@@ -26193,6 +26358,7 @@ mod showing_the_mail_with_a_label {
             &Some(Arc::clone(&home)),
             Some("acct".to_string()),
             &tx,
+            CalendarShowing::agenda_now(),
         );
 
         let mut labels = None;

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 474 records have arrived since and have not been through it.
+# 475 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17323,7 +17323,7 @@ red = [
     "presentation::ui_types::tests::test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 56 },
+    { file = "src/presentation/ui_types.rs", tests = 68 },
 ]
 
 # ── The same fact, known and then not said ──────────────────────────────────
@@ -17405,4 +17405,31 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# The step Previous period and Next period make, broken to a constant rather
+# than removed. A week that answers the day it was already on is what a
+# half-finished version looks like: the buttons are enabled, they are pressed,
+# the list is drawn again and the heading written again, and everything says
+# what it said before. Nothing that only asks whether the buttons are enabled
+# can see it.
+#
+# Measured twice, and the first measurement is why this record names two tests.
+# It reddened one, the one comparing the dates by hand, and nothing asked
+# whether the words somebody hears after pressing Prev had changed. That is a
+# thinner guard than the button deserves, so
+# `test_the_heading_names_a_different_week_after_a_step` was written, taken red
+# against this same break, and the break measured again.
+[[guard]]
+name = "the step to the week before and after answers the week it is already on"
+file = "src/presentation/ui_types.rs"
+before = """            (CalendarView::Week, Step::Back) => self.day - chrono::Duration::days(7),
+            (CalendarView::Week, Step::Forward) => self.day + chrono::Duration::days(7),"""
+after = """            (CalendarView::Week, _) => self.day,"""
+red = [
+    "presentation::ui_types::tests::test_the_week_before_and_after_move_by_exactly_seven_days_at_both_ends",
+    "presentation::ui_types::tests::test_the_heading_names_a_different_week_after_a_step",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 68 },
 ]
