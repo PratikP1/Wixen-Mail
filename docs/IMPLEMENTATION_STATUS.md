@@ -111,6 +111,14 @@ Gmail does with one arriving from another account, or what any provider does
 when a message carries an identifier it already holds. The changelog keeps those
 three under its known limitations.
 
+**A move this program was closed part way through** is found on the next start
+and offered back to whoever was making it, and nothing is sent to either server
+until the second account has been asked whether it already has the message. That
+is built, and what has never happened is the thing it is for: no process has
+been killed mid-move against real accounts and restarted. The whole message is
+kept in the cache while a move is in the air, which
+[Privacy](privacy.md) describes.
+
 ## Quality gates
 
 Every commit must pass four checks, run together by `scripts/check.sh`:
