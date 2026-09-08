@@ -641,6 +641,24 @@ Two things are owed and neither blocks a merge.
 `scripts/guards.sh --touched-by 5cdbe7e` belongs to the phase-8 sweep, and the
 three new records have never been through a sweep, which the census now says.
 
+## The merge
+
+`scripts/check.sh all` passed on the branch at `9a09576`: formatting, clippy
+with `-D warnings`, the whole suite and the release build. Merged to `main` at
+`40495fe` with a merge commit. `main` is at version `0.96.0` with 672 guard
+records, and it is **not pushed**.
+
+The four task commits and the docs commit:
+
+1. `3b9f936` RED, the copy written as the move by another name, twelve named
+   failures plus two house-style checks
+2. `41319e3` GREEN, the three differences, the write, the routing, two guard
+   records
+3. `23ee544` RED, the menu agreement in both directions, three named failures
+   including one the gate found
+4. `8fa1a81` GREEN, the copy line on three menus, one guard record
+5. `9a09576` the summary, the state and five ledger entries
+
 ## Self-Check: PASSED
 
 Every file this summary names exists on disk, and all four commit hashes are in
