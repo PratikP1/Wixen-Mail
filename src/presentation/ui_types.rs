@@ -929,6 +929,29 @@ impl CalendarView {
     /// in a different order. Somebody moving by keyboard learns the order once.
     pub const OFFERED: [CalendarView; 3] = [Self::Agenda, Self::Week, Self::Month];
 
+    /// The word this view is stored as.
+    ///
+    /// Its own word rather than [`Self::label`], because the label is read out
+    /// and could be reworded tomorrow, and rewording something somebody hears
+    /// must not change what is already written in their settings file.
+    #[must_use]
+    pub fn stored(self) -> &'static str {
+        todo!("the stored word for each view")
+    }
+
+    /// The view a stored word names, or the agenda when nothing recognises it.
+    ///
+    /// A word nothing recognises is a settings file somebody edited by hand, or
+    /// one a later version wrote. Refusing to start over it would be a whole
+    /// program held hostage by one word, and the agenda is what the calendar
+    /// showed before views existed, so falling back to it is falling back to no
+    /// change at all. This is the shape `MarkRead` and `CopyLines` already use.
+    #[must_use]
+    pub fn from_stored(stored: &str) -> Self {
+        let _ = stored;
+        todo!("read a stored word back, falling back to the agenda")
+    }
+
     /// The name the picker offers and a screen reader reads out.
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -2642,6 +2665,32 @@ mod tests {
             ),
             calendar_range_label(&found),
         );
+    }
+
+    #[test]
+    fn test_every_view_is_stored_under_a_word_that_reads_back_as_itself() {
+        for view in CalendarView::OFFERED {
+            assert_eq!(
+                CalendarView::from_stored(view.stored()),
+                view,
+                "{} did not read back as itself",
+                view.stored()
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_stored_view_nothing_recognises_falls_back_to_the_agenda() {
+        // A settings file somebody edited, or one a later version wrote. The
+        // calendar opens on what it always showed rather than the program
+        // refusing to start over one word.
+        for written in ["", "  ", "Week", "day", "fortnight", "agenda "] {
+            assert_eq!(
+                CalendarView::from_stored(written),
+                CalendarView::Agenda,
+                "{written:?} was not read as the agenda"
+            );
+        }
     }
 
     #[test]
