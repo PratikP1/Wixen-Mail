@@ -98,6 +98,33 @@ fn the_rows_the_picker_should_hold() -> Vec<Option<Destination>> {
     ]
 }
 
+/// Three accounts, each holding a folder at the same path, for the question of
+/// which branch the window opens with its folders showing.
+///
+/// Three rather than two, and the message is in the third. With two accounts
+/// and the answer in the first, a build that opens the first branch always is
+/// right by accident and the assertion says nothing. Separate from
+/// [`branches`], which is about resolving a chosen row and has a nested folder
+/// for that reason, because a fixture that answered both questions would have
+/// to be read twice to see what either one turns on.
+fn three_accounts() -> Vec<Branch> {
+    let branch = |id: &str, called: &str| Branch {
+        account_id: id.to_string(),
+        account_name: called.to_string(),
+        places: vec![Destination {
+            name: "Archive".to_string(),
+            id: "Archive".to_string(),
+            account_id: id.to_string(),
+            depth: 0,
+        }],
+    };
+    vec![
+        branch("acct-1", "one@example.com"),
+        branch("acct-2", "two@example.com"),
+        branch("acct-3", "three@example.com"),
+    ]
+}
+
 /// A conversation whose third message replies to the first, so the order the
 /// nodes arrive in is not the order the built tree is walked in.
 fn nodes() -> Vec<ThreadNode> {
@@ -137,6 +164,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
                 false,
                 &branches,
                 None,
+                Some("acct-1"),
                 None,
             );
 
@@ -182,6 +210,56 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
                 ));
             }
             picker.destroy();
+
+            // Which branches a window holding three accounts really opens
+            // with. Asked of the control, because nothing else can say it: the
+            // walk meets the same rows in the same order whether they are open
+            // or shut, every answer still resolves, and the only difference is
+            // how long somebody has to listen before reaching the last one.
+            let three = three_accounts();
+            let (several, tree, _) = wx_destination::build_destination_dialog(
+                &frame,
+                Moving::Message,
+                false,
+                &three,
+                None,
+                Some("acct-3"),
+                None,
+            );
+            if let Some(root) = tree.get_root_item() {
+                let mut open = Vec::new();
+                let mut walking = tree.get_first_child(&root).map(|(account, _)| account);
+                while let Some(account) = walking {
+                    if tree.is_expanded(&account) {
+                        open.push(tree.get_item_text(&account).unwrap_or_default());
+                    }
+                    walking = tree.get_next_sibling(&account);
+                }
+                said.push(answer("accounts drawn open, of three", open));
+            }
+            several.destroy();
+
+            // One account on its own is open, because a lone closed branch is
+            // a window that reads as empty.
+            let alone = vec![three_accounts().remove(0)];
+            let (one, tree, _) = wx_destination::build_destination_dialog(
+                &frame,
+                Moving::Message,
+                false,
+                &alone,
+                None,
+                Some("acct-1"),
+                None,
+            );
+            if let Some(root) = tree.get_root_item()
+                && let Some((account, _)) = tree.get_first_child(&root)
+            {
+                said.push(answer(
+                    "one account on its own is open",
+                    tree.is_expanded(&account),
+                ));
+            }
+            one.destroy();
 
             let nodes = nodes();
             let (conversation, tree, chosen) =
@@ -262,6 +340,14 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             "picker on the second account's Archive",
             picked("Archive", "Archive", "acct-2", 0),
         ),
+        // One of three, and it is the third: the account the message is in.
+        // A build that opened them all would say three, and one that always
+        // opened the first would name the wrong one.
+        (
+            "accounts drawn open, of three",
+            answer("", vec!["three@example.com".to_string()]).1,
+        ),
+        ("one account on its own is open", "true".to_string()),
         ("rows the conversation walks", "3".to_string()),
         (
             "conversation on the first message",

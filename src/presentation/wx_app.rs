@@ -8234,9 +8234,14 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     // that opening on the last one exists for; moving a folder is not something
     // anybody does twice in a row, and opening on wherever the last one went
     // would put the cursor somewhere unrelated.
-    let Some(into) =
-        crate::presentation::wx_destination::ask(frame, Moving::Folder, false, &branches, None)
-    else {
+    let Some(into) = crate::presentation::wx_destination::ask(
+        frame,
+        Moving::Folder,
+        false,
+        &branches,
+        None,
+        Some(&chosen.account.id),
+    ) else {
         return;
     };
 
@@ -17307,6 +17312,11 @@ fn move_or_copy_message(
             account: &went.account,
             path: &went.path,
         }),
+        // Where to open when nothing was remembered. Every account is offered
+        // now, so the first branch is whichever the sidebar draws first, and
+        // somebody filing a message would meet that account's folders before
+        // their own.
+        Some(&account_id),
     ) else {
         return;
     };

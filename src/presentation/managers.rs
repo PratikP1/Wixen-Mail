@@ -6287,6 +6287,9 @@ fn move_item(
         false,
         &branches,
         None,
+        // The account the thing being moved is on, so a window holding several
+        // accounts opens on that one rather than on whichever is drawn first.
+        Some(&account_id),
     )?;
     // Read off the answer rather than searched for in the branches this
     // function passed in. The window hands back the whole destination, so what
