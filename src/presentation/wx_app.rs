@@ -8366,7 +8366,7 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     let Some(into) = crate::presentation::wx_destination::ask(
         frame,
         Moving::Folder,
-        false,
+        crate::application::destinations::Filing::Moving,
         &branches,
         None,
         Some(&chosen.account.id),
@@ -17387,7 +17387,7 @@ fn move_or_copy_message(
 ) {
     let AppHandles { state, tx, rt } = app;
     use crate::application::destinations::{
-        FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
+        Filing, FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
     };
 
     let Some(cache) = cache.clone() else {
@@ -17476,7 +17476,14 @@ fn move_or_copy_message(
     let Some(into) = crate::presentation::wx_destination::ask(
         frame,
         Moving::Message,
-        copying,
+        // Turned into the act here rather than all the way down. The rest of
+        // the mail path still reads a flag, and rewriting that is a change to
+        // mail rather than to this.
+        if copying {
+            Filing::Copying
+        } else {
+            Filing::Moving
+        },
         &branches,
         last_used.as_ref().map(|went| FolderInAnAccount {
             account: &went.account,

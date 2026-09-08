@@ -23,7 +23,7 @@
 //! which of the two leaked rather than only that something did.
 
 use std::sync::{Arc, Mutex};
-use wixen_mail::application::destinations::{Branch, Destination, Moving};
+use wixen_mail::application::destinations::{Branch, Destination, Filing, Moving};
 use wixen_mail::presentation::{wx_destination, wx_thread_view};
 use wxdragon::prelude::*;
 use wxdragon::widgets::item_data::{get_item_data, remove_item_data, store_item_data};
@@ -134,7 +134,7 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
             let (destination, _tree, _destinations) = wx_destination::build_destination_dialog(
                 &frame,
                 Moving::Message,
-                false,
+                Filing::Moving,
                 &branches(),
                 None,
                 Some("acct-1"),

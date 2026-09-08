@@ -128,6 +128,61 @@ pub enum Moving {
     Folder,
 }
 
+/// Which of the two acts this is: putting the thing somewhere else, or putting
+/// a second one somewhere.
+///
+/// One value rather than a `bool` at four call sites, because the two differ in
+/// more than the word on the button and each difference has a reason worth
+/// writing down beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Filing {
+    /// The thing goes somewhere else and leaves where it was.
+    Moving,
+    /// A second one is made somewhere and the first stays where it is.
+    Copying,
+}
+
+impl Filing {
+    /// The word for the act, for a window's title and for the button that
+    /// carries it out.
+    ///
+    /// Capitalised, because both places it is read start a label.
+    pub const fn act(self) -> &'static str {
+        match self {
+            Self::Moving => "Move",
+            Self::Copying => "Copy",
+        }
+    }
+
+    /// Whether the container the thing is in now is taken out of the chooser.
+    ///
+    /// Taken out for a move: offering somebody the place a thing already is is
+    /// offering a command that silently does nothing, and they will not know
+    /// which of the two it was.
+    pub const fn leaves_out_where_it_is(self) -> bool {
+        // Taken out for both while only the move is written. What a copy
+        // should answer is what this commit's failing test is about.
+        match self {
+            Self::Moving | Self::Copying => true,
+        }
+    }
+
+    /// Whether whoever holds the thing has to be able to be told about it.
+    ///
+    /// Asked for a move, for the reasons in
+    /// [`crate::application::pim_command::cannot_be_moved`]: moving an item a
+    /// provider holds means deleting it there, creating it again here and
+    /// writing the identity that comes back over the old one, and none of that
+    /// is built.
+    pub const fn needs_the_holder_told(self) -> bool {
+        // Asked for both while only the move is written. Whether a copy
+        // inherits the refusal is what this commit's failing test is about.
+        match self {
+            Self::Moving | Self::Copying => true,
+        }
+    }
+}
+
 /// One place in the tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Destination {

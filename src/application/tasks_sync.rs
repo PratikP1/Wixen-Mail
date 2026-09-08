@@ -430,7 +430,7 @@ impl Provider {
 ///
 /// Asked outside the sync by anything that has to know whether a change can be
 /// told to a provider at all, so that the prefixes stay known in one place.
-pub(crate) fn a_provider_holds(task_id: &str) -> bool {
+pub fn a_provider_holds(task_id: &str) -> bool {
     !Provider::made_here(task_id)
 }
 

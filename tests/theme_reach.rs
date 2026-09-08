@@ -32,7 +32,7 @@
 
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::calendar::{WhatIsBeingDone, WhatTheCalendarAllows, WhereAChangeGoes};
-use wixen_mail::application::destinations::{Branch, Destination, Moving};
+use wixen_mail::application::destinations::{Branch, Destination, Filing, Moving};
 use wixen_mail::application::due::Snooze;
 use wixen_mail::application::new_item::ItemKind;
 use wixen_mail::application::spell_session;
@@ -709,7 +709,7 @@ fn check_destination(parent: &Frame, palette: theme::Palette, into: &mut Vec<Sit
     let (dialog, _tree, _destinations) = wx_destination::build_destination_dialog(
         parent,
         Moving::Message,
-        false,
+        Filing::Moving,
         &branches,
         None,
         Some("acct-1"),

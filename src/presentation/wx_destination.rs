@@ -17,7 +17,7 @@
 //! for exactly this.
 
 use crate::application::destinations::{
-    Branch, Destination, FolderInAnAccount, Moving, nothing_to_offer,
+    Branch, Destination, Filing, FolderInAnAccount, Moving, nothing_to_offer,
 };
 use crate::presentation::accessibility::names::{
     set_accessible_name, set_accessible_name_and_description,
@@ -31,8 +31,8 @@ use wxdragon::prelude::*;
 /// The words differ between moving and copying because they are different acts
 /// and somebody hearing the title should know which one they are in the middle
 /// of. Kept out of the builder so both can be tested.
-pub fn heading(moving: Moving, copying: bool) -> String {
-    let act = if copying { "Copy" } else { "Move" };
+pub fn heading(moving: Moving, filing: Filing) -> String {
+    let act = filing.act();
     match moving {
         Moving::Message => format!("{act} the message to"),
         // What is being moved, not what it is going into. "Move the calendar
@@ -89,7 +89,7 @@ pub fn what_a_selection_means(
 pub fn ask(
     parent: &Frame,
     moving: Moving,
-    copying: bool,
+    filing: Filing,
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
     the_account_it_is_in: Option<&str>,
@@ -100,7 +100,7 @@ pub fn ask(
     let (dialog, tree, destinations) = build_destination_dialog(
         parent,
         moving,
-        copying,
+        filing,
         branches,
         last_used,
         the_account_it_is_in,
@@ -136,7 +136,7 @@ pub fn ask(
 pub fn build_destination_dialog(
     parent: &Frame,
     moving: Moving,
-    copying: bool,
+    filing: Filing,
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
     the_account_it_is_in: Option<&str>,
@@ -151,7 +151,7 @@ pub fn build_destination_dialog(
     // control in the room, and read here.
     let open_branch = crate::application::destinations::the_branch_to_open(branches, open_on);
 
-    let title = heading(moving, copying);
+    let title = heading(moving, filing);
     let dialog = Dialog::builder(parent, &title)
         .with_size(520, 420)
         .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
@@ -268,10 +268,14 @@ pub fn build_destination_dialog(
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let choose = Button::builder(&dialog)
-        .with_label(if copying { "&Copy" } else { "&Move" })
+        // The mnemonic on the same letter the word starts with, which is what
+        // it was when this said "&Copy" or "&Move" in two places. One source
+        // for the label and the name, so the button cannot say one word and be
+        // announced as another.
+        .with_label(&format!("&{}", filing.act()))
         .with_id(ID_OK)
         .build();
-    set_accessible_name(&choose, if copying { "Copy" } else { "Move" });
+    set_accessible_name(&choose, filing.act());
     let cancel = Button::builder(&dialog)
         // No mnemonic, which is what the other twenty-two Cancel buttons in
         // this program do and what Windows does. It had one, and it was the
@@ -330,16 +334,16 @@ mod tests {
     fn test_the_title_says_which_act_this_is() {
         // Moving and copying are different, and somebody hearing the title
         // should know which one they are in the middle of.
-        assert!(heading(Moving::Message, false).starts_with("Move"));
-        assert!(heading(Moving::Message, true).starts_with("Copy"));
+        assert!(heading(Moving::Message, Filing::Moving).starts_with("Move"));
+        assert!(heading(Moving::Message, Filing::Copying).starts_with("Copy"));
     }
 
     #[test]
     fn test_the_title_says_what_is_being_moved() {
-        assert!(heading(Moving::Message, false).contains("message"));
+        assert!(heading(Moving::Message, Filing::Moving).contains("message"));
 
         for kind in ContainerKind::ALL {
-            let said = heading(Moving::Item(kind), false);
+            let said = heading(Moving::Item(kind), Filing::Moving);
             assert!(said.starts_with("Move the"), "{kind:?}: {said}");
             assert!(said.ends_with(" to"), "{kind:?}: {said}");
         }
@@ -423,7 +427,7 @@ mod tests {
         // and reads the same for all four.
         let said: Vec<String> = ContainerKind::ALL
             .iter()
-            .map(|kind| heading(Moving::Item(*kind), false))
+            .map(|kind| heading(Moving::Item(*kind), Filing::Moving))
             .collect();
         let unique: std::collections::HashSet<&String> = said.iter().collect();
 
