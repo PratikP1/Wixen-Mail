@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 480 records have arrived since and have not been through it.
+# 481 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17597,4 +17597,50 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 17 },
+]
+
+# ── A contact left in a group it was only passing through ───────────────────
+#
+# What it costs a person: they move somebody out of Team A and into Team B, are
+# told nothing happened because she was not in Team A after all, and she is now
+# in Team B anyway. Nobody working by ear sees that. The sentence they heard
+# said the move did not happen, and a membership appeared.
+#
+# Whether she is really in the group she is leaving is answered by the take-out
+# itself, by how many rows it removed, rather than by a read before the write,
+# because a membership read first can be stale by the time the write runs. That
+# answer therefore arrives after the put-in has already happened, so the put-in
+# has to be undone, and the transaction is the only thing that undoes it.
+#
+# The break is the transaction losing its hold, written as the one edit that
+# does it: committing before the early answer, which is what somebody adding a
+# "make sure we commit" line writes. Running the two statements on `self.conn`
+# instead was tried first and is NOT the break, because it is not one: the
+# statements go through the same connection, so SQLite runs them inside the
+# open transaction whichever handle issued them, and the tests all stay green.
+#
+# The record is also what couples this suite to the write it guards. `check.sh`
+# reads `file` to decide which commits run which tests, and the green commit
+# that added the write ran `data::message_cache::contacts` and not the suite,
+# because no record named the file yet.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
+# --no-fail-fast` on a clean tree with nothing else building. Exactly one test,
+# tree-wide. The other four in the suite reach a route where both halves
+# succeed, so a transaction and two loose statements are the same thing to them.
+[[guard]]
+name = "a contact is not left in the group it was moving to when the move did not happen"
+file = "src/data/message_cache/contacts.rs"
+suite = "a_contact_moved_between_groups"
+before = """            return Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave);
+        }"""
+after = """            let _ = moving.commit();
+            return Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave);
+        }"""
+red = [
+    "test_a_contact_that_is_not_in_the_group_it_would_leave_is_not_put_in_the_other_one",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+    { file = "tests/a_contact_moved_between_groups.rs", tests = 5 },
 ]
