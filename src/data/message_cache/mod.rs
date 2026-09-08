@@ -150,6 +150,12 @@ pub struct MessageCache {
     /// How much of the form signed mail arrived in to keep. See
     /// [`signed_original::SIGNED_ORIGINAL_BUDGET_BYTES`].
     signed_original_budget: i64,
+    /// How much to hold for moves that are in the air. See
+    /// [`moves_in_flight::MOVES_IN_FLIGHT_BUDGET_BYTES`].
+    moves_in_flight_budget: i64,
+    /// The largest message held while it moves. See
+    /// [`moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES`].
+    largest_move_kept: i64,
     /// What the merge of the local folders did when this cache was opened.
     ///
     /// `None` when it could not run at all. Kept because the merge happens once
@@ -1242,6 +1248,8 @@ impl MessageCache {
             body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
             attachment_budget: attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES,
             signed_original_budget: signed_original::SIGNED_ORIGINAL_BUDGET_BYTES,
+            moves_in_flight_budget: moves_in_flight::MOVES_IN_FLIGHT_BUDGET_BYTES,
+            largest_move_kept: moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES,
             merge_of_local_folders: None,
         };
         cache.initialize_schema()?;
@@ -1392,6 +1400,29 @@ impl MessageCache {
     #[must_use]
     pub fn keeping_signed_originals_under(mut self, budget_bytes: i64) -> Self {
         self.signed_original_budget = budget_bytes;
+        self
+    }
+
+    /// The same cache, holding less for moves that are in the air.
+    ///
+    /// The fourth of the same shape, for the same two reasons as the three
+    /// above.
+    #[must_use]
+    pub fn keeping_moves_in_flight_under(mut self, budget_bytes: i64) -> Self {
+        self.moves_in_flight_budget = budget_bytes;
+        self
+    }
+
+    /// The same cache, keeping nothing larger than this while it moves.
+    ///
+    /// The ceiling rather than the budget, and it is settable for a reason the
+    /// other three ceilings did not have. Whether a message over it still
+    /// moves is a question about a whole crossing, two servers and a removal,
+    /// and driving that with a twenty-five megabyte message would put fifty
+    /// megabytes through two loopback sockets to watch one row not be written.
+    #[must_use]
+    pub fn keeping_no_move_larger_than(mut self, ceiling_bytes: i64) -> Self {
+        self.largest_move_kept = ceiling_bytes;
         self
     }
 

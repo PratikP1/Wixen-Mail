@@ -1214,8 +1214,16 @@ mod tests {
     const THE_DESTINATION_ACCOUNT: &str = "acc-2";
 
     fn a_store() -> AStore {
+        a_store_keeping_no_move_larger_than(
+            crate::data::message_cache::moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES,
+        )
+    }
+
+    fn a_store_keeping_no_move_larger_than(ceiling_bytes: i64) -> AStore {
         let cache = TempHome::named("wixen_move_across_", |dir| {
-            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
+            let cache = MessageCache::new(dir.to_path_buf(), None)
+                .expect("a cache")
+                .keeping_no_move_larger_than(ceiling_bytes);
             cache
                 .save_folder(&crate::data::message_cache::CachedFolder {
                     id: 0,
@@ -2323,6 +2331,58 @@ mod tests {
             reached, all,
             "a way a crossed move can end was never reached here, so nothing \
              above says whether it lets go of the bytes"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_too_large_to_keep_still_moves() {
+        // The pairing earning its keep, and the whole crossing rather than the
+        // store on its own. Nothing about this person's move is worse than it
+        // would have been: the append goes first, the removal goes last, and
+        // an append whose answer never arrives is asked about. So the move
+        // must not fail, must not be refused, and must not warn them about a
+        // safeguard they never knew existed.
+        //
+        // A ceiling of one byte rather than twenty-five megabytes of mail
+        // through two loopback sockets. That the shipped number is the one
+        // really applied is `moves_in_flight`'s own pair of tests, which do
+        // build the real thing.
+        //
+        // What was kept is read at the instant of the append and not
+        // afterwards. Afterwards the move has ended and its row has gone
+        // whatever happened, so "nothing was kept" and "something was kept and
+        // then let go of" are the same answer, and the assertion could not
+        // fail.
+        let store = a_store_keeping_no_move_larger_than(1);
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])])
+            .watching_the_store(&store);
+
+        let across = waiting_for(a_move_across(
+            &store,
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("a message too large to keep still moves");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the move did not finish at the source"
+        );
+        assert!(
+            !destination.everything_it_was_asked().await.is_empty(),
+            "the message never reached the destination, so this test is not \
+             about what it is named after"
+        );
+        assert!(
+            destination.what_the_store_was_holding().await.is_empty(),
+            "a message over the ceiling was kept anyway, so a row offering to \
+             finish the move exists with no message in it"
         );
     }
 

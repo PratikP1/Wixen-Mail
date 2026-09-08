@@ -44,6 +44,46 @@
 use super::MessageCache;
 use crate::common::{Error, Result};
 
+/// The largest message kept while it moves.
+///
+/// Twenty-five megabytes, the same number as
+/// [`super::attachment_content::LARGEST_ATTACHMENT_KEPT_BYTES`] and
+/// [`super::signed_original::LARGEST_SIGNED_MESSAGE_KEPT_BYTES`], so the three
+/// ceilings on message content are one number and `docs/privacy.md` can say it
+/// once. There is no measurement behind it, and saying so is more use than a
+/// justification that sounds like one: it is the size most providers refuse to
+/// accept above, so ordinary mail is under it.
+///
+/// **A message over it still moves.** Nothing is refused, nothing is warned
+/// about, and the person is not told, because nothing about their move is
+/// worse than it would have been. It goes with the safeguard every other
+/// message already has: the append is first, the removal is last, and if the
+/// append's answer never arrives the destination is asked. This is the pairing
+/// earning its keep. With only the kept bytes, a message over the ceiling
+/// would have no safeguard at all.
+pub const LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES: i64 = 25 * 1024 * 1024;
+
+/// How much is held for moves in flight before the newest gives way.
+///
+/// Sixty-four megabytes. Not measured, and half of what the form signed mail
+/// arrived in gets, because a move is over in seconds and what accumulates
+/// here is only moves that were interrupted and never answered about. Chosen so
+/// that a handful of large interrupted moves cannot quietly add a noticeable
+/// amount to the cache.
+///
+/// [`MessageCache::keeping_moves_in_flight_under`] is the seam a setting would
+/// use if anyone ever asks for one. Nothing here is a setting today, and the
+/// reason is that these three numbers are backstops rather than preferences.
+pub const MOVES_IN_FLIGHT_BUDGET_BYTES: i64 = 64 * 1024 * 1024;
+
+/// How long a move nobody answered about is kept, in days.
+///
+/// Seven, and not measured either. By the time a week has passed the offer has
+/// been made and ignored, or made and never seen, and what the bytes still buy
+/// is one message not being fetched again. That is not worth a whole message
+/// sitting unencrypted on somebody's disk indefinitely.
+pub const A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS: i64 = 7;
+
 /// A move about to be made, as the cache needs to hold it.
 ///
 /// A struct rather than seven positional arguments, four of which are optional
@@ -146,6 +186,9 @@ impl MessageCache {
     /// message arrived long ago and is already in this cache, and these bytes
     /// are held for the crossing and nothing else.
     pub fn keep_the_message_while_it_moves(&self, moving: &AMoveStarting<'_>) -> Result<()> {
+        let over_the_ceiling =
+            i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept);
+        let kept: &[u8] = if over_the_ceiling { &[] } else { moving.raw };
         self.conn
             .execute(
                 "INSERT INTO move_in_flight
@@ -173,8 +216,8 @@ impl MessageCache {
                     // answered no, and a resume would then send the message
                     // again on the strength of it.
                     as_one_column(moving.was_there_before),
-                    moving.raw,
-                    moving.raw.len() as i64,
+                    kept,
+                    kept.len() as i64,
                     now(),
                 ],
             )
@@ -184,6 +227,65 @@ impl MessageCache {
                     e
                 ))
             })?;
+
+        // Here rather than left to a caller, for the reason
+        // `keep_signed_original` gives: the body cache once had an eviction
+        // function nothing outside its own tests called, so the documented
+        // budget was never applied to anything.
+        if let Err(e) = self.stay_within_the_budget_for_moves(moving.message_row_id) {
+            tracing::warn!("Could not bring the moves in flight back under their limit: {e}");
+        }
+        Ok(())
+    }
+
+    /// Bring the total back under the budget.
+    fn stay_within_the_budget_for_moves(&self, _just_written: i64) -> Result<()> {
+        let mut total = self.bytes_kept_for_moves()?;
+        if total <= self.moves_in_flight_budget {
+            return Ok(());
+        }
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT message_id, bytes FROM move_in_flight
+                 ORDER BY started_at ASC, message_id ASC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare the move sweep: {}", e)))?;
+        let candidates: Vec<(i64, i64)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::Other(format!("Failed to list the moves in flight: {}", e)))?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read a move in flight: {}", e)))?;
+        for (message_id, bytes) in candidates {
+            if total <= self.moves_in_flight_budget {
+                break;
+            }
+            self.the_move_is_over(message_id)?;
+            total -= bytes;
+        }
+        Ok(())
+    }
+
+    /// Let go of the moves nobody ever answered about.
+    ///
+    /// A row that has sat here for longer than the backstop is one whose offer
+    /// was made and ignored, or never seen. What the bytes still buy by then is
+    /// one message not being fetched again, and that is not worth a whole
+    /// message sitting unencrypted on somebody's disk indefinitely.
+    ///
+    /// Nothing is lost. The message is at the account it came from, because a
+    /// move puts it at the second account first and takes it off the first
+    /// last, so a move that never reached an ending never removed anything.
+    pub fn forget_the_moves_nobody_answered_about(&self) -> Result<()> {
+        let too_old = (chrono::Utc::now()
+            - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS))
+        .to_rfc3339();
+        self.conn
+            .execute(
+                "DELETE FROM move_in_flight WHERE started_at < ?1",
+                rusqlite::params![too_old],
+            )
+            .map_err(|e| Error::Other(format!("Failed to give up on an unfinished move: {}", e)))?;
         Ok(())
     }
 
@@ -274,6 +376,31 @@ impl MessageCache {
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Failed to total the moves in flight: {}", e)))
+    }
+}
+
+/// Making a move look older than it is, for the tests of this module and the
+/// window's.
+///
+/// The backstop is a length of time, and the only other way to test it is to
+/// wait a week.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use super::*;
+
+    /// Say that this move was started then.
+    pub(crate) fn pretend_it_started_at(
+        cache: &MessageCache,
+        message_row_id: i64,
+        when: chrono::DateTime<chrono::Utc>,
+    ) {
+        cache
+            .conn
+            .execute(
+                "UPDATE move_in_flight SET started_at = ?1 WHERE message_id = ?2",
+                rusqlite::params![when.to_rfc3339(), message_row_id],
+            )
+            .expect("a move backdated for a test");
     }
 }
 
@@ -496,5 +623,160 @@ mod tests {
         let unfinished = cache.moves_that_did_not_finish().expect("read");
         assert_eq!(unfinished.len(), 1, "{unfinished:?}");
         assert_eq!(unfinished[0].to_folder, "Later");
+    }
+
+    // ── Nothing sits here longer than it is worth ────────────────────────
+
+    /// A message just over the real ceiling.
+    ///
+    /// Twenty-five megabytes, built here rather than through a smaller
+    /// ceiling, because these two tests are what says the shipped number is
+    /// the one being applied. The crossing's own test names a small one, for
+    /// the reason `keeping_no_move_larger_than` gives.
+    fn a_message_over_the_ceiling() -> Vec<u8> {
+        vec![b'x'; LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES as usize + 1]
+    }
+
+    #[test]
+    fn test_a_message_too_large_to_keep_leaves_nothing_to_resume_from() {
+        // Nothing at all, and not a row with the bytes missing. A row is an
+        // offer to finish a move, and an offer whose bytes are empty would
+        // send an empty message to somebody's account. signed_original keeps
+        // its row without its bytes on purpose, because "this message claimed
+        // a signature" is still true; there is no fact of that kind here.
+        //
+        // The move itself is not affected and is not refused. It goes with the
+        // safeguard every other message has, which is the pairing earning its
+        // keep.
+        let (cache, row) = a_cache_holding_one_message();
+        let large = a_message_over_the_ceiling();
+
+        cache
+            .keep_the_message_while_it_moves(&AMoveStarting {
+                raw: &large,
+                ..moving(row, Some(&[]))
+            })
+            .expect("a message too large to keep is not a failure");
+
+        assert!(
+            cache.moves_that_did_not_finish().expect("read").is_empty(),
+            "a message too large to keep left a row that offers to finish a \
+             move with no message in it"
+        );
+        assert_eq!(cache.bytes_kept_for_moves().expect("the total"), 0);
+    }
+
+    #[test]
+    fn test_the_move_just_started_is_the_one_that_gives_way_to_the_budget() {
+        // The newest and not the oldest, which is the opposite of what an
+        // ordinary cache does and is right here for a reason worth stating.
+        // The older row is a move somebody has not been asked about yet, and
+        // dropping it takes away the only offer they will ever get. The newest
+        // is a move happening right now, whose bytes buy a re-fetch it will
+        // almost certainly never need, because it will be over in seconds.
+        let (cache, first) = a_cache_holding_one_message();
+        let second = a_message(&cache, 5);
+        let room_for_one = THE_MESSAGE.len() as i64;
+        let cache = MessageCache::new(cache.path().to_path_buf(), None)
+            .expect("the same cache again")
+            .keeping_moves_in_flight_under(room_for_one);
+
+        cache
+            .keep_the_message_while_it_moves(&moving(first, None))
+            .expect("kept");
+        cache
+            .keep_the_message_while_it_moves(&moving(second, None))
+            .expect("asked");
+
+        let held: Vec<i64> = cache
+            .moves_that_did_not_finish()
+            .expect("read")
+            .iter()
+            .map(|move_| move_.message_row_id)
+            .collect();
+        assert_eq!(
+            held,
+            vec![first],
+            "the move somebody has yet to be asked about was dropped to make \
+             room for one that will be over in seconds"
+        );
+    }
+
+    #[test]
+    fn test_a_move_nobody_answered_about_goes_on_its_own() {
+        // The backstop, and it has to run where the rows are read rather than
+        // in a function with no caller. This cache has no sweep and nothing
+        // that ever looks at what a previous run left, so an eviction rule
+        // nothing calls is a rule that never applies to anything.
+        let (cache, row) = a_cache_holding_one_message();
+        cache
+            .keep_the_message_while_it_moves(&moving(row, None))
+            .expect("kept");
+        for_tests::pretend_it_started_at(
+            &cache,
+            row,
+            chrono::Utc::now() - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS + 1),
+        );
+
+        assert!(
+            cache.moves_that_did_not_finish().expect("read").is_empty(),
+            "a move nobody answered about a week ago is still being offered, \
+             and its message is still on the disk"
+        );
+        assert_eq!(cache.bytes_kept_for_moves().expect("the total"), 0);
+    }
+
+    #[test]
+    fn test_a_move_younger_than_the_backstop_is_still_offered() {
+        // The other direction, and without it the test above passes against a
+        // backstop that throws everything away, including a move interrupted a
+        // minute ago.
+        let (cache, row) = a_cache_holding_one_message();
+        cache
+            .keep_the_message_while_it_moves(&moving(row, None))
+            .expect("kept");
+        for_tests::pretend_it_started_at(
+            &cache,
+            row,
+            chrono::Utc::now() - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS - 1),
+        );
+
+        assert_eq!(cache.moves_that_did_not_finish().expect("read").len(), 1);
+    }
+
+    #[test]
+    fn test_every_way_the_bytes_are_dropped_leaves_the_message_where_it_was() {
+        // Said by a test rather than only by the module doc. All three drops
+        // are cheap for one reason: the message is at the account it came
+        // from, because a move puts it at the second account first and takes
+        // it off the first last. Nothing here speaks to a server at all, and
+        // the message's own row and everything else the cache holds about it
+        // are untouched by every one of them.
+        let (cache, row) = a_cache_holding_one_message();
+        let large = a_message_over_the_ceiling();
+
+        cache
+            .keep_the_message_while_it_moves(&AMoveStarting {
+                raw: &large,
+                ..moving(row, None)
+            })
+            .expect("too large to keep");
+        cache
+            .keep_the_message_while_it_moves(&moving(row, None))
+            .expect("kept");
+        for_tests::pretend_it_started_at(
+            &cache,
+            row,
+            chrono::Utc::now() - chrono::TimeDelta::days(A_MOVE_IS_GIVEN_UP_ON_AFTER_DAYS + 1),
+        );
+        cache.moves_that_did_not_finish().expect("read");
+        cache.the_move_is_over(row).expect("ended");
+
+        let still_here = cache
+            .get_message(row)
+            .expect("the message row")
+            .expect("the message is still in the cache");
+        assert_eq!(still_here.uid, 4);
+        assert_eq!(still_here.folder_id, 1);
     }
 }
