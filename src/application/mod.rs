@@ -58,6 +58,7 @@ pub mod local_delete;
 pub mod local_folders;
 pub mod long_text;
 pub mod looking_people_up;
+pub mod mail_across_accounts;
 pub mod mail_auth;
 pub mod mail_controller;
 pub mod mail_session;

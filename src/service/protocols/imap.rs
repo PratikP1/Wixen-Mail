@@ -1467,19 +1467,30 @@ impl ImapSession {
 
     /// Add a message to a mailbox, as it would have arrived.
     ///
-    /// Used for the copy of a sent message. `flags` is an IMAP flag list such
-    /// as `(\Seen)`, because a message somebody wrote should not appear in
-    /// Sent as unread mail waiting to be dealt with.
+    /// Used for the copy of a sent message, and for a message copied to a
+    /// folder on another account. `flags` is an IMAP flag list such as
+    /// `(\Seen)`, because a message somebody wrote should not appear in Sent as
+    /// unread mail waiting to be dealt with.
+    ///
+    /// `arrived` is the date the message should be filed under, spelled as RFC
+    /// 3501 writes one and in quotes, which is what
+    /// [`crate::application::mail_across_accounts::when_it_arrived`] builds.
+    /// `None` files it under now, which is right for a message being sent and
+    /// wrong for one that arrived five years ago at another account. The value
+    /// goes into the command line unquoted and unchecked by the library
+    /// underneath, so nothing may pass a server's answer through here as it
+    /// arrived.
     pub async fn append_message(
         &mut self,
         into: &str,
         flags: Option<&str>,
+        arrived: Option<&str>,
         raw: &[u8],
     ) -> Result<()> {
         self.may_i("save a copy of the message")?;
         with_timeout(
             COMMAND_TIMEOUT,
-            self.session.append(into, flags, None, raw),
+            self.session.append(into, flags, arrived, raw),
             "saving a copy of the message",
         )
         .await?
@@ -1911,7 +1922,12 @@ fn body_bytes<'a>(attribute: &'a AttributeValue<'_>) -> Option<&'a [u8]> {
 }
 
 /// How RFC 3501 writes the date a server filed a message on.
-const INTERNAL_DATE_FORMAT: &str = "%d-%b-%Y %H:%M:%S %z";
+///
+/// Read in both directions and so spelled once. A message crossing to another
+/// account carries the date the first server filed it, which means formatting
+/// this way as well as parsing it, and two spellings would silently give the
+/// copy a date its own server never said.
+pub(crate) const INTERNAL_DATE_FORMAT: &str = "%d-%b-%Y %H:%M:%S %z";
 
 /// When the server filed the message, if it said and the date reads.
 fn internal_date(attributes: &[AttributeValue<'_>]) -> Option<String> {
@@ -3175,7 +3191,7 @@ pub(crate) mod against_a_server_that_answers {
         let raw = "From: me@example.com\r\nSubject: Saved\r\n\r\nfirst\r\n.\r\nlast\r\n";
 
         waiting_for(
-            session.append_message("Sent", Some("(\\Seen)"), raw.as_bytes()),
+            session.append_message("Sent", Some("(\\Seen)"), None, raw.as_bytes()),
             "the copy",
         )
         .await
@@ -3208,7 +3224,7 @@ pub(crate) mod against_a_server_that_answers {
         let raw = "From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished yet\r\n";
 
         let refused = waiting_for(
-            session.append_message("Drafts", Some("(\\Draft)"), raw.as_bytes()),
+            session.append_message("Drafts", Some("(\\Draft)"), None, raw.as_bytes()),
             "the refusal",
         )
         .await;
@@ -3408,7 +3424,7 @@ pub(crate) mod against_a_server_that_answers {
             the_failure(session.copy_message(7, "Archive").await),
             the_failure(session.move_message(7, "Archive").await),
             the_failure(session.remove_by_message_id("<d@x>").await),
-            the_failure(session.append_message("Sent", None, b"raw").await),
+            the_failure(session.append_message("Sent", None, None, b"raw").await),
             the_failure(session.delete_message(7, Some("Trash")).await),
             the_failure(session.set_subscribed("Work", true).await),
             the_failure(session.create_mailbox("Work").await),

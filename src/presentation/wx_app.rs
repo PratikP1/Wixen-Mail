@@ -17341,7 +17341,7 @@ fn move_or_copy_message(
             if copying { "Copying" } else { "Moving" }
         ),
     );
-    spawn_folder_move(app, row_id, uid, subject, from, into.id, copying);
+    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -17349,13 +17349,18 @@ fn move_or_copy_message(
 /// A moved message leaves the folder it was in, so the row goes once the server
 /// has agreed and not before. A copy leaves it where it is, so nothing about
 /// the list changes at all.
+///
+/// `into` is the whole destination rather than its path, because a path is
+/// unique inside one account and not across them. Which account it names is what
+/// decides whether this is one `COPY` down the connection that is already open
+/// or a fetch at one server and an append at another.
 fn spawn_folder_move(
     app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
     from: String,
-    into: String,
+    into: crate::application::destinations::Destination,
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -17374,6 +17379,13 @@ fn spawn_folder_move(
             message_row_id,
             s.active_account_id.as_deref(),
         )
+    };
+    // The account the chosen destination belongs to, read off the row that was
+    // chosen rather than inferred here. Taken beside the source account so both
+    // come from one locked look at the state.
+    let destination_account = {
+        let s = lock_state(state);
+        s.accounts.iter().find(|a| a.id == into.account_id).cloned()
     };
 
     rt.spawn_blocking(move || {
@@ -17409,16 +17421,57 @@ fn spawn_folder_move(
         // Nothing but the branch above held those apart, so a move that ever
         // came back empty would have been announced as a copy that went
         // perfectly.
-        let outcome = if copying {
-            handle
-                .block_on(controller.copy_message(&from, uid, &into))
-                .map(|()| crate::application::server_delete::after_a_copy(&into, &subject))
-        } else {
-            handle
-                .block_on(controller.move_message(&from, uid, &into))
+        // Which of the two conversations this is. A folder on the same server
+        // is one command down the connection that is already open; a folder on
+        // another account is a fetch here and an append there, and sending the
+        // first shape at the second would name a folder path on a server that
+        // does not have it.
+        let crossing = crate::application::mail_across_accounts::whether_it_crosses(
+            &account.id,
+            &into.account_id,
+        );
+
+        let outcome = match (crossing, copying) {
+            (crate::application::mail_across_accounts::Crossing::AnotherAccount, true) => {
+                let Some(destination_account) = destination_account else {
+                    return fail(
+                        "the account that folder is on is not set up on this computer".to_string(),
+                    );
+                };
+                // The destination's own held session, so the append carries
+                // that account's permission. An account somebody marked
+                // read-only refuses it there rather than here.
+                let taking = match handle.block_on(
+                    crate::application::mail_session::the_session_at(&destination_account),
+                ) {
+                    Ok(session) => session,
+                    Err(why) => return fail(why.to_string()),
+                };
+                handle
+                    .block_on(crate::application::mail_across_accounts::copy_it_across(
+                        controller.as_ref(),
+                        &from,
+                        uid,
+                        taking.as_ref(),
+                        &into.id,
+                    ))
+                    .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject))
+            }
+            (crate::application::mail_across_accounts::Crossing::AnotherAccount, false) => {
+                // A move across accounts is an append and then a removal at the
+                // source, and the removal is 04.1-03. Refused in words rather
+                // than sent as a `MOVE` the source server would answer by
+                // naming a folder it does not have.
+                return fail("moving a message to another account is not built yet".to_string());
+            }
+            (crate::application::mail_across_accounts::Crossing::TheSameAccount, true) => handle
+                .block_on(controller.copy_message(&from, uid, &into.id))
+                .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject)),
+            (crate::application::mail_across_accounts::Crossing::TheSameAccount, false) => handle
+                .block_on(controller.move_message(&from, uid, &into.id))
                 .map(|moved| {
-                    crate::application::server_delete::after_a_move(&moved, &into, &subject)
-                })
+                    crate::application::server_delete::after_a_move(&moved, &into.id, &subject)
+                }),
         };
 
         match outcome {

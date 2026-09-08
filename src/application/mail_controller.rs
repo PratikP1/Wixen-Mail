@@ -692,9 +692,20 @@ impl MailController {
     }
 
     /// Save a copy of a message into a folder, as the Sent copy is saved.
-    pub async fn append_message(&self, into: &str, flags: Option<&str>, raw: &[u8]) -> Result<()> {
+    ///
+    /// `arrived` is the date to file it under. `None` means now, which is right
+    /// for a message going out and wrong for one being copied to another
+    /// account: appended with no date, a five year old message sorts to the top
+    /// of the folder it lands in.
+    pub async fn append_message(
+        &self,
+        into: &str,
+        flags: Option<&str>,
+        arrived: Option<&str>,
+        raw: &[u8],
+    ) -> Result<()> {
         once_more_if_the_connection_went!(self, session, {
-            session.append_message(into, flags, raw).await
+            session.append_message(into, flags, arrived, raw).await
         })
     }
 
@@ -909,7 +920,10 @@ mod tests {
             controller.delete_message("INBOX", 1, None).await.err(),
             controller.move_message("INBOX", 1, "Archive").await.err(),
             controller.copy_message("INBOX", 1, "Archive").await.err(),
-            controller.append_message("Sent", None, b"raw").await.err(),
+            controller
+                .append_message("Sent", None, None, b"raw")
+                .await
+                .err(),
             controller.set_subscribed("Work", true).await.err(),
             controller.create_mailbox("Work").await.err(),
             controller.rename_mailbox("Work", "Works").await.err(),
@@ -1722,7 +1736,7 @@ mod against_a_server_that_answers {
         let raw = b"From: me@example.com\r\nSubject: Sent\r\n\r\nbody\r\n";
 
         controller
-            .append_message("Sent", Some("(\\Seen)"), raw)
+            .append_message("Sent", Some("(\\Seen)"), None, raw)
             .await
             .expect("the copy to be saved");
 
@@ -1754,6 +1768,7 @@ mod against_a_server_that_answers {
             .append_message(
                 "Sent",
                 Some("(\\Seen)"),
+                None,
                 b"From: me@example.com\r\n\r\nbody\r\n",
             )
             .await;

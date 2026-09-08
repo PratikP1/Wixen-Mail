@@ -3577,11 +3577,11 @@ tests_last_seen = [
 name = "saving a copy does not change which folder is open"
 file = "src/application/mail_controller.rs"
 before = """        once_more_if_the_connection_went!(self, session, {
-            session.append_message(into, flags, raw).await
+            session.append_message(into, flags, arrived, raw).await
         })"""
 after = """        once_more_if_the_connection_went!(self, session, {
             session.select_folder(into).await?;
-            session.append_message(into, flags, raw).await
+            session.append_message(into, flags, arrived, raw).await
         })"""
 red = [
     "application::mail_controller::against_a_server_that_answers::test_saving_a_copy_of_a_sent_message_appends_it_where_it_was_told",
@@ -4092,13 +4092,13 @@ name = "the move handler asks one place what to say and what to do with the row"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
 before = """                .map(|moved| {
-                    crate::application::server_delete::after_a_move(&moved, &into, &subject)
+                    crate::application::server_delete::after_a_move(&moved, &into.id, &subject)
                 })"""
 after = """                .map(|moved| {
                     let _ = &moved;
                     crate::application::server_delete::WhatToDoNext {
                         then: crate::application::server_delete::ThenWhat::MarkItDeletedHere,
-                        said: format!("Moved to {into}: {subject}"),
+                        said: format!("Moved to {}: {subject}", into.id),
                     }
                 })"""
 red = [
@@ -5383,11 +5383,11 @@ tests_last_seen = [
 [[guard]]
 name = "one place words what a move or a copy did"
 file = "src/presentation/wx_app.rs"
-before = """                .map(|()| crate::application::server_delete::after_a_copy(&into, &subject))"""
+before = """                .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject)),"""
 after = """                .map(|()| crate::application::server_delete::WhatToDoNext {
                     then: crate::application::server_delete::ThenWhat::LeaveTheRow,
-                    said: format!("Copied to {into}: {subject}"),
-                })"""
+                    said: format!("Copied to {}: {subject}", into.id),
+                }),"""
 red = [
     "presentation::wx_app::one_owner_for_what_a_delete_did::test_only_the_owner_words_what_a_move_or_a_copy_did",
 ]

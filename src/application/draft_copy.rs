@@ -183,7 +183,10 @@ impl KeepsTheDraft for DraftAtTheServer<'_> {
             crate::service::protocols::imap::flag::SEEN
         );
         self.session
-            .append_message(folder, Some(&as_a_read_draft), raw)
+            // No date. A draft is being written now, so now is when it arrived,
+            // and the one call that has a date to carry is a message copied
+            // across from another account.
+            .append_message(folder, Some(&as_a_read_draft), None, raw)
             .await
             .map_err(|e| e.to_string())
     }
