@@ -101,6 +101,16 @@ built, and none of them has ever run against a real account. [What is worth
 testing, and what is known to be broken](ALPHA_TESTING.md) keeps the fuller
 list.
 
+**Moving and copying a message to another account** is the newest of those and
+is worth naming on its own, because it is the only write that speaks to two
+servers. The message is put at the second server before anything is taken off
+the first, so every failure leaves it in one place or in two rather than in
+none. That order is proved against loopback servers written for the tests, and
+loopback servers cannot say what a real provider does with a large message, what
+Gmail does with one arriving from another account, or what any provider does
+when a message carries an identifier it already holds. The changelog keeps those
+three under its known limitations.
+
 ## Quality gates
 
 Every commit must pass four checks, run together by `scripts/check.sh`:

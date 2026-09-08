@@ -35,9 +35,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   account in that sentence and you hear it on every message you file.
 
   The moved message will not be in this program's list of the folder it went to
-  until that account next syncs that folder. The server it was appended to gives
-  out a number for it that nothing tells this program, so there is nothing to
-  write down until the folder is read again.
+  until that account next syncs that folder. The server it was put on gives out
+  a number for it that nothing tells this program, so there is nothing to write
+  down until the folder is read again.
+
+  If the folder you moved it to is one you have turned syncing off for, it will
+  not appear here at all until you turn syncing back on for it, in Folders to
+  keep up to date for that account. The message is at the server either way, and
+  you can see it in webmail or another mail program. Moving a message does not
+  turn syncing on for you: a setting you chose is not something another command
+  should change behind you.
 
   What has not been checked: none of this has run against a real mail account.
   See the known limitations below.
@@ -84,7 +91,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the account you are copying to, that account refuses it and says so.
 
   What has not been checked: none of this has run against a real mail account.
-  Moving a message to another account is not built yet, only copying.
+  Moving a message to another account arrived in the same release, and is the
+  entry at the top of this section.
 
 - **You can see who you have blocked, and take a block off.** Tools, Blocked
   Senders, with the other managers and just under Message Filters. It lists
@@ -451,7 +459,8 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Nothing you did could reach that yet, because the window has only ever been
   given one account's folders at a time. What it means today is that the code
   underneath is ready to be given more than one, which is the next piece of
-  work. Mail still does not move between accounts.
+  work. That work landed in this same release: mail now moves and copies
+  between accounts, and the entries for it are at the top of this section.
 
 - **Three entries in this changelog said you could turn speech off and still
   get braille, and that has never worked.** They are corrected where they stand,

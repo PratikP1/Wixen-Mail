@@ -385,7 +385,7 @@ can navigate. Making them real headings is being worked on.
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
 | Send read receipt | no shortcut | Action menu. Only when that message asked for one |
-| Move to | `Ctrl+Shift+V` | Action menu. In Mail, put this message in another folder, opening on the last folder you filed into. In the other modules, move the chosen event, task or note to another calendar, list or folder |
+| Move to | `Ctrl+Shift+V` | Action menu. In Mail, put this message in another folder, on this account or on another one, opening on the last folder you filed into. In the other modules, move the chosen event, task or note to another calendar, list or folder |
 | Copy to folder | `Ctrl+Shift+Y` | Action menu, Copy to. Put a copy of this message in another folder, on this account or on another one |
 
 Both open a window listing every account with somewhere to put the message. One
@@ -493,7 +493,7 @@ anything.
 | Pin or Unpin | `Ctrl+Shift+P` | Notes |
 | Delete | `Delete` | Every module. Deletes whichever item is chosen |
 | Delete Permanently | `Shift+Del` | Mail |
-| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, and for a calendar, list or note folder elsewhere |
+| Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere |
 
 Five submenus hold the rest:
 
