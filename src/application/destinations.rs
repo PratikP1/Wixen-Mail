@@ -251,11 +251,21 @@ pub fn open_on<'a>(
     {
         return Some(again);
     }
-    // RED. The window opened on whichever branch was built first, which was
-    // right while there was only ever one. With every account offered it is
-    // whichever account the sidebar happens to draw first, and somebody filing
-    // a message meets that account's folders before their own.
-    let _ = the_account_it_is_in;
+    // The account the thing is in, next. Opening on whichever branch was built
+    // first was right while there was only ever one; with every account offered
+    // it is whichever account the sidebar happens to draw first, and somebody
+    // filing a message would meet that account's folders before their own.
+    if let Some(its_own) = the_account_it_is_in
+        && let Some(theirs) = branches
+            .iter()
+            .filter(|branch| branch.account_id == its_own)
+            .flat_map(|branch| branch.places.iter())
+            .next()
+    {
+        return Some(theirs);
+    }
+    // Its own account has nowhere left to put it, so it is not a branch at all.
+    // The first place there is beats opening on nothing.
     branches
         .iter()
         .flat_map(|branch| branch.places.iter())
@@ -280,12 +290,14 @@ pub fn the_branch_to_open<'a>(
     branches: &'a [Branch],
     opening_on: Option<&Destination>,
 ) -> Option<&'a str> {
-    // RED. What the window did before this plan is open every branch, and the
-    // reading that replaces "all of them" without asking anything is "the first
-    // one". Both are wrong for the same reason and only one of them compiles
-    // here.
-    let _ = opening_on;
-    branches.first().map(|branch| branch.account_id.as_str())
+    if branches.len() == 1 {
+        return branches.first().map(|branch| branch.account_id.as_str());
+    }
+    let opening_on = opening_on?;
+    branches
+        .iter()
+        .find(|branch| branch.account_id == opening_on.account_id)
+        .map(|branch| branch.account_id.as_str())
 }
 
 /// Every account's mail folders, as branches the picker can be given.

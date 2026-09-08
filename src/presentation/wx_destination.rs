@@ -162,10 +162,20 @@ pub fn build_destination_dialog(
     let tree = TreeCtrl::builder(&dialog)
         .with_style(TreeCtrlStyle::HasButtons | TreeCtrlStyle::LinesAtRoot)
         .build();
+    // Every key named here is one a `TreeCtrl` answers to on its own: the
+    // arrows, Left and Right on a row with children, and the activation the
+    // dialog's default button takes. Left is named now that it earns its place:
+    // accounts other than the one this opens on start closed, so somebody who
+    // opened the wrong one needs the way back out as much as the way in.
+    //
+    // Escape is left out, and that is a judgement rather than an oversight. It
+    // closes every dialog in this program, so it is the one key somebody
+    // already knows, and this sentence is read out in full every time focus
+    // reaches the tree.
     set_accessible_name_and_description(
         &tree,
         &title,
-        "Arrow keys move, Right expands an account, Enter chooses.",
+        "Arrow keys move, Right opens an account and Left closes it, Enter chooses.",
     );
 
     // Every tree needs a root. The accounts hang off it, and the style hides

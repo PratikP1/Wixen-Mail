@@ -14,6 +14,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the message is now in the list. An account with no folders known yet is left
   out, because it would be a row you open, find nothing in, and close.
 
+  One account in that window is open and the rest are closed: the one you last
+  filed into, or the one the message is in. With several accounts set up, every
+  account open meant the last account's folders sat behind every folder of the
+  ones above it, and somebody moving through the list by keyboard has to hear
+  each row on the way. Press Right on an account to open it and Left to close
+  it again.
+
   Moving a folder still offers only its own account, and that is on purpose:
   the command that renames a folder cannot reach another server.
 
