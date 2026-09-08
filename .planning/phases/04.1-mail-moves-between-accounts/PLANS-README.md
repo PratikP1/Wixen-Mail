@@ -512,6 +512,17 @@ truth. Phase 5's own risk-ordering section is unaffected: it argues from
 `one_day_kept_out_of_the_series` and the destructive write going last, which 4.1
 does not change.
 
+**Done on 2026-09-08, at the start of phase 5 rather than at the end of this
+one, and it was six places rather than four.** The sweep above searches for the
+claim worded as a positive. Two more places word it as a negative and it missed
+both: `README.md:191`, "Mail does not move between accounts", and
+`05-05-PLAN.md:62`, "and mail does not". That is the same failure this section
+was written to prevent, one level up, so the lesson is not "count in a sweep
+rather than in prose" but "sweep for the negative as well as the positive". All
+six now say that mail moves between accounts and that `05-05` is the first PIM
+move to cross one, with `where_mail_can_go`, `where_this_message_can_go` and the
+call at `wx_app.rs:17310` named as the evidence.
+
 Note also that the file is `README.md` and not `PLANS-README.md`. Phase 4.2 uses
 `PLANS-README.md` and phase 5 uses `README.md`; this phase follows 4.2, since it
 is the more recent and the more complete of the two.

@@ -27,7 +27,7 @@ phase 5.1.
 | 05-02 | 2 | PIM-06, PIM-03 | 05-01 | no | Week and month as narrower windows over the list that exists, with Prev and Next that move and announce | carried |
 | 05-03 | 3 | PIM-02 | none | no | Copy beside move for events, tasks and notes | carried, checkpoint struck |
 | 05-04 | 4 | PIM-02 | 05-03 | no | A contact moves between groups, and the move asks which group it is leaving | new |
-| 05-05 | 5 | PIM-02 | 05-03 | no | A reminder moves to another account, which is the first move in this program that crosses one | new |
+| 05-05 | 5 | PIM-02 | 05-03 | no | A reminder moves to another account, which is the first PIM move to cross one | new |
 | 05-06 | 6 | PIM-01 | 05-03 | no | The local half of "exactly one list" proved, a move that says what has and has not happened, and PIM-01's text corrected to match | carried, checkpoint replaced by the edit it was asking permission for |
 | 05-07 | 7 | PIM-01 | 05-06 | no | A half-finished move survives the program closing, with no provider called yet | new |
 | 05-08 | 8 | PIM-01 | 05-07 | yes, at the end | The provider move itself: delete there, create here, and a recovery that reads from the local copy | new |
@@ -188,18 +188,30 @@ contact is in as many groups as somebody put it in, so the question a move has t
 ask is not "which container is it in" but "which of the several is it leaving".
 That shape change is the whole of `05-04` task 1.
 
-**Mail does not move between accounts, so decision 4's stated precedent is not
-true of this code.** `grep -rn "Branch {" src/ --include=*.rs` returns six hits;
-the two that build more than one branch sit below `#[cfg(test)]` at
-`destinations.rs:306`. Every one of the three production sites builds
-`vec![Branch { .. }]` with exactly one entry, holding the account the thing is
-already in. This does not overturn the decision and it does change what it costs:
-the tree is shaped for several accounts and has never carried them. `offer` is
-written over a `Vec<Branch>`, `test_other_accounts_keep_their_places` proves it
-keeps another account's places, and `destinations.rs`'s module header opens by
-explaining why two accounts both having an Archive is the reason it is a tree.
-Unreached machinery rather than missing machinery. `05-05` says so and is written
-to be its first user.
+**Mail moves between accounts now, and this paragraph used to say it did not.**
+Corrected 2026-09-08 against `main` at `abb1218`. When phase 5 was assembled on
+2026-09-06 the claim was measured and right: every `Branch` built outside
+`#[cfg(test)]` held one account, so decision 4's "the way mail already moves
+between accounts" described something that did not happen, and the machinery was
+unreached rather than missing. Phase 4.1 reached it.
+`destinations::where_mail_can_go` builds a `Branch` per account from the drawn
+sidebar rows, `where_this_message_can_go` wraps that in `offer`, and
+`wx_app.rs:17310` calls it from the move somebody makes.
+
+What that costs phase 5 is one framing and no design. `05-05` still uses
+`pick_one` rather than the destination tree, because the tree answers a folder
+inside an account and never an account itself: `build_destination_dialog` pushes
+`None` for every account row on purpose, with a comment saying an account
+heading is somewhere to look rather than somewhere to put something. So `05-05`
+is the first *PIM* move to cross an account, it is not the first move in the
+program, and its summary must not claim to be unprecedented.
+
+Phase 4.1's `PLANS-README.md` predicted this correction and named four places to
+make it. The sweep it gave, `grep -rn "first move\|first cross\|crosses one"`,
+missed two more that word the same claim as a negative, which is the failure
+that document was itself warning about one paragraph earlier. Six were
+corrected. Whoever writes the next such note greps for the negative as well as
+the positive.
 
 **`offer` deletes empty branches, so a reminder needs something to stand in an
 account's places.** `offer` ends with
