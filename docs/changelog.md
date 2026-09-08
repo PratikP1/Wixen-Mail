@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A message can be copied into a folder on another account.** Choose Copy to,
+  pick a folder under a different account, and the message is fetched from the
+  account it is in and put at the other account's server. The original stays
+  exactly where it is, which is what a copy means, and is why copying arrives
+  before moving: if anything goes wrong the message has not gone anywhere.
+
+  Whether it has been read, whether it is starred and whether it has been
+  answered travel with it. A message marked for removal does not arrive marked
+  for removal, because the folder it lands in would take it at the next tidy-up
+  and you would never see the copy you asked for. Labels one provider invented
+  are left behind, because they mean nothing at another provider and a strict
+  server can refuse the whole message over one it does not recognise.
+
+  The date the first server filed it travels too, so a five year old message
+  does not arrive looking like it came in today and sort to the top.
+
+  If the second account's server refuses, you are told the message is still
+  where it was and nothing was made. If you have Allow Changes switched off for
+  the account you are copying to, that account refuses it and says so.
+
+  What has not been checked: none of this has run against a real mail account.
+  Moving a message to another account is not built yet, only copying.
+
 - **You can see who you have blocked, and take a block off.** Tools, Blocked
   Senders, with the other managers and just under Message Filters. It lists
   every block on the account you are looking at, saying who is blocked, which

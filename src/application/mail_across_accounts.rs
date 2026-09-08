@@ -31,7 +31,7 @@
 //! arriving today, at the top of somebody's folder.
 
 use crate::common::Result;
-use crate::service::protocols::imap::ImapMessage;
+use crate::service::protocols::imap::{ImapMessage, flag};
 
 /// Whether a chosen destination is at the same server the message is at.
 ///
@@ -54,10 +54,12 @@ pub enum Crossing {
 /// The account identifiers, never the folder paths. A path is unique inside one
 /// account and not across them, which is what
 /// [`crate::application::destinations::FolderInAnAccount`] exists to say.
-pub fn whether_it_crosses(_the_message_is_in: &str, _it_is_going_to: &str) -> Crossing {
-    // RED. What the program answers today, where every destination is a folder
-    // on the account the message is in because the window offers no others.
-    Crossing::TheSameAccount
+pub fn whether_it_crosses(the_message_is_in: &str, it_is_going_to: &str) -> Crossing {
+    if the_message_is_in == it_is_going_to {
+        Crossing::TheSameAccount
+    } else {
+        Crossing::AnotherAccount
+    }
 }
 
 /// The flags that survive being carried to another server.
@@ -81,12 +83,18 @@ pub fn whether_it_crosses(_the_message_is_in: &str, _it_is_going_to: &str) -> Cr
 /// `APPEND` with no flag list are different commands and only one of them is
 /// what this means.
 pub fn the_flags_that_travel(on_the_message: &[String]) -> Option<String> {
-    // RED, and it is the filter somebody writes without thinking about it:
-    // whatever the source server said, spelled straight back out.
-    if on_the_message.is_empty() {
+    let travelling: Vec<&str> = on_the_message
+        .iter()
+        .filter_map(|named| {
+            [flag::SEEN, flag::FLAGGED, flag::ANSWERED, flag::DRAFT]
+                .into_iter()
+                .find(|known| named.eq_ignore_ascii_case(known))
+        })
+        .collect();
+    if travelling.is_empty() {
         return None;
     }
-    Some(format!("({})", on_the_message.join(" ")))
+    Some(format!("({})", travelling.join(" ")))
 }
 
 /// The date the source server filed it, spelled the way `APPEND` takes one.
@@ -101,10 +109,12 @@ pub fn the_flags_that_travel(on_the_message: &[String]) -> Option<String> {
 /// be putting a stranger's text inside a command this program sends. A date that
 /// does not read comes back as `None`, which is the same as a server that said
 /// nothing: worse than the right date, and better than a command nobody wrote.
-pub fn when_it_arrived(_rfc3339: Option<&str>) -> Option<String> {
-    // RED. The nought every existing caller of `append_message` passes, which
-    // is the defect written out: an appended message reads as arriving today.
-    None
+pub fn when_it_arrived(rfc3339: Option<&str>) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(rfc3339?).ok()?;
+    Some(format!(
+        "\"{}\"",
+        parsed.format(crate::service::protocols::imap::INTERNAL_DATE_FORMAT)
+    ))
 }
 
 /// The account the message is in, as a crossing needs to see it.
@@ -153,13 +163,23 @@ pub(crate) async fn copy_it_across(
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     into: &str,
 ) -> Result<()> {
-    // RED, and it is the crossing somebody writes without thinking about it:
-    // fetch the message and append it, carrying nothing about how the source
-    // had it filed and asking nothing about whether the source had it at all.
-    let _ = the_account_it_is_in.the_headers_of(from, &[uid]).await?;
+    let headers = the_account_it_is_in.the_headers_of(from, &[uid]).await?;
+    let Some(filed) = headers.into_iter().find(|message| message.uid == uid) else {
+        // The server answered and named no message. Appending anyway would put
+        // a copy at the destination unread and dated today, which is worse than
+        // not copying it, because nothing afterwards says it happened that way.
+        return Err(crate::common::Error::Protocol(format!(
+            "The mail server said nothing about the message with UID {uid}"
+        )));
+    };
     let raw = the_account_it_is_in.the_bytes_of(from, uid).await?;
     the_account_it_is_going_to
-        .take_this_message(into, None, None, &raw)
+        .take_this_message(
+            into,
+            the_flags_that_travel(&filed.flags).as_deref(),
+            when_it_arrived(filed.internal_date.as_deref()).as_deref(),
+            &raw,
+        )
         .await
 }
 
@@ -189,10 +209,10 @@ impl TheAccountItIsGoingTo for crate::application::mail_controller::MailControll
 mod tests {
     use super::*;
     use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
+    use crate::service::protocols::imap::ImapSession;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, reading_only_on, signed_in_to,
     };
-    use crate::service::protocols::imap::{ImapSession, flag};
 
     /// The UID every test here asks for.
     const THE_UID: u32 = 4;
@@ -447,7 +467,7 @@ mod tests {
         // is the only thing that can see it. A crossing that quietly also
         // flagged or copied at the source would look identical from the
         // destination's side and from this function's return value.
-        let source = a_server_holding_the_message("\\Seen", "01-Aug-2026 10:00:00 +0000").await;
+        let source = a_server_holding_the_message(flag::SEEN, "01-Aug-2026 10:00:00 +0000").await;
         let destination = a_server_that_can("").await;
 
         waiting_for(copy_it_across(
@@ -468,7 +488,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_the_destination_is_told_to_append_into_the_folder_that_was_chosen() {
-        let source = a_server_holding_the_message("\\Seen", "01-Aug-2026 10:00:00 +0000").await;
+        let source = a_server_holding_the_message(flag::SEEN, "01-Aug-2026 10:00:00 +0000").await;
         let destination = a_server_that_can("").await;
 
         waiting_for(copy_it_across(
@@ -520,7 +540,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_destination_that_refuses_the_append_leaves_the_message_where_it_was() {
-        let source = a_server_holding_the_message("\\Seen", "01-Aug-2026 10:00:00 +0000").await;
+        let source = a_server_holding_the_message(flag::SEEN, "01-Aug-2026 10:00:00 +0000").await;
         let destination = a_server_that_refuses("", "APPEND").await;
 
         let refused = waiting_for(copy_it_across(
@@ -548,7 +568,7 @@ mod tests {
         // destination's session and nothing is sent to either server. A gate
         // read at the source would let a crossing into an account somebody had
         // marked read-only.
-        let source = a_server_holding_the_message("\\Seen", "01-Aug-2026 10:00:00 +0000").await;
+        let source = a_server_holding_the_message(flag::SEEN, "01-Aug-2026 10:00:00 +0000").await;
         let destination = a_server_that_can("").await;
 
         let refused = waiting_for(copy_it_across(
