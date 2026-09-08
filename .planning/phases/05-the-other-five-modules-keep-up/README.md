@@ -337,10 +337,26 @@ seventeen whose frontmatter contradicted its own body.
   rather than only appearing in a menu label. `05-RESEARCH.md` assumption A2 is
   not settled by any test in this repository.
 
-`.planning/WINDOWS.md` ends at entry 119 before this phase. Each plan says which
-entries it owes, one entry per unrun thing rather than one entry for all of them,
-because an entry saying "this has never been tried" tells the next reader nothing
-about which part to try first.
+**`.planning/WINDOWS.md` held 192 entries on 2026-09-08, not the 119 this
+paragraph used to say, and it will hold more by the time you read it.** The
+number was right when phase 5 was assembled on 2026-09-06 against a tree where
+phases 4.1 and 4.2 had not landed; both have since, and 4.1 alone opened
+fourteen. Every plan in this phase repeated the 119, so all eight were corrected
+on 2026-09-08 to say the same thing this paragraph now says: **read the last row
+of the file before choosing a number, rather than trusting any figure written
+down here.**
+
+What it costs to get wrong is not a wrong number in a document.
+`tests/the_planning_files_agree_with_themselves.rs` refuses a duplicated ledger
+id, the file stores every entry twice as a markdown table and a JSON block that
+must agree, and that target runs inside the commit gate. So the commit is
+refused, and the message is about the two halves disagreeing rather than about
+the numbering, which reads as a broken ledger rather than as a plan quoting a
+stale figure.
+
+Each plan says which entries it owes, one entry per unrun thing rather than one
+entry for all of them, because an entry saying "this has never been tried" tells
+the next reader nothing about which part to try first.
 
 ## What is owed to documents, and belongs to whoever lands these
 
