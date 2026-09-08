@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 167
+open_count: 171
 waived_count: 0
 fixed_count: 15
-total_count: 182
-last_updated: 2026-09-08T00:34:49.971Z
+total_count: 186
+last_updated: 2026-09-08T02:10:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -197,6 +197,10 @@ last_updated: 2026-09-08T00:34:49.971Z
 | 180 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | The move and copy window now draws a real tree, with a folder inside the folder it is in, and names accounts the way the sidebar does. No screen reader has heard either. Whether Right and Left expand and collapse as somebody expects in this dialog, whether a folder two deep is reached and read as being inside its parent, and whether hearing Work with an address after it on a branch is a help or a mouthful, are all judgements only NVDA or Narrator settles | open |  | 2026-09-08T00:34:48.878Z |  |
 | 181 | 04.1 | deviation | src/data/config.rs |  | The census asking whether every stored setting is read by something now follows one hop through a function of config.rs, because a setting whose stored value holds two facts gets a reader and a writer and stops being named anywhere else. Three limits, recorded rather than narrowed away. It counts a pub fn taking and self whose doc comment merely mentions the field, since the body is taken as everything between one pub fn and the next. It cannot see a setting read by a free function rather than a method. And it counts no function taking mut self, which is right for the pair that prompted it and would be wrong for a setting legitimately read inside a method that also writes | open |  | 2026-09-08T00:34:49.418Z |  |
 | 182 | 04.1 | unrun-verify | src/presentation/wx_app.rs |  | Nothing tests that the move window opens on the folder last filed into. The guard record covering that call reddens the settings census rather than anything about the window, so what is defended is that the stored value is read at all and not that the row it names is where the cursor lands. Reaching that needs a live window, a stored settings file and a branch with the remembered folder in it | open |  | 2026-09-08T00:34:49.971Z |  |
+| 183 | 04.1 | unrun-verify | src/application/mail_across_accounts.rs |  | No message has been copied between two real accounts. Every assertion here is against a loopback server this project wrote, which answers exactly what the script says and nothing a provider does on top: whether Gmail treats an APPEND with an internal date the way the RFC says, whether a strict server refuses a flag list this drops keywords from anyway, whether a message fetched with BODY.PEEK and appended somewhere else arrives byte for byte, and whether a slow append times out before it lands are all questions only a live account answers | open |  | 2026-09-08T02:10:00.000Z |  |
+| 184 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | No screen reader has heard the move and copy window with several accounts in it. Three questions: whether an account row reads as an account rather than as a folder, whether a collapsed branch is announced as collapsed with a count of what is inside, and whether the person finds Right without being told. The accessible description names Right and Left, which is structure present rather than experience good | open |  | 2026-09-08T02:10:00.000Z |  |
+| 185 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | Whether Enter chooses in this window is unverified and always has been. A TreeCtrl takes Enter as an item activation, and whether that reaches the dialog's default button was read off the code rather than pressed. The accessible description and docs/KEYBOARD_SHORTCUTS.md both say Enter chooses. CLAUDE.md already records one key bound in the composer that was measured never arriving, and no reader of source text can tell that case from a key that works | open |  | 2026-09-08T02:10:00.000Z |  |
+| 186 | 04.1 | deviation | src/application/mail_across_accounts.rs |  | The transcript half of test_a_copy_across_accounts_says_nothing_to_the_source_that_changes_it cannot be made to fail. What it asserts, that no STORE, EXPUNGE or COPY reaches the source, is guaranteed by the trait the source is behind rather than by the code under test: TheAccountItIsIn has two reads and no write, so no body of copy_it_across can send one. That is a stronger guarantee than the test, and it means the test only starts measuring anything if somebody widens the trait. Its other assertion, that the copy succeeded, was taken red | open |  | 2026-09-08T02:10:00.000Z |  |
 
 ````json
 [
@@ -2382,6 +2386,54 @@ last_updated: 2026-09-08T00:34:49.971Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T00:34:49.971Z",
+    "resolved_at": null
+  },
+  {
+    "id": 183,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/application/mail_across_accounts.rs",
+    "line": null,
+    "description": "No message has been copied between two real accounts. Every assertion here is against a loopback server this project wrote, which answers exactly what the script says and nothing a provider does on top: whether Gmail treats an APPEND with an internal date the way the RFC says, whether a strict server refuses a flag list this drops keywords from anyway, whether a message fetched with BODY.PEEK and appended somewhere else arrives byte for byte, and whether a slow append times out before it lands are all questions only a live account answers",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T02:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 184,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/presentation/wx_destination.rs",
+    "line": null,
+    "description": "No screen reader has heard the move and copy window with several accounts in it. Three questions: whether an account row reads as an account rather than as a folder, whether a collapsed branch is announced as collapsed with a count of what is inside, and whether the person finds Right without being told. The accessible description names Right and Left, which is structure present rather than experience good",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T02:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 185,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/presentation/wx_destination.rs",
+    "line": null,
+    "description": "Whether Enter chooses in this window is unverified and always has been. A TreeCtrl takes Enter as an item activation, and whether that reaches the dialog's default button was read off the code rather than pressed. The accessible description and docs/KEYBOARD_SHORTCUTS.md both say Enter chooses. CLAUDE.md already records one key bound in the composer that was measured never arriving, and no reader of source text can tell that case from a key that works",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T02:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 186,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/application/mail_across_accounts.rs",
+    "line": null,
+    "description": "The transcript half of test_a_copy_across_accounts_says_nothing_to_the_source_that_changes_it cannot be made to fail. What it asserts, that no STORE, EXPUNGE or COPY reaches the source, is guaranteed by the trait the source is behind rather than by the code under test: TheAccountItIsIn has two reads and no write, so no body of copy_it_across can send one. That is a stronger guarantee than the test, and it means the test only starts measuring anything if somebody widens the trait. Its other assertion, that the copy succeeded, was taken red",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T02:10:00.000Z",
     "resolved_at": null
   }
 ]
