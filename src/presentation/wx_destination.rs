@@ -82,12 +82,17 @@ pub fn what_a_selection_means(
 /// `last_used` is where the previous one went. The window opens on it if it is
 /// still on offer, so filing several messages into the same folder is the
 /// shortcut and Enter rather than a walk through the tree each time.
+///
+/// `the_account_it_is_in` is where to open when nothing was remembered. With
+/// several accounts on offer, the first branch is whichever account the sidebar
+/// happens to draw first, which is nobody's answer to "where should this go".
 pub fn ask(
     parent: &Frame,
     moving: Moving,
     copying: bool,
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
+    the_account_it_is_in: Option<&str>,
 ) -> Option<Destination> {
     if branches.is_empty() {
         return None;
@@ -98,6 +103,7 @@ pub fn ask(
         copying,
         branches,
         last_used,
+        the_account_it_is_in,
         theme::current_from_stored_config(),
     );
 
@@ -133,12 +139,17 @@ pub fn build_destination_dialog(
     copying: bool,
     branches: &[Branch],
     last_used: Option<FolderInAnAccount<'_>>,
+    the_account_it_is_in: Option<&str>,
     palette: Option<theme::Palette>,
 ) -> (Dialog, TreeCtrl, Vec<Option<Destination>>) {
     // Held whole rather than as its path, for the reason the answer is whole:
     // two accounts can both hold an `Archive`, and a row matched on the path
     // alone would put the cursor on whichever branch was drawn first.
-    let open_on = crate::application::destinations::open_on(branches, last_used);
+    let open_on =
+        crate::application::destinations::open_on(branches, last_used, the_account_it_is_in);
+    // Which one branch is drawn open. Decided in `destinations`, with no
+    // control in the room, and read here.
+    let open_branch = crate::application::destinations::the_branch_to_open(branches, open_on);
 
     let title = heading(moving, copying);
     let dialog = Dialog::builder(parent, &title)
@@ -151,10 +162,20 @@ pub fn build_destination_dialog(
     let tree = TreeCtrl::builder(&dialog)
         .with_style(TreeCtrlStyle::HasButtons | TreeCtrlStyle::LinesAtRoot)
         .build();
+    // Every key named here is one a `TreeCtrl` answers to on its own: the
+    // arrows, Left and Right on a row with children, and the activation the
+    // dialog's default button takes. Left is named now that it earns its place:
+    // accounts other than the one this opens on start closed, so somebody who
+    // opened the wrong one needs the way back out as much as the way in.
+    //
+    // Escape is left out, and that is a judgement rather than an oversight. It
+    // closes every dialog in this program, so it is the one key somebody
+    // already knows, and this sentence is read out in full every time focus
+    // reaches the tree.
     set_accessible_name_and_description(
         &tree,
         &title,
-        "Arrow keys move, Right expands an account, Enter chooses.",
+        "Arrow keys move, Right opens an account and Left closes it, Enter chooses.",
     );
 
     // Every tree needs a root. The accounts hang off it, and the style hides
@@ -232,7 +253,15 @@ pub fn build_destination_dialog(
                 under.truncate(depth + 1);
                 under.push(row);
             }
-            tree.expand(&under[0]);
+            // One account's folders showing, not every account's. A screen
+            // reader user meets rows in order and cannot skim, so with eight
+            // accounts open the last account's folders sit behind every folder
+            // of the seven above. Closed, they are eight rows, each announced
+            // as collapsed and with a count of what is inside, and Right opens
+            // the one somebody wants.
+            if open_branch == Some(branch.account_id.as_str()) {
+                tree.expand(&under[0]);
+            }
         }
     }
     sizer.add(&tree, 1, SizerFlag::All | SizerFlag::Expand, 8);

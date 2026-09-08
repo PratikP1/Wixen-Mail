@@ -34,7 +34,9 @@
 //! this file.
 
 use std::collections::HashSet;
-use wixen_mail::application::destinations::{where_mail_can_go, whose_folders_a_move_is_about};
+use wixen_mail::application::destinations::{
+    where_mail_can_go, where_this_message_can_go, whose_folders_a_move_is_about,
+};
 use wixen_mail::application::folder_settings::UnreadOnAParent;
 use wixen_mail::presentation::folder_tree::{AccountInTheTree, FolderInTheTree, WhichRow, rows};
 
@@ -419,5 +421,80 @@ fn test_a_folder_the_server_has_stopped_listing_is_still_somewhere_mail_can_go()
             .iter()
             .any(|(account, path, _, _)| account == "b" && path == "Old"),
         "{picker:?}"
+    );
+}
+
+/// Which accounts the move and copy window would show, for a message in `a`'s
+/// `Archive`.
+fn the_accounts_offered_for_a_message_in(account: &str, folder: Option<&str>) -> Vec<String> {
+    where_this_message_can_go(&accounts(), &folders(), account, folder)
+        .into_iter()
+        .map(|branch| branch.account_id)
+        .collect()
+}
+
+/// Which folders the window would offer, as the account each is on and its
+/// path, read off the branch the row is drawn under.
+///
+/// The branch and not the place's own account. Those agree in working code,
+/// which is exactly why a test that read the place would pass against a build
+/// that drew every row under the wrong heading. `04.1-01` found that here.
+fn what_is_offered_for_a_message_in(account: &str, folder: Option<&str>) -> Vec<(String, String)> {
+    where_this_message_can_go(&accounts(), &folders(), account, folder)
+        .into_iter()
+        .flat_map(|branch| {
+            let under = branch.account_id;
+            branch
+                .places
+                .into_iter()
+                .map(move |place| (under.clone(), place.id))
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_account_with_somewhere_to_put_it_is_offered() {
+    // Not only the account the message is in. A message can be copied to a
+    // folder on another account, and the window is where somebody names one.
+    let offered = the_accounts_offered_for_a_message_in("a", Some("Archive"));
+
+    assert!(offered.contains(&"a".to_string()), "{offered:?}");
+    assert!(offered.contains(&"b".to_string()), "{offered:?}");
+    assert!(offered.contains(&"c".to_string()), "{offered:?}");
+}
+
+#[test]
+fn test_the_folder_the_message_is_in_is_taken_out_of_its_own_account_and_no_other() {
+    // The fixture is what makes this able to fail. Accounts `a` and `b` both
+    // hold a folder at the path `Archive`, and no IMAP server hands out a path
+    // prefixed with its account. With two accounts whose folder names differ,
+    // this assertion comes out right against a build that compares the path
+    // alone and never consults the account, which is the same hazard `04.1-01`
+    // found one layer down in `offer`.
+    let offered = what_is_offered_for_a_message_in("a", Some("Archive"));
+
+    assert!(
+        !offered.contains(&("a".to_string(), "Archive".to_string())),
+        "the folder the message is in was offered as somewhere to put it: {offered:?}"
+    );
+    assert!(
+        offered.contains(&("b".to_string(), "Archive".to_string())),
+        "another account's folder at the same path was taken out with it, and \
+         it is a different folder on a different server: {offered:?}"
+    );
+}
+
+#[test]
+fn test_a_message_whose_folder_is_not_known_is_still_offered_everywhere() {
+    // Nothing is taken out, because nothing is known to be already in one.
+    let offered = what_is_offered_for_a_message_in("a", None);
+
+    assert!(
+        offered.contains(&("a".to_string(), "Archive".to_string())),
+        "{offered:?}"
+    );
+    assert!(
+        offered.contains(&("b".to_string(), "Archive".to_string())),
+        "{offered:?}"
     );
 }

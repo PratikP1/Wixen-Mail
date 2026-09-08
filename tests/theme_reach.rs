@@ -712,6 +712,7 @@ fn check_destination(parent: &Frame, palette: theme::Palette, into: &mut Vec<Sit
         false,
         &branches,
         None,
+        Some("acct-1"),
         Some(palette),
     );
     check("destination dialog", &dialog, palette.main_surface(), into);

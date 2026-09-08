@@ -8218,6 +8218,12 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
         // opens, finds nothing in, and closes without learning why.
         return refuse_a_command(tx, nothing_to_offer(Moving::Folder));
     }
+    // One branch, and it stays one branch. The message move offers every
+    // account now, and this deliberately does not: RFC 9051's `RENAME` names
+    // two mailboxes on one connection and has no way to reach another account,
+    // so a destination in a second account is a destination the command cannot
+    // get to. Offering it would be offering somebody a command that will fail,
+    // and a folder full of mail is not a thing to find that out with.
     let branches = vec![Branch {
         account_id: chosen.account.id.clone(),
         account_name: chosen.account.email.clone(),
@@ -8228,9 +8234,14 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     // that opening on the last one exists for; moving a folder is not something
     // anybody does twice in a row, and opening on wherever the last one went
     // would put the cursor somewhere unrelated.
-    let Some(into) =
-        crate::presentation::wx_destination::ask(frame, Moving::Folder, false, &branches, None)
-    else {
+    let Some(into) = crate::presentation::wx_destination::ask(
+        frame,
+        Moving::Folder,
+        false,
+        &branches,
+        None,
+        Some(&chosen.account.id),
+    ) else {
         return;
     };
 
@@ -17206,7 +17217,7 @@ fn move_or_copy_message(
 ) {
     let AppHandles { state, tx, rt } = app;
     use crate::application::destinations::{
-        FolderInAnAccount, Moving, anywhere, offer, where_mail_can_go,
+        FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
     };
 
     let Some(cache) = cache.clone() else {
@@ -17259,9 +17270,9 @@ fn move_or_copy_message(
     // to read the folders itself, name the account by its address whatever the
     // sidebar had decided, and give every folder a depth of nought.
     //
-    // Still narrowed to one account. Offering the others is 04.1-02; what is
-    // fixed here is that the one it offers is drawn the way the sidebar draws
-    // it.
+    // Which of those branches to offer is `where_this_message_can_go`, where a
+    // test can read the answer without a window. This used to build every
+    // account's branch here and then throw all but one away.
     let accounts = the_accounts_in_the_tree(&cache, &account_id);
     let in_the_tree = match the_folders_in_the_tree(&cache, &accounts, &account_id) {
         Ok(folders) => folders,
@@ -17274,16 +17285,7 @@ fn move_or_copy_message(
             );
         }
     };
-    let branches = offer(
-        where_mail_can_go(&accounts, &in_the_tree)
-            .into_iter()
-            .filter(|branch| branch.account_id == account_id)
-            .collect(),
-        from.as_deref().map(|path| FolderInAnAccount {
-            account: &account_id,
-            path,
-        }),
-    );
+    let branches = where_this_message_can_go(&accounts, &in_the_tree, &account_id, from.as_deref());
 
     if !anywhere(&branches) {
         return send_status(
@@ -17310,6 +17312,11 @@ fn move_or_copy_message(
             account: &went.account,
             path: &went.path,
         }),
+        // Where to open when nothing was remembered. Every account is offered
+        // now, so the first branch is whichever the sidebar draws first, and
+        // somebody filing a message would meet that account's folders before
+        // their own.
+        Some(&account_id),
     ) else {
         return;
     };
@@ -17341,7 +17348,7 @@ fn move_or_copy_message(
             if copying { "Copying" } else { "Moving" }
         ),
     );
-    spawn_folder_move(app, row_id, uid, subject, from, into.id, copying);
+    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -17349,13 +17356,18 @@ fn move_or_copy_message(
 /// A moved message leaves the folder it was in, so the row goes once the server
 /// has agreed and not before. A copy leaves it where it is, so nothing about
 /// the list changes at all.
+///
+/// `into` is the whole destination rather than its path, because a path is
+/// unique inside one account and not across them. Which account it names is what
+/// decides whether this is one `COPY` down the connection that is already open
+/// or a fetch at one server and an append at another.
 fn spawn_folder_move(
     app: AppHandles<'_>,
     message_row_id: i64,
     uid: u32,
     subject: String,
     from: String,
-    into: String,
+    into: crate::application::destinations::Destination,
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
@@ -17374,6 +17386,13 @@ fn spawn_folder_move(
             message_row_id,
             s.active_account_id.as_deref(),
         )
+    };
+    // The account the chosen destination belongs to, read off the row that was
+    // chosen rather than inferred here. Taken beside the source account so both
+    // come from one locked look at the state.
+    let destination_account = {
+        let s = lock_state(state);
+        s.accounts.iter().find(|a| a.id == into.account_id).cloned()
     };
 
     rt.spawn_blocking(move || {
@@ -17409,16 +17428,82 @@ fn spawn_folder_move(
         // Nothing but the branch above held those apart, so a move that ever
         // came back empty would have been announced as a copy that went
         // perfectly.
-        let outcome = if copying {
-            handle
-                .block_on(controller.copy_message(&from, uid, &into))
-                .map(|()| crate::application::server_delete::after_a_copy(&into, &subject))
-        } else {
-            handle
-                .block_on(controller.move_message(&from, uid, &into))
+        // Which of the two conversations this is. A folder on the same server
+        // is one command down the connection that is already open; a folder on
+        // another account is a fetch here and an append there, and sending the
+        // first shape at the second would name a folder path on a server that
+        // does not have it.
+        let crossing = crate::application::mail_across_accounts::whether_it_crosses(
+            &account.id,
+            &into.account_id,
+        );
+
+        let outcome = match (crossing, copying) {
+            (crate::application::mail_across_accounts::Crossing::AnotherAccount, true) => {
+                let Some(destination_account) = destination_account else {
+                    return fail(
+                        "the account that folder is on is not set up on this computer".to_string(),
+                    );
+                };
+                // The destination's own held session, so the append carries
+                // that account's permission. An account somebody marked
+                // read-only refuses it there rather than here.
+                let taking = match handle.block_on(
+                    crate::application::mail_session::the_session_at(&destination_account),
+                ) {
+                    Ok(session) => session,
+                    Err(why) => return fail(why.to_string()),
+                };
+                // Named in what is said afterwards, because two accounts can
+                // both have an Archive and a sentence naming the folder alone
+                // would not say where the message went. The wording is decided
+                // in `server_delete` beside the other three, not here.
+                let crossed = crate::application::server_delete::Copied::IntoTheAccount(
+                    &destination_account.name,
+                );
+                match handle.block_on(crate::application::mail_across_accounts::copy_it_across(
+                    controller.as_ref(),
+                    &from,
+                    uid,
+                    taking.as_ref(),
+                    &into.id,
+                )) {
+                    Ok(()) => Ok(crate::application::server_delete::after_a_copy(
+                        crossed, &into.id, &subject,
+                    )),
+                    // Not a bare failure. The message is still exactly where it
+                    // was and saying so is the answer to the question somebody
+                    // asks next, so the sentence comes from the same place the
+                    // successful one does.
+                    Err(why) => Ok(crate::application::server_delete::nothing_was_copied(
+                        crossed,
+                        &from,
+                        &subject,
+                        &why.to_string(),
+                    )),
+                }
+            }
+            (crate::application::mail_across_accounts::Crossing::AnotherAccount, false) => {
+                // A move across accounts is an append and then a removal at the
+                // source, and the removal is 04.1-03. Refused in words rather
+                // than sent as a `MOVE` the source server would answer by
+                // naming a folder it does not have.
+                return fail("moving a message to another account is not built yet".to_string());
+            }
+            (crate::application::mail_across_accounts::Crossing::TheSameAccount, true) => handle
+                .block_on(controller.copy_message(&from, uid, &into.id))
+                .map(|()| {
+                    crate::application::server_delete::after_a_copy(
+                        crate::application::server_delete::Copied::WithinTheAccount,
+                        &into.id,
+                        &subject,
+                    )
+                }),
+            (crate::application::mail_across_accounts::Crossing::TheSameAccount, false) => handle
+                .block_on(controller.move_message(&from, uid, &into.id))
                 .map(|moved| {
-                    crate::application::server_delete::after_a_move(&moved, &into, &subject)
-                })
+                    crate::application::server_delete::after_a_move(&moved, &into.id, &subject)
+                }),
         };
 
         match outcome {

@@ -386,7 +386,19 @@ can navigate. Making them real headings is being worked on.
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
 | Send read receipt | no shortcut | Action menu. Only when that message asked for one |
 | Move to | `Ctrl+Shift+V` | Action menu. In Mail, put this message in another folder, opening on the last folder you filed into. In the other modules, move the chosen event, task or note to another calendar, list or folder |
-| Copy to folder | `Ctrl+Shift+Y` | Action menu, Copy to. Put a copy of this message in another folder |
+| Copy to folder | `Ctrl+Shift+Y` | Action menu, Copy to. Put a copy of this message in another folder, on this account or on another one |
+
+Both open a window listing every account with somewhere to put the message. One
+account is open, the one you last filed into or the one the message is in, and
+the rest are closed so you meet a list of accounts rather than every folder of
+every account. Inside that window:
+
+| What | Key | Notes |
+|------|-----|-------|
+| Open an account | `Right` | On an account row, or on a folder that has folders inside it |
+| Close it again | `Left` | |
+| Choose | `Enter` | |
+| Leave without choosing | `Esc` | |
 | Menu for this thing | `Applications` or `Shift+F10` | What can be done with the message, task, folder or list you are on |
 | Navigate Forward | `Tab` | Move to next element in current pane |
 | Navigate Backward | `Shift+Tab` | Move to previous element in current pane |

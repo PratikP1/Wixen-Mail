@@ -137,6 +137,7 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
                 false,
                 &branches(),
                 None,
+                Some("acct-1"),
                 None,
             );
             let closed = store_item_data(());

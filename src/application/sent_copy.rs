@@ -408,7 +408,9 @@ impl FilesACopy for ServerCopy<'_> {
     async fn keep_a_copy(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String> {
         let already_read = format!("({})", crate::service::protocols::imap::flag::SEEN);
         self.session
-            .append_message(folder, Some(&already_read), raw)
+            // No date. A message that has just gone out arrived now, so the
+            // server's own stamp is the right one.
+            .append_message(folder, Some(&already_read), None, raw)
             .await
             .map_err(|e| e.to_string())
     }

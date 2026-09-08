@@ -241,6 +241,7 @@ pub fn anywhere(branches: &[Branch]) -> bool {
 pub fn open_on<'a>(
     branches: &'a [Branch],
     last_used: Option<FolderInAnAccount<'_>>,
+    the_account_it_is_in: Option<&str>,
 ) -> Option<&'a Destination> {
     if let Some(last) = last_used
         && let Some(again) = branches
@@ -250,10 +251,53 @@ pub fn open_on<'a>(
     {
         return Some(again);
     }
+    // The account the thing is in, next. Opening on whichever branch was built
+    // first was right while there was only ever one; with every account offered
+    // it is whichever account the sidebar happens to draw first, and somebody
+    // filing a message would meet that account's folders before their own.
+    if let Some(its_own) = the_account_it_is_in
+        && let Some(theirs) = branches
+            .iter()
+            .filter(|branch| branch.account_id == its_own)
+            .flat_map(|branch| branch.places.iter())
+            .next()
+    {
+        return Some(theirs);
+    }
+    // Its own account has nowhere left to put it, so it is not a branch at all.
+    // The first place there is beats opening on nothing.
     branches
         .iter()
         .flat_map(|branch| branch.places.iter())
         .next()
+}
+
+/// Which one account's branch the window opens with its folders showing.
+///
+/// One, and not every one. A person moving by keyboard through a screen reader
+/// meets rows in order and cannot skim: with eight accounts open, the last
+/// account's folders sit behind every folder of the seven above it. With seven
+/// of them closed, the same person meets eight rows, hears which is which, and
+/// opens the one they want with Right. A `TreeCtrl` says that a row is
+/// collapsed and how many children it has, so the shape is spoken rather than
+/// having to be counted.
+///
+/// The branch holding the row the window opens on, so the cursor is not inside
+/// a branch that is shut. Where there is only one branch it is opened whatever
+/// else is true, because a single closed branch is a window that reads as
+/// empty.
+pub fn the_branch_to_open<'a>(
+    branches: &'a [Branch],
+    opening_on: Option<&Destination>,
+) -> Option<&'a str> {
+    if branches.len() == 1 {
+        return branches.first().map(|branch| branch.account_id.as_str());
+    }
+    let opening_on = opening_on?;
+    branches
+        .iter()
+        .find(|branch| branch.account_id == opening_on.account_id)
+        .map(|branch| branch.account_id.as_str())
 }
 
 /// Every account's mail folders, as branches the picker can be given.
@@ -358,6 +402,41 @@ pub fn where_mail_can_go(
         }
     }
     branches
+}
+
+/// Everywhere one message can be filed, in every account that is set up.
+///
+/// Every account and not only the one the message is in, because a message can
+/// be copied to a folder on another account. That is the whole of what
+/// `04.1-02` widened: the assembly is the one `move_or_copy_message` already
+/// did, lifted here so the set it answers with is something a test can read
+/// without a window.
+///
+/// The folder the message is in is taken out of that account's branch and
+/// nowhere else. Another account holding a folder at the same path keeps it,
+/// because it is a different folder on a different server and the message is
+/// not in it. `offer` is where that is decided and this does not decide it
+/// again.
+///
+/// An account with nowhere left to put it does not appear, which `offer` also
+/// decides: an empty branch is a row somebody opens, finds nothing in, and
+/// closes. An account this program may not write to does appear, because the
+/// refusal belongs at the moment of the write, which is where every other write
+/// in the program puts it, and a folder missing from a list is a folder nobody
+/// can ask about.
+pub fn where_this_message_can_go(
+    accounts: &[crate::presentation::folder_tree::AccountInTheTree],
+    folders: &[crate::presentation::folder_tree::FolderInTheTree],
+    the_account_it_is_in: &str,
+    the_folder_it_is_in: Option<&str>,
+) -> Vec<Branch> {
+    offer(
+        where_mail_can_go(accounts, folders),
+        the_folder_it_is_in.map(|path| FolderInAnAccount {
+            account: the_account_it_is_in,
+            path,
+        }),
+    )
 }
 
 /// Whose folders a move or copy is about.
@@ -645,7 +724,7 @@ mod tests {
             place("work", "Work"),
         ]);
 
-        let opens = open_on(&tree, in_one("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work"), Some("one")).expect("a destination");
 
         assert_eq!(opens.id, "work");
     }
@@ -658,7 +737,7 @@ mod tests {
         // named a different one.
         let tree = two_accounts();
 
-        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+        let opens = open_on(&tree, in_two("Archive"), Some("one")).expect("a destination");
 
         assert_eq!(opens.account_id, "two", "{opens:?}");
         assert_eq!(opens.id, "Archive");
@@ -689,7 +768,7 @@ mod tests {
             ],
         }];
 
-        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+        let opens = open_on(&tree, in_two("Archive"), Some("one")).expect("a destination");
 
         assert_eq!(opens.id, "INBOX", "falls back to the first: {opens:?}");
     }
@@ -701,7 +780,7 @@ mod tests {
         // so it is not on offer, and opening on it would open on nothing.
         let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
 
-        let opens = open_on(&tree, in_one("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work"), Some("one")).expect("a destination");
 
         assert_eq!(opens.id, "inbox", "falls back to the first");
     }
@@ -710,12 +789,125 @@ mod tests {
     fn test_the_first_time_opens_on_the_first_place() {
         let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
 
-        assert_eq!(open_on(&tree, None).expect("a destination").id, "inbox");
+        assert_eq!(
+            open_on(&tree, None, Some("one")).expect("a destination").id,
+            "inbox"
+        );
     }
 
     #[test]
     fn test_nothing_to_open_on_when_there_is_nowhere() {
-        assert!(open_on(&[], in_one("work")).is_none());
+        assert!(open_on(&[], in_one("work"), None).is_none());
+    }
+
+    /// Three accounts, each holding a folder at the path `Archive`.
+    ///
+    /// Three rather than two, and the one that matters is the third. With two,
+    /// a build that always answers "the first branch" is right half the time by
+    /// accident, and the half it is right about is the one a two-account
+    /// fixture reaches first. The third account is the one nothing can arrive
+    /// at without asking.
+    ///
+    /// The shared path is the same point [`two_accounts`] makes: no IMAP server
+    /// hands out a path prefixed with its account, so a fixture whose accounts
+    /// cannot collide passes against code that never consults the account.
+    fn three_accounts() -> Vec<Branch> {
+        let branch = |id: &str, called: &str| Branch {
+            account_id: id.to_string(),
+            account_name: called.to_string(),
+            places: vec![Destination {
+                name: "Archive".to_string(),
+                id: "Archive".to_string(),
+                account_id: id.to_string(),
+                depth: 0,
+            }],
+        };
+        vec![
+            branch("one", "me@example.com"),
+            branch("two", "work@example.com"),
+            branch("three", "home@example.com"),
+        ]
+    }
+
+    #[test]
+    fn test_the_window_opens_on_the_account_the_message_is_in() {
+        // With nothing remembered. It used to open on whichever branch was
+        // built first, which was right while one account was the only one on
+        // offer and is now whichever account the sidebar draws first.
+        let tree = three_accounts();
+
+        let opens = open_on(&tree, None, Some("three")).expect("a destination");
+
+        assert_eq!(opens.account_id, "three", "{opens:?}");
+    }
+
+    #[test]
+    fn test_where_the_last_one_went_still_wins_over_the_account_it_is_in() {
+        // Filing twenty messages into one folder is what opening on the last
+        // one is for, and a message being moved out of an account is exactly
+        // when it goes somewhere else.
+        let tree = three_accounts();
+
+        let opens = open_on(&tree, in_two("Archive"), Some("three")).expect("a destination");
+
+        assert_eq!(opens.account_id, "two", "{opens:?}");
+    }
+
+    #[test]
+    fn test_an_account_that_is_not_on_offer_is_not_opened_on() {
+        // The message's own account has nowhere left to put it, so it is not a
+        // branch at all. Falling back to the first place there is beats
+        // opening on nothing.
+        let tree = three_accounts();
+
+        let opens = open_on(&tree, None, Some("nobody")).expect("a destination");
+
+        assert_eq!(opens.account_id, "one", "{opens:?}");
+    }
+
+    #[test]
+    fn test_only_the_branch_the_window_opens_on_is_open() {
+        // Not all of them. Somebody moving by keyboard through a screen reader
+        // meets rows in order and cannot skim, so eight open accounts put the
+        // last account's folders behind every folder of the seven above it.
+        //
+        // The answer is in the third branch on purpose. With two accounts and
+        // the answer in the first, a build that opens the first branch always
+        // is right for the wrong reason and the test says nothing.
+        let tree = three_accounts();
+        let opening_on = open_on(&tree, None, Some("three")).expect("a destination");
+
+        let open = the_branch_to_open(&tree, Some(opening_on));
+
+        assert_eq!(
+            open,
+            Some("three"),
+            "the window opens with the cursor inside a branch that is shut"
+        );
+    }
+
+    #[test]
+    fn test_one_account_on_its_own_is_open() {
+        // A lone closed branch is a window that reads as empty: one row, and
+        // nothing to say that everything is inside it.
+        let tree = one_account(vec![place("inbox", "Inbox")]);
+        let opening_on = open_on(&tree, None, Some("one")).expect("a destination");
+
+        assert_eq!(the_branch_to_open(&tree, Some(opening_on)), Some("one"));
+    }
+
+    #[test]
+    fn test_one_account_on_its_own_is_open_even_with_nothing_to_open_on() {
+        // The same, when nothing answered. Whatever else is true, one branch
+        // is opened.
+        let tree = one_account(vec![place("inbox", "Inbox")]);
+
+        assert_eq!(the_branch_to_open(&tree, None), Some("one"));
+    }
+
+    #[test]
+    fn test_nothing_is_opened_when_there_is_nothing_to_open() {
+        assert_eq!(the_branch_to_open(&[], None), None);
     }
 
     #[test]
