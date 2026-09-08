@@ -167,6 +167,15 @@ pub enum Action {
     /// puts it in, so it has no one home to move it out of, and "move" would be
     /// the wrong word for what it would do.
     MoveItem,
+    /// Put a second copy of this event, task or note in another calendar, list
+    /// or folder, leaving the first where it is.
+    ///
+    /// Beside [`Action::MoveItem`] and offered exactly where it is, for the
+    /// same three reasons. Apart from [`Action::CopyToFolder`], which is a
+    /// message going into a mail folder, because what is offered differs and
+    /// offering a calendar as a home for a message is not a mistake worth
+    /// making reachable.
+    CopyItem,
     /// Put a copy of this message in another folder, keeping this one.
     CopyToFolder,
     /// Choose which of this account's folders are kept up to date.
@@ -433,6 +442,53 @@ mod tests {
                 offered,
                 PimCommand::Move.applies_to(kind),
                 "the menu and the command disagree about {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_copy_is_offered_exactly_where_it_means_something() {
+        // The twin of the check above, written the same way and for the same
+        // reason. Offering a copy on a reminder, which is filed nowhere, would
+        // be a stop that teaches nothing; leaving it off a task would leave
+        // making a second one as typing it again.
+        //
+        // Both directions in one assertion, over every kind, which is what
+        // makes this a guard rather than a spot check: it fails on a menu that
+        // gained a line the command refuses, and on a command that was widened
+        // while a menu was not.
+        use crate::application::pim_command::PimCommand;
+
+        for kind in ItemKind::ALL {
+            let offered = entries_for(Focus::Items(kind))
+                .iter()
+                .any(|e| e.action == Action::CopyItem);
+            assert_eq!(
+                offered,
+                PimCommand::Copy.applies_to(kind),
+                "the menu and the command disagree about copying {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_copy_sits_beside_the_move_it_is_the_twin_of() {
+        // Read in order by somebody who cannot skim, so the two acts on one
+        // item belong together rather than at opposite ends of the list. Every
+        // menu that offers one offers the other, and nothing sits between
+        // them.
+        for kind in ItemKind::ALL {
+            let actions: Vec<Action> = entries_for(Focus::Items(kind))
+                .iter()
+                .map(|e| e.action)
+                .collect();
+            let Some(moved) = actions.iter().position(|a| *a == Action::MoveItem) else {
+                continue;
+            };
+            assert_eq!(
+                actions.get(moved + 1),
+                Some(&Action::CopyItem),
+                "{kind:?} does not offer copying next to moving: {actions:?}"
             );
         }
     }
