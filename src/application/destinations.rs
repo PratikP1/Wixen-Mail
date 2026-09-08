@@ -141,6 +141,19 @@ pub struct Destination {
     pub account_id: String,
     /// How deep, so the tree can be built without a second pass. Nought is a
     /// child of the account.
+    ///
+    /// Read by [`crate::presentation::wx_destination::build_destination_dialog`]
+    /// since 04.1-01, and by nothing before it. This sentence and the one on
+    /// `test_how_deep_each_row_is_says_where_it_sits` both said the field built
+    /// the tree, and for as long as they said it every place was appended as a
+    /// direct child of its account whatever its depth. A passing test on a
+    /// field nothing read is what made them look checked.
+    ///
+    /// **A place attaches to the row above it**, so the places in a branch have
+    /// to arrive in the order a walk down the tree meets them: a folder after
+    /// the folder it is in, never before. Both producers here answer that way,
+    /// and [`where_a_folder_can_go`] sorts for it rather than trusting the
+    /// order the folders were stored in.
     pub depth: usize,
 }
 
@@ -153,18 +166,46 @@ pub struct Branch {
     pub places: Vec<Destination>,
 }
 
+/// One folder, named the only way a folder can be named across accounts.
+///
+/// A path is unique inside one account and not across them: two accounts can
+/// both have an `Archive`, which is the first sentence of this module's own
+/// doc. So everything here that asks "which folder is this" asks for the pair,
+/// and the field names say which half is which because the two are both
+/// strings and swapping them compiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderInAnAccount<'a> {
+    /// The account's identifier, not its name. A name is what somebody hears
+    /// and two accounts can share one.
+    pub account: &'a str,
+    /// The path as the server spells it.
+    pub path: &'a str,
+}
+
 /// The tree, with the places you cannot use taken out.
 ///
 /// `already_in` is where the thing is now. It is removed, because offering
 /// somebody the place a thing already is is offering them a command that
 /// silently does nothing, and they will not know which of the two it was.
-pub fn offer(branches: Vec<Branch>, already_in: Option<&str>) -> Vec<Branch> {
+///
+/// Removed from that account's branch only. Another account that happens to
+/// hold a folder at the same path keeps it, because it is a different folder
+/// on a different server and the message is not in it.
+pub fn offer(branches: Vec<Branch>, already_in: Option<FolderInAnAccount<'_>>) -> Vec<Branch> {
     branches
         .into_iter()
         .map(|mut branch| {
-            branch
-                .places
-                .retain(|place| Some(place.id.as_str()) != already_in);
+            // The account read off the place rather than off the branch it is
+            // in. Both say the same thing wherever a branch is built, and the
+            // one the place carries is the one that travels back with the
+            // answer, so it is the one an identity should be asked of.
+            branch.places.retain(|place| {
+                already_in
+                    != Some(FolderInAnAccount {
+                        account: place.account_id.as_str(),
+                        path: place.id.as_str(),
+                    })
+            });
             branch
         })
         // An account with nowhere left to put it is not shown. An empty
@@ -192,12 +233,20 @@ pub fn anywhere(branches: &[Branch]) -> bool {
 /// message is already in it, which is the ordinary case of moving something
 /// back out of the folder it was just put in, and a window that opened on a row
 /// which is not there would open on nothing.
-pub fn open_on<'a>(branches: &'a [Branch], last_used: Option<&str>) -> Option<&'a Destination> {
+///
+/// The account as well as the path, for the reason [`offer`] takes both: the
+/// window opens on the folder somebody last filed into, in the account they
+/// filed it into, rather than on whichever branch happens to hold a folder at
+/// that path first.
+pub fn open_on<'a>(
+    branches: &'a [Branch],
+    last_used: Option<FolderInAnAccount<'_>>,
+) -> Option<&'a Destination> {
     if let Some(last) = last_used
         && let Some(again) = branches
             .iter()
             .flat_map(|branch| branch.places.iter())
-            .find(|place| place.id == last)
+            .find(|place| place.account_id == last.account && place.id == last.path)
     {
         return Some(again);
     }
@@ -205,6 +254,138 @@ pub fn open_on<'a>(branches: &'a [Branch], last_used: Option<&str>) -> Option<&'
         .iter()
         .flat_map(|branch| branch.places.iter())
         .next()
+}
+
+/// Every account's mail folders, as branches the picker can be given.
+///
+/// The picker's tree and the sidebar's tree are one hierarchy, and this is
+/// where that is made true: it asks
+/// [`crate::presentation::folder_tree::rows`] for the sidebar's own answer and
+/// translates it. Nothing here decides which folders exist, which account owns
+/// one, how deep it sits or what an account is called, because all four
+/// already have an answer and a second one is a divergence waiting to happen.
+/// A folder the sidebar shows and the picker does not, or the two disagreeing
+/// about which account a folder belongs to, would be invisible until somebody
+/// moved mail into the wrong place.
+///
+/// Application reaching into presentation is the arrangement this tree already
+/// has in thirty-one places. The alternative is a second builder, which is the
+/// thing being removed.
+///
+/// # What is translated rather than taken
+///
+/// Three things, and they are the whole of the difference between the two
+/// views. The sidebar draws an account as a row, so its folders start one deep
+/// and the picker's start at nought, where the account is the root. The
+/// sidebar's row reads out with its unread count on the end; the picker's is
+/// the bare name, because a destination is somewhere to put mail rather than
+/// somewhere to read it. And the sidebar's identity is the account and the
+/// path, which is what a [`Destination`] carries in two fields.
+///
+/// # What is left out, and why each
+///
+/// The rows that are not folders: Favourites, All Inboxes, Labels and the
+/// saved searches. None of them is somewhere a message can be put. Nothing is
+/// passed in for the first and the last two, so they do not arise, and All
+/// Inboxes is dropped by naming the two kinds of row this reads.
+///
+/// The folders kept on this computer, which the sidebar draws under their own
+/// heading rather than under an account. They belong to no account here, so
+/// they match no branch and are not offered, which is what the picker has
+/// always done.
+///
+/// # A folder the server has stopped listing
+///
+/// **Offered.** Decided here rather than left to be inferred later from what
+/// the code does. `gone` is a fact about the server's last answer (D-27) and
+/// not a verdict on the folder: it still holds its mail, the sidebar still
+/// draws it, and somebody can still open it and read what is in it. A picker
+/// that left it out would make the list saying where mail can go disagree with
+/// the list saying where mail is, for a reason nobody could hear. If the
+/// folder really has gone, the server refuses the command and says so, which
+/// is a failure somebody can act on; a folder silently missing from the tree
+/// is not.
+pub fn where_mail_can_go(
+    accounts: &[crate::presentation::folder_tree::AccountInTheTree],
+    folders: &[crate::presentation::folder_tree::FolderInTheTree],
+) -> Vec<Branch> {
+    use crate::application::folder_settings::UnreadOnAParent;
+    use crate::presentation::folder_tree::{WhichRow, rows};
+
+    let mut branches: Vec<Branch> = Vec::with_capacity(accounts.len());
+    // Nothing pinned, no labels, no saved searches, and nothing collapsed. The
+    // first three are other kinds of row and the fourth only changes how a row
+    // is worded, and the wording is the one thing here that is not used.
+    let drawn = rows(
+        accounts,
+        folders,
+        &[],
+        &[],
+        &[],
+        UnreadOnAParent::default(),
+        &std::collections::HashSet::new(),
+    );
+    for row in drawn {
+        match row.identity {
+            WhichRow::Account(id) => {
+                // What the sidebar decided to call it, which is the label with
+                // an address after it only where a second account reads the
+                // same. Named here rather than looked up again, because a
+                // second rule for when an address is read out is two accounts
+                // called Work reading as one row in one of the two windows.
+                let called = row.name;
+                branches.push(Branch {
+                    account_id: id,
+                    account_name: called,
+                    places: Vec::new(),
+                });
+            }
+            WhichRow::Folder { account, path } => {
+                let Some(branch) = branches
+                    .iter_mut()
+                    .find(|branch| branch.account_id == account)
+                else {
+                    continue;
+                };
+                branch.places.push(Destination {
+                    name: row.name,
+                    id: path,
+                    account_id: account,
+                    depth: row.depth.saturating_sub(1),
+                });
+            }
+            _ => {}
+        }
+    }
+    branches
+}
+
+/// Whose folders a move or copy is about.
+///
+/// The account the chosen message is in, not the account that happens to be
+/// open. All Inboxes reads every account's inbox as one list, so those differ
+/// routinely, and the two halves of a move used to answer this question
+/// separately: the folders offered came from the account on screen and the
+/// command went to the account the row belongs to. So the path was chosen on
+/// one server and sent to another, where a mailbox of that name is a different
+/// mailbox and a message that happens to share a UID is a different message.
+///
+/// Asked once here and passed to both halves, rather than each half deciding.
+///
+/// A row that records no account of its own falls back to the one on screen,
+/// which is the ordinary case outside All Inboxes, where every row belongs to
+/// the account being looked at. Whether the answer then names an account this
+/// program knows is the caller's question, and the caller refuses rather than
+/// reaching for another: the shape this replaces fell back to whichever account
+/// came first in the list, so a command aimed at nothing in particular still
+/// reached a real server.
+pub fn whose_folders_a_move_is_about<'a>(
+    the_message_is_in: Option<&'a str>,
+    the_account_that_is_open: Option<&'a str>,
+) -> Option<&'a str> {
+    the_message_is_in
+        .filter(|account| !account.is_empty())
+        .or(the_account_that_is_open)
 }
 
 /// What to say when there is nowhere to put it.
@@ -267,40 +448,63 @@ pub fn where_a_folder_can_go(
         });
     }
 
-    places.extend(
-        folders
-            .iter()
-            .filter(|other| !inside_it.contains(&other.id))
-            .filter(|other| Some(other.id) != folder.parent)
-            .map(|other| Destination {
-                name: other.name.clone(),
-                id: other.path.clone(),
-                account_id: account_id.to_string(),
-                depth: how_far_in(folders, other.id),
-            }),
-    );
+    // Parents before their children, which is what [`Destination::depth`]
+    // requires and what the stored order does not give. Folders come back
+    // `ORDER BY id`, which is the order they were first heard of, so `Archive`,
+    // `Work`, `Archive/2026` is an ordinary stored order once somebody makes a
+    // folder inside another one after making a folder beside it. Drawn in that
+    // order, `Archive/2026` would hang under `Work`.
+    //
+    // Sorted on the chain of folders each one sits inside, which puts every
+    // folder straight after the one it is in and leaves brothers and sisters in
+    // the order they arrived. The sort is stable, so nothing else moves.
+    let mut offered: Vec<(Vec<i64>, &crate::application::folders_underneath::Placed)> = folders
+        .iter()
+        .filter(|other| !inside_it.contains(&other.id))
+        .filter(|other| Some(other.id) != folder.parent)
+        .map(|other| (the_way_down_to(folders, other.id), other))
+        .collect();
+    offered.sort_by(|(one, _), (other, _)| one.cmp(other));
+
+    places.extend(offered.into_iter().map(|(chain, other)| Destination {
+        name: other.name.clone(),
+        id: other.path.clone(),
+        account_id: account_id.to_string(),
+        depth: chain.len().saturating_sub(1),
+    }));
     places
 }
 
-/// How many folders this one sits inside, for the row's indent.
+/// The folders this one sits inside, outermost first, ending with itself.
+///
+/// One walk answering two questions, because they are one question: how far in
+/// a folder sits is how long this is, and the order a tree is drawn in is this
+/// read as a sort key. Two walks would be two chances to disagree about what is
+/// under what.
 ///
 /// Bounded for the reason every walk over stored parents is: the column comes
 /// from a database an earlier version wrote, and a walk that does not return
-/// does not return while holding the window open.
-fn how_far_in(folders: &[crate::application::folders_underneath::Placed], of: i64) -> usize {
+/// does not return while holding the window open. Past the bound the chain is
+/// cut, which puts a folder in a cycle at the deepest a row can be drawn rather
+/// than leaving the window still.
+fn the_way_down_to(
+    folders: &[crate::application::folders_underneath::Placed],
+    of: i64,
+) -> Vec<i64> {
     use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
 
-    let mut deep = 0;
+    let mut chain = vec![of];
     let mut at = folders.iter().find(|folder| folder.id == of);
     while let Some(folder) = at {
         let Some(parent) = folder.parent else { break };
-        deep += 1;
-        if deep >= AS_DEEP_AS_A_TREE_GOES {
+        chain.push(parent);
+        if chain.len() >= AS_DEEP_AS_A_TREE_GOES {
             break;
         }
         at = folders.iter().find(|above| above.id == parent);
     }
-    deep
+    chain.reverse();
+    chain
 }
 
 #[cfg(test)]
@@ -324,13 +528,76 @@ mod tests {
         }]
     }
 
+    /// A folder in the account these fixtures call `one`.
+    fn in_one(path: &str) -> Option<FolderInAnAccount<'_>> {
+        Some(FolderInAnAccount {
+            account: "one",
+            path,
+        })
+    }
+
+    /// A folder in the second account, which is the account `two_accounts`
+    /// adds.
+    fn in_two(path: &str) -> Option<FolderInAnAccount<'_>> {
+        Some(FolderInAnAccount {
+            account: "two",
+            path,
+        })
+    }
+
+    /// Two accounts, each holding a folder at the path `Archive`.
+    ///
+    /// The shared path is the whole point of this fixture and the reason it
+    /// replaced one that gave its two accounts `a-inbox` and `b-inbox`. A real
+    /// IMAP path is not prefixed with an account, so a fixture whose two
+    /// accounts cannot collide passes against a comparison that ignores the
+    /// account entirely, which is exactly the defect these tests are about.
+    ///
+    /// The first account has an `INBOX` as well, so removing its `Archive`
+    /// leaves it with somewhere to put things and the branch is not dropped
+    /// for being empty. Without that, "the other account kept its Archive"
+    /// and "both accounts lost theirs" are both one branch and the assertion
+    /// cannot tell them apart.
+    fn two_accounts() -> Vec<Branch> {
+        vec![
+            Branch {
+                account_id: "one".to_string(),
+                account_name: "me@example.com".to_string(),
+                places: vec![
+                    Destination {
+                        name: "Inbox".to_string(),
+                        id: "INBOX".to_string(),
+                        account_id: "one".to_string(),
+                        depth: 0,
+                    },
+                    Destination {
+                        name: "Archive".to_string(),
+                        id: "Archive".to_string(),
+                        account_id: "one".to_string(),
+                        depth: 0,
+                    },
+                ],
+            },
+            Branch {
+                account_id: "two".to_string(),
+                account_name: "work@example.com".to_string(),
+                places: vec![Destination {
+                    name: "Archive".to_string(),
+                    id: "Archive".to_string(),
+                    account_id: "two".to_string(),
+                    depth: 0,
+                }],
+            },
+        ]
+    }
+
     #[test]
     fn test_the_place_it_is_already_in_is_not_offered() {
         // Otherwise it is a command that silently does nothing, and nobody
         // can tell that from one that failed.
         let tree = offer(
             one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]),
-            Some("inbox"),
+            in_one("inbox"),
         );
 
         let names: Vec<&str> = tree[0].places.iter().map(|p| p.name.as_str()).collect();
@@ -341,7 +608,7 @@ mod tests {
     fn test_an_account_with_nowhere_left_is_not_shown() {
         // An empty branch is a row somebody opens, finds nothing in, and
         // closes, having learnt nothing.
-        let tree = offer(one_account(vec![place("inbox", "Inbox")]), Some("inbox"));
+        let tree = offer(one_account(vec![place("inbox", "Inbox")]), in_one("inbox"));
 
         assert!(tree.is_empty());
     }
@@ -350,22 +617,22 @@ mod tests {
     fn test_other_accounts_keep_their_places() {
         // Two accounts can both have an Archive, and removing the one you are
         // in must not remove the other account's.
-        let mut two = one_account(vec![place("a-inbox", "Inbox")]);
-        two.push(Branch {
-            account_id: "two".to_string(),
-            account_name: "work@example.com".to_string(),
-            places: vec![Destination {
-                name: "Inbox".to_string(),
-                id: "b-inbox".to_string(),
-                account_id: "two".to_string(),
-                depth: 0,
-            }],
-        });
+        //
+        // This test said that before and could not see it: its two accounts
+        // held `a-inbox` and `b-inbox`, which cannot collide, so it passed
+        // against an `offer` that ignored the account altogether.
+        let tree = offer(two_accounts(), in_one("Archive"));
 
-        let tree = offer(two, Some("a-inbox"));
-
-        assert_eq!(tree.len(), 1);
-        assert_eq!(tree[0].account_name, "work@example.com");
+        assert_eq!(
+            tree.len(),
+            2,
+            "the other account's Archive is a different folder on a different \
+             server, so its branch is still somewhere the message can go: {tree:?}"
+        );
+        let theirs: Vec<&str> = tree[1].places.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(theirs, ["Archive"], "{tree:?}");
+        let mine: Vec<&str> = tree[0].places.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(mine, ["INBOX"], "{tree:?}");
     }
 
     #[test]
@@ -378,9 +645,53 @@ mod tests {
             place("work", "Work"),
         ]);
 
-        let opens = open_on(&tree, Some("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work")).expect("a destination");
 
         assert_eq!(opens.id, "work");
+    }
+
+    #[test]
+    fn test_the_window_opens_on_the_account_it_was_filed_into() {
+        // Both accounts hold an `Archive`. Opening on the path alone opens on
+        // whichever branch comes first, which is a window that says it is
+        // about to file into the account somebody is looking at when they
+        // named a different one.
+        let tree = two_accounts();
+
+        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+
+        assert_eq!(opens.account_id, "two", "{opens:?}");
+        assert_eq!(opens.id, "Archive");
+    }
+
+    #[test]
+    fn test_a_last_destination_in_another_account_is_not_used() {
+        // The remembered folder is in an account this window is not showing,
+        // so it is not on offer here at all, whatever the first branch happens
+        // to hold at that path. Opening on it would open on a row about
+        // somewhere else.
+        let tree = vec![Branch {
+            account_id: "one".to_string(),
+            account_name: "me@example.com".to_string(),
+            places: vec![
+                Destination {
+                    name: "Inbox".to_string(),
+                    id: "INBOX".to_string(),
+                    account_id: "one".to_string(),
+                    depth: 0,
+                },
+                Destination {
+                    name: "Archive".to_string(),
+                    id: "Archive".to_string(),
+                    account_id: "one".to_string(),
+                    depth: 0,
+                },
+            ],
+        }];
+
+        let opens = open_on(&tree, in_two("Archive")).expect("a destination");
+
+        assert_eq!(opens.id, "INBOX", "falls back to the first: {opens:?}");
     }
 
     #[test]
@@ -390,7 +701,7 @@ mod tests {
         // so it is not on offer, and opening on it would open on nothing.
         let tree = one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]);
 
-        let opens = open_on(&tree, Some("work")).expect("a destination");
+        let opens = open_on(&tree, in_one("work")).expect("a destination");
 
         assert_eq!(opens.id, "inbox", "falls back to the first");
     }
@@ -404,12 +715,12 @@ mod tests {
 
     #[test]
     fn test_nothing_to_open_on_when_there_is_nowhere() {
-        assert!(open_on(&[], Some("work")).is_none());
+        assert!(open_on(&[], in_one("work")).is_none());
     }
 
     #[test]
     fn test_nowhere_to_go_is_known_before_a_window_opens() {
-        let nothing = offer(one_account(vec![place("inbox", "Inbox")]), Some("inbox"));
+        let nothing = offer(one_account(vec![place("inbox", "Inbox")]), in_one("inbox"));
 
         assert!(!anywhere(&nothing));
         assert!(anywhere(&one_account(vec![place("inbox", "Inbox")])));
@@ -529,7 +840,7 @@ mod tests {
     fn test_nothing_is_removed_when_it_is_not_in_anything_yet() {
         let tree = offer(
             one_account(vec![place("inbox", "Inbox"), place("archive", "Archive")]),
-            None,
+            None::<FolderInAnAccount<'_>>,
         );
 
         assert_eq!(tree[0].places.len(), 2);
@@ -625,6 +936,15 @@ mod tests {
         fn test_how_deep_each_row_is_says_where_it_sits() {
             // `Destination.depth` is what builds the tree in the window
             // without a second pass, and nought is a child of the account.
+            //
+            // That sentence was false for as long as it stood here: nothing in
+            // the program read the field, and the window drew every place as a
+            // direct child of its account. This test passed throughout, which
+            // is what made the claim look checked. What the window does with
+            // the number is checked in
+            // `tests/tree_dialogs_resolve_the_row_somebody_is_on.rs`, against a
+            // live control, because only a live control can say which of a
+            // tree and a list was built.
             let places = where_a_folder_can_go(&an_account(), 4, "acc");
             let archive = places
                 .iter()

@@ -8243,7 +8243,7 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
         .into_iter()
         .map(|under| under.path)
         .collect();
-    if inside_it.contains(&into) {
+    if inside_it.contains(&into.id) {
         return refuse_a_command(
             tx,
             &format!(
@@ -8254,11 +8254,11 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     }
 
     let name = chosen.readable_name().to_string();
-    let where_to = branches[0]
-        .places
-        .iter()
-        .find(|place| place.id == into)
-        .map_or_else(|| name.clone(), |place| place.name.clone());
+    // Read off the answer rather than looked up again in the branch this
+    // function built. The window hands back the whole destination, so the name
+    // it read out is the name the question repeats.
+    let where_to = into.name.clone();
+    let into = into.id;
     let question = if into.is_empty() {
         format!("Move {name} out of the folder it is in, so it sits on its own?")
     } else {
@@ -10423,6 +10423,101 @@ fn the_accounts_in_the_tree(
     every
 }
 
+/// Every account's folders, as the tree takes them.
+///
+/// One assembly, two callers: the sidebar's redraw and the move and copy
+/// window. Both then go through
+/// [`crate::application::destinations::where_mail_can_go`] or
+/// [`folder_tree::rows`], which are two calls to one builder rather than two
+/// builders. Two shapes for one hierarchy is what this replaces, and the
+/// failure it was heading for is invisible until somebody moves mail into a
+/// folder the two views disagree about.
+///
+/// Every account's folders, read per account and joined, so a folder still
+/// arrives carrying the account it belongs to and lands in that branch.
+///
+/// The open account's read is the one that can refuse. A second account whose
+/// folders cannot be read loses its branch and is logged; refusing the whole
+/// tree over it would take the mail somebody is actually looking at off the
+/// screen because a different account is in trouble.
+///
+/// The parents each account's folders were given at sync, which is what nests
+/// the tree, and which of them the server's last list left out (D-27). One read
+/// of each per account rather than per folder, and read rather than computed:
+/// no path is split here, because the separator that would split it is the
+/// server's own and was only in hand at sync.
+///
+/// Keyed on the account and the path together, which is D-25's identity and not
+/// tidiness. Keyed on the path alone, two accounts that both have an `INBOX`
+/// are one entry, and whichever was read last decides where the other one nests
+/// and whether it says the server has stopped listing it. A folder that has
+/// gone is a folder somebody is told not to use, so borrowing that answer from
+/// another account is a sentence about the wrong mailbox.
+///
+/// A read that fails is logged and taken as nothing, which is the reading that
+/// understates rather than the one that alarms: the folder is drawn flat and
+/// nothing claims the server has dropped it.
+fn the_folders_in_the_tree(
+    cache: &MessageCache,
+    accounts: &[folder_tree::AccountInTheTree],
+    account_id: &str,
+) -> crate::common::Result<Vec<folder_tree::FolderInTheTree>> {
+    let mut folders = Vec::new();
+    for account in accounts {
+        if account.id == account_id {
+            folders.extend(folders_in_the_tree(cache, account_id)?);
+            continue;
+        }
+        match folders_in_the_tree(cache, &account.id) {
+            Ok(theirs) => folders.extend(theirs),
+            Err(e) => tracing::warn!(
+                "{}'s folders could not be read, so its branch is empty: {e}",
+                account.id
+            ),
+        }
+    }
+
+    let mut parents: std::collections::HashMap<(String, String), Option<i64>> =
+        std::collections::HashMap::new();
+    let mut gone: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for account in accounts {
+        match cache.folder_parents(&account.id) {
+            Ok(theirs) => parents.extend(
+                theirs
+                    .into_iter()
+                    .map(|(path, parent)| ((account.id.clone(), path), parent)),
+            ),
+            Err(e) => tracing::warn!("{}'s folder parents could not be read: {e}", account.id),
+        }
+        match cache.what_the_server_said(&account.id) {
+            Ok(theirs) => gone.extend(theirs.into_iter().filter_map(|(path, said)| {
+                said.the_server_no_longer_lists_it()
+                    .then(|| (account.id.clone(), path))
+            })),
+            Err(e) => tracing::warn!(
+                "What the server said about {}'s folders could not be read: {e}",
+                account.id
+            ),
+        }
+    }
+
+    Ok(folders
+        .iter()
+        .map(|folder| {
+            let which = (folder.account_id.clone(), folder.path.clone());
+            folder_tree::FolderInTheTree {
+                account: folder.account_id.clone(),
+                id: folder.id,
+                path: folder.path.clone(),
+                name: folder.name.clone(),
+                unread: folder.unread_count,
+                parent: parents.get(&which).copied().flatten(),
+                gone: gone.contains(&which),
+            }
+        })
+        .collect())
+}
+
 /// The folder tree, as the updates that redraw it.
 ///
 /// Shared by the ordinary module load and by a finished mail sync, which both
@@ -10451,28 +10546,7 @@ fn folder_tree_updates(
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
     let accounts = the_accounts_in_the_tree(cache, account_id);
-
-    // Every account's folders, read per account and joined, so a folder still
-    // arrives carrying the account it belongs to and lands in that branch.
-    //
-    // The open account's read is the one that can refuse. A second account
-    // whose folders cannot be read loses its branch and is logged; refusing the
-    // whole tree over it would take the mail somebody is actually looking at
-    // off the screen because a different account is in trouble.
-    let mut folders = Vec::new();
-    for account in &accounts {
-        if account.id == account_id {
-            folders.extend(folders_in_the_tree(cache, account_id)?);
-            continue;
-        }
-        match folders_in_the_tree(cache, &account.id) {
-            Ok(theirs) => folders.extend(theirs),
-            Err(e) => tracing::warn!(
-                "{}'s folders could not be read, so its branch is empty: {e}",
-                account.id
-            ),
-        }
-    }
+    let in_the_tree = the_folders_in_the_tree(cache, &accounts, account_id)?;
     // The tree label carries the unread count, because a folder name alone
     // does not answer the question somebody is asking when they arrow onto it.
     //
@@ -10517,61 +10591,6 @@ fn folder_tree_updates(
             ),
         }
     }
-    // The parents each account's folders were given at sync, which is what
-    // nests the tree, and which of them the server's last list left out (D-27).
-    // One read of each per account rather than per folder, and read rather than
-    // computed: no path is split here, because the separator that would split
-    // it is the server's own and was only in hand at sync.
-    //
-    // Keyed on the account and the path together, which is D-25's identity and
-    // not tidiness. Keyed on the path alone, two accounts that both have an
-    // `INBOX` are one entry, and whichever was read last decides where the
-    // other one nests and whether it says the server has stopped listing it.
-    // A folder that has gone is a folder somebody is told not to use, so
-    // borrowing that answer from another account is a sentence about the wrong
-    // mailbox.
-    //
-    // A read that fails is logged and taken as nothing, which is the reading
-    // that understates rather than the one that alarms: the folder is drawn
-    // flat and nothing claims the server has dropped it.
-    let mut parents: std::collections::HashMap<(String, String), Option<i64>> =
-        std::collections::HashMap::new();
-    let mut gone: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
-    for account in &accounts {
-        match cache.folder_parents(&account.id) {
-            Ok(theirs) => parents.extend(
-                theirs
-                    .into_iter()
-                    .map(|(path, parent)| ((account.id.clone(), path), parent)),
-            ),
-            Err(e) => tracing::warn!("{}'s folder parents could not be read: {e}", account.id),
-        }
-        match cache.what_the_server_said(&account.id) {
-            Ok(theirs) => gone.extend(theirs.into_iter().filter_map(|(path, said)| {
-                said.the_server_no_longer_lists_it()
-                    .then(|| (account.id.clone(), path))
-            })),
-            Err(e) => tracing::warn!(
-                "What the server said about {}'s folders could not be read: {e}",
-                account.id
-            ),
-        }
-    }
-    let in_the_tree: Vec<folder_tree::FolderInTheTree> = folders
-        .iter()
-        .map(|folder| {
-            let which = (folder.account_id.clone(), folder.path.clone());
-            folder_tree::FolderInTheTree {
-                account: folder.account_id.clone(),
-                id: folder.id,
-                path: folder.path.clone(),
-                name: folder.name.clone(),
-                unread: folder.unread_count,
-                parent: parents.get(&which).copied().flatten(),
-                gone: gone.contains(&which),
-            }
-        })
-        .collect();
     let rows = folder_tree::rows(
         &accounts,
         &in_the_tree,
@@ -10632,12 +10651,12 @@ fn folder_tree_updates(
         // two folders whose leaf is the same word collapse into one entry of
         // this map and one of them becomes a row that opens the other's mail.
         UIUpdate::FolderIdsLoaded(
-            folders
+            in_the_tree
                 .iter()
                 .map(|f| {
                     (
                         folder_tree::WhichRow::Folder {
-                            account: f.account_id.clone(),
+                            account: f.account.clone(),
                             path: f.path.clone(),
                         }
                         .stored(),
@@ -15205,13 +15224,17 @@ fn owner_of(
     row_id: i64,
     open: Option<&str>,
 ) -> Option<crate::data::account::Account> {
-    messages
+    let the_message_is_in = messages
         .iter()
         .find(|m| m.message_id == row_id)
-        .map(|m| m.account_id.clone())
-        .filter(|id| !id.is_empty())
-        .or_else(|| open.map(str::to_string))
-        .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
+        .map(|m| m.account_id.as_str());
+    // The rule itself lives in `application::destinations`, where a test can
+    // reach it without a window, and this resolves the answer to an account
+    // somebody has set up. Two callers ask this and one of them decides which
+    // folders are offered, so the rule has to be one rule.
+    let whose =
+        crate::application::destinations::whose_folders_a_move_is_about(the_message_is_in, open)?;
+    accounts.iter().find(|a| a.id == whose).cloned()
 }
 
 /// Sign out of a mail session without letting a silent server hold the window.
@@ -17182,7 +17205,9 @@ fn move_or_copy_message(
     copying: bool,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+    use crate::application::destinations::{
+        FolderInAnAccount, Moving, anywhere, offer, where_mail_can_go,
+    };
 
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "No message store is available");
@@ -17196,40 +17221,68 @@ fn move_or_copy_message(
     let Some((row_id, uid, subject)) = chosen else {
         return send_refusal(tx, rt, "Choose a message first");
     };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_refusal(tx, rt, "Add an account first");
+
+    // Whose folders this is about, asked once and used by both halves. The
+    // folders offered used to come from the account on screen while the command
+    // went to the account `owner_of` names, and in All Inboxes those differ
+    // routinely, so the path was chosen on one server and sent to another.
+    //
+    // `owner_of` is where the fallback for a row with no account of its own
+    // lives, and where a row naming an account this program does not know comes
+    // back as nothing. Nothing is a refusal here rather than a reach for
+    // whichever account came first.
+    let Some(account) = ({
+        let s = lock_state(state);
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            row_id,
+            s.active_account_id.as_deref(),
+        )
+    }) else {
+        return send_refusal(
+            tx,
+            rt,
+            "This message is not in an account this program knows about.",
+        );
     };
+    let account_id = account.id.clone();
 
     // Where it is now, so that folder is not offered. Offering it is offering a
     // command that silently does nothing, and nobody can tell that from one
     // that failed.
     let from = cache.folder_path_for_message(row_id).ok().flatten();
-    let account_name = {
-        let s = lock_state(state);
-        s.accounts
-            .iter()
-            .find(|a| a.id == account_id)
-            .map_or_else(|| account_id.clone(), |a| a.email.clone())
-    };
 
-    let places: Vec<Destination> = cache
-        .get_folders_for_account(&account_id)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|folder| Destination {
-            name: folder.name,
-            id: folder.path,
-            account_id: account_id.clone(),
-            depth: 0,
-        })
-        .collect();
+    // The same hierarchy the sidebar draws, through the same builder, so a
+    // folder on offer here is a folder somebody can see there, under the same
+    // account, at the same depth, with the account named the same way. It used
+    // to read the folders itself, name the account by its address whatever the
+    // sidebar had decided, and give every folder a depth of nought.
+    //
+    // Still narrowed to one account. Offering the others is 04.1-02; what is
+    // fixed here is that the one it offers is drawn the way the sidebar draws
+    // it.
+    let accounts = the_accounts_in_the_tree(&cache, &account_id);
+    let in_the_tree = match the_folders_in_the_tree(&cache, &accounts, &account_id) {
+        Ok(folders) => folders,
+        Err(e) => {
+            tracing::warn!("The folders to offer could not be read: {e}");
+            return send_refusal(
+                tx,
+                rt,
+                "This account's folders could not be read from this computer.",
+            );
+        }
+    };
     let branches = offer(
-        vec![Branch {
-            account_id: account_id.clone(),
-            account_name,
-            places,
-        }],
-        from.as_deref(),
+        where_mail_can_go(&accounts, &in_the_tree)
+            .into_iter()
+            .filter(|branch| branch.account_id == account_id)
+            .collect(),
+        from.as_deref().map(|path| FolderInAnAccount {
+            account: &account_id,
+            path,
+        }),
     );
 
     if !anywhere(&branches) {
@@ -17240,18 +17293,23 @@ fn move_or_copy_message(
         );
     }
     // Where the last one went, so the window opens on it and filing the next
-    // message into the same folder is the shortcut and Enter.
+    // message into the same folder is the shortcut and Enter. Read as an
+    // account and a path, because a path alone opens on whichever branch holds
+    // a folder of that name first.
     let mut settings = crate::data::config::ConfigManager::load_stored().ok();
     let last_used = settings
         .as_ref()
-        .and_then(|mgr| mgr.app_config().last_filed_into.get(&account_id).cloned());
+        .and_then(|mgr| mgr.app_config().where_the_last_one_went(&account_id));
 
     let Some(into) = crate::presentation::wx_destination::ask(
         frame,
         Moving::Message,
         copying,
         &branches,
-        last_used.as_deref(),
+        last_used.as_ref().map(|went| FolderInAnAccount {
+            account: &went.account,
+            path: &went.path,
+        }),
     ) else {
         return;
     };
@@ -17260,9 +17318,13 @@ fn move_or_copy_message(
     // filing a run of messages should not have the window forget where they
     // are going because one of them failed on the way.
     if let Some(mgr) = settings.as_mut() {
-        mgr.app_config_mut()
-            .last_filed_into
-            .insert(account_id.clone(), into.clone());
+        mgr.app_config_mut().remember_where_one_went(
+            &account_id,
+            &crate::data::config::FiledInto {
+                account: into.account_id.clone(),
+                path: into.id.clone(),
+            },
+        );
         if let Err(e) = mgr.save() {
             tracing::warn!("Could not remember where that was filed: {e}");
         }
@@ -17279,7 +17341,7 @@ fn move_or_copy_message(
             if copying { "Copying" } else { "Moving" }
         ),
     );
-    spawn_folder_move(app, row_id, uid, subject, from, into, copying);
+    spawn_folder_move(app, row_id, uid, subject, from, into.id, copying);
 }
 
 /// Do the move or copy on the server, and only then change the list.

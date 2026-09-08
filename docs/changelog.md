@@ -306,6 +306,57 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Moving a message from All Inboxes offered the wrong account's folders, and
+  sent the move to a different server from the one the folders came from.** All
+  Inboxes shows every account's inbox as one list, so the message you have
+  chosen often belongs to an account other than the one open in the folder
+  list. The window offered the open account's folders and the move itself was
+  sent to the account the message is really in. A folder called Archive exists
+  on both, so the move usually appeared to work and put the message somewhere
+  you had not chosen; a folder that only the open account has was sent to a
+  server that had never heard of it.
+
+  The window now offers the folders of the account the message is in, whichever
+  account you are looking at. A message belonging to no account this program
+  knows about is refused in a sentence rather than filed into whichever account
+  came first.
+
+  Where the last message went is remembered per account as before, and now
+  remembers which account the folder was on as well as its name, so the window
+  opens on the folder you last used and not on a folder of the same name
+  somewhere else. Anything remembered by an earlier version still opens on the
+  right folder.
+
+- **The window that asks where to move a message now shows folders inside the
+  folders they are in.** It used to show every folder as a row directly under
+  the account, so `Archive`, `2026` and `June` came one after another with
+  nothing saying that the second is inside the first and the third inside the
+  second. Two folders called `2026` in different places were two rows reading
+  the same word.
+
+  Arrow keys work as they do in the folder list on the left: Right opens a
+  folder to see what is inside it, Left closes it again.
+
+  The same window also names your accounts the way the folder list does. An
+  account nobody else is named after reads as its name alone, and two accounts
+  you have called the same thing each get their address after the name, so you
+  can tell them apart by ear. Before this, one of the two windows read out a
+  full address every time and the other read out neither.
+
+  What has not been checked: nobody has heard this window with a screen reader
+  since it changed.
+
+- **The window that asks where to move a message can no longer hand a folder
+  from one account to a different account's server.** The window offers folders
+  belonging to one account, and until now it answered with the folder's path
+  and nothing else. A path says which folder only within one account: two
+  accounts can both have an Archive, and both spell it `Archive`.
+
+  Nothing you did could reach that yet, because the window has only ever been
+  given one account's folders at a time. What it means today is that the code
+  underneath is ready to be given more than one, which is the next piece of
+  work. Mail still does not move between accounts.
+
 - **Three entries in this changelog said you could turn speech off and still
   get braille, and that has never worked.** They are corrected where they stand,
   because somebody reads a changelog backwards to work out when something

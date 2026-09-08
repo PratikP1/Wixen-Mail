@@ -6288,14 +6288,12 @@ fn move_item(
         &branches,
         None,
     )?;
-    let landed = branches
-        .iter()
-        .flat_map(|branch| branch.places.iter())
-        .find(|place| place.id == into)
-        .map(|place| place.name.clone())
-        .unwrap_or_else(|| into.clone());
+    // Read off the answer rather than searched for in the branches this
+    // function passed in. The window hands back the whole destination, so what
+    // the sentence names is what the row read out.
+    let landed = into.name.clone();
 
-    Some(match file_under(cache, kind, id, &into, &account_id) {
+    Some(match file_under(cache, kind, id, &into.id, &account_id) {
         Ok(()) => Moved::Into(crate::application::pim_command::moved(name, &landed)),
         // The other route to the same refusals, taken when the chooser was
         // bypassed. It arrives as a failed write rather than as a refusal
@@ -6354,7 +6352,9 @@ fn where_it_could_go(
     id: &str,
     name: &str,
 ) -> Option<Offered> {
-    use crate::application::destinations::{Branch, Destination, Moving, anywhere, offer};
+    use crate::application::destinations::{
+        Branch, Destination, FolderInAnAccount, Moving, anywhere, offer,
+    };
 
     let holder = kind.kept_in()?;
     let (account_id, account_name) = {
@@ -6399,13 +6399,17 @@ fn where_it_could_go(
         .collect();
     // Where it already is, left out. Offering the container something is
     // already in is offering a move that does nothing.
+    let held = held_in(cache, kind, id, &account_for_lookup);
     let branches = offer(
         vec![Branch {
             account_id,
             account_name,
             places,
         }],
-        held_in(cache, kind, id, &account_for_lookup).as_deref(),
+        held.as_deref().map(|path| FolderInAnAccount {
+            account: &account_for_lookup,
+            path,
+        }),
     );
     if !anywhere(&branches) {
         return said(
