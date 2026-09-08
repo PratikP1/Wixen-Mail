@@ -8218,6 +8218,12 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
         // opens, finds nothing in, and closes without learning why.
         return refuse_a_command(tx, nothing_to_offer(Moving::Folder));
     }
+    // One branch, and it stays one branch. The message move offers every
+    // account now, and this deliberately does not: RFC 9051's `RENAME` names
+    // two mailboxes on one connection and has no way to reach another account,
+    // so a destination in a second account is a destination the command cannot
+    // get to. Offering it would be offering somebody a command that will fail,
+    // and a folder full of mail is not a thing to find that out with.
     let branches = vec![Branch {
         account_id: chosen.account.id.clone(),
         account_name: chosen.account.email.clone(),

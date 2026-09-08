@@ -8,11 +8,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The Move to and Copy to window shows every account you have set up.** It
+  used to show only the account the message was in, so a folder on another
+  account was somewhere you could not choose. Any account with somewhere to put
+  the message is now in the list. An account with no folders known yet is left
+  out, because it would be a row you open, find nothing in, and close.
+
+  Moving a folder still offers only its own account, and that is on purpose:
+  the command that renames a folder cannot reach another server.
+
 - **A message can be copied into a folder on another account.** Choose Copy to,
   pick a folder under a different account, and the message is fetched from the
   account it is in and put at the other account's server. The original stays
   exactly where it is, which is what a copy means, and is why copying arrives
   before moving: if anything goes wrong the message has not gone anywhere.
+
+  What you hear afterwards names the account as well as the folder, because two
+  accounts can both have an Archive and "Copied to Archive" would not tell you
+  which one. If it could not be done you are told nothing was copied, which
+  account refused, and which folder the message is still in.
 
   Whether it has been read, whether it is starred and whether it has been
   answered travel with it. A message marked for removal does not arrive marked

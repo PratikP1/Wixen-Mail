@@ -99,13 +99,14 @@ pub enum Copied<'a> {
 /// the window, and which of two questions the answer had come back to was
 /// carried by nothing but the branch a few lines above it.
 pub fn after_a_copy(copied: Copied<'_>, into: &str, subject: &str) -> WhatToDoNext {
-    // RED. The account is taken and thrown away, which is what the sentence did
-    // before this plan: one account was the only one on offer, so the folder
-    // name said the whole of it.
-    let _ = copied;
     WhatToDoNext {
         then: ThenWhat::LeaveTheRow,
-        said: format!("Copied to {into}: {subject}"),
+        said: match copied {
+            Copied::WithinTheAccount => format!("Copied to {into}: {subject}"),
+            Copied::IntoTheAccount(account) => {
+                format!("Copied to {into} in {account}: {subject}")
+            }
+        },
     }
 }
 
@@ -125,12 +126,16 @@ pub fn nothing_was_copied(
     subject: &str,
     why: &str,
 ) -> WhatToDoNext {
-    // RED. What the window says today, which names neither the folder the
-    // message is still in nor the account that refused.
-    let _ = (copied, still_in);
+    // Which account refused, for a copy that crossed. A refusal naming the
+    // source account sends somebody to the wrong settings page, and the setting
+    // they would find there is switched the way they left it.
+    let refused_by = match copied {
+        Copied::WithinTheAccount => String::new(),
+        Copied::IntoTheAccount(account) => format!(" {account} refused it."),
+    };
     WhatToDoNext {
         then: ThenWhat::LeaveTheRow,
-        said: format!("{subject} was not copied: {why}"),
+        said: format!("Nothing was copied.{refused_by} {subject} is still in {still_in}: {why}"),
     }
 }
 

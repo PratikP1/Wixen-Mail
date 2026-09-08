@@ -387,13 +387,7 @@ pub fn where_this_message_can_go(
     the_folder_it_is_in: Option<&str>,
 ) -> Vec<Branch> {
     offer(
-        where_mail_can_go(accounts, folders)
-            .into_iter()
-            // RED. The narrowing this plan takes out, lifted from
-            // `move_or_copy_message` exactly as it stood: every account is
-            // built and then all but one is thrown away.
-            .filter(|branch| branch.account_id == the_account_it_is_in)
-            .collect(),
+        where_mail_can_go(accounts, folders),
         the_folder_it_is_in.map(|path| FolderInAnAccount {
             account: the_account_it_is_in,
             path,

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 463 records have arrived since and have not been through it.
+# 465 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -4010,7 +4010,7 @@ red = [
     "application::server_delete::tests::test_a_message_the_server_still_holds_unflagged_keeps_its_row",
 ]
 tests_last_seen = [
-    { file = "src/application/server_delete.rs", tests = 7 },
+    { file = "src/application/server_delete.rs", tests = 10 },
 ]
 
 [[guard]]
@@ -16779,7 +16779,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 30 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 9 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
 ]
 
 [[guard]]
@@ -16808,7 +16808,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 30 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 9 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
 ]
 
 [[guard]]
@@ -16840,16 +16840,26 @@ after = """                    .find(|branch| !branch.account_id.is_empty())"""
 # Measured a third time on the same day, and it fell behind twice in one
 # session. A test added afterwards asks this same question from the caller's
 # side, and a record shorter than the truth is what this file exists to stop.
+#
+# Measured a fourth time in 04.1-02, and it had fallen behind again for the
+# same reason: three tests reading which accounts the window offers reach this
+# rule too, because a branch lookup that has lost the account puts every folder
+# in one branch and the other accounts then have nothing in them and are
+# dropped. Five to eight. This is the record CLAUDE.md's paragraph about a
+# record perishing is written from, and it has now perished three times.
 red = [
     "test_a_folder_belongs_to_one_account_in_both",
     "test_a_folder_the_server_has_stopped_listing_is_still_somewhere_mail_can_go",
+    "test_a_message_whose_folder_is_not_known_is_still_offered_everywhere",
     "test_a_place_says_the_account_of_the_branch_it_is_drawn_under",
+    "test_every_account_with_somewhere_to_put_it_is_offered",
+    "test_the_folder_the_message_is_in_is_taken_out_of_its_own_account_and_no_other",
     "test_the_picker_offers_the_folders_the_sidebar_shows",
     "test_the_window_offers_the_folders_of_the_account_the_message_is_in",
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 30 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 9 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
 ]
 
 [[guard]]
@@ -16948,4 +16958,74 @@ red = [
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 58 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# ── A copy across accounts, sent as a copy inside one ────────────────────────
+#
+# Two accounts are two mail servers and no IMAP command reaches across them.
+# `COPY` names a mailbox on the connection it is sent down, so a crossing sent
+# as an ordinary copy goes to the account the message is already in, naming a
+# folder path that belongs to a different server.
+#
+# What that does depends on the source server and none of the answers is one
+# somebody could act on. Usually it fails naming a mailbox the person can see
+# in the window they just used. Where the two accounts happen to hold a folder
+# at the same path, which is the ordinary case for `Archive`, `Sent` and
+# `INBOX`, it succeeds and files the message into the wrong account, and the
+# sentence afterwards says it went where it was asked to go.
+#
+# The break is the comparison itself rather than one of its arms, because a
+# function with two values answers something whatever it does and the reading
+# that ignores its arguments compiles.
+
+[[guard]]
+name = "the crossing decision compares nothing and every destination is the same account"
+file = "src/application/mail_across_accounts.rs"
+before = """    if the_message_is_in == it_is_going_to {
+        Crossing::TheSameAccount
+    } else {
+        Crossing::AnotherAccount
+    }"""
+after = """    let _ = (the_message_is_in, it_is_going_to);
+    Crossing::TheSameAccount"""
+red = [
+    "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 13 },
+]
+
+# ── Every account built, and all but one thrown away ─────────────────────────
+#
+# What the move and copy window did before 04.1-02, in the line it did it on.
+# `where_mail_can_go` has always answered with every account's branches; the
+# window kept the one the message was in, so a folder on another account was
+# somewhere nobody could choose and copying to another account was unreachable
+# whatever the code underneath could do.
+#
+# The break reddens nothing in the library, which is the point of the record.
+# The window is what narrowed, and the only tests that can see the difference
+# are the ones reading the assembly from outside.
+
+[[guard]]
+name = "the move window offers only the account the message is in"
+file = "src/application/destinations.rs"
+suite = "one_hierarchy_two_views"
+before = """    offer(
+        where_mail_can_go(accounts, folders),
+        the_folder_it_is_in.map(|path| FolderInAnAccount {"""
+after = """    offer(
+        where_mail_can_go(accounts, folders)
+            .into_iter()
+            .filter(|branch| branch.account_id == the_account_it_is_in)
+            .collect(),
+        the_folder_it_is_in.map(|path| FolderInAnAccount {"""
+red = [
+    "test_every_account_with_somewhere_to_put_it_is_offered",
+    "test_the_folder_the_message_is_in_is_taken_out_of_its_own_account_and_no_other",
+    "test_a_message_whose_folder_is_not_known_is_still_offered_everywhere",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 30 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
 ]
