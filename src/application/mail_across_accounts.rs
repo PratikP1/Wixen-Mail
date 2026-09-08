@@ -266,10 +266,106 @@ async fn the_message_itself(
     Ok((filed, raw))
 }
 
+/// The identifier a destination can be asked about, if there is one.
+///
+/// A `Message-ID` is a header a stranger wrote, and two of the things it can be
+/// are not questions. It can be absent, which real mail is: `mail_sync.rs:564`
+/// keeps such a message with an empty identifier. And it can be blank. Neither
+/// names a message, and a search for neither matches whatever the server
+/// decides it matches, which is not a confirmation of anything.
+///
+/// Everything else is passed on as it arrived, quoted at the boundary by
+/// [`crate::service::protocols::imap::ImapSession::uids_with_message_id`] so
+/// that a value holding a space or a bracket cannot end the search key early.
+/// Not narrowed further here: an identifier this program does not recognise the
+/// shape of is still the identifier the message really carries, and refusing to
+/// ask about it would turn an answerable question into an unanswerable one.
+fn the_identifier_to_ask_about(header: Option<&str>) -> Option<&str> {
+    let named = header?.trim();
+    (!named.is_empty()).then_some(named)
+}
+
+/// Which failures mean the destination never answered.
+///
+/// The whole safeguard turns on this line, so it is one function with its
+/// reason written down rather than a `matches!` inside a branch.
+///
+/// A server that says `NO` or `BAD` has answered, and the message did not land.
+/// A connection that dropped, and a command that ran out of time, have not
+/// answered at all: the message may be there and may not, and both arrive as
+/// [`crate::common::Error::Network`]. A refusal by the permission gate has not
+/// answered either, but nothing was sent, so it is also not ambiguous; it is a
+/// [`crate::common::Error::Security`] and falls on the answered side, which is
+/// right because a message that never left cannot have landed.
+fn the_destination_never_answered(why: &crate::common::Error) -> bool {
+    matches!(why, crate::common::Error::Network(_))
+}
+
+/// Whether the destination folder holds the message after an append that was
+/// never answered.
+///
+/// Its own function, and not inlined into the move, because `04.1-04` calls it
+/// from a place where no move is in progress: after the program has been closed
+/// part way through one and started again. A question reachable only from
+/// inside the move is a question that plan would have to write a second time.
+///
+/// # Why it takes what was there before
+///
+/// A message carrying this identifier being in the folder is not the same fact
+/// as this message having arrived. The identifier is a header a stranger wrote,
+/// and the folder may already hold a message carrying it: an earlier copy of
+/// this same message, or one somebody else put there. Reading either as an
+/// arrival would remove the source copy of a message that never left, which is
+/// the one failure this whole phase exists to prevent.
+///
+/// So the folder is asked before the message is sent as well as after, and only
+/// something there now that was not there before is an arrival. Where nobody
+/// looked beforehand the question cannot be settled at all, which is what `None`
+/// means and why it is not the same as an empty list.
+pub(crate) async fn whether_the_destination_has_it(
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    into: &str,
+    message_id: Option<&str>,
+    was_there_before: Option<&[u32]>,
+) -> WhetherItLanded {
+    let Some(message_id) = message_id else {
+        return WhetherItLanded::ItCannotBeAsked(
+            "the message carries no identifier of its own, so there is nothing to ask about"
+                .to_string(),
+        );
+    };
+    let Some(was_there_before) = was_there_before else {
+        return WhetherItLanded::ItCannotBeAsked(
+            "the folder was not read before the message was sent, so a message there now \
+             cannot be told from one that was there all along"
+                .to_string(),
+        );
+    };
+    match the_account_it_is_going_to
+        .which_messages_carry(into, message_id)
+        .await
+    {
+        Ok(now) if now.iter().any(|uid| !was_there_before.contains(uid)) => {
+            WhetherItLanded::ItIsThere
+        }
+        Ok(_) => WhetherItLanded::ItIsNotThere,
+        Err(why) => WhetherItLanded::ItCannotBeAsked(why.to_string()),
+    }
+}
+
 /// Move one message from the account it is in to a folder on another account.
 ///
 /// Append first, remove last, and nothing at the source is touched until the
-/// destination has answered that it holds the message.
+/// destination has answered that it holds the message. That order is the whole
+/// safeguard: a failure anywhere before the removal leaves the message exactly
+/// where it was, and a failure after it leaves two copies. Both are things
+/// somebody can put right. A message removed from the only server that had it
+/// is not.
+///
+/// An `Err` here means nothing changed at either server, which is the contract
+/// [`crate::service::protocols::imap::ImapSession::move_message`] already has.
+/// Everything that did change something comes back as a [`MovedAcross`] naming
+/// where the message now is.
 pub(crate) async fn move_it_across(
     the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
     from: &str,
@@ -278,28 +374,73 @@ pub(crate) async fn move_it_across(
     into: &str,
 ) -> Result<MovedAcross> {
     let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
-    let sent = the_account_it_is_going_to
+    let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());
+
+    // Asked before the message goes, because afterwards it is too late: a
+    // folder holding one message with that identifier cannot say whether it is
+    // the one just sent or one that was always there. A folder that cannot be
+    // read now is not a failure and does not stop the move; it only means an
+    // append whose answer never arrives cannot be settled, and the ending then
+    // says so rather than guessing.
+    let was_there_before = match identifier {
+        Some(identifier) => the_account_it_is_going_to
+            .which_messages_carry(into, identifier)
+            .await
+            .ok(),
+        None => None,
+    };
+
+    if let Err(why) = the_account_it_is_going_to
         .take_this_message(
             into,
             the_flags_that_travel(&filed.flags).as_deref(),
             when_it_arrived(filed.internal_date.as_deref()).as_deref(),
             &raw,
         )
-        .await;
-
-    if let Err(why) = sent {
-        let found = the_account_it_is_going_to
-            .which_messages_carry(into, &filed.message_id.unwrap_or_default())
-            .await?;
-        if found.is_empty() {
+        .await
+    {
+        if !the_destination_never_answered(&why) {
             return Ok(MovedAcross::TheDestinationRefusedIt(why.to_string()));
+        }
+        match whether_the_destination_has_it(
+            the_account_it_is_going_to,
+            into,
+            identifier,
+            was_there_before.as_deref(),
+        )
+        .await
+        {
+            // It landed after all. The removal may go, and it goes for the same
+            // reason it would have gone had the answer arrived.
+            WhetherItLanded::ItIsThere => {}
+            WhetherItLanded::ItIsNotThere => {
+                return Ok(MovedAcross::ItNeverArrivedSoNothingWasRemoved(
+                    why.to_string(),
+                ));
+            }
+            WhetherItLanded::ItCannotBeAsked(unanswerable) => {
+                return Ok(MovedAcross::ItIsNotKnownWhereItIs(format!(
+                    "{why}, and {unanswerable}"
+                )));
+            }
         }
     }
 
-    the_account_it_is_in
-        .take_it_off_the_server(from, uid)
-        .await?;
-    Ok(MovedAcross::ItArrivedAndTheSourceLetItGo)
+    Ok(
+        match the_account_it_is_in.take_it_off_the_server(from, uid).await {
+            Ok(LetGo::ItIsGone) => MovedAcross::ItArrivedAndTheSourceLetItGo,
+            Ok(LetGo::StillHereMarked(why)) => MovedAcross::ItArrivedAndIsStillHereMarked(why),
+            Ok(LetGo::StillHereUnmarked(said)) => {
+                MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said)
+            }
+            // The message is at the destination, so this is not a failure of the
+            // move however it reads from here, and answering with `Err` would
+            // tell the caller nothing had happened anywhere. Nothing was marked
+            // either: everything that can go wrong before the mark goes wrong
+            // before it is sent.
+            Err(why) => MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(why.to_string()),
+        },
+    )
 }
 
 impl TheAccountItIsIn for crate::application::mail_controller::MailController {
@@ -356,11 +497,20 @@ mod tests {
     /// The headers the source server answers a header fetch with.
     const THE_HEADERS: &str = "Subject: Lunch\r\nFrom: Ada <ada@example.com>\r\n\r\n";
 
-    /// The `Message-ID` the message carries.
+    /// The `Message-ID` header the message carries, as it goes on the wire.
     ///
     /// A header a stranger wrote, which is the whole reason it is quoted before
     /// it becomes a search key rather than pasted into one.
     const THE_IDENTIFIER: &str = "<lunch.4@example.com>";
+
+    /// The same identifier as this program holds it.
+    ///
+    /// The angle brackets are part of how the header is written and not part of
+    /// the identifier, and the parser takes them off, so this is what reaches a
+    /// search. It matches the header either way: `HEADER MESSAGE-ID` looks for
+    /// the value inside the header's text rather than for the whole of it, which
+    /// is how the draft-replacement path has always found its previous copy.
+    const THE_IDENTIFIER_AS_IT_IS_HELD: &str = "lunch.4@example.com";
 
     /// How the server holding the message behaves.
     ///
@@ -1250,8 +1400,19 @@ mod tests {
         assert!(
             asked
                 .iter()
-                .any(|line| line.starts_with("SEARCH") && line.contains(THE_IDENTIFIER)),
+                .any(|line| line.starts_with("SEARCH")
+                    && line.contains(THE_IDENTIFIER_AS_IT_IS_HELD)),
             "the destination was never asked whether it had the message: {asked:?}"
+        );
+        // Twice: once before the message went, so a message already there could
+        // not be mistaken for it, and once after.
+        assert_eq!(
+            asked
+                .iter()
+                .filter(|line| line.starts_with("SEARCH"))
+                .count(),
+            2,
+            "{asked:?}"
         );
         let said = everything_said_to(&source).await;
         assert!(said.to_uppercase().contains("UID STORE"), "{said}");
@@ -1323,6 +1484,200 @@ mod tests {
         let said = everything_said_to(&source).await;
         assert!(!said.to_uppercase().contains("STORE"), "{said}");
         assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_message_that_was_already_there_is_not_read_as_the_one_just_sent() {
+        // The destination stopped answering, and the folder holds a message
+        // carrying the same identifier that it already held before the send.
+        // That is not this message arriving. It is an earlier copy of it, or a
+        // message somebody else wrote that identifier onto, and reading either
+        // as an arrival removes the source copy of a message that never left.
+        //
+        // The identifier is a header a stranger wrote, so the question it can
+        // answer is bounded on purpose: not "is something carrying this here",
+        // which a stranger decides, but "is something carrying this here that
+        // was not here a moment ago", which the sending decides.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(
+            TheAppend::IsNeverAnswered,
+            vec![Ok(vec![9]), Ok(vec![9])],
+        );
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert!(
+            matches!(across, MovedAcross::ItNeverArrivedSoNothingWasRemoved(_)),
+            "a message that was in the folder before the send was counted as the \
+             one that was sent: {across:?}"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards() {
+        // The folder could not be read before the message went, so what it
+        // holds now cannot be compared with anything. That is not the same as
+        // the folder having been empty, and treating it as empty would make any
+        // message carrying that identifier an arrival.
+        //
+        // The failed read does not stop the move: the append is still sent, and
+        // it is only an append whose answer never comes that this leaves
+        // unsettled.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(
+            TheAppend::IsNeverAnswered,
+            vec![
+                Err(crate::common::Error::Protocol(
+                    "the folder could not be opened".to_string(),
+                )),
+                Ok(vec![9]),
+            ],
+        );
+
+        let across = waiting_for(move_it_across(
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to end");
+
+        assert!(
+            matches!(across, MovedAcross::ItIsNotKnownWhereItIs(_)),
+            "{across:?}"
+        );
+        assert!(
+            destination
+                .everything_it_was_asked()
+                .await
+                .iter()
+                .any(|line| line.starts_with("APPEND")),
+            "a folder that could not be read beforehand stopped the message being sent"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+    }
+
+    // ── The question on its own, which is what 04.1-04 will call ────────────
+
+    #[tokio::test]
+    async fn test_a_message_with_no_identifier_is_never_asked_about() {
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
+
+        for nothing_to_ask_about in [None, Some(""), Some("   ")] {
+            let answer = whether_the_destination_has_it(
+                &destination,
+                "Archive",
+                the_identifier_to_ask_about(nothing_to_ask_about),
+                Some(&[]),
+            )
+            .await;
+
+            assert!(
+                matches!(answer, WhetherItLanded::ItCannotBeAsked(_)),
+                "{nothing_to_ask_about:?} was treated as a question: {answer:?}"
+            );
+        }
+        assert!(
+            destination.everything_it_was_asked().await.is_empty(),
+            "an identifier that names no message was sent to a server as a search key"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_nothing_new_carrying_the_identifier_is_not_there_rather_than_unanswerable() {
+        // Three answers rather than two, and this is the one that would be lost
+        // if a failure and an absence were folded together. A folder that
+        // answered and holds nothing new is a folder that really does not have
+        // the message, and something can be said about it.
+        let destination =
+            ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![1, 2])]);
+
+        let answer = whether_the_destination_has_it(
+            &destination,
+            "Archive",
+            Some(THE_IDENTIFIER_AS_IT_IS_HELD),
+            Some(&[1, 2]),
+        )
+        .await;
+
+        assert_eq!(answer, WhetherItLanded::ItIsNotThere);
+    }
+
+    #[tokio::test]
+    async fn test_something_carrying_the_identifier_that_was_not_there_before_is_an_arrival() {
+        let destination =
+            ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![1, 2, 7])]);
+
+        let answer = whether_the_destination_has_it(
+            &destination,
+            "Archive",
+            Some(THE_IDENTIFIER_AS_IT_IS_HELD),
+            Some(&[1, 2]),
+        )
+        .await;
+
+        assert_eq!(answer, WhetherItLanded::ItIsThere);
+    }
+
+    #[tokio::test]
+    async fn test_a_folder_that_will_not_answer_cannot_be_asked() {
+        let destination = ADestinationThat::takes_the_append(
+            TheAppend::Lands,
+            vec![Err(crate::common::Error::Protocol(
+                "the server would not search".to_string(),
+            ))],
+        );
+
+        let answer = whether_the_destination_has_it(
+            &destination,
+            "Archive",
+            Some(THE_IDENTIFIER_AS_IT_IS_HELD),
+            Some(&[]),
+        )
+        .await;
+
+        let WhetherItLanded::ItCannotBeAsked(why) = answer else {
+            panic!("a server that would not answer was read as one that said no: {answer:?}");
+        };
+        assert!(why.contains("would not search"), "{why}");
+    }
+
+    #[test]
+    fn test_a_refusal_is_told_apart_from_an_answer_that_never_came() {
+        // The one line the whole safeguard turns on. A server that said no has
+        // answered and the message did not land; a connection that dropped has
+        // not answered at all.
+        use crate::common::Error;
+
+        assert!(the_destination_never_answered(&Error::Network(
+            "the connection to the mail server failed".to_string()
+        )));
+        for answered in [
+            Error::Protocol("the server refused it".to_string()),
+            Error::Security("Allow Changes is off".to_string()),
+            Error::InPlainWords("something already worded".to_string()),
+            Error::Other("something else".to_string()),
+        ] {
+            assert!(
+                !the_destination_never_answered(&answered),
+                "{answered:?} was read as an answer that never came, so a message the \
+                 destination never took could be searched for and then removed at the source"
+            );
+        }
     }
 
     #[tokio::test]

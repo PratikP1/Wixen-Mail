@@ -16992,7 +16992,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 13 },
+    { file = "src/application/mail_across_accounts.rs", tests = 30 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
