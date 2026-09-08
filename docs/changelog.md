@@ -8,6 +8,36 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A move to another account that this program was closed part way through can
+  be finished the next time you start it.** You are told which message it was,
+  which folder and account it was going to, and where it still is, and you are
+  asked whether to finish it. Answer No and it is left alone and you are not
+  asked again.
+
+  Before anything is sent, the account it was going to is asked whether it
+  already has the message. It is only sent again if it does not. That is what
+  stops a move you interrupted turning into two copies.
+
+  **Your message was never at risk, with or without this.** A move puts the
+  message at the second account first and only then takes it off the first, so
+  at every point the program can stop, the first account still has it. What
+  this adds is narrower and still worth having: the move can be finished even
+  when the account the message came *from* is the one that is not answering,
+  because a large message does not have to be fetched from it again. If you
+  have signed out of that account, changed its password, or lost your
+  connection to it, the move can still be completed.
+
+  Where the message has no identifier of its own, the second account cannot be
+  asked whether it already has it, so nothing is sent to either account. You
+  are told where the message is and where to look, in case a copy did arrive.
+
+  To do this, the whole message is kept in the cache folder while the move is
+  in the air, which is normally a few seconds. It is not encrypted, like
+  everything else in that folder, and `docs/privacy.md` says what is kept and
+  when it goes.
+
+  What has not been checked: this has never been done with a real mail account.
+
 - **A message can be moved to a folder on another account.** Choose Move to,
   pick a folder under a different account, and the message is put at that
   account's server and then taken off the one it was in. Whether it has been

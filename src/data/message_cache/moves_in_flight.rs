@@ -167,7 +167,12 @@ impl MessageCache {
                     moving.to_folder,
                     moving.flags,
                     moving.arrived,
-                    as_one_column(moving.was_there_before).unwrap_or_default(),
+                    // `None` where nobody looked, and it stays `None` all the
+                    // way to the column. Flattening it to an empty list here
+                    // would turn a question that cannot be settled into one
+                    // answered no, and a resume would then send the message
+                    // again on the strength of it.
+                    as_one_column(moving.was_there_before),
                     moving.raw,
                     moving.raw.len() as i64,
                     now(),
@@ -187,15 +192,21 @@ impl MessageCache {
     /// A local read: it touches no server and needs no session, which is what
     /// lets it run the moment the mail window is ready, before any account has
     /// signed in.
+    ///
+    /// The source side comes through the join rather than out of this table.
+    /// The message row carries the uid and which folder it is in, and `folders`
+    /// carries that folder's account and its path, so all three are already
+    /// written down once and this reads them where they are.
     pub fn moves_that_did_not_finish(&self) -> Result<Vec<AMoveLeftUnfinished>> {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT i.message_id, m.subject, m.message_id, m.folder_id, m.uid,
+                "SELECT i.message_id, m.subject, m.message_id, f.account_id, f.path, m.uid,
                         i.to_account_id, i.to_folder, i.flags, i.arrived,
                         i.was_there_before, i.original, i.started_at
                  FROM move_in_flight i
                  INNER JOIN messages m ON m.id = i.message_id
+                 INNER JOIN folders f ON f.id = m.folder_id
                  ORDER BY i.started_at ASC, i.message_id ASC",
             )
             .map_err(|e| {
@@ -208,16 +219,16 @@ impl MessageCache {
                     message_row_id: row.get(0)?,
                     subject: row.get(1)?,
                     identifier: row.get(2)?,
-                    from_account_id: String::new(),
-                    from_folder: row.get::<_, i64>(3)?.to_string(),
-                    uid: row.get::<_, i64>(4)? as u32,
-                    to_account_id: row.get(5)?,
-                    to_folder: row.get(6)?,
-                    flags: row.get(7)?,
-                    arrived: row.get(8)?,
-                    was_there_before: read_back(row.get(9)?),
-                    raw: row.get(10)?,
-                    started_at: row.get(11)?,
+                    from_account_id: row.get(3)?,
+                    from_folder: row.get(4)?,
+                    uid: row.get::<_, i64>(5)? as u32,
+                    to_account_id: row.get(6)?,
+                    to_folder: row.get(7)?,
+                    flags: row.get(8)?,
+                    arrived: row.get(9)?,
+                    was_there_before: read_back(row.get(10)?),
+                    raw: row.get(11)?,
+                    started_at: row.get(12)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to list the unfinished moves: {}", e)))?
@@ -230,11 +241,24 @@ impl MessageCache {
     ///
     /// Called at every ending, successful or refused. A row left behind is a
     /// whole unencrypted message sitting on the disk with nothing anywhere
-    /// saying it is there.
+    /// saying it is there, and on the next start somebody is asked about a
+    /// move that finished perfectly well.
+    ///
+    /// The row and not only the bytes, which is the opposite of what
+    /// [`super::signed_original`] does and the difference is worth stating
+    /// where somebody copying that module will read it. There a row means "the
+    /// message claimed a signature", which stays true after the bytes go, so
+    /// dropping the row would turn a signed message into one that never
+    /// claimed anything. Here a row means "a move is in the air", and once it
+    /// is not, the row says something untrue.
+    ///
+    /// Doing nothing when there is no row is right and not a hole. The move
+    /// may have been too large to keep, or nothing may have been kept at all,
+    /// and both of those are moves that end the same way as any other.
     pub fn the_move_is_over(&self, message_row_id: i64) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE move_in_flight SET original = X'', bytes = 0 WHERE message_id = ?1",
+                "DELETE FROM move_in_flight WHERE message_id = ?1",
                 rusqlite::params![message_row_id],
             )
             .map_err(|e| Error::Other(format!("Failed to let go of a finished move: {}", e)))?;

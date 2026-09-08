@@ -435,7 +435,7 @@ pub(crate) async fn move_it_across(
     into: &str,
     recording: TheMoveAsThisProgramRecordsIt<'_>,
 ) -> Result<MovedAcross> {
-    the_crossing(
+    let ended = the_crossing(
         the_account_it_is_in,
         from,
         uid,
@@ -443,7 +443,20 @@ pub(crate) async fn move_it_across(
         into,
         recording,
     )
-    .await
+    .await;
+
+    // Once, on the way out, rather than in each of the six endings and the two
+    // early returns above them. An arm that forgot would leave a whole
+    // unencrypted message on somebody's disk with nothing anywhere saying it is
+    // there, and the arms that are easiest to forget are the ones nobody
+    // exercises by hand. Clearing a row that was never written does nothing,
+    // which is what makes one call on the way out correct as well as safe.
+    if let Some(cache) = recording.cache
+        && let Err(e) = cache.the_move_is_over(recording.row)
+    {
+        tracing::warn!("The bytes kept for a finished move could not be let go of: {e}");
+    }
+    ended
 }
 
 /// The crossing itself, with the kept bytes written in the middle of it.
@@ -474,6 +487,31 @@ async fn the_crossing(
 
     let flags = the_flags_that_travel(&filed.flags);
     let arrived = when_it_arrived(filed.internal_date.as_deref());
+
+    // Before the append, which is the whole point of keeping them. From here
+    // until the move reaches an ending, this computer holds everything needed
+    // to finish the move without going back to the source for the message: the
+    // bytes, where they were going, how they were to be filed, and what the
+    // destination folder held beforehand. Written after the append it would
+    // cover the removal and not the append, and the append is the half that can
+    // leave a question open.
+    //
+    // Failure here is logged and not fatal. It costs the safeguard, not the
+    // move: the append still goes first and the source still holds the message
+    // until the destination has answered.
+    if let Some(cache) = recording.cache
+        && let Err(e) = cache.keep_the_message_while_it_moves(&AMoveStarting {
+            message_row_id: recording.row,
+            to_account_id: recording.to_account_id,
+            to_folder: into,
+            flags: flags.as_deref(),
+            arrived: arrived.as_deref(),
+            was_there_before: was_there_before.as_deref(),
+            raw: &raw,
+        })
+    {
+        tracing::warn!("The message being moved could not be kept while it moves: {e}");
+    }
 
     if let Err(why) = the_account_it_is_going_to
         .take_this_message(into, flags.as_deref(), arrived.as_deref(), &raw)
@@ -506,30 +544,7 @@ async fn the_crossing(
         }
     }
 
-    // The message is at the destination and the removal has not gone yet, so
-    // this is the window worth keeping the bytes for.
-    if let Some(cache) = recording.cache
-        && let Err(e) = cache.keep_the_message_while_it_moves(&AMoveStarting {
-            message_row_id: recording.row,
-            to_account_id: recording.to_account_id,
-            to_folder: into,
-            flags: flags.as_deref(),
-            arrived: arrived.as_deref(),
-            was_there_before: was_there_before.as_deref(),
-            raw: &raw,
-        })
-    {
-        tracing::warn!("The message being moved could not be kept while it moves: {e}");
-    }
-
-    let ended = the_removal(the_account_it_is_in, from, uid).await;
-    if let MovedAcross::ItArrivedAndTheSourceLetItGo = ended
-        && let Some(cache) = recording.cache
-        && let Err(e) = cache.the_move_is_over(recording.row)
-    {
-        tracing::warn!("The bytes kept for a finished move could not be let go of: {e}");
-    }
-    Ok(ended)
+    Ok(the_removal(the_account_it_is_in, from, uid).await)
 }
 
 /// Ask the source to let the message go, and say what really happened.
@@ -607,16 +622,16 @@ pub(crate) async fn finish_the_move(
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     the_account_it_is_leaving: &impl TheAccountItIsLeaving,
 ) -> MovedAcross {
-    match the_account_it_is_going_to
-        .take_this_message(
-            &unfinished.to_folder,
-            unfinished.flags.as_deref(),
-            unfinished.arrived.as_deref(),
-            &unfinished.raw,
-        )
-        .await
-    {
-        Ok(()) => {
+    let landed = whether_the_destination_has_it(
+        the_account_it_is_going_to,
+        &unfinished.to_folder,
+        the_identifier_to_ask_about(Some(&unfinished.identifier)),
+        unfinished.was_there_before.as_deref(),
+    )
+    .await;
+
+    match how_to_finish(&landed) {
+        FinishingIt::TakeItOffTheSource => {
             the_removal(
                 the_account_it_is_leaving,
                 &unfinished.from_folder,
@@ -624,10 +639,35 @@ pub(crate) async fn finish_the_move(
             )
             .await
         }
-        Err(why) if the_destination_never_answered(&why) => {
-            MovedAcross::ItIsNotKnownWhereItIs(why.to_string())
+        FinishingIt::SendItAgainThenTakeItOff => {
+            match the_account_it_is_going_to
+                .take_this_message(
+                    &unfinished.to_folder,
+                    unfinished.flags.as_deref(),
+                    unfinished.arrived.as_deref(),
+                    &unfinished.raw,
+                )
+                .await
+            {
+                Ok(()) => {
+                    the_removal(
+                        the_account_it_is_leaving,
+                        &unfinished.from_folder,
+                        unfinished.uid,
+                    )
+                    .await
+                }
+                // A second append that is not answered either leaves the same
+                // question open again, and this time the folder's before-list
+                // is stale: the first append may have landed since it was
+                // taken. So nothing is removed and the ending says so.
+                Err(why) if the_destination_never_answered(&why) => {
+                    MovedAcross::ItIsNotKnownWhereItIs(why.to_string())
+                }
+                Err(why) => MovedAcross::TheDestinationRefusedIt(why.to_string()),
+            }
         }
-        Err(why) => MovedAcross::TheDestinationRefusedIt(why.to_string()),
+        FinishingIt::NothingCanBeSent(why) => MovedAcross::ItIsNotKnownWhereItIs(why),
     }
 }
 

@@ -2775,7 +2775,7 @@ red = [
     "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 4 },
+    { file = "src/presentation/asking.rs", tests = 5 },
 ]
 
 # What each first-run answer costs is the button's description, which is what a
@@ -16992,7 +16992,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 30 },
+    { file = "src/application/mail_across_accounts.rs", tests = 42 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
@@ -17103,7 +17103,7 @@ red = [
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 30 },
+    { file = "src/application/mail_across_accounts.rs", tests = 42 },
 ]
 
 # ── An append nobody answered, counted as one that landed ────────────────────
@@ -17124,7 +17124,16 @@ tests_last_seen = [
 # two. Under it a message with an identifier is always taken to have landed,
 # whatever the destination really holds and whether or not it could be read.
 #
-# Measured 2026-09-08 against the whole library.
+# Measured 2026-09-08 against the whole library, and measured again the same day
+# when 04.1-04 gave the question a second caller. It reddened three more tests
+# than the record named, which is the shape this file exists to catch: the same
+# question is now asked by a move finished on a later run, so a version of it
+# that answers yes to everything sends somebody's message to a destination that
+# already has it. Two of the three say exactly that. The third is the check that
+# every ending lets go of the kept bytes, which fails because a question
+# answering yes leaves two of the six endings unreachable.
+#
+# Re-measured 2026-09-08.
 
 [[guard]]
 name = "an append the destination never answered is counted as one that landed"
@@ -17147,7 +17156,10 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_that_will_not_answer_cannot_be_asked",
     "application::mail_across_accounts::tests::test_nothing_new_carrying_the_identifier_is_not_there_rather_than_unanswerable",
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_found_afterwards_is_removed_at_the_source",
+    "application::mail_across_accounts::tests::test_a_resumed_move_asks_the_destination_before_it_sends_anything",
+    "application::mail_across_accounts::tests::test_a_resumed_move_the_destination_does_not_have_is_sent_again_then_removed",
+    "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 30 },
+    { file = "src/application/mail_across_accounts.rs", tests = 42 },
 ]
