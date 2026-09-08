@@ -36,6 +36,13 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   everything else in that folder, and `docs/privacy.md` says what is kept and
   when it goes.
 
+  A message larger than 25 MB is not kept, and moves exactly as it would have
+  anyway. Interrupted moves are kept up to 64 MB in total, the newest giving
+  way first, so a move you have not been asked about is never dropped to make
+  room for one happening now. And a move you never answer about is given up on
+  after seven days. None of those three loses anything: the message is at the
+  account it came from throughout.
+
   What has not been checked: this has never been done with a real mail account.
 
 - **A message can be moved to a folder on another account.** Choose Move to,

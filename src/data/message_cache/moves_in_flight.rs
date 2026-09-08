@@ -186,9 +186,19 @@ impl MessageCache {
     /// message arrived long ago and is already in this cache, and these bytes
     /// are held for the crossing and nothing else.
     pub fn keep_the_message_while_it_moves(&self, moving: &AMoveStarting<'_>) -> Result<()> {
-        let over_the_ceiling =
-            i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept);
-        let kept: &[u8] = if over_the_ceiling { &[] } else { moving.raw };
+        // Over the ceiling, nothing at all is written, and that is the
+        // opposite of what `keep_signed_original` does with a message too
+        // large to keep. There the row is what says the message claimed a
+        // signature, which stays true after the bytes go. Here a row is an
+        // offer to finish a move, so a row with no message in it would offer
+        // to send an empty message to somebody's account.
+        //
+        // The move itself goes on. It keeps the safeguard every other message
+        // has, which is why this is not a failure and not worth telling
+        // anybody about.
+        if i64::try_from(moving.raw.len()).is_ok_and(|size| size > self.largest_move_kept) {
+            return Ok(());
+        }
         self.conn
             .execute(
                 "INSERT INTO move_in_flight
@@ -216,8 +226,8 @@ impl MessageCache {
                     // answered no, and a resume would then send the message
                     // again on the strength of it.
                     as_one_column(moving.was_there_before),
-                    kept,
-                    kept.len() as i64,
+                    moving.raw,
+                    moving.raw.len() as i64,
                     now(),
                 ],
             )
@@ -238,32 +248,26 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Bring the total back under the budget.
-    fn stay_within_the_budget_for_moves(&self, _just_written: i64) -> Result<()> {
-        let mut total = self.bytes_kept_for_moves()?;
-        if total <= self.moves_in_flight_budget {
+    /// Bring the total back under the budget, the move just started giving way.
+    ///
+    /// The newest and not the oldest, which is the opposite of what a cache
+    /// usually does and is the same answer
+    /// [`MessageCache::keep_signed_original`] arrives at by a different route.
+    ///
+    /// An older row here is a move somebody has not been asked about yet, and
+    /// dropping it takes away the only offer they will ever get. The row just
+    /// written is a move happening now: it will reach an ending in seconds, and
+    /// what its bytes buy in the meantime is a re-fetch it will almost
+    /// certainly never need. So the new one gives way and the old ones stay.
+    ///
+    /// Which also means this can only ever drop one row, and it is the row it
+    /// was called about. Nothing here can drop a row somebody is about to be
+    /// asked about, which is the one rule this module really owes.
+    fn stay_within_the_budget_for_moves(&self, just_written: i64) -> Result<()> {
+        if self.bytes_kept_for_moves()? <= self.moves_in_flight_budget {
             return Ok(());
         }
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT message_id, bytes FROM move_in_flight
-                 ORDER BY started_at ASC, message_id ASC",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare the move sweep: {}", e)))?;
-        let candidates: Vec<(i64, i64)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-            .map_err(|e| Error::Other(format!("Failed to list the moves in flight: {}", e)))?
-            .collect::<std::result::Result<_, _>>()
-            .map_err(|e| Error::Other(format!("Failed to read a move in flight: {}", e)))?;
-        for (message_id, bytes) in candidates {
-            if total <= self.moves_in_flight_budget {
-                break;
-            }
-            self.the_move_is_over(message_id)?;
-            total -= bytes;
-        }
-        Ok(())
+        self.the_move_is_over(just_written)
     }
 
     /// Let go of the moves nobody ever answered about.
@@ -299,7 +303,20 @@ impl MessageCache {
     /// The message row carries the uid and which folder it is in, and `folders`
     /// carries that folder's account and its path, so all three are already
     /// written down once and this reads them where they are.
+    ///
+    /// The backstop runs here, before the read, and it has to run somewhere
+    /// like this rather than in a function of its own. This cache has no sweep
+    /// and nothing that ever looks at what a previous run left behind:
+    /// `evict_signed_originals_over` and `keep_signed_originals_within_budget`
+    /// are public, documented and called by nothing that ships. An eviction
+    /// rule with no caller is a rule that never applies to anything, and this
+    /// is the one place a leftover row is ever looked at.
+    ///
+    /// Dropping first and reading afterwards is safe here for the reason the
+    /// module doc gives: a row past the backstop is one this has just decided
+    /// not to offer, so nothing drops a row it is about to read.
     pub fn moves_that_did_not_finish(&self) -> Result<Vec<AMoveLeftUnfinished>> {
+        self.forget_the_moves_nobody_answered_about()?;
         let mut stmt = self
             .conn
             .prepare_cached(

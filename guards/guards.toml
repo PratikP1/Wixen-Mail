@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 468 records have arrived since and have not been through it.
+# 470 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -16992,7 +16992,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 42 },
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
@@ -17103,7 +17103,7 @@ red = [
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 42 },
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
 ]
 
 # ── An append nobody answered, counted as one that landed ────────────────────
@@ -17161,5 +17161,80 @@ red = [
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 42 },
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+]
+
+# ── A move finished on a later run, sent again without asking ────────────────
+#
+# The one way keeping the bytes can do harm that not keeping them would not,
+# and the only reason the whole store needed a question built first.
+#
+# A row that outlived the program means this program stopped somewhere between
+# writing the bytes and letting go of them. That is not the same as an append
+# that never went: it may have gone and landed and the answer may have been on
+# its way back when the process ended. Sending it again because a row exists
+# gives somebody two copies of their message, at an account they cannot easily
+# tell apart, with nothing anywhere saying why.
+#
+# The break skips the question and always sends. It is not an absence but the
+# obvious shape: a row is there, so the move did not finish, so finish it. That
+# reading is wrong about exactly one thing and it is the thing that matters.
+#
+# Measured 2026-09-08 against the whole library.
+
+[[guard]]
+name = "a move finished on a later run appends without asking the destination"
+file = "src/application/mail_across_accounts.rs"
+before = """    let landed = whether_the_destination_has_it(
+        the_account_it_is_going_to,
+        &unfinished.to_folder,
+        the_identifier_to_ask_about(Some(&unfinished.identifier)),
+        unfinished.was_there_before.as_deref(),
+    )
+    .await;"""
+after = """    let landed = WhetherItLanded::ItIsNotThere;
+    let _ = the_identifier_to_ask_about(Some(&unfinished.identifier));"""
+red = [
+    "application::mail_across_accounts::tests::test_a_resumed_move_asks_the_destination_before_it_sends_anything",
+    "application::mail_across_accounts::tests::test_a_resumed_move_the_destination_already_has_is_only_removed",
+    "application::mail_across_accounts::tests::test_a_resumed_move_the_destination_does_not_have_is_sent_again_then_removed",
+    "application::mail_across_accounts::tests::test_a_resumed_move_that_cannot_be_asked_about_sends_nothing_to_either_server",
+    "application::mail_across_accounts::tests::test_a_resumed_move_whose_folder_nobody_read_settles_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+]
+
+# ── A finished move leaving its message on the disk ──────────────────────────
+#
+# What it costs a person: a whole message of theirs, unencrypted, sitting in
+# the cache folder after the move it was written for finished perfectly well,
+# with nothing anywhere saying it is there. On the next start they are asked
+# whether to finish a move that is already done, and answering yes speaks to
+# both servers again about it.
+#
+# The break takes away the one call that lets go of the bytes. It is placed on
+# the way out of the whole crossing rather than in each ending, so there is one
+# line to remove and one line to forget, which is the shape that was chosen
+# precisely because six endings and two early returns are six and two chances
+# to forget.
+#
+# Measured 2026-09-08 against the whole library.
+
+[[guard]]
+name = "a move that reached an ending leaves its message on the disk"
+file = "src/application/mail_across_accounts.rs"
+before = """    if let Some(cache) = recording.cache
+        && let Err(e) = cache.the_move_is_over(recording.row)
+    {
+        tracing::warn!("The bytes kept for a finished move could not be let go of: {e}");
+    }
+    ended"""
+after = """    let _ = recording;
+    ended"""
+red = [
+    "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
 ]
