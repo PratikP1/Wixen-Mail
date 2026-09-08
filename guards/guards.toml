@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 472 records have arrived since and have not been through it.
+# 474 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2255,7 +2255,7 @@ tests_last_seen = [
     { file = "src/common/moment.rs", tests = 10 },
     { file = "src/presentation/date_display.rs", tests = 37 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/presentation/read_aloud.rs", tests = 46 },
+    { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/service/caldav.rs", tests = 163 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
@@ -2846,7 +2846,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 23 },
     { file = "src/presentation/date_display.rs", tests = 37 },
-    { file = "src/presentation/read_aloud.rs", tests = 46 },
+    { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
 # The hour the calendar's out-of-hours note judges comes from the same parsed,
@@ -2877,7 +2877,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/date_display.rs", tests = 37 },
-    { file = "src/presentation/pim_rows.rs", tests = 23 },
+    { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]
 
 # A reminder set for a day goes off at that day's start, which is deliberate,
@@ -17289,12 +17289,89 @@ tests_last_seen = [
     { file = "tests/a_moved_day_is_shown_once.rs", tests = 2 },
 ]
 
-# ── The same break, and everything in the library that answers to it ─────────
+# ── A changed day of a series that sounds like all the others ───────────────
 #
-# The record above is scoped to one integration target and can say nothing
-# about the library. This one carries the rest of what the same break reddens,
-# measured on its own with `WIXEN_TEST_THREADS=4 cargo test --lib
-# --no-fail-fast` on a clean tree on 2026-09-08.
+# What it costs a person: they arrow down a calendar past fifty-two Tuesdays,
+# one of which was moved or changed on its own, and nothing they hear tells
+# them which. Every other thing the row says about that day is the same as the
+# ordinary days say about themselves.
+#
+# Two records, because two separate things can go quiet and breaking one does
+# not catch the other. This one is the row forgetting it stands apart:
+# `from_entry` stops reading the stored columns and answers that every row is
+# an ordinary day. The constant rather than the removal, because a field that
+# is simply gone does not build and is nobody's mistake; a field wired to a
+# plausible default is what a half-finished version looks like, and it is green
+# everywhere except here.
+#
+# Only two tests answer to it. The tests about what is said build their rows
+# directly with the field set, so they say nothing about where the field came
+# from. That is the record after it, and finding out that one break did not
+# reach both halves is the reason there are two.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --lib
+# --no-fail-fast` on a clean tree.
+
+[[guard]]
+name = "a row stops knowing it is a day of a series that was changed on its own"
+file = "src/presentation/ui_types.rs"
+before = """            changed_on_its_own: entry.cut_from_event_id.is_some()
+                || entry.provider_recurrence_id.is_some(),"""
+after = """            changed_on_its_own: false,"""
+red = [
+    "presentation::ui_types::tests::test_a_day_changed_on_its_own_is_known_from_either_stored_column",
+    "presentation::ui_types::tests::test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 56 },
+]
+
+# ── The same fact, known and then not said ──────────────────────────────────
+#
+# The other half of the record above. The row knows the day was changed and the
+# words for it go quiet, which is the failure this project's second guardrail
+# is about: the structure is there, the tests about the field pass, and the
+# person moving down the list hears nothing.
+#
+# The break is the clause answering nothing whatever it is asked, which is a
+# half-written function rather than a deleted one. It reddens five tests across
+# the two places the clause is heard: the row cell a screen reader reads while
+# arrowing, and the short reading Space gives. Both call the one function, so
+# one break reaches both, which is the point of there being one function.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --lib
+# --no-fail-fast` on a clean tree.
+
+[[guard]]
+name = "the clause about a day changed on its own goes quiet"
+file = "src/presentation/read_aloud.rs"
+before = """    match changed_on_its_own {
+        true => "changed just for this day",
+        false => "",
+    }
+}"""
+after = """    let _ = changed_on_its_own;
+    ""
+}"""
+red = [
+    "presentation::pim_rows::tests::test_a_changed_day_out_of_hours_is_told_both_things",
+    "presentation::pim_rows::tests::test_a_day_changed_on_its_own_says_so_in_the_row_itself",
+    "presentation::read_aloud::tests::test_a_changed_day_of_a_series_nobody_can_work_out_is_told_both_things",
+    "presentation::read_aloud::tests::test_a_day_changed_on_its_own_says_so_in_the_short_reading",
+    "presentation::read_aloud::tests::test_the_full_reading_does_not_say_the_day_was_changed_over_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/pim_rows.rs", tests = 25 },
+    { file = "src/presentation/read_aloud.rs", tests = 49 },
+]
+
+# ── The same break as the moved-day record, seen from the library ───────────
+#
+# The suite-scoped record further up is run with `--test <suite>` and nothing
+# else, so it can say nothing about the library. This one carries the rest of
+# what the same break reddens, measured on its own with
+# `WIXEN_TEST_THREADS=4 cargo test --lib --no-fail-fast` on a clean tree on
+# 2026-09-08.
 #
 # Worth reading rather than skipping: seven tests across three modules answer
 # to one pair of writes. The CalDAV read, the Google read and the screen that
@@ -17303,7 +17380,7 @@ tests_last_seen = [
 # at once.
 
 [[guard]]
-name = "a day moved out of a series is still shown on the date it left, in the library"
+name = "a day moved out of a series is still shown on the date it left, seen from the library"
 file = "src/application/calendar.rs"
 before = """    cache.save_calendar_event(that_day)?;
     let called_off =

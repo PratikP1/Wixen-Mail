@@ -209,6 +209,38 @@ pub(super) fn status_worth_saying(status: &str) -> &str {
     }
 }
 
+/// What is said about one day of a series that was changed on its own.
+///
+/// The words were chosen against the two sentences
+/// `application::calendar` already speaks about a single day of a series, so
+/// this sounds like them rather than like a new voice. `one_day_taken_off`
+/// says "That one day is taken off. The other days are unchanged." and
+/// `WrittenDown::OneDayChanged` says "Only the day you opened was changed. The
+/// other days were left alone." Both put the change and its narrowness in one
+/// breath, and both use the plain word "changed" rather than any of the
+/// machinery's own words. "Changed just for this day" is the shortest thing
+/// that keeps all three of those: it says the day differs, it says the rest of
+/// the series does not, and it cannot be heard as the meeting having been
+/// called off, which "cancelled" or "removed" would be.
+///
+/// It has to be short because it is read out while somebody arrows, and it is
+/// paid on every changed day. The row beside it already says the date and the
+/// title, so this adds nothing they already carry.
+///
+/// Empty on every ordinary event and on every ordinary day of a series, which
+/// is nearly every row, so an ordinary calendar costs nothing extra to listen
+/// to. That is how the priority and the status above already work.
+///
+/// One function with two callers, the row cell and the short reading, so what
+/// is heard while arrowing and what is heard on Space cannot come to disagree.
+/// Two copies of one sentence have already drifted apart in this codebase.
+pub(super) fn a_changed_day_worth_saying(changed_on_its_own: bool) -> &'static str {
+    match changed_on_its_own {
+        true => "changed just for this day",
+        false => "",
+    }
+}
+
 /// What a reading can honestly say about what is attached.
 ///
 /// A list row knows whether anything is attached and not what, because a folder
@@ -439,7 +471,18 @@ impl ReadAloud for CalendarEventItem {
         } else {
             ""
         };
-        spoken(&[("", &self.summary), ("", &when), ("", unreadable)])
+        spoken(&[
+            ("", &self.summary),
+            ("", &when),
+            ("", unreadable),
+            // The same words the row itself carries, from the one function
+            // that builds them, so Space and arrowing say one thing. Not
+            // repeated in the full reading below, which already spends a line
+            // on how often the event comes round: that is the wider statement
+            // about the same series, and hearing both is two overlapping
+            // sentences about one event.
+            ("", a_changed_day_worth_saying(self.changed_on_its_own)),
+        ])
     }
 
     fn read_full(&self, out: Reading) -> String {

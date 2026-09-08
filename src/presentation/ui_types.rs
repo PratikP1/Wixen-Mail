@@ -1125,9 +1125,15 @@ impl CalendarEventItem {
             categories: entry.categories.clone(),
             show_as: entry.show_as.clone(),
             recurrence_rule: entry.recurrence_rule.clone(),
-            // Nothing yet. The stored columns that answer this are read in the
-            // commit that makes the tests below pass.
-            changed_on_its_own: false,
+            // Either column, because both mean the same thing to somebody
+            // listening. `cut_from_event_id` is set when the change was made
+            // here and `provider_recurrence_id` when a calendar server sent
+            // the day already changed, and a server can set the second
+            // without the first where the series' own row has not arrived
+            // here yet. Asking about one of them would go quiet for whole
+            // accounts.
+            changed_on_its_own: entry.cut_from_event_id.is_some()
+                || entry.provider_recurrence_id.is_some(),
             attendees_json: entry.attendees_json.clone(),
         }
     }

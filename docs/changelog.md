@@ -427,6 +427,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   - Reading each file takes a moment, so a very large batch from a network
     drive can make the window pause. Nothing bounds the number of files.
 
+### Added
+
+- **A day of a repeating meeting that was changed on its own now says so when
+  you arrow past it.** The row reads "changed just for this day" after the
+  time. Before this, arrowing down fifty-two Tuesdays gave you no way to tell
+  the one that was moved or rescheduled from the fifty-one that were not:
+  everything else the row said about it was the same as the others said about
+  themselves.
+
+  It is said in the row itself rather than only when you press Space, because
+  the row is what a screen reader reads while you move through the list, and a
+  fact you have to press a key to find is a fact most people never meet. Space
+  says it too, in the same words.
+
+  It does not replace the time, and it does not replace the note about a
+  meeting falling outside your working day. A meeting moved to seven in the
+  evening says both.
+
+  Whether it was you or your calendar server that changed the day is not said.
+  It makes no difference to what the day is, and it would be a longer row on
+  every changed day for something nobody needs.
+
+  What has not been checked: nobody has yet heard this through a screen reader.
+
 ### Known limitations
 
 - **A meeting moved to another day is on the calendar once, on the day it

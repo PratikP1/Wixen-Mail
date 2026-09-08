@@ -19,7 +19,7 @@
 use crate::application::reading_habits::WorkingDay;
 
 use super::date_display::{DateSettings, spoken};
-use super::read_aloud::{priority_worth_saying, status_worth_saying};
+use super::read_aloud::{a_changed_day_worth_saying, priority_worth_saying, status_worth_saying};
 use super::ui_types::{CalendarEventItem, ContactItem, NoteItem, ReminderItem, TaskItem};
 
 /// One stored date, written the way this reader asked for it.
@@ -71,20 +71,41 @@ pub fn event_cell(
 ) -> String {
     match column {
         0 => {
-            if event.is_all_day {
+            let when = if event.is_all_day {
                 "All day".to_string()
             } else {
-                // The time, and whether it falls outside the working day.
-                // Words rather than a colour, because a colour is not
-                // available to the person this is for, and nothing at all
-                // inside the day, so most rows in most calendars cost nothing
-                // to hear.
-                let when = date(&event.start, dates, now);
-                match hour_of(&event.start).map(|hour| day.note_for(hour)) {
-                    Some(note) if !note.is_empty() => format!("{when}, {note}"),
-                    _ => when,
-                }
-            }
+                date(&event.start, dates, now)
+            };
+            // Whether the hour falls outside the working day. Words rather
+            // than a colour, because a colour is not available to the person
+            // this is for, and nothing at all inside the day, so most rows in
+            // most calendars cost nothing to hear. A whole day has no hour to
+            // be outside anything.
+            let out_of_hours = match event.is_all_day {
+                true => "",
+                false => hour_of(&event.start).map_or("", |hour| day.note_for(hour)),
+            };
+            // Whether this is a day of a series that was changed on its own
+            // rides here too, and not in a column of its own: a new column
+            // changes the column set, the headers and every calendar list, for
+            // a fact that is empty on nearly every row. Not in the status
+            // column either, because status already means the meeting's own
+            // status, and two unrelated facts in one cell is worse to listen
+            // to than a longer first cell.
+            //
+            // Joined rather than nested, because both notes can apply at once:
+            // a meeting moved into the evening is out of hours and is a day
+            // changed on its own, and the arms this used to be written as
+            // dropped whichever one came second.
+            [
+                when.as_str(),
+                out_of_hours,
+                a_changed_day_worth_saying(event.changed_on_its_own),
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ")
         }
         1 => non_empty(&event.summary, "No title"),
         2 => event.calendar_name.clone().unwrap_or_default(),
