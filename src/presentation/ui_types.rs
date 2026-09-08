@@ -723,6 +723,27 @@ pub struct CalendarEventItem {
     /// itself or the ending is a count that happens to read the same. The
     /// item form's Recurrence page is filled from this, not from `repeats`.
     pub recurrence_rule: Option<String>,
+    /// Whether this row is one day of a series that was changed on its own,
+    /// rather than an ordinary day of it.
+    ///
+    /// Filled in [`Self::from_entry`] from the stored row, from either of the
+    /// two columns that record it. Somebody arrowing down fifty-two Tuesdays
+    /// otherwise has no way to tell the one that was moved from the fifty-one
+    /// that were not, because every other thing the row says about it is the
+    /// same.
+    ///
+    /// One field and not two. The store knows two ways that a day stands
+    /// apart: `cut_from_event_id`, set when the change was made here, and
+    /// `provider_recurrence_id`, set when a calendar server sent the day
+    /// already changed. Which of the two it was is a fact about who did it,
+    /// and nobody listening to a calendar needs it. Two fields would mean two
+    /// sentences saying the same thing, which is two sentences to drift apart.
+    ///
+    /// Apart from [`Self::repeats`], which says how often the event comes
+    /// round. Folding the two together would leave the sentence about a rule
+    /// that cannot be worked out and this one fighting over one field, and
+    /// both are worth hearing.
+    pub changed_on_its_own: bool,
     /// Who is coming, exactly as the event's own column holds it.
     ///
     /// Carried through the list rather than looked up again when the editor
@@ -1104,6 +1125,9 @@ impl CalendarEventItem {
             categories: entry.categories.clone(),
             show_as: entry.show_as.clone(),
             recurrence_rule: entry.recurrence_rule.clone(),
+            // Nothing yet. The stored columns that answer this are read in the
+            // commit that makes the tests below pass.
+            changed_on_its_own: false,
             attendees_json: entry.attendees_json.clone(),
         }
     }
@@ -1363,6 +1387,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         }
     }
 
@@ -2176,6 +2201,65 @@ mod tests {
         entry.recurrence_rule = Some("FREQ=WEEKLY".to_string());
         let item = CalendarEventItem::from_entry(&entry);
         assert_eq!(item.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+    }
+
+    #[test]
+    fn test_a_day_changed_on_its_own_is_known_from_either_stored_column() {
+        // The store records the same fact two ways and which one is set says
+        // only who made the change: this computer, or the calendar server
+        // that sent the day already changed. A row built from either has to
+        // know it stands apart from the ordinary days of its series, because
+        // everything else it says about itself is the same as theirs.
+        let mut changed_here = calendar_event();
+        changed_here.cut_from_event_id = Some("series-1".to_string());
+        assert!(
+            CalendarEventItem::from_entry(&changed_here).changed_on_its_own,
+            "a day cut out of a series here does not know it was changed"
+        );
+
+        let mut changed_at_the_server = calendar_event();
+        changed_at_the_server.provider_recurrence_id = Some("20260817T090000Z".to_string());
+        assert!(
+            CalendarEventItem::from_entry(&changed_at_the_server).changed_on_its_own,
+            "a day the calendar server changed does not know it was changed"
+        );
+
+        assert!(
+            !CalendarEventItem::from_entry(&calendar_event()).changed_on_its_own,
+            "an ordinary event says a day of it was changed"
+        );
+    }
+
+    #[test]
+    fn test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed() {
+        // `shown_days` builds each day with `..Self::from_entry(entry)`, so a
+        // field filled in `from_entry` reaches every expanded row without
+        // `shown_days` knowing about it. Asserted rather than assumed: the
+        // other way round, every day of every series would carry the default
+        // and the whole thing would be silent for the events it matters most
+        // for.
+        let (from, to) = (
+            chrono::NaiveDate::from_ymd_opt(2026, 7, 1).expect("a real date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 31).expect("a real date"),
+        );
+
+        let mut series = calendar_event();
+        series.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        let ordinary = CalendarEventItem::shown_days(&series, from, to);
+        assert!(ordinary.len() > 1, "the series was not expanded at all");
+        assert!(
+            ordinary.iter().all(|day| !day.changed_on_its_own),
+            "an ordinary day of a series says it was changed"
+        );
+
+        let mut that_day = calendar_event();
+        that_day.cut_from_event_id = Some("e1".to_string());
+        let cut_out = CalendarEventItem::shown_days(&that_day, from, to);
+        assert_eq!(cut_out.len(), 1, "a day kept on its own is one row");
+        assert!(
+            cut_out[0].changed_on_its_own,
+            "the day that was changed lost the fact on the way through shown_days"
+        );
     }
 
     #[test]

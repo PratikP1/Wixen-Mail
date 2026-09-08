@@ -215,6 +215,15 @@ fn non_empty(value: &str, fallback: &str) -> String {
 mod tests {
     use super::*;
 
+    /// What a row says when the day was changed on its own.
+    ///
+    /// Written out here rather than asked of the function that builds it, and
+    /// written out a second time in `read_aloud`'s tests, so the two are
+    /// independent statements of one wording. A test that asks the code what
+    /// it says agrees with the code whatever the code says, and two copies of
+    /// one sentence have already drifted apart in this codebase.
+    const A_CHANGED_DAY: &str = "changed just for this day";
+
     /// Fixed rather than read from the machine, so these read the same
     /// wherever they run.
     fn at_a_desk() -> DateSettings {
@@ -256,6 +265,62 @@ mod tests {
         let cell = event_cell(&morning, 0, at_a_desk(), midday(), WorkingDay::default());
 
         assert!(!cell.contains("working day"), "{cell}");
+    }
+
+    #[test]
+    fn test_a_day_changed_on_its_own_says_so_in_the_row_itself() {
+        // This is the reading a screen reader gives while somebody arrows down
+        // the list. `wx_app` answers the calendar's virtual list with
+        // `event_cell`, so a clause that lives anywhere else is a clause
+        // nobody hears without pressing a key first. Fifty-two Tuesdays go
+        // past and one of them was moved; the row is where that has to be
+        // said.
+        let mut moved = event();
+        moved.changed_on_its_own = true;
+
+        let cell = event_cell(&moved, 0, at_a_desk(), midday(), WorkingDay::default());
+
+        assert!(cell.contains(A_CHANGED_DAY), "{cell}");
+        // Appended to the time rather than instead of it. A cell that says
+        // only that the day was changed has lost the one thing a calendar row
+        // is for.
+        assert!(
+            cell.starts_with(&event_cell(
+                &event(),
+                0,
+                at_a_desk(),
+                midday(),
+                WorkingDay::default()
+            )),
+            "{cell}"
+        );
+        assert!(
+            !event_cell(&event(), 0, at_a_desk(), midday(), WorkingDay::default())
+                .contains(A_CHANGED_DAY),
+            "an ordinary day is being told it was changed"
+        );
+    }
+
+    #[test]
+    fn test_a_changed_day_out_of_hours_is_told_both_things() {
+        // The time cell already carries one qualifying clause and it is
+        // written as a match with two arms, so the obvious way to add a second
+        // clause drops the first. Both are worth hearing and neither replaces
+        // the other.
+        let mut moved_to_the_evening = event();
+        moved_to_the_evening.changed_on_its_own = true;
+        moved_to_the_evening.start = "2026-07-27 19:00".to_string();
+
+        let cell = event_cell(
+            &moved_to_the_evening,
+            0,
+            at_a_desk(),
+            midday(),
+            WorkingDay::default(),
+        );
+
+        assert!(cell.contains("after the working day"), "{cell}");
+        assert!(cell.contains(A_CHANGED_DAY), "{cell}");
     }
 
     #[test]
@@ -367,6 +432,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         }
     }
 

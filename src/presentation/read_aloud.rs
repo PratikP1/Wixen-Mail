@@ -483,6 +483,14 @@ mod tests {
     // a screen reader pass answers that.
     use super::*;
 
+    /// What a reading says when the day was changed on its own.
+    ///
+    /// The same words `pim_rows`' tests write out, and written out here rather
+    /// than asked of the function that builds it for the reason given there:
+    /// two independent statements of one wording can disagree and be seen to,
+    /// and a test that asks the code agrees with it whatever it says.
+    const A_CHANGED_DAY: &str = "changed just for this day";
+
     /// Fixed rather than read from the machine, so these read the same
     /// wherever they run.
     fn aloud() -> Reading {
@@ -646,6 +654,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         }
     }
 
@@ -1287,6 +1296,75 @@ mod tests {
     }
 
     #[test]
+    fn test_a_day_changed_on_its_own_says_so_in_the_short_reading() {
+        // Space gives the short reading, and it says the same thing the row
+        // itself says while somebody arrows past. Both come from one function
+        // so they cannot come to disagree, and the assertion that they say the
+        // same words is in `pim_rows`' tests as well as here.
+        let moved = CalendarEventItem {
+            changed_on_its_own: true,
+            repeats: "every week".to_string(),
+            ..event()
+        };
+
+        let short = moved.read_short(aloud());
+
+        assert!(short.contains(A_CHANGED_DAY), "{short}");
+        // An ordinary day of the same series says nothing extra. Green before
+        // this field existed and green after, so it settles nothing on its
+        // own; it is here because the assertion above is what a wrong reading
+        // would satisfy by saying the clause on every row.
+        let ordinary = CalendarEventItem {
+            repeats: "every week".to_string(),
+            ..event()
+        };
+        assert!(!ordinary.read_short(aloud()).contains(A_CHANGED_DAY));
+    }
+
+    #[test]
+    fn test_the_full_reading_does_not_say_the_day_was_changed_over_again() {
+        // The full reading already spends a line on how often the event comes
+        // round, which is the wider statement about the same series. Saying
+        // both is two overlapping sentences about one event, and the shorter
+        // reading is where the fact earns its place.
+        let moved = CalendarEventItem {
+            changed_on_its_own: true,
+            repeats: "every week".to_string(),
+            ..event()
+        };
+
+        // Anchored on the short reading, so this cannot pass by the clause not
+        // existing anywhere.
+        assert!(moved.read_short(aloud()).contains(A_CHANGED_DAY));
+
+        let full = moved.read_full(aloud());
+        assert!(!full.contains(A_CHANGED_DAY), "{full}");
+        assert!(full.contains("every week"), "{full}");
+    }
+
+    #[test]
+    fn test_a_changed_day_of_a_series_nobody_can_work_out_is_told_both_things() {
+        // An unreadable rule is the one thing the short reading already spends
+        // a line on without being asked, because a series that could not be
+        // worked out has no other days on the screen to show it repeats. A day
+        // of such a series that was also changed on its own has two facts
+        // worth hearing and neither displaces the other.
+        let both = CalendarEventItem {
+            changed_on_its_own: true,
+            repeats: crate::application::occurrences::CANNOT_BE_READ.to_string(),
+            ..event()
+        };
+
+        let short = both.read_short(aloud());
+
+        assert!(
+            short.contains(crate::application::occurrences::CANNOT_BE_READ),
+            "{short}"
+        );
+        assert!(short.contains(A_CHANGED_DAY), "{short}");
+    }
+
+    #[test]
     fn test_two_days_of_the_same_series_are_not_the_same_item_to_read() {
         // Every day of a series carries the stored event's identity, so without
         // the day as well all fifty-two Tuesdays are one item: pressing Space
@@ -1327,6 +1405,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         };
 
         assert!(
@@ -1357,6 +1436,7 @@ mod tests {
             categories: String::new(),
             show_as: String::new(),
             recurrence_rule: None,
+            changed_on_its_own: false,
         };
         assert!(event.read_full(aloud()).contains("all day"));
         assert!(
