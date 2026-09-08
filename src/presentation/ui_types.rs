@@ -510,6 +510,12 @@ pub enum UIUpdate {
     /// It grows by a set of contacts each time a count is added, so the boxing
     /// is not a one-off.
     ContactsSyncComplete(Box<crate::application::contacts_sync::SyncResult>),
+    /// The view the calendar opens on was changed in Settings.
+    ///
+    /// Sent so the running calendar takes it up without a restart, the way
+    /// [`Self::WorkingDayChanged`] already does. A setting that needs the
+    /// program restarted to take effect is a setting that appears not to work.
+    CalendarViewChanged(CalendarView),
     /// Calendar events loaded for display.
     ///
     /// `showing` is the window that was asked for, and `None` where none was.
@@ -936,7 +942,11 @@ impl CalendarView {
     /// must not change what is already written in their settings file.
     #[must_use]
     pub fn stored(self) -> &'static str {
-        todo!("the stored word for each view")
+        match self {
+            Self::Agenda => "agenda",
+            Self::Week => "week",
+            Self::Month => "month",
+        }
     }
 
     /// The view a stored word names, or the agenda when nothing recognises it.
@@ -948,8 +958,28 @@ impl CalendarView {
     /// change at all. This is the shape `MarkRead` and `CopyLines` already use.
     #[must_use]
     pub fn from_stored(stored: &str) -> Self {
-        let _ = stored;
-        todo!("read a stored word back, falling back to the agenda")
+        Self::OFFERED
+            .into_iter()
+            .find(|view| view.stored() == stored)
+            .unwrap_or_default()
+    }
+
+    /// Where this view sits in [`Self::OFFERED`], which is the entry a picker
+    /// selects to show it.
+    #[must_use]
+    pub fn offered_at(self) -> u32 {
+        Self::OFFERED
+            .iter()
+            .position(|view| *view == self)
+            .unwrap_or(0) as u32
+    }
+
+    /// The view a picker's selection names, or the agenda when it names none.
+    #[must_use]
+    pub fn offered_at_entry(at: Option<u32>) -> Self {
+        at.and_then(|at| usize::try_from(at).ok())
+            .and_then(|at| Self::OFFERED.get(at).copied())
+            .unwrap_or_default()
     }
 
     /// The name the picker offers and a screen reader reads out.

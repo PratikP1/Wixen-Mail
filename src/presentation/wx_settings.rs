@@ -20,6 +20,7 @@ use crate::presentation::accessibility::names::{
 use crate::presentation::accessibility::sound_scheme::SoundScheme;
 use crate::presentation::accessibility::sound_scheme_import;
 use crate::presentation::theme;
+use crate::presentation::ui_types::CalendarView;
 use crate::service::spellcheck::available_languages;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -105,6 +106,7 @@ pub struct SettingsWidgets {
     pub default_reminder: TextCtrl,
     day_starts: Choice,
     day_ends: Choice,
+    calendar_view: Choice,
     // Advanced
     log_level: Choice,
     pub download_folder: TextCtrl,
@@ -252,7 +254,8 @@ pub fn build_settings_dialog(
 
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
-    let (default_reminder, day_starts, day_ends) = build_calendar_pim_tab(&pim_panel, config);
+    let (default_reminder, day_starts, day_ends, calendar_view) =
+        build_calendar_pim_tab(&pim_panel, config);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
     // ── Tab 6: Feedback
@@ -397,6 +400,7 @@ pub fn build_settings_dialog(
         default_reminder,
         day_starts,
         day_ends,
+        calendar_view,
         log_level,
         download_folder,
         look_at_message_contents,
@@ -1706,16 +1710,33 @@ fn build_permissions_tab(
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
-fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choice, Choice) {
+fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choice, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Calendar View
     let view_sec = section(panel, "Calendar");
 
-    // A default view, showing weekends, and the first day of the week were
-    // all offered here and read by nothing. The view picker was the worst of
-    // them: it offered Day, Week and Month, three views this program cannot
-    // draw at all. There is one agenda view and no week to start.
+    // A default view, showing weekends, and the first day of the week were all
+    // offered here and read by nothing. The view picker was the worst of them:
+    // it offered Day, Week and Month, three views this program could not draw
+    // at all, and it was taken out rather than left lying.
+    //
+    // It is back, offering the three that exist, and this section stops being a
+    // heading with nothing under it. Showing weekends and the first day of the
+    // week have not come back: neither is built, and offering either again
+    // would be the same defect a second time.
+    //
+    // The names and their order come from `CalendarView::OFFERED`, which the
+    // picker on the calendar toolbar also reads, so the two cannot come to
+    // offer different views or the same views in a different order.
+    let view_choice = labelled_choice(
+        panel,
+        &view_sec,
+        "Calendar opens &on:",
+        "The calendar opens on",
+        &CalendarView::OFFERED.map(CalendarView::label),
+        CalendarView::from_stored(&config.calendar_view).offered_at(),
+    );
 
     sizer.add_sizer(&view_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -1769,7 +1790,7 @@ fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choic
     sizer.add_sizer(&day_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (rem_field, day_starts, day_ends)
+    (rem_field, day_starts, day_ends, view_choice)
 }
 
 /// Every hour of the day, named rather than numbered.
@@ -2397,6 +2418,15 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     let day = WorkingDay::from_setting(sel(&w.day_starts) as u8, sel(&w.day_ends) as u8);
     cfg.working_day_starts = day.starts;
     cfg.working_day_ends = day.ends;
+
+    // Read back, not only shown. A control that shows a stored answer and is
+    // read into nothing satisfies every check about being offered and changes
+    // nothing, which is the failure
+    // `test_whether_message_text_may_be_fetched_is_offered_by_a_screen` is
+    // written about.
+    cfg.calendar_view = CalendarView::offered_at_entry(w.calendar_view.get_selection())
+        .stored()
+        .to_string();
 
     cfg.default_reminder_minutes = w
         .default_reminder

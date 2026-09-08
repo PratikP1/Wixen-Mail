@@ -42,6 +42,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   which of them fall inside it. So a week does not load noticeably quicker than
   the full agenda.
 
+  The view you choose is remembered. Settings, Calendar and PIM, Calendar has
+  "Calendar opens on", which is Agenda unless you change it, so no existing
+  calendar changes shape because this shipped. Change it there and the calendar
+  takes it up straight away rather than waiting for a restart, and the View box
+  on the toolbar follows.
+
   What has not been checked: none of this has been heard with a screen reader,
   and no calendar has ever been synced from a real account.
 

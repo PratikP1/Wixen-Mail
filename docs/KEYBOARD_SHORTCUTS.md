@@ -118,6 +118,17 @@ showing and `[ ]` when it is hidden. `Enter` on a calendar hides or shows it,
 and says which it did. Its events leave and rejoin the day list to match.
 Events that belong to no calendar are always shown.
 
+Above the event list is a row of four controls, reached with `Tab` or by holding
+`Alt` and pressing the underlined letter of each: **Today**, **Previous
+period**, **Next period**, and a **View** box offering Agenda, Week and Month.
+There is no separate key for these, because the row sits at the top of the
+calendar panel and is the first thing `Tab` reaches. Choosing Week or Month
+narrows the list to that period; Previous period and Next period then move you
+one period at a time and each says which one you landed on. In Agenda there is
+no period before or after, so both buttons are unavailable and your screen
+reader says so. Which view the calendar opens on is on the Calendar section of
+the Calendar and PIM tab in Settings.
+
 ### The Event Window
 
 Everything in the event window is reached with `Tab`, or by holding `Alt` and

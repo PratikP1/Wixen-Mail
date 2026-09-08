@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 182
+open_count: 183
 waived_count: 0
 fixed_count: 15
-total_count: 197
-last_updated: 2026-09-08T17:35:23.552Z
+total_count: 198
+last_updated: 2026-09-08T19:25:35.807Z
 ---
 
 # Broken Windows Ledger
@@ -212,6 +212,7 @@ last_updated: 2026-09-08T17:35:23.552Z
 | 195 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | Nothing about the week view has been heard. Four questions only a screen reader run answers. Whether the heading, which is a StaticText the announcement queue also speaks on the calendar-period topic, is heard once or twice when Previous period is pressed. Whether Week of 20 July 2026 is the right amount of words to hear on every press, or whether it should shorten after the first. Whether the View box in the toolbar is reached and understood before somebody starts arrowing the list, since it is the fourth control on a row that starts with three buttons. And whether the announcement topic really suppresses a burst: five quick presses of Next should read the fifth week and no other, and the topic is the mechanism but nobody has heard it happen | open |  | 2026-09-08T17:35:12.582Z |  |
 | 196 | 05 | unrun-verify | src/presentation/wx_calendar_module.rs |  | Previous period and Next period carry the same name on both Windows accessibility channels by construction, and neither channel has been read. The button label is Previous period and Next period, which is what Windows gives UI Automation for a native button and therefore what Narrator says, and set_accessible_name writes the same words to MSAA, which is what NVDA says. Both were checked by reading the code, not by running Axe.Windows over UI Automation or scripts/msaa-names.ps1 over MSAA. The View box beside them is a Choice with a StaticText label of its own and an explicit accessible name of Calendar view, and is unread on both channels for the same reason | open |  | 2026-09-08T17:35:22.872Z |  |
 | 197 | 05 | deviation | src/presentation/managers.rs |  | The reload after an edit now asks for the window on screen rather than the whole eighteen months, so saving an event in a week view no longer puts somebody back in the agenda with nothing said. Nothing tests that it does. The window arithmetic it calls has eleven tests, and the wiring, one call to the_calendar_on_screen inside manage_calendar, has none: manage_calendar opens a wxWidgets dialog and needs a Frame, so a test would first have to extract the reload into a function of its own, and any test of it would live in managers.rs, which 41 guard records fingerprint, at roughly 80 minutes of remeasurement on the critical path for a one-line change. The plan offered fix-with-a-test or record-as-a-stub; this is the third thing, fixed without one, and it is here so that the gap is visible rather than implied by the absence of a test | open |  | 2026-09-08T17:35:23.552Z |  |
+| 198 | 05 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has chosen a view, closed this program and opened it again. The three pieces are each tested where they live: the settings screen writes the word, AppConfig round-trips it, and CalendarView::from_stored reads it back with a fallback for anything it does not recognise. What joins them is one line at startup that puts the stored view into WxUIState and one that sets the toolbar box to match, and neither has a test: they sit inside the frame builder, which needs a running wxWidgets window. So the claim that the view survives a restart rests on reading three tested pieces and one untested join. The same join decides what the box on the toolbar says when the window opens, which is what a screen reader reads for it | open |  | 2026-09-08T19:25:35.807Z |  |
 
 ````json
 [
@@ -2577,6 +2578,18 @@ last_updated: 2026-09-08T17:35:23.552Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T17:35:23.552Z",
+    "resolved_at": null
+  },
+  {
+    "id": 198,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nobody has chosen a view, closed this program and opened it again. The three pieces are each tested where they live: the settings screen writes the word, AppConfig round-trips it, and CalendarView::from_stored reads it back with a fallback for anything it does not recognise. What joins them is one line at startup that puts the stored view into WxUIState and one that sets the toolbar box to match, and neither has a test: they sit inside the frame builder, which needs a running wxWidgets window. So the claim that the view survives a restart rests on reading three tested pieces and one untested join. The same join decides what the box on the toolbar says when the window opens, which is what a screen reader reads for it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T19:25:35.807Z",
     "resolved_at": null
   }
 ]

@@ -489,6 +489,9 @@ struct PimPanelRefs {
     /// one exists. In the agenda neither does.
     cal_prev: Button,
     cal_next: Button,
+    /// Held so a view chosen in Settings shows in the toolbar box too, rather
+    /// than leaving the box naming a view the list is not showing.
+    cal_view_picker: Choice,
     cal_tree: TreeCtrl,
     // Contacts
     contact_list: ListCtrl,
@@ -1085,6 +1088,16 @@ impl WxMailApp {
                     )
                 })
                 .unwrap_or_default();
+            // The view the calendar opens on, so that choosing Week and coming
+            // back tomorrow is still Week. Into state for the same reason the
+            // working day is: every path that reads the calendar back asks
+            // state which window it is refilling.
+            let opens_on = stored_config
+                .as_ref()
+                .map_or(CalendarView::default(), |cfg| {
+                    CalendarView::from_stored(&cfg.calendar_view)
+                });
+            lock_state(&state).calendar_showing = CalendarShowing::now(opens_on);
             let marks_read = stored_config
                 .as_ref()
                 .map(|cfg| {
@@ -1439,6 +1452,11 @@ impl WxMailApp {
                 palette,
             );
             cal_cp.panel.show(false);
+            // The box shows the view that is really on, rather than the first
+            // entry it was built with. A picker reading Agenda over a week of
+            // events is a control saying something untrue about the screen
+            // beside it, and it is the value a screen reader speaks for the box.
+            cal_cp.view_picker.set_selection(opens_on.offered_at());
             let cal_content = cal_cp.panel;
 
             // Contacts content panel
@@ -1475,6 +1493,7 @@ impl WxMailApp {
                 cal_date_label: cal_cp.date_label,
                 cal_prev: cal_cp.btn_prev,
                 cal_next: cal_cp.btn_next,
+                cal_view_picker: cal_cp.view_picker,
                 cal_tree: cal_sb.tree,
                 contact_list: contacts_cp.contact_list,
                 contacts_tree: contacts_sb.tree,
@@ -1962,11 +1981,7 @@ impl WxMailApp {
                 let state = state.clone();
                 let picker = cal_cp.view_picker;
                 move |_| {
-                    let chosen = picker
-                        .get_selection()
-                        .and_then(|at| usize::try_from(at).ok())
-                        .and_then(|at| CalendarView::OFFERED.get(at).copied())
-                        .unwrap_or_default();
+                    let chosen = CalendarView::offered_at_entry(picker.get_selection());
                     let day = lock_state(&state).calendar_showing.day;
                     show_the_calendar(CalendarShowing { view: chosen, day });
                 }
@@ -15577,6 +15592,10 @@ fn handle_settings(
                 new_config.working_day_starts,
                 new_config.working_day_ends,
             );
+            // Read the same way, and applied for the same reason: a view chosen
+            // in Settings that the calendar only takes up after a restart is a
+            // setting that appears not to work.
+            let opens_on = CalendarView::from_stored(&new_config.calendar_view);
             // Read before `new_config` moves into storage below, and kept
             // regardless of whether the save that follows succeeds: a save
             // failure is already reported through `send_status`, and should
@@ -15589,6 +15608,7 @@ fn handle_settings(
                 send_status(tx, rt, &format!("Settings save error: {}", e));
             } else {
                 let _ = tx.try_send(UIUpdate::WorkingDayChanged(working_day));
+                let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
                 send_status(tx, rt, "Settings saved");
             }
             palette
@@ -16478,6 +16498,18 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // every visible cell afresh; nothing here announces anything,
             // because the row text is the announcement.
             pim.cal_event_list.set_item_count(rows as i64);
+        }
+        UIUpdate::CalendarViewChanged(view) => {
+            // The day is kept, not reset to today. Somebody who was looking at
+            // a week in March and changes what the calendar opens on has not
+            // asked to be moved to this week as well.
+            let (account, showing) = {
+                let mut s = lock_state(state);
+                s.calendar_showing.view = *view;
+                (s.active_account_id.clone(), s.calendar_showing)
+            };
+            pim.cal_view_picker.set_selection(view.offered_at());
+            load_module_data(PimModule::Calendar, message_cache, account, tx, showing);
         }
         UIUpdate::CalendarEventsLoaded { events, showing } => {
             lock_state(state).events = events.clone();
