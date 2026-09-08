@@ -159,11 +159,13 @@ impl Filing {
     /// Taken out for a move: offering somebody the place a thing already is is
     /// offering a command that silently does nothing, and they will not know
     /// which of the two it was.
+    /// Left in for a copy, because a second one in the list the first is
+    /// already in is a duplicate somebody may want, and it is the one
+    /// destination a copy can have that a move cannot.
     pub const fn leaves_out_where_it_is(self) -> bool {
-        // Taken out for both while only the move is written. What a copy
-        // should answer is what this commit's failing test is about.
         match self {
-            Self::Moving | Self::Copying => true,
+            Self::Moving => true,
+            Self::Copying => false,
         }
     }
 
@@ -174,11 +176,30 @@ impl Filing {
     /// provider holds means deleting it there, creating it again here and
     /// writing the identity that comes back over the old one, and none of that
     /// is built.
+    /// None of that reasoning survives being asked about a copy. The original
+    /// is untouched, so the provider's copy of it goes on being right, and the
+    /// new one is an item made on this computer that the next push creates
+    /// wherever it now sits. Inheriting the refusal would refuse the one act
+    /// that is safe, and reusing the move's question whole is exactly how that
+    /// would happen.
     pub const fn needs_the_holder_told(self) -> bool {
-        // Asked for both while only the move is written. Whether a copy
-        // inherits the refusal is what this commit's failing test is about.
         match self {
-            Self::Moving | Self::Copying => true,
+            Self::Moving => true,
+            Self::Copying => false,
+        }
+    }
+
+    /// Whether this act makes a new row rather than changing the one it read.
+    ///
+    /// The whole of what a copy is, and the point at which it stops being able
+    /// to carry anything a provider gave the original. A new row keeping the
+    /// provider's identity would be pushed as an update to the provider's own
+    /// item, so the original would move to wherever the copy was put and the
+    /// copy would never exist anywhere but here.
+    pub const fn makes_a_new_row(self) -> bool {
+        match self {
+            Self::Moving => false,
+            Self::Copying => true,
         }
     }
 }

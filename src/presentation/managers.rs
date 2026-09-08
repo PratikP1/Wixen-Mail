@@ -6622,6 +6622,25 @@ pub fn file_under(
                 })?;
             event.calendar_id = Some(into.to_string());
             event.pending = true;
+            if filing.makes_a_new_row() {
+                event.id = new_id("event");
+                // An event keeps the provider's identity in columns of its
+                // own, so a new identifier is not enough on its own. Kept, the
+                // push would ask the provider to update its event rather than
+                // create a second, and the original would be the one that
+                // moved. The rest go with it because they describe that
+                // identity: which version was last seen there, and when.
+                event.provider_event_id = None;
+                event.etag = None;
+                event.last_modified_remote = None;
+                event.last_synced_at = None;
+                // And a copy of one day of a series is an event, not that
+                // day: the pairing names a series row that already has its
+                // own day taken off, and a second claim on it would take the
+                // day off twice.
+                event.cut_from_event_id = None;
+                event.provider_recurrence_id = None;
+            }
             cache.save_calendar_event(&event)?;
             Ok(event.id)
         }
@@ -6638,6 +6657,16 @@ pub fn file_under(
                 })?;
             task.task_list_id = Some(into.to_string());
             task.pending = true;
+            if filing.makes_a_new_row() {
+                // A task carries the provider's identity in the identifier
+                // itself, which `tasks_sync::a_provider_holds` reads, so
+                // minting one here is what makes the copy this computer's own.
+                // The two remembered answers go with it: both are what the
+                // provider last said about the original.
+                task.id = new_id("task");
+                task.remote_updated = None;
+                task.remote_status = None;
+            }
             cache.save_task(&task)?;
             Ok(task.id)
         }
@@ -6649,6 +6678,12 @@ pub fn file_under(
                 ))
             })?;
             note.folder_id = Some(into.to_string());
+            if filing.makes_a_new_row() {
+                // Nothing else to clear. A note has no provider identity and
+                // no waiting flag, because a note goes nowhere. `05.1-03` is
+                // what gives it both, and it comes through here.
+                note.id = new_id("note");
+            }
             cache.save_note(&note)?;
             Ok(note.id)
         }

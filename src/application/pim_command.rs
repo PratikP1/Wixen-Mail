@@ -59,10 +59,14 @@ impl PimCommand {
             // reminder: the module holds buckets worked out from when each one
             // is due, and there is nothing to move it to. Mail moves between
             // folders by its own path, which has to talk to the server.
-            Self::Move => matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note),
-            // Offered nowhere yet. Which kinds accept a copy is what this
-            // commit's failing test is about.
-            Self::Copy => false,
+            //
+            // A copy answers the same, for the same three reasons: a second
+            // contact is a second person rather than a second filing, a
+            // reminder's buckets are not places, and mail copies between
+            // folders by the path that talks to the server.
+            Self::Move | Self::Copy => {
+                matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note)
+            }
         }
     }
 
@@ -175,10 +179,9 @@ pub fn filed(filing: Filing, name: &str, into: &str) -> String {
 /// Apart from [`Filing::act`], which is the capitalised word a button and a
 /// window title carry.
 const fn did(filing: Filing) -> &'static str {
-    // One word for both while only the move is written. The copy's own word is
-    // what this commit's failing tests are about.
     match filing {
-        Filing::Moving | Filing::Copying => "moved",
+        Filing::Moving => "moved",
+        Filing::Copying => "copied",
     }
 }
 
@@ -307,9 +310,8 @@ pub fn did_not_happen(command: PimCommand, kind: ItemKind, name: &str, reason: &
         PimCommand::Delete => format!("Deleting {named}"),
         PimCommand::ToggleComplete => format!("Changing whether {named} is done"),
         PimCommand::TogglePin => format!("Changing whether {named} is pinned"),
-        // One word for both while only the move is written, the same open
-        // question `did` carries.
-        PimCommand::Move | PimCommand::Copy => format!("Moving {named}"),
+        PimCommand::Move => format!("Moving {named}"),
+        PimCommand::Copy => format!("Copying {named}"),
     };
     format!(
         "{tried} did not work: {}. Nothing has been changed. Try it again, and if it \

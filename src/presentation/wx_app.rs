@@ -3725,16 +3725,23 @@ impl WxMailApp {
                         // command serves every panel. The alternative is
                         // seven ids per action and seven handlers that differ
                         // only in which list they read.
-                        // Move on the Action menu lands here in every module but
-                        // Mail, and falls through to the folder picker in Mail.
-                        // One item, one key, and the answer follows the module,
-                        // which is the rule Delete already follows.
+                        // Move and Copy on the Action menu land here in every
+                        // module but Mail, and fall through to the folder
+                        // picker in Mail. One item and one key each, and the
+                        // answer follows the module, which is the rule Delete
+                        // already follows.
+                        //
+                        // Both ids in one condition rather than two, because
+                        // the question is the same for each and a second
+                        // condition is a second place for one of them to be
+                        // forgotten.
                         _ if id == ID_CONTEXT_NEW_ITEM
                             || id == ID_CONTEXT_DELETE_ITEM
                             || id == ID_CONTEXT_TOGGLE_COMPLETE
                             || id == ID_CONTEXT_TOGGLE_PIN
                             || id == ID_CONTEXT_MOVE_ITEM
-                            || (id == ID_MOVE_TO_FOLDER && showing != PimModule::Mail) =>
+                            || ((id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER)
+                                && showing != PimModule::Mail) =>
                         {
                             use crate::application::pim_command::{PimAction, PimCommand};
                             let module = showing;
@@ -3757,6 +3764,8 @@ impl WxMailApp {
                                     PimCommand::ToggleComplete
                                 } else if id == ID_CONTEXT_MOVE_ITEM || id == ID_MOVE_TO_FOLDER {
                                     PimCommand::Move
+                                } else if id == ID_COPY_TO_FOLDER {
+                                    PimCommand::Copy
                                 } else {
                                     PimCommand::TogglePin
                                 };
@@ -6230,11 +6239,21 @@ impl WxMailApp {
             )
             .build();
 
+        // The first item follows whichever module is open, the way Move beside
+        // it does, so it no longer says "folder": in Tasks it offers lists and
+        // in the calendar it offers calendars. The three below it make
+        // something of another kind out of a message and are mail's alone.
+        //
+        // It stays on this submenu rather than moving to the top level beside
+        // Move, which is where the symmetry would put it. This menu has four
+        // letters left, j, q, x and z, and none of them is one anybody would
+        // reach for to copy; taking one would have traded a guessable mnemonic
+        // for a position. Ctrl+Shift+Y is unmoved and is the path that matters.
         let copy_to_menu = Menu::builder()
             .append_item(
                 ID_COPY_TO_FOLDER,
-                "another &Folder...\tCtrl+Shift+Y",
-                "Put a copy of this message in another folder",
+                "&Somewhere Else...\tCtrl+Shift+Y",
+                "Put a copy of the chosen message, event, task or note somewhere else",
             )
             .append_separator()
             .append_item(
@@ -6573,7 +6592,7 @@ impl WxMailApp {
         message.append_submenu(
             copy_to_menu,
             "Cop&y to",
-            "Keep this message and make something else from it",
+            "Put a second copy of the chosen thing somewhere, keeping the first",
         );
         message.append_submenu(labels_menu, "&Label", "Put a label on this message");
         message.append_submenu(
