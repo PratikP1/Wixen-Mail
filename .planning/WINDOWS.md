@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 171
+open_count: 175
 waived_count: 0
 fixed_count: 15
-total_count: 186
-last_updated: 2026-09-08T02:10:00.000Z
+total_count: 190
+last_updated: 2026-09-08T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -201,6 +201,10 @@ last_updated: 2026-09-08T02:10:00.000Z
 | 184 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | No screen reader has heard the move and copy window with several accounts in it. Three questions: whether an account row reads as an account rather than as a folder, whether a collapsed branch is announced as collapsed with a count of what is inside, and whether the person finds Right without being told. The accessible description names Right and Left, which is structure present rather than experience good | open |  | 2026-09-08T02:10:00.000Z |  |
 | 185 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | Whether Enter chooses in this window is unverified and always has been. A TreeCtrl takes Enter as an item activation, and whether that reaches the dialog's default button was read off the code rather than pressed. The accessible description and docs/KEYBOARD_SHORTCUTS.md both say Enter chooses. CLAUDE.md already records one key bound in the composer that was measured never arriving, and no reader of source text can tell that case from a key that works | open |  | 2026-09-08T02:10:00.000Z |  |
 | 186 | 04.1 | deviation | src/application/mail_across_accounts.rs |  | The transcript half of test_a_copy_across_accounts_says_nothing_to_the_source_that_changes_it cannot be made to fail. What it asserts, that no STORE, EXPUNGE or COPY reaches the source, is guaranteed by the trait the source is behind rather than by the code under test: TheAccountItIsIn has two reads and no write, so no body of copy_it_across can send one. That is a stronger guarantee than the test, and it means the test only starts measuring anything if somebody widens the trait. Its other assertion, that the copy succeeded, was taken red | open |  | 2026-09-08T02:10:00.000Z |  |
+| 187 | 04.1 | unrun-verify | src/application/mail_across_accounts.rs |  | No message has been moved between two real accounts. Every assertion is against loopback servers this project wrote, and three questions only a live account answers are named in docs/changelog.md under known limitations: what a real provider does with an upload of a ten megabyte message, what Gmail makes of a message uploaded from another account when it treats a copy as a label, and what any provider does when a message arrives carrying an identifier the destination already holds. The last is not idle, because that identifier is what the program asks about when an upload's answer never arrives | open |  | 2026-09-08T12:00:00.000Z |  |
+| 188 | 04.1 | unrun-verify | src/application/mail_across_accounts.rs |  | The ambiguous append, where the destination stops answering part way through, has never happened against a real server. Both tests that drive it script the answer through a hand-written destination rather than a loopback one, because the only way to make a real connection stop answering is to close it and a closed connection cannot then be asked what the folder holds. What is proved is what the code does with an Error::Network; what is unproved is that a real dropped connection and a real timeout arrive as one | open |  | 2026-09-08T12:00:00.000Z |  |
+| 189 | 04.1 | deviation | src/presentation/wx_app.rs |  | A folder somebody has turned syncing off for is still offered by the move and copy picker, and a message moved into it is at the server and never appears in this program. The decision taken is that the move must not turn syncing on, because a setting somebody chose is not something another command changes behind them, and that the fact is said in docs/changelog.md instead. Saying it in the window at the moment of the move would be better and is not done: it needs the destination account's folder_choices read at move time, and the plan's acceptance criteria forbid adding a test to wx_app.rs, which is where that check would live | open |  | 2026-09-08T12:00:00.000Z |  |
+| 190 | 04.1 | deviation | src/service/protocols/imap.rs |  | ImapSession::remove_these is refused in the words "replace a saved draft", which is wrong for every caller but the one it was written for. The delete handler already worked around it rather than reuse it, and the cross-account move now does the same by way of a new take_this_one_off whose gate says "move a message". Three callers now avoid one function because of its refusal wording; the wording itself is still not fixed, and fixing it means deciding what a neutral sentence costs the draft path that has the specific one today | open |  | 2026-09-08T12:00:00.000Z |  |
 
 ````json
 [
@@ -2434,6 +2438,54 @@ last_updated: 2026-09-08T02:10:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T02:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 187,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/application/mail_across_accounts.rs",
+    "line": null,
+    "description": "No message has been moved between two real accounts. Every assertion is against loopback servers this project wrote, and three questions only a live account answers are named in docs/changelog.md under known limitations: what a real provider does with an upload of a ten megabyte message, what Gmail makes of a message uploaded from another account when it treats a copy as a label, and what any provider does when a message arrives carrying an identifier the destination already holds. The last is not idle, because that identifier is what the program asks about when an upload's answer never arrives",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 188,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/application/mail_across_accounts.rs",
+    "line": null,
+    "description": "The ambiguous append, where the destination stops answering part way through, has never happened against a real server. Both tests that drive it script the answer through a hand-written destination rather than a loopback one, because the only way to make a real connection stop answering is to close it and a closed connection cannot then be asked what the folder holds. What is proved is what the code does with an Error::Network; what is unproved is that a real dropped connection and a real timeout arrive as one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 189,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "A folder somebody has turned syncing off for is still offered by the move and copy picker, and a message moved into it is at the server and never appears in this program. The decision taken is that the move must not turn syncing on, because a setting somebody chose is not something another command changes behind them, and that the fact is said in docs/changelog.md instead. Saying it in the window at the moment of the move would be better and is not done: it needs the destination account's folder_choices read at move time, and the plan's acceptance criteria forbid adding a test to wx_app.rs, which is where that check would live",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 190,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "ImapSession::remove_these is refused in the words \"replace a saved draft\", which is wrong for every caller but the one it was written for. The delete handler already worked around it rather than reuse it, and the cross-account move now does the same by way of a new take_this_one_off whose gate says \"move a message\". Three callers now avoid one function because of its refusal wording; the wording itself is still not fixed, and fixing it means deciding what a neutral sentence costs the draft path that has the specific one today",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T12:00:00.000Z",
     "resolved_at": null
   }
 ]
