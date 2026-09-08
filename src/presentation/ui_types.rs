@@ -887,6 +887,157 @@ pub fn calendar_range_label(events: &[CalendarEventItem]) -> String {
     }
 }
 
+/// Which stretch of the calendar the list is showing.
+///
+/// A week and a month are the same thing at two sizes: a narrower pair of
+/// dates handed to the query that already takes a pair of dates. So they are
+/// one enum with one piece of arithmetic behind it rather than two sets of
+/// functions, which would drift apart the first time either was reworded.
+///
+/// None of them is a grid. PIM-06 asks that somebody can work through a view's
+/// events in date order without reconstructing the grid from cell labels, and
+/// the surest way to answer that is not to build one: the list is already
+/// sorted by moment, so read from the top it is already in date order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CalendarView {
+    /// Six months back and a year on, which is what the calendar has shown
+    /// since it was written.
+    ///
+    /// The default, so that nobody's calendar changes shape because this
+    /// shipped.
+    #[default]
+    Agenda,
+    /// Seven days, Monday to Sunday.
+    Week,
+    /// The first to the last day of one calendar month.
+    Month,
+}
+
+impl CalendarView {
+    /// The three, in the order every picker offers them.
+    ///
+    /// One list, so that the picker in the calendar panel and the one on the
+    /// settings screen cannot come to hold different views or the same views
+    /// in a different order. Somebody moving by keyboard learns the order once.
+    pub const OFFERED: [CalendarView; 3] = [Self::Agenda, Self::Week, Self::Month];
+
+    /// The name the picker offers and a screen reader reads out.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        todo!("the name each view is offered under")
+    }
+
+    /// Whether Prev and Next mean anything in this view.
+    ///
+    /// They do not in the agenda. It is not a period, so there is no period
+    /// before it, and a button that moves nothing while saying it did is the
+    /// worst of the three answers. Both are disabled there instead, which a
+    /// screen reader reports as unavailable on arrival, so nobody presses one
+    /// and waits.
+    #[must_use]
+    pub fn moves_by_period(self) -> bool {
+        todo!("whether a period before and after this one exists")
+    }
+}
+
+/// Which way [`CalendarShowing::stepped`] moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step {
+    Back,
+    Forward,
+}
+
+/// The view somebody chose and the day it is anchored on.
+///
+/// Two values that are no use apart: the window is worked out from both, and
+/// a step moves the day while keeping the view. Held in `WxUIState` beside
+/// `events`, and handed to every path that reads the calendar back, so that no
+/// reload has to guess which window it is refilling. A reload that guessed
+/// "the whole eighteen months" is what used to put somebody back in the agenda
+/// without a word said, every time they saved an event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CalendarShowing {
+    pub view: CalendarView,
+    /// A day inside the period, not necessarily its first.
+    ///
+    /// Kept as the day rather than as the period's own start so that switching
+    /// from a week to a month stays where somebody was, and so that stepping
+    /// back from the thirty-first of a month and forward again returns to the
+    /// month it started in.
+    pub day: chrono::NaiveDate,
+}
+
+impl CalendarShowing {
+    /// The agenda, anchored on today: what the calendar showed before views
+    /// existed.
+    #[must_use]
+    pub fn agenda_now() -> Self {
+        Self {
+            view: CalendarView::Agenda,
+            day: chrono::Utc::now().date_naive(),
+        }
+    }
+
+    /// This view, anchored on today.
+    #[must_use]
+    pub fn now(view: CalendarView) -> Self {
+        Self {
+            view,
+            day: chrono::Utc::now().date_naive(),
+        }
+    }
+
+    /// The pair of dates this view hands the query, both ends inclusive.
+    ///
+    /// Clock-free, taking the day from the value rather than reading the clock
+    /// here, for the reason [`CalendarEventItem::the_window_around`]'s comment
+    /// gives: reading the clock inside the thing under test leaves only
+    /// relative assertions available, and a relative assertion cannot tell one
+    /// week from one week and a day.
+    #[must_use]
+    pub fn window(self) -> (chrono::NaiveDate, chrono::NaiveDate) {
+        todo!("the window each view names around its day")
+    }
+
+    /// The same view, one period earlier or later.
+    ///
+    /// One function for all three views rather than one per view, so that a
+    /// fourth view is an arm here and not a fourth pair of functions to keep
+    /// in step. The agenda does not move: it has no period, and answering with
+    /// a different day would be a button that says it did something.
+    #[must_use]
+    pub fn stepped(self, step: Step) -> Self {
+        let _ = step;
+        todo!("the period before and after this one")
+    }
+}
+
+/// The heading over the calendar list.
+///
+/// Where a window was asked for, this names **the window** rather than the
+/// rows that came back. The two differ the moment a week is empty: describing
+/// the rows would say "No events" and leave somebody with no idea which week
+/// they had moved to.
+///
+/// Where no window was asked for it describes the rows, which is what
+/// [`calendar_range_label`] has always done. Search is that case: it shows the
+/// events themselves from anywhere in the calendar, so putting "Week of 27
+/// July" over them would be a heading naming a period the list is not showing,
+/// which is the exact fault naming the window exists to prevent.
+///
+/// The agenda is the same case for a different reason. It does ask for a
+/// window, but eighteen months read out as two dates is a machine format
+/// rather than a period anybody thinks in, and no one chose it.
+#[must_use]
+pub fn calendar_heading(
+    showing: Option<CalendarShowing>,
+    events: &[CalendarEventItem],
+    settings: crate::presentation::date_display::DateSettings,
+) -> String {
+    let _ = (showing, events, settings);
+    todo!("name the window where one was asked for, and the rows where none was")
+}
+
 /// Task list item for UI display
 #[derive(Clone, Debug)]
 pub struct TaskListItem {
@@ -2040,6 +2191,252 @@ mod tests {
 
         assert_eq!(from, chrono::NaiveDate::from_ymd_opt(2026, 1, 27).unwrap());
         assert_eq!(to, chrono::NaiveDate::from_ymd_opt(2027, 7, 26).unwrap());
+    }
+
+    /// A day, written the short way these tests keep writing it.
+    fn day(written: &str) -> chrono::NaiveDate {
+        chrono::NaiveDate::parse_from_str(written, "%Y-%m-%d").expect("a real date")
+    }
+
+    /// Date settings with nothing read off this machine.
+    ///
+    /// `DateSettings::default()` asks Windows which way round it writes a date
+    /// and which clock it keeps, so a heading test built on it would assert one
+    /// thing here and another on a machine set up differently.
+    fn dates_written(
+        order: crate::presentation::date_display::DateOrder,
+    ) -> crate::presentation::date_display::DateSettings {
+        crate::presentation::date_display::DateSettings {
+            style: crate::presentation::date_display::DateStyle::Absolute,
+            order,
+            wording: crate::presentation::date_display::DateWording::Verbal,
+            clock: crate::presentation::date_display::Clock::TwentyFourHour,
+        }
+    }
+
+    /// The week view anchored on a day.
+    fn week_of(written: &str) -> CalendarShowing {
+        CalendarShowing {
+            view: CalendarView::Week,
+            day: day(written),
+        }
+    }
+
+    #[test]
+    fn test_the_week_around_a_day_is_seven_days_and_starts_on_a_monday() {
+        // 26 July 2026 is a Sunday, so its week starts on Monday the 20th and
+        // ends on the Sunday itself. Worked out from a calendar by hand rather
+        // than read back off the code.
+        let (from, to) = week_of("2026-07-26").window();
+
+        assert_eq!(from, day("2026-07-20"), "the week starts at {from}");
+        assert_eq!(to, day("2026-07-26"), "the week ends at {to}");
+        assert_eq!((to - from).num_days(), 6, "seven days counted inclusively");
+    }
+
+    #[test]
+    fn test_a_day_at_either_end_of_a_week_lands_in_the_same_week() {
+        // The Monday and the Sunday of one week. If the arithmetic counted
+        // seven days back from the day handed in rather than to the start of
+        // its week, these two would answer different windows and somebody
+        // clicking Next would move by an amount that depended on which day
+        // they happened to be sitting on.
+        assert_eq!(
+            week_of("2026-07-20").window(),
+            week_of("2026-07-26").window()
+        );
+    }
+
+    #[test]
+    fn test_the_week_before_and_after_move_by_exactly_seven_days_at_both_ends() {
+        let this_week = week_of("2026-07-22");
+
+        let before = this_week.stepped(Step::Back).window();
+        let after = this_week.stepped(Step::Forward).window();
+
+        assert_eq!(before, (day("2026-07-13"), day("2026-07-19")));
+        assert_eq!(after, (day("2026-07-27"), day("2026-08-02")));
+        assert_eq!(
+            this_week
+                .stepped(Step::Back)
+                .stepped(Step::Forward)
+                .window(),
+            this_week.window(),
+            "back and forward again is not where it started"
+        );
+    }
+
+    #[test]
+    fn test_a_week_across_the_end_of_a_month_or_a_year_is_still_seven_days() {
+        // 31 December 2026 is a Thursday, so its week runs from Monday
+        // 28 December into Sunday 3 January 2027, crossing both boundaries at
+        // once.
+        let (from, to) = week_of("2026-12-31").window();
+
+        assert_eq!(from, day("2026-12-28"));
+        assert_eq!(to, day("2027-01-03"));
+        assert_eq!((to - from).num_days(), 6);
+    }
+
+    #[test]
+    fn test_the_agenda_is_the_window_it_always_was_and_does_not_move() {
+        // The agenda is not a period, so there is nothing before it. Prev and
+        // Next are disabled there rather than answering a day that is not a
+        // move, and the window it names is the one the calendar has always
+        // shown.
+        let agenda = CalendarShowing {
+            view: CalendarView::Agenda,
+            day: day("2026-07-26"),
+        };
+
+        assert!(!CalendarView::Agenda.moves_by_period());
+        assert!(CalendarView::Week.moves_by_period());
+        assert_eq!(agenda.window(), (day("2026-01-27"), day("2027-07-26")));
+        assert_eq!(agenda.stepped(Step::Forward), agenda);
+        assert_eq!(agenda.stepped(Step::Back), agenda);
+    }
+
+    #[test]
+    fn test_the_heading_for_a_week_names_the_week_even_when_nothing_is_in_it() {
+        // The whole point of naming the window rather than the rows. An empty
+        // week described by its rows says "No events", and somebody who has
+        // just pressed Next four times is then told nothing about where they
+        // are.
+        let empty: [CalendarEventItem; 0] = [];
+
+        assert_eq!(
+            calendar_heading(
+                Some(week_of("2026-07-26")),
+                &empty,
+                dates_written(crate::presentation::date_display::DateOrder::DayFirst),
+            ),
+            "Week of 20 July 2026",
+        );
+        assert_eq!(
+            calendar_heading(
+                Some(week_of("2026-07-26")),
+                &empty,
+                dates_written(crate::presentation::date_display::DateOrder::MonthFirst),
+            ),
+            "Week of July 20, 2026",
+        );
+    }
+
+    #[test]
+    fn test_a_search_keeps_a_heading_made_from_the_rows_it_found() {
+        // Search asks for no window: it shows the events themselves, from
+        // anywhere in the calendar. Naming a period over them would be a
+        // heading describing something other than the list, which is the fault
+        // naming the window exists to prevent, arriving through its own
+        // remedy.
+        let found = [event("2026-02-11T09:00:00Z"), event("2026-11-30T09:00:00Z")];
+
+        assert_eq!(
+            calendar_heading(
+                None,
+                &found,
+                dates_written(crate::presentation::date_display::DateOrder::DayFirst),
+            ),
+            calendar_range_label(&found),
+        );
+    }
+
+    #[test]
+    fn test_every_view_is_offered_under_a_name_somebody_would_recognise() {
+        let offered: Vec<&str> = CalendarView::OFFERED.iter().map(|v| v.label()).collect();
+
+        assert_eq!(offered, ["Agenda", "Week", "Month"]);
+    }
+
+    #[test]
+    fn test_a_repeating_event_in_a_one_week_window_falls_only_on_the_days_inside_it() {
+        // The expansion half of this was already true: `falls_on` takes a from
+        // and a to and does not care how far apart they are. What is new is
+        // that the pair now comes from a week.
+        let daily = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=DAILY".into()),
+            start_datetime: "2026-07-20T09:00:00Z".into(),
+            end_datetime: "2026-07-20T09:15:00Z".into(),
+            ..calendar_event()
+        };
+        let (from, to) = week_of("2026-07-22").window();
+
+        let rows = CalendarEventItem::shown_days(&daily, from, to);
+
+        assert_eq!(rows.len(), 7, "one row for each day of the week");
+        assert_eq!(rows[0].start, "2026-07-20T09:00:00Z");
+        assert_eq!(rows[6].start, "2026-07-26T09:00:00Z");
+    }
+
+    #[test]
+    fn test_a_day_moved_out_of_a_series_is_in_the_week_it_moved_to_and_not_the_one_it_left() {
+        // Narrower than what `tests/a_moved_day_is_shown_once.rs` already
+        // settles through the real store, and here so that the week window
+        // itself is the thing under test.
+        let series = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            start_datetime: "2026-07-20T09:00:00Z".into(),
+            end_datetime: "2026-07-20T09:15:00Z".into(),
+            exception_dates: Some("2026-07-27".into()),
+            ..calendar_event()
+        };
+        let moved = CalendarEventEntry {
+            id: "e-moved".into(),
+            start_datetime: "2026-07-29T09:00:00Z".into(),
+            end_datetime: "2026-07-29T09:15:00Z".into(),
+            cut_from_event_id: Some("e1".into()),
+            ..calendar_event()
+        };
+        let entries = [series, moved];
+
+        let the_week_it_left = week_of("2026-07-27").window();
+        let rows =
+            CalendarEventItem::every_day_shown(&entries, the_week_it_left.0, the_week_it_left.1);
+
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.start.starts_with("2026-07-27"))
+                .count(),
+            0,
+            "the day it left still holds a row"
+        );
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.start.starts_with("2026-07-29"))
+                .count(),
+            1,
+            "the day it moved to does not hold exactly one row"
+        );
+    }
+
+    #[test]
+    fn test_a_week_and_the_agenda_agree_about_a_day_that_is_in_both() {
+        // Choosing a week and choosing the agenda again gets the same rows
+        // back for a day both windows contain. A narrower window is a narrower
+        // question, not a different one.
+        let weekly = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            start_datetime: "2026-07-20T09:00:00Z".into(),
+            end_datetime: "2026-07-20T09:15:00Z".into(),
+            ..calendar_event()
+        };
+        let entries = [weekly];
+        let on_the_day = |showing: CalendarShowing| {
+            let (from, to) = showing.window();
+            CalendarEventItem::every_day_shown(&entries, from, to)
+                .into_iter()
+                .filter(|row| row.start.starts_with("2026-07-20"))
+                .map(|row| (row.id, row.start, row.repeats))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            on_the_day(week_of("2026-07-20")),
+            on_the_day(CalendarShowing {
+                view: CalendarView::Agenda,
+                day: day("2026-07-20"),
+            }),
+        );
     }
 
     #[test]

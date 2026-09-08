@@ -394,6 +394,27 @@ pub fn a_day_in_words(stored: &str, settings: DateSettings) -> String {
     }
 }
 
+/// A month and its year as they are said: "July 2026", or "07/2026".
+///
+/// Here rather than beside the calendar heading that wants it, because how a
+/// month is written is this module's rule and a second answer to it somewhere
+/// else is a second thing to keep in step. `month` is 1 for January; anything
+/// outside 1 to 12 comes back as the year alone rather than taking the
+/// application down on a corrupt record, which is the same care
+/// [`a_month_and_a_day`] takes for the same reason.
+///
+/// The order of the day and month does not arise: there is no day. So the two
+/// orders answer alike and only the wording decides.
+pub fn a_month_in_words(year: i32, month: u32, settings: DateSettings) -> String {
+    let Some(name) = MONTHS.get(month.wrapping_sub(1) as usize) else {
+        return year.to_string();
+    };
+    match settings.wording {
+        DateWording::Verbal => format!("{name} {year}"),
+        DateWording::Numeric => format!("{month:02}/{year}"),
+    }
+}
+
 /// The two numbers in "03-14", when both name a real month and a real day.
 ///
 /// The range check is not politeness: the month is used to index the month
