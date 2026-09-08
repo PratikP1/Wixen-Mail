@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 175
+open_count: 177
 waived_count: 0
 fixed_count: 15
-total_count: 190
-last_updated: 2026-09-08T12:00:00.000Z
+total_count: 192
+last_updated: 2026-09-08T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -205,6 +205,8 @@ last_updated: 2026-09-08T12:00:00.000Z
 | 188 | 04.1 | unrun-verify | src/application/mail_across_accounts.rs |  | The ambiguous append, where the destination stops answering part way through, has never happened against a real server. Both tests that drive it script the answer through a hand-written destination rather than a loopback one, because the only way to make a real connection stop answering is to close it and a closed connection cannot then be asked what the folder holds. What is proved is what the code does with an Error::Network; what is unproved is that a real dropped connection and a real timeout arrive as one | open |  | 2026-09-08T12:00:00.000Z |  |
 | 189 | 04.1 | deviation | src/presentation/wx_app.rs |  | A folder somebody has turned syncing off for is still offered by the move and copy picker, and a message moved into it is at the server and never appears in this program. The decision taken is that the move must not turn syncing on, because a setting somebody chose is not something another command changes behind them, and that the fact is said in docs/changelog.md instead. Saying it in the window at the moment of the move would be better and is not done: it needs the destination account's folder_choices read at move time, and the plan's acceptance criteria forbid adding a test to wx_app.rs, which is where that check would live | open |  | 2026-09-08T12:00:00.000Z |  |
 | 190 | 04.1 | deviation | src/service/protocols/imap.rs |  | ImapSession::remove_these is refused in the words "replace a saved draft", which is wrong for every caller but the one it was written for. The delete handler already worked around it rather than reuse it, and the cross-account move now does the same by way of a new take_this_one_off whose gate says "move a message". Three callers now avoid one function because of its refusal wording; the wording itself is still not fixed, and fixing it means deciding what a neutral sentence costs the draft path that has the specific one today | open |  | 2026-09-08T12:00:00.000Z |  |
+| 191 | 04.1 | unrun-verify | src/presentation/wx_app.rs |  | This program has never been killed part way through a move between two real accounts and started again, so the one case the kept bytes exist for has never happened outside a test. Nor has the question put on the next start ever been heard: whether it is read out at all, whether both answers are reachable by keyboard, whether focus lands sensibly, and whether it reads as something unfinished rather than as an error, when nothing was lost, are all questions only NVDA can answer. The seven steps are written out in 04.1-04-SUMMARY.md, and two of their outcomes stop the phase rather than continuing it: nothing said at all on the next start, and the message arriving twice at the destination | open |  | 2026-09-08T20:00:00.000Z |  |
+| 192 | 04.1 | deviation | src/presentation/wx_app.rs |  | The question about an unfinished move is a wxWidgets MessageDialog, which the binding builds from a title and a body and which offers no seam for set_accessible_name_and_description. What a screen reader reads for it is its title and its text, both written here, and this is the house pattern that ask_about_the_folders_that_have_gone already follows. The words are also announced through the announcement queue at high priority, so somebody whose reader was mid-sentence still hears them; whether that reads as the same thing said twice is unverified by ear | open |  | 2026-09-08T20:00:00.000Z |  |
 
 ````json
 [
@@ -2486,6 +2488,30 @@ last_updated: 2026-09-08T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 191,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "This program has never been killed part way through a move between two real accounts and started again, so the one case the kept bytes exist for has never happened outside a test. Nor has the question put on the next start ever been heard: whether it is read out at all, whether both answers are reachable by keyboard, whether focus lands sensibly, and whether it reads as something unfinished rather than as an error, when nothing was lost, are all questions only NVDA can answer. The seven steps are written out in 04.1-04-SUMMARY.md, and two of their outcomes stop the phase rather than continuing it: nothing said at all on the next start, and the message arriving twice at the destination",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 192,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The question about an unfinished move is a wxWidgets MessageDialog, which the binding builds from a title and a body and which offers no seam for set_accessible_name_and_description. What a screen reader reads for it is its title and its text, both written here, and this is the house pattern that ask_about_the_folders_that_have_gone already follows. The words are also announced through the announcement queue at high priority, so somebody whose reader was mid-sentence still hears them; whether that reads as the same thing said twice is unverified by ear",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T20:00:00.000Z",
     "resolved_at": null
   }
 ]
