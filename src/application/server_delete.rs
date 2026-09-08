@@ -19,6 +19,7 @@
 //! the row exactly as it is, because taking it out would be the list saying
 //! something the server does not.
 
+use crate::application::mail_across_accounts::MovedAcross;
 use crate::service::protocols::imap::{Deletion, Moved};
 
 /// What the list should do with the row now.
@@ -66,6 +67,82 @@ pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
         then,
         said: format!("{}: {subject}", moved.spoken(into)),
     }
+}
+
+/// What to do and what to say after a move to a folder on another account.
+///
+/// The same decision as [`after_a_move`] and for the same reason, which is the
+/// one this module's doc gives: the row and the sentence have to agree, and
+/// they used to be decided in two places.
+///
+/// # Why every sentence names the account
+///
+/// [`after_a_move`] says `Moved to {into}` and names no account, which was
+/// unambiguous while a move stayed inside one and is not any more. The choice
+/// taken here is that a move which crossed always names the account and a move
+/// which did not never does, rather than naming it in both.
+///
+/// Naming it in both would put an account into every sentence about the
+/// ordinary case, and these sentences are heard in full by somebody filing a
+/// run of messages with a screen reader; the cost is paid on every message and
+/// buys nothing while there is only one account in the sentence. Naming it only
+/// when it differs would be two sentences for one act, decided at the call
+/// site, which is the fault [`after_a_copy`]'s own doc records. Two functions
+/// for two acts, each naming what its own act needs, is neither.
+///
+/// # Why four of the seven leave the row alone
+///
+/// Three of them are the point of this phase. An append the destination
+/// refused, one that never arrived, and one nobody could ask about all leave
+/// the message exactly where it was, so taking the row out would be the list
+/// saying it had gone somewhere. The fourth is the message being in both
+/// places with the original unmarked, which is the same case
+/// [`crate::service::protocols::imap::Moved::CopiedAndNotFlagged`] already
+/// leaves alone.
+pub fn after_a_move_across_accounts(
+    across: &MovedAcross,
+    into: &str,
+    destination_account: &str,
+    still_in: &str,
+    subject: &str,
+) -> WhatToDoNext {
+    let then = match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo
+        | MovedAcross::ItArrivedAndIsStillHereMarked(_) => ThenWhat::MarkItDeletedHere,
+        MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_)
+        | MovedAcross::TheDestinationRefusedIt(_)
+        | MovedAcross::ItNeverArrivedSoNothingWasRemoved(_)
+        | MovedAcross::ItIsNotKnownWhereItIs(_) => ThenWhat::LeaveTheRow,
+    };
+    let there = format!("{into} in {destination_account}");
+    let said = match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo => format!("Moved to {there}: {subject}"),
+        MovedAcross::ItArrivedAndIsStillHereMarked(why) => format!(
+            "Moved to {there}, and still in {still_in} marked for removal, because {}: {subject}",
+            why.spoken()
+        ),
+        MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said) => format!(
+            "Copied to {there}, and still in {still_in} as well, because {destination_account} \
+             took it and this account would not let it go: {said}. Trying again would make a \
+             second copy: {subject}"
+        ),
+        MovedAcross::TheDestinationRefusedIt(why) => format!(
+            "Nothing was moved. {destination_account} refused it. {subject} is still in \
+             {still_in}: {why}"
+        ),
+        MovedAcross::ItNeverArrivedSoNothingWasRemoved(why) => format!(
+            "Nothing was moved. {destination_account} stopped answering and does not have the \
+             message. {subject} is still in {still_in}: {why}"
+        ),
+        // Both places, in one sentence, because either is possible and choosing
+        // one would be a guess presented as a fact. Nothing was removed, and
+        // saying that is what stops somebody assuming the worst.
+        MovedAcross::ItIsNotKnownWhereItIs(why) => format!(
+            "{destination_account} stopped answering, so {subject} may now be in {into} there \
+             as well as still being in {still_in} here. Nothing was removed: {why}"
+        ),
+    };
+    WhatToDoNext { then, said }
 }
 
 /// Which of the two copies this was.
@@ -204,6 +281,39 @@ mod tests {
         }
     }
 
+    fn every_move_across() -> Vec<MovedAcross> {
+        vec![
+            MovedAcross::ItArrivedAndTheSourceLetItGo,
+            MovedAcross::ItArrivedAndIsStillHereMarked(StillHere::TheServerCannotRemoveOneMessage),
+            MovedAcross::ItArrivedAndIsStillHereMarked(refused()),
+            MovedAcross::ItArrivedAndTheSourceWouldNotLetGo("over quota".to_string()),
+            MovedAcross::TheDestinationRefusedIt("over quota".to_string()),
+            MovedAcross::ItNeverArrivedSoNothingWasRemoved("the connection went".to_string()),
+            MovedAcross::ItIsNotKnownWhereItIs("the connection went".to_string()),
+        ]
+    }
+
+    /// The same again for the endings a move to another account has.
+    ///
+    /// No wildcard arm, for the reason the others have none. A way for a
+    /// cross-account move to end that is added to the type stops this file
+    /// compiling until somebody comes here and says what it is called, and the
+    /// list it then has to be added to is in
+    /// `test_the_endings_asked_about_are_all_the_endings_there_are`.
+    fn which_move_across_ending(across: &MovedAcross) -> &'static str {
+        match across {
+            MovedAcross::ItArrivedAndTheSourceLetItGo => "arrived, and the source let it go",
+            MovedAcross::ItArrivedAndIsStillHereMarked(_) => "arrived, still here marked",
+            MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_) => "arrived, still here unmarked",
+            MovedAcross::TheDestinationRefusedIt(_) => "the destination refused it",
+            MovedAcross::ItNeverArrivedSoNothingWasRemoved(_) => "it never arrived",
+            MovedAcross::ItIsNotKnownWhereItIs(_) => "nobody knows where it is",
+        }
+    }
+
+    /// The account a cross-account move is going to, in every test here.
+    const THE_DESTINATION_ACCOUNT: &str = "Personal";
+
     fn every_copy() -> Vec<Copied<'static>> {
         vec![Copied::WithinTheAccount, Copied::IntoTheAccount("Personal")]
     }
@@ -260,6 +370,225 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(asked, all, "a copy can end a way nothing here asks about");
+
+        let asked: BTreeSet<&str> = every_move_across()
+            .iter()
+            .map(which_move_across_ending)
+            .collect();
+        let all: BTreeSet<&str> = [
+            "arrived, and the source let it go",
+            "arrived, still here marked",
+            "arrived, still here unmarked",
+            "the destination refused it",
+            "it never arrived",
+            "nobody knows where it is",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            asked, all,
+            "a move to another account can end a way nothing here asks about"
+        );
+    }
+
+    #[test]
+    fn test_a_move_across_accounts_marks_the_row_only_where_the_source_no_longer_holds_it_plainly()
+    {
+        // The same rule as `after_a_move`, for the same reason: a row marked
+        // deleted here is what a message flagged for removal at the server
+        // syncs back as, so marking one the server still holds unflagged is the
+        // list claiming something no later sync will correct.
+        //
+        // Three of the four that leave the row alone are the ones this phase is
+        // about. An append that was refused, one that never arrived, and one
+        // nobody can ask about all leave the message exactly where it was, and
+        // a list that dropped the row would be saying it had gone somewhere.
+        for across in [
+            MovedAcross::ItArrivedAndTheSourceLetItGo,
+            MovedAcross::ItArrivedAndIsStillHereMarked(StillHere::TheServerCannotRemoveOneMessage),
+            MovedAcross::ItArrivedAndIsStillHereMarked(refused()),
+        ] {
+            assert_eq!(
+                after_a_move_across_accounts(
+                    &across,
+                    "Archive",
+                    THE_DESTINATION_ACCOUNT,
+                    "INBOX",
+                    "Invoice"
+                )
+                .then,
+                ThenWhat::MarkItDeletedHere,
+                "{across:?}"
+            );
+        }
+        for across in [
+            MovedAcross::ItArrivedAndTheSourceWouldNotLetGo("over quota".to_string()),
+            MovedAcross::TheDestinationRefusedIt("over quota".to_string()),
+            MovedAcross::ItNeverArrivedSoNothingWasRemoved("the connection went".to_string()),
+            MovedAcross::ItIsNotKnownWhereItIs("the connection went".to_string()),
+        ] {
+            assert_eq!(
+                after_a_move_across_accounts(
+                    &across,
+                    "Archive",
+                    THE_DESTINATION_ACCOUNT,
+                    "INBOX",
+                    "Invoice"
+                )
+                .then,
+                ThenWhat::LeaveTheRow,
+                "{across:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_every_way_a_move_across_accounts_ends_says_something_different() {
+        // An ending copied from its neighbour and left unedited is invisible to
+        // every other test here: the row is right, the words are a sentence, and
+        // only comparing them with each other can see it. On the model of
+        // `test_every_kind_names_itself_rather_than_saying_item`.
+        let said: Vec<String> = every_move_across()
+            .iter()
+            .map(|across| {
+                after_a_move_across_accounts(
+                    across,
+                    "Archive",
+                    THE_DESTINATION_ACCOUNT,
+                    "INBOX",
+                    "Invoice",
+                )
+                .said
+            })
+            .collect();
+
+        for sentence in &said {
+            assert!(!sentence.trim().is_empty());
+            assert!(sentence.contains("Invoice"), "{sentence}");
+        }
+        let mut distinct = said.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            said.len(),
+            "two ways a move across accounts can end say the same thing, so somebody \
+             hearing it cannot tell which happened: {said:?}"
+        );
+    }
+
+    #[test]
+    fn test_every_ending_of_a_move_across_accounts_names_the_account_it_went_to() {
+        // The fixture is what makes this able to fail: the source folder and the
+        // destination folder are both plausible names on either account, and no
+        // IMAP server hands out a path prefixed with its account. A sentence
+        // naming only the folder does not say which of two Archives.
+        for across in every_move_across() {
+            let said = after_a_move_across_accounts(
+                &across,
+                "Archive",
+                THE_DESTINATION_ACCOUNT,
+                "INBOX",
+                "Invoice",
+            )
+            .said;
+            assert!(
+                said.contains(THE_DESTINATION_ACCOUNT),
+                "{across:?} does not say which account: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_move_that_crossed_does_not_read_like_one_that_stayed_in_the_account() {
+        // The decision this file takes about naming the account, written where
+        // it can be seen to hold. A move inside one account does not name it,
+        // because there is only one account in the sentence and every one of
+        // those sentences is heard in full by somebody moving through a list. A
+        // move that crossed always names it, because there are two.
+        //
+        // The same folder path on both sides, because two accounts can both
+        // have an Archive and that is the case a sentence has to tell apart.
+        let stayed = after_a_move(&Moved::Moved, "Archive", "Invoice").said;
+        let crossed = after_a_move_across_accounts(
+            &MovedAcross::ItArrivedAndTheSourceLetItGo,
+            "Archive",
+            THE_DESTINATION_ACCOUNT,
+            "INBOX",
+            "Invoice",
+        )
+        .said;
+
+        assert_ne!(
+            stayed, crossed,
+            "a move to another account's Archive reads exactly like a move to this \
+             account's Archive"
+        );
+        assert!(crossed.contains(THE_DESTINATION_ACCOUNT), "{crossed}");
+        assert!(!stayed.contains(THE_DESTINATION_ACCOUNT), "{stayed}");
+    }
+
+    #[test]
+    fn test_a_move_that_left_the_message_in_both_places_says_so_and_says_where() {
+        // The ending somebody most needs the words for. The message really is at
+        // the destination and really is still here, and trying again would make
+        // a second copy there, because nothing anywhere removes duplicates.
+        let said = after_a_move_across_accounts(
+            &MovedAcross::ItArrivedAndTheSourceWouldNotLetGo("over quota".to_string()),
+            "Archive",
+            THE_DESTINATION_ACCOUNT,
+            "INBOX",
+            "Invoice",
+        )
+        .said;
+
+        assert!(said.contains("Archive"), "{said}");
+        assert!(said.contains("INBOX"), "{said}");
+        assert!(said.contains("over quota"), "{said}");
+        assert!(said.to_lowercase().contains("still"), "{said}");
+    }
+
+    #[test]
+    fn test_a_move_that_could_not_be_settled_names_both_places_rather_than_choosing_one() {
+        // Nobody knows whether the message arrived. Saying it moved would be a
+        // guess, and saying it did not would be the other guess. What is true is
+        // that it may be in either place and nothing was removed, and that is
+        // what somebody needs in order to go and look.
+        let said = after_a_move_across_accounts(
+            &MovedAcross::ItIsNotKnownWhereItIs("the connection went".to_string()),
+            "Archive",
+            THE_DESTINATION_ACCOUNT,
+            "INBOX",
+            "Invoice",
+        )
+        .said;
+
+        assert!(said.contains("Archive"), "{said}");
+        assert!(said.contains("INBOX"), "{said}");
+        assert!(said.contains(THE_DESTINATION_ACCOUNT), "{said}");
+        assert!(
+            !said.to_lowercase().starts_with("moved to"),
+            "an ending nobody could settle was announced as a move: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_move_that_never_arrived_says_the_message_is_still_where_it_was() {
+        let said = after_a_move_across_accounts(
+            &MovedAcross::ItNeverArrivedSoNothingWasRemoved("the connection went".to_string()),
+            "Archive",
+            THE_DESTINATION_ACCOUNT,
+            "INBOX",
+            "Invoice",
+        )
+        .said;
+
+        assert!(said.contains("INBOX"), "{said}");
+        assert!(said.to_lowercase().contains("still"), "{said}");
+        assert!(
+            !said.to_lowercase().starts_with("moved to"),
+            "a move that never happened was announced as one that did: {said}"
+        );
     }
 
     #[test]
@@ -373,6 +702,20 @@ mod tests {
             )
             .said,
         );
+        // And the fifth thing that can happen to a message on the folder path.
+        // Compared against the other four rather than only against each other,
+        // because "Moved to Archive" said of a move that crossed and of one that
+        // did not is the same sentence about two different accounts.
+        said.extend(every_move_across().iter().map(|across| {
+            after_a_move_across_accounts(
+                across,
+                "Archive",
+                THE_DESTINATION_ACCOUNT,
+                "INBOX",
+                "Invoice",
+            )
+            .said
+        }));
 
         for sentence in &said {
             assert!(!sentence.trim().is_empty());

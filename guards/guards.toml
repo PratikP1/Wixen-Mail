@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 466 records have arrived since and have not been through it.
+# 468 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -4010,7 +4010,7 @@ red = [
     "application::server_delete::tests::test_a_message_the_server_still_holds_unflagged_keeps_its_row",
 ]
 tests_last_seen = [
-    { file = "src/application/server_delete.rs", tests = 10 },
+    { file = "src/application/server_delete.rs", tests = 17 },
 ]
 
 [[guard]]
@@ -16992,7 +16992,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 13 },
+    { file = "src/application/mail_across_accounts.rs", tests = 30 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
@@ -17063,4 +17063,91 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
     { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
+]
+
+# ── The removal sent before the destination has the message ──────────────────
+#
+# The one break in this phase that loses somebody's mail. A move across accounts
+# is an append at one server and a removal at another, and nothing joins them:
+# there is no transaction, no two-phase anything, and no way to undo either half
+# once it has gone. The only safeguard available is the order.
+#
+# Removal last means every failure is recoverable. The destination refuses and
+# the message is where it always was. The source will not let go and the message
+# is in two places, which somebody can see and tidy up. Removal first means a
+# refused append leaves the message nowhere, with a sentence saying it moved and
+# nothing anywhere saying where it went.
+#
+# The break puts the removal at the top of the sequence and throws its answer
+# away, which is where a rewrite that tidied the branching would arrive without
+# meaning to: the removal has to happen in every arm that reaches it, so hoisting
+# it looks like taking out a repetition.
+#
+# Measured 2026-09-08 against the whole library.
+
+[[guard]]
+name = "the source is told to give the message up before the destination has it"
+file = "src/application/mail_across_accounts.rs"
+before = """    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
+    let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());"""
+after = """    let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
+    let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());
+    let _ = the_account_it_is_in.take_it_off_the_server(from, uid).await;"""
+red = [
+    "application::mail_across_accounts::tests::test_nothing_is_said_to_the_source_that_changes_it_until_the_append_has_gone_out",
+    "application::mail_across_accounts::tests::test_a_destination_that_refuses_the_append_leaves_the_source_untouched",
+    "application::mail_across_accounts::tests::test_a_refusal_is_an_answer_so_a_message_already_there_is_not_read_as_an_arrival",
+    "application::mail_across_accounts::tests::test_a_message_that_was_already_there_is_not_read_as_the_one_just_sent",
+    "application::mail_across_accounts::tests::test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 30 },
+]
+
+# ── An append nobody answered, counted as one that landed ────────────────────
+#
+# The second way to lose a message, and it is quieter than the first because the
+# order is still right. The append goes out, the connection drops, and nothing
+# ever says whether the server took it. Treating that as success sends the
+# removal, and if the message never arrived it is now nowhere.
+#
+# What makes it a question rather than a guess is asking the destination
+# afterwards, and what makes the answer worth anything is that the folder was
+# read before the message went as well. A `Message-ID` is a header a stranger
+# wrote, and a folder that already held a message carrying it would otherwise
+# confirm an arrival that never happened.
+#
+# The break makes the question answer yes to everything, which is the shape
+# somebody arrives at by simplifying a function whose three answers look like
+# two. Under it a message with an identifier is always taken to have landed,
+# whatever the destination really holds and whether or not it could be read.
+#
+# Measured 2026-09-08 against the whole library.
+
+[[guard]]
+name = "an append the destination never answered is counted as one that landed"
+file = "src/application/mail_across_accounts.rs"
+before = """    match the_account_it_is_going_to
+        .which_messages_carry(into, message_id)
+        .await
+    {
+        Ok(now) if now.iter().any(|uid| !was_there_before.contains(uid)) => {
+            WhetherItLanded::ItIsThere
+        }
+        Ok(_) => WhetherItLanded::ItIsNotThere,
+        Err(why) => WhetherItLanded::ItCannotBeAsked(why.to_string()),
+    }"""
+after = """    let _ = (the_account_it_is_going_to, into, message_id, was_there_before);
+    WhetherItLanded::ItIsThere"""
+red = [
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing",
+    "application::mail_across_accounts::tests::test_a_message_that_was_already_there_is_not_read_as_the_one_just_sent",
+    "application::mail_across_accounts::tests::test_a_folder_that_will_not_answer_cannot_be_asked",
+    "application::mail_across_accounts::tests::test_nothing_new_carrying_the_identifier_is_not_there_rather_than_unanswerable",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_found_afterwards_is_removed_at_the_source",
+]
+tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 30 },
 ]

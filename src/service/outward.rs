@@ -792,7 +792,9 @@ const MAIL_TRANSPORTS: [(&str, Counted); 3] = [
     // tightened from a floor to the count in the same edit: a read gate that
     // had joined the write census by accident would have raised this, and a
     // floor cannot tell being raised from being cleared.
-    ("src/service/protocols/imap.rs", Counted::Exactly(11)),
+    // 12 since `take_this_one_off` arrived on 2026-09-08, the removal half of a
+    // move whose other half happened at another account's server.
+    ("src/service/protocols/imap.rs", Counted::Exactly(12)),
     ("src/service/protocols/smtp.rs", Counted::AtLeast(2)),
     ("src/service/protocols/pop3.rs", Counted::AtLeast(1)),
 ];
@@ -856,7 +858,7 @@ impl Counted {
 /// `send_email` and `send_raw` both open an SMTP conversation and differ only
 /// by which address the row names.
 #[cfg(test)]
-const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 13] = [
+const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 14] = [
     (
         "src/service/protocols/imap.rs",
         "create_mailbox",
@@ -916,6 +918,15 @@ const MAIL_MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 13] = [
         "delete_message",
         "src/service/protocols/imap.rs",
         "UID EXPUNGE 7",
+    ),
+    // Measured a layer up, in the tests that drive a move across two accounts,
+    // because that is the only caller and it is where the two servers are stood
+    // up. The row says where for exactly that reason.
+    (
+        "src/service/protocols/imap.rs",
+        "take_this_one_off",
+        "src/application/mail_across_accounts.rs",
+        "UID EXPUNGE 4",
     ),
     (
         "src/service/protocols/pop3.rs",
