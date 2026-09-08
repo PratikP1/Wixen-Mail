@@ -17206,7 +17206,7 @@ fn move_or_copy_message(
 ) {
     let AppHandles { state, tx, rt } = app;
     use crate::application::destinations::{
-        FolderInAnAccount, Moving, anywhere, offer, where_mail_can_go,
+        FolderInAnAccount, Moving, anywhere, where_this_message_can_go,
     };
 
     let Some(cache) = cache.clone() else {
@@ -17259,9 +17259,9 @@ fn move_or_copy_message(
     // to read the folders itself, name the account by its address whatever the
     // sidebar had decided, and give every folder a depth of nought.
     //
-    // Still narrowed to one account. Offering the others is 04.1-02; what is
-    // fixed here is that the one it offers is drawn the way the sidebar draws
-    // it.
+    // Which of those branches to offer is `where_this_message_can_go`, where a
+    // test can read the answer without a window. This used to build every
+    // account's branch here and then throw all but one away.
     let accounts = the_accounts_in_the_tree(&cache, &account_id);
     let in_the_tree = match the_folders_in_the_tree(&cache, &accounts, &account_id) {
         Ok(folders) => folders,
@@ -17274,16 +17274,7 @@ fn move_or_copy_message(
             );
         }
     };
-    let branches = offer(
-        where_mail_can_go(&accounts, &in_the_tree)
-            .into_iter()
-            .filter(|branch| branch.account_id == account_id)
-            .collect(),
-        from.as_deref().map(|path| FolderInAnAccount {
-            account: &account_id,
-            path,
-        }),
-    );
+    let branches = where_this_message_can_go(&accounts, &in_the_tree, &account_id, from.as_deref());
 
     if !anywhere(&branches) {
         return send_status(
@@ -17447,15 +17438,34 @@ fn spawn_folder_move(
                     Ok(session) => session,
                     Err(why) => return fail(why.to_string()),
                 };
-                handle
-                    .block_on(crate::application::mail_across_accounts::copy_it_across(
-                        controller.as_ref(),
+                // Named in what is said afterwards, because two accounts can
+                // both have an Archive and a sentence naming the folder alone
+                // would not say where the message went. The wording is decided
+                // in `server_delete` beside the other three, not here.
+                let crossed = crate::application::server_delete::Copied::IntoTheAccount(
+                    &destination_account.name,
+                );
+                match handle.block_on(crate::application::mail_across_accounts::copy_it_across(
+                    controller.as_ref(),
+                    &from,
+                    uid,
+                    taking.as_ref(),
+                    &into.id,
+                )) {
+                    Ok(()) => Ok(crate::application::server_delete::after_a_copy(
+                        crossed, &into.id, &subject,
+                    )),
+                    // Not a bare failure. The message is still exactly where it
+                    // was and saying so is the answer to the question somebody
+                    // asks next, so the sentence comes from the same place the
+                    // successful one does.
+                    Err(why) => Ok(crate::application::server_delete::nothing_was_copied(
+                        crossed,
                         &from,
-                        uid,
-                        taking.as_ref(),
-                        &into.id,
-                    ))
-                    .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject))
+                        &subject,
+                        &why.to_string(),
+                    )),
+                }
             }
             (crate::application::mail_across_accounts::Crossing::AnotherAccount, false) => {
                 // A move across accounts is an append and then a removal at the
@@ -17466,7 +17476,13 @@ fn spawn_folder_move(
             }
             (crate::application::mail_across_accounts::Crossing::TheSameAccount, true) => handle
                 .block_on(controller.copy_message(&from, uid, &into.id))
-                .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject)),
+                .map(|()| {
+                    crate::application::server_delete::after_a_copy(
+                        crate::application::server_delete::Copied::WithinTheAccount,
+                        &into.id,
+                        &subject,
+                    )
+                }),
             (crate::application::mail_across_accounts::Crossing::TheSameAccount, false) => handle
                 .block_on(controller.move_message(&from, uid, &into.id))
                 .map(|moved| {

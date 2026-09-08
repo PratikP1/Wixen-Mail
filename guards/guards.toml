@@ -5383,7 +5383,13 @@ tests_last_seen = [
 [[guard]]
 name = "one place words what a move or a copy did"
 file = "src/presentation/wx_app.rs"
-before = """                .map(|()| crate::application::server_delete::after_a_copy(&into.id, &subject)),"""
+before = """                .map(|()| {
+                    crate::application::server_delete::after_a_copy(
+                        crate::application::server_delete::Copied::WithinTheAccount,
+                        &into.id,
+                        &subject,
+                    )
+                }),"""
 after = """                .map(|()| crate::application::server_delete::WhatToDoNext {
                     then: crate::application::server_delete::ThenWhat::LeaveTheRow,
                     said: format!("Copied to {}: {subject}", into.id),

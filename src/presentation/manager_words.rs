@@ -101,7 +101,7 @@ pub(crate) fn nothing_selected(kind: &str, to_do: &str) -> String {
 mod tests {
     use super::*;
     use crate::application::server_delete::{
-        after_a_copy, after_a_delete, after_a_move, nothing_changed,
+        Copied, after_a_copy, after_a_delete, after_a_move, nothing_changed, nothing_was_copied,
     };
     use crate::service::protocols::imap::{Deletion, Moved, StillHere};
 
@@ -142,7 +142,9 @@ mod tests {
             .map(|d| after_a_delete(&d, "Invoice").said)
             .chain([
                 after_a_move(&Moved::Moved, "Archive", "Invoice").said,
-                after_a_copy("Archive", "Invoice").said,
+                after_a_copy(Copied::WithinTheAccount, "Archive", "Invoice").said,
+                after_a_copy(Copied::IntoTheAccount("Personal"), "Archive", "Invoice").said,
+                nothing_was_copied(Copied::WithinTheAccount, "INBOX", "Invoice", "over quota").said,
                 nothing_changed("over quota"),
             ])
             .collect();

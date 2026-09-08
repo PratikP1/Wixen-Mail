@@ -68,21 +68,69 @@ pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
     }
 }
 
+/// Which of the two copies this was.
+///
+/// Two named values rather than an account and an empty string, because the
+/// sentence differs and nothing but a name says which one a caller meant.
+///
+/// A folder path is unique inside one account and not across them: two accounts
+/// can both have an `Archive`. So a sentence naming the folder alone does not
+/// say where the message went, and somebody hearing it cannot tell a copy that
+/// crossed from one that did not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Copied<'a> {
+    /// Into a folder on the account the message is already in. The folder name
+    /// says the whole of it, because there is only one account in the sentence.
+    WithinTheAccount,
+    /// Into a folder on another account, which is named for that reason.
+    IntoTheAccount(&'a str),
+}
+
 /// What to do and what to say after the server copied a message somebody asked
 /// to have copied.
 ///
 /// A copy is not a move that half worked, and the two must not read alike. This
 /// one leaves the original where it is because that is what was asked for, and
-/// the row stays for the same reason.
+/// the row stays for the same reason. It stays for a copy that crossed to
+/// another account too: nothing at the source was even asked about.
 ///
 /// Here rather than in the window that asks for it, so that what the folder
 /// path says about a message leaving a folder has one owner. It was worded in
 /// the window, and which of two questions the answer had come back to was
 /// carried by nothing but the branch a few lines above it.
-pub fn after_a_copy(into: &str, subject: &str) -> WhatToDoNext {
+pub fn after_a_copy(copied: Copied<'_>, into: &str, subject: &str) -> WhatToDoNext {
+    // RED. The account is taken and thrown away, which is what the sentence did
+    // before this plan: one account was the only one on offer, so the folder
+    // name said the whole of it.
+    let _ = copied;
     WhatToDoNext {
         then: ThenWhat::LeaveTheRow,
         said: format!("Copied to {into}: {subject}"),
+    }
+}
+
+/// What to do and what to say when a copy could not be made.
+///
+/// The row stays, because nothing at the source was touched. The sentence says
+/// where the message still is, because "it was not copied" leaves somebody not
+/// knowing whether the original survived, and a copy that fails is exactly the
+/// moment that question is worth answering.
+///
+/// Here beside the other three so the four cannot drift apart. The window used
+/// to say "{subject} was not copied: {reason}", which names neither where the
+/// message is nor, for a copy that crossed, which of two accounts refused it.
+pub fn nothing_was_copied(
+    copied: Copied<'_>,
+    still_in: &str,
+    subject: &str,
+    why: &str,
+) -> WhatToDoNext {
+    // RED. What the window says today, which names neither the folder the
+    // message is still in nor the account that refused.
+    let _ = (copied, still_in);
+    WhatToDoNext {
+        then: ThenWhat::LeaveTheRow,
+        said: format!("{subject} was not copied: {why}"),
     }
 }
 
@@ -151,6 +199,23 @@ mod tests {
         }
     }
 
+    fn every_copy() -> Vec<Copied<'static>> {
+        vec![Copied::WithinTheAccount, Copied::IntoTheAccount("Personal")]
+    }
+
+    /// The same again for the two shapes a copy has.
+    ///
+    /// No wildcard arm, for the reason the two above have none. A third shape
+    /// of copy stops this file compiling until somebody comes here and says
+    /// what it is called, and the list it then has to be added to is in
+    /// `test_the_endings_asked_about_are_all_the_endings_there_are`.
+    fn which_copy_ending(copied: &Copied<'_>) -> &'static str {
+        match copied {
+            Copied::WithinTheAccount => "copied inside the account",
+            Copied::IntoTheAccount(_) => "copied into another account",
+        }
+    }
+
     #[test]
     fn test_the_endings_asked_about_are_all_the_endings_there_are() {
         // `every_deletion` and `every_move` are written out by hand and three
@@ -184,6 +249,12 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(asked, all, "a move can end a way nothing here asks about");
+
+        let asked: BTreeSet<&str> = every_copy().iter().map(which_copy_ending).collect();
+        let all: BTreeSet<&str> = ["copied inside the account", "copied into another account"]
+            .into_iter()
+            .collect();
+        assert_eq!(asked, all, "a copy can end a way nothing here asks about");
     }
 
     #[test]
@@ -283,7 +354,20 @@ mod tests {
         // A copy somebody asked for is a fourth thing that can happen to a
         // message on the folder path, and it must not read like a move that
         // half worked.
-        said.push(after_a_copy("Archive", "Invoice").said);
+        said.extend(
+            every_copy()
+                .into_iter()
+                .map(|copied| after_a_copy(copied, "Archive", "Invoice").said),
+        );
+        said.push(
+            nothing_was_copied(
+                Copied::IntoTheAccount("Personal"),
+                "INBOX",
+                "Invoice",
+                "over quota",
+            )
+            .said,
+        );
 
         for sentence in &said {
             assert!(!sentence.trim().is_empty());
@@ -293,6 +377,63 @@ mod tests {
         distinct.sort();
         distinct.dedup();
         assert_eq!(distinct.len(), said.len(), "{said:?}");
+    }
+
+    #[test]
+    fn test_a_copy_into_another_account_says_which_account_it_went_to() {
+        // The fixture is what makes this able to fail. Both sentences name the
+        // same folder path, because two accounts can both have an `Archive`,
+        // and no IMAP server hands out a path prefixed with its account. With
+        // two different folder names the two sentences would differ whether or
+        // not the account was ever consulted.
+        let inside = after_a_copy(Copied::WithinTheAccount, "Archive", "Invoice").said;
+        let across = after_a_copy(Copied::IntoTheAccount("Personal"), "Archive", "Invoice").said;
+
+        assert_ne!(
+            inside, across,
+            "a copy to another account's Archive reads exactly like a copy to \
+             this account's Archive, so the sentence does not say where the \
+             message went"
+        );
+        assert!(across.contains("Personal"), "{across}");
+        assert!(across.contains("Archive"), "{across}");
+        assert!(!inside.contains("Personal"), "{inside}");
+    }
+
+    #[test]
+    fn test_a_copy_that_was_not_made_says_the_message_is_still_where_it_was() {
+        // A copy that failed is exactly the moment somebody wonders whether the
+        // original survived, and "it was not copied" does not answer that.
+        let said = nothing_was_copied(
+            Copied::IntoTheAccount("Personal"),
+            "INBOX",
+            "Invoice",
+            "over quota",
+        )
+        .said;
+
+        assert!(said.contains("INBOX"), "{said}");
+        assert!(said.to_lowercase().contains("still"), "{said}");
+        assert!(said.contains("over quota"), "{said}");
+        assert!(said.contains("Invoice"), "{said}");
+    }
+
+    #[test]
+    fn test_a_copy_that_was_not_made_leaves_the_row_alone() {
+        // Nothing at the source was touched, and for a copy across accounts
+        // nothing at the source was even asked about.
+        for copied in every_copy() {
+            assert_eq!(
+                nothing_was_copied(copied, "INBOX", "Invoice", "over quota").then,
+                ThenWhat::LeaveTheRow,
+                "{copied:?}"
+            );
+            assert_eq!(
+                after_a_copy(copied, "Archive", "Invoice").then,
+                ThenWhat::LeaveTheRow,
+                "{copied:?}"
+            );
+        }
     }
 
     #[test]

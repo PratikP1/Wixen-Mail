@@ -360,6 +360,47 @@ pub fn where_mail_can_go(
     branches
 }
 
+/// Everywhere one message can be filed, in every account that is set up.
+///
+/// Every account and not only the one the message is in, because a message can
+/// be copied to a folder on another account. That is the whole of what
+/// `04.1-02` widened: the assembly is the one `move_or_copy_message` already
+/// did, lifted here so the set it answers with is something a test can read
+/// without a window.
+///
+/// The folder the message is in is taken out of that account's branch and
+/// nowhere else. Another account holding a folder at the same path keeps it,
+/// because it is a different folder on a different server and the message is
+/// not in it. `offer` is where that is decided and this does not decide it
+/// again.
+///
+/// An account with nowhere left to put it does not appear, which `offer` also
+/// decides: an empty branch is a row somebody opens, finds nothing in, and
+/// closes. An account this program may not write to does appear, because the
+/// refusal belongs at the moment of the write, which is where every other write
+/// in the program puts it, and a folder missing from a list is a folder nobody
+/// can ask about.
+pub fn where_this_message_can_go(
+    accounts: &[crate::presentation::folder_tree::AccountInTheTree],
+    folders: &[crate::presentation::folder_tree::FolderInTheTree],
+    the_account_it_is_in: &str,
+    the_folder_it_is_in: Option<&str>,
+) -> Vec<Branch> {
+    offer(
+        where_mail_can_go(accounts, folders)
+            .into_iter()
+            // RED. The narrowing this plan takes out, lifted from
+            // `move_or_copy_message` exactly as it stood: every account is
+            // built and then all but one is thrown away.
+            .filter(|branch| branch.account_id == the_account_it_is_in)
+            .collect(),
+        the_folder_it_is_in.map(|path| FolderInAnAccount {
+            account: the_account_it_is_in,
+            path,
+        }),
+    )
+}
+
 /// Whose folders a move or copy is about.
 ///
 /// The account the chosen message is in, not the account that happens to be
