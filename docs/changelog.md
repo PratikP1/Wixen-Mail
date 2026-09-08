@@ -29,6 +29,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   if the answer is yes. Where it cannot ask, nothing is taken off and you are
   told the message may be in either place.
 
+  Every one of those endings has its own sentence, and each names the account as
+  well as the folder, because two accounts can both have an Archive. A move that
+  stays inside one account still says only the folder, because there is only one
+  account in that sentence and you hear it on every message you file.
+
   The moved message will not be in this program's list of the folder it went to
   until that account next syncs that folder. The server it was appended to gives
   out a number for it that nothing tells this program, so there is nothing to

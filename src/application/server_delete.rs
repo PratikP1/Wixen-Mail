@@ -69,19 +69,80 @@ pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
     }
 }
 
-/// What to do and what to say after a move to another account.
+/// What to do and what to say after a move to a folder on another account.
+///
+/// The same decision as [`after_a_move`] and for the same reason, which is the
+/// one this module's doc gives: the row and the sentence have to agree, and
+/// they used to be decided in two places.
+///
+/// # Why every sentence names the account
+///
+/// [`after_a_move`] says `Moved to {into}` and names no account, which was
+/// unambiguous while a move stayed inside one and is not any more. The choice
+/// taken here is that a move which crossed always names the account and a move
+/// which did not never does, rather than naming it in both.
+///
+/// Naming it in both would put an account into every sentence about the
+/// ordinary case, and these sentences are heard in full by somebody filing a
+/// run of messages with a screen reader; the cost is paid on every message and
+/// buys nothing while there is only one account in the sentence. Naming it only
+/// when it differs would be two sentences for one act, decided at the call
+/// site, which is the fault [`after_a_copy`]'s own doc records. Two functions
+/// for two acts, each naming what its own act needs, is neither.
+///
+/// # Why four of the seven leave the row alone
+///
+/// Three of them are the point of this phase. An append the destination
+/// refused, one that never arrived, and one nobody could ask about all leave
+/// the message exactly where it was, so taking the row out would be the list
+/// saying it had gone somewhere. The fourth is the message being in both
+/// places with the original unmarked, which is the same case
+/// [`crate::service::protocols::imap::Moved::CopiedAndNotFlagged`] already
+/// leaves alone.
 pub fn after_a_move_across_accounts(
     across: &MovedAcross,
     into: &str,
-    _destination_account: &str,
-    _still_in: &str,
+    destination_account: &str,
+    still_in: &str,
     subject: &str,
 ) -> WhatToDoNext {
-    let _ = across;
-    WhatToDoNext {
-        then: ThenWhat::MarkItDeletedHere,
-        said: format!("Moved to {into}: {subject}"),
-    }
+    let then = match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo
+        | MovedAcross::ItArrivedAndIsStillHereMarked(_) => ThenWhat::MarkItDeletedHere,
+        MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_)
+        | MovedAcross::TheDestinationRefusedIt(_)
+        | MovedAcross::ItNeverArrivedSoNothingWasRemoved(_)
+        | MovedAcross::ItIsNotKnownWhereItIs(_) => ThenWhat::LeaveTheRow,
+    };
+    let there = format!("{into} in {destination_account}");
+    let said = match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo => format!("Moved to {there}: {subject}"),
+        MovedAcross::ItArrivedAndIsStillHereMarked(why) => format!(
+            "Moved to {there}, and still in {still_in} marked for removal, because {}: {subject}",
+            why.spoken()
+        ),
+        MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said) => format!(
+            "Copied to {there}, and still in {still_in} as well, because {destination_account} \
+             took it and this account would not let it go: {said}. Trying again would make a \
+             second copy: {subject}"
+        ),
+        MovedAcross::TheDestinationRefusedIt(why) => format!(
+            "Nothing was moved. {destination_account} refused it. {subject} is still in \
+             {still_in}: {why}"
+        ),
+        MovedAcross::ItNeverArrivedSoNothingWasRemoved(why) => format!(
+            "Nothing was moved. {destination_account} stopped answering and does not have the \
+             message. {subject} is still in {still_in}: {why}"
+        ),
+        // Both places, in one sentence, because either is possible and choosing
+        // one would be a guess presented as a fact. Nothing was removed, and
+        // saying that is what stops somebody assuming the worst.
+        MovedAcross::ItIsNotKnownWhereItIs(why) => format!(
+            "{destination_account} stopped answering, so {subject} may now be in {into} there \
+             as well as still being in {still_in} here. Nothing was removed: {why}"
+        ),
+    };
+    WhatToDoNext { then, said }
 }
 
 /// Which of the two copies this was.
