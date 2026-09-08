@@ -8,6 +8,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **An event, a task or a note can be copied into another calendar, list or
+  folder.** Press `Ctrl+Shift+Y`, or use Action, Copy to, Somewhere Else, and
+  choose where the second one goes. The original stays exactly where it is, and
+  what you hear afterwards says "copied to" and names the place it went, so a
+  copy is never mistaken for a move.
+
+  Until now you could move one of these and there was no way to copy one, so
+  making a second version of something meant typing it again. The key follows
+  whichever module you are in, the way Move on `Ctrl+Shift+V` already does: in
+  Mail it puts a copy of the message in another folder, and in the calendar,
+  Tasks or Notes it copies what you are on.
+
+  It is on the context menu too, next to Move, on the same three lists. Press
+  the Applications key or `Shift+F10` on an event, a task or a note and you
+  meet "Move to another calendar" and "Copy to another calendar" together,
+  rather than having to know the key.
+
+  The list of places offered for a copy includes the one the item is already
+  in. Two of the same thing on one list is a duplicate you may want, and it is
+  the one destination a copy has that a move does not, so it is offered rather
+  than hidden.
+
+  A copy of something your account holds is made on this computer. It is a new
+  item waiting to be sent, not a second claim on the one the provider already
+  has, so copying a Google task or an Outlook event leaves theirs untouched. It
+  is also why a copy is allowed where a move is still refused: moving one of
+  those has to be told to the provider and cannot be yet, and a copy has
+  nothing to tell them about the original.
+
+  Known limitation: a copied note is a local note like every other note. Notes
+  carry no waiting-to-be-sent flag, because they go nowhere, so nothing about
+  the copy is queued anywhere.
+
+  Contacts and reminders are not copied. A contact is in as many groups as you
+  put it in, so a second one is a second person rather than a second filing,
+  and reminders are sorted into buckets worked out from when they are due,
+  which are not places to put anything.
+
+  Nobody has heard any of this with a screen reader. Whether "copied to" and
+  "moved to" are told apart at speed, and whether a chooser offering the list
+  you are already on reads as a mistake, are open questions.
+
 - **The calendar can show one week or one month at a time, and Previous period
   and Next period now work.** Choose Week or Month in the View box on the
   calendar toolbar and the list narrows to the seven days, or the calendar

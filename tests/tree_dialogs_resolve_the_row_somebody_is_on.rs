@@ -24,7 +24,7 @@
 //! on the commits that change this file.
 
 use std::sync::{Arc, Mutex};
-use wixen_mail::application::destinations::{Branch, Destination, Moving};
+use wixen_mail::application::destinations::{Branch, Destination, Filing, Moving};
 use wixen_mail::presentation::tree_walk;
 use wixen_mail::presentation::wx_thread_view::{ThreadChoice, ThreadNode};
 use wixen_mail::presentation::{wx_destination, wx_thread_view};
@@ -161,7 +161,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             let (picker, tree, destinations) = wx_destination::build_destination_dialog(
                 &frame,
                 Moving::Message,
-                false,
+                Filing::Moving,
                 &branches,
                 None,
                 Some("acct-1"),
@@ -220,7 +220,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             let (several, tree, _) = wx_destination::build_destination_dialog(
                 &frame,
                 Moving::Message,
-                false,
+                Filing::Moving,
                 &three,
                 None,
                 Some("acct-3"),
@@ -245,7 +245,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
             let (one, tree, _) = wx_destination::build_destination_dialog(
                 &frame,
                 Moving::Message,
-                false,
+                Filing::Moving,
                 &alone,
                 None,
                 Some("acct-1"),

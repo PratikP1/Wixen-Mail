@@ -128,6 +128,82 @@ pub enum Moving {
     Folder,
 }
 
+/// Which of the two acts this is: putting the thing somewhere else, or putting
+/// a second one somewhere.
+///
+/// One value rather than a `bool` at four call sites, because the two differ in
+/// more than the word on the button and each difference has a reason worth
+/// writing down beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Filing {
+    /// The thing goes somewhere else and leaves where it was.
+    Moving,
+    /// A second one is made somewhere and the first stays where it is.
+    Copying,
+}
+
+impl Filing {
+    /// The word for the act, for a window's title and for the button that
+    /// carries it out.
+    ///
+    /// Capitalised, because both places it is read start a label.
+    pub const fn act(self) -> &'static str {
+        match self {
+            Self::Moving => "Move",
+            Self::Copying => "Copy",
+        }
+    }
+
+    /// Whether the container the thing is in now is taken out of the chooser.
+    ///
+    /// Taken out for a move: offering somebody the place a thing already is is
+    /// offering a command that silently does nothing, and they will not know
+    /// which of the two it was.
+    /// Left in for a copy, because a second one in the list the first is
+    /// already in is a duplicate somebody may want, and it is the one
+    /// destination a copy can have that a move cannot.
+    pub const fn leaves_out_where_it_is(self) -> bool {
+        match self {
+            Self::Moving => true,
+            Self::Copying => false,
+        }
+    }
+
+    /// Whether whoever holds the thing has to be able to be told about it.
+    ///
+    /// Asked for a move, for the reasons in
+    /// [`crate::application::pim_command::cannot_be_moved`]: moving an item a
+    /// provider holds means deleting it there, creating it again here and
+    /// writing the identity that comes back over the old one, and none of that
+    /// is built.
+    /// None of that reasoning survives being asked about a copy. The original
+    /// is untouched, so the provider's copy of it goes on being right, and the
+    /// new one is an item made on this computer that the next push creates
+    /// wherever it now sits. Inheriting the refusal would refuse the one act
+    /// that is safe, and reusing the move's question whole is exactly how that
+    /// would happen.
+    pub const fn needs_the_holder_told(self) -> bool {
+        match self {
+            Self::Moving => true,
+            Self::Copying => false,
+        }
+    }
+
+    /// Whether this act makes a new row rather than changing the one it read.
+    ///
+    /// The whole of what a copy is, and the point at which it stops being able
+    /// to carry anything a provider gave the original. A new row keeping the
+    /// provider's identity would be pushed as an update to the provider's own
+    /// item, so the original would move to wherever the copy was put and the
+    /// copy would never exist anywhere but here.
+    pub const fn makes_a_new_row(self) -> bool {
+        match self {
+            Self::Moving => false,
+            Self::Copying => true,
+        }
+    }
+}
+
 /// One place in the tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Destination {

@@ -167,6 +167,15 @@ pub enum Action {
     /// puts it in, so it has no one home to move it out of, and "move" would be
     /// the wrong word for what it would do.
     MoveItem,
+    /// Put a second copy of this event, task or note in another calendar, list
+    /// or folder, leaving the first where it is.
+    ///
+    /// Beside [`Action::MoveItem`] and offered exactly where it is, for the
+    /// same three reasons. Apart from [`Action::CopyToFolder`], which is a
+    /// message going into a mail folder, because what is offered differs and
+    /// offering a calendar as a home for a message is not a mistake worth
+    /// making reachable.
+    CopyItem,
     /// Put a copy of this message in another folder, keeping this one.
     CopyToFolder,
     /// Choose which of this account's folders are kept up to date.
@@ -359,9 +368,15 @@ static CONTACTS: &[Entry] = &[
     entry("&Delete", Action::DeleteItem),
 ];
 
+// Copy sits next to Move on all three, because they are the two acts on one
+// item and these lists are met in order by somebody who cannot skim. The
+// letter is y on each, which is the letter Copy to folder already claims on
+// the message menu and the one Ctrl+Shift+Y carries. None of these three menus
+// claimed it.
 static EVENTS: &[Entry] = &[
     entry("&New event", Action::NewItem),
     entry("Mo&ve to another calendar", Action::MoveItem),
+    entry("Cop&y to another calendar", Action::CopyItem),
     entry("&Delete", Action::DeleteItem),
 ];
 
@@ -374,6 +389,7 @@ static REMINDERS: &[Entry] = &[
 static TASKS: &[Entry] = &[
     entry("&New task", Action::NewItem),
     entry("Mo&ve to another list", Action::MoveItem),
+    entry("Cop&y to another list", Action::CopyItem),
     entry("Mar&k done or not done", Action::ToggleComplete),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -381,6 +397,7 @@ static TASKS: &[Entry] = &[
 static NOTES: &[Entry] = &[
     entry("&New note", Action::NewItem),
     entry("Mo&ve to another folder", Action::MoveItem),
+    entry("Cop&y to another folder", Action::CopyItem),
     entry("&Pin or unpin", Action::TogglePin),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -433,6 +450,53 @@ mod tests {
                 offered,
                 PimCommand::Move.applies_to(kind),
                 "the menu and the command disagree about {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_copy_is_offered_exactly_where_it_means_something() {
+        // The twin of the check above, written the same way and for the same
+        // reason. Offering a copy on a reminder, which is filed nowhere, would
+        // be a stop that teaches nothing; leaving it off a task would leave
+        // making a second one as typing it again.
+        //
+        // Both directions in one assertion, over every kind, which is what
+        // makes this a guard rather than a spot check: it fails on a menu that
+        // gained a line the command refuses, and on a command that was widened
+        // while a menu was not.
+        use crate::application::pim_command::PimCommand;
+
+        for kind in ItemKind::ALL {
+            let offered = entries_for(Focus::Items(kind))
+                .iter()
+                .any(|e| e.action == Action::CopyItem);
+            assert_eq!(
+                offered,
+                PimCommand::Copy.applies_to(kind),
+                "the menu and the command disagree about copying {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_copy_sits_beside_the_move_it_is_the_twin_of() {
+        // Read in order by somebody who cannot skim, so the two acts on one
+        // item belong together rather than at opposite ends of the list. Every
+        // menu that offers one offers the other, and nothing sits between
+        // them.
+        for kind in ItemKind::ALL {
+            let actions: Vec<Action> = entries_for(Focus::Items(kind))
+                .iter()
+                .map(|e| e.action)
+                .collect();
+            let Some(moved) = actions.iter().position(|a| *a == Action::MoveItem) else {
+                continue;
+            };
+            assert_eq!(
+                actions.get(moved + 1),
+                Some(&Action::CopyItem),
+                "{kind:?} does not offer copying next to moving: {actions:?}"
             );
         }
     }

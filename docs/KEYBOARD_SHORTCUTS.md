@@ -397,7 +397,7 @@ can navigate. Making them real headings is being worked on.
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
 | Send read receipt | no shortcut | Action menu. Only when that message asked for one |
 | Move to | `Ctrl+Shift+V` | Action menu. In Mail, put this message in another folder, on this account or on another one, opening on the last folder you filed into. In the other modules, move the chosen event, task or note to another calendar, list or folder |
-| Copy to folder | `Ctrl+Shift+Y` | Action menu, Copy to. Put a copy of this message in another folder, on this account or on another one |
+| Copy to | `Ctrl+Shift+Y` | Action menu, Copy to, Somewhere Else. In Mail, put a copy of this message in another folder, on this account or on another one. In the other modules, put a second copy of the chosen event, task or note in another calendar, list or folder, leaving the first where it is |
 
 Both open a window listing every account with somewhere to put the message. One
 account is open, the one you last filed into or the one the message is in, and
@@ -510,7 +510,7 @@ Five submenus hold the rest:
 
 | Submenu | What is on it |
 |--------|----------|
-| Copy to | Another folder (`Ctrl+Shift+Y`), a task, the calendar, or a note. The message stays where it is |
+| Copy to | Somewhere else (`Ctrl+Shift+Y`), which follows the module you are in, and then a task, the calendar, or a note, which are for a message. The first copy stays where it is |
 | Label | The ten labels, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |

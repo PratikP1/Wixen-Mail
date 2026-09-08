@@ -461,7 +461,7 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
 
 - [x] 05-01-PLAN.md
 - [x] 05-02-PLAN.md
-- [ ] 05-03-PLAN.md
+- [x] 05-03-PLAN.md
 - [ ] 05-04-PLAN.md
 - [ ] 05-05-PLAN.md
 - [ ] 05-06-PLAN.md
@@ -542,7 +542,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 4. Writing and reading a message in full | 9/9 | Executed, all merged, verification human_needed | 2026-09-06 |
 | 4.1 Mail moves between accounts | 4/4 | Complete, 04.1-04 merged | - |
 | 4.2 What was built and never reached | 9/9 | Executed, all merged, verification human_needed | 2026-09-07 |
-| 5. The other five modules keep up | 2/8 | In Progress|  |
+| 5. The other five modules keep up | 3/8 | In Progress|  |
 | 5.1 Notes and contacts reach a server | 0/6 | Planned, not started | - |
 | 5.2 Notes in OneNote | 0/3 | Planned, not started | - |
 | 6. How the application speaks | 0/TBD | Researched, not planned | - |

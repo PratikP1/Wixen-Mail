@@ -2060,42 +2060,54 @@ fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
     }
 }
 
-/// Move follows the module rather than always meaning a mail folder.
+/// Move and copy follow the module rather than always meaning a mail folder.
 ///
-/// One item on the Action menu and one key, the rule Delete beside it already
-/// follows. In Mail it asks which folder; anywhere else it asks which calendar,
-/// list or note folder, because offering a mail folder as a home for a task is
-/// not a mistake worth making reachable.
+/// One item on the Action menu and one key each, the rule Delete beside them
+/// already follows. In Mail they ask which folder; anywhere else they ask which
+/// calendar, list or note folder, because offering a mail folder as a home for
+/// a task is not a mistake worth making reachable.
 ///
 /// The arm that answers for the other five modules has to come first, since a
-/// match is read top down and the mail arm below it takes the command
+/// match is read top down and the mail arm below it takes both commands
 /// unconditionally.
+///
+/// Both ids are named in one condition rather than in two, because the question
+/// is the same for each and a second condition is a second place for one of
+/// them to be forgotten. That shape is what this reads for: the ordering check
+/// below finds the mail arm by the same text, so writing them apart would make
+/// the two searches find the same line.
 #[test]
-fn test_move_follows_the_module_rather_than_always_meaning_a_mail_folder() {
+fn test_move_and_copy_follow_the_module_rather_than_always_meaning_a_mail_folder() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let squashed = without_whitespace(&what_ships(&app));
 
     assert!(
-        squashed.contains("id==ID_MOVE_TO_FOLDER&&showing!=PimModule::Mail"),
-        "Move is no longer answered by the module it was raised in, so choosing \
-         it on a task offers a list of mail folders"
+        squashed
+            .contains("(id==ID_MOVE_TO_FOLDER||id==ID_COPY_TO_FOLDER)&&showing!=PimModule::Mail"),
+        "Move and Copy are no longer both answered by the module they were \
+         raised in, so choosing one on a task offers a list of mail folders"
     );
     assert!(
         squashed.contains("id==ID_CONTEXT_MOVE_ITEM||id==ID_MOVE_TO_FOLDER{PimCommand::Move"),
         "the menu bar's Move no longer asks for a move, so it reaches the item \
          handler and does something else there"
     );
+    assert!(
+        squashed.contains("id==ID_CONTEXT_COPY_ITEM||id==ID_COPY_TO_FOLDER{PimCommand::Copy"),
+        "the menu bar's Copy or the context menu's no longer asks for a copy, \
+         so it reaches the item handler and does something else there"
+    );
 
     let pim_arm = squashed
-        .find("id==ID_MOVE_TO_FOLDER&&showing!=PimModule::Mail")
+        .find("(id==ID_MOVE_TO_FOLDER||id==ID_COPY_TO_FOLDER)&&showing!=PimModule::Mail")
         .expect("the arm for the other five modules");
     let mail_arm = squashed
-        .find("id==ID_MOVE_TO_FOLDER||id==ID_COPY_TO_FOLDER")
+        .find("_ifid==ID_MOVE_TO_FOLDER||id==ID_COPY_TO_FOLDER=>")
         .expect("the arm for mail");
     assert!(
         pim_arm < mail_arm,
-        "the mail arm is read first, so Move in Tasks or Notes offers mail \
-         folders and the module arm below it is never reached"
+        "the mail arm is read first, so Move or Copy in Tasks or Notes offers \
+         mail folders and the module arm below it is never reached"
     );
 }
 

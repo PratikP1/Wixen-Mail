@@ -13,6 +13,7 @@
 //! item", and it has to be short enough that nobody learns to answer before it
 //! finishes.
 
+use crate::application::destinations::Filing;
 use crate::application::new_item::{ContainerKind, ItemKind};
 
 /// A command that acts on whatever is selected.
@@ -30,6 +31,13 @@ pub enum PimCommand {
     /// task typed in a hurry lands on whichever list was open, and without this
     /// the only way to correct it was to delete it and type it again.
     Move,
+    /// Put a second one in another calendar, list or folder, leaving the first
+    /// where it is.
+    ///
+    /// The same shape twice is the ordinary case too: a task that is on this
+    /// week's list and next week's, an event that belongs to two calendars. The
+    /// only way to make one was to type it again.
+    Copy,
 }
 
 impl PimCommand {
@@ -51,7 +59,28 @@ impl PimCommand {
             // reminder: the module holds buckets worked out from when each one
             // is due, and there is nothing to move it to. Mail moves between
             // folders by its own path, which has to talk to the server.
-            Self::Move => matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note),
+            //
+            // A copy answers the same, for the same three reasons: a second
+            // contact is a second person rather than a second filing, a
+            // reminder's buckets are not places, and mail copies between
+            // folders by the path that talks to the server.
+            Self::Move | Self::Copy => {
+                matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note)
+            }
+        }
+    }
+
+    /// Which of the two filing acts this is, for the commands that put
+    /// something somewhere.
+    ///
+    /// `None` for the three that put nothing anywhere. Asked rather than
+    /// decided at the call site, so the pairing lives beside the enum it is
+    /// about and a fourth filing command cannot be wired to the wrong act.
+    pub const fn filing(self) -> Option<Filing> {
+        match self {
+            Self::Move => Some(Filing::Moving),
+            Self::Copy => Some(Filing::Copying),
+            Self::Delete | Self::ToggleComplete | Self::TogglePin => None,
         }
     }
 }
@@ -127,15 +156,32 @@ pub fn deleted(kind: ItemKind, name: &str) -> String {
     }
 }
 
-/// What to say once something has been moved.
+/// What to say once something has been moved, or copied.
 ///
 /// Names where it went. "Moved" alone leaves somebody who chose from a tree of
 /// twenty calendars with no way to know which one they landed on, and the whole
-/// reason to move a thing is to put it somewhere in particular.
-pub fn moved(name: &str, into: &str) -> String {
+/// reason to file a thing somewhere is to put it somewhere in particular.
+///
+/// One sentence taking the act rather than two sentences of the same shape.
+/// Somebody who cannot see the two lists has only this to tell them which of
+/// the two happened, so the two must differ; and a second sentence written
+/// beside this one is a second sentence to keep in step with it.
+pub fn filed(filing: Filing, name: &str, into: &str) -> String {
+    let done = did(filing);
     match name.trim() {
-        "" => format!("Moved to {into}"),
-        title => format!("{title} moved to {into}"),
+        "" => format!("{} to {into}", capitalise(done)),
+        title => format!("{title} {done} to {into}"),
+    }
+}
+
+/// The past tense of the act, for the middle of a sentence.
+///
+/// Apart from [`Filing::act`], which is the capitalised word a button and a
+/// window title carry.
+const fn did(filing: Filing) -> &'static str {
+    match filing {
+        Filing::Moving => "moved",
+        Filing::Copying => "copied",
     }
 }
 
@@ -174,22 +220,33 @@ pub fn cannot_be_moved(kind: ItemKind, holder: ContainerKind, name: &str) -> Str
 /// or one a calendar server marks as read-only, takes nothing: the row would be
 /// filed there on this computer, marked as waiting to be sent, and every sync
 /// from then on would look at it, find nothing that could send it, and leave it
-/// exactly where it was. The move was offered, accepted and announced as done,
+/// exactly where it was. The act was offered, accepted and announced as done,
 /// and nothing ever happened.
 ///
-/// Same shape as the item refusal: what is true, then that nothing was moved,
+/// This one asks about the destination, so it refuses a copy for exactly the
+/// reason it refuses a move and takes the act as a parameter rather than being
+/// written out twice. A copy announced with the word "moved" would tell
+/// somebody who cannot see the list that their original had gone.
+///
+/// Same shape as the item refusal: what is true, then that nothing happened,
 /// then what does work. Two sentences of the same shape are one thing to learn
 /// rather than two.
-pub fn cannot_be_moved_into(kind: ItemKind, holder: ContainerKind, container_name: &str) -> String {
+pub fn cannot_be_filed_into(
+    filing: Filing,
+    kind: ItemKind,
+    holder: ContainerKind,
+    container_name: &str,
+) -> String {
     let holder_name = holder.label().to_lowercase();
     let named = match container_name.trim() {
         // A row whose name never loaded. "That calendar" is still answerable.
         "" => format!("That {holder_name}"),
         name => format!("\"{name}\""),
     };
+    let done = did(filing);
     format!(
-        "{named} is a {holder_name} this program can only read, and {} moved into it could \
-         never be sent. Nothing has been moved. {} you can change can hold it.",
+        "{named} is a {holder_name} this program can only read, and {} {done} into it could \
+         never be sent. Nothing has been {done}. {} you can change can hold it.",
         a_thing(kind),
         capitalise(&format!("a {holder_name}")),
     )
@@ -254,6 +311,7 @@ pub fn did_not_happen(command: PimCommand, kind: ItemKind, name: &str, reason: &
         PimCommand::ToggleComplete => format!("Changing whether {named} is done"),
         PimCommand::TogglePin => format!("Changing whether {named} is pinned"),
         PimCommand::Move => format!("Moving {named}"),
+        PimCommand::Copy => format!("Copying {named}"),
     };
     format!(
         "{tried} did not work: {}. Nothing has been changed. Try it again, and if it \
@@ -275,9 +333,11 @@ pub fn toggled(command: PimCommand, name: &str, now: bool) -> String {
         (PimCommand::TogglePin, false) => "unpinned",
         (PimCommand::Delete, _) => "deleted",
         // Not a state something is now in. Where a thing went is the whole of
-        // what is worth saying about a move, and that needs the destination's
-        // name, which this does not have. Said by `moved` instead.
+        // what is worth saying about either of these, and that needs the
+        // destination's name, which this does not have. Said by `filed`
+        // instead.
         (PimCommand::Move, _) => "moved",
+        (PimCommand::Copy, _) => "copied",
     };
     match name.trim() {
         "" => capitalise(state),
@@ -288,10 +348,11 @@ pub fn toggled(command: PimCommand, name: &str, now: bool) -> String {
 /// The short word `Event::Confirmed`'s tone carries, when this command is one
 /// of the toggles it covers.
 ///
-/// `None` for [`PimCommand::Delete`] and [`PimCommand::Move`]: a delete asks
-/// first and is announced by [`deleted`], and a move needs the destination's
-/// name, which [`moved`] already carries. Neither is the "did the small
-/// thing I asked for happen" fact `Event::Confirmed` exists for.
+/// `None` for [`PimCommand::Delete`], [`PimCommand::Move`] and
+/// [`PimCommand::Copy`]: a delete asks first and is announced by [`deleted`],
+/// and the two filing commands need the destination's name, which [`filed`]
+/// already carries. None of the three is the "did the small thing I asked for
+/// happen" fact `Event::Confirmed` exists for.
 ///
 /// Deliberately not [`toggled`]'s sentence. That names the item, which
 /// somebody who just acted on the row they were sitting on already knows;
@@ -306,7 +367,7 @@ pub fn confirmed_detail(command: PimCommand, now: bool) -> Option<&'static str> 
             "Marked not done"
         }),
         PimCommand::TogglePin => Some(if now { "Pinned" } else { "Unpinned" }),
-        PimCommand::Delete | PimCommand::Move => None,
+        PimCommand::Delete | PimCommand::Move | PimCommand::Copy => None,
     }
 }
 
@@ -382,7 +443,22 @@ mod tests {
         // Silence after a move is indistinguishable from a move that failed,
         // and "moved" without a destination leaves somebody who chose from a
         // tree of twenty lists no way to know where they landed.
-        assert_eq!(moved("Buy milk", "Shopping"), "Buy milk moved to Shopping");
+        assert_eq!(
+            filed(Filing::Moving, "Buy milk", "Shopping"),
+            "Buy milk moved to Shopping"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_says_it_was_copied_and_never_that_it_moved() {
+        // The one thing somebody who cannot see the two lists has to go on.
+        // Heard as "moved", a copy says the original has gone from the list
+        // they were sitting on, and the next thing they do is go looking for
+        // it.
+        let said = filed(Filing::Copying, "Buy milk", "Shopping");
+
+        assert_eq!(said, "Buy milk copied to Shopping");
+        assert!(!said.contains("moved"), "{said}");
     }
 
     #[test]
@@ -414,12 +490,43 @@ mod tests {
         // The other axis of the same refusal. The item was fine to move and
         // the destination was not, and the sentence has to name the
         // destination, because that is the part somebody chose.
-        let said = cannot_be_moved_into(ItemKind::Event, ContainerKind::Calendar, "Term dates");
+        let said = cannot_be_filed_into(
+            Filing::Moving,
+            ItemKind::Event,
+            ContainerKind::Calendar,
+            "Term dates",
+        );
 
         assert!(said.contains("Term dates"), "{said}");
         assert!(said.contains("can only read"), "{said}");
         assert!(said.contains("Nothing has been moved"), "{said}");
         assert!(said.contains("A calendar you can change"), "{said}");
+    }
+
+    #[test]
+    fn test_a_copy_into_a_container_that_can_only_be_read_is_refused_saying_copy() {
+        // The same refusal on the same axis, because the destination is the
+        // half being refused and a copy filed in a calendar nothing can send
+        // to would sit there waiting for ever exactly as a move would.
+        //
+        // Worded as a copy, though. "Nothing has been moved" answering a copy
+        // is an answer to a question nobody asked, and somebody working by ear
+        // has no list to glance at to find out that their original is still
+        // there.
+        let said = cannot_be_filed_into(
+            Filing::Copying,
+            ItemKind::Event,
+            ContainerKind::Calendar,
+            "Term dates",
+        );
+
+        assert!(said.contains("Term dates"), "{said}");
+        assert!(
+            said.contains("copied into it could never be sent"),
+            "{said}"
+        );
+        assert!(said.contains("Nothing has been copied"), "{said}");
+        assert!(!said.contains("moved"), "{said}");
     }
 
     #[test]
@@ -437,7 +544,14 @@ mod tests {
     fn test_a_move_of_an_untitled_row_still_says_where_it_went() {
         // A row whose title never loaded still went somewhere, and where it
         // went is the part worth hearing.
-        assert_eq!(moved("   ", "Shopping"), "Moved to Shopping");
+        assert_eq!(
+            filed(Filing::Moving, "   ", "Shopping"),
+            "Moved to Shopping"
+        );
+        assert_eq!(
+            filed(Filing::Copying, "   ", "Shopping"),
+            "Copied to Shopping"
+        );
     }
 
     #[test]
@@ -451,6 +565,43 @@ mod tests {
 
         assert!(PimCommand::TogglePin.applies_to(ItemKind::Note));
         assert!(!PimCommand::TogglePin.applies_to(ItemKind::Task));
+    }
+
+    #[test]
+    fn test_a_copy_means_something_exactly_where_a_move_does() {
+        // The three kinds that have a container to be copied into. A contact
+        // is in as many groups as somebody puts it in, so a second one is a
+        // second person rather than a second filing; a reminder's buckets are
+        // worked out from when it is due and are not places; and mail copies
+        // between folders by its own path, which has to talk to a server.
+        //
+        // Held to Move's own answer rather than to a list written out again,
+        // because the two questions have the same answer for the same reason
+        // and a list written twice is a list that comes apart.
+        for kind in ItemKind::ALL {
+            assert_eq!(
+                PimCommand::Copy.applies_to(kind),
+                PimCommand::Move.applies_to(kind),
+                "copy and move disagree about {kind:?}, and nothing here is a \
+                 reason for them to"
+            );
+        }
+
+        assert!(PimCommand::Copy.applies_to(ItemKind::Task));
+        assert!(!PimCommand::Copy.applies_to(ItemKind::Contact));
+        assert!(!PimCommand::Copy.applies_to(ItemKind::Reminder));
+    }
+
+    #[test]
+    fn test_only_the_two_filing_commands_name_an_act() {
+        // The pairing lives here so that a command that puts something
+        // somewhere cannot be wired to the other act at a call site. The other
+        // three put nothing anywhere and say so.
+        assert_eq!(PimCommand::Move.filing(), Some(Filing::Moving));
+        assert_eq!(PimCommand::Copy.filing(), Some(Filing::Copying));
+        assert_eq!(PimCommand::Delete.filing(), None);
+        assert_eq!(PimCommand::ToggleComplete.filing(), None);
+        assert_eq!(PimCommand::TogglePin.filing(), None);
     }
 
     #[test]
@@ -531,13 +682,14 @@ mod tests {
             PimCommand::ToggleComplete,
             PimCommand::TogglePin,
             PimCommand::Move,
+            PimCommand::Copy,
         ]
         .into_iter()
         .map(|command| did_not_happen(command, ItemKind::Task, "Buy milk", "the file is in use"))
         .collect();
         assert_eq!(
             every.len(),
-            4,
+            5,
             "two commands fail in the same words: {every:?}"
         );
 
@@ -595,12 +747,13 @@ mod tests {
     }
 
     #[test]
-    fn test_confirmed_detail_is_silent_for_delete_and_move() {
-        // Neither is the "did the small thing I asked for happen" fact
-        // `Event::Confirmed` exists for: a delete asks first and is announced
-        // by `deleted`, and a move needs the destination `moved` already
-        // names.
+    fn test_confirmed_detail_is_silent_for_delete_and_for_filing() {
+        // None of the three is the "did the small thing I asked for happen"
+        // fact `Event::Confirmed` exists for: a delete asks first and is
+        // announced by `deleted`, and a move and a copy each need the
+        // destination `filed` already names.
         assert_eq!(confirmed_detail(PimCommand::Delete, true), None);
         assert_eq!(confirmed_detail(PimCommand::Move, false), None);
+        assert_eq!(confirmed_detail(PimCommand::Copy, false), None);
     }
 }

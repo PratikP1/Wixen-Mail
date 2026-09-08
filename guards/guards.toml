@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 477 records have arrived since and have not been through it.
+# 480 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -1878,7 +1878,7 @@ red = [
     "application::pim_command::tests::test_the_refusal_names_the_kind_with_the_article_that_belongs_with_it",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 18 },
+    { file = "src/application/pim_command.rs", tests = 22 },
 ]
 
 # ── An edit that was not an edit ────────────────────────────────────────────
@@ -4654,7 +4654,7 @@ red = [
     "application::pim_command::tests::test_a_row_that_went_away_between_the_question_and_the_answer_is_said_not_left_silent",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 18 },
+    { file = "src/application/pim_command.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -5473,7 +5473,7 @@ red = [
     "application::pim_command::tests::test_a_command_that_failed_says_what_it_was_and_what_to_try",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 18 },
+    { file = "src/application/pim_command.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -11293,11 +11293,15 @@ tests_last_seen = [
 [[guard]]
 name = "a refused move is said on the refusal channel rather than the status line"
 file = "src/presentation/managers.rs"
-before = """                Some(Moved::Refused(why)) => {
+# `Moved` became `Filed` in 05-03, when copy joined move on this arm, and the
+# record was unmeasurable until the text below named the code as it now stands.
+# Re-measured by hand on 2026-09-08 after the rename rather than edited until it
+# applied: the break still reddens exactly the one test named.
+before = """                Some(Filed::Refused(why)) => {
                     let _ = tx.try_send(UIUpdate::CommandRefused(why));
                     return;
                 }"""
-after = """                Some(Moved::Refused(why)) => Ok(why),"""
+after = """                Some(Filed::Refused(why)) => Ok(why),"""
 red = [
     "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
 ]
@@ -17484,4 +17488,113 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/ui_types.rs", tests = 78 },
+]
+
+# ── A copy that writes over the row it read ─────────────────────────────────
+#
+# What it costs a person: they press Ctrl+Shift+Y on a task, hear "Book the
+# dentist copied to Next week", and This week has lost it. A copy that quietly
+# became a move is not something anybody working by ear can see, and the
+# sentence they heard says the opposite of what happened.
+#
+# It is the failure that arrives by sharing one function too far. Moving and
+# copying are one write, one chooser and one read, and the whole of what makes
+# them different is three answers on `Filing`. Answering the third the way a
+# move answers it turns the copy back into a move.
+#
+# Two records, and the second is not a duplicate of the first. A record is also
+# what couples an integration suite to the source it guards: `check.sh` reads
+# `file` to decide which commits run the suite, so the record below on
+# `destinations.rs` is what makes a commit touching the decision run these
+# tests, and the record after it does the same for the file that carries out
+# the write. Without the second, a commit changing the write would not run the
+# suite that watches it.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
+# --no-fail-fast` on a clean tree with nothing else building. No library test
+# goes red for either break, which is a fact about where the coverage is rather
+# than a red list to pad: `Filing` has no unit tests of its own and is measured
+# through the real write instead, which is the stronger of the two.
+
+[[guard]]
+name = "a copy makes a new row rather than writing over the one it read"
+file = "src/application/destinations.rs"
+suite = "a_copy_leaves_the_original_where_it_was"
+before = """        match self {
+            Self::Moving => false,
+            Self::Copying => true,
+        }
+    }
+}"""
+after = """        match self {
+            Self::Moving | Self::Copying => false,
+        }
+    }
+}"""
+red = [
+    "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
+    "test_the_copy_of_an_event_a_provider_holds_makes_no_claim_on_the_providers_own",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 37 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+]
+
+# The same failure one step later, at the write rather than at the decision.
+# The copy keeps the identifier the provider gave the original, so the store
+# writes over the row it read and the next push asks the provider to update its
+# own task instead of creating a second one.
+[[guard]]
+name = "a copied task is given an identifier of its own"
+file = "src/presentation/managers.rs"
+suite = "a_copy_leaves_the_original_where_it_was"
+before = """                task.id = new_id("task");
+                task.remote_updated = None;"""
+after = """                task.remote_updated = None;"""
+red = [
+    "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+]
+
+# ── A copy line on a panel where copying means nothing ──────────────────────
+#
+# What it costs a person: they arrow down the menu on a reminder, meet "Copy to
+# another list", choose it, and are told to choose a task first. A reminder is
+# sorted into a bucket worked out from when it is due, and a bucket is not a
+# place, so there is nowhere for the copy to go. A line that does nothing is a
+# stop somebody lands on, hears, and learns nothing from, and it costs a moment
+# every time it is passed.
+#
+# The break is the one somebody adding a sixth module would make: the menu
+# widened and the command not. It is written on the reminders list because that
+# is the kind the command refuses and the menu is one line away from offering.
+#
+# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
+# --no-fail-fast` on a clean tree. One test, and not the ordering check beside
+# it: a reminder is offered no move either, so that one has nothing to sit
+# beside and steps over the kind.
+[[guard]]
+name = "the copy line is on exactly the menus whose command accepts one"
+file = "src/application/context_menu.rs"
+before = """    entry("Mar&k done or not done", Action::ToggleComplete),
+    entry("&Delete", Action::DeleteItem),
+];
+
+static TASKS: &[Entry] = &["""
+after = """    entry("Mar&k done or not done", Action::ToggleComplete),
+    entry("Cop&y to another list", Action::CopyItem),
+    entry("&Delete", Action::DeleteItem),
+];
+
+static TASKS: &[Entry] = &["""
+red = [
+    "application::context_menu::tests::test_a_copy_is_offered_exactly_where_it_means_something",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 17 },
 ]

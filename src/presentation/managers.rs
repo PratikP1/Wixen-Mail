@@ -2670,12 +2670,18 @@ pub fn pim_command(
                 _ => return,
             }
             .map(|()| toggled(command, &name, now)),
-            // Its own path: it has a window in the middle of it, and somebody can
-            // leave that window without choosing, which is not a failure and must
-            // not be announced as one.
-            PimCommand::Move => match move_item(&cache, state, frame, kind, &id, &name) {
-                Some(Moved::Into(said)) => Ok(said),
-                Some(Moved::Failed(why)) => Err(why),
+            // Their own path: there is a window in the middle of it, and
+            // somebody can leave that window without choosing, which is not a
+            // failure and must not be announced as one.
+            //
+            // Which act it is comes from the command rather than from a flag
+            // read here, so the two cannot be wired the wrong way round.
+            PimCommand::Move | PimCommand::Copy => match command
+                .filing()
+                .and_then(|filing| file_it(&cache, state, frame, filing, kind, &id, &name))
+            {
+                Some(Filed::Into(said)) => Ok(said),
+                Some(Filed::Failed(why)) => Err(why),
                 // Down the refusal channel rather than the status line. A
                 // status announcement carries the topic "status", and a newer
                 // one on a topic replaces the older in the queue, so a refusal
@@ -2683,7 +2689,7 @@ pub fn pim_command(
                 // there. It is also spoken at Low. The refusal is the answer
                 // to a key somebody just pressed and the one thing they cannot
                 // be left to miss, which is what `CommandRefused` is for.
-                Some(Moved::Refused(why)) => {
+                Some(Filed::Refused(why)) => {
                     let _ = tx.try_send(UIUpdate::CommandRefused(why));
                     return;
                 }
@@ -3290,6 +3296,7 @@ fn draft_label(draft: &crate::data::message_cache::CachedDraft) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::destinations::Filing;
     use crate::common::temp_home::TempHome;
 
     fn test_cache() -> TempHome<MessageCache> {
@@ -4668,6 +4675,7 @@ mod tests {
             "t1",
             "list-b",
             "acct",
+            Filing::Moving,
         )
         .expect("the move to be written");
 
@@ -4695,6 +4703,7 @@ mod tests {
             "e1",
             "cal-b",
             "acct",
+            Filing::Moving,
         )
         .expect("the move to be written");
 
@@ -4727,6 +4736,7 @@ mod tests {
             "google:t1",
             "google:list-b",
             "acct",
+            Filing::Moving,
         )
         .expect_err("a move nothing can send is refused");
         assert!(
@@ -4759,6 +4769,7 @@ mod tests {
             "e1",
             "cal-b",
             "acct",
+            Filing::Moving,
         )
         .expect_err("a move nothing can send is refused");
         assert!(
@@ -4833,22 +4844,24 @@ mod tests {
         let source =
             std::fs::read_to_string("src/presentation/managers.rs").expect("this file to read");
         let arm = source
-            .split_once("PimCommand::Move => match move_item(")
-            .expect("the Move arm")
+            .split_once("PimCommand::Move | PimCommand::Copy => match command")
+            .expect("the arm the two filing commands share")
             .1;
         let arm = &arm[..arm.find("\n            },").unwrap_or(arm.len())];
         assert!(
-            arm.contains("Moved::Refused(why)"),
-            "the Move arm no longer tells a refusal apart from a move that happened"
+            arm.contains("Filed::Refused(why)"),
+            "the filing arm no longer tells a refusal apart from a move or a \
+             copy that happened"
         );
         assert!(
             arm.contains("UIUpdate::CommandRefused(why)"),
-            "a refused move is announced by some route other than the refusal \
-             channel, where a later status line replaces it before it is spoken"
+            "a refused move or copy is announced by some route other than the \
+             refusal channel, where a later status line replaces it before it \
+             is spoken"
         );
         assert!(
             !arm.contains("send_status"),
-            "a refused move is written to the status line again"
+            "a refused move or copy is written to the status line again"
         );
 
         let window = std::fs::read_to_string("src/presentation/wx_app.rs")
@@ -4885,6 +4898,7 @@ mod tests {
             crate::application::new_item::ItemKind::Event,
             "e1",
             "Dentist",
+            Filing::Moving,
         )
         .expect("an answer");
 
@@ -4916,6 +4930,7 @@ mod tests {
             crate::application::new_item::ItemKind::Event,
             "e1",
             "Dentist",
+            Filing::Moving,
         )
         .expect("an answer");
 
@@ -4949,6 +4964,7 @@ mod tests {
             "e1",
             "term-dates",
             "acct",
+            Filing::Moving,
         )
         .expect_err("a move nothing can send is refused");
         assert!(
@@ -4994,6 +5010,7 @@ mod tests {
             "e1",
             "cal-b",
             "acct",
+            Filing::Moving,
         )
         .expect("the move to be written");
 
@@ -5034,6 +5051,7 @@ mod tests {
             crate::application::new_item::ItemKind::Task,
             "google:t1",
             "Book the dentist",
+            Filing::Moving,
         )
         .expect("an answer");
 
@@ -5070,6 +5088,7 @@ mod tests {
             crate::application::new_item::ItemKind::Task,
             "t1",
             "Book the dentist",
+            Filing::Moving,
         )
         .expect("an answer");
 
@@ -5123,6 +5142,7 @@ mod tests {
             "n1",
             "folder-b",
             "acct",
+            Filing::Moving,
         )
         .expect("the move to be written");
 
@@ -6277,37 +6297,39 @@ pub fn delete_container(
 /// Items filed in the wrong place is the ordinary case rather than the unusual
 /// one: a task typed in a hurry lands on whichever list happened to be open,
 /// and until now the only way to correct that was to delete it and type it
-/// again.
-fn move_item(
+/// again. The same shape twice is ordinary too, and until now the only way to
+/// have it was to type the second one.
+fn file_it(
     cache: &MessageCache,
     state: &Arc<StdMutex<WxUIState>>,
     frame: &Frame,
+    filing: crate::application::destinations::Filing,
     kind: crate::application::new_item::ItemKind,
     id: &str,
     name: &str,
-) -> Option<Moved> {
+) -> Option<Filed> {
     use crate::application::destinations::Moving;
 
     let Offered {
         holder,
         account_id,
         offer,
-    } = where_it_could_go(cache, state, kind, id, name)?;
+    } = where_it_could_go(cache, state, kind, id, name, filing)?;
     let branches = match offer {
         // Nothing was asked and nothing was written. The sentence is the whole
         // answer, and it is a plain one rather than a failure: no window opened
         // and no row changed.
-        Offer::Said(sentence) => return Some(Moved::Refused(sentence)),
+        Offer::Said(sentence) => return Some(Filed::Refused(sentence)),
         Offer::Ask(branches) => branches,
     };
 
     let into = crate::presentation::wx_destination::ask(
         frame,
         Moving::Item(holder),
-        false,
+        filing,
         &branches,
         None,
-        // The account the thing being moved is on, so a window holding several
+        // The account the thing being filed is on, so a window holding several
         // accounts opens on that one rather than on whichever is drawn first.
         Some(&account_id),
     )?;
@@ -6316,24 +6338,28 @@ fn move_item(
     // the sentence names is what the row read out.
     let landed = into.name.clone();
 
-    Some(match file_under(cache, kind, id, &into.id, &account_id) {
-        Ok(()) => Moved::Into(crate::application::pim_command::moved(name, &landed)),
-        // The other route to the same refusals, taken when the chooser was
-        // bypassed. It arrives as a failed write rather than as a refusal
-        // because that is what it is here: something was asked for that
-        // `where_it_could_go` would not have offered.
-        Err(why) => Moved::Failed(why),
-    })
+    Some(
+        match file_under(cache, kind, id, &into.id, &account_id, filing) {
+            Ok(_) => Filed::Into(crate::application::pim_command::filed(
+                filing, name, &landed,
+            )),
+            // The other route to the same refusals, taken when the chooser was
+            // bypassed. It arrives as a failed write rather than as a refusal
+            // because that is what it is here: something was asked for that
+            // `where_it_could_go` would not have offered.
+            Err(why) => Filed::Failed(why),
+        },
+    )
 }
 
-/// How a Move ended.
+/// How a Move or a Copy ended.
 ///
-/// Three endings and not two, because a refusal and a move are said down
+/// Three endings and not two, because a refusal and a filing are said down
 /// different channels. A refusal is the answer to a key somebody just pressed;
 /// it went out as a status line, at Low and under a topic a newer status line
 /// replaces, so the sentence explaining why nothing happened could be dropped
 /// by the next thing a sync wrote there.
-enum Moved {
+enum Filed {
     /// It happened. The sentence names where it went.
     Into(String),
     /// It did not happen and nothing was written. The sentence says why.
@@ -6342,7 +6368,7 @@ enum Moved {
     Failed(crate::common::Error),
 }
 
-/// What the move command found before any window opened.
+/// What the filing command found before any window opened.
 struct Offered {
     holder: crate::application::new_item::ContainerKind,
     /// The account the item and its containers are looked up in.
@@ -6359,12 +6385,16 @@ enum Offer {
     Ask(Vec<crate::application::destinations::Branch>),
 }
 
-/// Work out what the move command can offer, without opening anything.
+/// Work out what the filing command can offer, without opening anything.
 ///
-/// Split from [`move_item`] because every decision worth making happens before
+/// Split from [`file_it`] because every decision worth making happens before
 /// the chooser and none of it could be reached in a test through a window:
-/// which account, whether the move can be told to whoever holds the item, and
+/// which account, whether the act can be told to whoever holds the item, and
 /// what is left to offer once the container it is already in is taken out.
+///
+/// The last two are the two a copy answers differently, and both are asked of
+/// [`crate::application::destinations::Filing`] rather than decided here, so
+/// the reason for each sits beside the other act's.
 ///
 /// `None` when there is no account open or the kind is one nothing holds, which
 /// are both silences rather than answers.
@@ -6374,6 +6404,7 @@ fn where_it_could_go(
     kind: crate::application::new_item::ItemKind,
     id: &str,
     name: &str,
+    filing: crate::application::destinations::Filing,
 ) -> Option<Offered> {
     use crate::application::destinations::{
         Branch, Destination, FolderInAnAccount, Moving, anywhere, offer,
@@ -6401,7 +6432,9 @@ fn where_it_could_go(
 
     // Asked before the chooser, so nobody works through a tree of twenty
     // calendars to answer a question whose answer is thrown away.
-    if let Err(refused) = moving_can_be_told(cache, kind, id, name, &account_id) {
+    if filing.needs_the_holder_told()
+        && let Err(refused) = moving_can_be_told(cache, kind, id, name, &account_id)
+    {
         return said(account_id, refused);
     }
 
@@ -6420,9 +6453,12 @@ fn where_it_could_go(
             depth: 0,
         })
         .collect();
-    // Where it already is, left out. Offering the container something is
-    // already in is offering a move that does nothing.
-    let held = held_in(cache, kind, id, &account_for_lookup);
+    // Where it already is, left out for a move, because offering the container
+    // something is already in is offering a move that does nothing.
+    let held = filing
+        .leaves_out_where_it_is()
+        .then(|| held_in(cache, kind, id, &account_for_lookup))
+        .flatten();
     let branches = offer(
         vec![Branch {
             account_id,
@@ -6522,32 +6558,43 @@ fn moving_can_be_told(
     }
 }
 
-/// Write the item into its new container.
+/// Write the item into its new container, and say which row is in it.
 ///
 /// Read, change, write, rather than an UPDATE naming one column, because the
 /// same rows are what the sync compares against and a partial write would send
-/// up an item with everything else blanked.
+/// up an item with everything else blanked. One function for both acts rather
+/// than a second one beside it: the read and the write are the same, so a
+/// column added to a note by `05.1-03` is added once and both acts carry it.
 ///
-/// The move is marked as waiting to be sent, the way ticking a task off is.
+/// The row is marked as waiting to be sent, the way ticking a task off is.
 /// Without that the row changed here and `pending_tasks` and
 /// `pending_calendar_events` never saw it, so nothing ever pushed it and the
-/// status line said "moved" for a change that reached nobody.
+/// status line said "moved" for a change that reached nobody. A note carries no
+/// such column, because a note goes nowhere; `05.1-03` is what gives it one.
 ///
 /// Refused for an item a provider already holds, rather than written and
 /// queued. [`moving_can_be_told`] is asked before the chooser opens as well, so
 /// nobody is made to answer a question whose answer is thrown away; asking here
-/// too is what makes it impossible to write one of those moves by any route.
-fn file_under(
+/// too is what makes it impossible to write one of those by any route.
+///
+/// Public so the two acts can be run against a real store from
+/// `tests/a_copy_leaves_the_original_where_it_was.rs`. Every decision worth
+/// making here is about rows rather than about windows, and the alternative was
+/// a `#[test]` in this file, which 41 guard records fingerprint.
+pub fn file_under(
     cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
     id: &str,
     into: &str,
     account_id: &str,
-) -> crate::common::Result<()> {
+    filing: crate::application::destinations::Filing,
+) -> crate::common::Result<String> {
     use crate::application::new_item::ItemKind;
     use crate::common::Error;
 
-    if let Err(refused) = moving_can_be_told(cache, kind, id, "", account_id) {
+    if filing.needs_the_holder_told()
+        && let Err(refused) = moving_can_be_told(cache, kind, id, "", account_id)
+    {
         return Err(Error::Other(refused));
     }
     // And whether the place it is going could ever hold it. The chooser leaves
@@ -6557,7 +6604,7 @@ fn file_under(
         && let Some(name) = can_only_be_read(cache, holder, into)
     {
         return Err(Error::Other(
-            crate::application::pim_command::cannot_be_moved_into(kind, holder, &name),
+            crate::application::pim_command::cannot_be_filed_into(filing, kind, holder, &name),
         ));
     }
 
@@ -6575,7 +6622,27 @@ fn file_under(
                 })?;
             event.calendar_id = Some(into.to_string());
             event.pending = true;
-            cache.save_calendar_event(&event)
+            if filing.makes_a_new_row() {
+                event.id = new_id("event");
+                // An event keeps the provider's identity in columns of its
+                // own, so a new identifier is not enough on its own. Kept, the
+                // push would ask the provider to update its event rather than
+                // create a second, and the original would be the one that
+                // moved. The rest go with it because they describe that
+                // identity: which version was last seen there, and when.
+                event.provider_event_id = None;
+                event.etag = None;
+                event.last_modified_remote = None;
+                event.last_synced_at = None;
+                // And a copy of one day of a series is an event, not that
+                // day: the pairing names a series row that already has its
+                // own day taken off, and a second claim on it would take the
+                // day off twice.
+                event.cut_from_event_id = None;
+                event.provider_recurrence_id = None;
+            }
+            cache.save_calendar_event(&event)?;
+            Ok(event.id)
         }
         ItemKind::Task => {
             let mut task = cache
@@ -6590,7 +6657,18 @@ fn file_under(
                 })?;
             task.task_list_id = Some(into.to_string());
             task.pending = true;
-            cache.save_task(&task)
+            if filing.makes_a_new_row() {
+                // A task carries the provider's identity in the identifier
+                // itself, which `tasks_sync::a_provider_holds` reads, so
+                // minting one here is what makes the copy this computer's own.
+                // The two remembered answers go with it: both are what the
+                // provider last said about the original.
+                task.id = new_id("task");
+                task.remote_updated = None;
+                task.remote_status = None;
+            }
+            cache.save_task(&task)?;
+            Ok(task.id)
         }
         ItemKind::Note => {
             let mut note = cache.get_note(id)?.ok_or_else(|| {
@@ -6600,12 +6678,19 @@ fn file_under(
                 ))
             })?;
             note.folder_id = Some(into.to_string());
-            cache.save_note(&note)
+            if filing.makes_a_new_row() {
+                // Nothing else to clear. A note has no provider identity and
+                // no waiting flag, because a note goes nowhere. `05.1-03` is
+                // what gives it both, and it comes through here.
+                note.id = new_id("note");
+            }
+            cache.save_note(&note)?;
+            Ok(note.id)
         }
         // Never reached: `kept_in` gives these no container, so the chooser is
         // never opened for one. Written out rather than caught by a catch-all,
         // so a new kind of item is a compile error here.
-        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Ok(()),
+        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Ok(id.to_string()),
     }
 }
 
