@@ -80,6 +80,37 @@ pub fn yes_no_where_enter_answers_yes() -> MessageDialogStyle {
     MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion
 }
 
+/// Which of a question's two answers came back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answered {
+    /// They chose the first answer.
+    Yes,
+    /// They chose the second answer.
+    No,
+    /// The window was closed without an answer.
+    ///
+    /// Not the same as either of the other two, and this variant exists to
+    /// stop it being folded into one of them. A question worth asking is one
+    /// where both answers do something, so answering it on somebody's behalf
+    /// because they closed the window does one of those things without being
+    /// asked to.
+    Neither,
+}
+
+/// What a two-answer question came back as.
+///
+/// Here beside the flag that decides which answer Enter gives, because the two
+/// are one subject: how a question with two answers is put and how its answer
+/// is read. It used to be written once for each question, and a second copy of
+/// a mapping this small is a copy nobody would notice going wrong.
+pub fn which_of_the_two(from_the_dialog: wxdragon::Id) -> Answered {
+    match from_the_dialog {
+        wxdragon::id::ID_YES => Answered::Yes,
+        wxdragon::id::ID_NO => Answered::No,
+        _ => Answered::Neither,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +173,16 @@ mod tests {
         // meaning something else, which is the kind of mistake that looks like
         // nothing at all until a dialog behaves oddly.
         assert_eq!(ENTER_DOES_NOT_ANSWER_YES.bits(), WX_NO_DEFAULT);
+    }
+
+    #[test]
+    fn test_closing_the_window_is_neither_answer() {
+        // The one that matters. A closed window folded into No answers the
+        // question on somebody's behalf, and folded into Yes it carries out
+        // the thing they were being asked about.
+        assert_eq!(which_of_the_two(wxdragon::id::ID_YES), Answered::Yes);
+        assert_eq!(which_of_the_two(wxdragon::id::ID_NO), Answered::No);
+        assert_eq!(which_of_the_two(wxdragon::id::ID_CANCEL), Answered::Neither);
+        assert_eq!(which_of_the_two(wxdragon::id::ID_OK), Answered::Neither);
     }
 }

@@ -5521,6 +5521,28 @@ impl WxMailApp {
                 ask_about_the_alpha_once(&frame, &a11y);
             }
 
+            // A move this program was closed part way through, found on the
+            // next start. After show and after the alpha question, for the
+            // same reasons: a dialog needs a frame that is on screen, and two
+            // questions must not open over one another. Skipped during a scan
+            // run, which has nobody to answer it.
+            //
+            // This is the whole reason the bytes of a crossing are kept. A
+            // store written for an interruption and read by nothing after one
+            // would be a whole unencrypted message on somebody's disk in
+            // exchange for a capability that does not exist.
+            if scan_target.is_none() {
+                say_what_did_not_finish(
+                    AppHandles {
+                        state: &state,
+                        tx: &scan_tx,
+                        rt: &scan_rt,
+                    },
+                    &frame,
+                    &a11y,
+                );
+            }
+
             // What Windows handed over, if it handed over anything: the
             // `mailto:` link somebody followed or the `.ics` or `.vcf` file
             // they opened. After show, for the same reason as above, and
@@ -17499,12 +17521,38 @@ fn spawn_folder_move(
                     Ok(session) => session,
                     Err(why) => return fail(why.to_string()),
                 };
+                // A connection of this thread's own, the way every other
+                // worker here opens one: a `MessageCache` holds a SQLite
+                // connection, which is not shareable across threads, so the
+                // one the window holds cannot come along.
+                //
+                // Nothing here fails if it cannot be opened. The keeping is a
+                // safeguard on top of the ordering, and the ordering is what
+                // makes a crossing safe.
+                let keeping = AppPaths::resolve()
+                    .ok()
+                    .map(|paths| paths.cache_dir())
+                    .and_then(|dir| {
+                        crate::data::message_cache::MessageCache::new(dir, None)
+                            .inspect_err(|e| {
+                                tracing::warn!(
+                                    "The message being moved cannot be kept while it \
+                                     moves, because the store could not be opened: {e}"
+                                );
+                            })
+                            .ok()
+                    });
                 match handle.block_on(crate::application::mail_across_accounts::move_it_across(
                     controller.as_ref(),
                     &from,
                     uid,
                     taking.as_ref(),
                     &into.id,
+                    crate::application::mail_across_accounts::TheMoveAsThisProgramRecordsIt {
+                        cache: keeping.as_ref(),
+                        row: message_row_id,
+                        to_account_id: &destination_account.id,
+                    },
                 )) {
                     // Every ending, including the ones where something went
                     // wrong after the message landed, is worded and decided
@@ -24899,6 +24947,221 @@ fn ask_about_the_alpha_once(frame: &Frame, a11y: &Accessibility) {
             crate::presentation::accessibility::announcements::Priority::High,
         );
     }
+}
+
+/// Say what happened to a move this program did not finish, and offer to
+/// finish it.
+///
+/// Once, when the window is ready. The read is local: it opens the cache, asks
+/// which moves have no ending, and touches no server, which is what lets it run
+/// here at all. At this moment no account has necessarily signed in, and the
+/// asking and the sending happen when somebody answers, by which time the
+/// sessions exist.
+///
+/// It is not an error and the words do not read like one. A move is append then
+/// remove and the removal is last, so at every point the program can stop the
+/// message is still at the account it came from. Nothing was lost, and saying
+/// so is the first thing the sentence does.
+///
+/// Every decision this makes is somewhere a test can reach without a window:
+/// what to say and whether there is anything to offer are
+/// [`crate::application::mail_across_accounts::what_to_say_about_an_unfinished_move`],
+/// and what a resume then does is
+/// [`crate::application::mail_across_accounts::how_to_finish`].
+fn say_what_did_not_finish(app: AppHandles<'_>, frame: &Frame, a11y: &Accessibility) {
+    use crate::application::mail_across_accounts::{
+        AboutAnUnfinishedMove, TheAccountsInvolved, what_to_say_about_an_unfinished_move,
+    };
+    use crate::presentation::accessibility::announcements::Priority;
+    use crate::presentation::asking::{Answered, which_of_the_two, yes_no_where_enter_answers_no};
+
+    let AppHandles { state, tx, rt } = app;
+    let Some(cache) = AppPaths::resolve()
+        .ok()
+        .map(|paths| paths.cache_dir())
+        .and_then(|dir| crate::data::message_cache::MessageCache::new(dir, None).ok())
+    else {
+        return;
+    };
+    let unfinished = match cache.moves_that_did_not_finish() {
+        Ok(unfinished) => unfinished,
+        Err(e) => {
+            tracing::warn!("The moves that did not finish could not be read: {e}");
+            return;
+        }
+    };
+    if unfinished.is_empty() {
+        return;
+    }
+    let accounts = {
+        let s = lock_state(state);
+        s.accounts.clone()
+    };
+    // What each account is called, or nothing at all where it is no longer set
+    // up here. A row can outlive the account it names, and offering to finish
+    // a move to an account that has gone would be offering a command with
+    // nowhere to send it.
+    let named = |id: &str| accounts.iter().find(|a| a.id == id).map(|a| a.name.clone());
+
+    for move_ in unfinished {
+        let it_is_in = named(&move_.from_account_id);
+        let it_was_going_to = named(&move_.to_account_id);
+        let said = what_to_say_about_an_unfinished_move(
+            &move_,
+            TheAccountsInvolved {
+                it_is_in: it_is_in.as_deref(),
+                it_was_going_to: it_was_going_to.as_deref(),
+            },
+        );
+        match said {
+            // Nothing can be done, so it is said rather than asked, and the
+            // kept bytes go: a whole message left on the disk for a move
+            // nobody can finish is a copy with nothing saying it is there.
+            AboutAnUnfinishedMove::JustSay(words) => {
+                let _ = a11y.announce(&words, Priority::High);
+                send_status(tx, rt, &words);
+                if let Err(e) = cache.the_move_is_over(move_.message_row_id) {
+                    tracing::warn!("The bytes kept for a move nobody can finish stayed: {e}");
+                }
+            }
+            AboutAnUnfinishedMove::Ask { title, words } => {
+                // Spoken as well as shown. A message box is read out when it
+                // opens, and the announcement is what reaches somebody whose
+                // reader was mid-sentence on something else.
+                let _ = a11y.announce(&words, Priority::High);
+                // Enter answers No, because Yes here speaks to two servers and
+                // may take the message off one of them.
+                let asked = MessageDialog::builder(frame, &words, &title)
+                    .with_style(yes_no_where_enter_answers_no())
+                    .build()
+                    .show_modal();
+                match which_of_the_two(asked) {
+                    Answered::Yes => spawn_finishing_the_move(
+                        AppHandles { state, tx, rt },
+                        move_,
+                        it_is_in.unwrap_or_default(),
+                        it_was_going_to.unwrap_or_default(),
+                    ),
+                    // A decision, so the bytes go and the question is not put
+                    // again. The message is where it always was.
+                    Answered::No => {
+                        if let Err(e) = cache.the_move_is_over(move_.message_row_id) {
+                            tracing::warn!("The bytes kept for an abandoned move stayed: {e}");
+                        }
+                        send_status(
+                            tx,
+                            rt,
+                            &format!(
+                                "{} was left where it is, and you will not be asked again.",
+                                move_.subject
+                            ),
+                        );
+                    }
+                    // Nobody answered. Nothing is written and nothing is sent,
+                    // so a later start asks again, and the backstop takes the
+                    // row on its own if it never is answered.
+                    Answered::Neither => (),
+                }
+            }
+        }
+    }
+}
+
+/// Finish a move on the two servers, once somebody has said to.
+///
+/// Both sessions are opened here rather than when the question was put, so
+/// nothing signs in on behalf of a question that might be answered No, and the
+/// permission each account carries is asked again at the moment the command
+/// goes.
+fn spawn_finishing_the_move(
+    app: AppHandles<'_>,
+    unfinished: crate::data::message_cache::moves_in_flight::AMoveLeftUnfinished,
+    it_is_in: String,
+    it_was_going_to: String,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    let (source, destination) = {
+        let s = lock_state(state);
+        (
+            s.accounts
+                .iter()
+                .find(|a| a.id == unfinished.from_account_id)
+                .cloned(),
+            s.accounts
+                .iter()
+                .find(|a| a.id == unfinished.to_account_id)
+                .cloned(),
+        )
+    };
+
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let (Some(source), Some(destination)) = (source, destination) else {
+            return say(UIUpdate::ErrorOccurred(format!(
+                "{} could not be finished: one of the two accounts is no longer set up.",
+                unfinished.subject
+            )));
+        };
+        let leaving =
+            match handle.block_on(crate::application::mail_session::the_session_at(&source)) {
+                Ok(session) => session,
+                Err(why) => {
+                    return say(UIUpdate::ErrorOccurred(format!(
+                        "{} could not be finished: {it_is_in} could not be signed in to. {why}",
+                        unfinished.subject
+                    )));
+                }
+            };
+        let taking = match handle.block_on(crate::application::mail_session::the_session_at(
+            &destination,
+        )) {
+            Ok(session) => session,
+            Err(why) => {
+                return say(UIUpdate::ErrorOccurred(format!(
+                    "{} could not be finished: {it_was_going_to} could not be signed \
+                     in to. {why}",
+                    unfinished.subject
+                )));
+            }
+        };
+
+        let across = handle.block_on(crate::application::mail_across_accounts::finish_the_move(
+            &unfinished,
+            taking.as_ref(),
+            leaving.as_ref(),
+        ));
+        // Whatever happened, the kept bytes have done their job: the move
+        // reached an ending and there is nothing left to resume.
+        if let Some(cache) = AppPaths::resolve()
+            .ok()
+            .map(|paths| paths.cache_dir())
+            .and_then(|dir| crate::data::message_cache::MessageCache::new(dir, None).ok())
+            && let Err(e) = cache.the_move_is_over(unfinished.message_row_id)
+        {
+            tracing::warn!("The bytes kept for a finished move stayed: {e}");
+        }
+
+        // The same words the move itself uses, from the same place, so a move
+        // finished a day later does not read differently from one that
+        // finished at the time.
+        let next = crate::application::server_delete::after_a_move_across_accounts(
+            &across,
+            &unfinished.to_folder,
+            &it_was_going_to,
+            &unfinished.from_folder,
+            &unfinished.subject,
+        );
+        if next.then == crate::application::server_delete::ThenWhat::MarkItDeletedHere {
+            say(UIUpdate::MessageDeletedFromCache(unfinished.message_row_id));
+        }
+        say(UIUpdate::StatusUpdated(next.said));
+    });
 }
 
 #[cfg(test)]

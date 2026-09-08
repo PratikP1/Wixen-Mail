@@ -75,6 +75,29 @@ Whenever there is no second copy, for any of these reasons, the message says its
 could not be checked here, and says plainly that this is not the same as a signature that
 failed.
 
+### A message being moved to another account is kept until the move ends
+
+Moving a message to a folder on a different account means fetching it from one mail server
+and uploading it to the other. While that is happening, the whole message is kept in the
+`cache` folder, and it is not encrypted, like everything else in that folder.
+
+Normally that is a few seconds. If Wixen Mail closes part way through a move, the message
+stays there until you answer the question you are asked the next time you start it, and at
+most seven days. Answer it either way and the copy goes immediately. Say nothing, and it
+goes on its own after the seven days.
+
+A message larger than 25 MB is not kept at all, and the move happens exactly as it would
+have. If several interrupted moves add up to more than 64 MB, the newest one is not kept,
+so a move you have not been asked about yet is never dropped to make room for one happening
+now.
+
+**This copy does not protect your message, and nothing else here should be read as saying
+it does.** A move puts the message at the second account first and only takes it off the
+first afterwards, so at every point where the program can stop, the first account still has
+it. What the copy buys is narrower: the move can be finished even when the account the
+message came *from* is the one that is not answering, and a large message does not have to
+be downloaded a second time. Deleting the copy loses nothing.
+
 ### Contact groups stay here
 
 A contact group is a name you give to some of the people in your address book, so you can write

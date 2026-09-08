@@ -31,6 +31,8 @@
 //! arriving today, at the top of somebody's folder.
 
 use crate::common::Result;
+use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::moves_in_flight::{AMoveLeftUnfinished, AMoveStarting};
 use crate::service::protocols::imap::{ImapMessage, LetGo, flag};
 
 /// Whether a chosen destination is at the same server the message is at.
@@ -186,6 +188,35 @@ pub enum WhetherItLanded {
     ItCannotBeAsked(String),
 }
 
+/// What keeping a move needs from this program's own records.
+///
+/// Three things that travel together because none of them is any use without
+/// the others: the store the bytes go in, the row that says which message they
+/// are, and the account that has to be found again to finish the move.
+#[derive(Clone, Copy)]
+pub(crate) struct TheMoveAsThisProgramRecordsIt<'a> {
+    /// Where the bytes are kept while the move is in the air, or `None` where
+    /// this computer could not open that store at all.
+    ///
+    /// Optional because the keeping is a safeguard and not the move. Without
+    /// it a crossing works exactly as it did before this existed: the append
+    /// goes first, nothing is removed at the source until the destination has
+    /// answered, and the source holds the message throughout. Refusing to move
+    /// somebody's message because a second copy of it could not be written
+    /// would be the safeguard making things worse than not having it.
+    pub cache: Option<&'a MessageCache>,
+    /// The message's own row in that cache.
+    pub row: i64,
+    /// The account the destination folder belongs to.
+    ///
+    /// Here rather than beside the folder path because it is no part of the
+    /// conversation with either server. The append names the folder down the
+    /// destination account's own connection, and the account identifier is
+    /// what a later run of the program needs in order to find that connection
+    /// again.
+    pub to_account_id: &'a str,
+}
+
 /// Every way a move to a folder on another account can end.
 ///
 /// Not a `Result`, for the reason [`crate::service::protocols::imap::Moved`] is
@@ -301,6 +332,37 @@ fn the_destination_never_answered(why: &crate::common::Error) -> bool {
     matches!(why, crate::common::Error::Network(_))
 }
 
+/// Why the destination cannot be asked, decided without speaking to it.
+///
+/// Two of the three ways [`whether_the_destination_has_it`] can come back
+/// unanswerable are settled before any server is involved, and one place says
+/// so rather than two. That matters because the second reader is the window
+/// that meets an unfinished move on the next start: it has to know, before it
+/// offers to finish anything, whether there is a question to put at all. Two
+/// readings of the same rule would eventually offer somebody a choice that
+/// cannot be carried out.
+///
+/// `None` means the question can be put. It says nothing about the answer.
+fn why_the_question_cannot_be_put(
+    message_id: Option<&str>,
+    was_there_before: Option<&[u32]>,
+) -> Option<String> {
+    if message_id.is_none() {
+        return Some(
+            "the message carries no identifier of its own, so there is nothing to ask about"
+                .to_string(),
+        );
+    }
+    if was_there_before.is_none() {
+        return Some(
+            "the folder was not read before the message was sent, so a message there now \
+             cannot be told from one that was there all along"
+                .to_string(),
+        );
+    }
+    None
+}
+
 /// Whether the destination folder holds the message after an append that was
 /// never answered.
 ///
@@ -328,17 +390,16 @@ pub(crate) async fn whether_the_destination_has_it(
     message_id: Option<&str>,
     was_there_before: Option<&[u32]>,
 ) -> WhetherItLanded {
-    let Some(message_id) = message_id else {
+    if let Some(why) = why_the_question_cannot_be_put(message_id, was_there_before) {
+        return WhetherItLanded::ItCannotBeAsked(why);
+    }
+    let (Some(message_id), Some(was_there_before)) = (message_id, was_there_before) else {
+        // Unreachable: the check above answers `None` only when both are
+        // present. Written as a refusal rather than an unwrap because this file
+        // may not panic, and because the two readings can only ever disagree
+        // here, where the disagreement is visible.
         return WhetherItLanded::ItCannotBeAsked(
-            "the message carries no identifier of its own, so there is nothing to ask about"
-                .to_string(),
-        );
-    };
-    let Some(was_there_before) = was_there_before else {
-        return WhetherItLanded::ItCannotBeAsked(
-            "the folder was not read before the message was sent, so a message there now \
-             cannot be told from one that was there all along"
-                .to_string(),
+            "the question could not be put together".to_string(),
         );
     };
     match the_account_it_is_going_to
@@ -372,6 +433,40 @@ pub(crate) async fn move_it_across(
     uid: u32,
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     into: &str,
+    recording: TheMoveAsThisProgramRecordsIt<'_>,
+) -> Result<MovedAcross> {
+    let ended = the_crossing(
+        the_account_it_is_in,
+        from,
+        uid,
+        the_account_it_is_going_to,
+        into,
+        recording,
+    )
+    .await;
+
+    // Once, on the way out, rather than in each of the six endings and the two
+    // early returns above them. An arm that forgot would leave a whole
+    // unencrypted message on somebody's disk with nothing anywhere saying it is
+    // there, and the arms that are easiest to forget are the ones nobody
+    // exercises by hand. Clearing a row that was never written does nothing,
+    // which is what makes one call on the way out correct as well as safe.
+    if let Some(cache) = recording.cache
+        && let Err(e) = cache.the_move_is_over(recording.row)
+    {
+        tracing::warn!("The bytes kept for a finished move could not be let go of: {e}");
+    }
+    ended
+}
+
+/// The crossing itself, with the kept bytes written in the middle of it.
+async fn the_crossing(
+    the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
+    from: &str,
+    uid: u32,
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    into: &str,
+    recording: TheMoveAsThisProgramRecordsIt<'_>,
 ) -> Result<MovedAcross> {
     let (filed, raw) = the_message_itself(the_account_it_is_in, from, uid).await?;
     let identifier = the_identifier_to_ask_about(filed.message_id.as_deref());
@@ -390,13 +485,36 @@ pub(crate) async fn move_it_across(
         None => None,
     };
 
+    let flags = the_flags_that_travel(&filed.flags);
+    let arrived = when_it_arrived(filed.internal_date.as_deref());
+
+    // Before the append, which is the whole point of keeping them. From here
+    // until the move reaches an ending, this computer holds everything needed
+    // to finish the move without going back to the source for the message: the
+    // bytes, where they were going, how they were to be filed, and what the
+    // destination folder held beforehand. Written after the append it would
+    // cover the removal and not the append, and the append is the half that can
+    // leave a question open.
+    //
+    // Failure here is logged and not fatal. It costs the safeguard, not the
+    // move: the append still goes first and the source still holds the message
+    // until the destination has answered.
+    if let Some(cache) = recording.cache
+        && let Err(e) = cache.keep_the_message_while_it_moves(&AMoveStarting {
+            message_row_id: recording.row,
+            to_account_id: recording.to_account_id,
+            to_folder: into,
+            flags: flags.as_deref(),
+            arrived: arrived.as_deref(),
+            was_there_before: was_there_before.as_deref(),
+            raw: &raw,
+        })
+    {
+        tracing::warn!("The message being moved could not be kept while it moves: {e}");
+    }
+
     if let Err(why) = the_account_it_is_going_to
-        .take_this_message(
-            into,
-            the_flags_that_travel(&filed.flags).as_deref(),
-            when_it_arrived(filed.internal_date.as_deref()).as_deref(),
-            &raw,
-        )
+        .take_this_message(into, flags.as_deref(), arrived.as_deref(), &raw)
         .await
     {
         if !the_destination_never_answered(&why) {
@@ -426,21 +544,212 @@ pub(crate) async fn move_it_across(
         }
     }
 
-    Ok(
-        match the_account_it_is_in.take_it_off_the_server(from, uid).await {
-            Ok(LetGo::ItIsGone) => MovedAcross::ItArrivedAndTheSourceLetItGo,
-            Ok(LetGo::StillHereMarked(why)) => MovedAcross::ItArrivedAndIsStillHereMarked(why),
-            Ok(LetGo::StillHereUnmarked(said)) => {
-                MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said)
-            }
-            // The message is at the destination, so this is not a failure of the
-            // move however it reads from here, and answering with `Err` would
-            // tell the caller nothing had happened anywhere. Nothing was marked
-            // either: everything that can go wrong before the mark goes wrong
-            // before it is sent.
-            Err(why) => MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(why.to_string()),
-        },
+    Ok(the_removal(the_account_it_is_in, from, uid).await)
+}
+
+/// Ask the source to let the message go, and say what really happened.
+///
+/// One place, shared by the move and by a move finished on a later run,
+/// because the two have to come to the same conclusion about the same three
+/// answers. A resume with a removal of its own would be a second reading of
+/// what `StillHereMarked` means.
+async fn the_removal(
+    the_account_it_is_leaving: &impl TheAccountItIsLeaving,
+    from: &str,
+    uid: u32,
+) -> MovedAcross {
+    match the_account_it_is_leaving
+        .take_it_off_the_server(from, uid)
+        .await
+    {
+        Ok(LetGo::ItIsGone) => MovedAcross::ItArrivedAndTheSourceLetItGo,
+        Ok(LetGo::StillHereMarked(why)) => MovedAcross::ItArrivedAndIsStillHereMarked(why),
+        Ok(LetGo::StillHereUnmarked(said)) => MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said),
+        // The message is at the destination, so this is not a failure of the
+        // move however it reads from here, and answering with `Err` would
+        // tell the caller nothing had happened anywhere. Nothing was marked
+        // either: everything that can go wrong before the mark goes wrong
+        // before it is sent.
+        Err(why) => MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(why.to_string()),
+    }
+}
+
+/// What to do about a move the program stopped part way through.
+///
+/// A decision over what the destination answered and nothing else, so it is
+/// asked and tested without a window and without a server. The window meets it
+/// already made, which is the rule `server_delete.rs` states for the row and
+/// the sentence and it is the same reason: a decision taken inside a callback
+/// can only be checked by opening a window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinishingIt {
+    /// The destination has the message, so all that is left is the removal.
+    TakeItOffTheSource,
+    /// The destination does not have it, so the append goes again from the
+    /// kept bytes, and only then is the source asked to let go.
+    SendItAgainThenTakeItOff,
+    /// Nothing can be decided, so nothing is sent to either server.
+    NothingCanBeSent(String),
+}
+
+/// What a resumed move should do, given what the destination answered.
+///
+/// The whole of the safeguard is that this is asked at all. A row surviving a
+/// restart means the program stopped somewhere between the write and the
+/// clear, and the append may well have landed. Sending it again on the
+/// strength of the row existing is how a second copy of somebody's mail is
+/// made, and it is the one way this store can do harm that not having it would
+/// not.
+pub fn how_to_finish(landed: &WhetherItLanded) -> FinishingIt {
+    match landed {
+        WhetherItLanded::ItIsThere => FinishingIt::TakeItOffTheSource,
+        WhetherItLanded::ItIsNotThere => FinishingIt::SendItAgainThenTakeItOff,
+        WhetherItLanded::ItCannotBeAsked(why) => FinishingIt::NothingCanBeSent(why.clone()),
+    }
+}
+
+/// Finish a move the program was stopped part way through.
+///
+/// Asks the destination first, always, and then does what [`how_to_finish`]
+/// says. Nothing reaches either server before that question has been put.
+///
+/// Both accounts' permissions still apply and both are asked again, because
+/// each command goes down its own account's held session and the answer may
+/// have changed between the run that started the move and the run that
+/// finishes it.
+pub(crate) async fn finish_the_move(
+    unfinished: &AMoveLeftUnfinished,
+    the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+    the_account_it_is_leaving: &impl TheAccountItIsLeaving,
+) -> MovedAcross {
+    let landed = whether_the_destination_has_it(
+        the_account_it_is_going_to,
+        &unfinished.to_folder,
+        the_identifier_to_ask_about(Some(&unfinished.identifier)),
+        unfinished.was_there_before.as_deref(),
     )
+    .await;
+
+    match how_to_finish(&landed) {
+        FinishingIt::TakeItOffTheSource => {
+            the_removal(
+                the_account_it_is_leaving,
+                &unfinished.from_folder,
+                unfinished.uid,
+            )
+            .await
+        }
+        FinishingIt::SendItAgainThenTakeItOff => {
+            match the_account_it_is_going_to
+                .take_this_message(
+                    &unfinished.to_folder,
+                    unfinished.flags.as_deref(),
+                    unfinished.arrived.as_deref(),
+                    &unfinished.raw,
+                )
+                .await
+            {
+                Ok(()) => {
+                    the_removal(
+                        the_account_it_is_leaving,
+                        &unfinished.from_folder,
+                        unfinished.uid,
+                    )
+                    .await
+                }
+                // A second append that is not answered either leaves the same
+                // question open again, and this time the folder's before-list
+                // is stale: the first append may have landed since it was
+                // taken. So nothing is removed and the ending says so.
+                Err(why) if the_destination_never_answered(&why) => {
+                    MovedAcross::ItIsNotKnownWhereItIs(why.to_string())
+                }
+                Err(why) => MovedAcross::TheDestinationRefusedIt(why.to_string()),
+            }
+        }
+        FinishingIt::NothingCanBeSent(why) => MovedAcross::ItIsNotKnownWhereItIs(why),
+    }
+}
+
+/// What somebody is told about a move the program did not finish.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AboutAnUnfinishedMove {
+    /// It can be finished if they say so. Two answers, and the words say what
+    /// each of them does.
+    Ask {
+        /// What the window is called.
+        title: String,
+        /// What is said and read out.
+        words: String,
+    },
+    /// Nothing can be done about it. Said rather than asked, and the kept bytes
+    /// go, because a question whose only honest answer is "nothing" is not a
+    /// question.
+    JustSay(String),
+}
+
+/// The two accounts a move was between, as somebody hears them named.
+///
+/// `None` where the account is no longer set up on this computer, which is a
+/// real case: a row can outlive the account it names. Offering to finish a move
+/// to an account that has gone would be offering a command with nowhere to go.
+#[derive(Debug, Clone, Copy)]
+pub struct TheAccountsInvolved<'a> {
+    /// What the account still holding the message is called.
+    pub it_is_in: Option<&'a str>,
+    /// What the account it was going to is called.
+    pub it_was_going_to: Option<&'a str>,
+}
+
+/// What to say to somebody about a move that did not finish.
+///
+/// Written here rather than in the window for the reason above, and it decides
+/// three things at once: whether there is anything to offer, what the sentence
+/// says, and which of the two shapes it takes.
+///
+/// It is not an error and it must not read like one. Nothing was lost: the
+/// message is still where it was, because a move is append then remove and the
+/// removal is last. The words say that first.
+pub fn what_to_say_about_an_unfinished_move(
+    unfinished: &AMoveLeftUnfinished,
+    accounts: TheAccountsInvolved<'_>,
+) -> AboutAnUnfinishedMove {
+    let subject = &unfinished.subject;
+    let (Some(it_is_in), Some(it_was_going_to)) = (accounts.it_is_in, accounts.it_was_going_to)
+    else {
+        return AboutAnUnfinishedMove::JustSay(format!(
+            "Moving {subject} did not finish, and one of the two accounts it was \
+             between is no longer set up on this computer, so it cannot be \
+             finished from here. Nothing was lost."
+        ));
+    };
+    let where_it_is = format!("{} in {it_is_in}", unfinished.from_folder);
+    let where_it_was_going = format!("{} in {it_was_going_to}", unfinished.to_folder);
+
+    if let Some(why) = why_the_question_cannot_be_put(
+        the_identifier_to_ask_about(Some(&unfinished.identifier)),
+        unfinished.was_there_before.as_deref(),
+    ) {
+        return AboutAnUnfinishedMove::JustSay(format!(
+            "Moving {subject} to {where_it_was_going} did not finish. The message \
+             is still in {where_it_is} and nothing was lost. It cannot be \
+             finished from here, because {why}. Look in {where_it_was_going} to \
+             see whether a copy arrived there, and move it again if it did not."
+        ));
+    }
+
+    AboutAnUnfinishedMove::Ask {
+        title: "A move that did not finish".to_string(),
+        words: format!(
+            "Moving {subject} to {where_it_was_going} did not finish, because \
+             this program closed part way through it. The message is still in \
+             {where_it_is} and nothing was lost.\n\n\
+             Finish the move now? {it_was_going_to} is asked first whether it \
+             already has the message, and it is only sent again if it does not. \
+             Answer No to leave the message where it is; you will not be asked \
+             about it again."
+        ),
+    }
 }
 
 impl TheAccountItIsIn for crate::application::mail_controller::MailController {
@@ -482,6 +791,7 @@ impl TheAccountItIsLeaving for crate::application::mail_controller::MailControll
 mod tests {
     use super::*;
     use crate::common::answering::{Conversation, LONG_ENOUGH, Turn, conversing};
+    use crate::common::temp_home::TempHome;
     use crate::service::protocols::imap::ImapSession;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, reading_only_on, signed_in_to,
@@ -781,6 +1091,17 @@ mod tests {
         watching: Option<&'a Conversation>,
         /// What the source had been told when the append arrived.
         the_source_had_been_told: tokio::sync::Mutex<Vec<String>>,
+        /// This program's own store, read at the instant the append arrives.
+        ///
+        /// The same witness as the one above and for the same reason. Whether
+        /// the bytes were kept before the append is a question about an
+        /// instant, and asking it after the move has finished asks about a
+        /// different one: by then the row has been taken away again, and a
+        /// store that never held anything and a store that held it and let go
+        /// look exactly alike.
+        watching_the_store: Option<&'a AStore>,
+        /// What the store was holding when the append arrived.
+        the_store_was_holding: tokio::sync::Mutex<Vec<AMoveLeftUnfinished>>,
     }
 
     impl<'a> ADestinationThat<'a> {
@@ -791,11 +1112,18 @@ mod tests {
                 asked: tokio::sync::Mutex::new(Vec::new()),
                 watching: None,
                 the_source_had_been_told: tokio::sync::Mutex::new(Vec::new()),
+                watching_the_store: None,
+                the_store_was_holding: tokio::sync::Mutex::new(Vec::new()),
             }
         }
 
         fn watching_the_source(mut self, source: &'a Conversation) -> Self {
             self.watching = Some(source);
+            self
+        }
+
+        fn watching_the_store(mut self, store: &'a AStore) -> Self {
+            self.watching_the_store = Some(store);
             self
         }
 
@@ -805,6 +1133,10 @@ mod tests {
 
         async fn what_the_source_had_been_told(&self) -> Vec<String> {
             self.the_source_had_been_told.lock().await.clone()
+        }
+
+        async fn what_the_store_was_holding(&self) -> Vec<AMoveLeftUnfinished> {
+            self.the_store_was_holding.lock().await.clone()
         }
     }
 
@@ -818,6 +1150,9 @@ mod tests {
         ) -> Result<()> {
             if let Some(source) = self.watching {
                 *self.the_source_had_been_told.lock().await = source.transcript().await;
+            }
+            if let Some(store) = self.watching_the_store {
+                *self.the_store_was_holding.lock().await = store.moves_it_is_holding();
             }
             self.asked.lock().await.push(format!("APPEND {into}"));
             match self.the_append {
@@ -844,6 +1179,108 @@ mod tests {
                 .pop_front()
                 .unwrap_or_else(|| Ok(Vec::new()))
         }
+    }
+
+    /// This program's own store, with the message being moved already in it.
+    ///
+    /// The real cache rather than a double, and that is the point. What these
+    /// tests ask is whether a whole message really is on the disk at the moment
+    /// the append goes out, and really is gone once the move has ended. A
+    /// double answers that question about itself.
+    struct AStore {
+        cache: TempHome<MessageCache>,
+        row: i64,
+    }
+
+    impl AStore {
+        /// Every move it currently holds bytes for.
+        fn moves_it_is_holding(&self) -> Vec<AMoveLeftUnfinished> {
+            self.cache
+                .moves_that_did_not_finish()
+                .expect("the moves that did not finish")
+        }
+
+        /// How this program records the move under test.
+        fn recording(&self) -> TheMoveAsThisProgramRecordsIt<'_> {
+            TheMoveAsThisProgramRecordsIt {
+                cache: Some(&self.cache),
+                row: self.row,
+                to_account_id: THE_DESTINATION_ACCOUNT,
+            }
+        }
+    }
+
+    /// The account the destination folder is at, as this program knows it.
+    const THE_DESTINATION_ACCOUNT: &str = "acc-2";
+
+    fn a_store() -> AStore {
+        a_store_keeping_no_move_larger_than(
+            crate::data::message_cache::moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES,
+        )
+    }
+
+    fn a_store_keeping_no_move_larger_than(ceiling_bytes: i64) -> AStore {
+        let cache = TempHome::named("wixen_move_across_", |dir| {
+            let cache = MessageCache::new(dir.to_path_buf(), None)
+                .expect("a cache")
+                .keeping_no_move_larger_than(ceiling_bytes);
+            cache
+                .save_folder(&crate::data::message_cache::CachedFolder {
+                    id: 0,
+                    account_id: "acc-1".to_string(),
+                    name: "INBOX".to_string(),
+                    path: "INBOX".to_string(),
+                    folder_type: "Inbox".to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("a folder");
+            cache
+        });
+        let row = cache
+            .save_message(&crate::data::message_cache::CachedMessage {
+                id: 0,
+                uid: THE_UID,
+                folder_id: 1,
+                message_id: THE_IDENTIFIER_AS_IT_IS_HELD.to_string(),
+                subject: "Lunch".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                date: "2026-08-28".to_string(),
+                body_plain: None,
+                body_html: None,
+                read: false,
+                starred: false,
+                deleted: false,
+                safety: crate::service::safety::Safety::Ordinary,
+            })
+            .expect("a message");
+        AStore { cache, row }
+    }
+
+    /// The move as the program makes it, with a real store behind it.
+    ///
+    /// Every test here goes through this rather than through
+    /// [`move_it_across`] directly, so no test can be written by accident
+    /// against a crossing that keeps nothing.
+    async fn a_move_across(
+        kept_in: &AStore,
+        the_account_it_is_in: &(impl TheAccountItIsIn + TheAccountItIsLeaving),
+        from: &str,
+        uid: u32,
+        the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
+        into: &str,
+    ) -> Result<MovedAcross> {
+        move_it_across(
+            the_account_it_is_in,
+            from,
+            uid,
+            the_account_it_is_going_to,
+            into,
+            kept_in.recording(),
+        )
+        .await
     }
 
     /// Wait for one crossing, and fail with a sentence rather than a timeout.
@@ -1157,7 +1594,8 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_server_that_can("UIDPLUS").await;
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1208,7 +1646,8 @@ mod tests {
         let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])])
             .watching_the_source(&source);
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1251,7 +1690,8 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1282,7 +1722,8 @@ mod tests {
         .await;
         let destination = a_server_that_can("UIDPLUS").await;
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1320,7 +1761,8 @@ mod tests {
         .await;
         let destination = a_server_that_can("UIDPLUS").await;
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1354,7 +1796,8 @@ mod tests {
         let destination =
             ADestinationThat::takes_the_append(TheAppend::IsRefused, vec![Ok(vec![9])]);
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1385,7 +1828,8 @@ mod tests {
             vec![Ok(vec![]), Ok(vec![9])],
         );
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1429,7 +1873,8 @@ mod tests {
             vec![Ok(vec![]), Ok(vec![])],
         );
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1462,7 +1907,8 @@ mod tests {
         .await;
         let destination = ADestinationThat::takes_the_append(TheAppend::IsNeverAnswered, vec![]);
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1504,7 +1950,8 @@ mod tests {
             vec![Ok(vec![9]), Ok(vec![9])],
         );
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1545,7 +1992,8 @@ mod tests {
             ],
         );
 
-        let across = waiting_for(move_it_across(
+        let across = waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1690,7 +2138,8 @@ mod tests {
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_server_that_can("UIDPLUS").await;
 
-        waiting_for(move_it_across(
+        waiting_for(a_move_across(
+            &a_store(),
             &the_account_it_is_leaving(&source).await,
             "INBOX",
             THE_UID,
@@ -1703,5 +2152,560 @@ mod tests {
         let said = everything_said_to(&source).await;
         assert!(!said.to_uppercase().contains("UID COPY"), "{said}");
         assert!(!said.to_uppercase().contains("UID MOVE"), "{said}");
+    }
+
+    // ── The bytes kept while the move is in the air ──────────────────────
+
+    #[tokio::test]
+    async fn test_the_message_is_already_on_the_disk_when_the_append_goes_out() {
+        // The instant that decides whether any of this is worth having. If the
+        // bytes are written after the append, then the whole window this store
+        // exists for, between handing the message over and hearing back, is a
+        // window it does not cover.
+        //
+        // Read from inside the append rather than checked afterwards, for the
+        // reason the ordering witness beside it gives: by the time the move has
+        // ended the row has been taken away again, and a store that never held
+        // anything is indistinguishable from one that held it and let go.
+        let store = a_store();
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])])
+            .watching_the_store(&store);
+
+        let across = waiting_for(a_move_across(
+            &store,
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("the move to be made");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        let held = destination.what_the_store_was_holding().await;
+        assert_eq!(
+            held.len(),
+            1,
+            "the message was not being kept when the append went out, so a \
+             program stopped between the two would have nothing to resume from"
+        );
+        assert_eq!(
+            held[0].raw,
+            THE_MESSAGE.as_bytes(),
+            "what was kept is not the message that was sent"
+        );
+        assert_eq!(held[0].to_folder, "Archive");
+        assert_eq!(held[0].to_account_id, THE_DESTINATION_ACCOUNT);
+        assert_eq!(
+            held[0].was_there_before,
+            Some(Vec::new()),
+            "the folder was read before the message went and the answer was not \
+             kept, so a resume could never settle whether the append landed"
+        );
+    }
+
+    /// Which ending this is, with no wildcard arm.
+    ///
+    /// A seventh way for a crossing to end stops this compiling until somebody
+    /// says what it is called, and the list below then has to gain it too.
+    fn which_ending(across: &MovedAcross) -> &'static str {
+        match across {
+            MovedAcross::ItArrivedAndTheSourceLetItGo => "the source let it go",
+            MovedAcross::ItArrivedAndIsStillHereMarked(_) => "still here, marked",
+            MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(_) => "still here, unmarked",
+            MovedAcross::TheDestinationRefusedIt(_) => "the destination refused it",
+            MovedAcross::ItNeverArrivedSoNothingWasRemoved(_) => "it never arrived",
+            MovedAcross::ItIsNotKnownWhereItIs(_) => "nobody knows where it is",
+        }
+    }
+
+    #[tokio::test]
+    async fn test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind() {
+        // Every arm, not the happy one. An ending that forgets to let go
+        // leaves a whole unencrypted message on somebody's disk with nothing
+        // anywhere saying it is there, and on the next start they are asked
+        // about a move that ended perfectly well.
+        //
+        // The endings are collected as they happen and the set is compared
+        // against the whole of the type at the end, so an ending nothing here
+        // reaches fails this rather than passing quietly.
+        let mut reached: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+
+        for scenario in 0..6 {
+            let store = a_store();
+            let source = a_source_server(match scenario {
+                2 => ASourceServer {
+                    refusing: "UID STORE",
+                    ..ASourceServer::default()
+                },
+                1 => ASourceServer {
+                    capabilities: "",
+                    ..ASourceServer::default()
+                },
+                _ => ASourceServer::default(),
+            })
+            .await;
+
+            let across = match scenario {
+                0..=2 => {
+                    let destination = a_server_that_can("UIDPLUS").await;
+                    waiting_for(a_move_across(
+                        &store,
+                        &the_account_it_is_leaving(&source).await,
+                        "INBOX",
+                        THE_UID,
+                        &the_account_it_is_going_to(&destination).await,
+                        "Archive",
+                    ))
+                    .await
+                }
+                3 => {
+                    let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
+                    waiting_for(a_move_across(
+                        &store,
+                        &the_account_it_is_leaving(&source).await,
+                        "INBOX",
+                        THE_UID,
+                        &the_account_it_is_going_to(&destination).await,
+                        "Archive",
+                    ))
+                    .await
+                }
+                4 => {
+                    let destination = ADestinationThat::takes_the_append(
+                        TheAppend::IsNeverAnswered,
+                        vec![Ok(vec![]), Ok(vec![])],
+                    );
+                    waiting_for(a_move_across(
+                        &store,
+                        &the_account_it_is_leaving(&source).await,
+                        "INBOX",
+                        THE_UID,
+                        &destination,
+                        "Archive",
+                    ))
+                    .await
+                }
+                _ => {
+                    let destination = ADestinationThat::takes_the_append(
+                        TheAppend::IsNeverAnswered,
+                        vec![
+                            Ok(vec![]),
+                            Err(crate::common::Error::Protocol("no search here".to_string())),
+                        ],
+                    );
+                    waiting_for(a_move_across(
+                        &store,
+                        &the_account_it_is_leaving(&source).await,
+                        "INBOX",
+                        THE_UID,
+                        &destination,
+                        "Archive",
+                    ))
+                    .await
+                }
+            }
+            .expect("every one of these is an ending rather than a failure");
+
+            reached.insert(which_ending(&across));
+            assert!(
+                store.moves_it_is_holding().is_empty(),
+                "the bytes were still being kept after a move ended as \
+                 {across:?}"
+            );
+        }
+
+        let all: std::collections::BTreeSet<&str> = [
+            "the source let it go",
+            "still here, marked",
+            "still here, unmarked",
+            "the destination refused it",
+            "it never arrived",
+            "nobody knows where it is",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            reached, all,
+            "a way a crossed move can end was never reached here, so nothing \
+             above says whether it lets go of the bytes"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_too_large_to_keep_still_moves() {
+        // The pairing earning its keep, and the whole crossing rather than the
+        // store on its own. Nothing about this person's move is worse than it
+        // would have been: the append goes first, the removal goes last, and
+        // an append whose answer never arrives is asked about. So the move
+        // must not fail, must not be refused, and must not warn them about a
+        // safeguard they never knew existed.
+        //
+        // A ceiling of one byte rather than twenty-five megabytes of mail
+        // through two loopback sockets. That the shipped number is the one
+        // really applied is `moves_in_flight`'s own pair of tests, which do
+        // build the real thing.
+        //
+        // What was kept is read at the instant of the append and not
+        // afterwards. Afterwards the move has ended and its row has gone
+        // whatever happened, so "nothing was kept" and "something was kept and
+        // then let go of" are the same answer, and the assertion could not
+        // fail.
+        let store = a_store_keeping_no_move_larger_than(1);
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])])
+            .watching_the_store(&store);
+
+        let across = waiting_for(a_move_across(
+            &store,
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("a message too large to keep still moves");
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the move did not finish at the source"
+        );
+        assert!(
+            !destination.everything_it_was_asked().await.is_empty(),
+            "the message never reached the destination, so this test is not \
+             about what it is named after"
+        );
+        assert!(
+            destination.what_the_store_was_holding().await.is_empty(),
+            "a message over the ceiling was kept anyway, so a row offering to \
+             finish the move exists with no message in it"
+        );
+    }
+
+    // ── Finishing a move the program was stopped part way through ────────
+
+    /// A move left unfinished, as the store would hand one back.
+    fn left_unfinished(
+        identifier: &str,
+        was_there_before: Option<Vec<u32>>,
+    ) -> AMoveLeftUnfinished {
+        AMoveLeftUnfinished {
+            message_row_id: 1,
+            subject: "Lunch".to_string(),
+            identifier: identifier.to_string(),
+            from_account_id: "acc-1".to_string(),
+            from_folder: "INBOX".to_string(),
+            uid: THE_UID,
+            to_account_id: THE_DESTINATION_ACCOUNT.to_string(),
+            to_folder: "Archive".to_string(),
+            flags: Some("(\\Seen)".to_string()),
+            arrived: Some("\"01-Aug-2026 10:00:00 +0000\"".to_string()),
+            was_there_before,
+            raw: THE_MESSAGE.as_bytes().to_vec(),
+            started_at: "2026-09-08T09:00:00Z".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_move_asks_the_destination_before_it_sends_anything() {
+        // The one way this store can do harm that not having it would not. A
+        // row surviving a restart means the program stopped somewhere between
+        // the write and the clear, and the append may well have landed.
+        // Sending it again because a row exists is how somebody ends up with
+        // two copies of their message and nothing saying why.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
+
+        waiting_for(finish_the_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+            &destination,
+            &the_account_it_is_leaving(&source).await,
+        ))
+        .await;
+
+        let asked = destination.everything_it_was_asked().await;
+        let Some(first) = asked.first() else {
+            panic!("the destination was never asked anything at all");
+        };
+        assert!(
+            first.starts_with("SEARCH"),
+            "the first thing a resumed move said to the destination was \
+             {first:?}, so the message was sent again without asking whether it \
+             was already there"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_move_the_destination_already_has_is_only_removed() {
+        // The append landed before the program stopped. Sending it again would
+        // make the second copy; the only thing left to do is the removal.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
+
+        let across = waiting_for(finish_the_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+            &destination,
+            &the_account_it_is_leaving(&source).await,
+        ))
+        .await;
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        let asked = destination.everything_it_was_asked().await;
+        assert!(
+            !asked.iter().any(|said| said.starts_with("APPEND")),
+            "the message was sent again to a destination that already had it: \
+             {asked:?}"
+        );
+        assert!(
+            source.was_told("UID EXPUNGE 4").await,
+            "the move was not finished at the source"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_move_the_destination_does_not_have_is_sent_again_then_removed() {
+        // The append never landed, so the kept bytes are what completes the
+        // move without going back to the source for the message. This is the
+        // case the whole store exists for.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])]);
+
+        let across = waiting_for(finish_the_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+            &destination,
+            &the_account_it_is_leaving(&source).await,
+        ))
+        .await;
+
+        assert_eq!(across, MovedAcross::ItArrivedAndTheSourceLetItGo);
+        let asked = destination.everything_it_was_asked().await;
+        assert_eq!(
+            asked,
+            vec![
+                format!("SEARCH Archive {THE_IDENTIFIER_AS_IT_IS_HELD}"),
+                "APPEND Archive".to_string(),
+            ],
+            "a resumed move that had to send the message again did not ask \
+             first, or did not send it"
+        );
+        assert!(
+            !everything_said_to(&source)
+                .await
+                .to_uppercase()
+                .contains("BODY.PEEK[]"),
+            "the message was fetched from the source again, so the kept bytes \
+             bought nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_move_that_cannot_be_asked_about_sends_nothing_to_either_server() {
+        // A message with no identifier of its own, which real mail is:
+        // `mail_sync.rs:564` keeps such a message with an empty one. Nothing
+        // can be asked, so nothing may be sent: appending would risk a second
+        // copy and removing would risk the only one.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
+
+        let across = waiting_for(finish_the_move(
+            &left_unfinished("", Some(Vec::new())),
+            &destination,
+            &the_account_it_is_leaving(&source).await,
+        ))
+        .await;
+
+        assert!(
+            matches!(across, MovedAcross::ItIsNotKnownWhereItIs(_)),
+            "{across:?}"
+        );
+        assert!(
+            destination.everything_it_was_asked().await.is_empty(),
+            "something was said to the destination about a move nothing can \
+             settle"
+        );
+        let said = everything_said_to(&source).await;
+        assert!(!said.to_uppercase().contains("STORE"), "{said}");
+        assert!(!said.to_uppercase().contains("EXPUNGE"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_move_whose_folder_nobody_read_settles_nothing() {
+        // The second unanswerable case, and it is not the same as the first. A
+        // folder nobody read before the message was sent cannot tell a message
+        // that has just arrived from one that was always there, so a hit
+        // proves nothing.
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![9])]);
+
+        let across = waiting_for(finish_the_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, None),
+            &destination,
+            &the_account_it_is_leaving(&source).await,
+        ))
+        .await;
+
+        assert!(
+            matches!(across, MovedAcross::ItIsNotKnownWhereItIs(_)),
+            "{across:?}"
+        );
+        assert!(destination.everything_it_was_asked().await.is_empty());
+    }
+
+    #[test]
+    fn test_the_three_answers_lead_to_three_different_things_being_done() {
+        // Two of them folded together is the failure this whole phase is
+        // about. "It is not there" sends the message again; "nobody could find
+        // out" must send nothing at all, and reading the second as the first
+        // is how a message is removed from the only server that has it.
+        assert_eq!(
+            how_to_finish(&WhetherItLanded::ItIsThere),
+            FinishingIt::TakeItOffTheSource
+        );
+        assert_eq!(
+            how_to_finish(&WhetherItLanded::ItIsNotThere),
+            FinishingIt::SendItAgainThenTakeItOff
+        );
+        assert_eq!(
+            how_to_finish(&WhetherItLanded::ItCannotBeAsked("no search".to_string())),
+            FinishingIt::NothingCanBeSent("no search".to_string())
+        );
+    }
+
+    // ── What somebody is told about it ───────────────────────────────────
+
+    /// Both accounts still set up, named as somebody hears them.
+    fn both_accounts() -> TheAccountsInvolved<'static> {
+        TheAccountsInvolved {
+            it_is_in: Some("Work"),
+            it_was_going_to: Some("Home"),
+        }
+    }
+
+    #[test]
+    fn test_the_offer_says_where_the_message_is_and_does_not_read_like_an_error() {
+        // Nothing was lost and it must not sound as though something was. A
+        // move is append then remove and the removal is last, so at every
+        // point the program can stop the message is still at the account it
+        // came from.
+        let AboutAnUnfinishedMove::Ask { words, .. } = what_to_say_about_an_unfinished_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+            both_accounts(),
+        ) else {
+            panic!("a move that can be finished was not offered");
+        };
+
+        assert!(words.contains("Lunch"), "{words}");
+        assert!(words.contains("INBOX in Work"), "{words}");
+        assert!(words.contains("Archive in Home"), "{words}");
+        assert!(
+            words.contains("nothing was lost"),
+            "the words do not say the message is safe: {words}"
+        );
+        for alarming in ["error", "failed", "lost the message", "went wrong"] {
+            assert!(
+                !words.to_lowercase().contains(alarming),
+                "the words read like something went wrong ({alarming}): {words}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_move_nothing_can_settle_is_told_rather_than_offered() {
+        // Offering to finish a move that cannot be finished is offering a
+        // choice whose only honest outcome is nothing happening. The person is
+        // told where the message is and where to look instead.
+        let said = what_to_say_about_an_unfinished_move(
+            &left_unfinished("", Some(Vec::new())),
+            both_accounts(),
+        );
+
+        let AboutAnUnfinishedMove::JustSay(words) = said else {
+            panic!("a move nothing can settle was offered as a choice: {said:?}");
+        };
+        assert!(words.contains("INBOX in Work"), "{words}");
+        assert!(words.contains("Archive in Home"), "{words}");
+        assert!(
+            words.contains("nothing was lost"),
+            "the words do not say the message is safe: {words}"
+        );
+    }
+
+    #[test]
+    fn test_a_move_to_an_account_that_has_gone_is_told_rather_than_offered() {
+        // A row can outlive the account it names. Offering to finish the move
+        // would be offering a command with nowhere to send it, and the answer
+        // Yes would sign in to nothing.
+        let said = what_to_say_about_an_unfinished_move(
+            &left_unfinished(THE_IDENTIFIER_AS_IT_IS_HELD, Some(Vec::new())),
+            TheAccountsInvolved {
+                it_is_in: Some("Work"),
+                it_was_going_to: None,
+            },
+        );
+
+        assert!(
+            matches!(said, AboutAnUnfinishedMove::JustSay(_)),
+            "{said:?}"
+        );
+    }
+
+    #[test]
+    fn test_only_the_crossing_keeps_a_message_while_it_moves() {
+        // The store is written from one place, so a move that stays inside one
+        // account cannot write a row: the same-account path is a `COPY` down
+        // one connection and never reaches this file at all.
+        //
+        // An exact list rather than an emptiness check, so a reading that has
+        // quietly stopped matching anything fails here rather than reporting a
+        // clean tree. That is the companion this project asks any
+        // source-reading check to carry, and the reason is in
+        // `how_it_arrived.rs`, where the version without one passed against a
+        // scope that could not see the path that had gone wrong.
+        assert_eq!(
+            shipped_files_calling(".keep_the_message_while_it_moves("),
+            vec!["src/application/mail_across_accounts.rs".to_string()]
+        );
+    }
+
+    /// Every shipped source file that calls a named method.
+    ///
+    /// The whole of `src/`, and the shipped half of each file through
+    /// [`crate::common::what_ships::what_ships`]: the test halves here call
+    /// these directly on purpose, and a reading that saw them would report
+    /// every one as a caller.
+    fn shipped_files_calling(wanted: &str) -> Vec<String> {
+        fn walk(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, into);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                    into.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(std::path::Path::new("src"), &mut files);
+        files.sort();
+
+        let mut named: Vec<String> = files
+            .iter()
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .filter(|path| !path.starts_with("src/data/message_cache"))
+            .filter(|path| {
+                std::fs::read_to_string(path).is_ok_and(|source| {
+                    crate::common::what_ships::what_ships(&source).contains(wanted)
+                })
+            })
+            .collect();
+        named.sort();
+        named
     }
 }
