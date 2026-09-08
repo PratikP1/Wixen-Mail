@@ -15,6 +15,7 @@ mod folders;
 pub mod held_conflicts;
 pub mod how_it_arrived;
 mod messages;
+pub mod moves_in_flight;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::CardsRead;
 pub use folders::WhatTheServerSaid;
@@ -1552,6 +1553,33 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create signed_original table: {}", e)))?;
+
+        // A message being moved to a folder on another account, held from
+        // before the append until the move ends. A row exists exactly while a
+        // crossing is in the air, which is normally seconds; one that outlives
+        // the program is a move that was interrupted, and it is what lets that
+        // move be finished on the next run. See `moves_in_flight`.
+        //
+        // Only the destination side is here. The source account, folder and
+        // uid are all reachable from the message row this keys on, and copying
+        // them would be two records of one fact that can disagree.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS move_in_flight (
+                message_id INTEGER PRIMARY KEY,
+                to_account_id TEXT NOT NULL,
+                to_folder TEXT NOT NULL,
+                flags TEXT,
+                arrived TEXT,
+                was_there_before TEXT,
+                original BLOB NOT NULL,
+                bytes INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create move_in_flight table: {}", e)))?;
 
         self.conn
             .execute(

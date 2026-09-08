@@ -217,10 +217,10 @@ pub enum Answer {
 /// dangerous reading is a dismissal counting as Yes, and that cannot happen
 /// when only the Yes button itself says yes.
 pub fn what_they_said(from_the_dialog: wxdragon::Id) -> Answer {
-    match from_the_dialog {
-        wxdragon::id::ID_YES => Answer::RemoveThem,
-        wxdragon::id::ID_NO => Answer::KeepThem,
-        _ => Answer::NotNow,
+    match crate::presentation::asking::which_of_the_two(from_the_dialog) {
+        crate::presentation::asking::Answered::Yes => Answer::RemoveThem,
+        crate::presentation::asking::Answered::No => Answer::KeepThem,
+        crate::presentation::asking::Answered::Neither => Answer::NotNow,
     }
 }
 
