@@ -8,6 +8,49 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The calendar can show one week or one month at a time, and Previous period
+  and Next period now work.** Choose Week or Month in the View box on the
+  calendar toolbar and the list narrows to the seven days, or the calendar
+  month, around the day you are on. Previous period and Next period move you a
+  week or a month at a time, and each says which period you landed on, so you
+  hear "Week of 20 July 2026" or "July 2026" rather than only having the list
+  redrawn under you. Today brings you back to the period you are in.
+
+  A month is a list, not a grid. It is the same list the agenda uses, in date
+  order from the first of the month to the last, so you work down it the way
+  you already work down your calendar rather than piecing a month together from
+  the labels on a grid of cells.
+
+  Stepping between months keeps to real months. Going back from the 31st of a
+  month lands in the month before even when it is shorter, and going forward
+  again returns to the month you started in. December and January are next door
+  to each other in both directions.
+
+  The heading names the week you asked for, not the events that came back. An
+  empty week still tells you which week it is. Search is the exception: it
+  shows events from anywhere in your calendar, so its heading keeps describing
+  what it found.
+
+  Both buttons used to be greyed out, and their labels read as "less than Prev"
+  and "Next greater than" to Narrator, while NVDA read them as "Previous
+  period, not built yet" and "Next period, not built yet". They now carry the
+  same real name on both.
+
+  A week is a narrower question, not a faster one. Your calendar is still read
+  in two passes and the second one reads every repeating event in the account
+  whatever window is on screen, because only working the repeats out can say
+  which of them fall inside it. So a week does not load noticeably quicker than
+  the full agenda.
+
+  The view you choose is remembered. Settings, Calendar and PIM, Calendar has
+  "Calendar opens on", which is Agenda unless you change it, so no existing
+  calendar changes shape because this shipped. Change it there and the calendar
+  takes it up straight away rather than waiting for a restart, and the View box
+  on the toolbar follows.
+
+  What has not been checked: none of this has been heard with a screen reader,
+  and no calendar has ever been synced from a real account.
+
 - **A move to another account that this program was closed part way through can
   be finished the next time you start it.** You are told which message it was,
   which folder and account it was going to, and where it still is, and you are

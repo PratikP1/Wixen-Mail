@@ -462,6 +462,20 @@ pub struct AppConfig {
     /// Default reminder lead-time in minutes (e.g. 15 = remind 15 min before)
     #[serde(default = "default_reminder_minutes")]
     pub default_reminder_minutes: u32,
+    /// Which stretch of calendar the calendar opens on: "agenda", "week" or
+    /// "month".
+    ///
+    /// A word rather than a number, so a settings file somebody opens says what
+    /// it means. Stored as a plain string here and read back into
+    /// `presentation::ui_types::CalendarView` where it is used, the way
+    /// `date_style` and `date_order` are read into `DateSettings`: which stretch
+    /// of calendar to draw is a question about the screen, and this layer holds
+    /// what survives a restart rather than what it means.
+    ///
+    /// Anything else falls back to the agenda rather than refusing to start.
+    /// See `CalendarView::from_stored`.
+    #[serde(default = "default_calendar_view")]
+    pub calendar_view: String,
     /// How long Send holds a message before anything hands it to a server, in
     /// seconds.
     ///
@@ -577,6 +591,17 @@ fn default_reminder_minutes() -> u32 {
     15
 }
 
+/// The agenda, which is what the calendar showed before views existed, so that
+/// nobody's calendar changes shape because this shipped.
+///
+/// Written out rather than taken from `CalendarView::default().stored()`, so
+/// that this layer does not reach up into the screen it stores for. The test
+/// beside it asserts the two agree, which is the coupling that matters without
+/// the dependency.
+fn default_calendar_view() -> String {
+    "agenda".to_string()
+}
+
 fn default_autosave_minutes() -> u32 {
     crate::application::autosave::AutosaveInterval::default().minutes()
 }
@@ -645,6 +670,7 @@ impl Default for AppConfig {
             check_spelling_as_you_type: default_true(),
             default_sort_order: default_sort_order(),
             default_reminder_minutes: default_reminder_minutes(),
+            calendar_view: default_calendar_view(),
         }
     }
 }
@@ -1336,6 +1362,29 @@ mod permission_tests {
     }
 
     #[test]
+    fn test_a_new_installation_opens_the_calendar_on_the_agenda() {
+        // The default is the shape the calendar has always had, so nobody's
+        // calendar changes because views shipped.
+        //
+        // The word is written out in `default_calendar_view` rather than taken
+        // from the screen's own enum, so that this layer does not reach up into
+        // the one it stores for. That leaves two places holding one word, and
+        // this is the assertion that keeps them together.
+        assert_eq!(AppConfig::default().calendar_view, "agenda");
+        assert_eq!(
+            AppConfig::default().calendar_view,
+            crate::presentation::ui_types::CalendarView::Agenda.stored(),
+            "the stored default and the view it is meant to name have drifted"
+        );
+        assert_eq!(
+            crate::presentation::ui_types::CalendarView::from_stored(
+                &AppConfig::default().calendar_view
+            ),
+            crate::presentation::ui_types::CalendarView::default(),
+        );
+    }
+
+    #[test]
     fn test_an_account_cannot_be_wider_than_the_setting() {
         // Turning everything off has to mean off. An account entry left over
         // from before must not quietly put it back.
@@ -1377,6 +1426,7 @@ mod permission_tests {
             "unread_on_a_parent",
             "announce_decorative_pictures",
             "undo_send_hold_seconds",
+            "calendar_view",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1400,6 +1450,11 @@ mod permission_tests {
         assert_eq!(parsed.clock_hours, "auto");
         assert_eq!(parsed.default_sort_order, "date_newest");
         assert_eq!(parsed.default_reminder_minutes, 15);
+        assert_eq!(
+            parsed.calendar_view, "agenda",
+            "an absent key would have changed the shape of every existing \
+             calendar on the first start after upgrading"
+        );
         assert!(
             parsed.check_spelling_as_you_type,
             "spelling would stop being checked for everybody upgrading"

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 474 records have arrived since and have not been through it.
+# 477 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11913,7 +11913,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 58 },
+    { file = "src/data/config.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -12765,7 +12765,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 26 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 58 },
+    { file = "src/data/config.rs", tests = 59 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -16956,7 +16956,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 58 },
+    { file = "src/data/config.rs", tests = 59 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -17323,7 +17323,7 @@ red = [
     "presentation::ui_types::tests::test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 56 },
+    { file = "src/presentation/ui_types.rs", tests = 78 },
 ]
 
 # ── The same fact, known and then not said ──────────────────────────────────
@@ -17405,4 +17405,83 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# The step Previous period and Next period make, broken to a constant rather
+# than removed. A week that answers the day it was already on is what a
+# half-finished version looks like: the buttons are enabled, they are pressed,
+# the list is drawn again and the heading written again, and everything says
+# what it said before. Nothing that only asks whether the buttons are enabled
+# can see it.
+#
+# Measured twice, and the first measurement is why this record names two tests.
+# It reddened one, the one comparing the dates by hand, and nothing asked
+# whether the words somebody hears after pressing Prev had changed. That is a
+# thinner guard than the button deserves, so
+# `test_the_heading_names_a_different_week_after_a_step` was written, taken red
+# against this same break, and the break measured again.
+[[guard]]
+name = "the step to the week before and after answers the week it is already on"
+file = "src/presentation/ui_types.rs"
+before = """            (CalendarView::Week, Step::Back) => self.day - chrono::Duration::days(7),
+            (CalendarView::Week, Step::Forward) => self.day + chrono::Duration::days(7),"""
+after = """            (CalendarView::Week, _) => self.day,"""
+red = [
+    "presentation::ui_types::tests::test_the_week_before_and_after_move_by_exactly_seven_days_at_both_ends",
+    "presentation::ui_types::tests::test_the_heading_names_a_different_week_after_a_step",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 78 },
+]
+
+# The month step made by adding and taking off thirty days, which is the naive
+# version and the one somebody writes without thinking about it.
+#
+# The plan that asked for this record named it for the year boundary, and the
+# measurement says that is the wrong thing to name it for: thirty days back from
+# the fourteenth of January is the fifteenth of December, which is the right
+# month, and thirty days on from the fourteenth of December is the thirteenth of
+# January, which is also the right month. The naive step is correct across a year
+# boundary and wrong about the day that does not exist in the shorter month, so
+# this record guards that and the record below guards the boundary, on a break
+# that can actually reach it.
+[[guard]]
+name = "the month step counts thirty days instead of going to the month next door"
+file = "src/presentation/ui_types.rs"
+before = """            (CalendarView::Month, Step::Back) => the_same_day_of(
+                the_first_of_the_month_holding(self.day) - chrono::Duration::days(1),
+                self.day,
+            ),
+            (CalendarView::Month, Step::Forward) => the_same_day_of(
+                the_last_day_of_the_month_holding(self.day) + chrono::Duration::days(1),
+                self.day,
+            ),"""
+after = """            (CalendarView::Month, Step::Back) => self.day - chrono::Duration::days(30),
+            (CalendarView::Month, Step::Forward) => self.day + chrono::Duration::days(30),"""
+red = [
+    "presentation::ui_types::tests::test_stepping_back_from_the_thirty_first_lands_in_the_shorter_month_and_forward_returns",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 78 },
+]
+
+# December's next month taken as January of the same year, which is the
+# off-by-one every piece of month arithmetic is one keystroke away from. It
+# reverses December's own window, so the far end falls before the near one and
+# nothing can be inside it, and it puts the month after December a year early.
+#
+# This is the break the record above was meant to be and could not be. Written
+# in the helper that answers what the month next door is, because that is the
+# one place the year is decided.
+[[guard]]
+name = "the month after December is taken as January of the same year"
+file = "src/presentation/ui_types.rs"
+before = """        12 => (first.year() + 1, 1),"""
+after = """        12 => (first.year(), 1),"""
+red = [
+    "presentation::ui_types::tests::test_the_month_after_december_is_january_of_the_year_after",
+    "presentation::ui_types::tests::test_the_month_before_january_is_december_of_the_year_before",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 78 },
 ]

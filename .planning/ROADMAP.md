@@ -458,6 +458,16 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
   6. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist.
 
 **Plans**: TBD
+
+- [x] 05-01-PLAN.md
+- [x] 05-02-PLAN.md
+- [ ] 05-03-PLAN.md
+- [ ] 05-04-PLAN.md
+- [ ] 05-05-PLAN.md
+- [ ] 05-06-PLAN.md
+- [ ] 05-07-PLAN.md
+- [ ] 05-08-PLAN.md
+
 **UI hint**: yes
 
 ### Phase 6: How the application speaks
@@ -472,6 +482,7 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
      **This criterion was rewritten on 2026-09-06 because the original could not be built.** It asked for Speech and Braille to be set independently. They ride a single `UiaRaiseNotificationEvent`, whose declared signature takes no medium parameter at all, so whether a notification is spoken, brailled or both is the screen reader's decision and not this program's. Four readings agree: the call site, the module comment above it, `screen_reader.rs`, and `docs/accessibility.md`, which has said the honest version all along.
 
      The `||` in `accessibility.rs` that releases the notification when either channel is on is deliberate and correct, and there is a test named for the case with a comment explaining it: requiring both would leave a deaf-blind user with nothing when a send fails. So the defect is not the routing. It is that Settings offers two independent tick boxes and one changelog entry promises independent control, both of which describe something that cannot happen. Correcting those three false sentences belongs to phase 4.2; offering the honest control belongs here.
+
   2. Month names, day names and relative wording follow the machine's locale, falling back to English silently where there is no translation.
   3. The accessibility scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so "roughly half" becomes a list.
   4. The interactions only a human screen reader pass can cover are written down as a scoped list, and each of the five WebView2 findings is either fixed or recorded as upstream with the upstream named.
@@ -531,7 +542,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 4. Writing and reading a message in full | 9/9 | Executed, all merged, verification human_needed | 2026-09-06 |
 | 4.1 Mail moves between accounts | 4/4 | Complete, 04.1-04 merged | - |
 | 4.2 What was built and never reached | 9/9 | Executed, all merged, verification human_needed | 2026-09-07 |
-| 5. The other five modules keep up | 1/8 | In progress | - |
+| 5. The other five modules keep up | 2/8 | In Progress|  |
 | 5.1 Notes and contacts reach a server | 0/6 | Planned, not started | - |
 | 5.2 Notes in OneNote | 0/3 | Planned, not started | - |
 | 6. How the application speaks | 0/TBD | Researched, not planned | - |
