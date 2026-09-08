@@ -237,6 +237,15 @@ mod tests {
         flags: &'static str,
         internal_date: &'static str,
     ) -> Conversation {
+        a_server_holding_the_message_numbered(THE_UID, flags, internal_date).await
+    }
+
+    /// The same, for a server whose message is not the one being asked about.
+    async fn a_server_holding_the_message_numbered(
+        uid: u32,
+        flags: &'static str,
+        internal_date: &'static str,
+    ) -> Conversation {
         conversing("* OK loopback ready\r\n", move |line| {
             let tag = line.split_whitespace().next().unwrap_or("*").to_string();
             let said = line.to_uppercase();
@@ -267,7 +276,7 @@ mod tests {
                     format!(" INTERNALDATE \"{internal_date}\"")
                 };
                 return Turn::Say(format!(
-                    "* 1 FETCH (UID {THE_UID} FLAGS ({flags}) RFC822.SIZE 120{dated} \
+                    "* 1 FETCH (UID {uid} FLAGS ({flags}) RFC822.SIZE 120{dated} \
                      BODY[HEADER.FIELDS (SUBJECT FROM)] {{{}}}\r\n{THE_HEADERS})\r\n\
                      {tag} OK done\r\n",
                     THE_HEADERS.len()
@@ -282,6 +291,14 @@ mod tests {
             Turn::Say(format!("{tag} BAD unscripted\r\n"))
         })
         .await
+    }
+
+    /// A mail server that hands the bytes over but names a different message.
+    ///
+    /// What a folder looks like when the message has been taken out from
+    /// somewhere else between one command and the next.
+    async fn a_server_naming_a_different_message() -> Conversation {
+        a_server_holding_the_message_numbered(THE_UID + 1, flag::SEEN, "").await
     }
 
     /// One end of a crossing, behind the lock a shared session needs.
@@ -597,10 +614,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_source_that_says_nothing_about_the_message_is_not_a_copy_with_no_flags() {
-        // The server answered and named no message, which is a message that is
-        // not there. Appending anyway would put a copy at the destination
-        // unread and dated today, which is worse than not copying it.
-        let source = a_server_that_can("").await;
+        // The server answered and named a different message, which for this
+        // UID is a message that is not there. Appending anyway would put a copy
+        // at the destination unread and dated today, which is worse than not
+        // copying it, because nothing afterwards says it happened that way.
+        //
+        // The fixture hands the bytes over and only withholds the headers, on
+        // purpose. It used to be a server that answered neither, and against
+        // that one this test passed however the code behaved: the body fetch
+        // failed first, so a build with no check on the headers at all came
+        // back as an error and looked right. Found by taking the red by hand
+        // rather than by reading the test.
+        let source = a_server_naming_a_different_message().await;
         let destination = a_server_that_can("").await;
 
         let refused = waiting_for(copy_it_across(
