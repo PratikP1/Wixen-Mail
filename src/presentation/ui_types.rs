@@ -2440,6 +2440,169 @@ mod tests {
         );
     }
 
+    /// The month view anchored on a day.
+    fn month_of(written: &str) -> CalendarShowing {
+        CalendarShowing {
+            view: CalendarView::Month,
+            day: day(written),
+        }
+    }
+
+    #[test]
+    fn test_the_month_around_a_day_is_the_first_to_the_last_of_that_month() {
+        assert_eq!(
+            month_of("2026-07-15").window(),
+            (day("2026-07-01"), day("2026-07-31")),
+        );
+        // February in a leap year, which is the case a table of month lengths
+        // gets wrong and counting to the day before the first of the next
+        // month gets right without anybody remembering it is a case.
+        assert_eq!(
+            month_of("2024-02-10").window(),
+            (day("2024-02-01"), day("2024-02-29")),
+        );
+    }
+
+    #[test]
+    fn test_a_day_in_the_middle_and_the_last_of_a_month_land_in_the_same_month() {
+        assert_eq!(
+            month_of("2026-07-15").window(),
+            month_of("2026-07-31").window()
+        );
+        assert_eq!(
+            month_of("2026-07-01").window(),
+            month_of("2026-07-31").window()
+        );
+    }
+
+    #[test]
+    fn test_the_month_before_january_is_december_of_the_year_before() {
+        let january = month_of("2026-01-14");
+
+        assert_eq!(
+            january.stepped(Step::Back).window(),
+            (day("2025-12-01"), day("2025-12-31")),
+        );
+        assert_eq!(
+            january.stepped(Step::Back).stepped(Step::Forward).window(),
+            january.window(),
+            "back over the year boundary and forward again is not where it started"
+        );
+    }
+
+    #[test]
+    fn test_the_month_after_december_is_january_of_the_year_after() {
+        let december = month_of("2026-12-14");
+
+        assert_eq!(
+            december.stepped(Step::Forward).window(),
+            (day("2027-01-01"), day("2027-01-31")),
+        );
+        assert_eq!(
+            december.stepped(Step::Forward).stepped(Step::Back).window(),
+            december.window(),
+            "forward over the year boundary and back again is not where it started"
+        );
+    }
+
+    #[test]
+    fn test_stepping_back_from_the_thirty_first_lands_in_the_shorter_month_and_forward_returns() {
+        // The case every naive version gets wrong. Taking thirty days off
+        // 31 March lands on 1 March, which is the month it started in, and
+        // taking thirty-one lands on 28 February in a non-leap year and
+        // 29 February in a leap one, so the answer depends on the year. The
+        // day is clamped to the last of the shorter month instead.
+        let march = month_of("2026-03-31");
+
+        let february = march.stepped(Step::Back);
+        assert_eq!(february.window(), (day("2026-02-01"), day("2026-02-28")));
+        assert_eq!(
+            february.day,
+            day("2026-02-28"),
+            "the anchor did not clamp to the last day February has"
+        );
+        assert_eq!(
+            february.stepped(Step::Forward).window(),
+            march.window(),
+            "forward from the clamped day did not return to March"
+        );
+    }
+
+    #[test]
+    fn test_the_heading_for_a_month_names_the_month_and_the_year() {
+        let empty: [CalendarEventItem; 0] = [];
+        let named = |wording| {
+            calendar_heading(
+                Some(month_of("2026-07-15")),
+                &empty,
+                crate::presentation::date_display::DateSettings {
+                    wording,
+                    ..dates_written(crate::presentation::date_display::DateOrder::DayFirst)
+                },
+            )
+        };
+
+        assert_eq!(
+            named(crate::presentation::date_display::DateWording::Verbal),
+            "July 2026"
+        );
+        assert_eq!(
+            named(crate::presentation::date_display::DateWording::Numeric),
+            "07/2026"
+        );
+    }
+
+    #[test]
+    fn test_a_daily_series_in_a_month_window_is_one_row_a_day_and_no_more() {
+        // A daily series is what `MOST_DAYS_ONE_SERIES_SHOWS` is written
+        // against, and a month is the widest window this plan ever narrows to,
+        // so this is the case where a window and that ceiling could meet. Thirty
+        // is well under 800 and the ceiling is not reached, which is the point:
+        // narrowing a window cannot make a series produce more rows.
+        let daily = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=DAILY".into()),
+            start_datetime: "2026-06-01T09:00:00Z".into(),
+            end_datetime: "2026-06-01T09:15:00Z".into(),
+            ..calendar_event()
+        };
+        let (from, to) = month_of("2026-06-15").window();
+
+        let rows = CalendarEventItem::shown_days(&daily, from, to);
+
+        assert_eq!(rows.len(), 30, "June has thirty days");
+        assert_eq!(rows[0].start, "2026-06-01T09:00:00Z");
+        assert_eq!(rows[29].start, "2026-06-30T09:00:00Z");
+    }
+
+    #[test]
+    fn test_the_month_the_week_and_the_agenda_agree_about_a_day_in_all_three() {
+        // Three windows, one question. Choosing month, then week, then agenda
+        // gets the same row back for a day all three contain.
+        let weekly = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            start_datetime: "2026-07-20T09:00:00Z".into(),
+            end_datetime: "2026-07-20T09:15:00Z".into(),
+            ..calendar_event()
+        };
+        let entries = [weekly];
+        let on_the_day = |showing: CalendarShowing| {
+            let (from, to) = showing.window();
+            CalendarEventItem::every_day_shown(&entries, from, to)
+                .into_iter()
+                .filter(|row| row.start.starts_with("2026-07-20"))
+                .map(|row| (row.id, row.start, row.repeats))
+                .collect::<Vec<_>>()
+        };
+        let agenda = CalendarShowing {
+            view: CalendarView::Agenda,
+            day: day("2026-07-20"),
+        };
+
+        assert_eq!(on_the_day(month_of("2026-07-20")), on_the_day(agenda));
+        assert_eq!(on_the_day(week_of("2026-07-20")), on_the_day(agenda));
+        assert_eq!(on_the_day(agenda).len(), 1, "the day itself went missing");
+    }
+
     #[test]
     fn test_the_heading_names_a_different_week_after_a_step() {
         // Written after measuring the guard on the week step, which reddened

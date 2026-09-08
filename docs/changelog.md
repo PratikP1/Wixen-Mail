@@ -8,12 +8,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **The calendar can show one week at a time, and Previous period and Next
-  period now work.** Choose Week in the View box on the calendar toolbar and
-  the list narrows to the seven days around the day you are on. Previous period
-  and Next period move you a week at a time, and each says which week you
-  landed on, so you hear "Week of 20 July 2026" rather than only having the
-  list redrawn under you. Today brings you back to the week you are in.
+- **The calendar can show one week or one month at a time, and Previous period
+  and Next period now work.** Choose Week or Month in the View box on the
+  calendar toolbar and the list narrows to the seven days, or the calendar
+  month, around the day you are on. Previous period and Next period move you a
+  week or a month at a time, and each says which period you landed on, so you
+  hear "Week of 20 July 2026" or "July 2026" rather than only having the list
+  redrawn under you. Today brings you back to the period you are in.
+
+  A month is a list, not a grid. It is the same list the agenda uses, in date
+  order from the first of the month to the last, so you work down it the way
+  you already work down your calendar rather than piecing a month together from
+  the labels on a grid of cells.
+
+  Stepping between months keeps to real months. Going back from the 31st of a
+  month lands in the month before even when it is shorter, and going forward
+  again returns to the month you started in. December and January are next door
+  to each other in both directions.
 
   The heading names the week you asked for, not the events that came back. An
   empty week still tells you which week it is. Search is the exception: it
