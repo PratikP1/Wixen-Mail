@@ -362,15 +362,30 @@ pub fn where_mail_can_go(
 
 /// Whose folders a move or copy is about.
 ///
-/// **RED half of 04.1-01 task 3: this answers with the account that is open,
-/// which is what `move_or_copy_message` really did.** The commit after this one
-/// makes it the account the message is in.
+/// The account the chosen message is in, not the account that happens to be
+/// open. All Inboxes reads every account's inbox as one list, so those differ
+/// routinely, and the two halves of a move used to answer this question
+/// separately: the folders offered came from the account on screen and the
+/// command went to the account the row belongs to. So the path was chosen on
+/// one server and sent to another, where a mailbox of that name is a different
+/// mailbox and a message that happens to share a UID is a different message.
+///
+/// Asked once here and passed to both halves, rather than each half deciding.
+///
+/// A row that records no account of its own falls back to the one on screen,
+/// which is the ordinary case outside All Inboxes, where every row belongs to
+/// the account being looked at. Whether the answer then names an account this
+/// program knows is the caller's question, and the caller refuses rather than
+/// reaching for another: the shape this replaces fell back to whichever account
+/// came first in the list, so a command aimed at nothing in particular still
+/// reached a real server.
 pub fn whose_folders_a_move_is_about<'a>(
     the_message_is_in: Option<&'a str>,
     the_account_that_is_open: Option<&'a str>,
 ) -> Option<&'a str> {
-    let _ = the_message_is_in;
-    the_account_that_is_open
+    the_message_is_in
+        .filter(|account| !account.is_empty())
+        .or(the_account_that_is_open)
 }
 
 /// What to say when there is nowhere to put it.

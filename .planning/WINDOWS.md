@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 163
+open_count: 167
 waived_count: 0
 fixed_count: 15
-total_count: 178
-last_updated: 2026-09-07T21:40:00.000Z
+total_count: 182
+last_updated: 2026-09-08T00:34:49.971Z
 ---
 
 # Broken Windows Ledger
@@ -193,6 +193,10 @@ last_updated: 2026-09-07T21:40:00.000Z
 | 176 | 04.2 | deviation | .planning/STATE.md |  | progress.total_plans says 87 and there are 85 *-PLAN.md files. It is deliberately not asserted because what it counts could not be established. The roadmap's progress denominators sum to 85, deriveProgressFromRoadmap in the vendored tooling sums exactly those denominators, and a second writer in state-transition.cjs sets the field to whatever an argument passes it. The 87 arrived at b998dfaf on 2026-09-07, in the commit whose message records state.advance-plan being run by accident, over a roadmap whose denominators already summed to 85. So the observed value matches neither reading and the field has at least two writers with different meanings. | open |  | 2026-09-07T21:40:00.000Z |  |
 | 177 | 04.2 | deviation | tests/the_planning_files_agree_with_themselves.rs |  | The ledger check compares two of the ten columns each entry carries twice: status and description. A table row whose phase, kind, file, line, reason or either timestamp was edited alone still reverts silently on the next tool write and nothing says so. Two columns were chosen because they are what a person reads and what a repair changes, and the check was measured against the real defect of closing an entry in the table only. Widening it is cheap and was not done, so the limit is written down rather than assumed away. | open |  | 2026-09-07T21:40:00.000Z |  |
 | 178 | 04.2 | deviation | tests/the_planning_files_agree_with_themselves.rs |  | The state check holds four facts. current_phase_name, status, stopped_at and state_head are also written in the frontmatter and described in the Current Position prose, and no check pairs them. stopped_at is the one that already went wrong: at c6e08a9 it said 04.2-05 while the heading described plan 7, and only the current_plan half of that divergence is now held. It is not obvious how to pair a prose sentence with a field, which is why the four that are held are the four that are written as numbers or as one token. | open |  | 2026-09-07T21:40:00.000Z |  |
+| 179 | 04.1 | deviation | src/presentation/wx_app.rs |  | move_or_copy_message and spawn_folder_move each call owner_of, and the modal dialog runs between the two calls. Both now ask one rule so they agree in every ordinary case, but a sync that replaces the message list while the window is open would leave the second call falling back to the account on screen, which is the divergence this plan closed everywhere else. Passing the first answer to spawn_folder_move would close it and would take that function out of the list tests/wired.rs holds to asking owner_of, and that check exists because this fault has now happened four times, so the narrower window is recorded rather than traded for the wider check | open |  | 2026-09-08T00:34:33.068Z |  |
+| 180 | 04.1 | unrun-verify | src/presentation/wx_destination.rs |  | The move and copy window now draws a real tree, with a folder inside the folder it is in, and names accounts the way the sidebar does. No screen reader has heard either. Whether Right and Left expand and collapse as somebody expects in this dialog, whether a folder two deep is reached and read as being inside its parent, and whether hearing Work with an address after it on a branch is a help or a mouthful, are all judgements only NVDA or Narrator settles | open |  | 2026-09-08T00:34:48.878Z |  |
+| 181 | 04.1 | deviation | src/data/config.rs |  | The census asking whether every stored setting is read by something now follows one hop through a function of config.rs, because a setting whose stored value holds two facts gets a reader and a writer and stops being named anywhere else. Three limits, recorded rather than narrowed away. It counts a pub fn taking and self whose doc comment merely mentions the field, since the body is taken as everything between one pub fn and the next. It cannot see a setting read by a free function rather than a method. And it counts no function taking mut self, which is right for the pair that prompted it and would be wrong for a setting legitimately read inside a method that also writes | open |  | 2026-09-08T00:34:49.418Z |  |
+| 182 | 04.1 | unrun-verify | src/presentation/wx_app.rs |  | Nothing tests that the move window opens on the folder last filed into. The guard record covering that call reddens the settings census rather than anything about the window, so what is defended is that the stored value is read at all and not that the row it names is where the cursor lands. Reaching that needs a live window, a stored settings file and a branch with the remembered folder in it | open |  | 2026-09-08T00:34:49.971Z |  |
 
 ````json
 [
@@ -2330,6 +2334,54 @@ last_updated: 2026-09-07T21:40:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-07T21:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 179,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "move_or_copy_message and spawn_folder_move each call owner_of, and the modal dialog runs between the two calls. Both now ask one rule so they agree in every ordinary case, but a sync that replaces the message list while the window is open would leave the second call falling back to the account on screen, which is the divergence this plan closed everywhere else. Passing the first answer to spawn_folder_move would close it and would take that function out of the list tests/wired.rs holds to asking owner_of, and that check exists because this fault has now happened four times, so the narrower window is recorded rather than traded for the wider check",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T00:34:33.068Z",
+    "resolved_at": null
+  },
+  {
+    "id": 180,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/presentation/wx_destination.rs",
+    "line": null,
+    "description": "The move and copy window now draws a real tree, with a folder inside the folder it is in, and names accounts the way the sidebar does. No screen reader has heard either. Whether Right and Left expand and collapse as somebody expects in this dialog, whether a folder two deep is reached and read as being inside its parent, and whether hearing Work with an address after it on a branch is a help or a mouthful, are all judgements only NVDA or Narrator settles",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T00:34:48.878Z",
+    "resolved_at": null
+  },
+  {
+    "id": 181,
+    "kind": "deviation",
+    "phase": "04.1",
+    "file": "src/data/config.rs",
+    "line": null,
+    "description": "The census asking whether every stored setting is read by something now follows one hop through a function of config.rs, because a setting whose stored value holds two facts gets a reader and a writer and stops being named anywhere else. Three limits, recorded rather than narrowed away. It counts a pub fn taking and self whose doc comment merely mentions the field, since the body is taken as everything between one pub fn and the next. It cannot see a setting read by a free function rather than a method. And it counts no function taking mut self, which is right for the pair that prompted it and would be wrong for a setting legitimately read inside a method that also writes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T00:34:49.418Z",
+    "resolved_at": null
+  },
+  {
+    "id": 182,
+    "kind": "unrun-verify",
+    "phase": "04.1",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nothing tests that the move window opens on the folder last filed into. The guard record covering that call reddens the settings census rather than anything about the window, so what is defended is that the stored value is read at all and not that the row it names is where the cursor lands. Reaching that needs a live window, a stored settings file and a branch with the remembered folder in it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-08T00:34:49.971Z",
     "resolved_at": null
   }
 ]

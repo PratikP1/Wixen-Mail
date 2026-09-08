@@ -15224,13 +15224,17 @@ fn owner_of(
     row_id: i64,
     open: Option<&str>,
 ) -> Option<crate::data::account::Account> {
-    messages
+    let the_message_is_in = messages
         .iter()
         .find(|m| m.message_id == row_id)
-        .map(|m| m.account_id.clone())
-        .filter(|id| !id.is_empty())
-        .or_else(|| open.map(str::to_string))
-        .and_then(|id| accounts.iter().find(|a| a.id == id).cloned())
+        .map(|m| m.account_id.as_str());
+    // The rule itself lives in `application::destinations`, where a test can
+    // reach it without a window, and this resolves the answer to an account
+    // somebody has set up. Two callers ask this and one of them decides which
+    // folders are offered, so the rule has to be one rule.
+    let whose =
+        crate::application::destinations::whose_folders_a_move_is_about(the_message_is_in, open)?;
+    accounts.iter().find(|a| a.id == whose).cloned()
 }
 
 /// Sign out of a mail session without letting a silent server hold the window.
@@ -17217,9 +17221,32 @@ fn move_or_copy_message(
     let Some((row_id, uid, subject)) = chosen else {
         return send_refusal(tx, rt, "Choose a message first");
     };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
-        return send_refusal(tx, rt, "Add an account first");
+
+    // Whose folders this is about, asked once and used by both halves. The
+    // folders offered used to come from the account on screen while the command
+    // went to the account `owner_of` names, and in All Inboxes those differ
+    // routinely, so the path was chosen on one server and sent to another.
+    //
+    // `owner_of` is where the fallback for a row with no account of its own
+    // lives, and where a row naming an account this program does not know comes
+    // back as nothing. Nothing is a refusal here rather than a reach for
+    // whichever account came first.
+    let Some(account) = ({
+        let s = lock_state(state);
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            row_id,
+            s.active_account_id.as_deref(),
+        )
+    }) else {
+        return send_refusal(
+            tx,
+            rt,
+            "This message is not in an account this program knows about.",
+        );
     };
+    let account_id = account.id.clone();
 
     // Where it is now, so that folder is not offered. Offering it is offering a
     // command that silently does nothing, and nobody can tell that from one
@@ -17266,20 +17293,22 @@ fn move_or_copy_message(
         );
     }
     // Where the last one went, so the window opens on it and filing the next
-    // message into the same folder is the shortcut and Enter.
+    // message into the same folder is the shortcut and Enter. Read as an
+    // account and a path, because a path alone opens on whichever branch holds
+    // a folder of that name first.
     let mut settings = crate::data::config::ConfigManager::load_stored().ok();
     let last_used = settings
         .as_ref()
-        .and_then(|mgr| mgr.app_config().last_filed_into.get(&account_id).cloned());
+        .and_then(|mgr| mgr.app_config().where_the_last_one_went(&account_id));
 
     let Some(into) = crate::presentation::wx_destination::ask(
         frame,
         Moving::Message,
         copying,
         &branches,
-        last_used.as_deref().map(|path| FolderInAnAccount {
-            account: &account_id,
-            path,
+        last_used.as_ref().map(|went| FolderInAnAccount {
+            account: &went.account,
+            path: &went.path,
         }),
     ) else {
         return;
@@ -17289,9 +17318,13 @@ fn move_or_copy_message(
     // filing a run of messages should not have the window forget where they
     // are going because one of them failed on the way.
     if let Some(mgr) = settings.as_mut() {
-        mgr.app_config_mut()
-            .last_filed_into
-            .insert(account_id.clone(), into.id.clone());
+        mgr.app_config_mut().remember_where_one_went(
+            &account_id,
+            &crate::data::config::FiledInto {
+                account: into.account_id.clone(),
+                path: into.id.clone(),
+            },
+        );
         if let Err(e) = mgr.save() {
             tracing::warn!("Could not remember where that was filed: {e}");
         }

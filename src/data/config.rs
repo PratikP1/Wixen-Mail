@@ -649,6 +649,14 @@ impl Default for AppConfig {
     }
 }
 
+/// What separates the account from the path in a remembered destination.
+///
+/// A character rather than a second map, because `last_filed_into` is one of
+/// two entries in a fixed-size census at the foot of this file and the name has
+/// to stay. It is the same shape `presentation::message_columns` stores a
+/// column layout in, and for the same reason.
+const A_DESTINATION_FROM_ITS_ACCOUNT: char = '|';
+
 /// A folder somewhere, as [`AppConfig::last_filed_into`] remembers one.
 ///
 /// A folder and the account it is on, because a path says which folder only
@@ -698,24 +706,56 @@ impl AppConfig {
 
     /// Where the last message filed from this account went.
     ///
-    /// **RED half of 04.1-01 task 3: this reads a bare path and answers with
-    /// the account it is keyed under, which is what the value has always
-    /// meant.** It does not yet read a destination that names an account of its
-    /// own, which is what the commit after this one adds.
+    /// The one place a stored destination is read, paired with
+    /// [`AppConfig::remember_where_one_went`], which is the only place one is
+    /// written. Two functions and no third reader, so the shape of the stored
+    /// string is a fact about these two lines rather than about every caller.
+    ///
+    /// **A value naming no account is read as the account it is keyed under.**
+    /// That is not a default chosen for safety: until mail could be filed into
+    /// another account, every remembered destination was in the account it was
+    /// keyed under, so it is what the stored value has always meant. There is no
+    /// argument here saying which account to assume, and the map key is the
+    /// answer, so there is nothing a caller could pass a wrong literal for.
+    ///
+    /// **The half in front of the separator has to look like an account
+    /// identifier before it is read as one.** A server may call a mailbox
+    /// anything, `Work|Old` included, and every one of those was written by an
+    /// older build as a bare path. An account identifier here is a UUID, which
+    /// is what [`crate::data::account::Account`] mints, so asking whether the
+    /// half parses as one tells a destination this build wrote from a folder
+    /// somebody's server named.
     pub fn where_the_last_one_went(&self, filed_from: &str) -> Option<FiledInto> {
-        self.last_filed_into.get(filed_from).map(|path| FiledInto {
-            account: filed_from.to_string(),
-            path: path.clone(),
+        let stored = self.last_filed_into.get(filed_from)?;
+        let named = stored
+            .split_once(A_DESTINATION_FROM_ITS_ACCOUNT)
+            .filter(|(account, _)| uuid::Uuid::parse_str(account).is_ok());
+        Some(match named {
+            Some((account, path)) => FiledInto {
+                account: account.to_string(),
+                path: path.to_string(),
+            },
+            None => FiledInto {
+                account: filed_from.to_string(),
+                path: stored.clone(),
+            },
         })
     }
 
     /// Remember where one has just gone, so the next opens on it.
     ///
-    /// **RED half of 04.1-01 task 3: this writes the path alone**, so a
-    /// destination in another account comes back as one in this account.
+    /// Written as soon as a folder is chosen rather than once a server has
+    /// agreed, which is what the caller has always done: somebody filing a run
+    /// of messages should not have the window forget where they are going
+    /// because one of them failed on the way.
     pub fn remember_where_one_went(&mut self, filed_from: &str, went: &FiledInto) {
-        self.last_filed_into
-            .insert(filed_from.to_string(), went.path.clone());
+        self.last_filed_into.insert(
+            filed_from.to_string(),
+            format!(
+                "{}{A_DESTINATION_FROM_ITS_ACCOUNT}{}",
+                went.account, went.path
+            ),
+        );
     }
 
     /// Validate configuration values
@@ -1889,6 +1929,53 @@ mod every_setting_is_acted_on {
             .collect()
     }
 
+    /// The calls a shipping function of this file makes to read one setting.
+    ///
+    /// Answered as `reader(`, so what the caller has to hold is a call and not
+    /// a mention: a file that named `where_the_last_one_went` in a comment
+    /// would not count, and a file that calls it would.
+    ///
+    /// **A function that takes `&mut self` is not a reader**, and leaving that
+    /// out was measured rather than reasoned. `last_filed_into` has a pair, one
+    /// that reads it and one that writes it, and with both counted the census
+    /// was satisfied by the writer alone: taking the read out of the whole
+    /// program left it green, which is a setting written on every move and
+    /// looked at by nothing, and that is the exact shape this census exists to
+    /// catch. Rust says which is which in the signature, so nothing has to be
+    /// guessed from the body.
+    ///
+    /// The body is taken as everything between one `pub fn` and the next, which
+    /// includes the doc comment of the one after it. That is wide, and it is
+    /// wide in the safe direction: the worst it can do is offer a reader that
+    /// does not really read the setting, and the second hop then asks whether
+    /// anything calls that reader, which is the evidence the check is after.
+    fn functions_here_that_name(setting: &str, config: &str) -> Vec<String> {
+        let ships = crate::common::what_ships::what_ships(config);
+        let mut readers = Vec::new();
+        let mut in_this_one: Option<String> = None;
+        let mut signature = String::new();
+        for line in ships.lines() {
+            if let Some(rest) = line.trim().strip_prefix("pub fn ")
+                && let Some(name) = rest.split('(').next()
+            {
+                in_this_one = Some(format!("{name}("));
+                signature = line.to_string();
+            } else if !signature.contains('{') && in_this_one.is_some() {
+                // A signature broken over several lines by the formatter, which
+                // is where `&mut self` sits for the longer ones.
+                signature.push_str(line);
+            }
+            if line.contains(setting)
+                && !signature.contains("&mut self")
+                && let Some(reader) = in_this_one.as_ref()
+                && !readers.contains(reader)
+            {
+                readers.push(reader.clone());
+            }
+        }
+        readers
+    }
+
     /// Every source file that ships, except the two that own a setting rather
     /// than acting on one.
     fn files_that_act() -> Vec<std::path::PathBuf> {
@@ -1934,17 +2021,56 @@ mod every_setting_is_acted_on {
         // written to end: the main window has test modules sitting between
         // stretches of code, and two settings are read below the first one.
         let config = std::fs::read_to_string("src/data/config.rs").expect("the settings");
+        let acting: Vec<String> = files_that_act()
+            .into_iter()
+            .filter_map(|path| std::fs::read_to_string(&path).ok())
+            .map(|text| crate::common::what_ships::what_ships(&text).to_string())
+            .collect();
         let mut ignored = Vec::new();
 
         for name in stored_setting_names(&config) {
-            let read_somewhere = files_that_act().into_iter().any(|path| {
-                std::fs::read_to_string(&path)
-                    .is_ok_and(|text| crate::common::what_ships::what_ships(&text).contains(&name))
-            });
+            // Named outright, which is how most of them are read.
+            //
+            // Or named by a function here that something out there calls, which
+            // is the second hop and is newer than this check. A setting whose
+            // stored value holds more than one fact gets exactly one pair of
+            // functions that reads and writes it, so that the shape of the
+            // string is a fact about two lines rather than about every caller.
+            // `last_filed_into` is the first of those, and the moment it grew
+            // one its own name stopped appearing anywhere but this file. A
+            // check that looked for the name alone would have called it
+            // ignored, which is the opposite of what had happened to it.
+            //
+            // Still two hops and not one: a function here that names a setting
+            // proves nothing on its own, because a reader nobody calls is the
+            // very shape this check exists to catch. Something that acts has to
+            // call it.
+            let read_somewhere = acting.iter().any(|text| text.contains(&name))
+                || functions_here_that_name(&name, &config)
+                    .iter()
+                    .any(|reader| acting.iter().any(|text| text.contains(reader)));
             if !read_somewhere {
                 ignored.push(name);
             }
         }
+
+        // Proving the measurement, for the second hop, because it is the half
+        // that can answer "read" too easily. A reading that offered a reader
+        // for a name this file never writes would answer "read" for every
+        // setting and pass this test having looked at nothing.
+        assert!(
+            functions_here_that_name("a_setting_this_file_does_not_hold", &config).is_empty(),
+            "the second hop offers a reader for a setting nothing here names, \
+             so it would answer that every setting is read"
+        );
+        // And the other half of the same proof. A pair that reads and writes
+        // one setting must offer the reader and not the writer, or a setting
+        // written on every move and looked at by nothing passes as read.
+        assert_eq!(
+            functions_here_that_name("last_filed_into", &config),
+            ["where_the_last_one_went("],
+            "the reader and the writer of one setting are not the same evidence"
+        );
 
         assert!(
             ignored.is_empty(),

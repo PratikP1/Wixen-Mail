@@ -306,6 +306,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Moving a message from All Inboxes offered the wrong account's folders, and
+  sent the move to a different server from the one the folders came from.** All
+  Inboxes shows every account's inbox as one list, so the message you have
+  chosen often belongs to an account other than the one open in the folder
+  list. The window offered the open account's folders and the move itself was
+  sent to the account the message is really in. A folder called Archive exists
+  on both, so the move usually appeared to work and put the message somewhere
+  you had not chosen; a folder that only the open account has was sent to a
+  server that had never heard of it.
+
+  The window now offers the folders of the account the message is in, whichever
+  account you are looking at. A message belonging to no account this program
+  knows about is refused in a sentence rather than filed into whichever account
+  came first.
+
+  Where the last message went is remembered per account as before, and now
+  remembers which account the folder was on as well as its name, so the window
+  opens on the folder you last used and not on a folder of the same name
+  somewhere else. Anything remembered by an earlier version still opens on the
+  right folder.
+
 - **The window that asks where to move a message now shows folders inside the
   folders they are in.** It used to show every folder as a row directly under
   the account, so `Archive`, `2026` and `June` came one after another with
