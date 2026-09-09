@@ -5,6 +5,34 @@ use crate::data::message_cache::{
     DeletedTask, MessageCache, TaskEntry, TaskListEntry, TheDeletionSoFar,
 };
 
+/// What starting a move of a task the provider holds did.
+///
+/// The move is a deletion at the provider and a creation there under a new
+/// name, and neither call is made here. What this answers is about the two
+/// local writes that have to be in place before either can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovedWhatTheProviderHolds {
+    /// The new copy is in the destination list and the old identifier is owed
+    /// a deletion, both written.
+    Moved,
+    /// The task was not here to move, so nothing was written.
+    ///
+    /// Answered by the removal of the old row itself, by how many rows it took
+    /// away, rather than by a read before the write. The caller hands over the
+    /// task as it read it, and a sync deciding the provider no longer holds it
+    /// between that read and this write is ordinary. That answer therefore
+    /// arrives after the new copy has already been written, so the new copy
+    /// has to be undone, and the transaction is the only thing that undoes it.
+    ItIsNotHereToMove,
+    /// The destination is the list it is already in, so nothing was written.
+    ///
+    /// Carrying it out would write a second copy of the task and a note asking
+    /// the provider to delete the first, for a move that changes nothing. The
+    /// chooser cannot offer this; a route that did not go through the chooser
+    /// can, which is why it is asked here.
+    IntoTheListItIsAlreadyIn,
+}
+
 impl MessageCache {
     // ── Task Lists ──────────────────────────────────────────────────────────
 
@@ -236,6 +264,28 @@ impl MessageCache {
         self.drop_synced_task(task_id)
     }
 
+    /// Start a move of a task the provider holds, by writing both halves of it
+    /// at once.
+    ///
+    /// Nothing reaches a provider from here. A task the provider holds cannot
+    /// be moved between lists by anybody today: `moving_can_be_told` refuses it
+    /// before the chooser opens and `file_under` asks again afterwards, and
+    /// neither refusal is touched. This is the state such a move would leave
+    /// behind, built and tested before anything is allowed to make the calls
+    /// that produce it.
+    pub fn move_a_task_the_provider_holds(
+        &self,
+        task: &TaskEntry,
+        into_list: &str,
+        new_id: &str,
+    ) -> Result<MovedWhatTheProviderHolds> {
+        // The red half of red/green: today's behaviour, which is that nothing
+        // writes a move like this at all. Replaced by the green commit on this
+        // branch.
+        let _ = (task, into_list, new_id);
+        Ok(MovedWhatTheProviderHolds::Moved)
+    }
+
     /// One task, or nothing.
     pub fn find_task(&self, task_id: &str) -> Result<Option<TaskEntry>> {
         let mut stmt = self
@@ -305,6 +355,9 @@ impl MessageCache {
                     task_list_id: row.get(2)?,
                     deleted_at: row.get(3)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(4)?),
+                    // Red half: no column yet, so every note reads as waiting
+                    // for nothing.
+                    waiting_for_task_id: None,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?;

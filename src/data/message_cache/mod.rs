@@ -22,6 +22,7 @@ pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
 pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
+pub use tasks::MovedWhatTheProviderHolds;
 pub mod notes;
 mod outbox;
 pub mod reminders;
@@ -1149,6 +1150,26 @@ pub struct DeletedTask {
     pub deleted_at: String,
     /// Whether the provider has taken it yet.
     pub so_far: TheDeletionSoFar,
+    /// The copy on this computer that has to reach the provider before this
+    /// deletion may be sent, or nothing for an ordinary deletion.
+    ///
+    /// Set only by [`MessageCache::move_a_task_the_provider_holds`]. A move of
+    /// a task the provider holds is a deletion in the old list and a creation
+    /// in the new one, and the failure the whole thing is about lands between
+    /// them. Sending the deletion first would ask the provider to destroy the
+    /// only copy it has, so the note names what it is waiting for and the push
+    /// leaves it alone until that has gone.
+    ///
+    /// # Not a third variant on [`TheDeletionSoFar`]
+    ///
+    /// That is the obvious tidying and it is the wrong one. `TheDeletionSoFar`
+    /// is declared once and read by contacts, events and tasks, and its own
+    /// doc comment says so: "one type says it for all three". Neither a contact
+    /// nor an event has a half-finished move and neither will under this
+    /// milestone, so a third variant would put a state they cannot reach into
+    /// every match that reads them. This fact is task-shaped, so it lives on
+    /// the task's own struct and in the task's own table.
+    pub waiting_for_task_id: Option<String>,
 }
 
 /// Note folder entry (container for notes)
