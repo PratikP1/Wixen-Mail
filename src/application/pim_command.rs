@@ -63,18 +63,37 @@ impl PimCommand {
             // `managers::pim_command` sends a contact to the group-membership
             // path before the chooser that names one container is reached.
             //
-            // Not a reminder: the module holds buckets worked out from when
-            // each one is due, and there is nothing to move it to. Mail moves
-            // between folders by its own path, which has to talk to the server.
+            // A reminder was left out because the module holds buckets worked
+            // out from when each one is due, and a bucket is not a place. That
+            // was true and it was about the wrong container. The one a reminder
+            // really has, and has had since the table was written, is the
+            // account, so moving one means sending it to another account. It
+            // does not come through the path below either: `kept_in` answers
+            // `None` for a reminder, and `managers::pim_command` sends one to
+            // the account path before the chooser that names one container is
+            // reached.
+            //
+            // Mail is still out. It moves between folders by its own path,
+            // which has to talk to the server.
             //
             // A copy answers the same, and for a contact it is the put-in that
             // already ships. A second contact would be a second person, which
             // is not something anybody wants; a second group membership is
             // exactly what copying one means, and it had no way in from this
-            // family of commands.
+            // family of commands. A second reminder in another account is an
+            // ordinary thing to want, and a copy is offered the account the
+            // reminder is in as well, where a move is not.
+            //
+            // Written out rather than as "anything but mail", although the two
+            // answer alike today. The five are here for five reasons and a
+            // sixth kind of item should have to give its own.
             Self::Move | Self::Copy => matches!(
                 kind,
-                ItemKind::Event | ItemKind::Task | ItemKind::Note | ItemKind::Contact
+                ItemKind::Event
+                    | ItemKind::Task
+                    | ItemKind::Note
+                    | ItemKind::Contact
+                    | ItemKind::Reminder
             ),
         }
     }
@@ -92,6 +111,90 @@ impl PimCommand {
             Self::Delete | Self::ToggleComplete | Self::TogglePin => None,
         }
     }
+}
+
+/// One account, named the way somebody hears it.
+///
+/// Not [`crate::application::destinations::Branch`], which is an account and
+/// the places inside it. A reminder is kept in no place, so every branch here
+/// would carry an empty `places` and a reader would have to work out that the
+/// emptiness meant something rather than nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnAccount {
+    /// The identifier the row is written with.
+    pub id: String,
+    /// What it is called when it is read out.
+    ///
+    /// Its name, with its address after it only where two accounts read alike.
+    /// `presentation::folder_tree` decides that, because only it can see the
+    /// whole set being offered, and this takes the answer rather than making a
+    /// second rule for when an address is spoken.
+    pub spoken: String,
+}
+
+/// The accounts a reminder can be filed into, given the one it is in now.
+///
+/// The account is the only container a reminder has ever had, so this is the
+/// whole of the question a reminder's move asks.
+///
+/// The act decides whether the account it is in is one of them, and it is asked
+/// rather than assumed: [`Filing::leaves_out_where_it_is`] is the same
+/// predicate `where_it_could_go` reads for the three kinds that are kept in a
+/// container, so a copy of a reminder is offered the account it is in for
+/// exactly the reason a copy of a task is offered the list it is on. Offering
+/// somebody the account a thing is already in is offering a move that does
+/// nothing; putting a second reminder there is a real act somebody may want.
+pub fn accounts_a_reminder_could_go_to(
+    filing: Filing,
+    accounts: &[AnAccount],
+    in_now: &str,
+) -> Vec<AnAccount> {
+    accounts
+        .iter()
+        .filter(|account| !filing.leaves_out_where_it_is() || account.id != in_now)
+        .cloned()
+        .collect()
+}
+
+/// What to say when a move has nowhere to go, because there is one account.
+///
+/// Said before any window opens. A chooser with nothing in it is a window
+/// somebody arrows through to find out there was never an answer, and a key
+/// that opens nothing and says nothing is indistinguishable from a broken one.
+///
+/// Deliberately not [`is_not_kept_in_a_container`], which is the nearest
+/// existing sentence and says the wrong thing. That one says a reminder cannot
+/// be filed at all, and somebody who hears it stops trying: what is true is
+/// that this computer has one account today and a second one gives the command
+/// somewhere to go.
+pub fn the_only_account_there_is(name: &str) -> String {
+    let named = match name.trim() {
+        "" => "That reminder".to_string(),
+        title => format!("\"{title}\""),
+    };
+    format!(
+        "{named} is in the one account set up on this computer, so there is nowhere else to \
+         move it to. Nothing has been moved. Setting up a second account gives a reminder \
+         somewhere to go."
+    )
+}
+
+/// What to say when the account chosen turns out to be the one it is in.
+///
+/// The chooser cannot offer this, because a move leaves out the account the
+/// reminder is in. It arrives when something moves the reminder between the
+/// question and the answer, and by a route that never opened a chooser at all.
+///
+/// Not [`filed`], which is what the successful move says and is the sentence
+/// nearest to hand here. Saying "moved to Work" about a reminder that was in
+/// Work before the key was pressed is a report of an act that did not happen,
+/// and somebody working by ear has no list to glance at to find out.
+pub fn already_in_that_account(name: &str, account: &str) -> String {
+    let named = match name.trim() {
+        "" => "That reminder".to_string(),
+        title => format!("\"{title}\""),
+    };
+    format!("{named} is already in {account}. Nothing has been moved.")
 }
 
 /// One command, and the thing it lands on.
@@ -602,13 +705,15 @@ mod tests {
 
     #[test]
     fn test_a_copy_means_something_exactly_where_a_move_does() {
-        // The four kinds that have somewhere to be copied into. A contact was
+        // The five kinds that have somewhere to be copied into. A contact was
         // out of this list until 05-04 on the grounds that a second contact is
         // a second person rather than a second filing, which is true and was
         // about the wrong thing: a copy of a contact is a second group
         // membership, and it is the put-in that has always been on the contacts
-        // menu. A reminder's buckets are worked out from when it is due and are
-        // not places, and mail copies between folders by its own path, which
+        // menu. A reminder was out until 05-05 on the grounds that its buckets
+        // are worked out from when it is due and are not places, which is also
+        // true and was also about the wrong container: the one a reminder has
+        // is the account. Mail copies between folders by its own path, which
         // has to talk to a server.
         //
         // Held to Move's own answer rather than to a list written out again,
@@ -625,7 +730,8 @@ mod tests {
 
         assert!(PimCommand::Copy.applies_to(ItemKind::Task));
         assert!(PimCommand::Copy.applies_to(ItemKind::Contact));
-        assert!(!PimCommand::Copy.applies_to(ItemKind::Reminder));
+        assert!(PimCommand::Copy.applies_to(ItemKind::Reminder));
+        assert!(!PimCommand::Copy.applies_to(ItemKind::Mail));
     }
 
     #[test]
@@ -794,20 +900,153 @@ mod tests {
     }
 
     #[test]
-    fn test_a_contact_can_be_filed_although_it_has_no_one_home() {
-        // The reason contacts were left out was right and is now answered
-        // rather than overruled: a contact is in as many groups as somebody
-        // puts it in, so there is no one home to move it out of, and the
-        // program asks which one. Mail and reminders are still out, and for
-        // reasons that have not changed.
+    fn test_a_contact_and_a_reminder_can_both_be_filed_although_neither_has_one_home() {
+        // Both reasons for leaving them out were right and both are now
+        // answered rather than overruled. A contact is in as many groups as
+        // somebody puts it in, so there is no one home to move it out of, and
+        // the program asks which one. A reminder is in no bucket anybody put it
+        // in, so there was nothing to move it between, and the container it
+        // does have is the account it has always belonged to.
+        //
+        // Mail is still out, for a reason that has not changed: it moves
+        // between folders by a path that has to talk to a server.
         for command in [PimCommand::Move, PimCommand::Copy] {
             assert!(
                 command.applies_to(ItemKind::Contact),
                 "{command:?} does not reach a contact"
             );
+            assert!(
+                command.applies_to(ItemKind::Reminder),
+                "{command:?} does not reach a reminder"
+            );
             assert!(!command.applies_to(ItemKind::Mail), "{command:?}");
-            assert!(!command.applies_to(ItemKind::Reminder), "{command:?}");
         }
+    }
+
+    /// Two accounts, in the order a chooser would read them out.
+    fn two_accounts() -> Vec<AnAccount> {
+        vec![
+            AnAccount {
+                id: "acct-work".to_string(),
+                spoken: "Work".to_string(),
+            },
+            AnAccount {
+                id: "acct-home".to_string(),
+                spoken: "Home".to_string(),
+            },
+        ]
+    }
+
+    #[test]
+    fn test_a_reminder_is_not_offered_the_account_it_is_already_in() {
+        // Offering it would be offering a command that silently does nothing:
+        // the storage answers AlreadyThere and writes no row, so somebody who
+        // worked through the list to the account they were already in would
+        // have arrowed through a question with no answer in it.
+        let offered = accounts_a_reminder_could_go_to(Filing::Moving, &two_accounts(), "acct-work");
+
+        assert_eq!(offered.len(), 1, "{offered:?}");
+        assert_eq!(offered[0].id, "acct-home");
+    }
+
+    #[test]
+    fn test_a_reminder_being_copied_is_offered_the_account_it_is_in() {
+        // The other half of the same rule, and the one a filter written once
+        // for both acts gets wrong. A second reminder in the account the first
+        // is in is a real thing to want, which is why `Filing` carries
+        // `leaves_out_where_it_is` rather than every caller deciding.
+        let offered =
+            accounts_a_reminder_could_go_to(Filing::Copying, &two_accounts(), "acct-work");
+
+        assert_eq!(offered.len(), 2, "{offered:?}");
+        assert!(
+            offered.iter().any(|account| account.id == "acct-work"),
+            "the copy was refused the account the reminder is in: {offered:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_on_a_machine_with_one_account_has_nowhere_to_move_to_and_somewhere_to_copy_to()
+     {
+        // The case the sentence below exists for, and the case that separates
+        // the two acts most plainly. There is nowhere else to move it, and
+        // copying it where it is still makes a second reminder.
+        let only = vec![AnAccount {
+            id: "acct-work".to_string(),
+            spoken: "Work".to_string(),
+        }];
+
+        assert!(accounts_a_reminder_could_go_to(Filing::Moving, &only, "acct-work").is_empty());
+        assert_eq!(
+            accounts_a_reminder_could_go_to(Filing::Copying, &only, "acct-work").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_a_reminder_with_nowhere_to_go_is_told_that_rather_than_that_it_cannot_be_filed() {
+        // The nearest existing sentence says a reminder is not kept in one
+        // container, which is true and is not the answer to this. Somebody who
+        // hears it concludes the command does not work on reminders and never
+        // tries again after setting up a second account. What is true is that
+        // there is one account today.
+        let said = the_only_account_there_is("Ring the dentist");
+
+        assert!(said.contains("Ring the dentist"), "{said}");
+        assert!(
+            said.contains("one account"),
+            "it does not say what is actually in the way: {said}"
+        );
+        assert!(
+            said.contains("Nothing has been moved"),
+            "it does not say the reminder is where it was: {said}"
+        );
+        assert!(
+            !said.contains("not kept in one container"),
+            "the refusal says a reminder can never be filed, which is a \
+             different fact and stops somebody trying again: {said}"
+        );
+        assert_ne!(said, is_not_kept_in_a_container(ItemKind::Reminder));
+    }
+
+    #[test]
+    fn test_a_reminder_with_nowhere_to_go_and_no_title_is_still_a_sentence() {
+        // A row whose title never loaded, the case every sentence here copes
+        // with.
+        let said = the_only_account_there_is("   ");
+
+        assert!(said.starts_with("That reminder"), "{said}");
+        assert!(!said.contains("\"\""), "{said}");
+    }
+
+    #[test]
+    fn test_a_move_into_the_account_it_was_already_in_does_not_report_a_move() {
+        // The sentence nearest to hand is the one a successful move says, and
+        // it is a report of something that did not happen. Somebody working by
+        // ear has no list to glance at, so "Ring the dentist moved to Work"
+        // for a reminder that was in Work before the key was pressed is the
+        // only thing they have and it is false.
+        let said = already_in_that_account("Ring the dentist", "Work");
+
+        assert!(said.contains("Ring the dentist"), "{said}");
+        assert!(said.contains("Work"), "{said}");
+        assert!(
+            said.contains("already"),
+            "it does not say what was actually true: {said}"
+        );
+        assert!(
+            said.contains("Nothing has been moved"),
+            "it does not say the reminder is where it was: {said}"
+        );
+        // "moved to", which is the phrase a successful move says, rather than
+        // "moved", which every refusal here has to be free to use in the
+        // sentence saying nothing happened. The first version of this assertion
+        // forbade the word outright and reddened the correct sentence.
+        assert!(
+            !said.contains("moved to"),
+            "a move that did not happen is reported as one: {said}"
+        );
+        assert_ne!(said, filed(Filing::Moving, "Ring the dentist", "Work"));
     }
 
     #[test]

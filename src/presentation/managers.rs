@@ -2706,6 +2706,34 @@ pub fn pim_command(
                 }
                 return;
             }
+            PimCommand::Move | PimCommand::Copy if kind == ItemKind::Reminder => {
+                // A reminder is kept in no container, so filing one is not one
+                // write naming the container it lives in. The path below opens
+                // with `kept_in`, which a reminder answers `None`, so a
+                // reminder sent down it falls out with `None` and is announced
+                // as nothing at all: a key that does nothing and says nothing.
+                // Reaching `file_under` itself is refused rather than reported
+                // as done, which `05-04` closed for all three kinds with no
+                // container; a refusal somebody can hear is better than a lie
+                // and is still not the answer.
+                //
+                // The container a reminder does have is the account, and both
+                // acts go through one function because the question is the same
+                // one. Which act it is comes from the command rather than from
+                // a flag read here.
+                if let Some(filing) = command.filing() {
+                    move_a_reminder_to_another_account(
+                        filing,
+                        Some(row),
+                        state,
+                        &Some(cache),
+                        frame,
+                        tx,
+                        rt,
+                    );
+                }
+                return;
+            }
             PimCommand::Move | PimCommand::Copy => match command
                 .filing()
                 .and_then(|filing| file_it(&cache, state, frame, filing, kind, &id, &name))
@@ -7071,6 +7099,165 @@ pub fn move_a_contact_between_groups(
         }
         Ok(MovedBetweenGroups::IntoTheOneItIsLeaving) => {
             send_refusal(tx, rt, &contact_groups::already_in(&person, &out_of.1));
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+        }
+    }
+}
+
+/// Every account a reminder could be in, named the way the sidebar names them.
+///
+/// Through `folder_tree::so_no_two_accounts_read_alike`, which puts the address
+/// after the name only where two accounts read alike. The alternative, an
+/// address on every row, reads a full email address aloud on every move for a
+/// case that needs it rarely, and a second rule for when an address is spoken
+/// is two accounts called Work reading as one row in one of the two places.
+fn the_accounts_here(
+    cache: &MessageCache,
+    looked_at: &str,
+) -> Vec<crate::application::pim_command::AnAccount> {
+    use crate::application::pim_command::AnAccount;
+
+    crate::presentation::folder_tree::so_no_two_accounts_read_alike(
+        &crate::presentation::wx_app::the_accounts_in_the_tree(cache, looked_at),
+    )
+    .into_iter()
+    .map(|account| AnAccount {
+        id: account.id,
+        spoken: account.name,
+    })
+    .collect()
+}
+
+/// Send the chosen reminder to another account, or put a copy in one.
+///
+/// A reminder is kept in no container, so it does not go through
+/// [`where_it_could_go`] and [`file_under`], both of which open with
+/// `kind.kept_in()`. It has an account, which is the container it has always
+/// had, and that is what this asks about.
+///
+/// A flat list rather than the destination tree, and the reason is structural
+/// rather than aesthetic: `wx_destination::build_destination_dialog` pushes
+/// `None` into its destinations vector for every account row, and
+/// `what_a_selection_means` reads that as nothing chosen. An account heading is
+/// somewhere to look rather than somewhere to put something, and its doc
+/// comment says so. So the tree cannot answer an account at all, and
+/// [`pick_one`] is what this program already uses for a flat set of names.
+///
+/// Nobody has heard whether a flat list, where every other move in this program
+/// opens a tree, reads as a different command or as the same one.
+pub fn move_a_reminder_to_another_account(
+    filing: crate::application::destinations::Filing,
+    row: Option<usize>,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::destinations::Filing;
+    use crate::application::new_item::ItemKind;
+    use crate::application::pim_command::{
+        accounts_a_reminder_could_go_to, already_in_that_account, filed, no_longer_there,
+        the_only_account_there_is,
+    };
+    use crate::data::message_cache::MovedToAnotherAccount;
+
+    let Some(cache) = cache.clone() else {
+        return send_refusal(tx, rt, "No storage is open");
+    };
+    let Some(row) = row else {
+        return send_refusal(tx, rt, "Choose a reminder first");
+    };
+    let Some((id, name, _)) = selected_item(state, ItemKind::Reminder, row) else {
+        return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, ""));
+    };
+    // Which account it is in is read from the store rather than taken from the
+    // panel. The panel was filled for the account being looked at, which is the
+    // same answer almost always and is an inference either way.
+    let Some(reminder) = cache.get_reminder(&id).ok().flatten() else {
+        return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
+    };
+    let in_now = reminder.account_id;
+
+    let could_go = accounts_a_reminder_could_go_to(
+        filing,
+        &the_accounts_here(&cache, &active_or_local(state)),
+        &in_now,
+    );
+    // Said before any window opens. A chooser with nothing in it is a window
+    // somebody arrows through to find out there was never an answer. Only a
+    // move can get here: a copy is offered at least the account the reminder is
+    // in, so its list is never empty.
+    let [first, ..] = could_go.as_slice() else {
+        return send_refusal(tx, rt, &the_only_account_there_is(&name));
+    };
+    // The one answer is taken rather than asked for, the way a contact's move
+    // takes the only group it could be leaving. A chooser holding a single row
+    // is a question somebody has to work through to give the only answer there
+    // is.
+    let into = match could_go.len() {
+        1 => first.clone(),
+        _ => {
+            let names: Vec<String> = could_go
+                .iter()
+                .map(|account| account.spoken.clone())
+                .collect();
+            let (question, window) = match filing {
+                Filing::Moving => (
+                    "Which account should this reminder go to?",
+                    "Move to another account",
+                ),
+                Filing::Copying => (
+                    "Which account should the copy go in?",
+                    "Copy to another account",
+                ),
+            };
+            let Some(chosen) = pick_one(frame, question, window, &names) else {
+                return;
+            };
+            could_go[chosen].clone()
+        }
+    };
+
+    let stamp = now_stamp();
+    let said = match filing {
+        Filing::Moving => match cache.move_reminder_to_account(&id, &into.id, &stamp) {
+            // Both of the other answers are ones the chooser cannot produce,
+            // because it is built from the accounts the reminder is not in.
+            // They arrive when something changes the row between the question
+            // and the answer, and each has a sentence of its own.
+            Ok(MovedToAnotherAccount::Moved) => Ok(filed(filing, &name, &into.spoken)),
+            Ok(MovedToAnotherAccount::AlreadyThere) => {
+                return send_refusal(tx, rt, &already_in_that_account(&name, &into.spoken));
+            }
+            Ok(MovedToAnotherAccount::NoSuchReminder) => {
+                return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
+            }
+            Err(e) => Err(e),
+        },
+        Filing::Copying => {
+            match cache.copy_reminder_to_account(&id, &into.id, &new_id("reminder"), &stamp) {
+                Ok(Some(_)) => Ok(filed(filing, &name, &into.spoken)),
+                Ok(None) => {
+                    return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
+                }
+                Err(e) => Err(e),
+            }
+        }
+    };
+
+    match said {
+        Ok(sentence) => {
+            send_status(tx, rt, &sentence);
+            crate::presentation::wx_app::load_module_data(
+                crate::common::types::PimModule::Reminders,
+                &Some(cache),
+                Some(active_or_local(state)),
+                tx,
+                the_calendar_on_screen(state),
+            );
         }
         Err(e) => {
             let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));

@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A reminder can be moved to another account.** Press `Ctrl+Shift+V` on a
+  reminder, or use the context menu's "Move to another account". You are asked
+  which account, and what you hear afterwards names the one it went to.
+
+  Until now a reminder had nowhere to go. The reminders list sorts what you
+  have into groups worked out from when each one is due, and those are not
+  places you can put something. The one place a reminder is really kept is the
+  account it belongs to, which it has always had, so that is what the move
+  changes. A reminder typed into the wrong account could only be corrected by
+  deleting it and typing it again.
+
+  The list leaves out the account the reminder is already in, because putting
+  it back where it is would do nothing. If you have set up one account, nothing
+  opens and you are told there is nowhere else to put it, before any window
+  appears. If there is exactly one other account, it is used without asking.
+
+  **Reminders sync nowhere, so this moves the reminder on this computer and
+  nothing else knows.** Neither Outlook, Exchange nor Google has anything to
+  sync a standalone reminder to, so there is nothing on either side to tell.
+
+- **Copy on a reminder makes a second one in another account.**
+  `Ctrl+Shift+Y`, or "Copy to another account" on the context menu. The
+  original stays where it is and the copy is a reminder of its own, with the
+  same title, notes, due time, priority and repeat setting.
+
+  This list does offer the account the reminder is already in, which the move's
+  list does not. A second reminder in the same account is a thing you might
+  want; moving one to where it already is does nothing.
+
 - **A contact can be moved from one group to another.** Press `Ctrl+Shift+V` on
   a contact, or use the context menu's "Move to another group". You are asked
   which group the contact is coming out of, and then which one it is going
