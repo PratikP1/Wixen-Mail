@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 485 records have arrived since and have not been through it.
+# 486 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17777,4 +17777,47 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/reminders.rs", tests = 9 },
+]
+
+# Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`
+# on a clean tree, and the measurement contradicted what plan 05-06 predicted
+# for it in two ways worth writing down.
+#
+# The break is the half-fix, not the deletion. `moving_can_be_told` is asked
+# twice, once in `where_it_could_go` before the chooser opens and once here
+# before anything is written, and somebody tidying up a duplicated question
+# takes out the second. That leaves the refusal working from the menu and gone
+# from every other route into the write, which is the state the second question
+# exists to prevent. Deleting the refusal outright would redden far more and
+# would be noticed by anybody reading the diff; this is the edit that looks like
+# housekeeping.
+#
+# It reddens five tests across three targets and this record can name two of
+# them. Without `suite` a record runs `cargo test --lib`, so a library test is
+# the only kind its red list can hold. The other three are integration tests
+# that call `file_under` directly and really do go red:
+# `a_copy_leaves_the_original_where_it_was::test_a_task_a_provider_holds_can_be_copied_although_it_cannot_be_moved`,
+# and `a_moved_task_is_in_one_list::test_a_task_a_provider_holds_stays_in_the_list_it_started_in`
+# and its queue twin. The plan said a record here should carry
+# `suite = "a_moved_task_is_in_one_list"` and then said it should not, on the
+# grounds that no test in that file can reach `file_under`. Both are wrong about
+# the same fact: those tests reach it perfectly well, and a `suite` record would
+# have named the two integration tests and missed the two library ones. The
+# library pair is the better red list because it covers the event as well as the
+# task, and the event has no integration file of its own.
+[[guard]]
+name = "the second question before a move is written is asked as well as the first"
+file = "src/presentation/managers.rs"
+before = """    if filing.needs_the_holder_told()
+        && let Err(refused) = moving_can_be_told(cache, kind, id, "", account_id)
+    {
+        return Err(Error::Other(refused));
+    }"""
+after = """"""
+red = [
+    "presentation::managers::tests::test_moving_a_task_the_provider_holds_is_refused_and_writes_nothing",
+    "presentation::managers::tests::test_moving_an_event_the_provider_holds_is_refused_and_writes_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]
