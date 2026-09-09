@@ -5,6 +5,34 @@ use crate::data::message_cache::{
     DeletedTask, MessageCache, TaskEntry, TaskListEntry, TheDeletionSoFar,
 };
 
+/// What starting a move of a task the provider holds did.
+///
+/// The move is a deletion at the provider and a creation there under a new
+/// name, and neither call is made here. What this answers is about the two
+/// local writes that have to be in place before either can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovedWhatTheProviderHolds {
+    /// The new copy is in the destination list and the old identifier is owed
+    /// a deletion, both written.
+    Moved,
+    /// The task was not here to move, so nothing was written.
+    ///
+    /// Answered by the removal of the old row itself, by how many rows it took
+    /// away, rather than by a read before the write. The caller hands over the
+    /// task as it read it, and a sync deciding the provider no longer holds it
+    /// between that read and this write is ordinary. That answer therefore
+    /// arrives after the new copy has already been written, so the new copy
+    /// has to be undone, and the transaction is the only thing that undoes it.
+    ItIsNotHereToMove,
+    /// The destination is the list it is already in, so nothing was written.
+    ///
+    /// Carrying it out would write a second copy of the task and a note asking
+    /// the provider to delete the first, for a move that changes nothing. The
+    /// chooser cannot offer this; a route that did not go through the chooser
+    /// can, which is why it is asked here.
+    IntoTheListItIsAlreadyIn,
+}
+
 impl MessageCache {
     // ── Task Lists ──────────────────────────────────────────────────────────
 
@@ -236,6 +264,141 @@ impl MessageCache {
         self.drop_synced_task(task_id)
     }
 
+    /// Start a move of a task the provider holds, by writing both halves of it
+    /// at once.
+    ///
+    /// Nothing reaches a provider from here. A task the provider holds cannot
+    /// be moved between lists by anybody today: `moving_can_be_told` refuses it
+    /// before the chooser opens and `file_under` asks again afterwards, and
+    /// neither refusal is touched. This is the state such a move would leave
+    /// behind, built and tested before anything is allowed to make the calls
+    /// that produce it. `05-08` is what makes them.
+    ///
+    /// # The two halves
+    ///
+    /// A move at the provider is a deletion in the old list and a creation in
+    /// the new one, and between them the task is at no provider at all. So the
+    /// new copy is written here in full, under an identifier this computer
+    /// minted, marked as waiting to be sent, and the provider's old identifier
+    /// is left a deletion note naming that copy as the thing that has to arrive
+    /// before the deletion may go. `push_tasks` reads that name and leaves the
+    /// note alone until then, so the provider is never asked to destroy the
+    /// only copy it has.
+    ///
+    /// # The new copy is written first and the old row removed last
+    ///
+    /// Not the other way round, and the next reader will want to correct it to
+    /// the order that reads as defensive. A failure between the two has to land
+    /// somewhere, and it should land where somebody can see it: the task in two
+    /// places is visible and correctable, the task in none looks exactly like a
+    /// task that was never there. This codebase has settled the same question
+    /// the same way four times: [`Self::rename_task`] saves the new task before
+    /// dropping the old one, `application::calendar::one_day_kept_out_of_the_series`
+    /// saves the changed day before the series, `02-06`'s saved-search replace
+    /// stamps the parent row last, and
+    /// [`MessageCache::move_contact_between_groups`] puts the contact in before
+    /// taking it out.
+    ///
+    /// # Why there is a transaction, and what would notice if there were not
+    ///
+    /// Whether the task is really still here is answered by the removal itself,
+    /// by how many rows it took away, rather than by a read before the write.
+    /// The caller hands over the task as it read it, and a sync deciding the
+    /// provider no longer holds it between that read and this write is
+    /// ordinary. That answer therefore arrives *after* the new copy and the
+    /// note have already been written, so both have to be undone, and the
+    /// transaction is the only thing that undoes them.
+    ///
+    /// Two loose statements pass every other test in
+    /// `tests/a_half_finished_task_move.rs` and fail that one.
+    ///
+    /// [`MessageCache::move_contact_between_groups`]: crate::data::message_cache::MessageCache::move_contact_between_groups
+    pub fn move_a_task_the_provider_holds(
+        &self,
+        task: &TaskEntry,
+        into_list: &str,
+        new_id: &str,
+    ) -> Result<MovedWhatTheProviderHolds> {
+        if task.task_list_id.as_deref() == Some(into_list) {
+            return Ok(MovedWhatTheProviderHolds::IntoTheListItIsAlreadyIn);
+        }
+        let moving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to start a move of a task: {}", e)))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Through `save_task` rather than a second sixteen-column upsert
+        // written out here. It runs on this cache's one connection, which is
+        // the connection the transaction above was opened on, so it is inside
+        // that transaction: SQLite scopes a transaction to a connection and not
+        // to the handle a statement was issued through. A copy of that upsert
+        // would drift from the original the first time a column was added.
+        self.save_task(&TaskEntry {
+            id: new_id.to_string(),
+            task_list_id: Some(into_list.to_string()),
+            // The copy has never been at a provider, so it has no stamp from
+            // one and everything about it is waiting to be sent. Left as the
+            // original's, the next pull would compare the provider's answer
+            // against a stamp for a task the provider has never seen.
+            remote_updated: None,
+            pending: true,
+            updated_at: now.clone(),
+            ..task.clone()
+        })?;
+
+        // The parent has not gone, it has been given a new name, so its
+        // children are pointed at the new name rather than orphaned.
+        // `drop_synced_task` answers this the other way, with null, and two of
+        // its callers need that; here it would flatten a task's subtasks every
+        // time somebody moved the parent between lists.
+        moving
+            .execute(
+                "UPDATE tasks SET parent_task_id = ?2 WHERE parent_task_id = ?1",
+                rusqlite::params![task.id, new_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to point the subtasks at the copy being moved: {}",
+                    e
+                ))
+            })?;
+
+        moving
+            .execute(
+                "INSERT OR REPLACE INTO deleted_tasks
+                    (id, account_id, task_list_id, deleted_at, waiting_for_task_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![task.id, task.account_id, task.task_list_id, now, new_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the provider is owed for a move: {}",
+                    e
+                ))
+            })?;
+
+        let taken_out = moving
+            .execute(
+                "DELETE FROM tasks WHERE id = ?1",
+                rusqlite::params![task.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to take away the moved task: {}", e)))?;
+        if taken_out == 0 {
+            // Returned without committing, so the transaction is dropped and
+            // rolls back, which is what takes the new copy and the note away
+            // again. There was nothing here to move, and the two things a move
+            // that did not happen would have left are a second task nobody
+            // asked for and a request to delete the first at the provider.
+            return Ok(MovedWhatTheProviderHolds::ItIsNotHereToMove);
+        }
+
+        moving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to move a task between lists: {}", e)))?;
+        Ok(MovedWhatTheProviderHolds::Moved)
+    }
+
     /// One task, or nothing.
     pub fn find_task(&self, task_id: &str) -> Result<Option<TaskEntry>> {
         let mut stmt = self
@@ -293,7 +456,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, task_list_id, deleted_at, taken_at
+                "SELECT id, account_id, task_list_id, deleted_at, taken_at, waiting_for_task_id
                  FROM deleted_tasks WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare deletions query: {}", e)))?;
@@ -305,6 +468,7 @@ impl MessageCache {
                     task_list_id: row.get(2)?,
                     deleted_at: row.get(3)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(4)?),
+                    waiting_for_task_id: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query deletions: {}", e)))?;
