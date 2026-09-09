@@ -27,6 +27,8 @@ pub mod notes;
 mod outbox;
 pub mod reminders;
 pub mod saved_searches;
+#[cfg(test)]
+mod schema_template;
 mod searching;
 pub mod shared_folders;
 mod signatures;
@@ -1223,6 +1225,16 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to create cache directory: {}", e)))?;
 
         let db_path = cache_dir.join("message_cache.db");
+
+        // Test builds only, and it changes nothing about what is opened below.
+        // A test opens hundreds of these and each open used to run the whole
+        // schema; this hands it a database that has already been through it
+        // once in this process. Nothing here is compiled into the program
+        // somebody installs, and a database that is already at the path is
+        // left alone. See `schema_template`.
+        #[cfg(test)]
+        schema_template::lay_it_down_at(&db_path);
+
         let conn = Connection::open(db_path)
             .map_err(|e| Error::Other(format!("Failed to open database: {}", e)))?;
         fold_case_the_way_rust_does(&conn)?;
