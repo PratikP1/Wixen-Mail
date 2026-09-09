@@ -19,11 +19,23 @@ subject="$root/scripts/which-checks.sh"
 # shellcheck source=scripts/shell-suite.sh
 . "$root/scripts/shell-suite.sh"
 
+# Everything this suite writes, under one directory and one trap. Two traps on
+# EXIT are one trap: the second replaces the first, and the files the first
+# named are left behind.
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+
+# Where the subject is run from. The repository root for every case but one:
+# the case that proves which-checks.sh really reads the index runs from a
+# repository of its own, so it cannot be answered by whatever happens to be
+# staged here and cannot touch it either.
+run_from="$root"
+
 expect() {
     local want="$1" desc="$2"
     shift 2
     local got status
-    got="$("$subject" "$@" 2>/dev/null)"
+    got="$(cd "$run_from" && "$subject" "$@" 2>/dev/null)"
     status=$?
     if [ "$status" -ne 0 ]; then
         suite_case_failed "$desc" \
@@ -33,6 +45,15 @@ expect() {
     else
         suite_case_passed "$desc"
     fi
+}
+
+expect_from() {
+    local where="$1"
+    shift
+    local previously="$run_from"
+    run_from="$where"
+    expect "$@"
+    run_from="$previously"
 }
 
 # A refusal is an answer too, and the cases below are the ones where answering
@@ -99,9 +120,149 @@ expect affected "an integration test" gsd/x tests/wired.rs
 # manifests. A manifest changes rarely, so `all` costs little in aggregate and
 # is the honest answer: the dependency graph and the feature set reach every
 # target.
-expect all "Cargo.toml" gsd/x Cargo.toml
-expect all "Cargo.lock" gsd/x Cargo.lock
-expect all "a manifest beside a source file" gsd/x src/lib.rs Cargo.toml
+#
+# With one exception, and it is the version line. This project puts the bump in
+# the same commit as the change it describes, because a version arriving later
+# describes a build nobody made, so nearly every commit in a phase touches both
+# manifests and nearly every commit was paying the whole gate for it. A diff
+# confined to the package's own version adds no dependency, no feature and no
+# build input: nothing that reaches a target reaches it. The tests that do read
+# the shipped version live in `tests/house_style.rs`, which every scoped run
+# ends with, so they are not skipped by the softer answer.
+#
+# The diff is handed over here rather than read from the index, so these answers
+# do not depend on what happens to be staged while the suite runs. One case
+# below hands over nothing on purpose.
+manifest_diff() {
+    cat > "$scratch/$1"
+    printf '%s' "$scratch/$1"
+}
+
+version_bump="$(manifest_diff version-bump.diff <<'DIFF'
+diff --git a/Cargo.lock b/Cargo.lock
+index acf60ed..99ec611 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -6720,7 +6720,7 @@ dependencies = [
+ [[package]]
+ name = "wixen-mail"
+-version = "0.99.0"
++version = "0.100.0"
+ dependencies = [
+diff --git a/Cargo.toml b/Cargo.toml
+index 51b601b..62db6ac 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "wixen-mail"
+-version = "0.99.0"
++version = "0.100.0"
+ edition = "2024"
+DIFF
+)"
+
+a_dependency_moved_too="$(manifest_diff dependency.diff <<'DIFF'
+diff --git a/Cargo.lock b/Cargo.lock
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -100,7 +100,7 @@
+ [[package]]
+ name = "serde"
+-version = "1.0.200"
++version = "1.0.201"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+@@ -6720,7 +6720,7 @@
+ [[package]]
+ name = "wixen-mail"
+-version = "0.99.0"
++version = "0.100.0"
+ dependencies = [
+DIFF
+)"
+
+a_feature_too="$(manifest_diff feature.diff <<'DIFF'
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,9 @@
+ [package]
+ name = "wixen-mail"
+-version = "0.99.0"
++version = "0.100.0"
+ edition = "2024"
++
++[features]
++telemetry = []
+DIFF
+)"
+
+a_dependencys_own_version="$(manifest_diff dependency-table.diff <<'DIFF'
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -40,7 +40,7 @@
+ [dependencies.wxdragon]
+-version = "0.9.0"
++version = "0.10.0"
+ features = ["webview"]
+DIFF
+)"
+
+nothing_readable="$(manifest_diff empty.diff < /dev/null)"
+
+expect all "Cargo.toml" --manifest-diff-file="$a_feature_too" gsd/x Cargo.toml
+expect all "Cargo.lock" --manifest-diff-file="$a_dependency_moved_too" gsd/x Cargo.lock
+expect all "a manifest beside a source file" \
+    --manifest-diff-file="$a_feature_too" gsd/x src/lib.rs Cargo.toml
+
+# The version line, and only the version line.
+expect affected "a version bump and nothing else in the manifest" \
+    --manifest-diff-file="$version_bump" gsd/x Cargo.toml Cargo.lock
+
+# Everything else in a manifest still earns everything, and these are the four
+# ways the softer answer could leak. The lock file is the one worth naming: a
+# dependency's version line reads exactly like the package's own, and what tells
+# them apart is whose `name` sits above it in the hunk.
+expect all "a lock file that also moved a dependency version" \
+    --manifest-diff-file="$a_dependency_moved_too" gsd/x Cargo.lock
+expect all "a feature added beside a version bump" \
+    --manifest-diff-file="$a_feature_too" gsd/x Cargo.toml
+expect all "a version line under a dependency table" \
+    --manifest-diff-file="$a_dependencys_own_version" gsd/x Cargo.toml
+expect all "a manifest diff that came back empty" \
+    --manifest-diff-file="$nothing_readable" gsd/x Cargo.toml
+
+# A check that cannot see what changed must not hand out the softer answer, and
+# on main the branch decides first anyway: everything that is not a document
+# earns everything, whatever the diff says.
+expect all "main with a version bump" \
+    --manifest-diff-file="$version_bump" main Cargo.toml Cargo.lock
+
+# And the path a commit really takes, which hands over no diff at all. Without
+# this case the git read could come back empty on every commit, every manifest
+# would answer `all` exactly as it does today, and every case above would still
+# pass: a fixture proves the reading and not the reader.
+a_repo_of_its_own="$scratch/a-repo"
+mkdir -p "$a_repo_of_its_own/no-hooks"
+git -C "$a_repo_of_its_own" init --quiet
+# This project's hook is configured on this repository rather than globally, so
+# a fresh one does not inherit it. Pinned at an empty directory anyway: a global
+# hooksPath set one day would otherwise run the whole gate from inside a suite
+# the gate is running.
+git -C "$a_repo_of_its_own" config core.hooksPath "$a_repo_of_its_own/no-hooks"
+git -C "$a_repo_of_its_own" config user.email "suite@example.invalid"
+git -C "$a_repo_of_its_own" config user.name "the suite"
+printf '[package]\nname = "wixen-mail"\nversion = "0.99.0"\nedition = "2024"\n' \
+    > "$a_repo_of_its_own/Cargo.toml"
+git -C "$a_repo_of_its_own" add Cargo.toml
+git -C "$a_repo_of_its_own" commit --quiet -m "the manifest before the bump"
+printf '[package]\nname = "wixen-mail"\nversion = "0.100.0"\nedition = "2024"\n' \
+    > "$a_repo_of_its_own/Cargo.toml"
+git -C "$a_repo_of_its_own" add Cargo.toml
+
+expect_from "$a_repo_of_its_own" affected "a version bump staged in a repository of its own" \
+    gsd/x Cargo.toml
 expect affected "the hook itself" gsd/x .githooks/pre-commit
 expect affected "this decision" gsd/x scripts/which-checks.sh
 
@@ -117,10 +278,9 @@ expect all_but_slow "a branch with nothing said about the change" gsd/x
 # says so and is held to it. `red-commit.sh` reads the marker; this file decides
 # only where such a commit is allowed to be made.
 
-red_marker="$(mktemp)"
-plain_message="$(mktemp)"
-broken_marker="$(mktemp)"
-trap 'rm -f "$red_marker" "$plain_message" "$broken_marker"' EXIT
+red_marker="$scratch/red-marker"
+plain_message="$scratch/plain-message"
+broken_marker="$scratch/broken-marker"
 
 cat > "$red_marker" <<'MSG'
 test(02-02): failing tests for the narrower question set
