@@ -26,7 +26,11 @@
 //! `application::pim_command`'s and this file's source-text check's to answer.
 //! It presses no key. And nothing here has been heard by a screen reader.
 
+use wixen_mail::application::destinations::Filing;
+use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::message_cache::{MessageCache, MovedToAnotherAccount, ReminderEntry};
+use wixen_mail::presentation::managers::file_under;
 
 /// The two accounts a reminder moves between.
 const HERE: &str = "acct-here";
@@ -215,6 +219,105 @@ fn test_a_move_to_the_account_it_is_already_in_writes_nothing_and_says_which_it_
     assert_eq!(
         after.updated_at, "2026-01-01T08:00:00Z",
         "the row was written again for a move that had nowhere to go"
+    );
+}
+
+#[test]
+fn test_filing_a_reminder_through_file_under_is_refused_rather_than_reported_as_done() {
+    // The trap `05-04` closed one plan early, asserted here for the kind it
+    // was closed for. `file_under`'s last arm used to answer the three kinds
+    // with no container by handing back the identifier it was given, which is
+    // success with nothing written, and its comment claimed a new kind of item
+    // would be a compile error there. That is true of a new `ItemKind` variant
+    // and false of an existing kind moving off the never-reached list, which
+    // is exactly what giving a reminder a move does.
+    //
+    // The route below keeps a reminder out of this function entirely. This is
+    // what happens if a later one does not: a refusal somebody can hear,
+    // rather than "Ring the dentist moved to Home" for a row nothing touched.
+    let dir = tempfile::tempdir().expect("somewhere to put the store");
+    let cache = a_store(&dir);
+    cache
+        .save_reminder(&a_reminder(DENTIST, HERE))
+        .expect("save");
+
+    let answer = file_under(
+        &cache,
+        ItemKind::Reminder,
+        DENTIST,
+        THERE,
+        HERE,
+        Filing::Moving,
+    );
+
+    assert!(
+        answer.is_err(),
+        "filing a reminder into an account here reported success: {answer:?}"
+    );
+    assert_eq!(
+        cache
+            .get_reminder(DENTIST)
+            .expect("read")
+            .expect("still there")
+            .account_id,
+        HERE,
+        "it moved the reminder after all"
+    );
+}
+
+#[test]
+fn test_a_reminder_is_filed_by_its_account_rather_than_by_the_path_that_names_one_container() {
+    // What this cannot see: whether the key is pressed, whether the window
+    // opens, or whether anybody hears the answer. It reads the source of the
+    // arm the two filing commands share and asks where a reminder goes from
+    // there.
+    //
+    // Why it exists. `where_it_could_go` opens with `kind.kept_in()?` and a
+    // reminder answers `None`, so a reminder that reaches the ordinary filing
+    // path falls out of it with `None`, which the dispatcher treats as
+    // "somebody left the window without choosing" and says nothing at all. A
+    // key that does nothing and says nothing is indistinguishable from a
+    // broken keyboard, and no test in this repository reaches that arm: it is
+    // in `managers.rs`, which 43 guard records fingerprint, so it has no unit
+    // tests of its own.
+    //
+    // Read as the text between the second and third arms the filing commands
+    // share. There have to be three: one for a contact, one for a reminder,
+    // and one for the three kinds that are kept in a single container. The
+    // reminder arm sits below the contact arm on purpose, so the check that
+    // watches the contact arm goes on reading the same text.
+    const SHARED: &str = "PimCommand::Move | PimCommand::Copy";
+    let managers =
+        std::fs::read_to_string("src/presentation/managers.rs").expect("the manager sources");
+    let ships = what_ships(&managers);
+    let below_the_first = ships
+        .split_once(SHARED)
+        .expect("the arm the two filing commands share")
+        .1;
+    let below_the_second = below_the_first
+        .split_once(SHARED)
+        .expect("a second filing arm, for a reminder")
+        .1;
+    let arm = below_the_second
+        .split_once(SHARED)
+        .expect("a third filing arm, for the kinds that are kept in one container")
+        .0;
+
+    assert!(
+        arm.contains("ItemKind::Reminder"),
+        "the filing arm no longer sends a reminder anywhere of its own, so it \
+         goes to the path that asks which single container holds it, gets \
+         nothing back, and says nothing"
+    );
+    assert!(
+        arm.contains("move_a_reminder_to_another_account"),
+        "nothing raises the move between accounts, so Ctrl+Shift+V on a \
+         reminder is a key that does nothing"
+    );
+    assert!(
+        !arm.contains("file_it("),
+        "a reminder is routed to the chooser that names one container, which \
+         refuses it: the whole point of this arm is to be reached first"
     );
 }
 
