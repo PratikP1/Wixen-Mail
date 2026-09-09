@@ -895,11 +895,31 @@ write path added by this milestone passes through that gate.
   - [D] A user moves a task to another list by keyboard, and the task appears in the target
     list and is gone from the source list in one action, not two.
 
-  - [D] The move goes through `Allowed::personal_information`, which is on for a new install,
-    and is refused with a reason when that gate is off.
+  - [D] **Reworded 2026-09-06 by Pratik's decision 5, carried out by `05-06`.** The behaviour
+    stays and the sentence is corrected. The move is written on this computer and marked as
+    waiting whatever `Allow Changes` says; the gate is applied where each HTTP client is built,
+    in `tasks_api.rs`, `google_api.rs`, `microsoft_graph.rs` and `caldav.rs`, so a refused push
+    is counted rather than reported as a failure and the sync summary names the setting to turn
+    on. What `05-06` adds is that the move says the same thing at the moment somebody makes it,
+    in the same words, out of `allowed::turn_the_setting_on`, rather than one sync later.
+    Not a refusal at move time, and deliberately: every other edit in the program is written
+    here and held at the gate, and making a task move the one exception is worse for somebody
+    moving by keyboard, who would meet a different answer on this command than on all the
+    others. The criterion this replaces asked for a refusal, which nothing has ever done.
 
   - [D] A move that fails at the provider leaves the task in exactly one list, never in both
     and never in neither.
+    **Owned by `05-07` and `05-08`, and not closed by `05-06`. Recorded 2026-09-06 from
+    Pratik's decision 1.** The criterion is left exactly as written, because decision 1 says
+    the provider move gets built and so this becomes true by being satisfied rather than by
+    being reworded. Today it is satisfied vacuously: a provider-held task is refused before
+    anything is written, so there is no failure between two writes for it to be about. `05-07`
+    makes the half-finished state a stored, visible, recoverable object and `05-08` makes the
+    provider calls, in that order. `05-06` measured the local half, in
+    `tests/a_moved_task_is_in_one_list.rs`, and that is a floor rather than this criterion:
+    `TaskEntry.task_list_id` is one nullable column, so two lists is not a state this storage
+    can hold, and the whole of the risk lives in the delete-there-create-here that does not
+    exist yet.
 
 - [ ] **PIM-02**: Move and copy items in the modules that are not mail.
   - Evidence: rewritten 2026-09-04. The mail half is right: `copy_message` and `move_message`
