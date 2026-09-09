@@ -30,15 +30,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   part is joined on with a comma rather than being a second sentence to sit
   through.
 
-  Known limitation: a task your account already holds still cannot be moved
-  between lists at all, and is refused with a reason before anything is
-  written. Moving one means deleting it at the provider and creating it again,
-  which is not built. That refusal is what keeps the promise that a task ends
-  in exactly one list, and there is now a test reading a moved task back out of
-  storage to say so for the moves that do happen.
+  This entry used to carry a known limitation saying that a task your account
+  already holds could not be moved between lists at all. That was true when it
+  was written and is no longer true. See the next entry.
 
   Nobody has heard any of this. Whether the extra clause reads as useful or as
   noise after the twentieth move is a question for an ear.
+
+- **A task your account already holds can now be moved to another list.** Until
+  now this was refused before anything was written, with a sentence saying that
+  moving one was not something the program could do yet. Moving one means asking
+  your provider to make the task again in the new list and then to delete it from
+  the old one, and neither call was made.
+
+  Both calls are made now, and the order was chosen rather than fallen into. The
+  new copy is created before the old one is deleted. If something goes wrong
+  between the two, your task is in both lists at your provider, which you can see
+  and can put right. The other order would leave it in neither, which nobody can
+  see.
+
+  On this computer there is no gap at all. At every moment exactly one row is
+  that task, and after the move it is in the list you chose.
+
+  If the second half does not happen, because the network went, because you
+  closed the program, or because Allow Changes is off, the next sync that works
+  finishes it. You do not have to do anything, and you do not have to move the
+  task again.
+
+  **Known limitation, and it is the one that matters: no account has ever been
+  used with this program, so no provider has ever accepted either call.**
+  Everything above is how the program behaves against a service that answers
+  from a script in a test. Whether Google or Microsoft really accepts a new copy
+  in a second list while the first still holds the task, and really accepts the
+  delete that follows, has never been tried once.
+
+  Moving an event between calendars is still refused, with the same sentence for
+  the same reason. It is the same job for a different kind of item and it has not
+  been built.
 
 - **A reminder can be moved to another account.** Press `Ctrl+Shift+V` on a
   reminder, or use the context menu's "Move to another account". You are asked

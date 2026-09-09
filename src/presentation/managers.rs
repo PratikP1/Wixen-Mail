@@ -5108,11 +5108,17 @@ mod tests {
     }
 
     #[test]
-    fn test_a_task_the_provider_holds_is_told_no_before_the_chooser_opens() {
-        // The refusal has to reach the command, not sit in a function nothing
-        // calls, and it has to come before the window: working through a tree
-        // of lists to reach an answer that is thrown away is worse than being
-        // told at the start.
+    fn test_a_task_the_provider_holds_is_offered_the_chooser_like_any_other() {
+        // The other of the two places `moving_can_be_told` is asked, and the
+        // reason both had to change together. This used to assert that a task
+        // Google holds was told no before the window opened; `file_under`'s twin
+        // asserted the same before anything was written. Changing one and not
+        // the other would leave the move refused from the menu and allowed from
+        // every other route, or offered from the menu and refused once somebody
+        // had answered.
+        //
+        // There is one function, so there is one answer, and this is the half
+        // that proves the person meets it.
         let cache = test_cache();
         two_task_lists(&cache, "google:list-a", "google:list-b");
         cache
@@ -5130,18 +5136,12 @@ mod tests {
         .expect("an answer");
 
         match offered.offer {
+            Offer::Ask(branches) => assert!(
+                !branches.is_empty(),
+                "the chooser opened with nowhere in it"
+            ),
             Offer::Said(sentence) => {
-                assert!(
-                    sentence.contains("Book the dentist"),
-                    "the refusal has to name the task: {sentence}"
-                );
-                assert!(
-                    sentence.contains("Nothing has been moved"),
-                    "the refusal has to say the move did not happen: {sentence}"
-                );
-            }
-            Offer::Ask(branches) => {
-                panic!("a move nothing can send was offered a chooser: {branches:?}")
+                panic!("a task a provider holds was refused a chooser: {sentence}")
             }
         }
     }
@@ -6607,12 +6607,28 @@ fn held_in(
 ///
 /// An item no provider has seen yet can go anywhere: the push creates it, and
 /// it creates it in whichever container the row names by then, so the move goes
-/// up with it. An item a provider already holds cannot, for the reasons in
+/// up with it.
+///
+/// An event a server already holds cannot, for the reasons in
 /// [`crate::application::pim_command::cannot_be_moved`], which is also where
 /// the sentence lives.
 ///
 /// A note is held by nobody. It never leaves this computer, so there is no
 /// second copy for a move here to disagree with.
+///
+/// # A task the provider holds used to be refused here and no longer is
+///
+/// It was refused for the reason the event still is: moving one means creating
+/// it again where it is going and deleting it where it was, and neither call was
+/// made. `05-07` built the state a half-finished move leaves behind and `05-08`
+/// made the calls, so the reason has gone and the refusal with it. What carries
+/// the move is [`file_under`], which sends a task a provider holds to
+/// [`crate::data::message_cache::MessageCache::move_a_task_the_provider_holds`]
+/// instead of writing its list column.
+///
+/// **The event arm is deliberately untouched.** Decision 1 of 2026-09-06 is
+/// about tasks and says nothing about events, and the tempting edit when
+/// lifting the refusal for one kind is to take the whole question out.
 fn moving_can_be_told(
     cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
@@ -6632,7 +6648,10 @@ fn moving_can_be_told(
             // The same question the push asks to decide between creating an
             // event and updating one.
             .is_some_and(|event| event.provider_event_id.is_some()),
-        ItemKind::Task => crate::application::tasks_sync::a_provider_holds(id),
+        // No task move is refused here now. Whether a provider holds it decides
+        // which write [`file_under`] uses rather than whether the move happens
+        // at all, and this used to be `tasks_sync::a_provider_holds(id)`.
+        ItemKind::Task => false,
         ItemKind::Note | ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => false,
     };
     match kind.kept_in().filter(|_| held_elsewhere) {
@@ -6718,10 +6737,17 @@ pub fn will_have_to_be_sent(
 /// status line said "moved" for a change that reached nobody. A note carries no
 /// such column, because a note goes nowhere; `05.1-03` is what gives it one.
 ///
-/// Refused for an item a provider already holds, rather than written and
-/// queued. [`moving_can_be_told`] is asked before the chooser opens as well, so
-/// nobody is made to answer a question whose answer is thrown away; asking here
-/// too is what makes it impossible to write one of those by any route.
+/// Refused for an event a server already holds, rather than written and queued.
+/// [`moving_can_be_told`] is asked before the chooser opens as well, so nobody
+/// is made to answer a question whose answer is thrown away; asking here too is
+/// what makes it impossible to write one of those by any route.
+///
+/// A task a provider holds is not refused and is not written this way either.
+/// It goes to
+/// [`crate::data::message_cache::MessageCache::move_a_task_the_provider_holds`],
+/// which is a different write for a different reason: the row carries the
+/// provider's own identifier, so filing it under a new list and marking it would
+/// ask the provider to update a task in a list it is not in.
 ///
 /// Public so the two acts can be run against a real store from
 /// `tests/a_copy_leaves_the_original_where_it_was.rs`. Every decision worth
@@ -6801,6 +6827,23 @@ pub fn file_under(
                         "",
                     ))
                 })?;
+            // A move of a task a provider holds is a different write, and this
+            // is the same question [`moving_can_be_told`] asks of the same task.
+            // **The two answers have to agree.** If that one refuses a task this
+            // one would move, the chooser refuses before it opens and nothing
+            // ever reaches here; if this one refuses a task that one lets
+            // through, somebody answers a question and is then told no. They
+            // agree today because that one refuses no task at all.
+            //
+            // Only for a move. A copy of a task a provider holds is the write
+            // below with a new identifier: the provider's own task is left
+            // exactly where it is, so the provider is owed nothing and there is
+            // no deletion to record.
+            if filing.needs_the_holder_told()
+                && crate::application::tasks_sync::a_provider_holds(&task.id)
+            {
+                return move_what_a_provider_holds(cache, &task, into);
+            }
             task.task_list_id = Some(into.to_string());
             task.pending = true;
             if filing.makes_a_new_row() {
@@ -6849,6 +6892,61 @@ pub fn file_under(
         ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Err(Error::Other(
             crate::application::pim_command::is_not_kept_in_a_container(kind),
         )),
+    }
+}
+
+/// Start a move of a task a provider holds, and say which row is in the new
+/// list.
+///
+/// # The order the provider is asked in, which is the whole safety argument
+///
+/// A move a provider has to be told about is two calls: create the task in the
+/// new list, delete it from the old one. Whichever goes first, a failure between
+/// them leaves the account in a state nobody asked for, and the two states are
+/// not equally bad. Delete first and a failed create leaves the task in no list
+/// at the provider, which nobody can see and nobody can recover from. Create
+/// first and a failed delete leaves it in two, which anybody can see and anybody
+/// can correct.
+///
+/// So this writes the new copy under an identifier minted here, which the push
+/// creates, and records the old identifier as a deletion the provider is owed
+/// **once that create has landed**. `push_tasks` sends deletions before
+/// creations, and `05-07`'s question in that loop is what holds this note back
+/// until the copy has gone, so the effective order at the provider is create
+/// then delete even though the loops run the other way round. Reordering those
+/// loops would reverse it, for every ordinary deletion in the program as well.
+///
+/// On this computer there is no gap at all. The write is one transaction: the
+/// new copy, the subtasks repointed, the note, and the old row taken away. At
+/// every instant exactly one row is that task.
+///
+/// **Nothing here has run against a real provider.** That the two calls in this
+/// order really leave the state described is a claim about Google and Microsoft,
+/// and no account has ever been used with this program.
+fn move_what_a_provider_holds(
+    cache: &MessageCache,
+    task: &crate::data::message_cache::TaskEntry,
+    into: &str,
+) -> crate::common::Result<String> {
+    use crate::application::new_item::ItemKind;
+    use crate::common::Error;
+    use crate::data::message_cache::MovedWhatTheProviderHolds;
+
+    let here = new_id("task");
+    match cache.move_a_task_the_provider_holds(task, into, &here)? {
+        MovedWhatTheProviderHolds::Moved => Ok(here),
+        // Somebody else's sync took the row away between the read above and
+        // this write. The transaction has already put back the copy and the
+        // note it had written, so nothing is left over to clean up.
+        MovedWhatTheProviderHolds::ItIsNotHereToMove => Err(Error::Other(
+            crate::application::pim_command::no_longer_there(ItemKind::Task, ""),
+        )),
+        // Already where it was asked to go, so the row it is in is the answer.
+        // The chooser leaves out the container an item is in, so only a route
+        // that did not go through the chooser reaches this. Carrying the move
+        // out would write a second copy and ask the provider to delete the
+        // first, for a move that changes nothing.
+        MovedWhatTheProviderHolds::IntoTheListItIsAlreadyIn => Ok(task.id.clone()),
     }
 }
 

@@ -356,17 +356,32 @@ const fn did(filing: Filing) -> &'static str {
 
 /// What to say when the item is one a provider holds and the move cannot be sent.
 ///
-/// Neither Google nor Microsoft is asked here to move a task to another list or
-/// an event to another calendar. Doing it means deleting the item where it is,
-/// creating it again where it is going, and writing the identity that comes
-/// back over the old one, and none of that is built. Filing it in the new
-/// container on this computer alone leaves the two ends disagreeing: the next
-/// push would ask the provider to update an item in a container it is not in,
-/// which is refused every time, and the next pull would put it back where the
-/// provider still has it.
+/// **This is an event's sentence and was a task's until 2026-09-09.** It is
+/// worth saying which words stopped being true, because they are the words this
+/// comment used to open with: no provider was asked to move a task to another
+/// list *or* an event to another calendar. `05-08` built the task half. A task a
+/// provider holds is now moved by creating it again in the new list and deleting
+/// it from the old one, in that order, so this sentence would be a refusal of
+/// something the program does. `moving_can_be_told`'s task arm is what stops it
+/// being said, and a guard record stands behind that arm going back to a
+/// refusal.
+///
+/// No server is asked to move an event to another calendar. Doing it means
+/// creating the event again where it is going, deleting it where it was, and
+/// writing the identity that comes back over the old one, and none of that is
+/// built for an event. Filing it in the new calendar on this computer alone
+/// leaves the two ends disagreeing: the next push would ask the server to update
+/// an event in a calendar it is not in, which is refused every time, and the
+/// next pull would put it back where the server still has it.
 ///
 /// So the move is refused and the reason said. It names what does work, because
-/// "not yet" on its own leaves somebody with nothing to try.
+/// "not yet" on its own leaves somebody with nothing to try, and for an event
+/// that advice is still the right one: an event made on this computer really can
+/// be moved.
+///
+/// The signature still takes any kind, because the caller's match does, and
+/// narrowing it to events would mean a second refusal path for one call site.
+/// What holds the line is the arm that reaches it, not the type.
 pub fn cannot_be_moved(kind: ItemKind, holder: ContainerKind, name: &str) -> String {
     let named = match name.trim() {
         "" => format!("This {}", thing(kind)),
@@ -771,12 +786,17 @@ mod tests {
     #[test]
     fn test_a_refused_move_says_it_did_not_happen_and_what_does_work() {
         // "Not yet" on its own leaves somebody trying it again on the next
-        // task, and a refusal that does not say the row is untouched reads
+        // event, and a refusal that does not say the row is untouched reads
         // exactly like a move that half worked.
-        let said = cannot_be_moved(ItemKind::Task, ContainerKind::TaskList, "Book the dentist");
+        //
+        // Asked about an event rather than a task since 2026-09-09. A task a
+        // provider holds can be moved now, so a task is not a kind this sentence
+        // is ever said about, and a test fingerprinting the wording for one
+        // would hold the shape of a sentence nobody can hear.
+        let said = cannot_be_moved(ItemKind::Event, ContainerKind::Calendar, "The dentist");
 
-        assert!(said.contains("Book the dentist"), "{said}");
-        assert!(said.contains("task list"), "{said}");
+        assert!(said.contains("The dentist"), "{said}");
+        assert!(said.contains("calendar"), "{said}");
         assert!(said.contains("Nothing has been moved"), "{said}");
         assert!(
             said.contains("made on this computer can be moved"),
