@@ -583,7 +583,23 @@ and that check's second `expect` is what it will meet.
 
 ## The merge
 
-Recorded after `scripts/check.sh all` and the merge, below.
+`scripts/check.sh all` passed on the branch at `45bd20d`: formatting, clippy
+with `-D warnings`, the whole suite and the release build. Merged to `main` at
+`6bfef9e` with a merge commit. `main` is at version `0.97.0` with 675 guard
+records, and it is **not pushed**.
+
+The six task commits and the docs commit:
+
+1. `23795a8` RED, the move written as the put-in that already ships, five named
+   failures
+2. `52de10d` GREEN, one transaction, the put-in first and the take-out second
+3. `5552a7d` the record for the transaction, and the census
+4. `917bea5` RED, the two filters, the five sentences and the two traps, eleven
+   named failures including the count check
+5. `0553503` GREEN, the widening, the menus, the routing, the refusal, the
+   changelog and the version
+6. `f0ead12` the two records for the chooser, and the census
+7. `45bd20d` the summary, the state and six ledger entries
 
 ## Self-Check: PASSED
 
