@@ -683,10 +683,12 @@ folder and goes through `file_under` properly.
 
 ## The merge
 
-`scripts/check.sh all` passed on the branch; the hash and the merge commit are
-recorded below the self-check.
+`scripts/check.sh all` passed on the branch at `83e632b`: formatting, clippy
+with `-D warnings`, the whole suite and the release build. Merged to `main` at
+`e2fd35d` with a merge commit. `main` is at version `0.98.0` with 677 guard
+records, and it is **not pushed**.
 
-The seven commits:
+The seven task commits, and the docs commit:
 
 1. `b62e148` RED, the move written as the upsert that cannot move it, nine named
    failures
@@ -698,12 +700,19 @@ The seven commits:
 6. `2751d2b` GREEN, the widening, the menu, the chooser, the routing, the
    documents and the version
 7. `c82a4b3` PIM-02 says all five, and the two documents that named three
+8. `83e632b` the summary, the state and three ledger entries
 
 ## Self-Check: PASSED
 
-Every file this summary names exists on disk and all seven commit hashes are in
+Every file this summary names exists on disk and all eight commit hashes are in
 `git log`. No carriage returns and no em dashes in this file, in `STATE.md`, in
 `ROADMAP.md` or in `WINDOWS.md`.
+
+`the_planning_files_agree_with_themselves` caught one counter this plan's own
+state update had left behind: `progress.completed_plans` said 67 against 68
+summaries on disk. Corrected, and the suite is green. That is the check doing
+what `04.2-06` left it there for, and it is the second plan running to be caught
+by it.
 
 ---
 *Phase: 05-the-other-five-modules-keep-up*
