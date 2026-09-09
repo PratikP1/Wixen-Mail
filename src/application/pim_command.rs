@@ -152,6 +152,20 @@ pub fn the_only_account_there_is(name: &str) -> String {
     is_not_kept_in_a_container(ItemKind::Reminder) + " " + name
 }
 
+/// What to say when the account chosen turns out to be the one it is in.
+///
+/// The chooser cannot offer this, because a move leaves out the account the
+/// reminder is in. It arrives when something moves the reminder between the
+/// question and the answer, and by a route that never opened a chooser at all.
+///
+/// Not [`filed`], which is what the successful move says and is the sentence
+/// nearest to hand here. Saying "moved to Work" about a reminder that was in
+/// Work before the key was pressed is a report of an act that did not happen,
+/// and somebody working by ear has no list to glance at to find out.
+pub fn already_in_that_account(name: &str, account: &str) -> String {
+    filed(Filing::Moving, name, account)
+}
+
 /// One command, and the thing it lands on.
 ///
 /// Bundled because they are one idea: what to do, to which kind of item, at
@@ -962,6 +976,28 @@ mod tests {
 
         assert!(said.starts_with("That reminder"), "{said}");
         assert!(!said.contains("\"\""), "{said}");
+    }
+
+    #[test]
+    fn test_a_move_into_the_account_it_was_already_in_does_not_report_a_move() {
+        // The sentence nearest to hand is the one a successful move says, and
+        // it is a report of something that did not happen. Somebody working by
+        // ear has no list to glance at, so "Ring the dentist moved to Work"
+        // for a reminder that was in Work before the key was pressed is the
+        // only thing they have and it is false.
+        let said = already_in_that_account("Ring the dentist", "Work");
+
+        assert!(said.contains("Ring the dentist"), "{said}");
+        assert!(said.contains("Work"), "{said}");
+        assert!(
+            said.contains("already"),
+            "it does not say what was actually true: {said}"
+        );
+        assert!(
+            !said.contains("moved"),
+            "a move that did not happen is reported as one: {said}"
+        );
+        assert_ne!(said, filed(Filing::Moving, "Ring the dentist", "Work"));
     }
 
     #[test]
