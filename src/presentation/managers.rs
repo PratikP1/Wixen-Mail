@@ -4777,18 +4777,25 @@ mod tests {
     }
 
     #[test]
-    fn test_moving_a_task_the_provider_holds_is_refused_and_writes_nothing() {
-        // Google is never asked to move a task to another list. Writing the
-        // move here alone leaves the two ends disagreeing, and marking the row
-        // to be sent asks Google to update a task in a list it is not in,
-        // which is refused on this sync and on every sync after it.
+    fn test_moving_a_task_the_provider_holds_writes_the_new_copy_and_the_note() {
+        // This used to be the refusal test, and it asserted that a task Google
+        // holds stayed where it was and nothing was queued. Decision 1 of
+        // 2026-09-06 overturned that: the move is built, and the local cache is
+        // the safeguard across the gap between the two provider calls.
+        //
+        // What replaces the refusal is not a plain write. The row keeps Google's
+        // identifier, so filing it under a new list and marking it would ask
+        // Google to update a task in a list it is not in, which is what the
+        // refusal was right about. Instead a copy is written under an identifier
+        // minted here, which the push creates, and the old identifier is
+        // recorded as a deletion Google is owed once that create has landed.
         let cache = test_cache();
         two_task_lists(&cache, "google:list-a", "google:list-b");
         cache
             .save_task(&a_settled_task("google:t1", "google:list-a"))
             .expect("a task Google holds");
 
-        let refused = file_under(
+        let here = file_under(
             &cache,
             crate::application::new_item::ItemKind::Task,
             "google:t1",
@@ -4796,21 +4803,30 @@ mod tests {
             "acct",
             Filing::Moving,
         )
-        .expect_err("a move nothing can send is refused");
-        assert!(
-            refused.to_string().contains("Nothing has been moved"),
-            "the refusal has to say the move did not happen: {refused}"
-        );
+        .expect("the move to be written");
 
+        assert!(
+            !crate::application::tasks_sync::a_provider_holds(&here),
+            "the copy kept Google's identifier, so the push would update the task in the \
+             list it is not in: {here}"
+        );
         let held = cache.get_all_tasks_for_account("acct").expect("the task");
         assert_eq!(
-            held.first().and_then(|task| task.task_list_id.as_deref()),
-            Some("google:list-a"),
-            "the task was moved here anyway"
+            held.iter()
+                .map(|task| (task.id.clone(), task.task_list_id.clone()))
+                .collect::<Vec<_>>(),
+            vec![(here.clone(), Some("google:list-b".to_string()))],
+            "the account does not hold exactly one task, in the list it was moved to"
         );
-        assert!(
-            cache.pending_tasks("acct").expect("the queue").is_empty(),
-            "a move nothing can carry out was queued to be sent"
+        assert_eq!(
+            cache
+                .deleted_tasks("acct")
+                .expect("the deletions")
+                .iter()
+                .map(|gone| (gone.id.clone(), gone.waiting_for_task_id.clone()))
+                .collect::<Vec<_>>(),
+            vec![("google:t1".to_string(), Some(here))],
+            "Google is not owed a deletion of its own copy, waiting for the new one"
         );
     }
 

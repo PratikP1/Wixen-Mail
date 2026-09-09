@@ -3111,6 +3111,125 @@ mod tests {
         result
     }
 
+    /// The move, made the way the Move command makes it.
+    ///
+    /// Through `file_under` rather than through `move_a_task_the_provider_holds`
+    /// directly, because the claim this plan makes is that a person can do this
+    /// and the write is only half of that. The refusal used to be in front of
+    /// it, and a fixture calling the storage write straight would pass with the
+    /// refusal still standing.
+    ///
+    /// Here rather than under `tests/`, and that is the only place it can be.
+    /// `push_tasks` is private, `TaskService` is `pub(crate)`, `Provider` is
+    /// private and the `Scripted` fake is inside this module, so nothing outside
+    /// this file can drive a sync. `file_under` is public, so this is the one
+    /// place both halves of the move are reachable at once. Widening any of the
+    /// four to relocate this test would widen production for a test's
+    /// convenience.
+    fn move_it(cache: &MessageCache, id: &str, into: &str) -> String {
+        crate::presentation::managers::file_under(
+            cache,
+            crate::application::new_item::ItemKind::Task,
+            id,
+            into,
+            "acc-1",
+            crate::application::destinations::Filing::Moving,
+        )
+        .expect("the move to be written")
+    }
+
+    /// An account holding one task Google holds, in a list, with a second list.
+    fn a_task_google_holds(name: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(name);
+        a_list_named(&cache, "google:from", "Work");
+        a_list_named(&cache, "google:to", "Home");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:from".to_string()),
+                ..task("x")
+            })
+            .expect("a task the provider holds");
+        cache
+    }
+
+    #[tokio::test]
+    async fn test_a_task_google_holds_moves_list_and_two_syncs_carry_it_out() {
+        // The whole path, from the act to the second provider call, against a
+        // service that takes what it is given.
+        //
+        // **Two syncs and not one, and the order is the safety argument rather
+        // than an inconvenience.** `push_tasks` sends deletions before
+        // creations, for a reason about one identifier that predates this
+        // feature. `05-07` put a question in the deletion loop that holds a note
+        // back while the copy replacing it is still waiting to be sent. So in
+        // the first sync the moved row is still pending when the deletion loop
+        // reaches its note, the note is skipped, and only then does the create
+        // run. The delete goes in the second sync, once the create has landed.
+        //
+        // The effect is that the provider is asked to create the new copy before
+        // it is asked to delete the old one. What a failure between them leaves
+        // is the task in two lists at the provider, which somebody can see,
+        // rather than in none, which nobody can. Reordering the loops would make
+        // one sync do both and would reverse exactly that, for every ordinary
+        // deletion in the program as well.
+        let cache = a_task_google_holds("a_provider_task_moves_lists");
+        let service = a_google_service_that_accepts();
+
+        let here = move_it(&cache, "google:t1", "google:to");
+
+        // The first sync: the create goes and the delete is held.
+        let first = push_against(&cache, &service).await;
+
+        assert!(
+            service.what_it_was_asked_to_delete().is_empty(),
+            "the provider was asked to delete the only copy it has before the new one \
+             existed: {:?}",
+            service.what_it_was_asked_to_delete()
+        );
+        assert_eq!(
+            first.waiting_on_the_new_copy, 1,
+            "the deletion was not counted as waiting for the copy that had not gone"
+        );
+        assert_eq!(first.sent, 1, "the create did not go: {:?}", first.errors);
+        assert!(
+            cache.find_task(&here).expect("a lookup").is_none(),
+            "the copy is still under the identifier this computer minted, so the create \
+             never landed"
+        );
+        let named = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the copy under the identifier Google gave back");
+        assert_eq!(
+            named.task_list_id.as_deref(),
+            Some("google:to"),
+            "the copy Google named is not in the list it was moved to"
+        );
+
+        // The second sync: nothing holds the note now.
+        let second = push_against(&cache, &service).await;
+
+        assert_eq!(
+            service.what_it_was_asked_to_delete(),
+            vec!["google:t1".to_string()],
+            "the old copy was left at the provider after the new one arrived"
+        );
+        assert_eq!(
+            second.waiting_on_the_new_copy, 0,
+            "the deletion is still being held by a copy that has already gone"
+        );
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .iter()
+                .all(|gone| !gone.so_far.still_owed()),
+            "the deletion the provider took is still recorded as owed, so it would be \
+             sent again on every sync from now on"
+        );
+    }
+
     #[tokio::test]
     async fn test_a_deletion_waiting_on_a_copy_that_has_not_gone_is_not_sent() {
         // The provider still holds only the copy this note would delete. Send

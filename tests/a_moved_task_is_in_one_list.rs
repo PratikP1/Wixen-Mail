@@ -8,18 +8,24 @@
 //! maintained, and the assertions below cannot fail against the write as it
 //! stands today.
 //!
-//! They are written anyway, because the sequence the criterion is really about
-//! has not been built. Moving a task a provider holds means deleting it there,
-//! creating it again in the new list, and writing the identity that comes back
-//! over the old one. That is `05-07` and `05-08`. The first thing somebody
-//! writing it reaches for is an insert, and an insert is exactly what turns one
-//! column into two rows. This file is what would notice.
+//! They were written anyway, because the sequence the criterion is really about
+//! had not been built. Moving a task a provider holds means creating it again in
+//! the new list, and deleting it where it was, and writing the identity that
+//! comes back over the one this computer minted. That is `05-07` and `05-08`.
+//! The first thing somebody writing it reaches for is an insert, and an insert
+//! is exactly what turns one column into two rows. This file is what would
+//! notice.
 //!
-//! Until then the promise is kept by refusing rather than by handling:
-//! `moving_can_be_told` is asked before the chooser opens and again inside
-//! `file_under`, so a task a provider holds cannot be moved by any route, and
-//! the last two tests here are what holds that refusal to writing nothing at
-//! all.
+//! **It has now been built, and the last two tests here changed with it.** Until
+//! 2026-09-09 the promise was kept by refusing rather than by handling:
+//! `moving_can_be_told` was asked before the chooser opened and again inside
+//! `file_under`, so a task a provider holds could not be moved by any route, and
+//! the last two tests held that refusal to writing nothing at all. `05-08`
+//! lifted it for tasks, so those two now assert what the refusal was standing in
+//! for: one row here after the move, and the old identifier owed a deletion at
+//! the provider. The refusal still stands for an event, and
+//! `presentation::managers::tests::test_moving_an_event_the_provider_holds_is_refused_and_writes_nothing`
+//! is what holds it there.
 //!
 //! An integration test rather than unit tests beside the code, for the reason
 //! `tests/a_copy_leaves_the_original_where_it_was.rs` gives: the question spans
@@ -218,11 +224,12 @@ fn test_a_moved_task_is_in_the_queue_to_be_sent_under_its_new_list() {
 
 #[test]
 fn test_the_fixture_for_a_provider_held_task_is_really_one_a_provider_holds() {
-    // Asked before the refusal is relied on. A fixture the sync would call
-    // this computer's own makes the two tests below pass for the wrong reason:
-    // they would be watching a move that was never refused, and reading the
-    // task sitting where it started as evidence of a refusal that never
-    // happened.
+    // Asked before the two tests below rely on it. A fixture the sync would
+    // call this computer's own sends them down the ordinary move, which writes
+    // one column and marks the row, and neither would be about a task a
+    // provider holds at all: there would be no second identifier and no
+    // deletion owed to anybody, and both would be reading the plain move's
+    // result as evidence about a path they never took.
     assert!(
         a_provider_holds("google:t1"),
         "the fixture the refusal tests use is not one a provider holds"
@@ -235,11 +242,19 @@ fn test_the_fixture_for_a_provider_held_task_is_really_one_a_provider_holds() {
 }
 
 #[test]
-fn test_a_task_a_provider_holds_stays_in_the_list_it_started_in() {
-    // Refused rather than handled, and that is what makes "exactly one list"
-    // true for a provider's task today. Deleting it there and making it again
-    // here is `05-07` and `05-08`; until then the promise is kept by nobody
-    // being allowed to try.
+fn test_a_task_a_provider_holds_is_on_one_list_after_a_move_as_well() {
+    // These last two used to assert the refusal, which is what made "exactly
+    // one list" true for a provider's task until 2026-09-09. Decision 1 of
+    // 2026-09-06 overturned it and `05-08` built the move, so what they assert
+    // now is the thing the refusal was standing in for: after a move of a task
+    // a provider holds, this computer holds exactly one row for it, in the list
+    // it went to.
+    //
+    // That is worth more here than it was as a refusal, because the write it
+    // goes through really can leave two rows or none. It writes a new copy,
+    // records what the provider is owed and takes the old row away, in one
+    // transaction, and the whole reason for the transaction is that the last
+    // step can find nothing to remove.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store_with_a_task(
         &dir,
@@ -247,7 +262,7 @@ fn test_a_task_a_provider_holds_stays_in_the_list_it_started_in() {
         "google:t1",
     );
 
-    let refused = file_under(
+    let here = file_under(
         &cache,
         ItemKind::Task,
         "google:t1",
@@ -255,28 +270,30 @@ fn test_a_task_a_provider_holds_stays_in_the_list_it_started_in() {
         ACCOUNT,
         Filing::Moving,
     )
-    .expect_err("a move nothing can send to be refused");
-    assert!(
-        refused.to_string().contains("Nothing has been moved"),
-        "the refusal does not say the move did not happen: {refused}"
-    );
+    .expect("the move to be written");
 
     assert_eq!(
-        tasks_on(&cache, "google:home"),
-        vec!["google:t1".to_string()],
-        "the refused task left the list it started in"
+        tasks_on(&cache, "google:elsewhere"),
+        vec![here],
+        "the moved task is not the one row on the list it went to"
     );
     assert!(
-        tasks_on(&cache, "google:elsewhere").is_empty(),
-        "the refused task reached the list it was refused entry to"
+        tasks_on(&cache, "google:home").is_empty(),
+        "the task is still on the list it left, so it is on two"
+    );
+    assert!(
+        tasks_on(&cache, "google:untouched").is_empty(),
+        "the task reached a list nobody chose"
     );
 }
 
 #[test]
-fn test_a_refused_move_puts_nothing_in_the_queue_to_be_sent() {
-    // The half a reading of the lists cannot see. A refusal that left the row
-    // where it was and marked it anyway would ask the provider, on this sync
-    // and every sync after it, to update a task in the list it is already in.
+fn test_a_move_of_a_task_a_provider_holds_leaves_the_old_identifier_owed_a_deletion() {
+    // The other half, and the one a reading of the lists cannot see. The old
+    // identifier is gone from this computer, and the provider still holds a copy
+    // under it, so something has to remember that the provider is owed a
+    // deletion. Without the note the provider keeps its copy for ever and the
+    // next pull writes it back down as a task nobody moved.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store_with_a_task(
         &dir,
@@ -284,7 +301,7 @@ fn test_a_refused_move_puts_nothing_in_the_queue_to_be_sent() {
         "google:t1",
     );
 
-    file_under(
+    let here = file_under(
         &cache,
         ItemKind::Task,
         "google:t1",
@@ -292,13 +309,20 @@ fn test_a_refused_move_puts_nothing_in_the_queue_to_be_sent() {
         ACCOUNT,
         Filing::Moving,
     )
-    .expect_err("a move nothing can send to be refused");
+    .expect("the move to be written");
 
     assert!(
+        cache.find_task("google:t1").expect("a lookup").is_none(),
+        "the old identifier is still a task here as well as at the provider"
+    );
+    assert_eq!(
         cache
-            .pending_tasks(ACCOUNT)
-            .expect("the queue to be readable")
-            .is_empty(),
-        "a move that was refused was queued to be sent"
+            .deleted_tasks(ACCOUNT)
+            .expect("the deletions to be readable")
+            .iter()
+            .map(|gone| (gone.id.clone(), gone.waiting_for_task_id.clone()))
+            .collect::<Vec<_>>(),
+        vec![("google:t1".to_string(), Some(here))],
+        "the provider is not owed a deletion of its own copy, waiting for the new one"
     );
 }
