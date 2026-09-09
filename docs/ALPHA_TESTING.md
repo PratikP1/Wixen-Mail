@@ -119,6 +119,10 @@ Written down so you do not spend time reporting things already on the list.
   have the same command. What no build has done is send that move to a real
   account, because none has ever been used. This entry used to say a task
   cannot be moved at all, which stopped being true when the command was added.
+  What you hear now says so: a move into a list or calendar your account holds
+  ends "and has not reached the account yet", or names Allow Changes where that
+  setting is off. Nobody has heard it, and whether it is useful or wearing
+  after the twentieth move is one of the things worth telling us.
 - **Contacts and reminders move too, and those moves reach nothing by design.**
   A contact moves between groups and a reminder moves between accounts, with
   the same two keys. Neither contact groups nor reminders are synced anywhere,

@@ -90,6 +90,16 @@ key on a task and choose "Move to another list", or use Ctrl+Shift+V. Events
 and notes have the same command. What has not happened is a move reaching a
 provider, because no account has ever been used with this program.
 
+What you hear now says which of those two happened. "Buy milk moved to
+Shopping" on its own was true about this computer and silent about the account,
+so a move that had gone nowhere sounded exactly like one that had arrived. A
+move into a list or calendar your account holds now says "and has not reached
+the account yet", and where Allow Changes is off it names that setting instead,
+in the words the syncs already use. A move into a list or folder made on this
+computer says nothing extra, because nothing is waiting for it, and that is
+true even on a Gmail or Outlook account: a list made here is kept here whatever
+the account is.
+
 Contacts and reminders have the same two commands now, and for them there is no
 provider to reach. A contact moves between groups and a reminder moves between
 accounts, and neither groups nor reminders are synced anywhere, so those moves

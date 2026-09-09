@@ -255,15 +255,37 @@ pub const MESSAGE_TEXT_NOTE: &str = "This is on unless you turn it off. Mail alr
 /// reads like one.
 pub fn changes_waiting_here(count: usize) -> String {
     match count {
-        1 => format!(
-            "1 change is waiting here: turn on {SETTINGS_SECTION} in Settings \
-             to send it"
-        ),
+        1 => format!("1 change is waiting here: {}", turn_the_setting_on()),
         many => format!(
             "{many} changes are waiting here: turn on {SETTINGS_SECTION} in \
              Settings to send them"
         ),
     }
+}
+
+/// The way out named the instant somebody makes one change this setting holds.
+///
+/// A third beside the two either side of it rather than a use of one of them,
+/// for the reason `removals_waiting_here` sits beside `changes_waiting_here`:
+/// the same setting, a different moment, and one sentence bent to cover both
+/// would be wrong in one of them. Those two are said by a sync that has looked
+/// at everything waiting and can count it. This is said at the moment somebody
+/// moved one thing, and "1 change is waiting here" told then reads as a tally
+/// of work somebody else did rather than as an answer about the thing they just
+/// did.
+///
+/// A clause rather than a sentence, because it is joined onto the one naming
+/// where the item went. Somebody with the setting off hears this after every
+/// move they make, and two sentences at that point is a paragraph.
+///
+/// `changes_waiting_here` is built on it rather than holding a second copy of
+/// the same words. That module's own history is the argument: two hand-written
+/// copies of the waiting sentence drifted and only one of them was ever
+/// corrected. The plural arm keeps its own whole sentence, because the three
+/// words that have to agree are in it and a sentence assembled from a stem and
+/// an "s" reads like one.
+pub fn turn_the_setting_on() -> String {
+    format!("turn on {SETTINGS_SECTION} in Settings to send it")
 }
 
 /// The sentence a POP check says when that setting is holding a clear-out back.
@@ -598,6 +620,26 @@ mod tests {
             changes_waiting_here(3),
             "3 changes are waiting here: turn on Allow Changes in Settings to \
              send them"
+        );
+    }
+
+    #[test]
+    fn test_one_change_held_at_the_moment_it_was_made_names_the_setting_the_sync_names() {
+        // The whole reason this clause exists here rather than being written
+        // where it is said. A filing says it the instant somebody files
+        // something and a sync says it after counting, so the two sentences
+        // differ; what must not differ is the setting they name and the words
+        // they name it in. Two hand-written copies of this fact drifted once
+        // and only one of them was corrected, which is why the sync's sentence
+        // is built on this clause rather than holding its own copy.
+        assert_eq!(
+            turn_the_setting_on(),
+            "turn on Allow Changes in Settings to send it"
+        );
+        assert!(
+            changes_waiting_here(1).ends_with(&turn_the_setting_on()),
+            "the sync's sentence and the one a move says have drifted apart: {}",
+            changes_waiting_here(1)
         );
     }
 

@@ -8,6 +8,38 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Moving or copying something now tells you whether it has gone anywhere.**
+  "Buy milk moved to Shopping" was true about this computer and said nothing
+  about your account, so a change that had reached nobody sounded exactly like
+  one that had arrived. You found out at the next sync, or not at all.
+
+  A move or copy into a list, calendar or folder your account holds now ends
+  "and has not reached the account yet". The next sync sends it. Where Allow
+  Changes is off, it names that instead: "and has not reached the account: turn
+  on Allow Changes in Settings to send it", which is the same wording the task,
+  calendar and contacts syncs already use for the same fact.
+
+  Nothing is added where nothing is waiting. A note goes nowhere, so a note
+  says only where it went. So does a task filed into a list you made on this
+  computer, and that holds even when the account is a Gmail or Outlook one: a
+  list made here stays here, the sync counts it as kept on this computer, and
+  telling you it had not reached your account would be the opposite of what
+  happens to it.
+
+  It stays one sentence. You hear it after every move you make, so the extra
+  part is joined on with a comma rather than being a second sentence to sit
+  through.
+
+  Known limitation: a task your account already holds still cannot be moved
+  between lists at all, and is refused with a reason before anything is
+  written. Moving one means deleting it at the provider and creating it again,
+  which is not built. That refusal is what keeps the promise that a task ends
+  in exactly one list, and there is now a test reading a moved task back out of
+  storage to say so for the moves that do happen.
+
+  Nobody has heard any of this. Whether the extra clause reads as useful or as
+  noise after the twentieth move is a question for an ear.
+
 - **A reminder can be moved to another account.** Press `Ctrl+Shift+V` on a
   reminder, or use the context menu's "Move to another account". You are asked
   which account, and what you hear afterwards names the one it went to.
