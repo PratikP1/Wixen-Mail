@@ -5391,11 +5391,27 @@ fn test_the_recorded_count_check_can_tell_a_drift_from_an_agreement() {
         "a file that did not move was named as though it had: {said}"
     );
 
+    // Which way it moved. Guardrail 4 in CLAUDE.md: when a check can fail two
+    // ways, make it say which. A file that gained a test and a file that lost
+    // one are different situations for whoever reads this, and the message used
+    // to be one shape for both, leaving the direction to be worked out from two
+    // numbers in a line naming up to 41 records at once.
+    assert!(
+        said.contains("gained"),
+        "a file that gained tests did not say that is what it did: {said}"
+    );
+
     // Losing one counts too. A deleted test can be the one the record rested on.
     let fewer = [("src/a.rs".to_string(), 11), ("src/b.rs".to_string(), 3)];
+    let losing = what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer)
+        .expect("a file that lost a test to be reported");
     assert!(
-        what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer).is_some(),
-        "a file that lost a test was not reported"
+        losing.contains("lost"),
+        "a file that lost a test did not say that is what it did: {losing}"
+    );
+    assert!(
+        losing.contains("12") && losing.contains("11"),
+        "the loss was reported without both numbers: {losing}"
     );
 
     // A record that has never been counted at all. Silence must not read as
