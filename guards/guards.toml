@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 481 records have arrived since and have not been through it.
+# 483 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17650,5 +17650,73 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "tests/a_contact_moved_between_groups.rs", tests = 7 },
+    { file = "tests/a_contact_moved_between_groups.rs", tests = 8 },
+]
+
+# ── A chooser that reads out every group in the account ─────────────────────
+#
+# What it costs a person: they press Ctrl+Shift+V on a contact who is in two
+# groups and are read a list of twenty. Nothing has crashed and no wrong answer
+# has been given, so somebody hearing it assumes they pressed the wrong key or
+# landed on the wrong row. Choosing a group the contact is not in then asks for
+# a move that cannot happen.
+#
+# Two records, because the defect has two independent homes and the first
+# guards only one of them. The answer to "which groups could this contact
+# leave" is a pure function with unit tests; the question being asked of that
+# answer is a call site in a window handler with no unit tests at all, because
+# it lives in `managers.rs`, which 42 records fingerprint. The regression
+# somebody actually writes is the second: one word at the call site, `&groups`
+# where `&leaving` was, which leaves the pure function and every one of its
+# tests untouched.
+#
+# Two candidate breaks were measured for the first record, both with
+# `WIXEN_TEST_THREADS=4 cargo test --all-targets --no-fail-fast` on a clean
+# tree on 2026-09-08, and they redden exactly the same two tests: the filter
+# widened to every group, and the filter negated to the groups the contact is
+# not in. The widened one is kept because it is the defect this record is named
+# for and the state the code was in before the filter was written; the negation
+# produces a different wrong list. That they are indistinguishable is worth
+# recording: the tests are sensitive to the set being wrong at all rather than
+# to it being too wide.
+#
+# No library test reddens for the second break and no integration test reddens
+# for the first, which is the measurement that made this two records rather
+# than one.
+[[guard]]
+name = "the groups a contact can leave are the ones it is in"
+file = "src/application/contact_groups.rs"
+before = """    groups
+        .iter()
+        .filter(|group| is_in(contact_id, group))
+        .cloned()
+        .collect()
+}"""
+after = """    let _ = contact_id;
+    groups.to_vec()
+}"""
+red = [
+    "application::contact_groups::tests::test_the_groups_a_contact_can_leave_are_the_ones_it_is_in",
+    "application::contact_groups::tests::test_a_contact_in_no_group_can_leave_none_of_them",
+]
+tests_last_seen = [
+    { file = "src/application/contact_groups.rs", tests = 30 },
+]
+
+# The same defect one step later, at the call site rather than at the answer.
+# The filter is still right and nothing is asked of it.
+[[guard]]
+name = "the question about which group a contact is leaving is asked of the groups it is in"
+file = "src/presentation/managers.rs"
+suite = "a_contact_moved_between_groups"
+before = """            &leaving,
+            "Which group should this contact come out of?","""
+after = """            &groups,
+            "Which group should this contact come out of?","""
+red = [
+    "test_each_group_question_is_asked_of_the_groups_that_question_has_an_answer_in",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_contact_moved_between_groups.rs", tests = 8 },
 ]

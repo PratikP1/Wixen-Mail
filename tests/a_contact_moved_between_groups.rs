@@ -331,3 +331,47 @@ fn test_a_contact_is_filed_by_its_groups_rather_than_by_the_path_that_names_one_
          ships, so either it does nothing or somebody has written a second one"
     );
 }
+
+#[test]
+fn test_each_group_question_is_asked_of_the_groups_that_question_has_an_answer_in() {
+    // What this cannot see: whether the window opens, what it reads like, or
+    // whether the two questions are told apart by ear. It reads which list each
+    // chooser is handed.
+    //
+    // Why it exists, and why it is a second check rather than part of the one
+    // above. `could_leave` and `could_join` have unit tests, and those stay
+    // green when the chooser stops being handed their answers: the regression
+    // is one word at the call site, `&groups` where `&leaving` was, and it
+    // leaves the pure functions untouched. What it costs is somebody hearing
+    // every group in the account read out where they expected the two they are
+    // in, and choosing one the contact is not in asks for a move that cannot
+    // happen. The wiring lives in `managers.rs`, which 42 guard records
+    // fingerprint, so it has no unit tests of its own.
+    let managers =
+        std::fs::read_to_string("src/presentation/managers.rs").expect("the manager sources");
+    let ships = what_ships(&managers);
+    let rest = ships
+        .split_once("pub fn move_a_contact_between_groups")
+        .expect("the move between groups")
+        .1;
+    let body: String = rest[..rest.find("\n}\n").unwrap_or(rest.len())]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    assert!(
+        body.contains("which_of_these_groups(frame,&leaving,"),
+        "the question about which group is being left is asked of some other \
+         list than the groups the contact is in"
+    );
+    assert!(
+        body.contains("which_of_these_groups(frame,&joining,"),
+        "the question about where the contact is going is asked of some other \
+         list than the groups it is not in"
+    );
+    assert!(
+        !body.contains("which_group("),
+        "a contact's move asks the chooser that offers every group in the \
+         account, so both questions are the whole sidebar read out"
+    );
+}
