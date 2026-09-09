@@ -125,29 +125,104 @@ impl MessageCache {
 
     /// Send a reminder to another account.
     ///
-    /// **This is deliberately the implementation somebody writes first, and it
-    /// does not work.** Change the account on the row and save it. It is
-    /// written this way in the RED half so the test that catches it is a test
-    /// that has been red, and the green half replaces it.
+    /// The account is the only container a reminder has ever had, so this is
+    /// the whole of what moving one means. Three answers rather than a bare
+    /// success: see [`MovedToAnotherAccount`].
+    ///
+    /// # Why this is not [`Self::save_reminder`] with the account changed
+    ///
+    /// Because that does not move it. `save_reminder` is an upsert whose
+    /// `ON CONFLICT(id) DO UPDATE SET` list names eight columns and not
+    /// `account_id`, so it writes the account on insert and ignores it on
+    /// update. Reading the row, changing the field and saving it writes every
+    /// other column, reports success and leaves the reminder exactly where it
+    /// was. Nothing says so: not the compiler, not the type, not the name of
+    /// the function. `tests/a_reminder_moved_to_another_account.rs` is what
+    /// says so, and that is the whole reason it exists.
+    ///
+    /// # Why an UPDATE naming two columns, when [`file_under`] refuses to
+    ///
+    /// `file_under`'s doc comment says read, change, write rather than an
+    /// UPDATE naming one column, "because the same rows are what the sync
+    /// compares against and a partial write would send up an item with
+    /// everything else blanked". That reason is about a sync, and it does not
+    /// reach a reminder: `application::new_item` records that there is nothing
+    /// on either side to sync a standalone reminder to, in Outlook, in Exchange
+    /// or in Google, so no row here is ever compared against anything. Copying
+    /// the rule without asking whether its reason held would have meant
+    /// building the move on `save_reminder`, which is the one thing that cannot
+    /// work.
+    ///
+    /// The one statement is also what makes the three answers race-free. It
+    /// asks "is it somewhere else" by refusing to match a row already in that
+    /// account, so the answer comes from the write rather than from a read that
+    /// can be stale by the time the write runs.
+    ///
+    /// [`file_under`]: crate::presentation::managers::file_under
     pub fn move_reminder_to_account(
         &self,
         id: &str,
         into: &str,
         stamp: &str,
     ) -> Result<MovedToAnotherAccount> {
-        if let Some(mut reminder) = self.get_reminder(id)? {
-            reminder.account_id = into.to_string();
-            reminder.updated_at = stamp.to_string();
-            self.save_reminder(&reminder)?;
+        // `related_event_id` goes with the row untouched, and today that is
+        // safe because nothing ever sets it. Measured 2026-09-08 with
+        // `grep -rn "related_event_id" src/ --include=*.rs`: outside this file
+        // it is the struct field, the column declaration and three writes, all
+        // of them `None` and only one of them outside a test. Nothing resolves
+        // the column, so no reminder in this program has ever pointed at an
+        // event and this move cannot break a link that is never made.
+        //
+        // That is a fact with a date rather than a permanent one. The moment
+        // something sets it, this carries a reminder to an account that does
+        // not hold the event it names, and the answer will be to clear the
+        // column here or to refuse the move. Whoever makes the first link
+        // meets it.
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE reminders SET account_id = ?2, updated_at = ?3
+                 WHERE id = ?1 AND account_id <> ?2",
+                rusqlite::params![id, into, stamp],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to move a reminder to another account: {}",
+                    e
+                ))
+            })?;
+        if changed > 0 {
+            return Ok(MovedToAnotherAccount::Moved);
         }
-        Ok(MovedToAnotherAccount::Moved)
+        // Nothing changed, which is two different facts and not one. The row
+        // is already in that account, or there is no such row, and each has a
+        // sentence of its own to say.
+        match self.get_reminder(id)? {
+            Some(_) => Ok(MovedToAnotherAccount::AlreadyThere),
+            None => Ok(MovedToAnotherAccount::NoSuchReminder),
+        }
     }
 
     /// Put a second reminder in another account, leaving the first where it is.
     ///
-    /// **Also deliberately wrong in the RED half**: the copy written as the
-    /// move by another name, which is the mistake a pair of acts sharing one
-    /// path invites. `None` when no reminder has that identifier.
+    /// Answers with the identifier of the row that ended up in the other
+    /// account, the way [`file_under`] does, and `None` when no reminder has
+    /// the identifier it was given.
+    ///
+    /// The new identifier is the caller's, not minted here, which is the same
+    /// split `file_under` uses: `presentation::managers::new_id` makes every
+    /// identifier this program writes, and a second minter in the storage
+    /// layer would be a second rule for what an identifier looks like. It has
+    /// to differ from the original's, and not for tidiness: `id` is the primary
+    /// key, so a copy that kept it would be an upsert over the row it was
+    /// copying and the copy would be the move with an extra step.
+    ///
+    /// `created_at` is now rather than the original's. A copy is a reminder
+    /// made today out of one made in March, and the list a person reads is
+    /// sorted by when things are due rather than by this, so nothing moves
+    /// under them either way.
+    ///
+    /// [`file_under`]: crate::presentation::managers::file_under
     pub fn copy_reminder_to_account(
         &self,
         id: &str,
@@ -155,10 +230,17 @@ impl MessageCache {
         as_id: &str,
         stamp: &str,
     ) -> Result<Option<String>> {
-        match self.move_reminder_to_account(id, into, stamp)? {
-            MovedToAnotherAccount::Moved => Ok(Some(as_id.to_string())),
-            MovedToAnotherAccount::AlreadyThere | MovedToAnotherAccount::NoSuchReminder => Ok(None),
-        }
+        let Some(original) = self.get_reminder(id)? else {
+            return Ok(None);
+        };
+        self.save_reminder(&ReminderEntry {
+            id: as_id.to_string(),
+            account_id: into.to_string(),
+            created_at: stamp.to_string(),
+            updated_at: stamp.to_string(),
+            ..original
+        })?;
+        Ok(Some(as_id.to_string()))
     }
 
     /// Get all reminders for an account, ordered by due date.
