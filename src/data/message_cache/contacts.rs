@@ -8,6 +8,35 @@ use crate::common::{Error, Result};
 use rusqlite::params;
 use std::collections::HashMap;
 
+/// What taking a contact from one group to another came to.
+///
+/// Three answers rather than a bare success, for the reason
+/// [`MessageCache::add_contact_to_group`] and its opposite already gave
+/// separately: the put-in ignores a repeat and the take-out ignores an absence,
+/// so a move built from the two of them would report success for something that
+/// did not happen. Here the two ways it can fail to happen are different from
+/// each other and neither is an error, so each is said rather than counted as
+/// done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovedBetweenGroups {
+    /// Out of the one and into the other, both written.
+    Moved,
+    /// It was not in the group it was to leave, so there was nothing to move
+    /// and nothing was written.
+    ///
+    /// Answered by the take-out itself rather than by a read before it: a
+    /// membership read first can be stale by the time the write runs, and a
+    /// sync that takes somebody out of a group between the two is ordinary.
+    NotInTheGroupItWouldLeave,
+    /// Both groups are the same one, so nothing was written.
+    ///
+    /// Carrying it out would put the contact in the group and then take it
+    /// straight back out, leaving it in no group and saying it had moved. The
+    /// chooser cannot offer this; a route that did not go through the chooser
+    /// can, which is why it is asked here.
+    IntoTheOneItIsLeaving,
+}
+
 /// What reading a file of contact cards did, and what it could not do.
 ///
 /// Three counts rather than one, because one of them made two different
@@ -1137,6 +1166,85 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to remove member from group: {}", e)))?;
         Ok(())
+    }
+
+    /// Take a contact out of one group and put it in another, in one write.
+    ///
+    /// # The put-in runs first and the take-out second
+    ///
+    /// Not the other way round, and the next reader will want to correct it to
+    /// the order that reads as defensive. At no instant between the two
+    /// statements is the contact in neither group. If the second half never
+    /// happens the contact is in both, which somebody can see in the sidebar
+    /// and put right; the other order leaves it in neither, which looks exactly
+    /// like a contact that was never in a group at all.
+    ///
+    /// This codebase has settled the same question the same way three times
+    /// already: [`Self::rename_task`] saves the new task before dropping the
+    /// old one, `application::calendar::one_day_kept_out_of_the_series` saves
+    /// the changed day before the series, and `02-06`'s saved-search replace
+    /// stamps the parent row last. That last one is where the reasoning is
+    /// written out: stamping it first put the only reachable failure before
+    /// anything was destroyed, which does not make the window safe, it makes it
+    /// unmeasurable.
+    ///
+    /// # Why there is a transaction, and what would notice if there were not
+    ///
+    /// Whether the contact is really in the group it is leaving is answered by
+    /// the take-out itself, by how many rows it removed, rather than by a read
+    /// before the write. A membership read first can be stale by the time the
+    /// write runs: a sync taking somebody out of a group in between is
+    /// ordinary. That answer therefore arrives *after* the put-in has already
+    /// happened, so the put-in has to be undone, and the transaction is the
+    /// only thing that undoes it.
+    ///
+    /// Two loose statements pass every other test in
+    /// `tests/a_contact_moved_between_groups.rs` and fail that one.
+    pub fn move_contact_between_groups(
+        &self,
+        contact_id: &str,
+        out_of: &str,
+        into: &str,
+    ) -> Result<MovedBetweenGroups> {
+        if out_of == into {
+            return Ok(MovedBetweenGroups::IntoTheOneItIsLeaving);
+        }
+        let moving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to move a contact between groups: {}", e)))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        moving
+            .execute(
+                "INSERT OR IGNORE INTO contact_group_members (group_id, contact_id, added_at) VALUES (?1, ?2, ?3)",
+                params![into, contact_id, now],
+            )
+            .map_err(|e| {
+                Error::Other(format!("Failed to put a contact in the group it is moving to: {}", e))
+            })?;
+        let taken_out = moving
+            .execute(
+                "DELETE FROM contact_group_members WHERE group_id = ?1 AND contact_id = ?2",
+                params![out_of, contact_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to take a contact out of the group it is leaving: {}",
+                    e
+                ))
+            })?;
+        if taken_out == 0 {
+            // Returned without committing, so the transaction is dropped and
+            // rolls back, which is what takes the put-in above away again.
+            // There was nothing to move, and a contact that gained a group
+            // membership out of a move that did not happen is the put-in this
+            // program already offers, arriving by a door nobody opened.
+            return Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave);
+        }
+        moving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to move a contact between groups: {}", e)))?;
+        Ok(MovedBetweenGroups::Moved)
     }
 
     fn load_group_member_ids(&self, group_id: &str) -> Result<Vec<String>> {

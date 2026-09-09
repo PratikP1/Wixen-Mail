@@ -54,19 +54,28 @@ impl PimCommand {
             Self::Delete => !matches!(kind, ItemKind::Mail),
             Self::ToggleComplete => matches!(kind, ItemKind::Task | ItemKind::Reminder),
             Self::TogglePin => matches!(kind, ItemKind::Note),
-            // Not a contact: a contact is in as many groups as somebody puts
-            // it in, so there is no one home to move it out of. Not a
-            // reminder: the module holds buckets worked out from when each one
-            // is due, and there is nothing to move it to. Mail moves between
-            // folders by its own path, which has to talk to the server.
+            // A contact is in as many groups as somebody puts it in, so there
+            // is no one home to move it out of. That was the reason for
+            // leaving it out and it is still true; what changed is that the
+            // program now asks which group is being left, and the answer to
+            // that question is the move. It does not come through the path
+            // below: `kept_in` still answers `None` for a contact, and
+            // `managers::pim_command` sends a contact to the group-membership
+            // path before the chooser that names one container is reached.
             //
-            // A copy answers the same, for the same three reasons: a second
-            // contact is a second person rather than a second filing, a
-            // reminder's buckets are not places, and mail copies between
-            // folders by the path that talks to the server.
-            Self::Move | Self::Copy => {
-                matches!(kind, ItemKind::Event | ItemKind::Task | ItemKind::Note)
-            }
+            // Not a reminder: the module holds buckets worked out from when
+            // each one is due, and there is nothing to move it to. Mail moves
+            // between folders by its own path, which has to talk to the server.
+            //
+            // A copy answers the same, and for a contact it is the put-in that
+            // already ships. A second contact would be a second person, which
+            // is not something anybody wants; a second group membership is
+            // exactly what copying one means, and it had no way in from this
+            // family of commands.
+            Self::Move | Self::Copy => matches!(
+                kind,
+                ItemKind::Event | ItemKind::Task | ItemKind::Note | ItemKind::Contact
+            ),
         }
     }
 
@@ -264,6 +273,30 @@ pub fn cannot_be_filed_into(
 /// that nothing was changed, which are the two facts worth having.
 pub fn no_longer_there(kind: ItemKind, name: &str) -> String {
     something_no_longer_there(thing(kind), name)
+}
+
+/// What to say when something is filed into a container and its kind is not
+/// kept in one.
+///
+/// The refusal for the arm nothing should reach. `file_under` used to answer
+/// the three kinds with no container by returning the identifier it was given,
+/// which is success with nothing written: a route that reached it was told the
+/// filing had happened, and the row was exactly as before. A comment there said
+/// a new kind of item would be a compile error, which is true of a new
+/// [`ItemKind`] variant and false of an existing kind moving from the
+/// never-reached list to the reached one, which is what giving a contact a move
+/// does.
+///
+/// Deliberately not [`something_no_longer_there`], which was the first sentence
+/// reached for and says the wrong thing: the row is there, and what is missing
+/// is a container to file it in. Somebody who hears that a contact has gone
+/// goes looking for a contact that never moved.
+pub fn is_not_kept_in_a_container(kind: ItemKind) -> String {
+    format!(
+        "{} is not kept in one container, so there is nowhere here to file it. \
+         Nothing has been changed.",
+        capitalise(a_thing(kind))
+    )
 }
 
 /// The same sentence for something [`ItemKind`] has no word for.
@@ -569,11 +602,14 @@ mod tests {
 
     #[test]
     fn test_a_copy_means_something_exactly_where_a_move_does() {
-        // The three kinds that have a container to be copied into. A contact
-        // is in as many groups as somebody puts it in, so a second one is a
-        // second person rather than a second filing; a reminder's buckets are
-        // worked out from when it is due and are not places; and mail copies
-        // between folders by its own path, which has to talk to a server.
+        // The four kinds that have somewhere to be copied into. A contact was
+        // out of this list until 05-04 on the grounds that a second contact is
+        // a second person rather than a second filing, which is true and was
+        // about the wrong thing: a copy of a contact is a second group
+        // membership, and it is the put-in that has always been on the contacts
+        // menu. A reminder's buckets are worked out from when it is due and are
+        // not places, and mail copies between folders by its own path, which
+        // has to talk to a server.
         //
         // Held to Move's own answer rather than to a list written out again,
         // because the two questions have the same answer for the same reason
@@ -588,7 +624,7 @@ mod tests {
         }
 
         assert!(PimCommand::Copy.applies_to(ItemKind::Task));
-        assert!(!PimCommand::Copy.applies_to(ItemKind::Contact));
+        assert!(PimCommand::Copy.applies_to(ItemKind::Contact));
         assert!(!PimCommand::Copy.applies_to(ItemKind::Reminder));
     }
 
@@ -755,5 +791,38 @@ mod tests {
         assert_eq!(confirmed_detail(PimCommand::Delete, true), None);
         assert_eq!(confirmed_detail(PimCommand::Move, false), None);
         assert_eq!(confirmed_detail(PimCommand::Copy, false), None);
+    }
+
+    #[test]
+    fn test_a_contact_can_be_filed_although_it_has_no_one_home() {
+        // The reason contacts were left out was right and is now answered
+        // rather than overruled: a contact is in as many groups as somebody
+        // puts it in, so there is no one home to move it out of, and the
+        // program asks which one. Mail and reminders are still out, and for
+        // reasons that have not changed.
+        for command in [PimCommand::Move, PimCommand::Copy] {
+            assert!(
+                command.applies_to(ItemKind::Contact),
+                "{command:?} does not reach a contact"
+            );
+            assert!(!command.applies_to(ItemKind::Mail), "{command:?}");
+            assert!(!command.applies_to(ItemKind::Reminder), "{command:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_kind_with_no_container_is_refused_rather_than_told_its_filing_worked() {
+        // The sentence for the arm nothing should reach. It must not be the
+        // one about a row that has gone: the row is there, and saying it is
+        // not sends somebody looking for something that never moved.
+        let said = is_not_kept_in_a_container(ItemKind::Contact);
+
+        assert!(said.contains("contact"), "{said}");
+        assert!(
+            !said.contains("no longer there"),
+            "a refusal about having no container says the row has gone: {said}"
+        );
+        assert!(said.contains("Nothing has been changed."), "{said}");
+        assert_ne!(said, is_not_kept_in_a_container(ItemKind::Reminder));
     }
 }

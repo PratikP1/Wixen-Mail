@@ -17,7 +17,7 @@ pub mod how_it_arrived;
 mod messages;
 pub mod moves_in_flight;
 pub use calendar::DeletedCalendarEvent;
-pub use contacts::CardsRead;
+pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
 pub use searching::{TextTheIndexHolds, WhereToSearch};

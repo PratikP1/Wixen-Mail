@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 189
+open_count: 195
 waived_count: 0
 fixed_count: 15
-total_count: 204
-last_updated: 2026-09-08T22:39:32.251Z
+total_count: 210
+last_updated: 2026-09-09T01:23:47.493Z
 ---
 
 # Broken Windows Ledger
@@ -219,6 +219,12 @@ last_updated: 2026-09-08T22:39:32.251Z
 | 202 | 05 | unrun-verify | src/presentation/wx_app.rs |  | No copy has been carried out by pressing a key in the running program. Every piece is tested where it lives: file_under writes the copy against a real store, Filing answers the three differences, and the sentences are held to their words. What joins them is the arm in wx_app.rs that turns Ctrl+Shift+Y or the context menu line into PimCommand::Copy, and the only thing that reads it is tests/wired.rs, which reads the source text of the arm rather than running it. So the claim that the key copies rests on tested pieces and a read join. The same arm decides which of the six modules answers, and a wrong answer there offers mail folders as a home for a task | open |  | 2026-09-08T22:39:17.913Z |  |
 | 203 | 05 | unrun-verify | src/presentation/managers.rs |  | No copied item has ever reached a provider. The copy is written as an item made on this computer waiting to be sent, and a_provider_holds answers false about it, which is asserted against a real store. What happens next is a push, and no push in this program has run against a real Google or Microsoft account. So whether a copied task is created at Google as a second task, rather than rejected or silently reconciled against the original, is untested and untestable here. It is the whole of T-05-09's mitigation past the local write | open |  | 2026-09-08T22:39:31.628Z |  |
 | 204 | 05 | deviation | guards/guards.toml |  | Two of the three answers that make a copy not a move have tests and no guard record. makes_a_new_row has two records, one on the decision and one on the write. leaves_out_where_it_is and needs_the_holder_told have neither, so nothing checks that the tests covering them would still notice if they stopped. Both are covered by a test in tests/a_copy_leaves_the_original_where_it_was.rs that has been red once, in the RED commit, which is more than an unmeasured guard has; what is missing is the recorded break that would catch the test going quiet later. Two more records is two more hand measurements, each a build and a full run | open |  | 2026-09-08T22:39:32.251Z |  |
+| 205 | 05 | unrun-verify | src/presentation/managers.rs |  | Nobody has been asked two questions for one move. A contact's move asks which group it is leaving and then which it is joining, where every other kind is asked once, and both windows are the same SingleChoiceDialog holding group names and counts. Whether that reads as a program being thorough or as one that cannot make up its mind is the question, and it can only be answered by somebody working down it by keyboard through a screen reader. The first question is skipped when there is only one answer, so the common case may be one question and the uncommon case two, which is its own kind of surprise | open |  | 2026-09-09T01:23:15.522Z |  |
+| 206 | 05 | unrun-verify | src/application/contact_groups.rs |  | The sentence a completed move says has never been heard. moved_between names two groups and two counts: "Ada Lovelace moved out of Team A, 2 people, and into Team B, 5 people." That is the longest status line this program says about a single act, and it is said at whatever rate somebody's screen reader is set to. It deliberately leaves out taken_out's reassurance that the contact is still in the address book, on the grounds that naming a group the contact is now in shows that without saying it. Whether the sentence is heard to the end, and whether the missing reassurance is missed, is unanswered | open |  | 2026-09-09T01:23:29.020Z |  |
+| 207 | 05 | unrun-verify | src/presentation/managers.rs |  | The two choosers a contact's move opens have never been told apart by ear. Both are a list of group names with the count of each, one after the other, and the only thing distinguishing them is the question and the window title: "Which group should this contact come out of?" in a window called Move out of a group, then "Which group should this contact go in?" in one called Move into a group. Somebody who missed the first word of either is looking at two lists that read identically. Whether the titles are announced at all, and whether come out of and go in are enough distance between two questions asked seconds apart, is unanswered | open |  | 2026-09-09T01:23:29.652Z |  |
+| 208 | 05 | unrun-verify | src/presentation/managers.rs |  | No contact has been moved between groups by pressing a key in the running program. Every piece is tested where it lives: the transactional write against a real store, the two filters and the five sentences as pure functions, and the menus against the command. What joins them is the arm in managers::pim_command that sends a contact to the group path before the chooser that names one container, and the only thing that reads it is a source-text check in tests/a_contact_moved_between_groups.rs. So the claim that Ctrl+Shift+V moves a contact rests on tested pieces and a read join. The same shape as ledger 202, one plan later | open |  | 2026-09-09T01:23:46.288Z |  |
+| 209 | 05 | unrun-verify | src/application/context_menu.rs |  | The contact context menu's Put in a group line now raises the copy command rather than an action of its own, and nobody has met the menu since. Two things are unheard. Somebody who learned Ctrl+Shift+Y as Copy in the calendar, Tasks or Notes meets a line called Put in a group here and there is nothing in the wording to connect them; the reason for keeping the old wording is that it describes what happens to a person and Copy does not, and whether that trade is right is a judgement about hearing it. And the menu now reads New contact, Move to another group, Put in a group, Take out of a group, Delete, met in that order by somebody who cannot skim | open |  | 2026-09-09T01:23:46.872Z |  |
+| 210 | 05 | unrun-verify | src/application/contact_groups.rs |  | The two refusals before either question have never been heard. in_no_group says the contact is in no group and to use Put in a group first; in_every_group says it is in every group and to make another group first. Both go down the refusal channel, both name a command by the words the menu uses, and both are the answer to a key somebody just pressed with no window opening. Whether naming a menu line inside a spoken sentence is followed, or whether somebody hears a sentence about a command and looks for a dialog, is unanswered | open |  | 2026-09-09T01:23:47.493Z |  |
 
 ````json
 [
@@ -2668,6 +2674,78 @@ last_updated: 2026-09-08T22:39:32.251Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-08T22:39:32.251Z",
+    "resolved_at": null
+  },
+  {
+    "id": 205,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "Nobody has been asked two questions for one move. A contact's move asks which group it is leaving and then which it is joining, where every other kind is asked once, and both windows are the same SingleChoiceDialog holding group names and counts. Whether that reads as a program being thorough or as one that cannot make up its mind is the question, and it can only be answered by somebody working down it by keyboard through a screen reader. The first question is skipped when there is only one answer, so the common case may be one question and the uncommon case two, which is its own kind of surprise",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:15.522Z",
+    "resolved_at": null
+  },
+  {
+    "id": 206,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/contact_groups.rs",
+    "line": null,
+    "description": "The sentence a completed move says has never been heard. moved_between names two groups and two counts: \"Ada Lovelace moved out of Team A, 2 people, and into Team B, 5 people.\" That is the longest status line this program says about a single act, and it is said at whatever rate somebody's screen reader is set to. It deliberately leaves out taken_out's reassurance that the contact is still in the address book, on the grounds that naming a group the contact is now in shows that without saying it. Whether the sentence is heard to the end, and whether the missing reassurance is missed, is unanswered",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:29.020Z",
+    "resolved_at": null
+  },
+  {
+    "id": 207,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The two choosers a contact's move opens have never been told apart by ear. Both are a list of group names with the count of each, one after the other, and the only thing distinguishing them is the question and the window title: \"Which group should this contact come out of?\" in a window called Move out of a group, then \"Which group should this contact go in?\" in one called Move into a group. Somebody who missed the first word of either is looking at two lists that read identically. Whether the titles are announced at all, and whether come out of and go in are enough distance between two questions asked seconds apart, is unanswered",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:29.652Z",
+    "resolved_at": null
+  },
+  {
+    "id": 208,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "No contact has been moved between groups by pressing a key in the running program. Every piece is tested where it lives: the transactional write against a real store, the two filters and the five sentences as pure functions, and the menus against the command. What joins them is the arm in managers::pim_command that sends a contact to the group path before the chooser that names one container, and the only thing that reads it is a source-text check in tests/a_contact_moved_between_groups.rs. So the claim that Ctrl+Shift+V moves a contact rests on tested pieces and a read join. The same shape as ledger 202, one plan later",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:46.288Z",
+    "resolved_at": null
+  },
+  {
+    "id": 209,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/context_menu.rs",
+    "line": null,
+    "description": "The contact context menu's Put in a group line now raises the copy command rather than an action of its own, and nobody has met the menu since. Two things are unheard. Somebody who learned Ctrl+Shift+Y as Copy in the calendar, Tasks or Notes meets a line called Put in a group here and there is nothing in the wording to connect them; the reason for keeping the old wording is that it describes what happens to a person and Copy does not, and whether that trade is right is a judgement about hearing it. And the menu now reads New contact, Move to another group, Put in a group, Take out of a group, Delete, met in that order by somebody who cannot skim",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:46.872Z",
+    "resolved_at": null
+  },
+  {
+    "id": 210,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/contact_groups.rs",
+    "line": null,
+    "description": "The two refusals before either question have never been heard. in_no_group says the contact is in no group and to use Put in a group first; in_every_group says it is in every group and to make another group first. Both go down the refusal channel, both name a command by the words the menu uses, and both are the answer to a key somebody just pressed with no window opening. Whether naming a menu line inside a spoken sentence is followed, or whether somebody hears a sentence about a command and looks for a dialog, is unanswered",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T01:23:47.493Z",
     "resolved_at": null
   }
 ]
