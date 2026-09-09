@@ -397,8 +397,14 @@ static EVENTS: &[Entry] = &[
     entry("&Delete", Action::DeleteItem),
 ];
 
+// "Another account" rather than another calendar, list or folder, because a
+// reminder is kept in none of those. The account is the container it has always
+// had, and it is the only one it has. The letters are v and y, the same two the
+// other three item menus use, and this menu claimed neither.
 static REMINDERS: &[Entry] = &[
     entry("&New reminder", Action::NewItem),
+    entry("Mo&ve to another account", Action::MoveItem),
+    entry("Cop&y to another account", Action::CopyItem),
     entry("Mar&k done or not done", Action::ToggleComplete),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -453,10 +459,13 @@ mod tests {
 
     #[test]
     fn test_move_is_offered_exactly_where_it_means_something() {
-        // The menu and the command have to agree. Offering it on a reminder,
-        // which is filed nowhere, would be a stop that teaches nothing; not
-        // offering it on a task would leave the only way to correct a
-        // misfiled one as deleting it and typing it again.
+        // The menu and the command have to agree. Offering it on a message,
+        // which moves between folders by a path that has to talk to a server,
+        // would be a stop that teaches nothing; not offering it on a task would
+        // leave the only way to correct a misfiled one as deleting it and
+        // typing it again. This used to name a reminder as the example of a
+        // kind filed nowhere, which was true of every container except the one
+        // a reminder really has: 05-05 gave the move that meaning.
         use crate::application::pim_command::PimCommand;
 
         for kind in ItemKind::ALL {

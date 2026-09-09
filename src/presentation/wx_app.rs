@@ -10542,7 +10542,10 @@ fn whole_message_reading(
 /// table is a separate write that can fail or predate them; before this the
 /// tree drew such an account anyway, under "This account". Building only from
 /// the table would take that person's mail off the screen to tidy up a name.
-fn the_accounts_in_the_tree(
+/// Public so the reminders chooser offers the same set of accounts the sidebar
+/// draws, including the "This account" row for an account the accounts table
+/// has no row for. A second reading of what accounts exist is a second answer.
+pub fn the_accounts_in_the_tree(
     cache: &MessageCache,
     looked_at: &str,
 ) -> Vec<folder_tree::AccountInTheTree> {

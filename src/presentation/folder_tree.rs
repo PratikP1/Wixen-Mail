@@ -563,7 +563,10 @@ fn plain_row(identity: WhichRow, label: String, depth: usize, expandable: bool) 
 /// looked at when the accounts table has no row for it, drawn as "This
 /// account". Since there can be only one of it, leaving it alone still keeps it
 /// apart from a real account of the same name, which does get an address.
-fn so_no_two_accounts_read_alike(accounts: &[AccountInTheTree]) -> Vec<AccountInTheTree> {
+/// Public so a chooser that offers accounts reads them out the same way the
+/// sidebar draws them. A second rule for when an address is spoken would be two
+/// accounts called Work reading as one row in one of the two places.
+pub fn so_no_two_accounts_read_alike(accounts: &[AccountInTheTree]) -> Vec<AccountInTheTree> {
     let spoken = |account: &AccountInTheTree| account.name.trim().to_lowercase();
     accounts
         .iter()

@@ -63,18 +63,37 @@ impl PimCommand {
             // `managers::pim_command` sends a contact to the group-membership
             // path before the chooser that names one container is reached.
             //
-            // Not a reminder: the module holds buckets worked out from when
-            // each one is due, and there is nothing to move it to. Mail moves
-            // between folders by its own path, which has to talk to the server.
+            // A reminder was left out because the module holds buckets worked
+            // out from when each one is due, and a bucket is not a place. That
+            // was true and it was about the wrong container. The one a reminder
+            // really has, and has had since the table was written, is the
+            // account, so moving one means sending it to another account. It
+            // does not come through the path below either: `kept_in` answers
+            // `None` for a reminder, and `managers::pim_command` sends one to
+            // the account path before the chooser that names one container is
+            // reached.
+            //
+            // Mail is still out. It moves between folders by its own path,
+            // which has to talk to the server.
             //
             // A copy answers the same, and for a contact it is the put-in that
             // already ships. A second contact would be a second person, which
             // is not something anybody wants; a second group membership is
             // exactly what copying one means, and it had no way in from this
-            // family of commands.
+            // family of commands. A second reminder in another account is an
+            // ordinary thing to want, and a copy is offered the account the
+            // reminder is in as well, where a move is not.
+            //
+            // Written out rather than as "anything but mail", although the two
+            // answer alike today. The five are here for five reasons and a
+            // sixth kind of item should have to give its own.
             Self::Move | Self::Copy => matches!(
                 kind,
-                ItemKind::Event | ItemKind::Task | ItemKind::Note | ItemKind::Contact
+                ItemKind::Event
+                    | ItemKind::Task
+                    | ItemKind::Note
+                    | ItemKind::Contact
+                    | ItemKind::Reminder
             ),
         }
     }
@@ -132,7 +151,7 @@ pub fn accounts_a_reminder_could_go_to(
 ) -> Vec<AnAccount> {
     accounts
         .iter()
-        .filter(|account| !filing.makes_a_new_row() || account.id != in_now)
+        .filter(|account| !filing.leaves_out_where_it_is() || account.id != in_now)
         .cloned()
         .collect()
 }
@@ -149,7 +168,15 @@ pub fn accounts_a_reminder_could_go_to(
 /// that this computer has one account today and a second one gives the command
 /// somewhere to go.
 pub fn the_only_account_there_is(name: &str) -> String {
-    is_not_kept_in_a_container(ItemKind::Reminder) + " " + name
+    let named = match name.trim() {
+        "" => "That reminder".to_string(),
+        title => format!("\"{title}\""),
+    };
+    format!(
+        "{named} is in the one account set up on this computer, so there is nowhere else to \
+         move it to. Nothing has been moved. Setting up a second account gives a reminder \
+         somewhere to go."
+    )
 }
 
 /// What to say when the account chosen turns out to be the one it is in.
@@ -163,7 +190,11 @@ pub fn the_only_account_there_is(name: &str) -> String {
 /// Work before the key was pressed is a report of an act that did not happen,
 /// and somebody working by ear has no list to glance at to find out.
 pub fn already_in_that_account(name: &str, account: &str) -> String {
-    filed(Filing::Moving, name, account)
+    let named = match name.trim() {
+        "" => "That reminder".to_string(),
+        title => format!("\"{title}\""),
+    };
+    format!("{named} is already in {account}. Nothing has been moved.")
 }
 
 /// One command, and the thing it lands on.
@@ -674,13 +705,15 @@ mod tests {
 
     #[test]
     fn test_a_copy_means_something_exactly_where_a_move_does() {
-        // The four kinds that have somewhere to be copied into. A contact was
+        // The five kinds that have somewhere to be copied into. A contact was
         // out of this list until 05-04 on the grounds that a second contact is
         // a second person rather than a second filing, which is true and was
         // about the wrong thing: a copy of a contact is a second group
         // membership, and it is the put-in that has always been on the contacts
-        // menu. A reminder's buckets are worked out from when it is due and are
-        // not places, and mail copies between folders by its own path, which
+        // menu. A reminder was out until 05-05 on the grounds that its buckets
+        // are worked out from when it is due and are not places, which is also
+        // true and was also about the wrong container: the one a reminder has
+        // is the account. Mail copies between folders by its own path, which
         // has to talk to a server.
         //
         // Held to Move's own answer rather than to a list written out again,
@@ -697,7 +730,8 @@ mod tests {
 
         assert!(PimCommand::Copy.applies_to(ItemKind::Task));
         assert!(PimCommand::Copy.applies_to(ItemKind::Contact));
-        assert!(!PimCommand::Copy.applies_to(ItemKind::Reminder));
+        assert!(PimCommand::Copy.applies_to(ItemKind::Reminder));
+        assert!(!PimCommand::Copy.applies_to(ItemKind::Mail));
     }
 
     #[test]
@@ -866,19 +900,26 @@ mod tests {
     }
 
     #[test]
-    fn test_a_contact_can_be_filed_although_it_has_no_one_home() {
-        // The reason contacts were left out was right and is now answered
-        // rather than overruled: a contact is in as many groups as somebody
-        // puts it in, so there is no one home to move it out of, and the
-        // program asks which one. Mail and reminders are still out, and for
-        // reasons that have not changed.
+    fn test_a_contact_and_a_reminder_can_both_be_filed_although_neither_has_one_home() {
+        // Both reasons for leaving them out were right and both are now
+        // answered rather than overruled. A contact is in as many groups as
+        // somebody puts it in, so there is no one home to move it out of, and
+        // the program asks which one. A reminder is in no bucket anybody put it
+        // in, so there was nothing to move it between, and the container it
+        // does have is the account it has always belonged to.
+        //
+        // Mail is still out, for a reason that has not changed: it moves
+        // between folders by a path that has to talk to a server.
         for command in [PimCommand::Move, PimCommand::Copy] {
             assert!(
                 command.applies_to(ItemKind::Contact),
                 "{command:?} does not reach a contact"
             );
+            assert!(
+                command.applies_to(ItemKind::Reminder),
+                "{command:?} does not reach a reminder"
+            );
             assert!(!command.applies_to(ItemKind::Mail), "{command:?}");
-            assert!(!command.applies_to(ItemKind::Reminder), "{command:?}");
         }
     }
 
@@ -994,7 +1035,15 @@ mod tests {
             "it does not say what was actually true: {said}"
         );
         assert!(
-            !said.contains("moved"),
+            said.contains("Nothing has been moved"),
+            "it does not say the reminder is where it was: {said}"
+        );
+        // "moved to", which is the phrase a successful move says, rather than
+        // "moved", which every refusal here has to be free to use in the
+        // sentence saying nothing happened. The first version of this assertion
+        // forbade the word outright and reddened the correct sentence.
+        assert!(
+            !said.contains("moved to"),
             "a move that did not happen is reported as one: {said}"
         );
         assert_ne!(said, filed(Filing::Moving, "Ring the dentist", "Work"));
