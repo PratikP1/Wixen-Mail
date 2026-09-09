@@ -204,24 +204,20 @@ fn test_the_copy_of_a_task_a_provider_holds_is_this_computers_own() {
 }
 
 #[test]
-fn test_a_task_a_provider_holds_can_be_copied_although_it_cannot_be_moved() {
-    // Moving one is refused because it means deleting it at the provider,
-    // creating it again here and writing the new identity over the old, and
-    // none of that is built. A copy touches none of that: the provider's own
-    // task is left exactly as it is and the new one is made here. Inheriting
-    // the refusal would refuse the one act that is safe.
+fn test_copying_a_task_a_provider_holds_leaves_the_provider_owed_nothing() {
+    // This test used to be called "can be copied although it cannot be moved",
+    // and it asserted that the move was refused and the copy was not. `05-08`
+    // built the move, so half of what it said stopped being true on 2026-09-09.
+    //
+    // What is worth asserting now is the difference between the two acts, which
+    // is sharper than the old refusal was. A move of a task a provider holds
+    // makes a copy here and records that the provider is owed a deletion of the
+    // one it still has. A copy makes a copy here and owes the provider nothing
+    // at all: the original is meant to stay exactly where it is, at the provider
+    // and on this computer, and a copy that recorded a deletion would take the
+    // original away from both.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store_with_a_task(&dir, "google:t1");
-
-    let refused = file_under(
-        &cache,
-        ItemKind::Task,
-        "google:t1",
-        ELSEWHERE,
-        ACCOUNT,
-        Filing::Moving,
-    );
-    assert!(refused.is_err(), "a provider's own task was moved");
 
     let copied = file_under(
         &cache,
@@ -230,11 +226,27 @@ fn test_a_task_a_provider_holds_can_be_copied_although_it_cannot_be_moved() {
         ELSEWHERE,
         ACCOUNT,
         Filing::Copying,
+    )
+    .expect("a copy of a task a provider holds to be written");
+
+    assert_ne!(
+        copied, "google:t1",
+        "the copy kept the provider's identifier, so the push would update the original"
     );
     assert!(
-        copied.is_ok(),
-        "the copy inherited the move's refusal: {:?}",
-        copied.err()
+        cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .is_some_and(|task| task.task_list_id.as_deref() == Some(HOME)),
+        "the original left the list it was in, so this was a move rather than a copy"
+    );
+    assert!(
+        cache
+            .deleted_tasks(ACCOUNT)
+            .expect("the deletions to be readable")
+            .is_empty(),
+        "a copy recorded a deletion the provider is owed, which would take the original \
+         away from the provider as well as from here"
     );
 }
 

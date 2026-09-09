@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 489 records have arrived since and have not been through it.
+# 491 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -452,7 +452,7 @@ red = [
     "application::tasks_sync::tests::test_what_stays_here_is_said_without_being_called_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -467,7 +467,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_counts_what_went_up",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -480,7 +480,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_says_how_many_were_left_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -495,7 +495,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_says_what_happened_in_words",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -512,7 +512,7 @@ red = [
     "application::tasks_sync::tests::test_several_failures_are_counted_not_listed",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -575,6 +575,10 @@ red = [
     # to be sent" becomes "1 removals" under this break.
     "application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting",
     "application::tasks_sync::tests::test_a_list_that_went_is_said_rather_than_left_to_be_noticed",
+    # Added 2026-09-09 by 05-08, found by --remeasure rather than predicted, and
+    # the same shape one plan later: this one reads the summary while a move is
+    # half done, so it meets both counts and both go through `how_many`.
+    "application::tasks_sync::tests::test_a_move_held_by_allow_changes_is_counted_apart_from_one_held_by_the_copy",
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
     "presentation::wx_app::what_the_status_line_says::test_a_mailbox_holding_one_message_does_not_say_one_messages",
@@ -587,7 +591,7 @@ tests_last_seen = [
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 135 },
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
     { file = "src/service/ical_subscription.rs", tests = 19 },
@@ -1382,7 +1386,7 @@ red = [
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 # ── What the clearing itself refuses ───────────────────────────────────────
@@ -1462,7 +1466,7 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/data/message_cache/tasks.rs", tests = 21 },
 ]
 
@@ -1477,7 +1481,7 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/data/message_cache/tasks.rs", tests = 21 },
 ]
 
@@ -1495,7 +1499,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_for_a_list_that_has_gone_is_not_sent_again_and_is_not_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 # ── What lets a deletion go ────────────────────────────────────────────────
@@ -1563,7 +1567,7 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -2947,7 +2951,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_held_by_allow_changes_waits_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -2961,12 +2965,16 @@ before = """            Err(e) if crate::service::outward::was_refused_by_the_ga
 after = """            Err(e) if refused_for_permission(&e) => result.needs_sign_in = true,
             // The task's id, not its title."""
 red = [
+    # Added 2026-09-09 by 05-08, found by --remeasure rather than predicted. A
+    # move whose create the gate refuses is a change held by the setting like any
+    # other, so it counts here and this break turns it into a reported problem.
+    "application::tasks_sync::tests::test_a_move_held_by_allow_changes_is_counted_apart_from_one_held_by_the_copy",
     "application::tasks_sync::tests::test_a_task_change_held_by_allow_changes_waits_rather_than_failing",
     "application::tasks_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -2979,7 +2987,7 @@ red = [
     "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -2994,10 +3002,15 @@ red = [
     # held by this setting, so it names this sentence in order to say the two
     # are not the same thing, and losing the sentence reddens it.
     "application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting",
+    # Added 2026-09-09 by 05-08, and it is the same shape as the line above one
+    # plan later: this one reads the summary while a move is half done and
+    # asserts that the sentence naming the setting is there and that the removal
+    # count was not folded into it.
+    "application::tasks_sync::tests::test_a_move_held_by_allow_changes_is_counted_apart_from_one_held_by_the_copy",
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 # ── The days a series calls off, crossing time zones whole ──────────────────
@@ -5618,7 +5631,7 @@ red = [
     "service::tasks_api::tests::test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -5643,7 +5656,7 @@ red = [
     "application::tasks_sync::tests::test_the_trait_the_sync_talks_through_still_asks_the_read_only_client",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -6268,7 +6281,7 @@ red = [
     "service::tasks_api::tests::test_the_only_words_that_can_leave_here_as_an_importance_are_the_three_microsoft_takes",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -9833,7 +9846,7 @@ after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, 
 }"""
 red = ["application::tasks_sync::tests::test_a_tasks_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 111 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -17797,9 +17810,10 @@ tests_last_seen = [
     { file = "src/data/message_cache/reminders.rs", tests = 9 },
 ]
 
-# Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`
-# on a clean tree, and the measurement contradicted what plan 05-06 predicted
-# for it in two ways worth writing down.
+# Re-measured by hand on 2026-09-09 with `cargo test --all-targets
+# --no-fail-fast` on a clean tree, after `05-08`, and **this guard is now much
+# weaker than the record above it used to say.** That is the finding, not the
+# red list.
 #
 # The break is the half-fix, not the deletion. `moving_can_be_told` is asked
 # twice, once in `where_it_could_go` before the chooser opens and once here
@@ -17810,19 +17824,22 @@ tests_last_seen = [
 # would be noticed by anybody reading the diff; this is the edit that looks like
 # housekeeping.
 #
-# It reddens five tests across three targets and this record can name two of
-# them. Without `suite` a record runs `cargo test --lib`, so a library test is
-# the only kind its red list can hold. The other three are integration tests
-# that call `file_under` directly and really do go red:
-# `a_copy_leaves_the_original_where_it_was::test_a_task_a_provider_holds_can_be_copied_although_it_cannot_be_moved`,
-# and `a_moved_task_is_in_one_list::test_a_task_a_provider_holds_stays_in_the_list_it_started_in`
-# and its queue twin. The plan said a record here should carry
-# `suite = "a_moved_task_is_in_one_list"` and then said it should not, on the
-# grounds that no test in that file can reach `file_under`. Both are wrong about
-# the same fact: those tests reach it perfectly well, and a `suite` record would
-# have named the two integration tests and missed the two library ones. The
-# library pair is the better red list because it covers the event as well as the
-# task, and the event has no integration file of its own.
+# It used to redden five tests across three targets, four of them about a task.
+# It now reddens **one**, tree-wide, and the one is about an event. `05-08`
+# lifted the refusal for a task, so a task no longer passes through this question
+# at all: `file_under` sends it to `move_a_task_the_provider_holds` on a branch
+# of its own, and taking this block out changes nothing about a task. What is
+# left here is the event, which is still refused for the reason a task used to
+# be, and one library test is the whole of what would notice.
+#
+# Measured rather than predicted, and the prediction would have been wrong in the
+# usual direction: the four task tests that used to redden here were rewritten by
+# `05-08` to assert that the move happens, and a move that happens goes on
+# happening with this block gone.
+#
+# The earlier note about a `suite` still holds. Without one a record runs
+# `cargo test --lib`, so a library test is the only kind its red list can hold,
+# and the event has no integration file of its own anyway.
 [[guard]]
 name = "the second question before a move is written is asked as well as the first"
 file = "src/presentation/managers.rs"
@@ -17833,10 +17850,105 @@ before = """    if filing.needs_the_holder_told()
     }"""
 after = """"""
 red = [
-    "presentation::managers::tests::test_moving_a_task_the_provider_holds_is_refused_and_writes_nothing",
     "presentation::managers::tests::test_moving_an_event_the_provider_holds_is_refused_and_writes_nothing",
 ]
 tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# Measured by hand on 2026-09-09 with `cargo test --lib --no-fail-fast` on a
+# clean tree, and measured against a second candidate before it was chosen.
+#
+# The break moves the stamp out of the arm that runs when the provider took the
+# deletion, so every deletion is written down as taken whether it landed or not.
+# That is what a half-finished version of this loop produces: the call and the
+# bookkeeping look like two steps of one action rather than one step conditional
+# on the other.
+#
+# What it costs is the recovery this whole plan rests on. A delete the provider
+# refused would be recorded as done, so nothing would ever ask again, and the
+# provider would keep its copy of a task that had already moved. The move would
+# be half finished for ever with nothing left saying so.
+#
+# It reddens exactly one test, and that is the reason this candidate was kept.
+# The other measured was the pending row's create not being retried, broken by
+# clearing the flag when the create failed. That reddens three, and two of them
+# are older tests about a list going and about a priority nothing understands.
+# So that break is already guarded by tests that predate this plan and a record
+# for it would be a second guard on a defect that has one. This break has none.
+[[guard]]
+name = "a deletion the provider refused is not written down as taken"
+file = "src/application/tasks_sync.rs"
+before = """        match sent {
+            Ok(()) => {
+                let _ = cache.the_provider_took_the_deletion_of_a_task(
+                    &gone.id,
+                    &crate::application::deletions::written(chrono::Utc::now()),
+                );
+                result.sent += 1;
+            }"""
+after = """        let _ = cache.the_provider_took_the_deletion_of_a_task(
+            &gone.id,
+            &crate::application::deletions::written(chrono::Utc::now()),
+        );
+        match sent {
+            Ok(()) => {
+                result.sent += 1;
+            }"""
+red = [
+    "application::tasks_sync::tests::test_a_move_whose_delete_is_refused_is_finished_by_the_sync_after_it",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+]
+
+# Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`
+# on a clean tree, after `05-08` lifted the refusal.
+#
+# The break is one word, and it is the way this would most plausibly be undone.
+# `moving_can_be_told`'s task arm answered `tasks_sync::a_provider_holds(id)`
+# from the day the chooser was written until 2026-09-09, and every other arm in
+# that match still answers a question rather than a constant. A `false` sitting
+# among them reads like something half-finished, and somebody resolving a merge
+# between this branch and anything written before it puts the call back without
+# reading why it went.
+#
+# What it costs is the whole of this plan. With the call back, a task a provider
+# holds is refused before the chooser opens and again before anything is written,
+# which is where this program was for a year, and the sentence it says stops
+# being true the moment the arm is right.
+#
+# Deliberately not a record on `file_under`'s branch. That branch answers the
+# same question, and a break there leaves the chooser offering a move the write
+# then carries out the wrong way, which is a different defect worth its own
+# record if anybody writes one. This is the arm the chooser and the write both
+# read.
+[[guard]]
+name = "a task a provider holds is not refused a move"
+file = "src/presentation/managers.rs"
+before = """        ItemKind::Task => false,"""
+after = """        ItemKind::Task => crate::application::tasks_sync::a_provider_holds(id),"""
+#
+# The red list grew from 3 to 10 inside the same plan, and that is left on the
+# record rather than tidied away. Task 1 measured it at 3 and the measurement was
+# right that day. Task 2 then added seven tests about the ways this move fails,
+# and every one of them starts by making the move, so with the refusal back every
+# one panics where it sets up rather than failing on what it is about. Found by
+# `--remeasure` hours after the record was written, and predicted by nobody.
+red = [
+    "presentation::managers::tests::test_a_task_the_provider_holds_is_offered_the_chooser_like_any_other",
+    "presentation::managers::tests::test_moving_a_task_the_provider_holds_writes_the_new_copy_and_the_note",
+    "application::tasks_sync::tests::test_a_task_google_holds_moves_list_and_two_syncs_carry_it_out",
+    "application::tasks_sync::tests::test_a_move_held_by_allow_changes_is_counted_apart_from_one_held_by_the_copy",
+    "application::tasks_sync::tests::test_a_move_interrupted_by_the_program_closing_is_finished_when_it_opens_again",
+    "application::tasks_sync::tests::test_a_move_into_a_list_made_here_is_never_sent_and_the_note_waits",
+    "application::tasks_sync::tests::test_a_move_that_needs_a_sign_in_is_not_reported_as_a_problem",
+    "application::tasks_sync::tests::test_a_move_whose_create_is_refused_sends_no_delete_and_keeps_both_halves",
+    "application::tasks_sync::tests::test_a_move_whose_delete_is_refused_is_finished_by_the_sync_after_it",
+    "application::tasks_sync::tests::test_a_task_microsoft_holds_moves_list_the_same_way",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
