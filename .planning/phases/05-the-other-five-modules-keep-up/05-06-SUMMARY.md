@@ -527,3 +527,8 @@ Commits, checked in `git log`:
 - `3b09589` FOUND: test(05-06), the RED half of task 2
 - `b45806a` FOUND: feat(05-06), the GREEN half of task 2
 - `b7810ce` FOUND: docs(05-06), task 3
+- `88575ec` FOUND: docs(05-06), this summary, the ledger and the counters
+- `b7f5953` FOUND: the merge into `main`
+
+`scripts/check.sh all` was run on the branch before the merge, detached, and
+reported all four checks passed. The branch was `a-move-says-what-has-not-left-this-computer`.
