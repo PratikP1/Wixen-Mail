@@ -2676,6 +2676,36 @@ pub fn pim_command(
             //
             // Which act it is comes from the command rather than from a flag
             // read here, so the two cannot be wired the wrong way round.
+            PimCommand::Move | PimCommand::Copy if kind == ItemKind::Contact => {
+                // A contact is in as many groups as somebody puts it in, so
+                // filing one is not one write naming the container it lives in.
+                // The path below opens with `kept_in`, which a contact answers
+                // `None`, so a contact sent down it falls out with `None` and
+                // is announced as nothing at all: a key that does nothing and
+                // says nothing.
+                //
+                // The copy is the put-in that already ships rather than a
+                // second one written beside it. Both go through the same
+                // function every other route to it goes through, so there is
+                // one piece of code that puts a contact in a group and one set
+                // of words for it.
+                let cache = Some(cache);
+                match command {
+                    PimCommand::Move => {
+                        move_a_contact_between_groups(Some(row), state, &cache, frame, tx, rt);
+                    }
+                    _ => change_the_group_a_contact_is_in(
+                        Membership::PutIn,
+                        Some(row),
+                        state,
+                        &cache,
+                        frame,
+                        tx,
+                        rt,
+                    ),
+                }
+                return;
+            }
             PimCommand::Move | PimCommand::Copy => match command
                 .filing()
                 .and_then(|filing| file_it(&cache, state, frame, filing, kind, &id, &name))
@@ -6687,10 +6717,22 @@ pub fn file_under(
             cache.save_note(&note)?;
             Ok(note.id)
         }
-        // Never reached: `kept_in` gives these no container, so the chooser is
-        // never opened for one. Written out rather than caught by a catch-all,
-        // so a new kind of item is a compile error here.
-        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Ok(id.to_string()),
+        // Refused rather than reported as done. `kept_in` gives these no
+        // container, so nothing should reach this arm, and it used to answer by
+        // handing back the identifier it was given: success, with nothing
+        // written. The comment here claimed that a new kind of item would be a
+        // compile error, which is true of a new `ItemKind` variant and false of
+        // an existing kind moving off this list. Giving a contact a move did
+        // exactly that, and the compiler said nothing: the command widened, the
+        // menus widened, the chooser opened, and this returned "moved" for a
+        // row it never touched.
+        //
+        // A contact goes to the group-membership path instead, before the
+        // chooser that names one container is reached, so this stays the arm
+        // nothing reaches. What has changed is that reaching it now says so.
+        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Err(Error::Other(
+            crate::application::pim_command::is_not_kept_in_a_container(kind),
+        )),
     }
 }
 
@@ -6775,9 +6817,8 @@ fn containers_in(
 /// have found none of them; and a group made before that was true is still
 /// filed under an account, so reading only this computer would lose those.
 fn groups_in(cache: &MessageCache, account_id: &str) -> Vec<(String, String, usize)> {
-    crate::presentation::wx_app::sources_for(account_id)
-        .iter()
-        .flat_map(|source| cache.load_contact_groups(source).unwrap_or_default())
+    every_group_here(cache, account_id)
+        .into_iter()
         .map(|group| {
             let holding = group.member_ids.len();
             (group.id, group.name, holding)
@@ -6785,16 +6826,27 @@ fn groups_in(cache: &MessageCache, account_id: &str) -> Vec<(String, String, usi
         .collect()
 }
 
-/// Ask which group, by name and by how many people are in it.
+/// The same groups with who is in each, for the questions that ask about one
+/// contact rather than about the groups.
 ///
-/// `None` when there are none to offer or somebody left the chooser without
-/// choosing. Leaving a chooser is not a failure and is not announced as one.
-///
-/// The sidebar tree is not used for this. It holds display labels rather than
-/// identifiers and has no selection handler at all, so recovering which group
-/// somebody was on would mean reading a name back out of a sentence. A list
-/// also reads the names out in order, which is how somebody who cannot see the
-/// tree finds the one they meant.
+/// [`groups_in`] is this with the members counted rather than named, and both
+/// come from one load so a chooser and the count it reads out cannot disagree.
+fn every_group_here(
+    cache: &MessageCache,
+    account_id: &str,
+) -> Vec<crate::application::contact_groups::Group> {
+    crate::presentation::wx_app::sources_for(account_id)
+        .iter()
+        .flat_map(|source| cache.load_contact_groups(source).unwrap_or_default())
+        .map(|group| crate::application::contact_groups::Group {
+            id: group.id,
+            name: group.name,
+            member_ids: group.member_ids,
+        })
+        .collect()
+}
+
+/// Ask which group, out of every group somebody can see from here.
 fn which_group(
     frame: &Frame,
     cache: &MessageCache,
@@ -6802,17 +6854,51 @@ fn which_group(
     question: &str,
     window: &str,
 ) -> Option<(String, String)> {
-    let choices = groups_in(cache, account_id);
+    which_of_these_groups(
+        frame,
+        &every_group_here(cache, account_id),
+        question,
+        window,
+    )
+}
+
+/// Ask which of these groups, by name and by how many people are in it.
+///
+/// `None` when there are none to offer or somebody left the chooser without
+/// choosing. Leaving a chooser is not a failure and is not announced as one.
+///
+/// Takes the groups rather than looking them up, because the two questions a
+/// contact's move asks are about different sets: which of the groups it is in
+/// it is leaving, and which of the ones it is not in it is joining. Both are
+/// answers [`crate::application::contact_groups`] gives, and a chooser that
+/// went and fetched its own list could not be handed either.
+///
+/// The sidebar tree is not used for this. It holds display labels rather than
+/// identifiers and has no selection handler at all, so recovering which group
+/// somebody was on would mean reading a name back out of a sentence. A list
+/// also reads the names out in order, which is how somebody who cannot see the
+/// tree finds the one they meant. The destination tree that the other three
+/// kinds use is not right here either: a contact's groups are a flat list
+/// inside one account, so a tree of one branch would be a level of structure
+/// that says nothing and one more thing to arrow through.
+fn which_of_these_groups(
+    frame: &Frame,
+    choices: &[crate::application::contact_groups::Group],
+    question: &str,
+    window: &str,
+) -> Option<(String, String)> {
     if choices.is_empty() {
         return None;
     }
     let names: Vec<String> = choices
         .iter()
-        .map(|(_, name, members)| crate::application::contact_groups::spoken(name, *members))
+        .map(|group| {
+            crate::application::contact_groups::spoken(&group.name, group.member_ids.len())
+        })
         .collect();
     let chosen = pick_one(frame, question, window, &names)?;
-    let (id, name, _) = choices[chosen].clone();
-    Some((id, name))
+    let group = choices[chosen].clone();
+    Some((group.id, group.name))
 }
 
 /// Give a contact group a different name.
@@ -6870,6 +6956,145 @@ pub fn rename_group(
             let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
         }
     }
+}
+
+/// Take the chosen contact out of one of its groups and put it in another.
+///
+/// Two questions where the other four kinds are asked one, and the first is the
+/// question that made a contact's move impossible until now: an event is in one
+/// calendar, so a move only has to ask where it is going, and a contact is in
+/// as many groups as somebody puts it in, so it has to be asked which one it is
+/// leaving. Asked only when there is more than one answer; a contact in a
+/// single group is not made to confirm the only possibility.
+///
+/// The two refusals before either question are not the same refusal. A contact
+/// in no group has nothing to leave and the remedy is to put it in one; a
+/// contact in every group has nowhere to go and the remedy is to make one. Both
+/// happen before a window opens, so nobody answers a question whose answer is
+/// thrown away.
+pub fn move_a_contact_between_groups(
+    row: Option<usize>,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::contact_groups;
+    use crate::application::new_item::ItemKind;
+    use crate::data::message_cache::MovedBetweenGroups;
+
+    let Some(cache) = cache.clone() else {
+        return send_refusal(tx, rt, "No storage is open");
+    };
+    let Some(row) = row else {
+        return send_refusal(tx, rt, "Choose a contact first");
+    };
+    let Some((contact_id, _, _)) = selected_item(state, ItemKind::Contact, row) else {
+        return send_refusal(
+            tx,
+            rt,
+            &crate::application::pim_command::no_longer_there(ItemKind::Contact, ""),
+        );
+    };
+    let account_id = active_or_local(state);
+    let person = the_person_called(&cache, &account_id, &contact_id);
+
+    let groups = every_group_here(&cache, &account_id);
+    let leaving = contact_groups::could_leave(&contact_id, &groups);
+    if leaving.is_empty() {
+        return send_refusal(tx, rt, &contact_groups::in_no_group(&person));
+    }
+    let joining = contact_groups::could_join(&contact_id, &groups);
+    if joining.is_empty() {
+        return send_refusal(tx, rt, &contact_groups::in_every_group(&person));
+    }
+
+    // The one answer is taken rather than asked for. A chooser holding a single
+    // row is a question somebody has to work through to give the only answer
+    // there is.
+    let out_of = if let [only] = leaving.as_slice() {
+        (only.id.clone(), only.name.clone())
+    } else {
+        let Some(chosen) = which_of_these_groups(
+            frame,
+            &leaving,
+            "Which group should this contact come out of?",
+            "Move out of a group",
+        ) else {
+            return;
+        };
+        chosen
+    };
+    let Some((into_id, _)) = which_of_these_groups(
+        frame,
+        &joining,
+        "Which group should this contact go in?",
+        "Move into a group",
+    ) else {
+        return;
+    };
+
+    match cache.move_contact_between_groups(&contact_id, &out_of.0, &into_id) {
+        Ok(MovedBetweenGroups::Moved) => {
+            // Both counts read after the write, so what is said is what the
+            // sidebar will show rather than what the chooser was built from.
+            let now = every_group_here(&cache, &account_id);
+            let holding = |id: &str| {
+                now.iter()
+                    .find(|group| group.id == id)
+                    .map_or(0, |group| group.member_ids.len())
+            };
+            let into_name = now
+                .iter()
+                .find(|group| group.id == into_id)
+                .map_or_else(|| into_id.clone(), |group| group.name.clone());
+            send_status(
+                tx,
+                rt,
+                &contact_groups::moved_between(
+                    &person,
+                    &out_of.1,
+                    holding(&out_of.0),
+                    &into_name,
+                    holding(&into_id),
+                ),
+            );
+            refill_the_contacts_panel(&cache, &account_id, tx);
+        }
+        // Both are answers the chooser cannot produce, because it is built from
+        // the groups the contact really is in and the ones it is not. They
+        // arrive when a sync changes a membership between the question and the
+        // answer, and each already has a sentence of its own.
+        Ok(MovedBetweenGroups::NotInTheGroupItWouldLeave) => {
+            send_refusal(tx, rt, &contact_groups::not_in(&person, &out_of.1));
+        }
+        Ok(MovedBetweenGroups::IntoTheOneItIsLeaving) => {
+            send_refusal(tx, rt, &contact_groups::already_in(&person, &out_of.1));
+        }
+        Err(e) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(e.to_string()));
+        }
+    }
+}
+
+/// The name to say about a contact, read from the store rather than the panel.
+///
+/// So a sentence says who was actually acted on rather than who the list
+/// thought was selected. An unknown contact is still named, because membership
+/// is by identifier and a contact from another account has to be reachable.
+fn the_person_called(cache: &MessageCache, account_id: &str, contact_id: &str) -> String {
+    crate::presentation::wx_app::sources_for(account_id)
+        .iter()
+        .flat_map(|source| {
+            cache
+                .get_contacts_for_account(source)
+                .ok()
+                .into_iter()
+                .flatten()
+        })
+        .find(|contact| contact.id == contact_id)
+        .map_or_else(|| "That contact".to_string(), |contact| contact.name)
 }
 
 /// Put the chosen contact in a group, or take it out of one.
@@ -7098,25 +7323,12 @@ fn change_membership(
             "group", "",
         ))
     })?;
-    let person = cache
-        .get_contacts_for_account(&group.account_id)
-        .ok()
-        .into_iter()
-        .flatten()
-        .chain(
-            cache
-                .get_contacts_for_account(crate::application::new_item::LOCAL_ACCOUNT_ID)
-                .ok()
-                .into_iter()
-                .flatten(),
-        )
-        .find(|contact| contact.id == contact_id);
     // The name is read from the row rather than passed in, so the sentence
     // says who was actually moved rather than who the list thought was
     // selected. An unknown contact is still moved: membership is by
     // identifier, and refusing would mean a contact from another account
     // could not be put in a group at all.
-    let person = person.map_or_else(|| "That contact".to_string(), |contact| contact.name);
+    let person = the_person_called(cache, &group.account_id, contact_id);
     let was_in = group.member_ids.iter().any(|id| id == contact_id);
 
     match (which_way, was_in) {

@@ -139,8 +139,6 @@ pub enum Action {
     /// The reason anybody keeps a group. Without it a group is a name in a
     /// sidebar and nothing more.
     WriteToGroup,
-    /// Put the chosen contact in a group.
-    AddToGroup,
     /// Take the chosen contact out of a group, leaving the contact alone.
     ///
     /// Named apart from [`Action::DeleteItem`] because they are one keystroke
@@ -163,18 +161,24 @@ pub enum Action {
     /// one kind that holds it. Offering a calendar as a home for a note is not
     /// a mistake worth making reachable.
     ///
-    /// Not offered for a contact. A contact is in as many groups as somebody
-    /// puts it in, so it has no one home to move it out of, and "move" would be
-    /// the wrong word for what it would do.
+    /// Offered for a contact too, where it means something different enough to
+    /// be worth saying: a contact is in as many groups as somebody puts it in,
+    /// so there is no one home to move it out of, and the move asks which group
+    /// is being left before it asks where the contact is going. That is two
+    /// questions where the other three kinds are asked one.
     MoveItem,
     /// Put a second copy of this event, task or note in another calendar, list
     /// or folder, leaving the first where it is.
     ///
-    /// Beside [`Action::MoveItem`] and offered exactly where it is, for the
-    /// same three reasons. Apart from [`Action::CopyToFolder`], which is a
-    /// message going into a mail folder, because what is offered differs and
-    /// offering a calendar as a home for a message is not a mistake worth
-    /// making reachable.
+    /// Beside [`Action::MoveItem`] and offered exactly where it is. For a
+    /// contact it is the put-in that has always been on this menu: a second
+    /// contact would be a second person, and a copy of a contact is a second
+    /// group membership. It keeps its old wording there rather than gaining a
+    /// second line of its own.
+    ///
+    /// Apart from [`Action::CopyToFolder`], which is a message going into a
+    /// mail folder, because what is offered differs and offering a calendar as
+    /// a home for a message is not a mistake worth making reachable.
     CopyItem,
     /// Put a copy of this message in another folder, keeping this one.
     CopyToFolder,
@@ -359,11 +363,24 @@ static ACCOUNT_IN_A_GROUP: &[Entry] = &[
 /// longer one borrowed from a row of another kind.
 static LABELS: &[Entry] = &[entry("&Labels...", Action::ManageLabels)];
 
+// The two filing acts, in the words this module already teaches. Moving a
+// contact means taking it out of one group and putting it in another, and
+// copying one means putting it in a second group without taking it out of the
+// first, which is what "Put in a group" has always done. So the copy line is
+// the line that was already here, and it now raises the copy command rather
+// than a command of its own: two menu lines that both put a contact in a group
+// would be two doors to one act, met one after the other by somebody who
+// cannot skim.
+//
+// Worded as putting somebody in and taking them out, rather than as adding and
+// removing, so the one next to Delete does not read like one. That is also why
+// the copy line is not called "Copy to another group" for symmetry with the
+// other three menus: the word describes what happens to a calendar entry and
+// not what happens to a person.
 static CONTACTS: &[Entry] = &[
     entry("&New contact", Action::NewItem),
-    // Worded as putting somebody in and taking them out, rather than as adding
-    // and removing, so the one next to Delete does not read like one.
-    entry("Put in a &group", Action::AddToGroup),
+    entry("Mo&ve to another group", Action::MoveItem),
+    entry("Put in a &group", Action::CopyItem),
     entry("Take &out of a group", Action::RemoveFromGroup),
     entry("&Delete", Action::DeleteItem),
 ];
@@ -524,12 +541,17 @@ mod tests {
         // The two storage calls behind these have existed since groups did and
         // neither had a caller, so a group could be made and could never gain
         // or lose a member.
+        //
+        // The put-in is `Action::CopyItem` now rather than an action of its
+        // own. Putting a contact in a second group without taking it out of the
+        // first is what copying a contact means, and two menu lines doing that
+        // would be two doors to one act.
         let offered: Vec<Action> = entries_for(Focus::Items(ItemKind::Contact))
             .iter()
             .map(|e| e.action)
             .collect();
 
-        assert!(offered.contains(&Action::AddToGroup), "{offered:?}");
+        assert!(offered.contains(&Action::CopyItem), "{offered:?}");
         assert!(offered.contains(&Action::RemoveFromGroup), "{offered:?}");
     }
 

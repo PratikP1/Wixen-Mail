@@ -580,7 +580,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/contact_groups.rs", tests = 24 },
+    { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 135 },
     { file = "src/application/tasks_sync.rs", tests = 106 },
@@ -1870,15 +1870,23 @@ tests_last_seen = [
 ]
 
 [[guard]]
+# Re-anchored 2026-09-08. The break was `capitalise(a_thing(kind))` on its own,
+# which named one place until `is_not_kept_in_a_container` arrived in the same
+# file and used the same call for the same reason. Two places is a break that
+# cannot be applied at all, so the anchor now carries the line above it, which
+# only `cannot_be_moved` has. Re-measured by hand after the anchor moved rather
+# than edited until it applied.
 name = "a refusal names the kind with the article that belongs with it"
 file = "src/application/pim_command.rs"
-before = """        capitalise(a_thing(kind))"""
-after = """        format!("A {}", thing(kind))"""
+before = """        holder.label().to_lowercase(),
+        capitalise(a_thing(kind))"""
+after = """        holder.label().to_lowercase(),
+        format!("A {}", thing(kind))"""
 red = [
     "application::pim_command::tests::test_the_refusal_names_the_kind_with_the_article_that_belongs_with_it",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 22 },
+    { file = "src/application/pim_command.rs", tests = 24 },
 ]
 
 # ── An edit that was not an edit ────────────────────────────────────────────
@@ -4654,7 +4662,7 @@ red = [
     "application::pim_command::tests::test_a_row_that_went_away_between_the_question_and_the_answer_is_said_not_left_silent",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 22 },
+    { file = "src/application/pim_command.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -5473,7 +5481,7 @@ red = [
     "application::pim_command::tests::test_a_command_that_failed_says_what_it_was_and_what_to_try",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 22 },
+    { file = "src/application/pim_command.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -17642,5 +17650,5 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "tests/a_contact_moved_between_groups.rs", tests = 5 },
+    { file = "tests/a_contact_moved_between_groups.rs", tests = 7 },
 ]

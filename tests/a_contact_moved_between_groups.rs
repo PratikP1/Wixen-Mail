@@ -297,14 +297,22 @@ fn test_a_contact_is_filed_by_its_groups_rather_than_by_the_path_that_names_one_
     // reason. Fourteen records name `wired.rs`, so a test added there costs
     // fourteen re-measurements inside the commit gate; this file is named by
     // one.
+    // Read as the text between the two arms the filing commands share. There
+    // have to be two: one that answers a contact and one that answers the three
+    // kinds kept in a single container. Merging them back into one is the
+    // regression, and it takes the first `expect` below with it.
+    const SHARED: &str = "PimCommand::Move | PimCommand::Copy";
     let managers =
         std::fs::read_to_string("src/presentation/managers.rs").expect("the manager sources");
-    let arm = what_ships(&managers)
-        .split_once("PimCommand::Move | PimCommand::Copy => ")
+    let ships = what_ships(&managers);
+    let below_the_first = ships
+        .split_once(SHARED)
         .expect("the arm the two filing commands share")
-        .1
-        .to_string();
-    let arm = &arm[..arm.find("\n        },").unwrap_or(arm.len())];
+        .1;
+    let arm = below_the_first
+        .split_once(SHARED)
+        .expect("a second filing arm, for the kinds that are kept in one container")
+        .0;
 
     assert!(
         arm.contains("ItemKind::Contact"),

@@ -8,6 +8,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A contact can be moved from one group to another.** Press `Ctrl+Shift+V` on
+  a contact, or use the context menu's "Move to another group". You are asked
+  which group the contact is coming out of, and then which one it is going
+  into, and what you hear afterwards names both groups and how many people are
+  in each of them now.
+
+  Until now a contact could be put in a group and taken out of one, and doing
+  both meant two commands and remembering which group you had just used. Move
+  was the one command the contacts list did not have.
+
+  The first question is only asked when there is more than one answer. A
+  contact in a single group goes straight to the question of where it is going.
+  Each list holds only the groups that question has an answer in: the first
+  offers the groups the contact is in, and the second the groups it is not, so
+  neither list is the whole sidebar read out.
+
+  If the contact is in no group at all, nothing opens and you are told to put
+  it in a group first. If it is already in every group there is, you are told
+  to make another group first. Those are different problems with different
+  answers, so they are different sentences.
+
+  The contact is never in neither group, not even for an instant. Both halves
+  of the move are one write, and the half that puts the contact in the new
+  group happens first, so a failure leaves it in both groups rather than in
+  none. In both you can see and correct; in none, nobody can.
+
+- **Copy on a contact puts it in a second group.** `Ctrl+Shift+Y`, and the
+  context menu line that used to say "Put in a group", which still says that.
+  It runs the same code it always did: a copy of a contact is a second group
+  membership, not a second person, and there is now a way to reach it from the
+  same pair of keys the calendar, Tasks and Notes use.
+
+  Known limitation: contact groups are kept on this computer. Nothing sends one
+  to Google or to Outlook, and a group you keep there does not appear here, so
+  a contact moved between groups here is moved here only.
+
 - **An event, a task or a note can be copied into another calendar, list or
   folder.** Press `Ctrl+Shift+Y`, or use Action, Copy to, Somewhere Else, and
   choose where the second one goes. The original stays exactly where it is, and

@@ -176,13 +176,17 @@ pub struct Group {
 
 /// The groups a contact could be taken out of: the ones it is in.
 ///
-/// Not written yet: every group there is, which is what the chooser this
-/// answer exists to narrow already offers. Somebody hearing twenty group names
-/// when they expected the two they are in would blame themselves rather than
-/// the program, and choosing one they are not in makes a move that cannot
-/// happen.
-pub fn could_leave(_contact_id: &str, groups: &[Group]) -> Vec<Group> {
-    groups.to_vec()
+/// The chooser this narrows offered every group in the account, because the
+/// three questions that came before it were all about groups rather than about
+/// one contact's groups. Somebody hearing twenty names where they expected two
+/// would blame themselves rather than the program, and choosing a group they
+/// are not in asks for a move that cannot happen.
+pub fn could_leave(contact_id: &str, groups: &[Group]) -> Vec<Group> {
+    groups
+        .iter()
+        .filter(|group| is_in(contact_id, group))
+        .cloned()
+        .collect()
 }
 
 /// The groups a contact could be put into: the ones it is not in.
@@ -192,19 +196,39 @@ pub fn could_leave(_contact_id: &str, groups: &[Group]) -> Vec<Group> {
 /// apart. A move into a group somebody is already in is not a move, it is a
 /// take-out wearing a move's name, and the count of the group they arrive in
 /// does not go up.
+pub fn could_join(contact_id: &str, groups: &[Group]) -> Vec<Group> {
+    groups
+        .iter()
+        .filter(|group| !is_in(contact_id, group))
+        .cloned()
+        .collect()
+}
+
+/// The one membership question the two answers above are built from.
 ///
-/// Not written yet either, for the same reason and in the same way.
-pub fn could_join(_contact_id: &str, groups: &[Group]) -> Vec<Group> {
-    groups.to_vec()
+/// One predicate for both, so the complement really is the complement. Two
+/// filters written out separately are two places for the comparison to drift,
+/// and a filter that let a group through both ways would put the group somebody
+/// is leaving on the list of places to go.
+fn is_in(contact_id: &str, group: &Group) -> bool {
+    group.member_ids.iter().any(|member| member == contact_id)
 }
 
 /// Said when a contact has been moved out of one group and into another.
 ///
-/// Not written yet. What is here is [`put_in`], which is what a move says when
-/// somebody writes it as the put-in that already ships: it names where the
-/// contact arrived and says nothing about where it came from, so the one fact
-/// that tells a move from a copy is missing from the only sentence that reports
-/// it.
+/// Both groups and both counts, through [`spoken`] so the numbers read the way
+/// every other group count in this program reads. Naming only where the contact
+/// arrived is what a move written as the put-in says, and heard rather than
+/// seen it is indistinguishable from a copy: the whole of what makes a move a
+/// move is the group that is no longer named.
+///
+/// It does not carry [`taken_out`]'s reassurance that the contact is still in
+/// the address book, and that is a decision rather than an omission. That
+/// sentence exists because taking somebody out of a group sits one line from
+/// Delete and one of the two cannot be undone. This one ends by naming a group
+/// the contact is now in, which shows they are still there without saying so,
+/// and a third clause on a sentence already carrying two names and two counts
+/// is a sentence people learn to talk over.
 pub fn moved_between(
     person: &str,
     out_of: &str,
@@ -212,28 +236,34 @@ pub fn moved_between(
     into: &str,
     into_members: usize,
 ) -> String {
-    let _ = (out_of, out_of_members);
-    put_in(person, into, into_members)
+    format!(
+        "{person} moved out of {}, and into {}.",
+        spoken(out_of, out_of_members),
+        spoken(into, into_members)
+    )
 }
 
 /// Said when a contact is in no group at all, so a move has nothing to leave.
 ///
-/// Not written yet: one sentence shared with [`in_every_group`], which is what
-/// somebody writes when both cases look from the inside like "there is nowhere
-/// to go". They are opposite problems with opposite remedies, and a person who
-/// hears the same words for both learns nothing from either.
+/// Names the command that fixes it, because "there is nowhere to move to" is
+/// true and useless. The remedy is a different line on the same menu, and
+/// somebody working down that menu by ear has already passed it.
 pub fn in_no_group(person: &str) -> String {
-    nowhere_to_move(person)
+    format!(
+        "{person} is not in any group, so there is nothing to move out of. Put in a group first."
+    )
 }
 
 /// Said when a contact is already in every group there is.
+///
+/// The opposite problem to [`in_no_group`] with the opposite remedy, which is
+/// why it is a second sentence rather than one shared "there is nowhere to go".
+/// One of them says to file the contact somewhere; this one says to make
+/// somewhere to file it.
 pub fn in_every_group(person: &str) -> String {
-    nowhere_to_move(person)
-}
-
-/// The one sentence the two cases above share while neither is written.
-fn nowhere_to_move(person: &str) -> String {
-    format!("There is nowhere to move {person} to.")
+    format!(
+        "{person} is already in every group there is, so there is nowhere to move to. Make another group first."
+    )
 }
 
 /// What is said once a group has been made.
