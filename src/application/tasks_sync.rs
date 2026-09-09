@@ -107,6 +107,21 @@ pub struct TaskSyncResult {
     /// change is waiting on a setting, and one error per waiting task on every
     /// sync from now on is how a warning somebody needs stops being read.
     pub waiting_on_the_setting: usize,
+    /// Deletions held back because the copy that is to replace them has not
+    /// reached the provider yet.
+    ///
+    /// One half of a move of a task the provider holds. Sending the deletion
+    /// while the new copy is still waiting would ask the provider to destroy
+    /// the only copy it has.
+    ///
+    /// Its own count rather than part of [`Self::waiting_on_the_setting`],
+    /// although both are counts of something that did not happen. What fixes
+    /// them is different, and that is the whole of what somebody hearing the
+    /// number can do about it: one is fixed by turning a setting on, and the
+    /// sentence says so; this one is fixed by a sync succeeding and by nothing
+    /// the person can do. Folding them together would name Allow Changes at
+    /// somebody whose setting is already on.
+    pub waiting_on_the_new_copy: usize,
     /// The provider refused a change because of what this application is
     /// allowed to do, rather than because of the change.
     ///
@@ -1385,6 +1400,23 @@ mod tests {
         lists_cut_short: bool,
         /// What this service makes of a change sent to it.
         writes: Writes,
+        /// Every task this service was asked to delete, in the order asked.
+        ///
+        /// The only sound way to assert that a delete did not happen. Reading
+        /// it off `TaskSyncResult` cannot do it: a delete refused before it
+        /// leaves the machine is counted as waiting on the setting rather than
+        /// pushed into `errors`, so `errors.is_empty()` is true whether the
+        /// call was attempted or not, and which of the two it means depends on
+        /// the settings file of whoever is running the tests. An assertion
+        /// whose emptiness has two causes is not an assertion about either.
+        ///
+        /// Recorded before the answer rather than after, because the question
+        /// is whether the call reached the service at all and a refusal is
+        /// still a call that reached it.
+        ///
+        /// A `Mutex` rather than a `RefCell` because these methods take
+        /// `&self` inside futures the sync holds across its own awaits.
+        deleted: std::sync::Mutex<Vec<String>>,
     }
 
     /// What a provider does with a change this computer sends it.
@@ -1433,6 +1465,22 @@ mod tests {
                 return PagedRead::cut_short(tasks);
             }
             PagedRead::whole(tasks)
+        }
+
+        /// Note that this service was asked to delete a task.
+        fn asked_to_delete(&self, task_id: &str) {
+            self.deleted
+                .lock()
+                .expect("the record of what this service was asked to delete")
+                .push(task_id.to_string());
+        }
+
+        /// What this service was asked to delete, in the order asked.
+        fn what_it_was_asked_to_delete(&self) -> Vec<String> {
+            self.deleted
+                .lock()
+                .expect("the record of what this service was asked to delete")
+                .clone()
         }
 
         /// What a test that never meant to send anything answers a write with.
@@ -1509,8 +1557,9 @@ mod tests {
             &self,
             _token: &str,
             _list_id: &str,
-            _task_id: &str,
+            task_id: &str,
         ) -> Result<()> {
+            self.asked_to_delete(task_id);
             self.answer(|| ())
         }
 
@@ -1550,7 +1599,8 @@ mod tests {
             })
         }
 
-        async fn ms_delete_task(&self, _token: &str, _list_id: &str, _task_id: &str) -> Result<()> {
+        async fn ms_delete_task(&self, _token: &str, _list_id: &str, task_id: &str) -> Result<()> {
+            self.asked_to_delete(task_id);
             self.answer(|| ())
         }
     }
@@ -1718,6 +1768,7 @@ mod tests {
             sent: 5,
             local_only: 6,
             waiting_on_the_setting: 12,
+            waiting_on_the_new_copy: 13,
             needs_sign_in: false,
             replaced: 7,
             lists_removed: 8,
@@ -1732,6 +1783,7 @@ mod tests {
             sent: 50,
             local_only: 60,
             waiting_on_the_setting: 120,
+            waiting_on_the_new_copy: 130,
             needs_sign_in: false,
             replaced: 70,
             lists_removed: 80,
@@ -1748,6 +1800,7 @@ mod tests {
                 sent: 55,
                 local_only: 66,
                 waiting_on_the_setting: 132,
+                waiting_on_the_new_copy: 143,
                 needs_sign_in: false,
                 replaced: 77,
                 lists_removed: 88,
@@ -2951,6 +3004,204 @@ mod tests {
         );
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(result.sent, 0);
+    }
+
+    /// An account holding a task in one list and a second list to move it to.
+    ///
+    /// The fixture for the four tests either side of the guard below. It builds
+    /// the half-finished move through the write that really produces one rather
+    /// than by hand, so a test cannot pass against a note the production path
+    /// would never have written.
+    fn a_move_of_a_task_google_holds(name: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(name);
+        a_list_named(&cache, "google:from", "Work");
+        a_list_named(&cache, "google:to", "Home");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t1".to_string(),
+                task_list_id: Some("google:from".to_string()),
+                ..task("x")
+            })
+            .expect("a task the provider holds");
+        let held = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the task");
+        cache
+            .move_a_task_the_provider_holds(&held, "google:to", "task-new")
+            .expect("the move to be written");
+        cache
+    }
+
+    /// A Google service that takes whatever it is sent.
+    fn a_google_service_that_accepts() -> Scripted {
+        Scripted {
+            google_lists: vec![GoogleTaskList {
+                id: "to".to_string(),
+                title: "Home".to_string(),
+            }],
+            writes: Writes::Accepted,
+            ..Default::default()
+        }
+    }
+
+    /// The push, run against one provider.
+    async fn push_against(cache: &MessageCache, service: &Scripted) -> TaskSyncResult {
+        let mut result = TaskSyncResult::default();
+        push_tasks(
+            cache,
+            service,
+            "token",
+            "acc-1",
+            Provider::Google,
+            &mut result,
+        )
+        .await;
+        result
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_waiting_on_a_copy_that_has_not_gone_is_not_sent() {
+        // The provider still holds only the copy this note would delete. Send
+        // it now and if the create then fails the task is at no provider at
+        // all and exists only on this computer, which is the one thing in this
+        // milestone that can lose somebody's work.
+        //
+        // Asserted against what the service was asked to do rather than against
+        // an empty error list, because a delete refused by Allow Changes is
+        // counted rather than reported and an empty error list would be true
+        // either way.
+        let cache = a_move_of_a_task_google_holds("waiting_on_a_copy");
+        let service = a_google_service_that_accepts();
+
+        let result = push_against(&cache, &service).await;
+
+        assert!(
+            service.what_it_was_asked_to_delete().is_empty(),
+            "the provider was asked to delete the only copy it has: {:?}",
+            service.what_it_was_asked_to_delete()
+        );
+        assert_eq!(result.waiting_on_the_new_copy, 1);
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .iter()
+                .all(|gone| gone.so_far.still_owed()),
+            "a deletion nobody sent was recorded as taken"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_waiting_on_a_copy_that_has_gone_is_sent() {
+        // The twin, and the two are worth little apart. A test that a call did
+        // not happen passes just as well when the whole path is broken, so the
+        // same fixture one step further on has to show the call really does
+        // happen once nothing is holding it.
+        //
+        // Passed on arrival: without the guard every deletion is sent, so this
+        // is the drift guard for the guard rather than a red.
+        let cache = a_move_of_a_task_google_holds("copy_has_gone");
+        cache
+            .mark_task_sent("task-new", Some("2026-07-01T10:00:00Z"), None)
+            .expect("the copy reaching the provider");
+        let service = a_google_service_that_accepts();
+
+        let result = push_against(&cache, &service).await;
+
+        assert_eq!(
+            service.what_it_was_asked_to_delete(),
+            vec!["google:t1".to_string()],
+            "the old copy was left at the provider after the new one arrived"
+        );
+        assert_eq!(result.waiting_on_the_new_copy, 0);
+        assert!(
+            cache
+                .deleted_tasks("acc-1")
+                .expect("the deletions")
+                .iter()
+                .all(|gone| !gone.so_far.still_owed()),
+            "a deletion the provider took is still recorded as owed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_deletion_waiting_on_a_copy_that_is_no_longer_there_at_all_is_sent() {
+        // The note nothing will ever unblock. Decided as send, and the reason
+        // is what the reachable way of getting here is: somebody moved a task
+        // and then deleted it, which means they want it gone, and the old copy
+        // at the provider is what is left of it. The alternative is a note that
+        // waits for ever, which keeps the task off this computer and at the
+        // provider with nothing left to say why.
+        //
+        // Passed on arrival, for the same reason as its neighbour above.
+        let cache = a_move_of_a_task_google_holds("copy_is_gone_for_good");
+        cache
+            .drop_synced_task("task-new")
+            .expect("the copy going before it was ever sent");
+        let service = a_google_service_that_accepts();
+
+        let result = push_against(&cache, &service).await;
+
+        assert_eq!(
+            service.what_it_was_asked_to_delete(),
+            vec!["google:t1".to_string()],
+            "a note nothing can unblock is waiting for ever"
+        );
+        assert_eq!(result.waiting_on_the_new_copy, 0);
+    }
+
+    #[tokio::test]
+    async fn test_an_ordinary_deletion_is_not_held_back_by_the_new_question() {
+        // A deletion that is not half of a move waits for nothing, and the new
+        // column must not turn every deletion this program has ever made into
+        // one that is held.
+        //
+        // Passed on arrival, for the same reason as the two above.
+        let cache = a_cache("ordinary_deletion_still_goes");
+        a_list_named(&cache, "google:to", "Home");
+        cache
+            .save_task(&TaskEntry {
+                id: "google:t9".to_string(),
+                task_list_id: Some("google:to".to_string()),
+                ..task("x")
+            })
+            .expect("a task");
+        cache.delete_task("google:t9").expect("a deletion");
+        let service = a_google_service_that_accepts();
+
+        let result = push_against(&cache, &service).await;
+
+        assert_eq!(
+            service.what_it_was_asked_to_delete(),
+            vec!["google:t9".to_string()],
+            "an ordinary deletion is being held back by something"
+        );
+        assert_eq!(result.waiting_on_the_new_copy, 0);
+    }
+
+    #[test]
+    fn test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting() {
+        // Two counts of things that did not happen, and what a person can do
+        // about them is not the same. Turning Allow Changes on sends the first
+        // and does nothing at all for the second, so a sentence naming the
+        // setting over both would send somebody to a screen that cannot help.
+        let said = TaskSyncResult {
+            waiting_on_the_new_copy: 1,
+            waiting_on_the_setting: 1,
+            ..TaskSyncResult::default()
+        }
+        .summary();
+
+        assert!(
+            said.contains("1 removal waiting for the new copy to be sent"),
+            "{said}"
+        );
+        assert!(said.contains("1 change is waiting here"), "{said}");
+        assert!(
+            !said.contains("2 changes are waiting here"),
+            "the two were folded into one count: {said}"
+        );
     }
 
     #[tokio::test]
