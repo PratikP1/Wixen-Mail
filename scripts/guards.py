@@ -544,6 +544,44 @@ def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
     )
 
 
+def the_filter_that_forbids_recounting_everything(
+    only: str | None, touched_by: str | None, remeasure: list[str] | None
+) -> str | None:
+    """Which narrowing was asked for alongside --recount-everything, if any.
+
+    That mode writes a fingerprint on every record in the file, having measured
+    nothing, and it returns before any filter is applied. So asking for one
+    record and a recount rewrites all of them, including the records already
+    known to be short, whose whole value is that nothing has stamped them yet.
+    One mistyped invocation is the whole file.
+
+    Refused rather than narrowed, which is the smaller and safer of the two
+    ways out. Honouring the filter would give the mode a second meaning that
+    reads identically at the call site, and its own message already says a
+    count written this way is the weaker claim: no test has been added to these
+    files since somebody looked, never that a record is right. The weaker claim
+    over a narrower set is still the weaker claim.
+
+    >>> the_filter_that_forbids_recounting_everything(None, None, None) is None
+    True
+    >>> the_filter_that_forbids_recounting_everything("deletion", None, None)
+    'a name to match: deletion'
+    >>> the_filter_that_forbids_recounting_everything(None, "main", None)
+    '--touched-by main'
+    >>> the_filter_that_forbids_recounting_everything(None, None, ["a"])
+    '--remeasure with 1 name'
+    >>> the_filter_that_forbids_recounting_everything(None, None, ["a", "b"])
+    '--remeasure with 2 names'
+
+    All of them, because a run that asked for two narrowings has two things to
+    take out, and being told about one of them costs a second round trip:
+
+    >>> the_filter_that_forbids_recounting_everything("deletion", "main", None)
+    'a name to match: deletion, --touched-by main'
+    """
+    return None
+
+
 def files_changed_since(ref: str) -> list[str]:
     """What this branch has changed, as paths relative to the repository root.
 
@@ -929,6 +967,23 @@ def main() -> int:
         return 1
 
     if asked.recount_everything:
+        narrowed = the_filter_that_forbids_recounting_everything(
+            asked.only, asked.touched_by, asked.remeasure
+        )
+        if narrowed:
+            print(
+                "\n--recount-everything writes a fingerprint on every record in "
+                "the file, so it\ncannot also be narrowed, and this run asked for "
+                f"{narrowed}.\n\n"
+                "It measures nothing. A count written this way says only that no "
+                "test has been\nadded to those files since somebody looked, never "
+                "that a record is right, so\nletting it through on a narrower set "
+                "would put that weaker claim on every\nrecord in the file anyway, "
+                "including the ones already known to be short.\n\n"
+                "Drop one of the two.\n"
+            )
+            return 1
+
         # Loud, and it says the thing it does not do. A count written here is
         # "no test has been added to these files since somebody looked", which
         # is a weaker claim than "this record is right" and reads exactly like
