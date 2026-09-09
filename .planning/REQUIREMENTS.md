@@ -925,15 +925,37 @@ write path added by this milestone passes through that gate.
     `related_event_id`, and nothing that holds it. Overturning the decision or narrowing the
     requirement is Pratik's call.
 
+    **Answered 2026-09-06 by decisions 3 and 4, and carried out by 2026-09-09.** All five, and
+    the "no container in the schema at all" reading above is the one thing here that was wrong.
+    A reminder has an `account_id`, `NOT NULL`, in the same list of columns that sentence
+    quotes, and an account is a container: it is what `get_reminders_for_account` selects on and
+    what decides which reminders a person is looking at. What made it invisible is that nothing
+    had ever asked a reminder which account it was in. The context-menu test the paragraph names
+    stayed green through both widenings, because it holds the menus to `applies_to` in both
+    directions and only reddens on a half-widening.
+
+    One storage finding, recorded because nothing above says it. `save_reminder` is an upsert
+    whose `ON CONFLICT(id) DO UPDATE SET` list names eight columns and not `account_id`, so it
+    writes the account on insert and ignores it on update. A move built on it reports success
+    and moves nothing.
+
   - [S] `docs/IMPLEMENTATION_STATUS.md:93` and `docs/ALPHA_TESTING.md:116`, both corrected
     2026-09-04. Until then both said moving and copying work for mail only, which is what the
     previous version of this line quoted and what `docs/changelog.md:2152` had already made
     false.
 
-  - [D] Events, tasks and notes support move and copy between their containers with the same
-    two keyboard commands in every module, because one key means one thing in every module
-    here. Move already does. Whether contacts and reminders join them is the open question
-    above: the code argues they should not, and for reminders there is nothing to move between.
+  - [D] All five modules support move and copy with the same two keyboard commands, because one
+    key means one thing in every module here. **Decided 2026-09-06 by decisions 3 and 4, and
+    true in the code from 2026-09-09.**
+
+    The open question above was whether contacts and reminders join the other three, and the
+    reasoning that made it hard was right about both and about the wrong container each time.
+    A contact is in as many groups as somebody puts it in, so there is no one home to move it
+    out of. The answer is that the program asks which one it is leaving, and that question is
+    the move. A reminder is filed nowhere, because the module sorts reminders into buckets
+    worked out from when each is due and a bucket is not a place. The answer is the container a
+    reminder has always had and nothing had looked at: the account. So neither needed a new
+    table or an invented concept, and neither goes through the path that names one container.
 
   - [D] Copy leaves the original untouched and move does not, and each announces which it did.
   - [D] The Action menu carries move and copy because they act on the selection; File, New

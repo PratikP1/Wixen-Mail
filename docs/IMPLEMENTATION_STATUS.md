@@ -90,8 +90,15 @@ key on a task and choose "Move to another list", or use Ctrl+Shift+V. Events
 and notes have the same command. What has not happened is a move reaching a
 provider, because no account has ever been used with this program.
 
+Contacts and reminders have the same two commands now, and for them there is no
+provider to reach. A contact moves between groups and a reminder moves between
+accounts, and neither groups nor reminders are synced anywhere, so those moves
+are finished when they are written here.
+
 This entry used to say that moving and copying work for mail only. That stopped
-being true when the command was added and nobody corrected it here.
+being true when the command was added and nobody corrected it here. It then said
+events, tasks and notes for a while after contacts and reminders had joined
+them, which is the same fault a size smaller.
 
 ## Built, and never run against a real account
 

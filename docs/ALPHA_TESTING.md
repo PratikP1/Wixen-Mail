@@ -119,6 +119,11 @@ Written down so you do not spend time reporting things already on the list.
   have the same command. What no build has done is send that move to a real
   account, because none has ever been used. This entry used to say a task
   cannot be moved at all, which stopped being true when the command was added.
+- **Contacts and reminders move too, and those moves reach nothing by design.**
+  A contact moves between groups and a reminder moves between accounts, with
+  the same two keys. Neither contact groups nor reminders are synced anywhere,
+  so a move there is finished on this computer and there is no provider waiting
+  to hear about it. Nobody has heard either command with a screen reader.
 - **Importing a file can join two people who share a name.** Two cards in one
   imported file are read as one person when nothing but their addresses tells
   them apart. Two people with the same name, and nothing else on their cards,
