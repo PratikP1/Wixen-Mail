@@ -40,7 +40,9 @@ use wixen_mail::application::destinations::Filing;
 use wixen_mail::application::new_item::ItemKind;
 use wixen_mail::application::tasks_sync::a_provider_holds;
 use wixen_mail::data::message_cache::{MessageCache, TaskEntry, TaskListEntry};
-use wixen_mail::presentation::managers::file_under;
+use wixen_mail::presentation::managers::{
+    a_removal_will_have_to_be_sent, file_under, will_have_to_be_sent,
+};
 
 /// The account every fixture here stores under.
 const ACCOUNT: &str = "acct";
@@ -56,6 +58,12 @@ const ACCOUNT: &str = "acct";
 const FROM: &str = "google:from";
 const TO: &str = "google:to";
 const UNTOUCHED: &str = "google:untouched";
+
+/// A list made on this computer, sitting on the same account.
+///
+/// `store_new_container` mints `tasklist-<when>` with no provider anywhere in
+/// it, and `push_tasks` reads exactly that to decide a task in it is kept here.
+const MADE_HERE: &str = "tasklist-mine";
 
 /// The identifier Google gave the task, which is what makes this a move the old
 /// refusal was about.
@@ -333,6 +341,59 @@ fn test_the_moved_task_is_waiting_to_be_sent_and_carries_no_stamp_from_the_provi
             .remote_updated,
         None,
         "the new copy carries a stamp for a task no provider has ever seen"
+    );
+}
+
+#[test]
+fn test_moving_a_task_a_provider_holds_leaves_something_to_send_wherever_it_goes() {
+    // The gap this plan opened, and the sentence that would have been wrong.
+    //
+    // Whether anything is waiting was answered by the destination alone, which
+    // is right for every filing that existed before this plan. A move of a task
+    // a provider holds is the first one that leaves something to send **wherever
+    // it goes**: the provider still holds its own copy in the list the task
+    // started in, and something has to ask for that copy to go.
+    //
+    // A list made on this computer is where the two answers come apart. The
+    // sync keeps a task in such a list here and never sends it, so the
+    // destination question says no and says it correctly. Announcing the move as
+    // finished would be a move reported as done while a deletion at the provider
+    // was owed for ever, which is exactly the repudiation this plan's threat
+    // register lists.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store_holding_the_task(&dir);
+    a_list(&cache, MADE_HERE, "Mine");
+
+    assert!(
+        !will_have_to_be_sent(&cache, ItemKind::Task, MADE_HERE),
+        "a list made on this computer is one the sync keeps here, so the destination \
+         question has to say nothing is waiting for it"
+    );
+    assert!(
+        a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Moving, HELD),
+        "moving a task a provider holds leaves the provider owed a removal, and nothing \
+         says so"
+    );
+}
+
+#[test]
+fn test_nothing_is_owed_by_a_copy_or_by_a_task_no_provider_holds() {
+    // The other side of the same question, and the reason it is not simply
+    // "true for a task". A copy leaves the provider's own item exactly where it
+    // is, so the provider is owed nothing and saying otherwise would announce a
+    // change that never happens. A task no provider has seen has no copy
+    // anywhere else to remove. A note is held by nobody at all.
+    assert!(
+        !a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Copying, HELD),
+        "a copy claimed the provider was owed a removal of the original"
+    );
+    assert!(
+        !a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Moving, "task-1"),
+        "a task no provider holds claimed a removal was owed somewhere"
+    );
+    assert!(
+        !a_removal_will_have_to_be_sent(ItemKind::Note, Filing::Moving, HELD),
+        "a note claimed a removal was owed, and a note goes nowhere"
     );
 }
 

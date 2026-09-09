@@ -6418,8 +6418,15 @@ fn file_it(
     // deciding, because `allowed_for` reads the stored settings file and a
     // function that does that cannot be asked a question in a test without
     // being told the answer by whoever's machine is running it.
+    // Two questions with two subjects, and either one saying yes means
+    // something is waiting. The destination decides whether the item's new home
+    // is somewhere a sync sends anything; the item decides whether the provider
+    // is owed the removal of a copy it already has. A move of a task a provider
+    // holds is the first filing where the second can be yes while the first is
+    // no.
     let waiting = crate::application::pim_command::what_is_waiting(
-        will_have_to_be_sent(cache, kind, &into.id),
+        will_have_to_be_sent(cache, kind, &into.id)
+            || a_removal_will_have_to_be_sent(kind, filing, id),
         crate::application::allowed::allowed_for(&account_id).personal_information,
     );
 
@@ -6720,6 +6727,62 @@ pub fn will_have_to_be_sent(
         // here rather than inheriting "nothing is ever waiting", which is the
         // answer that says nothing when something really is.
         ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => false,
+    }
+}
+
+/// Whether filing this item this way leaves the provider owed a removal of the
+/// copy it already holds.
+///
+/// The companion to [`will_have_to_be_sent`], and it is a second function
+/// because it has a second subject. That one asks about the destination. This
+/// one asks about the item, and both have to be answered.
+///
+/// A move of a task a provider holds leaves a deletion owed **wherever it
+/// goes**. The provider still has the task in the list it started in, and
+/// something has to ask for that copy to go. So the destination question can
+/// answer no while a change really is waiting: a task Google holds, moved into a
+/// list made on this computer, is kept here by `push_tasks` and never sent, and
+/// [`will_have_to_be_sent`] says so correctly. The deletion at Google is owed all
+/// the same, and a move announced with nothing said about the account would be a
+/// move reported as done while the account had not been told, which is the
+/// repudiation `05-08`'s threat register lists as T-05-08-03.
+///
+/// **Not folded into [`will_have_to_be_sent`] by giving it the item.** That
+/// function is deliberately not given anything it could answer the wrong
+/// question from, and its whole argument, with seven fixtures behind it, is that
+/// the answer comes from the destination. Two subjects are two functions.
+///
+/// A copy owes nothing, because the provider's own item is left exactly where it
+/// is, and claiming a removal for one would announce a change that never
+/// happens. Only a task, because only a task's move is built: an event a
+/// provider holds is refused by [`moving_can_be_told`] before this is reached,
+/// and if that is ever lifted this arm has to answer rather than inherit "no".
+///
+/// Public for the reason its neighbours are: the fixture is a stored task and a
+/// stored list rather than a window, and a `#[test]` in this file costs 44 guard
+/// records a re-measurement each.
+pub const fn a_removal_will_have_to_be_sent(
+    kind: crate::application::new_item::ItemKind,
+    filing: crate::application::destinations::Filing,
+    id: &str,
+) -> bool {
+    use crate::application::new_item::ItemKind;
+
+    if !filing.needs_the_holder_told() {
+        return false;
+    }
+    match kind {
+        // Answered as it was before `05-08` gave a task's move a second half.
+        // The real answer is whether a provider holds this one.
+        ItemKind::Task => {
+            let _ = id;
+            false
+        }
+        ItemKind::Event
+        | ItemKind::Note
+        | ItemKind::Mail
+        | ItemKind::Contact
+        | ItemKind::Reminder => false,
     }
 }
 
