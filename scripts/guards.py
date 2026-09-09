@@ -579,7 +579,14 @@ def the_filter_that_forbids_recounting_everything(
     >>> the_filter_that_forbids_recounting_everything("deletion", "main", None)
     'a name to match: deletion, --touched-by main'
     """
-    return None
+    asked_for: list[str] = []
+    if only:
+        asked_for.append(f"a name to match: {only}")
+    if touched_by:
+        asked_for.append(f"--touched-by {touched_by}")
+    if remeasure:
+        asked_for.append(f"--remeasure with {how_many(len(remeasure), 'name')}")
+    return ", ".join(asked_for) or None
 
 
 def files_changed_since(ref: str) -> list[str]:
