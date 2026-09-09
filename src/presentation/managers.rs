@@ -6761,23 +6761,31 @@ pub fn will_have_to_be_sent(
 /// Public for the reason its neighbours are: the fixture is a stored task and a
 /// stored list rather than a window, and a `#[test]` in this file costs 44 guard
 /// records a re-measurement each.
-pub const fn a_removal_will_have_to_be_sent(
+pub fn a_removal_will_have_to_be_sent(
     kind: crate::application::new_item::ItemKind,
     filing: crate::application::destinations::Filing,
     id: &str,
 ) -> bool {
     use crate::application::new_item::ItemKind;
 
+    // A copy leaves the provider's own item exactly where it is, so nothing is
+    // owed anywhere. Asked first, because it is true of every kind.
     if !filing.needs_the_holder_told() {
         return false;
     }
     match kind {
-        // Answered as it was before `05-08` gave a task's move a second half.
-        // The real answer is whether a provider holds this one.
-        ItemKind::Task => {
-            let _ = id;
-            false
-        }
+        // The identifier is the whole answer, the same way it is for the push
+        // and for [`will_have_to_be_sent`], so the prefixes stay known in one
+        // place.
+        ItemKind::Task => crate::application::tasks_sync::a_provider_holds(id),
+        // An event a server holds is refused a move by [`moving_can_be_told`]
+        // before this is reached, so there is no move here that could owe one.
+        // Written out rather than caught by a catch-all: if that refusal is ever
+        // lifted, this arm has to answer rather than inherit "nothing is owed",
+        // which is the answer that says nothing when something really is.
+        //
+        // A note is held by nobody, and the other three are never filed into a
+        // container at all.
         ItemKind::Event
         | ItemKind::Note
         | ItemKind::Mail

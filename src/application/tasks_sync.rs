@@ -3326,8 +3326,13 @@ mod tests {
         );
 
         let said = result.summary();
+        // Compared against the sentence itself rather than against a copy of its
+        // words. `allowed.rs`'s own comment records that two hand-written copies
+        // of this sentence drifted and only one of them was ever corrected, so a
+        // test holding a third copy would be the same mistake in a place nobody
+        // reads for wording.
         assert!(
-            said.contains("1 change is waiting here"),
+            said.contains(&crate::application::allowed::changes_waiting_here(1)),
             "the change held by the setting is not said: {said}"
         );
         assert!(

@@ -113,16 +113,37 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
-- **Moving a task between lists has never reached a provider.** The command is
-  there and works on what is held on this computer: press the menu key on a
-  task and choose "Move to another list", or use Ctrl+Shift+V. Events and notes
-  have the same command. What no build has done is send that move to a real
-  account, because none has ever been used. This entry used to say a task
-  cannot be moved at all, which stopped being true when the command was added.
-  What you hear now says so: a move into a list or calendar your account holds
-  ends "and has not reached the account yet", or names Allow Changes where that
-  setting is off. Nobody has heard it, and whether it is useful or wearing
-  after the twentieth move is one of the things worth telling us.
+- **Moving a task between lists has never reached a provider, and this is the
+  one thing on this page that could lose a task.** The command is there: press
+  the menu key on a task and choose "Move to another list", or use
+  `Ctrl+Shift+V`. Events and notes have the same command.
+
+  Until now this worked only on tasks made on this computer, and a task your
+  account already held was refused. It is no longer refused. Moving one asks
+  your provider to make the task again in the new list and then to delete it
+  from the old one, and the order is deliberate: the new copy is created first,
+  so a failure between the two leaves the task in **both** lists at your
+  provider rather than in neither. On this computer it is in exactly one list at
+  every moment, whatever happens.
+
+  What no build has done is make either call to a real account, because no
+  account has ever been used with this program. Whether Google or Microsoft
+  really accepts a new copy in a second list while the first still holds the
+  task, and really accepts the delete that follows, is untested. If you try this
+  on an account that matters, the thing worth checking afterwards is your task
+  lists at the provider, in a browser or on a phone: one copy in the new list is
+  what should be there, two is a failure that the next sync should tidy, and
+  none is the failure this was built to prevent and is worth telling us about
+  straight away.
+
+  What you hear when you move something says whether the account has been told:
+  a move into a list or calendar your account holds ends "and has not reached
+  the account yet", or names Allow Changes where that setting is off. Nobody has
+  heard it, and whether it is useful or wearing after the twentieth move is one
+  of the things worth telling us.
+
+  Moving an event between calendars is still refused, and says so. That is the
+  same job for a different kind of item and it has not been built.
 - **Contacts and reminders move too, and those moves reach nothing by design.**
   A contact moves between groups and a reminder moves between accounts, with
   the same two keys. Neither contact groups nor reminders are synced anywhere,

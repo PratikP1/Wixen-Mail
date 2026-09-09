@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 206
+open_count: 215
 waived_count: 0
 fixed_count: 15
-total_count: 221
-last_updated: 2026-09-09T09:04:47.221Z
+total_count: 230
+last_updated: 2026-09-09T21:16:53.634Z
 ---
 
 # Broken Windows Ledger
@@ -236,6 +236,15 @@ last_updated: 2026-09-09T09:04:47.221Z
 | 219 | 05 | unrun-verify | src/application/deletions.rs |  | Whether seven days is long enough for a move made just before a laptop is shut for a fortnight has never been tried. The note itself is safe: let_go_of_deletions_taken_before only releases a deletion a provider has taken, so one still waiting for its new copy survives however long it waits, which was read on main at 143a37f rather than assumed. What is released by the clock is the memory of a deletion already taken, and the read consults that memory to stop a provider writing the thing back down. A move that completes on day one and a machine that comes back on day fifteen is the case nobody has run | open |  | 2026-09-09T09:04:32.089Z |  |
 | 220 | 05 | todo | src/data/message_cache/tasks.rs |  | rename_task orphans a task's subtasks and nobody decided that it should. It calls drop_synced_task on the old identifier, which sets parent_task_id to null for every child, so a task made on this computer loses its subtask tree the moment a provider names it. That is older than this plan and nothing in this plan reaches it. move_a_task_the_provider_holds deliberately answers the same question the other way, pointing the children at the new identifier, because the parent has not gone but been renamed, and copying the null would have flattened a tree on every move. The two now disagree on purpose and one of them is wrong | open |  | 2026-09-09T09:04:46.509Z |  |
 | 221 | 05 | unrun-verify | tests/a_half_finished_task_move.rs |  | The failure this whole state exists for has never happened. A half-finished move is the create succeeding at the provider and the delete then failing, or the reverse, and nothing in this repository can produce either: no provider is called by this plan at all, and 05-08 makes the calls against fakes that answer from a script. Every test here builds the half-finished state by calling the write that produces it, which proves the state is held, survives a close and cannot exist half-written, and proves nothing about whether a real pair of calls leaves exactly that state | open |  | 2026-09-09T09:04:47.221Z |  |
+| 222 | 05 | unrun-verify | src/application/tasks_sync.rs |  | Whether a real provider accepts a create into a second list while the first still holds the task, which is the state a provider-held task move passes through on purpose | open |  | 2026-09-09T21:16:20.424Z |  |
+| 223 | 05 | unrun-verify | src/application/deletions.rs |  | Whether a real provider's list still names the old copy on the pull that follows the delete, and for how long. The seven-day memory in application::deletions is sized against a number nobody has measured | open |  | 2026-09-09T21:16:34.744Z |  |
+| 224 | 05 | unrun-verify | src/application/tasks_sync.rs |  | Whether a person hearing the move sentence and then the sync summary can tell a change waiting on a create from a change waiting on Allow Changes. The two are counted apart and only one names a remedy, and nobody has heard them side by side | open |  | 2026-09-09T21:16:35.427Z |  |
+| 225 | 05 | unrun-verify | src/service/tasks_api.rs |  | Whether Microsoft's notStarted, inProgress, waitingOnOthers and deferred survive a move. The new copy is created rather than updated and ms_task_to_entry rebuilds the row from Graph's answer, so remote_status is carried by the row up to the create and by Graph after it | open |  | 2026-09-09T21:16:36.063Z |  |
+| 226 | 05 | unrun-verify | src/application/tasks_sync.rs |  | Whether the identifier a provider hands back for the created copy is accepted by the same provider's delete for the old one, on an account signed in to both providers at once. Both passes read the same notes against the same account | open |  | 2026-09-09T21:16:36.731Z |  |
+| 227 | 05 | deviation | src/presentation/managers.rs |  | A task a provider holds moved into a list made on this computer: the create is counted local_only and never sent, so the deletion note waits for ever. Nothing is lost and the person can put it right by moving it into a synced list, but nothing tells them that. Tested and reported, not refused | open |  | 2026-09-09T21:16:51.492Z |  |
+| 228 | 05 | deviation | src/service/tasks_api.rs |  | google_task_to_entry sets created_at to empty, so a moved task loses when it was made once Google names the new copy. Pre-existing for every task created here and synced; a provider move now traverses it too | open |  | 2026-09-09T21:16:52.197Z |  |
+| 229 | 05 | unrun-verify | src/application/tasks_sync.rs |  | No test asserts that a task's fields survive the round trip through a provider's answer to the create. The Scripted fake returns a bare task, so the title comes back as Untitled task; a real provider echoes the body. Field survival is asserted on the local write only | open |  | 2026-09-09T21:16:52.910Z |  |
+| 230 | 05 | unrun-verify | src/presentation/managers.rs |  | Nobody has heard what a move of a provider-held task says. The clause is 05-06's and unchanged, and whether it carries the fact that the provider has not been told yet without wearing after twenty moves is a judgement about hearing it | open |  | 2026-09-09T21:16:53.634Z |  |
 
 ````json
 [
@@ -2889,6 +2898,114 @@ last_updated: 2026-09-09T09:04:47.221Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T09:04:47.221Z",
+    "resolved_at": null
+  },
+  {
+    "id": 222,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "Whether a real provider accepts a create into a second list while the first still holds the task, which is the state a provider-held task move passes through on purpose",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:20.424Z",
+    "resolved_at": null
+  },
+  {
+    "id": 223,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/deletions.rs",
+    "line": null,
+    "description": "Whether a real provider's list still names the old copy on the pull that follows the delete, and for how long. The seven-day memory in application::deletions is sized against a number nobody has measured",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:34.744Z",
+    "resolved_at": null
+  },
+  {
+    "id": 224,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "Whether a person hearing the move sentence and then the sync summary can tell a change waiting on a create from a change waiting on Allow Changes. The two are counted apart and only one names a remedy, and nobody has heard them side by side",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:35.427Z",
+    "resolved_at": null
+  },
+  {
+    "id": 225,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/service/tasks_api.rs",
+    "line": null,
+    "description": "Whether Microsoft's notStarted, inProgress, waitingOnOthers and deferred survive a move. The new copy is created rather than updated and ms_task_to_entry rebuilds the row from Graph's answer, so remote_status is carried by the row up to the create and by Graph after it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:36.063Z",
+    "resolved_at": null
+  },
+  {
+    "id": 226,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "Whether the identifier a provider hands back for the created copy is accepted by the same provider's delete for the old one, on an account signed in to both providers at once. Both passes read the same notes against the same account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:36.731Z",
+    "resolved_at": null
+  },
+  {
+    "id": 227,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "A task a provider holds moved into a list made on this computer: the create is counted local_only and never sent, so the deletion note waits for ever. Nothing is lost and the person can put it right by moving it into a synced list, but nothing tells them that. Tested and reported, not refused",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:51.492Z",
+    "resolved_at": null
+  },
+  {
+    "id": 228,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/service/tasks_api.rs",
+    "line": null,
+    "description": "google_task_to_entry sets created_at to empty, so a moved task loses when it was made once Google names the new copy. Pre-existing for every task created here and synced; a provider move now traverses it too",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:52.197Z",
+    "resolved_at": null
+  },
+  {
+    "id": 229,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "No test asserts that a task's fields survive the round trip through a provider's answer to the create. The Scripted fake returns a bare task, so the title comes back as Untitled task; a real provider echoes the body. Field survival is asserted on the local write only",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:52.910Z",
+    "resolved_at": null
+  },
+  {
+    "id": 230,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "Nobody has heard what a move of a provider-held task says. The clause is 05-06's and unchanged, and whether it carries the fact that the provider has not been told yet without wearing after twenty moves is a judgement about hearing it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T21:16:53.634Z",
     "resolved_at": null
   }
 ]

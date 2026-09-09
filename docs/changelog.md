@@ -57,6 +57,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   finishes it. You do not have to do anything, and you do not have to move the
   task again.
 
+  Said plainly, because it is the part worth knowing: if the move is interrupted
+  between the two calls, the task is in both lists at your provider until the
+  next sync, and it is never in neither. Closing the program does not lose it.
+  Turning Allow Changes off holds both calls rather than making one of them, and
+  the sync tells you a change is waiting and names the setting to turn on.
+
+  One case does not finish on its own, and you can put it right yourself. If you
+  move such a task into a list you made on this computer, the new copy stays
+  here, because a list made here is never sent anywhere, so the deletion at your
+  provider is never sent either. Nothing is lost: the task is here once and your
+  provider still has its own copy in the old list. Move it into a list your
+  account holds and the whole thing completes.
+
   **Known limitation, and it is the one that matters: no account has ever been
   used with this program, so no provider has ever accepted either call.**
   Everything above is how the program behaves against a service that answers
