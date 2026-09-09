@@ -20,6 +20,7 @@ pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
+pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub mod notes;
 mod outbox;

@@ -3,6 +3,34 @@
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, ReminderEntry};
 
+/// What taking a reminder to another account came to.
+///
+/// Three answers rather than a bare success, for the same reason
+/// [`MovedBetweenGroups`] has three: the two ways this can fail to happen are
+/// different from each other, neither is an error, and a caller told only
+/// "done" would say the reminder had moved when nothing was written.
+///
+/// [`MovedBetweenGroups`]: crate::data::message_cache::MovedBetweenGroups
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovedToAnotherAccount {
+    /// The row now belongs to the account it was sent to.
+    Moved,
+    /// It was already in that account, so nothing was written.
+    ///
+    /// Not an error and not a move. Writing it anyway would move `updated_at`
+    /// for an act that changed nothing, and say "moved to Work" to somebody
+    /// whose reminder was in Work all along. The chooser cannot offer this;
+    /// a route that did not go through the chooser can, which is why it is
+    /// answered here.
+    AlreadyThere,
+    /// No reminder has that identifier, so there was nothing to move.
+    ///
+    /// A reminder can be deleted in one window while another has it selected,
+    /// and the answer to a move aimed at a row that has gone is that the row
+    /// has gone, not that the move worked.
+    NoSuchReminder,
+}
+
 impl MessageCache {
     /// Put a reminder off until later.
     ///
@@ -68,6 +96,71 @@ impl MessageCache {
         Ok(())
     }
 
+    /// One reminder, by its identifier, whichever account holds it.
+    ///
+    /// Without an account, because the caller that needs this is asking which
+    /// account the row is in. Asking by account first would mean knowing the
+    /// answer before asking the question.
+    pub fn get_reminder(&self, id: &str) -> Result<Option<ReminderEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, account_id, title, description, due_datetime,
+                        is_completed, priority, repeat_rule, related_event_id,
+                        created_at, updated_at
+                 FROM reminders WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare reminder lookup: {}", e)))?;
+
+        stmt.query_row(rusqlite::params![id], read_reminder)
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(Error::Other(format!(
+                    "Failed to read a reminder: {}",
+                    other
+                ))),
+            })
+    }
+
+    /// Send a reminder to another account.
+    ///
+    /// **This is deliberately the implementation somebody writes first, and it
+    /// does not work.** Change the account on the row and save it. It is
+    /// written this way in the RED half so the test that catches it is a test
+    /// that has been red, and the green half replaces it.
+    pub fn move_reminder_to_account(
+        &self,
+        id: &str,
+        into: &str,
+        stamp: &str,
+    ) -> Result<MovedToAnotherAccount> {
+        if let Some(mut reminder) = self.get_reminder(id)? {
+            reminder.account_id = into.to_string();
+            reminder.updated_at = stamp.to_string();
+            self.save_reminder(&reminder)?;
+        }
+        Ok(MovedToAnotherAccount::Moved)
+    }
+
+    /// Put a second reminder in another account, leaving the first where it is.
+    ///
+    /// **Also deliberately wrong in the RED half**: the copy written as the
+    /// move by another name, which is the mistake a pair of acts sharing one
+    /// path invites. `None` when no reminder has that identifier.
+    pub fn copy_reminder_to_account(
+        &self,
+        id: &str,
+        into: &str,
+        as_id: &str,
+        stamp: &str,
+    ) -> Result<Option<String>> {
+        match self.move_reminder_to_account(id, into, stamp)? {
+            MovedToAnotherAccount::Moved => Ok(Some(as_id.to_string())),
+            MovedToAnotherAccount::AlreadyThere | MovedToAnotherAccount::NoSuchReminder => Ok(None),
+        }
+    }
+
     /// Get all reminders for an account, ordered by due date.
     pub fn get_reminders_for_account(&self, account_id: &str) -> Result<Vec<ReminderEntry>> {
         let mut stmt = self
@@ -82,21 +175,7 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to prepare reminders query: {}", e)))?;
 
         let rows = stmt
-            .query_map(rusqlite::params![account_id], |row| {
-                Ok(ReminderEntry {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    title: row.get(2)?,
-                    description: row.get(3)?,
-                    due_datetime: row.get(4)?,
-                    is_completed: row.get(5)?,
-                    priority: row.get(6)?,
-                    repeat_rule: row.get(7)?,
-                    related_event_id: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                })
-            })
+            .query_map(rusqlite::params![account_id], read_reminder)
             .map_err(|e| Error::Other(format!("Failed to query reminders: {}", e)))?;
 
         let mut reminders = Vec::new();
@@ -146,21 +225,7 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to prepare reminder search: {}", e)))?;
 
         let rows = stmt
-            .query_map(rusqlite::params![account_id, pattern], |row| {
-                Ok(ReminderEntry {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    title: row.get(2)?,
-                    description: row.get(3)?,
-                    due_datetime: row.get(4)?,
-                    is_completed: row.get(5)?,
-                    priority: row.get(6)?,
-                    repeat_rule: row.get(7)?,
-                    related_event_id: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                })
-            })
+            .query_map(rusqlite::params![account_id, pattern], read_reminder)
             .map_err(|e| Error::Other(format!("Failed to search reminders: {}", e)))?;
 
         let mut reminders = Vec::new();
@@ -171,6 +236,27 @@ impl MessageCache {
         }
         Ok(reminders)
     }
+}
+
+/// One row of the reminders table, in the order every query here selects them.
+///
+/// Written once. Three queries read the same eleven columns, and three copies
+/// of an eleven-field mapping are three places a column added to the table has
+/// to be remembered.
+fn read_reminder(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReminderEntry> {
+    Ok(ReminderEntry {
+        id: row.get(0)?,
+        account_id: row.get(1)?,
+        title: row.get(2)?,
+        description: row.get(3)?,
+        due_datetime: row.get(4)?,
+        is_completed: row.get(5)?,
+        priority: row.get(6)?,
+        repeat_rule: row.get(7)?,
+        related_event_id: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
 }
 
 #[cfg(test)]
@@ -292,6 +378,120 @@ mod tests {
         cache.delete_reminder("rem-1").unwrap();
         let reminders = cache.get_reminders_for_account("acct-1").unwrap();
         assert!(reminders.is_empty());
+    }
+
+    #[test]
+    fn test_a_move_between_accounts_is_the_one_column_save_reminder_will_not_write() {
+        // The finding this whole plan turns on, pinned as an assertion rather
+        // than left in a summary. `save_reminder` is an upsert whose
+        // `ON CONFLICT(id) DO UPDATE SET` list names eight columns and not
+        // `account_id`, so the obvious move, change the field and save it,
+        // writes everything else and leaves the account exactly where it was.
+        // It reports success while doing nothing, which is the one failure
+        // nobody working by ear could ever see.
+        let cache = test_cache();
+        one_due(&cache, "rem-1", "2026-07-31 14:43");
+
+        let mut sent = cache.get_reminder("rem-1").expect("read").expect("there");
+        sent.account_id = "acct-2".to_string();
+        sent.title = "Ring the dentist back".to_string();
+        cache.save_reminder(&sent).expect("save");
+
+        let after = cache.get_reminder("rem-1").expect("read").expect("there");
+        assert_eq!(
+            after.title, "Ring the dentist back",
+            "save_reminder stopped writing the columns it does write"
+        );
+        assert_eq!(
+            after.account_id, "acct-1",
+            "save_reminder has started writing account_id, so the trap this \
+             guards against has gone and the move can be built on it"
+        );
+
+        cache
+            .move_reminder_to_account("rem-1", "acct-2", "2026-07-31T18:44:00Z")
+            .expect("move");
+        assert_eq!(
+            cache
+                .get_reminder("rem-1")
+                .expect("read")
+                .expect("there")
+                .account_id,
+            "acct-2",
+            "the move wrote every column save_reminder writes and not the one \
+             it is for"
+        );
+    }
+
+    #[test]
+    fn test_a_move_to_the_account_it_is_already_in_leaves_the_row_exactly_as_it_was() {
+        // Said rather than written again. Rewriting the row would move
+        // `updated_at` for an act that changed nothing, and tell somebody
+        // whose reminder was in Work all along that it had been moved to Work.
+        let cache = test_cache();
+        one_due(&cache, "rem-1", "2026-07-31 14:43");
+        let before = cache.get_reminder("rem-1").expect("read").expect("there");
+
+        assert_eq!(
+            cache
+                .move_reminder_to_account("rem-1", "acct-1", "2026-08-01T09:00:00Z")
+                .expect("no error"),
+            MovedToAnotherAccount::AlreadyThere
+        );
+
+        let after = cache.get_reminder("rem-1").expect("read").expect("there");
+        assert_eq!(after.account_id, "acct-1");
+        assert_eq!(
+            after.updated_at, before.updated_at,
+            "the row was written again for a move that had nowhere to go"
+        );
+    }
+
+    #[test]
+    fn test_moving_a_reminder_no_row_has_writes_nothing_and_says_so() {
+        // A reminder can be deleted in one window while another window has it
+        // selected. The answer then is that the row has gone, not that the
+        // move worked.
+        let cache = test_cache();
+        one_due(&cache, "rem-1", "2026-07-31 14:43");
+
+        assert_eq!(
+            cache
+                .move_reminder_to_account("never-existed", "acct-2", "2026-08-01T09:00:00Z")
+                .expect("no error, just nothing to move"),
+            MovedToAnotherAccount::NoSuchReminder
+        );
+        assert!(
+            cache
+                .get_reminders_for_account("acct-2")
+                .expect("read")
+                .is_empty(),
+            "a move of a row that is not there put something in the account \
+             it was aimed at"
+        );
+    }
+
+    #[test]
+    fn test_copying_a_reminder_no_row_has_makes_nothing() {
+        let cache = test_cache();
+
+        assert_eq!(
+            cache
+                .copy_reminder_to_account(
+                    "never-existed",
+                    "acct-2",
+                    "rem-copy",
+                    "2026-08-01T09:00:00Z"
+                )
+                .expect("no error"),
+            None
+        );
+        assert!(
+            cache
+                .get_reminders_for_account("acct-2")
+                .expect("read")
+                .is_empty()
+        );
     }
 
     #[test]
