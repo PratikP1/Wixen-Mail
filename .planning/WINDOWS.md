@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 198
+open_count: 201
 waived_count: 0
 fixed_count: 15
-total_count: 213
-last_updated: 2026-09-09T04:40:35.448Z
+total_count: 216
+last_updated: 2026-09-09T06:50:13.358Z
 ---
 
 # Broken Windows Ledger
@@ -228,6 +228,9 @@ last_updated: 2026-09-09T04:40:35.448Z
 | 211 | 05 | unrun-verify | src/presentation/managers.rs |  | The account chooser is a flat list where every other move in this program opens a tree, and nobody has met it. Move and Copy on an event, a task, a note or a message open build_destination_dialog, which draws accounts as branches with places under them; a reminder opens pick_one, a SingleChoiceDialog holding account names in a row. The reason is structural rather than a preference: an account row in that tree pushes None into its destinations vector on purpose, so the tree cannot answer an account at all. Whether somebody who has learned Ctrl+Shift+V as the key that opens a tree hears a flat list and reads it as a different command, or as the same one asking a simpler question, is a real question and nobody has heard either | open |  | 2026-09-09T04:40:20.115Z |  |
 | 212 | 05 | unrun-verify | src/presentation/managers.rs |  | The name a completed reminder move says has never been heard. It is the account's label, with its address after it only where two accounts read alike, which is the rule so_no_two_accounts_read_alike already applies to the sidebar and which where_mail_can_go already takes. The plan asked for the address on every move, quoting Branch.account_name's doc comment; the sidebar rule was taken instead because an address read aloud on every move costs something for a case that needs it rarely. Whether Ring the dentist moved to Work is enough for somebody with two accounts, or whether the address is wanted every time even at that cost, is a judgement about hearing it and nobody has | open |  | 2026-09-09T04:40:34.804Z |  |
 | 213 | 05 | unrun-verify | src/application/pim_command.rs |  | The sentence somebody with one account meets has never been heard, and neither has how often they meet it. the_only_account_there_is says the reminder is in the one account set up on this computer, that there is nowhere else to move it to, that nothing has been moved, and that setting up a second account gives a reminder somewhere to go. It is said before any window opens, which is the right shape. What is unknown is whether a person who has one account and no intention of adding another hears it as information the first time and as nagging every time after, since Ctrl+Shift+V is one key away from Ctrl+Shift+K on the same list. Nothing throttles it and nothing remembers that they have heard it | open |  | 2026-09-09T04:40:35.448Z |  |
+| 214 | 05 | unrun-verify | src/application/pim_command.rs |  | The clause a filing now says has never been heard. A move or copy into a container an account holds ends 'and has not reached the account yet', or names Allow Changes where that setting is off, and both are joined onto the sentence naming where the item went rather than being a second sentence. Whether one sentence carrying both facts is heard as one answer or as a run-on, and whether the clause reads as useful or as noise after the twentieth move, is a judgement about hearing it. Guardrail 5 is the risk: this is said after every single filing somebody makes | open |  | 2026-09-09T06:50:00.150Z |  |
+| 215 | 05 | unrun-verify | tests/wired.rs |  | Whether Ctrl+Shift+V really reaches the filing handler in the non-mail modules, rather than only appearing in a menu label, is assumption A2 of 05-RESEARCH.md and nothing in this repository can answer it. tests/wired.rs says in its own header that a bound key proves Windows will dispatch it and says nothing about what the handler then does with the right thing on screen. Recorded rather than left to a green wiring test to look like an answer | open |  | 2026-09-09T06:50:12.578Z |  |
+| 216 | 05 | unrun-verify | src/presentation/managers.rs |  | The sentence 'and has not reached the account yet' has never been followed by an account receiving anything, because no build has run against a real account. What the clause promises is that the next sync sends it, and that the summary then says so; both halves are tested against scripted providers only. If a push fails for a reason the sync counts rather than reports, somebody hears the move was waiting and never hears that it stopped waiting | open |  | 2026-09-09T06:50:13.358Z |  |
 
 ````json
 [
@@ -2785,6 +2788,42 @@ last_updated: 2026-09-09T04:40:35.448Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T04:40:35.448Z",
+    "resolved_at": null
+  },
+  {
+    "id": 214,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/pim_command.rs",
+    "line": null,
+    "description": "The clause a filing now says has never been heard. A move or copy into a container an account holds ends 'and has not reached the account yet', or names Allow Changes where that setting is off, and both are joined onto the sentence naming where the item went rather than being a second sentence. Whether one sentence carrying both facts is heard as one answer or as a run-on, and whether the clause reads as useful or as noise after the twentieth move, is a judgement about hearing it. Guardrail 5 is the risk: this is said after every single filing somebody makes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T06:50:00.150Z",
+    "resolved_at": null
+  },
+  {
+    "id": 215,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "tests/wired.rs",
+    "line": null,
+    "description": "Whether Ctrl+Shift+V really reaches the filing handler in the non-mail modules, rather than only appearing in a menu label, is assumption A2 of 05-RESEARCH.md and nothing in this repository can answer it. tests/wired.rs says in its own header that a bound key proves Windows will dispatch it and says nothing about what the handler then does with the right thing on screen. Recorded rather than left to a green wiring test to look like an answer",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T06:50:12.578Z",
+    "resolved_at": null
+  },
+  {
+    "id": 216,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The sentence 'and has not reached the account yet' has never been followed by an account receiving anything, because no build has run against a real account. What the clause promises is that the next sync sends it, and that the summary then says so; both halves are tested against scripted providers only. If a push fails for a reason the sync counts rather than reports, somebody hears the move was waiting and never hears that it stopped waiting",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T06:50:13.358Z",
     "resolved_at": null
   }
 ]
