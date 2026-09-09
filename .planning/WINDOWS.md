@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 201
+open_count: 206
 waived_count: 0
 fixed_count: 15
-total_count: 216
-last_updated: 2026-09-09T06:50:13.358Z
+total_count: 221
+last_updated: 2026-09-09T09:04:47.221Z
 ---
 
 # Broken Windows Ledger
@@ -231,6 +231,11 @@ last_updated: 2026-09-09T06:50:13.358Z
 | 214 | 05 | unrun-verify | src/application/pim_command.rs |  | The clause a filing now says has never been heard. A move or copy into a container an account holds ends 'and has not reached the account yet', or names Allow Changes where that setting is off, and both are joined onto the sentence naming where the item went rather than being a second sentence. Whether one sentence carrying both facts is heard as one answer or as a run-on, and whether the clause reads as useful or as noise after the twentieth move, is a judgement about hearing it. Guardrail 5 is the risk: this is said after every single filing somebody makes | open |  | 2026-09-09T06:50:00.150Z |  |
 | 215 | 05 | unrun-verify | tests/wired.rs |  | Whether Ctrl+Shift+V really reaches the filing handler in the non-mail modules, rather than only appearing in a menu label, is assumption A2 of 05-RESEARCH.md and nothing in this repository can answer it. tests/wired.rs says in its own header that a bound key proves Windows will dispatch it and says nothing about what the handler then does with the right thing on screen. Recorded rather than left to a green wiring test to look like an answer | open |  | 2026-09-09T06:50:12.578Z |  |
 | 216 | 05 | unrun-verify | src/presentation/managers.rs |  | The sentence 'and has not reached the account yet' has never been followed by an account receiving anything, because no build has run against a real account. What the clause promises is that the next sync sends it, and that the summary then says so; both halves are tested against scripted providers only. If a push fails for a reason the sync counts rather than reports, somebody hears the move was waiting and never hears that it stopped waiting | open |  | 2026-09-09T06:50:13.358Z |  |
+| 217 | 05 | unrun-verify | src/application/tasks_sync.rs |  | The two counts a task sync now reads out have never been heard side by side. A deletion held by an outstanding create is said as a count, '1 removal waiting for the new copy to be sent', and a deletion held by Allow Changes is said as a sentence naming the setting. Both are counts of something that did not happen, and only one of them is something the person can act on. Whether somebody hearing both in one status line can tell which is which, or hears two numbers about waiting and goes looking for one setting that fixes both, is a judgement about hearing it and nobody has | open |  | 2026-09-09T09:04:16.858Z |  |
+| 218 | 05 | unrun-verify | src/application/tasks_sync.rs |  | Whether a provider goes on answering for a task under its old identifier long enough for the pull that follows a move to write it back down is a timing question no fake can answer. The push sends the create, the pull in the same sync reads every list, and the deletion of the old copy does not go until the sync after that. Between them the provider holds both copies and a read that sees the old one is answered only by the deletion note masking it. That masking is tested; how long the window really is at Google and at Microsoft is not, and cannot be without an account | open |  | 2026-09-09T09:04:31.423Z |  |
+| 219 | 05 | unrun-verify | src/application/deletions.rs |  | Whether seven days is long enough for a move made just before a laptop is shut for a fortnight has never been tried. The note itself is safe: let_go_of_deletions_taken_before only releases a deletion a provider has taken, so one still waiting for its new copy survives however long it waits, which was read on main at 143a37f rather than assumed. What is released by the clock is the memory of a deletion already taken, and the read consults that memory to stop a provider writing the thing back down. A move that completes on day one and a machine that comes back on day fifteen is the case nobody has run | open |  | 2026-09-09T09:04:32.089Z |  |
+| 220 | 05 | todo | src/data/message_cache/tasks.rs |  | rename_task orphans a task's subtasks and nobody decided that it should. It calls drop_synced_task on the old identifier, which sets parent_task_id to null for every child, so a task made on this computer loses its subtask tree the moment a provider names it. That is older than this plan and nothing in this plan reaches it. move_a_task_the_provider_holds deliberately answers the same question the other way, pointing the children at the new identifier, because the parent has not gone but been renamed, and copying the null would have flattened a tree on every move. The two now disagree on purpose and one of them is wrong | open |  | 2026-09-09T09:04:46.509Z |  |
+| 221 | 05 | unrun-verify | tests/a_half_finished_task_move.rs |  | The failure this whole state exists for has never happened. A half-finished move is the create succeeding at the provider and the delete then failing, or the reverse, and nothing in this repository can produce either: no provider is called by this plan at all, and 05-08 makes the calls against fakes that answer from a script. Every test here builds the half-finished state by calling the write that produces it, which proves the state is held, survives a close and cannot exist half-written, and proves nothing about whether a real pair of calls leaves exactly that state | open |  | 2026-09-09T09:04:47.221Z |  |
 
 ````json
 [
@@ -2824,6 +2829,66 @@ last_updated: 2026-09-09T06:50:13.358Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T06:50:13.358Z",
+    "resolved_at": null
+  },
+  {
+    "id": 217,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "The two counts a task sync now reads out have never been heard side by side. A deletion held by an outstanding create is said as a count, '1 removal waiting for the new copy to be sent', and a deletion held by Allow Changes is said as a sentence naming the setting. Both are counts of something that did not happen, and only one of them is something the person can act on. Whether somebody hearing both in one status line can tell which is which, or hears two numbers about waiting and goes looking for one setting that fixes both, is a judgement about hearing it and nobody has",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T09:04:16.858Z",
+    "resolved_at": null
+  },
+  {
+    "id": 218,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "Whether a provider goes on answering for a task under its old identifier long enough for the pull that follows a move to write it back down is a timing question no fake can answer. The push sends the create, the pull in the same sync reads every list, and the deletion of the old copy does not go until the sync after that. Between them the provider holds both copies and a read that sees the old one is answered only by the deletion note masking it. That masking is tested; how long the window really is at Google and at Microsoft is not, and cannot be without an account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T09:04:31.423Z",
+    "resolved_at": null
+  },
+  {
+    "id": 219,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/deletions.rs",
+    "line": null,
+    "description": "Whether seven days is long enough for a move made just before a laptop is shut for a fortnight has never been tried. The note itself is safe: let_go_of_deletions_taken_before only releases a deletion a provider has taken, so one still waiting for its new copy survives however long it waits, which was read on main at 143a37f rather than assumed. What is released by the clock is the memory of a deletion already taken, and the read consults that memory to stop a provider writing the thing back down. A move that completes on day one and a machine that comes back on day fifteen is the case nobody has run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T09:04:32.089Z",
+    "resolved_at": null
+  },
+  {
+    "id": 220,
+    "kind": "todo",
+    "phase": "05",
+    "file": "src/data/message_cache/tasks.rs",
+    "line": null,
+    "description": "rename_task orphans a task's subtasks and nobody decided that it should. It calls drop_synced_task on the old identifier, which sets parent_task_id to null for every child, so a task made on this computer loses its subtask tree the moment a provider names it. That is older than this plan and nothing in this plan reaches it. move_a_task_the_provider_holds deliberately answers the same question the other way, pointing the children at the new identifier, because the parent has not gone but been renamed, and copying the null would have flattened a tree on every move. The two now disagree on purpose and one of them is wrong",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T09:04:46.509Z",
+    "resolved_at": null
+  },
+  {
+    "id": 221,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "tests/a_half_finished_task_move.rs",
+    "line": null,
+    "description": "The failure this whole state exists for has never happened. A half-finished move is the create succeeding at the provider and the delete then failing, or the reverse, and nothing in this repository can produce either: no provider is called by this plan at all, and 05-08 makes the calls against fakes that answer from a script. Every test here builds the half-finished state by calling the write that produces it, which proves the state is held, survives a close and cannot exist half-written, and proves nothing about whether a real pair of calls leaves exactly that state",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T09:04:47.221Z",
     "resolved_at": null
   }
 ]
