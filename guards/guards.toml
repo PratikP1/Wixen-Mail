@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 486 records have arrived since and have not been through it.
+# 488 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -720,6 +720,14 @@ tests_last_seen = [
 # this one, opening on the same two lines, so the break stopped naming one
 # place and the run could no longer apply it. The tests that go red are the
 # same seven; only the text of the break changed, and it now names the routine.
+#
+# And again on 2026-09-09, when it came out short by one. `05-06` extracted the
+# tail of the single-change sentence into `allowed::turn_the_setting_on`, so a
+# move can name the setting in the same words a sync does, and built this arm on
+# it rather than leaving a second copy of the words beside it. The new test
+# asserting the two have not drifted apart therefore reddens under this break as
+# well, which is the whole point of it and was not something the record could
+# have predicted. Eight now, measured, not seven.
 name = "one change waiting is not read out in the plural"
 file = "src/application/allowed.rs"
 before = """pub fn changes_waiting_here(count: usize) -> String {
@@ -730,6 +738,7 @@ after = """pub fn changes_waiting_here(count: usize) -> String {
         0 => format!("""
 red = [
     "application::allowed::tests::test_a_waiting_change_names_the_one_place_that_can_send_it",
+    "application::allowed::tests::test_one_change_held_at_the_moment_it_was_made_names_the_setting_the_sync_names",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
     "application::contacts_sync::tests::test_a_change_a_setting_held_back_survives_the_read_in_the_same_sync",
     "application::contacts_sync::tests::test_a_change_google_had_moved_past_is_sent_again_rather_than_lost",
@@ -738,7 +747,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 26 },
+    { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
@@ -759,7 +768,7 @@ red = [
     "application::allowed::tests::test_a_removal_held_back_says_the_mail_is_still_on_the_server",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 26 },
+    { file = "src/application/allowed.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -1886,7 +1895,7 @@ red = [
     "application::pim_command::tests::test_the_refusal_names_the_kind_with_the_article_that_belongs_with_it",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 30 },
+    { file = "src/application/pim_command.rs", tests = 38 },
 ]
 
 # ── An edit that was not an edit ────────────────────────────────────────────
@@ -4662,7 +4671,7 @@ red = [
     "application::pim_command::tests::test_a_row_that_went_away_between_the_question_and_the_answer_is_said_not_left_silent",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 30 },
+    { file = "src/application/pim_command.rs", tests = 38 },
 ]
 
 [[guard]]
@@ -5481,7 +5490,7 @@ red = [
     "application::pim_command::tests::test_a_command_that_failed_says_what_it_was_and_what_to_try",
 ]
 tests_last_seen = [
-    { file = "src/application/pim_command.rs", tests = 30 },
+    { file = "src/application/pim_command.rs", tests = 38 },
 ]
 
 [[guard]]
@@ -12749,7 +12758,7 @@ red = [
     "presentation::first_run::tests::test_the_choice_that_says_read_my_mail_reads_mail",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 26 },
+    { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/presentation/command_line.rs", tests = 23 },
     { file = "src/presentation/first_run.rs", tests = 14 },
@@ -12775,7 +12784,7 @@ red = [
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 26 },
+    { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/data/config.rs", tests = 59 },
 ]
@@ -17820,4 +17829,57 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`.
+#
+# The break is the sentence made uniform: every filing gets the clause, which is
+# the tidy-up somebody writes when four arms look like three arms and a special
+# case. It is the version of this defect that ships, because the clause is
+# genuinely right most of the time and saying it always looks like consistency.
+# What it costs is the thing the clause was added for: a note and a task filed
+# into a list made on this computer are told the account has not had them yet,
+# when no account is ever going to.
+#
+# Four tests, all of them in the same module, and three of them older than this
+# feature. That is the shape worth noting: the ones that catch this are the
+# plain ones asserting what a move says, not the new one asserting what it says
+# when something is waiting. A guard asking only whether the clause can appear
+# would have stayed green through the whole break.
+[[guard]]
+name = "the clause about the account is said only where something really is waiting"
+file = "src/application/pim_command.rs"
+before = """        Waiting::StaysHere => landed,"""
+after = """        Waiting::StaysHere => format!("{landed}, and has not reached the account yet"),"""
+red = [
+    "application::pim_command::tests::test_a_copy_says_it_was_copied_and_never_that_it_moved",
+    "application::pim_command::tests::test_a_filing_that_stays_on_this_computer_says_nothing_about_waiting",
+    "application::pim_command::tests::test_a_move_of_an_untitled_row_still_says_where_it_went",
+    "application::pim_command::tests::test_a_move_says_what_moved_and_where_it_went",
+]
+tests_last_seen = [
+    { file = "src/application/pim_command.rs", tests = 38 },
+]
+
+# The same defect one step earlier, at the deciding rather than at the wording,
+# and a second record because the two are different edits in different files
+# and neither break applies to the other.
+#
+# It reddens exactly one test, measured on 2026-09-09 rather than predicted, and
+# that is worth leaving on the record rather than widening until it looks
+# healthier. The reason it is one: every other test of the sentence hands
+# `filed` a `Waiting` directly and never comes through here, and the integration
+# tests that do decide something ask `will_have_to_be_sent`, which is the other
+# half of the question. So this one test is the whole of what stands between
+# `what_is_waiting` and answering "waiting" for everything.
+[[guard]]
+name = "nothing is waiting when nothing was going to be sent"
+file = "src/application/pim_command.rs"
+before = """        (false, _) => Waiting::StaysHere,"""
+after = """        (false, _) => Waiting::ToBeSent,"""
+red = [
+    "application::pim_command::tests::test_nothing_is_waiting_when_nothing_was_going_to_be_sent",
+]
+tests_last_seen = [
+    { file = "src/application/pim_command.rs", tests = 38 },
 ]

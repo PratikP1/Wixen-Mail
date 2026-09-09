@@ -299,8 +299,12 @@ pub enum Waiting {
 /// something was going to be sent. A note filed in a folder is not held by
 /// Allow Changes, it simply has nowhere to go, and reporting the setting for it
 /// would send somebody to turn on a switch that would change nothing.
-pub const fn what_is_waiting(_will_be_sent: bool, _changes_are_allowed: bool) -> Waiting {
-    Waiting::StaysHere
+pub const fn what_is_waiting(will_be_sent: bool, changes_are_allowed: bool) -> Waiting {
+    match (will_be_sent, changes_are_allowed) {
+        (false, _) => Waiting::StaysHere,
+        (true, true) => Waiting::ToBeSent,
+        (true, false) => Waiting::HeldByTheSetting,
+    }
 }
 
 /// What to say once something has been moved, or copied.
@@ -323,11 +327,19 @@ pub const fn what_is_waiting(_will_be_sent: bool, _changes_are_allowed: bool) ->
 /// Nothing is added where nothing is waiting, which is most filings. A note
 /// goes nowhere, and a task filed into a list made on this computer goes
 /// nowhere either, whatever kind of account it is sitting on.
-pub fn filed(filing: Filing, name: &str, into: &str, _waiting: Waiting) -> String {
+pub fn filed(filing: Filing, name: &str, into: &str, waiting: Waiting) -> String {
     let done = did(filing);
-    match name.trim() {
+    let landed = match name.trim() {
         "" => format!("{} to {into}", capitalise(done)),
         title => format!("{title} {done} to {into}"),
+    };
+    match waiting {
+        Waiting::StaysHere => landed,
+        Waiting::ToBeSent => format!("{landed}, and has not reached the account yet"),
+        Waiting::HeldByTheSetting => format!(
+            "{landed}, and has not reached the account: {}",
+            crate::application::allowed::turn_the_setting_on()
+        ),
     }
 }
 

@@ -6650,11 +6650,42 @@ fn moving_can_be_told(
 /// rather than a window, and a `#[test]` in this file costs 43 guard records a
 /// re-measurement each.
 pub fn will_have_to_be_sent(
-    _cache: &MessageCache,
-    _kind: crate::application::new_item::ItemKind,
-    _into: &str,
+    cache: &MessageCache,
+    kind: crate::application::new_item::ItemKind,
+    into: &str,
 ) -> bool {
-    false
+    use crate::application::calendar::WhereAChangeGoes;
+    use crate::application::new_item::ItemKind;
+
+    match kind {
+        // The identifier, which is what `push_tasks` reads and what
+        // `a_provider_holds` was split out of the sync to answer, so the
+        // prefixes stay known in one place.
+        ItemKind::Task => crate::application::tasks_sync::a_provider_holds(into),
+        // The calendar sync's own answer about that calendar. Matched out
+        // rather than asked as "not one of these two", so a sixth kind of
+        // calendar is a compile error here instead of quietly defaulting to
+        // either answer: one of those defaults says nothing about a change
+        // that is really waiting, and the other claims one that never leaves.
+        ItemKind::Event => match crate::application::calendar::where_a_change_goes(
+            cache.get_calendar(into).ok().flatten().as_ref(),
+        ) {
+            WhereAChangeGoes::ACalendarServer
+            | WhereAChangeGoes::Google
+            | WhereAChangeGoes::Outlook => true,
+            WhereAChangeGoes::OnlyReadable | WhereAChangeGoes::KeptHere => false,
+        },
+        // A note goes nowhere, so there is never anything to wait for.
+        ItemKind::Note => false,
+        // None of these three reaches a filing that says where it went.
+        // `kept_in` gives them no container, so the chooser is never opened
+        // for one; a contact and a reminder take their own paths before it and
+        // mail moves between folders by its own. Written out rather than
+        // caught by a catch-all, so a kind moving onto that path has to answer
+        // here rather than inheriting "nothing is ever waiting", which is the
+        // answer that says nothing when something really is.
+        ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => false,
+    }
 }
 
 /// Write the item into its new container, and say which row is in it.
