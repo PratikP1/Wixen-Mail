@@ -2800,6 +2800,15 @@ impl MessageCache {
         self.ensure_column_exists("deleted_calendar_events", "provider_recurrence_id", "TEXT")?;
         self.ensure_column_exists("deleted_contacts", "taken_at", "TEXT")?;
         self.ensure_column_exists("deleted_tasks", "taken_at", "TEXT")?;
+        // The copy on this computer that has to reach the provider before this
+        // deletion may be sent. Nothing for every note already written, which is
+        // the right answer for all of them: a note only carries this when it is
+        // half of a move of a task the provider holds, and until this shipped no
+        // such move could be written at all.
+        //
+        // Nullable rather than defaulted, because "waiting for nothing" is what
+        // every ordinary deletion is and there is no identifier that means it.
+        self.ensure_column_exists("deleted_tasks", "waiting_for_task_id", "TEXT")?;
 
         self.ensure_column_exists(
             "message_filter_rules",
