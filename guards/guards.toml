@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 488 records have arrived since and have not been through it.
+# 489 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17882,4 +17882,50 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pim_command.rs", tests = 38 },
+]
+
+# ── A move that did not happen, leaving both halves of one behind ───────────
+#
+# What it would cost a person, once `05-08` makes the calls: they move a task
+# their account holds, a sync between their reading of it and the write decides
+# the account no longer has it, and the move answers that there was nothing
+# there to move. What is left behind is a second copy of the task nobody asked
+# for, in a list they were moving it to, and a note telling the next sync to
+# delete the first one at the account. Nothing said any of that happened.
+#
+# Whether the task is really still here is answered by the removal itself, by
+# how many rows it took away, and not by a read before the write, because a read
+# first can be stale by the time the write runs. That answer therefore arrives
+# after the new copy and the note are already written, so both have to be undone,
+# and the transaction is the only thing that undoes them.
+#
+# The break is the transaction losing its hold, written as the one edit that
+# does it: committing before the early answer, which is what somebody adding a
+# "make sure we commit" line writes. Moving the statements onto `self.conn` is
+# NOT the break and would leave every test green, because SQLite scopes a
+# transaction to a connection rather than to the handle a statement was issued
+# through, so they run inside the open transaction either way. That was measured
+# on 2026-09-08 for the identical break on
+# `MessageCache::move_contact_between_groups` and is recorded there too.
+#
+# Measured 2026-09-09 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
+# --no-fail-fast` on a clean tree with nothing else building, 47 targets. Exactly
+# one test, tree-wide, and the same count the contacts version came out at. The
+# other seven in the suite reach a route where every write succeeds, so a
+# transaction and four loose statements are the same thing to them.
+[[guard]]
+name = "a move of a task the provider holds that did not happen leaves neither half behind"
+file = "src/data/message_cache/tasks.rs"
+suite = "a_half_finished_task_move"
+before = """            return Ok(MovedWhatTheProviderHolds::ItIsNotHereToMove);
+        }"""
+after = """            let _ = moving.commit();
+            return Ok(MovedWhatTheProviderHolds::ItIsNotHereToMove);
+        }"""
+red = [
+    "test_a_move_of_a_task_that_is_no_longer_here_writes_neither_half",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "tests/a_half_finished_task_move.rs", tests = 8 },
 ]
