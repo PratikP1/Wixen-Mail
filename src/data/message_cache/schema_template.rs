@@ -41,6 +41,7 @@
 use super::MessageCache;
 use std::cell::Cell;
 use std::path::Path;
+use std::sync::OnceLock;
 
 thread_local! {
     /// True while this thread is opening a cache without the template.
@@ -94,10 +95,36 @@ pub(super) fn lay_it_down_at(db_path: &Path) {
 /// below assert that it is `Some`, because a fallback nothing notices is how a
 /// check stops checking.
 fn the_database_every_test_cache_starts_from() -> Option<&'static [u8]> {
-    // The red half of red/green. Nothing builds a template yet, so every test
-    // cache is still built by running the whole schema, and every test below
-    // says so.
-    None
+    static TEMPLATE: OnceLock<Option<Vec<u8>>> = OnceLock::new();
+    TEMPLATE.get_or_init(build_one).as_deref()
+}
+
+/// Build it, by opening a cache the way a user's first run opens one.
+///
+/// Running the real schema rather than writing a second description of it.
+/// A second description is a second source of truth, and it would drift from
+/// the first with nothing failing, which is a worse defect than the cost this
+/// removes.
+///
+/// The directory goes away as this returns. What is kept is the bytes, so
+/// there is no file in the temporary folder outliving the process that made
+/// it, and a test cache is written rather than copied.
+fn build_one() -> Option<Vec<u8>> {
+    let home = tempfile::tempdir().ok()?;
+    let db_path = home.path().join("message_cache.db");
+    {
+        let cache =
+            without_the_template(|| MessageCache::new(home.path().to_path_buf(), None)).ok()?;
+        // The schema is written through the write-ahead log, so nearly all of
+        // it is in the sidecar file rather than in the database itself until
+        // something moves it across. Reading the database before that would
+        // read a file with almost nothing in it.
+        cache
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .ok()?;
+    }
+    std::fs::read(&db_path).ok()
 }
 
 /// Open a cache without the template, the way a user's first run opens one.
