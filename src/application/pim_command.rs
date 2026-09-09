@@ -268,6 +268,41 @@ pub fn deleted(kind: ItemKind, name: &str) -> String {
     }
 }
 
+/// What is still owed to the account once the row here has been written.
+///
+/// A filing is two things that happen at different times and used to be
+/// announced as one. The row moves on this computer at the moment somebody
+/// presses the key; whether anything reaches the account is the next sync's
+/// business, and for a task in a list nobody syncs it is nobody's business at
+/// all. Saying only "moved to Work" is true of the first and silent about the
+/// second, and somebody who cannot see the list has that sentence and nothing
+/// else.
+///
+/// Three answers and not a boolean, because a change held by a setting is not
+/// the same as one waiting for the next sync. The first has something the
+/// person can do about it and the second has not, and telling somebody to go
+/// and turn on a setting that is already on is worse than saying nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Waiting {
+    /// Nothing is. The item stays on this computer and no account is owed it.
+    StaysHere,
+    /// It is written here and the next sync sends it.
+    ToBeSent,
+    /// It is written here, and Allow Changes is what is keeping it here.
+    HeldByTheSetting,
+}
+
+/// What is owed to the account, given whether anything will be sent at all.
+///
+/// Asked here rather than at the call site so the one case that matters cannot
+/// be got wrong by being forgotten: the setting only decides anything when
+/// something was going to be sent. A note filed in a folder is not held by
+/// Allow Changes, it simply has nowhere to go, and reporting the setting for it
+/// would send somebody to turn on a switch that would change nothing.
+pub const fn what_is_waiting(_will_be_sent: bool, _changes_are_allowed: bool) -> Waiting {
+    Waiting::StaysHere
+}
+
 /// What to say once something has been moved, or copied.
 ///
 /// Names where it went. "Moved" alone leaves somebody who chose from a tree of
@@ -278,7 +313,17 @@ pub fn deleted(kind: ItemKind, name: &str) -> String {
 /// Somebody who cannot see the two lists has only this to tell them which of
 /// the two happened, so the two must differ; and a second sentence written
 /// beside this one is a second sentence to keep in step with it.
-pub fn filed(filing: Filing, name: &str, into: &str) -> String {
+///
+/// And one sentence however much it has to carry. This is heard after every
+/// single filing, so the clause about the account is joined on with a comma
+/// rather than being a sentence of its own, and where the setting is named the
+/// join is a colon. A paragraph read out after every move is the failure
+/// guardrail 5 is about: feedback has to be bounded as well as distinct.
+///
+/// Nothing is added where nothing is waiting, which is most filings. A note
+/// goes nowhere, and a task filed into a list made on this computer goes
+/// nowhere either, whatever kind of account it is sitting on.
+pub fn filed(filing: Filing, name: &str, into: &str, _waiting: Waiting) -> String {
     let done = did(filing);
     match name.trim() {
         "" => format!("{} to {into}", capitalise(done)),
@@ -580,7 +625,7 @@ mod tests {
         // and "moved" without a destination leaves somebody who chose from a
         // tree of twenty lists no way to know where they landed.
         assert_eq!(
-            filed(Filing::Moving, "Buy milk", "Shopping"),
+            filed(Filing::Moving, "Buy milk", "Shopping", Waiting::StaysHere),
             "Buy milk moved to Shopping"
         );
     }
@@ -591,10 +636,124 @@ mod tests {
         // Heard as "moved", a copy says the original has gone from the list
         // they were sitting on, and the next thing they do is go looking for
         // it.
-        let said = filed(Filing::Copying, "Buy milk", "Shopping");
+        let said = filed(Filing::Copying, "Buy milk", "Shopping", Waiting::StaysHere);
 
         assert_eq!(said, "Buy milk copied to Shopping");
         assert!(!said.contains("moved"), "{said}");
+    }
+
+    #[test]
+    fn test_a_filing_the_account_is_owed_says_it_has_not_got_there_yet() {
+        // The half a move used to leave out. The row moves on this computer at
+        // the moment the key is pressed and nothing has reached the account,
+        // and somebody who cannot see the list had "Buy milk moved to Shopping"
+        // and no way to tell those two apart. They found out at the next sync
+        // or not at all.
+        assert_eq!(
+            filed(Filing::Moving, "Buy milk", "Shopping", Waiting::ToBeSent),
+            "Buy milk moved to Shopping, and has not reached the account yet"
+        );
+    }
+
+    #[test]
+    fn test_a_filing_that_stays_on_this_computer_says_nothing_about_waiting() {
+        // Most filings, and the reason the clause is not simply always said. A
+        // note goes nowhere, and a task filed into a list made on this computer
+        // goes nowhere either. "Has not reached the account yet" said about
+        // those is not a caution, it is untrue: nothing is ever going to reach
+        // an account, and there is nothing to wait for.
+        let said = filed(Filing::Moving, "Shopping list", "Home", Waiting::StaysHere);
+
+        assert_eq!(said, "Shopping list moved to Home");
+        assert!(!said.contains("account"), "{said}");
+        assert!(!said.contains("waiting"), "{said}");
+    }
+
+    #[test]
+    fn test_a_filing_the_setting_is_holding_names_the_setting_to_turn_on() {
+        // Allow Changes off is the one case where the person can do something
+        // about it, so it is the one case that says what. In the same words the
+        // task, calendar and contacts syncs use for the same fact, out of the
+        // same function, because two hand-written copies of it drifted once and
+        // only one was corrected.
+        let said = filed(
+            Filing::Moving,
+            "Buy milk",
+            "Shopping",
+            Waiting::HeldByTheSetting,
+        );
+
+        assert_eq!(
+            said,
+            "Buy milk moved to Shopping, and has not reached the account: turn on \
+             Allow Changes in Settings to send it"
+        );
+        assert!(
+            said.ends_with(&crate::application::allowed::turn_the_setting_on()),
+            "the move and the syncs no longer name the setting alike: {said}"
+        );
+    }
+
+    #[test]
+    fn test_the_setting_is_named_only_while_it_is_the_thing_holding_the_change() {
+        // Naming a setting that is already on teaches nothing and is heard
+        // after every single filing, which is how a useful sentence becomes
+        // noise. Guardrail 5: bounded is the half that is easy to lose.
+        for waiting in [Waiting::StaysHere, Waiting::ToBeSent] {
+            let said = filed(Filing::Moving, "Buy milk", "Shopping", waiting);
+            assert!(
+                !said.contains("Allow Changes"),
+                "the setting is named where it is not what is holding the change: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_what_a_filing_says_is_one_sentence_however_much_it_carries() {
+        // Heard after every move somebody makes. The longest this can produce
+        // is the setting case, and it is joined with a comma and a colon rather
+        // than being two sentences, because a paragraph read out after every
+        // move is the failure guardrail 5 names.
+        let longest = filed(
+            Filing::Copying,
+            "Ring the clinic about the results",
+            "Next week",
+            Waiting::HeldByTheSetting,
+        );
+
+        assert_eq!(
+            longest.matches(". ").count(),
+            0,
+            "the filing sentence has become a paragraph: {longest}"
+        );
+        assert!(!longest.ends_with('.'), "{longest}");
+    }
+
+    #[test]
+    fn test_a_copy_that_the_account_is_owed_still_says_copied() {
+        // The clause must not cost the one distinction this sentence exists to
+        // make. A copy waiting to be sent is still a copy, and heard as "moved"
+        // it says the original has gone.
+        let said = filed(Filing::Copying, "Buy milk", "Shopping", Waiting::ToBeSent);
+
+        assert!(said.starts_with("Buy milk copied to Shopping"), "{said}");
+        assert!(!said.contains("moved"), "{said}");
+    }
+
+    #[test]
+    fn test_nothing_is_waiting_when_nothing_was_going_to_be_sent() {
+        // The setting only decides anything about a change something was going
+        // to send. A note is not held by Allow Changes, it has nowhere to go,
+        // and sending somebody to turn on a switch that would change nothing
+        // for it is worse than saying nothing at all.
+        assert_eq!(what_is_waiting(false, false), Waiting::StaysHere);
+        assert_eq!(what_is_waiting(false, true), Waiting::StaysHere);
+    }
+
+    #[test]
+    fn test_a_change_that_will_be_sent_names_the_setting_only_when_it_is_off() {
+        assert_eq!(what_is_waiting(true, true), Waiting::ToBeSent);
+        assert_eq!(what_is_waiting(true, false), Waiting::HeldByTheSetting);
     }
 
     #[test]
@@ -681,11 +840,11 @@ mod tests {
         // A row whose title never loaded still went somewhere, and where it
         // went is the part worth hearing.
         assert_eq!(
-            filed(Filing::Moving, "   ", "Shopping"),
+            filed(Filing::Moving, "   ", "Shopping", Waiting::StaysHere),
             "Moved to Shopping"
         );
         assert_eq!(
-            filed(Filing::Copying, "   ", "Shopping"),
+            filed(Filing::Copying, "   ", "Shopping", Waiting::StaysHere),
             "Copied to Shopping"
         );
     }
@@ -1046,7 +1205,15 @@ mod tests {
             !said.contains("moved to"),
             "a move that did not happen is reported as one: {said}"
         );
-        assert_ne!(said, filed(Filing::Moving, "Ring the dentist", "Work"));
+        assert_ne!(
+            said,
+            filed(
+                Filing::Moving,
+                "Ring the dentist",
+                "Work",
+                Waiting::StaysHere
+            )
+        );
     }
 
     #[test]

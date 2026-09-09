@@ -6396,10 +6396,21 @@ fn file_it(
     // the sentence names is what the row read out.
     let landed = into.name.clone();
 
+    // Asked of the destination the window handed back, which is the same
+    // identifier `file_under` is about to write and the same one the push will
+    // read. The setting's answer is fetched here rather than inside the
+    // deciding, because `allowed_for` reads the stored settings file and a
+    // function that does that cannot be asked a question in a test without
+    // being told the answer by whoever's machine is running it.
+    let waiting = crate::application::pim_command::what_is_waiting(
+        will_have_to_be_sent(cache, kind, &into.id),
+        crate::application::allowed::allowed_for(&account_id).personal_information,
+    );
+
     Some(
         match file_under(cache, kind, id, &into.id, &account_id, filing) {
             Ok(_) => Filed::Into(crate::application::pim_command::filed(
-                filing, name, &landed,
+                filing, name, &landed, waiting,
             )),
             // The other route to the same refusals, taken when the chooser was
             // bypassed. It arrives as a failed write rather than as a refusal
@@ -6614,6 +6625,36 @@ fn moving_can_be_told(
         )),
         None => Ok(()),
     }
+}
+
+/// Whether filing something into this container leaves anything for a sync to
+/// send, or a change that stays on this computer.
+///
+/// The question is about the destination and never about the account. A task
+/// list made on this computer can sit on a Gmail account, because
+/// [`store_new_container`] mints `tasklist-<when>` with no provider in it, and
+/// `push_tasks` reads exactly that: `provider.is_local(&list_id)` counts the
+/// task as kept here and moves on without sending it. So "the account syncs
+/// tasks" is the wrong question, and asking it would announce that a change had
+/// not reached the account for a change the sync itself says is staying put.
+/// The identifier of the place it is going is the right one.
+///
+/// A calendar is told apart by what it came from rather than by a prefix, so
+/// the calendar sync's own answer is asked rather than a second one written
+/// here. A note is never waiting, because a note goes nowhere at all;
+/// `05.1-03` is the plan that gives notes somewhere to go, and it comes through
+/// [`file_under`], so this is one of the places it has to change.
+///
+/// Public for the reason [`file_under`] is: this is a decision about rows, the
+/// fixture that tells the right question from the wrong one is a stored list
+/// rather than a window, and a `#[test]` in this file costs 43 guard records a
+/// re-measurement each.
+pub fn will_have_to_be_sent(
+    _cache: &MessageCache,
+    _kind: crate::application::new_item::ItemKind,
+    _into: &str,
+) -> bool {
+    false
 }
 
 /// Write the item into its new container, and say which row is in it.
@@ -7228,7 +7269,16 @@ pub fn move_a_reminder_to_another_account(
             // because it is built from the accounts the reminder is not in.
             // They arrive when something changes the row between the question
             // and the answer, and each has a sentence of its own.
-            Ok(MovedToAnotherAccount::Moved) => Ok(filed(filing, &name, &into.spoken)),
+            // Nothing is ever waiting for a reminder. Neither Google,
+            // Outlook nor Exchange has a standalone reminder to sync one to,
+            // so there is no account for this to have failed to reach and
+            // nothing a setting could be holding.
+            Ok(MovedToAnotherAccount::Moved) => Ok(filed(
+                filing,
+                &name,
+                &into.spoken,
+                crate::application::pim_command::Waiting::StaysHere,
+            )),
             Ok(MovedToAnotherAccount::AlreadyThere) => {
                 return send_refusal(tx, rt, &already_in_that_account(&name, &into.spoken));
             }
@@ -7239,7 +7289,12 @@ pub fn move_a_reminder_to_another_account(
         },
         Filing::Copying => {
             match cache.copy_reminder_to_account(&id, &into.id, &new_id("reminder"), &stamp) {
-                Ok(Some(_)) => Ok(filed(filing, &name, &into.spoken)),
+                Ok(Some(_)) => Ok(filed(
+                    filing,
+                    &name,
+                    &into.spoken,
+                    crate::application::pim_command::Waiting::StaysHere,
+                )),
                 Ok(None) => {
                     return send_refusal(tx, rt, &no_longer_there(ItemKind::Reminder, &name));
                 }
