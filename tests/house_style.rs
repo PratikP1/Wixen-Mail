@@ -4996,6 +4996,18 @@ fn the_file_a_test_lives_in(test: &str, suite: Option<&str>) -> Option<PathBuf> 
 /// Silence is not agreement. A record that has written nothing down is reported
 /// rather than passed over, because the other reading gives every record added
 /// from now on a permanent exemption, granted by leaving a line out.
+///
+/// A moved count says which way it moved. Guardrail 4 in `CLAUDE.md`: when a
+/// check can fail two ways, make it say which. Gaining a test and losing one
+/// are different situations for whoever has to act on the line, and this line
+/// can name 41 records at once.
+///
+/// The direction is a description and not a decision, and reading it as one
+/// would be the defect. This compares a net count, not a list of deletions: a
+/// file that went down by three is equally consistent with three tests deleted
+/// and with five deleted and two added, and either of those two can reach the
+/// rule the record is about. So a decrease earns the same re-measurement as an
+/// increase, which is what the case below asserts.
 fn what_the_recorded_counts_get_wrong(
     name: &str,
     recorded: &[(String, usize)],
@@ -5015,7 +5027,14 @@ fn what_the_recorded_counts_get_wrong(
         .filter_map(
             |(file, now)| match recorded.iter().find(|(was, _)| was == file) {
                 Some((_, then)) if then == now => None,
-                Some((_, then)) => Some(format!("{file} held {then} tests and holds {now}")),
+                Some((_, then)) if now > then => Some(format!(
+                    "{file} has gained {}: it held {then} and holds {now}",
+                    how_many_tests(now - then)
+                )),
+                Some((_, then)) => Some(format!(
+                    "{file} has lost {}: it held {then} and holds {now}",
+                    how_many_tests(then - now)
+                )),
                 None => Some(format!(
                     "{file} is named by the red list and was never counted"
                 )),
@@ -5045,6 +5064,17 @@ fn how_many_files(count: usize) -> String {
         "1 file".to_string()
     } else {
         format!("{count} files")
+    }
+}
+
+/// A count of tests with the word, for the reason `how_many_files` gives. The
+/// commonest move is by one, so this is the case that would have read "1 tests"
+/// on nearly every line.
+fn how_many_tests(count: usize) -> String {
+    if count == 1 {
+        "1 test".to_string()
+    } else {
+        format!("{count} tests")
     }
 }
 
