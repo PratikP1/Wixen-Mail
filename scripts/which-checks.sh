@@ -61,12 +61,29 @@ set -euo pipefail
 # runs from `commit-msg` rather than `pre-commit`: the message does not exist
 # yet when `pre-commit` runs.
 message_file=""
-case "${1-}" in
-    --message-file=*)
-        message_file="${1#--message-file=}"
-        shift
-        ;;
-esac
+
+# The staged manifest diff, when somebody hands one over rather than leaving
+# this to read the index. `which-checks.test.sh` hands one over so its answers
+# do not depend on what happens to be staged while it runs, which for this
+# project is a version bump often enough to matter. A commit hook hands over
+# nothing and the index is read.
+manifest_diff_file=""
+
+while :; do
+    case "${1-}" in
+        --message-file=*)
+            message_file="${1#--message-file=}"
+            shift
+            ;;
+        --manifest-diff-file=*)
+            manifest_diff_file="${1#--manifest-diff-file=}"
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 branch="${1-}"
 shift || true
@@ -155,16 +172,112 @@ fi
 # put this package into its own dependency list, reddened that census, and the
 # break survived three commits before a hand-run of the library found it.
 #
-# Manifests change rarely, so answering `all` costs little in aggregate and asks
-# nobody to remember which tests read them.
+# With one exception, and it is the line this project moves most often.
+#
+# The convention here puts the version bump in the same commit as the change it
+# describes, because a version arriving later describes a build nobody made. So
+# nearly every commit in a phase touches both manifests, and the rule above was
+# charging each of them the whole gate for a line that adds no dependency, no
+# feature and no build input. Nothing that reaches a target is reached by it.
+#
+# The tests that do read the shipped version are not skipped by the softer
+# answer: they are in `tests/house_style.rs`, and `check.sh` ends every scoped
+# run with the guards that read the whole tree, house_style among them. The
+# library's own version tests compare fixed strings and one that asks whether
+# the number is non-empty, so no bump can move them.
+#
+# Everything else in a manifest still earns everything. What decides is below.
+only_the_packages_own_version_moved() {
+    local diff line body
+    local in_hunk=0 hunks=0 owned=0 touched=0 owned_here=0 changed_here=0
+
+    if [ -n "$manifest_diff_file" ]; then
+        diff="$(cat "$manifest_diff_file" 2>/dev/null || true)"
+    else
+        diff="$(git diff --cached -- "$@" 2>/dev/null || true)"
+    fi
+    # Nothing to read is not a version bump. A check that cannot see what
+    # changed must not hand out the softer of two answers, for the same reason
+    # a branch it cannot name answers `all`.
+    [ -n "$diff" ] || return 1
+
+    while IFS= read -r line; do
+        case "$line" in
+            # A new file, so whatever the last hunk of the last one left is
+            # already counted. The `---` and `+++` headers arrive between here
+            # and the next `@@`, which is why they are never read as changes.
+            'diff --git '*)
+                in_hunk=0
+                continue
+                ;;
+            '@@'*)
+                in_hunk=1
+                hunks=$((hunks + 1))
+                owned_here=0
+                changed_here=0
+                continue
+                ;;
+        esac
+        [ "$in_hunk" -eq 1 ] || continue
+
+        body="${line#?}"
+        case "$line" in
+            ' '*)
+                # Whose version this is, said by the hunk's own context rather
+                # than assumed from the file it is in. `[package]` is the
+                # manifest's own section and `name = "wixen-mail"` is this
+                # package's entry in the lock file. A dependency's version line
+                # reads exactly like this package's, and what tells them apart
+                # is the name above it: `[[package]]` is not `[package]`, and
+                # `name = "serde"` is not this package. So `cargo update` and a
+                # bump in one commit still earn everything.
+                #
+                # If the package is ever renamed, no hunk proves itself and the
+                # answer goes back to `all`. That is the safe direction to be
+                # wrong in.
+                case "$body" in
+                    '[package]' | 'name = "wixen-mail"')
+                        if [ "$owned_here" -eq 0 ]; then
+                            owned_here=1
+                            owned=$((owned + 1))
+                        fi
+                        ;;
+                esac
+                ;;
+            '+'* | '-'*)
+                # One changed line that is anything else, anywhere in the diff,
+                # and the whole thing earns everything: a feature, a profile, a
+                # lint, an added blank line, an edition, the rust-version floor.
+                case "$body" in
+                    'version = "'*'"') ;;
+                    *) return 1 ;;
+                esac
+                if [ "$changed_here" -eq 0 ]; then
+                    changed_here=1
+                    touched=$((touched + 1))
+                fi
+                ;;
+        esac
+    done <<< "$diff"
+
+    # Every hunk proved whose version it was moving, and every hunk moved one.
+    # A hunk of pure context is not a version bump, and neither is no hunk.
+    [ "$hunks" -gt 0 ] && [ "$owned" -eq "$hunks" ] && [ "$touched" -eq "$hunks" ]
+}
+
+manifests=()
 for path in "$@"; do
     case "$path" in
         Cargo.toml | Cargo.lock | */Cargo.toml | */Cargo.lock)
-            echo all
-            exit 0
+            manifests+=("$path")
             ;;
     esac
 done
+
+if [ "${#manifests[@]}" -gt 0 ] && ! only_the_packages_own_version_moved "${manifests[@]}"; then
+    echo all
+    exit 0
+fi
 
 # A document is a file whose content only a document-reading test can judge.
 # Everything else is a build input, however much it reads like prose:

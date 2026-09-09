@@ -4996,6 +4996,18 @@ fn the_file_a_test_lives_in(test: &str, suite: Option<&str>) -> Option<PathBuf> 
 /// Silence is not agreement. A record that has written nothing down is reported
 /// rather than passed over, because the other reading gives every record added
 /// from now on a permanent exemption, granted by leaving a line out.
+///
+/// A moved count says which way it moved. Guardrail 4 in `CLAUDE.md`: when a
+/// check can fail two ways, make it say which. Gaining a test and losing one
+/// are different situations for whoever has to act on the line, and this line
+/// can name 41 records at once.
+///
+/// The direction is a description and not a decision, and reading it as one
+/// would be the defect. This compares a net count, not a list of deletions: a
+/// file that went down by three is equally consistent with three tests deleted
+/// and with five deleted and two added, and either of those two can reach the
+/// rule the record is about. So a decrease earns the same re-measurement as an
+/// increase, which is what the case below asserts.
 fn what_the_recorded_counts_get_wrong(
     name: &str,
     recorded: &[(String, usize)],
@@ -5015,7 +5027,14 @@ fn what_the_recorded_counts_get_wrong(
         .filter_map(
             |(file, now)| match recorded.iter().find(|(was, _)| was == file) {
                 Some((_, then)) if then == now => None,
-                Some((_, then)) => Some(format!("{file} held {then} tests and holds {now}")),
+                Some((_, then)) if now > then => Some(format!(
+                    "{file} has gained {}: it held {then} and holds {now}",
+                    how_many_tests(now - then)
+                )),
+                Some((_, then)) => Some(format!(
+                    "{file} has lost {}: it held {then} and holds {now}",
+                    how_many_tests(then - now)
+                )),
                 None => Some(format!(
                     "{file} is named by the red list and was never counted"
                 )),
@@ -5045,6 +5064,17 @@ fn how_many_files(count: usize) -> String {
         "1 file".to_string()
     } else {
         format!("{count} files")
+    }
+}
+
+/// A count of tests with the word, for the reason `how_many_files` gives. The
+/// commonest move is by one, so this is the case that would have read "1 tests"
+/// on nearly every line.
+fn how_many_tests(count: usize) -> String {
+    if count == 1 {
+        "1 test".to_string()
+    } else {
+        format!("{count} tests")
     }
 }
 
@@ -5391,11 +5421,27 @@ fn test_the_recorded_count_check_can_tell_a_drift_from_an_agreement() {
         "a file that did not move was named as though it had: {said}"
     );
 
+    // Which way it moved. Guardrail 4 in CLAUDE.md: when a check can fail two
+    // ways, make it say which. A file that gained a test and a file that lost
+    // one are different situations for whoever reads this, and the message used
+    // to be one shape for both, leaving the direction to be worked out from two
+    // numbers in a line naming up to 41 records at once.
+    assert!(
+        said.contains("gained"),
+        "a file that gained tests did not say that is what it did: {said}"
+    );
+
     // Losing one counts too. A deleted test can be the one the record rested on.
     let fewer = [("src/a.rs".to_string(), 11), ("src/b.rs".to_string(), 3)];
+    let losing = what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer)
+        .expect("a file that lost a test to be reported");
     assert!(
-        what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer).is_some(),
-        "a file that lost a test was not reported"
+        losing.contains("lost"),
+        "a file that lost a test did not say that is what it did: {losing}"
+    );
+    assert!(
+        losing.contains("12") && losing.contains("11"),
+        "the loss was reported without both numbers: {losing}"
     );
 
     // A record that has never been counted at all. Silence must not read as

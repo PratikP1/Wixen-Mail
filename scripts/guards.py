@@ -500,6 +500,95 @@ def write_down_the_counts(
     RECORD.write_bytes(rewritten_with_counts(raw, guards, counts).encode("utf-8"))
 
 
+def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
+    """Why this run may not write down the tree it measured against, if it may not.
+
+    A count means "this record was checked against this tree", and only a run
+    that asked the whole question earns one. `--named-only` runs the modules a
+    record's own tests live in and never asks whether anything else went red, so
+    a record naming too few reads as correct to it. Writing under that run
+    stamps "checked" on a record nothing has checked in the direction 21 of the
+    23 records found wrong on 2026-09-01 were wrong in, and the count check then
+    stays quiet about it for ever. The closing message already says the run did
+    not ask, printed after the write has claimed it did.
+
+    The write is skipped and the flag pair is not refused, and that is the
+    load-bearing half. Refusing it would take away the only way to aim a run at
+    an exact set of records, which is what somebody needs when a shared file
+    moves: ledger 197 records a change shipped without a test on 2026-09-08
+    because a test of it would have lived in `src/presentation/managers.rs`,
+    which 41 records fingerprint, at roughly 80 minutes of re-measurement for a
+    one-line change. A remedy nobody can afford is a remedy nobody runs.
+
+    >>> why_the_counts_may_not_be_written(named_only=False) is None
+    True
+    >>> print(why_the_counts_may_not_be_written(named_only=True))
+    This run was filtered with --named-only, so no count was written down.
+    <BLANKLINE>
+    A count says a record was checked against this tree, and this run asked
+    half the question: it ran only the modules the record's tests live in, so a
+    test elsewhere that the break also reddens was neither run nor reported.
+    <BLANKLINE>
+    Re-run the same --remeasure selection without --named-only to earn it.
+    """
+    if not named_only:
+        return None
+    return (
+        "This run was filtered with --named-only, so no count was written down.\n"
+        "\n"
+        "A count says a record was checked against this tree, and this run asked\n"
+        "half the question: it ran only the modules the record's tests live in, so a\n"
+        "test elsewhere that the break also reddens was neither run nor reported.\n"
+        "\n"
+        "Re-run the same --remeasure selection without --named-only to earn it."
+    )
+
+
+def the_filter_that_forbids_recounting_everything(
+    only: str | None, touched_by: str | None, remeasure: list[str] | None
+) -> str | None:
+    """Which narrowing was asked for alongside --recount-everything, if any.
+
+    That mode writes a fingerprint on every record in the file, having measured
+    nothing, and it returns before any filter is applied. So asking for one
+    record and a recount rewrites all of them, including the records already
+    known to be short, whose whole value is that nothing has stamped them yet.
+    One mistyped invocation is the whole file.
+
+    Refused rather than narrowed, which is the smaller and safer of the two
+    ways out. Honouring the filter would give the mode a second meaning that
+    reads identically at the call site, and its own message already says a
+    count written this way is the weaker claim: no test has been added to these
+    files since somebody looked, never that a record is right. The weaker claim
+    over a narrower set is still the weaker claim.
+
+    >>> the_filter_that_forbids_recounting_everything(None, None, None) is None
+    True
+    >>> the_filter_that_forbids_recounting_everything("deletion", None, None)
+    'a name to match: deletion'
+    >>> the_filter_that_forbids_recounting_everything(None, "main", None)
+    '--touched-by main'
+    >>> the_filter_that_forbids_recounting_everything(None, None, ["a"])
+    '--remeasure with 1 name'
+    >>> the_filter_that_forbids_recounting_everything(None, None, ["a", "b"])
+    '--remeasure with 2 names'
+
+    All of them, because a run that asked for two narrowings has two things to
+    take out, and being told about one of them costs a second round trip:
+
+    >>> the_filter_that_forbids_recounting_everything("deletion", "main", None)
+    'a name to match: deletion, --touched-by main'
+    """
+    asked_for: list[str] = []
+    if only:
+        asked_for.append(f"a name to match: {only}")
+    if touched_by:
+        asked_for.append(f"--touched-by {touched_by}")
+    if remeasure:
+        asked_for.append(f"--remeasure with {how_many(len(remeasure), 'name')}")
+    return ", ".join(asked_for) or None
+
+
 def files_changed_since(ref: str) -> list[str]:
     """What this branch has changed, as paths relative to the repository root.
 
@@ -885,6 +974,23 @@ def main() -> int:
         return 1
 
     if asked.recount_everything:
+        narrowed = the_filter_that_forbids_recounting_everything(
+            asked.only, asked.touched_by, asked.remeasure
+        )
+        if narrowed:
+            print(
+                "\n--recount-everything writes a fingerprint on every record in "
+                "the file, so it\ncannot also be narrowed, and this run asked for "
+                f"{narrowed}.\n\n"
+                "It measures nothing. A count written this way says only that no "
+                "test has been\nadded to those files since somebody looked, never "
+                "that a record is right, so\nletting it through on a narrower set "
+                "would put that weaker claim on every\nrecord in the file anyway, "
+                "including the ones already known to be short.\n\n"
+                "Drop one of the two.\n"
+            )
+            return 1
+
         # Loud, and it says the thing it does not do. A count written here is
         # "no test has been added to these files since somebody looked", which
         # is a weaker claim than "this record is right" and reads exactly like
@@ -1043,13 +1149,22 @@ def main() -> int:
     #
     # Only under --remeasure. An ordinary run is a report, and a report that
     # edits the thing it reports on is not one.
+    #
+    # And only where the run asked the whole question. `why_the_counts_may_not_be_written`
+    # says what a filtered run did not ask and why that is not a count.
     if asked.remeasure and agreed:
-        write_down_the_counts(read_record(), {g.name: what_the_tree_holds_now(g) for g in agreed})
-        print(
-            f"\nWrote down the tree {how_many(len(agreed), 'record')} agreed "
-            "with, so a test added\nto any file they name fails the commit that "
-            "adds it."
-        )
+        forbidden = why_the_counts_may_not_be_written(named_only=asked.named_only)
+        if forbidden:
+            print(f"\n{forbidden}")
+        else:
+            write_down_the_counts(
+                read_record(), {g.name: what_the_tree_holds_now(g) for g in agreed}
+            )
+            print(
+                f"\nWrote down the tree {how_many(len(agreed), 'record')} agreed "
+                "with, so a test added\nto any file they name fails the commit that "
+                "adds it."
+            )
 
     # Both ways written out rather than one built from parts. Three words have
     # to agree in number and this project has already read out "1 changes are
