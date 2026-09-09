@@ -500,6 +500,40 @@ def write_down_the_counts(
     RECORD.write_bytes(rewritten_with_counts(raw, guards, counts).encode("utf-8"))
 
 
+def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
+    """Why this run may not write down the tree it measured against, if it may not.
+
+    A count means "this record was checked against this tree", and only a run
+    that asked the whole question earns one. `--named-only` runs the modules a
+    record's own tests live in and never asks whether anything else went red, so
+    a record naming too few reads as correct to it. Writing under that run
+    stamps "checked" on a record nothing has checked in the direction 21 of the
+    23 records found wrong on 2026-09-01 were wrong in, and the count check then
+    stays quiet about it for ever. The closing message already says the run did
+    not ask, printed after the write has claimed it did.
+
+    The write is skipped and the flag pair is not refused, and that is the
+    load-bearing half. Refusing it would take away the only way to aim a run at
+    an exact set of records, which is what somebody needs when a shared file
+    moves: ledger 197 records a change shipped without a test on 2026-09-08
+    because a test of it would have lived in `src/presentation/managers.rs`,
+    which 41 records fingerprint, at roughly 80 minutes of re-measurement for a
+    one-line change. A remedy nobody can afford is a remedy nobody runs.
+
+    >>> why_the_counts_may_not_be_written(named_only=False) is None
+    True
+    >>> print(why_the_counts_may_not_be_written(named_only=True))
+    This run was filtered with --named-only, so no count was written down.
+    <BLANKLINE>
+    A count says a record was checked against this tree, and this run asked
+    half the question: it ran only the modules the record's tests live in, so a
+    test elsewhere that the break also reddens was neither run nor reported.
+    <BLANKLINE>
+    Re-run the same --remeasure selection without --named-only to earn it.
+    """
+    return None
+
+
 def files_changed_since(ref: str) -> list[str]:
     """What this branch has changed, as paths relative to the repository root.
 
@@ -1043,13 +1077,22 @@ def main() -> int:
     #
     # Only under --remeasure. An ordinary run is a report, and a report that
     # edits the thing it reports on is not one.
+    #
+    # And only where the run asked the whole question. `why_the_counts_may_not_be_written`
+    # says what a filtered run did not ask and why that is not a count.
     if asked.remeasure and agreed:
-        write_down_the_counts(read_record(), {g.name: what_the_tree_holds_now(g) for g in agreed})
-        print(
-            f"\nWrote down the tree {how_many(len(agreed), 'record')} agreed "
-            "with, so a test added\nto any file they name fails the commit that "
-            "adds it."
-        )
+        forbidden = why_the_counts_may_not_be_written(named_only=asked.named_only)
+        if forbidden:
+            print(f"\n{forbidden}")
+        else:
+            write_down_the_counts(
+                read_record(), {g.name: what_the_tree_holds_now(g) for g in agreed}
+            )
+            print(
+                f"\nWrote down the tree {how_many(len(agreed), 'record')} agreed "
+                "with, so a test added\nto any file they name fails the commit that "
+                "adds it."
+            )
 
     # Both ways written out rather than one built from parts. Three words have
     # to agree in number and this project has already read out "1 changes are
