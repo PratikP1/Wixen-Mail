@@ -170,6 +170,7 @@ impl TaskSyncResult {
         self.sent += other.sent;
         self.local_only += other.local_only;
         self.waiting_on_the_setting += other.waiting_on_the_setting;
+        self.waiting_on_the_new_copy += other.waiting_on_the_new_copy;
         self.replaced += other.replaced;
         self.lists_removed += other.lists_removed;
         self.kept_elsewhere += other.kept_elsewhere;
@@ -207,6 +208,18 @@ impl TaskSyncResult {
         }
         if self.local_only > 0 {
             said.count(format!("{} kept on this computer", self.local_only));
+        }
+        if self.waiting_on_the_new_copy > 0 {
+            // A count and not the sentence `waiting_on_the_setting` gets, and
+            // not folded into it either. That one names the setting to turn on,
+            // because turning it on is what sends the change. Nothing the
+            // person can do sends this one: it goes when a sync manages to
+            // create the copy that replaces it, so a count is the whole of what
+            // there is to say.
+            said.count(format!(
+                "{} waiting for the new copy to be sent",
+                how_many(self.waiting_on_the_new_copy, "removal")
+            ));
         }
         if self.replaced > 0 {
             // Named as a loss rather than as a number in a list, because it
@@ -691,6 +704,44 @@ async fn push_tasks<S: TaskService>(
             // can never be sent now, so if the provider does still hold the
             // task, it keeps its copy while this computer shows nothing.
             continue;
+        }
+        if let Some(waiting_for) = gone.waiting_for_task_id.as_deref() {
+            // Half of a move of a task the provider holds: this note is the old
+            // copy there, and the new one has not been created there yet. What
+            // it costs to get this wrong is the worst thing in this milestone.
+            // The provider is asked to destroy the only copy it has, and if the
+            // create then fails the task is at no provider at all and exists
+            // only on this computer, where nothing says it was ever anywhere
+            // else.
+            //
+            // Arrived is the copy no longer waiting to be sent, and that one
+            // question covers both ways it stops waiting. `settle` calls
+            // `rename_task` once the create lands, which writes the provider's
+            // own identifier over the local one, so a lookup by the local one
+            // finds nothing. Somebody deleting the copy before it ever went
+            // takes the row away too. Both mean send: the first because the
+            // provider now holds the new copy, the second because somebody
+            // asked for the task to go and the old copy is what is left of it.
+            // The alternative for that second case is a note that waits for
+            // ever, which keeps the task off this computer and at the provider
+            // with nothing left to say why.
+            //
+            // A database that will not answer is not evidence that the copy has
+            // gone. Waiting costs one more sync; not waiting costs the task.
+            //
+            // Deletions run before creations in this function, so the note is
+            // skipped in the sync that sends the copy and goes out on the next
+            // one. That is the safe way round rather than the quick one, and
+            // the comment above the loop gives the reason the order is what it
+            // is.
+            let still_waiting = cache
+                .find_task(waiting_for)
+                .map(|found| found.is_some_and(|copy| copy.pending))
+                .unwrap_or(true);
+            if still_waiting {
+                result.waiting_on_the_new_copy += 1;
+                continue;
+            }
         }
         let sent = match provider {
             Provider::Google => service.google_delete_task(token, list_id, &gone.id).await,
