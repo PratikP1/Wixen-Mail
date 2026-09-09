@@ -500,8 +500,17 @@ roughly 6,000 test functions, which puts the per-record cost nearer 119 seconds
 than the 112 the old number assumed. Both terms go on moving, so multiply the
 count you take today by a rate you measure today.
 
+**The rate halved on 2026-09-09 and the twenty hours above now overstates it.**
+A record costs one rebuild plus one whole-library run, and the library run
+stopped rebuilding the database schema once per test that opens a cache.
+Measured that day at 8 threads, the two commits interleaved so the machine is in
+the same state for both: 120.3s and 120.2s at `02ddbcb`, 64.8s and 63.8s with
+the schema template. Do not read a new total off that halving. The rebuild term
+was never measured beside the run term, so the instruction is the one above,
+unchanged: take the count today and measure the rate today.
+
 **A plain sweep has no resume.** It writes nothing back to `guards.toml`; its only
-artefact is the flushed log. A twenty-hour job that cannot be stopped and picked
+artefact is the flushed log. A job of that size that cannot be stopped and picked
 up is a scheduling question before it is a technical one.
 
 Scoped to a single branch it was 63 records of the 536 that
@@ -529,6 +538,17 @@ slower than it says.
 Two conditions that held when the old curve was taken are now gone and neither
 changed the shape: `target/debug` had reached 786 GB, and a virus scanner was
 reading it.
+
+**The curve was taken a third time later the same day, after test caches stopped
+building the database schema, and this time the shape moved.** Whole library, one
+pass, same machine: 4 threads 93.9s, 8 threads 50.6s, 16 threads 51.8s. Against
+the same three at `02ddbcb`, taken the same way: 135.3s, 133.0s and 183.4s. Four
+and eight used to be level and sixteen cost 38% over eight; now four costs 86%
+over eight and sixteen costs 2%. Eight is still the right default. What changed
+is where the contention was: the writes that punished sixteen were the schema
+being built once per test, and they are gone. Read each of those as one pass. Two
+passes of the same pair on the same day differed by about 10%, which is wider
+than the gap between eight and sixteen.
 
 **One setting is not enough, and that was measured too.** A *scoped* run is
 contended harder than a whole-library one, because there is less work to spread
