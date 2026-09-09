@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 195
+open_count: 198
 waived_count: 0
 fixed_count: 15
-total_count: 210
-last_updated: 2026-09-09T01:23:47.493Z
+total_count: 213
+last_updated: 2026-09-09T04:40:35.448Z
 ---
 
 # Broken Windows Ledger
@@ -225,6 +225,9 @@ last_updated: 2026-09-09T01:23:47.493Z
 | 208 | 05 | unrun-verify | src/presentation/managers.rs |  | No contact has been moved between groups by pressing a key in the running program. Every piece is tested where it lives: the transactional write against a real store, the two filters and the five sentences as pure functions, and the menus against the command. What joins them is the arm in managers::pim_command that sends a contact to the group path before the chooser that names one container, and the only thing that reads it is a source-text check in tests/a_contact_moved_between_groups.rs. So the claim that Ctrl+Shift+V moves a contact rests on tested pieces and a read join. The same shape as ledger 202, one plan later | open |  | 2026-09-09T01:23:46.288Z |  |
 | 209 | 05 | unrun-verify | src/application/context_menu.rs |  | The contact context menu's Put in a group line now raises the copy command rather than an action of its own, and nobody has met the menu since. Two things are unheard. Somebody who learned Ctrl+Shift+Y as Copy in the calendar, Tasks or Notes meets a line called Put in a group here and there is nothing in the wording to connect them; the reason for keeping the old wording is that it describes what happens to a person and Copy does not, and whether that trade is right is a judgement about hearing it. And the menu now reads New contact, Move to another group, Put in a group, Take out of a group, Delete, met in that order by somebody who cannot skim | open |  | 2026-09-09T01:23:46.872Z |  |
 | 210 | 05 | unrun-verify | src/application/contact_groups.rs |  | The two refusals before either question have never been heard. in_no_group says the contact is in no group and to use Put in a group first; in_every_group says it is in every group and to make another group first. Both go down the refusal channel, both name a command by the words the menu uses, and both are the answer to a key somebody just pressed with no window opening. Whether naming a menu line inside a spoken sentence is followed, or whether somebody hears a sentence about a command and looks for a dialog, is unanswered | open |  | 2026-09-09T01:23:47.493Z |  |
+| 211 | 05 | unrun-verify | src/presentation/managers.rs |  | The account chooser is a flat list where every other move in this program opens a tree, and nobody has met it. Move and Copy on an event, a task, a note or a message open build_destination_dialog, which draws accounts as branches with places under them; a reminder opens pick_one, a SingleChoiceDialog holding account names in a row. The reason is structural rather than a preference: an account row in that tree pushes None into its destinations vector on purpose, so the tree cannot answer an account at all. Whether somebody who has learned Ctrl+Shift+V as the key that opens a tree hears a flat list and reads it as a different command, or as the same one asking a simpler question, is a real question and nobody has heard either | open |  | 2026-09-09T04:40:20.115Z |  |
+| 212 | 05 | unrun-verify | src/presentation/managers.rs |  | The name a completed reminder move says has never been heard. It is the account's label, with its address after it only where two accounts read alike, which is the rule so_no_two_accounts_read_alike already applies to the sidebar and which where_mail_can_go already takes. The plan asked for the address on every move, quoting Branch.account_name's doc comment; the sidebar rule was taken instead because an address read aloud on every move costs something for a case that needs it rarely. Whether Ring the dentist moved to Work is enough for somebody with two accounts, or whether the address is wanted every time even at that cost, is a judgement about hearing it and nobody has | open |  | 2026-09-09T04:40:34.804Z |  |
+| 213 | 05 | unrun-verify | src/application/pim_command.rs |  | The sentence somebody with one account meets has never been heard, and neither has how often they meet it. the_only_account_there_is says the reminder is in the one account set up on this computer, that there is nowhere else to move it to, that nothing has been moved, and that setting up a second account gives a reminder somewhere to go. It is said before any window opens, which is the right shape. What is unknown is whether a person who has one account and no intention of adding another hears it as information the first time and as nagging every time after, since Ctrl+Shift+V is one key away from Ctrl+Shift+K on the same list. Nothing throttles it and nothing remembers that they have heard it | open |  | 2026-09-09T04:40:35.448Z |  |
 
 ````json
 [
@@ -2746,6 +2749,42 @@ last_updated: 2026-09-09T01:23:47.493Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T01:23:47.493Z",
+    "resolved_at": null
+  },
+  {
+    "id": 211,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The account chooser is a flat list where every other move in this program opens a tree, and nobody has met it. Move and Copy on an event, a task, a note or a message open build_destination_dialog, which draws accounts as branches with places under them; a reminder opens pick_one, a SingleChoiceDialog holding account names in a row. The reason is structural rather than a preference: an account row in that tree pushes None into its destinations vector on purpose, so the tree cannot answer an account at all. Whether somebody who has learned Ctrl+Shift+V as the key that opens a tree hears a flat list and reads it as a different command, or as the same one asking a simpler question, is a real question and nobody has heard either",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T04:40:20.115Z",
+    "resolved_at": null
+  },
+  {
+    "id": 212,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "The name a completed reminder move says has never been heard. It is the account's label, with its address after it only where two accounts read alike, which is the rule so_no_two_accounts_read_alike already applies to the sidebar and which where_mail_can_go already takes. The plan asked for the address on every move, quoting Branch.account_name's doc comment; the sidebar rule was taken instead because an address read aloud on every move costs something for a case that needs it rarely. Whether Ring the dentist moved to Work is enough for somebody with two accounts, or whether the address is wanted every time even at that cost, is a judgement about hearing it and nobody has",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T04:40:34.804Z",
+    "resolved_at": null
+  },
+  {
+    "id": 213,
+    "kind": "unrun-verify",
+    "phase": "05",
+    "file": "src/application/pim_command.rs",
+    "line": null,
+    "description": "The sentence somebody with one account meets has never been heard, and neither has how often they meet it. the_only_account_there_is says the reminder is in the one account set up on this computer, that there is nowhere else to move it to, that nothing has been moved, and that setting up a second account gives a reminder somewhere to go. It is said before any window opens, which is the right shape. What is unknown is whether a person who has one account and no intention of adding another hears it as information the first time and as nagging every time after, since Ctrl+Shift+V is one key away from Ctrl+Shift+K on the same list. Nothing throttles it and nothing remembers that they have heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-09T04:40:35.448Z",
     "resolved_at": null
   }
 ]
