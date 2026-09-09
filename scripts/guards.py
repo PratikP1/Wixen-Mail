@@ -531,7 +531,17 @@ def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
     <BLANKLINE>
     Re-run the same --remeasure selection without --named-only to earn it.
     """
-    return None
+    if not named_only:
+        return None
+    return (
+        "This run was filtered with --named-only, so no count was written down.\n"
+        "\n"
+        "A count says a record was checked against this tree, and this run asked\n"
+        "half the question: it ran only the modules the record's tests live in, so a\n"
+        "test elsewhere that the break also reddens was neither run nor reported.\n"
+        "\n"
+        "Re-run the same --remeasure selection without --named-only to earn it."
+    )
 
 
 def files_changed_since(ref: str) -> list[str]:
