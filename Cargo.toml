@@ -366,3 +366,28 @@ wixen-mail = { path = ".", features = ["what-ships"] }
 [lints.clippy]
 significant_drop_in_scrutinee = "deny"
 await_holding_lock = "deny"
+
+# Debug information: enough to read a backtrace, not enough to fill a disk.
+#
+# Measured on 2026-09-09 at `10effea` rather than reasoned about. The default
+# `debug = true` was producing a 669 MB `.pdb` for the library alone, and cargo
+# keeps one per fingerprint. A guard run modifies a source file, rebuilds, runs
+# and restores, so every record in a sweep mints another one and nothing ever
+# collects them: `target/debug` had reached 786 GB, and `cargo clean -p
+# wixen-mail` removed 274,380 files and 828 GiB of it.
+#
+# That is not only disk. Linking 47 test binaries in parallel, each pulling that
+# much debug information through `link.exe`, is what produced `LNK1102: out of
+# memory` on a machine with 62 GB free. And every test here builds a SQLite
+# database in the temp directory on the same volume, which is the disk the suite
+# is already contended on.
+#
+# `line-tables-only` keeps the file and line of every frame, so a backtrace still
+# says where it came from and `RUST_BACKTRACE=1` is as useful as it was. What it
+# drops is the type and variable information a stepping debugger needs. That is a
+# real cost and it is taken deliberately: nobody on this project has attached a
+# debugger, and the disk and the linker are costing time every day. If somebody
+# needs to step through a variable, `cargo build --profile dev -Zdebug-info` is
+# not the answer; raise this back to `true` for that session and say so.
+[profile.dev]
+debug = "line-tables-only"

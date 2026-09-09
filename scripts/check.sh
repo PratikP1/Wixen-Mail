@@ -398,7 +398,20 @@ run_the_tests_that_reach_what_changed() {
                 echo "-- $module"
                 # A filter matching nothing exits zero, so a module with no
                 # tests of its own is not a pass, it is a run that said nothing.
-                cargo test --lib "${module}::" >> "$run_log" 2>&1 || status=1
+                #
+                # Four threads, not the harness default of one per core.
+                # Measured 2026-09-09 at `10effea` on 24 cores against
+                # `application::tasks_sync::`, 111 tests: 14s at the default,
+                # 4s at four threads, 6s at eight. A scoped run is contended
+                # harder than a whole-library one, because there is less work to
+                # spread and the same contention to spread it against, so its
+                # best thread count is lower than the eight `guards.py` uses for
+                # a full run. Two settings, not one, and each was measured.
+                #
+                # The `--all-targets` run further down is deliberately left
+                # alone: the same setting was measured there and the gate did
+                # not move.
+                cargo test --lib "${module}::" -- --test-threads=4 >> "$run_log" 2>&1 || status=1
                 ;;
             tests/*.rs)
                 target="$(basename "$path" .rs)"

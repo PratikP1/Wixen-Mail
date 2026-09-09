@@ -510,15 +510,38 @@ actually gained a test only reached 52, because one large shared file gained
 tests and many records name a test in it, so there is no clever selection that
 makes a scoped run quick either.
 
-That setting is `WIXEN_TEST_THREADS`, it defaults to 4, and it applies to the
-guard runs only. Measured on 24 logical cores over the 5,837-test library run on
-its own: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, and the
-harness default of one per core 196s. The suite is contended rather than
-compute-bound. **It does not carry to `scripts/check.sh`**, which runs
-`--all-targets`: there the test term falls from 197s to 111s and the whole gate
-does not move, 335s against 353s, so the gate does not set it. Reading the
-isolated figure as though it applied everywhere was the mistake, and timing the
-gate rather than assuming is what caught it.
+That setting is `WIXEN_TEST_THREADS` and **it defaults to 8, raised from 4 on
+2026-09-09 because the turning point moved and nothing re-asked.** Re-measured at
+`10effea` on 24 logical cores over the 6,720-test library run on its own: 1 thread
+375s, 2 threads 226s, 4 threads 161s, 8 threads 140s, 16 threads 234s. The suite
+is contended rather than compute-bound, which is unchanged; where the contention
+bites is not.
+
+The figures this paragraph used to give were taken on 2026-08-30 over 5,837
+tests: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, one per
+core 196s. They put the best at four. **The suite grew past that and the default
+went on costing about 13% of every guard run, for an unknown number of weeks,
+with nothing failing.** That is this file's own rule about dated measurements
+arriving as a bill: read the numbers above as a snapshot of one machine and one
+suite size, and re-take the curve rather than trusting it the moment a run feels
+slower than it says.
+
+Two conditions that held when the old curve was taken are now gone and neither
+changed the shape: `target/debug` had reached 786 GB, and a virus scanner was
+reading it.
+
+**One setting is not enough, and that was measured too.** A *scoped* run is
+contended harder than a whole-library one, because there is less work to spread
+against the same contention. Measured the same day against
+`application::tasks_sync::`, 111 tests: 14s at the harness default, 4s at four
+threads, 6s at eight. So `scripts/check.sh` pins the scoped `--lib` run to four
+while the guard runs use eight.
+
+**Neither carries to the `--all-targets` run**, which `scripts/check.sh` still
+leaves at the default: there the test term falls from 197s to 111s and the whole
+gate does not move, 335s against 353s. Reading an isolated figure as though it
+applied everywhere was the original mistake, and timing the thing you are about
+to change rather than assuming is what has now caught it twice.
 
 Running the records in parallel across git worktrees was measured and rejected:
 two concurrent suites take 131s each against 88s alone, so the contention is on

@@ -38,14 +38,29 @@ RECORD = ROOT / "guards" / "guards.toml"
 #    default(24)  196s
 #
 # The suite is contended rather than compute-bound, so the harness default of
-# one thread per core is the worst of the five and more than twice the cost of
-# the best. Every guard record pays this once, so 536 records is 31 hours at
-# the default and 14 at four threads.
+# one thread per core is far from the best. Every guard record pays this once,
+# so the setting multiplies through the whole sweep.
 #
-# What contends was not diagnosed. Overridable rather than fixed, because the
-# shape of that curve belongs to this machine: on a two-core CI runner the
-# default is already below the turning point and forcing four would be worse.
-TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "4")
+# Re-measured 2026-09-09 at `10effea`, 6,720 library tests on 24 cores, and the
+# turning point has moved: 1 thread 375s, 2 threads 226s, 4 threads 161s,
+# 8 threads 140s, 16 threads 234s. The best is now eight, not four, and the
+# previous figures, taken 2026-08-30 over 5,837 tests, put it at four. So the
+# default here was costing about 13% of every guard run, quietly, from the day
+# the suite grew past it.
+#
+# Take that as the warning rather than as the new permanent answer. This number
+# is a property of a machine and a suite size, both of which move, and nothing
+# re-asks it. Whoever next finds a guard run slower than this comment implies
+# should re-take the curve rather than trust it.
+#
+# What contends is still not diagnosed. Two conditions that were true when the
+# old curve was taken are gone: `target/debug` had reached 786 GB, and it was
+# being read by a virus scanner. Neither turned out to change the shape.
+#
+# Overridable rather than fixed, because the curve belongs to this machine: on a
+# two-core CI runner the default is already below the turning point and forcing
+# eight would be worse.
+TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "8")
 
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
