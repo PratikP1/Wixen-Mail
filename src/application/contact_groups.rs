@@ -159,6 +159,83 @@ pub fn not_in(person: &str, group: &str) -> String {
     format!("{person} is not in {group}.")
 }
 
+/// One contact group as a question about groups needs it.
+///
+/// Its own type rather than the stored row, for the reason
+/// [`crate::application::destinations`] keeps its own: the answers below are
+/// about which groups to offer somebody, and an account identifier and a
+/// creation stamp are not part of that question. The caller maps the rows it
+/// has loaded into these.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Group {
+    pub id: String,
+    pub name: String,
+    /// Who is in it, by contact identifier.
+    pub member_ids: Vec<String>,
+}
+
+/// The groups a contact could be taken out of: the ones it is in.
+///
+/// Not written yet: every group there is, which is what the chooser this
+/// answer exists to narrow already offers. Somebody hearing twenty group names
+/// when they expected the two they are in would blame themselves rather than
+/// the program, and choosing one they are not in makes a move that cannot
+/// happen.
+pub fn could_leave(_contact_id: &str, groups: &[Group]) -> Vec<Group> {
+    groups.to_vec()
+}
+
+/// The groups a contact could be put into: the ones it is not in.
+///
+/// The exact complement of [`could_leave`], and written as its own answer
+/// rather than as a negation at the call site so that the two cannot drift
+/// apart. A move into a group somebody is already in is not a move, it is a
+/// take-out wearing a move's name, and the count of the group they arrive in
+/// does not go up.
+///
+/// Not written yet either, for the same reason and in the same way.
+pub fn could_join(_contact_id: &str, groups: &[Group]) -> Vec<Group> {
+    groups.to_vec()
+}
+
+/// Said when a contact has been moved out of one group and into another.
+///
+/// Not written yet. What is here is [`put_in`], which is what a move says when
+/// somebody writes it as the put-in that already ships: it names where the
+/// contact arrived and says nothing about where it came from, so the one fact
+/// that tells a move from a copy is missing from the only sentence that reports
+/// it.
+pub fn moved_between(
+    person: &str,
+    out_of: &str,
+    out_of_members: usize,
+    into: &str,
+    into_members: usize,
+) -> String {
+    let _ = (out_of, out_of_members);
+    put_in(person, into, into_members)
+}
+
+/// Said when a contact is in no group at all, so a move has nothing to leave.
+///
+/// Not written yet: one sentence shared with [`in_every_group`], which is what
+/// somebody writes when both cases look from the inside like "there is nowhere
+/// to go". They are opposite problems with opposite remedies, and a person who
+/// hears the same words for both learns nothing from either.
+pub fn in_no_group(person: &str) -> String {
+    nowhere_to_move(person)
+}
+
+/// Said when a contact is already in every group there is.
+pub fn in_every_group(person: &str) -> String {
+    nowhere_to_move(person)
+}
+
+/// The one sentence the two cases above share while neither is written.
+fn nowhere_to_move(person: &str) -> String {
+    format!("There is nowhere to move {person} to.")
+}
+
 /// What is said once a group has been made.
 ///
 /// Shorter than [`STAYS_ON_THIS_COMPUTER`], which the window that asked for
@@ -555,5 +632,104 @@ mod tests {
         // in this module already takes, and a screen reader user hears this
         // one right after the group's own "nobody in it yet".
         assert_eq!(now_showing("Empty Group", 0), "Empty Group, nobody to show");
+    }
+
+    /// Three groups, with Ada in the first two and nobody else anywhere.
+    fn three_groups() -> Vec<Group> {
+        vec![
+            Group {
+                id: "g1".to_string(),
+                name: "Team A".to_string(),
+                member_ids: vec!["ada".to_string()],
+            },
+            Group {
+                id: "g2".to_string(),
+                name: "Team B".to_string(),
+                member_ids: vec!["ada".to_string(), "grace".to_string()],
+            },
+            Group {
+                id: "g3".to_string(),
+                name: "Everybody else".to_string(),
+                member_ids: Vec::new(),
+            },
+        ]
+    }
+
+    fn names(groups: &[Group]) -> Vec<&str> {
+        groups.iter().map(|group| group.name.as_str()).collect()
+    }
+
+    #[test]
+    fn test_the_groups_a_contact_can_leave_are_the_ones_it_is_in() {
+        // The chooser this narrows is the one that used to offer every group
+        // in the account. Twenty names where two were expected is a question
+        // somebody working by ear cannot answer, and choosing one they are not
+        // in asks for a move that cannot happen.
+        assert_eq!(
+            names(&could_leave("ada", &three_groups())),
+            ["Team A", "Team B"]
+        );
+        assert_eq!(names(&could_leave("grace", &three_groups())), ["Team B"]);
+    }
+
+    #[test]
+    fn test_a_contact_in_no_group_can_leave_none_of_them() {
+        // The case the move has to refuse rather than open a window for. A
+        // chooser with nothing in it is a question with no answer.
+        assert!(could_leave("nobody", &three_groups()).is_empty());
+    }
+
+    #[test]
+    fn test_the_groups_a_contact_can_join_are_the_ones_it_is_not_in() {
+        // The exact complement, and the reason it is asked rather than derived
+        // at the call site: a move into a group somebody is already in adds
+        // nothing, so offering it is offering an act that cannot report what it
+        // says it did.
+        assert_eq!(
+            names(&could_join("ada", &three_groups())),
+            ["Everybody else"]
+        );
+        assert_eq!(
+            names(&could_join("grace", &three_groups())),
+            ["Team A", "Everybody else"]
+        );
+    }
+
+    #[test]
+    fn test_a_completed_move_names_both_groups_and_both_counts() {
+        // Heard rather than seen, and it is the only thing that says which of
+        // the two acts happened. A sentence that named where the contact
+        // arrived and not where it came from is what a move written as the
+        // put-in says, and it reads exactly like a copy.
+        let said = moved_between("Ada Lovelace", "Team A", 2, "Team B", 5);
+
+        assert!(said.contains("Team A"), "{said}");
+        assert!(said.contains("Team B"), "{said}");
+        assert!(said.contains("2 people"), "{said}");
+        assert!(said.contains("5 people"), "{said}");
+        assert!(said.contains("Ada Lovelace"), "{said}");
+    }
+
+    #[test]
+    fn test_a_contact_in_no_group_is_told_which_command_puts_it_in_one() {
+        // "There is nowhere to move to" is true and useless. The remedy is a
+        // different command on the same menu, so the sentence names it.
+        let said = in_no_group("Ada Lovelace");
+
+        assert!(said.contains("not in any group"), "{said}");
+        assert!(said.contains("Put in a group"), "{said}");
+    }
+
+    #[test]
+    fn test_a_contact_in_every_group_is_told_the_groups_have_run_out() {
+        // The opposite problem with the opposite remedy, and the reason these
+        // are two sentences: one says to file the contact somewhere, the other
+        // says to make somewhere to file it. Somebody who hears the same words
+        // for both is told nothing by either.
+        let said = in_every_group("Ada Lovelace");
+
+        assert!(said.contains("every group"), "{said}");
+        assert!(said.contains("Make another group"), "{said}");
+        assert_ne!(said, in_no_group("Ada Lovelace"));
     }
 }

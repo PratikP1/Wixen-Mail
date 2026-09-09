@@ -25,7 +25,11 @@
 //! `application::contact_groups`'s and `tests/wired.rs`'s to answer. It presses
 //! no key. And nothing here has been heard by a screen reader.
 
+use wixen_mail::application::destinations::Filing;
+use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::message_cache::{ContactGroup, MessageCache, MovedBetweenGroups};
+use wixen_mail::presentation::managers::file_under;
 
 /// The account every fixture here stores under.
 const ACCOUNT: &str = "acct";
@@ -228,5 +232,94 @@ fn test_a_move_leaves_every_other_contact_and_group_where_they_were() {
         who_is_in(&cache, UNTOUCHED),
         vec![ADA.to_string()],
         "she was taken out of a group the move was never about"
+    );
+}
+
+#[test]
+fn test_filing_a_contact_through_file_under_is_refused_rather_than_reported_as_done() {
+    // The trap this whole plan is written around, and the compiler says
+    // nothing about it. `file_under`'s last arm answered the three kinds with
+    // no container by handing back the identifier it was given, which is
+    // success with nothing written. Its comment said a new kind of item would
+    // be a compile error there, which is true of a new `ItemKind` variant and
+    // false of an existing kind moving off that list, which is exactly what
+    // giving a contact a move does.
+    //
+    // So widening the command to a contact and leaving this arm alone
+    // compiles, runs, says "Ada Lovelace moved to Team B", and writes nothing.
+    // This is the test that would notice.
+    let dir = tempfile::tempdir().expect("somewhere to put the store");
+    let cache = a_store(&dir);
+    three_groups(&cache);
+    cache.add_contact_to_group(HOME, ADA).expect("Ada in one");
+
+    let answer = file_under(
+        &cache,
+        ItemKind::Contact,
+        ADA,
+        ELSEWHERE,
+        ACCOUNT,
+        Filing::Moving,
+    );
+
+    assert!(
+        answer.is_err(),
+        "filing a contact into a group here reported success: {answer:?}"
+    );
+    assert!(
+        who_is_in(&cache, ELSEWHERE).is_empty(),
+        "it wrote something after all"
+    );
+    assert_eq!(
+        who_is_in(&cache, HOME),
+        vec![ADA.to_string()],
+        "it took her out of the group she was in"
+    );
+}
+
+#[test]
+fn test_a_contact_is_filed_by_its_groups_rather_than_by_the_path_that_names_one_container() {
+    // What this cannot see: whether the key is pressed, whether the window
+    // opens, or whether anybody hears the answer. It reads the source of the
+    // arm the two filing commands share and asks where a contact goes from
+    // there.
+    //
+    // Why it exists. `where_it_could_go` opens with `kind.kept_in()?` and a
+    // contact answers `None`, so a contact that reaches the ordinary filing
+    // path falls out of it with `None`, which the dispatcher treats as
+    // "somebody left the window without choosing" and says nothing at all. A
+    // key that does nothing and says nothing is indistinguishable from a
+    // broken keyboard, and no test in this repository reaches that arm: it is
+    // in `managers.rs`, which 42 guard records fingerprint, so it has no unit
+    // tests of its own.
+    //
+    // It lives in this file rather than in `tests/wired.rs` for the same
+    // reason. Fourteen records name `wired.rs`, so a test added there costs
+    // fourteen re-measurements inside the commit gate; this file is named by
+    // one.
+    let managers =
+        std::fs::read_to_string("src/presentation/managers.rs").expect("the manager sources");
+    let arm = what_ships(&managers)
+        .split_once("PimCommand::Move | PimCommand::Copy => ")
+        .expect("the arm the two filing commands share")
+        .1
+        .to_string();
+    let arm = &arm[..arm.find("\n        },").unwrap_or(arm.len())];
+
+    assert!(
+        arm.contains("ItemKind::Contact"),
+        "the filing arm no longer sends a contact anywhere of its own, so it \
+         goes to the path that asks which single container holds it, gets \
+         nothing back, and says nothing"
+    );
+    assert!(
+        arm.contains("move_a_contact_between_groups"),
+        "nothing raises the move between groups, so Ctrl+Shift+V on a contact \
+         is a key that does nothing"
+    );
+    assert!(
+        arm.contains("change_the_group_a_contact_is_in"),
+        "the copy of a contact no longer reaches the put-in that already \
+         ships, so either it does nothing or somebody has written a second one"
     );
 }

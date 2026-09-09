@@ -266,6 +266,25 @@ pub fn no_longer_there(kind: ItemKind, name: &str) -> String {
     something_no_longer_there(thing(kind), name)
 }
 
+/// What to say when something is filed into a container and its kind is not
+/// kept in one.
+///
+/// The refusal for the arm nothing should reach. `file_under` used to answer
+/// the three kinds with no container by returning the identifier it was given,
+/// which is success with nothing written: a route that reached it was told the
+/// filing had happened, and the row was exactly as before. A comment there said
+/// a new kind of item would be a compile error, which is true of a new
+/// [`ItemKind`] variant and false of an existing kind moving from the
+/// never-reached list to the reached one, which is what giving a contact a move
+/// does.
+///
+/// Not written yet. What is here is [`something_no_longer_there`], which is the
+/// nearest sentence already in this file and says the wrong thing: the row is
+/// still there, and what is missing is a container to file it in.
+pub fn is_not_kept_in_a_container(kind: ItemKind) -> String {
+    something_no_longer_there(thing(kind), "")
+}
+
 /// The same sentence for something [`ItemKind`] has no word for.
 ///
 /// A contact group is the case today. No command here acts on one, so there is
@@ -755,5 +774,38 @@ mod tests {
         assert_eq!(confirmed_detail(PimCommand::Delete, true), None);
         assert_eq!(confirmed_detail(PimCommand::Move, false), None);
         assert_eq!(confirmed_detail(PimCommand::Copy, false), None);
+    }
+
+    #[test]
+    fn test_a_contact_can_be_filed_although_it_has_no_one_home() {
+        // The reason contacts were left out was right and is now answered
+        // rather than overruled: a contact is in as many groups as somebody
+        // puts it in, so there is no one home to move it out of, and the
+        // program asks which one. Mail and reminders are still out, and for
+        // reasons that have not changed.
+        for command in [PimCommand::Move, PimCommand::Copy] {
+            assert!(
+                command.applies_to(ItemKind::Contact),
+                "{command:?} does not reach a contact"
+            );
+            assert!(!command.applies_to(ItemKind::Mail), "{command:?}");
+            assert!(!command.applies_to(ItemKind::Reminder), "{command:?}");
+        }
+    }
+
+    #[test]
+    fn test_a_kind_with_no_container_is_refused_rather_than_told_its_filing_worked() {
+        // The sentence for the arm nothing should reach. It must not be the
+        // one about a row that has gone: the row is there, and saying it is
+        // not sends somebody looking for something that never moved.
+        let said = is_not_kept_in_a_container(ItemKind::Contact);
+
+        assert!(said.contains("contact"), "{said}");
+        assert!(
+            !said.contains("no longer there"),
+            "a refusal about having no container says the row has gone: {said}"
+        );
+        assert!(said.contains("Nothing has been changed."), "{said}");
+        assert_ne!(said, is_not_kept_in_a_container(ItemKind::Reminder));
     }
 }
