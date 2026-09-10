@@ -782,25 +782,21 @@ fn a_sync<S: NotesService + ABackendToDrive>(cache: &MessageCache, backend: &S) 
     run(sync_notes(cache, backend, ACCOUNT, &backend.container())).expect("a sync")
 }
 
-/// The same question of both backends.
-///
-/// The body is written once, against the seam's trait and
-/// [`ABackendToDrive`] and nothing else, so a reader cannot tell which backend
-/// an assertion is about except by the parameter. The two names below it are
-/// what a guard record and a failing run can name.
-macro_rules! the_same_of_both {
-    ($body:ident, $documents:ident, $pages:ident) => {
-        #[test]
-        fn $documents() {
-            $body(&ACollectionOfDocuments::new());
-        }
-
-        #[test]
-        fn $pages() {
-            $body(&ASectionOfPages::new());
-        }
-    };
-}
+// ── The same question of both backends ──────────────────────────────────────
+//
+// Every body below is written once, against the seam's trait and
+// [`ABackendToDrive`] and nothing else, so a reader cannot tell which backend
+// an assertion is about except by the parameter. Under each one sit the two
+// tests that run it, one line each.
+//
+// **They are written out rather than generated, and that is not a style
+// choice.** A macro taking the body and the two names is three lines shorter
+// and makes both of them invisible to this project's own tooling:
+// `test_every_test_a_guard_record_names_is_a_test_that_exists` looks for
+// `fn <name>(` in the suite file, and a name that reaches the compiler only as
+// a macro argument is never written that way. A guard record naming one is
+// refused on every commit, which was found by writing the macro first and
+// watching the check speak.
 
 // ── A note out, and back, whatever the backend calls it ─────────────────────
 
@@ -832,11 +828,15 @@ fn a_note_made_here_reaches_the_backend<S: NotesService + ABackendToDrive>(backe
     );
 }
 
-the_same_of_both!(
-    a_note_made_here_reaches_the_backend,
-    test_a_note_made_here_reaches_a_collection_of_documents,
-    test_a_note_made_here_reaches_a_section_of_pages
-);
+#[test]
+fn test_a_note_made_here_reaches_a_collection_of_documents() {
+    a_note_made_here_reaches_the_backend(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_note_made_here_reaches_a_section_of_pages() {
+    a_note_made_here_reaches_the_backend(&ASectionOfPages::new());
+}
 
 fn a_note_changed_here_is_written_without_replacing_a_whole_body<
     S: NotesService + ABackendToDrive,
@@ -872,11 +872,15 @@ fn a_note_changed_here_is_written_without_replacing_a_whole_body<
     assert_eq!(after.known_as.as_deref(), Some(held[0].0.as_str()));
 }
 
-the_same_of_both!(
-    a_note_changed_here_is_written_without_replacing_a_whole_body,
-    test_a_note_changed_here_reaches_a_collection_of_documents,
-    test_a_note_changed_here_reaches_a_section_of_pages
-);
+#[test]
+fn test_a_note_changed_here_reaches_a_collection_of_documents() {
+    a_note_changed_here_is_written_without_replacing_a_whole_body(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_note_changed_here_reaches_a_section_of_pages() {
+    a_note_changed_here_is_written_without_replacing_a_whole_body(&ASectionOfPages::new());
+}
 
 fn a_note_changed_at_the_backend_arrives_here<S: NotesService + ABackendToDrive>(backend: &S) {
     let dir = tempfile::tempdir().expect("a directory");
@@ -898,11 +902,15 @@ fn a_note_changed_at_the_backend_arrives_here<S: NotesService + ABackendToDrive>
     );
 }
 
-the_same_of_both!(
-    a_note_changed_at_the_backend_arrives_here,
-    test_a_change_at_a_collection_of_documents_arrives_here,
-    test_a_change_at_a_section_of_pages_arrives_here
-);
+#[test]
+fn test_a_change_at_a_collection_of_documents_arrives_here() {
+    a_note_changed_at_the_backend_arrives_here(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_change_at_a_section_of_pages_arrives_here() {
+    a_note_changed_at_the_backend_arrives_here(&ASectionOfPages::new());
+}
 
 fn a_note_only_the_backend_has_arrives_here<S: NotesService + ABackendToDrive>(backend: &S) {
     // The operation `05.1-03` had to add to the seam, asked of a second
@@ -928,11 +936,15 @@ fn a_note_only_the_backend_has_arrives_here<S: NotesService + ABackendToDrive>(b
     );
 }
 
-the_same_of_both!(
-    a_note_only_the_backend_has_arrives_here,
-    test_a_document_only_the_backend_has_arrives_here,
-    test_a_page_only_the_backend_has_arrives_here
-);
+#[test]
+fn test_a_document_only_the_backend_has_arrives_here() {
+    a_note_only_the_backend_has_arrives_here(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_page_only_the_backend_has_arrives_here() {
+    a_note_only_the_backend_has_arrives_here(&ASectionOfPages::new());
+}
 
 // ── The conflict, which is where a seam written about one backend shows ─────
 
@@ -976,11 +988,15 @@ fn a_note_changed_in_both_places_is_held_for_somebody_to_choose<
     );
 }
 
-the_same_of_both!(
-    a_note_changed_in_both_places_is_held_for_somebody_to_choose,
-    test_both_copies_of_a_document_are_held_for_a_choice,
-    test_both_copies_of_a_page_are_held_for_a_choice
-);
+#[test]
+fn test_both_copies_of_a_document_are_held_for_a_choice() {
+    a_note_changed_in_both_places_is_held_for_somebody_to_choose(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_both_copies_of_a_page_are_held_for_a_choice() {
+    a_note_changed_in_both_places_is_held_for_somebody_to_choose(&ASectionOfPages::new());
+}
 
 fn a_change_the_setting_held_is_not_written_over_by_the_read<S: NotesService + ABackendToDrive>(
     backend: &S,
@@ -1018,11 +1034,15 @@ fn a_change_the_setting_held_is_not_written_over_by_the_read<S: NotesService + A
     );
 }
 
-the_same_of_both!(
-    a_change_the_setting_held_is_not_written_over_by_the_read,
-    test_the_setting_and_a_document_that_moved_do_not_lose_the_change,
-    test_the_setting_and_a_page_that_moved_do_not_lose_the_change
-);
+#[test]
+fn test_the_setting_and_a_document_that_moved_do_not_lose_the_change() {
+    a_change_the_setting_held_is_not_written_over_by_the_read(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_the_setting_and_a_page_that_moved_do_not_lose_the_change() {
+    a_change_the_setting_held_is_not_written_over_by_the_read(&ASectionOfPages::new());
+}
 
 // ── A name the backend no longer knows ──────────────────────────────────────
 
@@ -1064,11 +1084,15 @@ fn a_note_the_backend_no_longer_holds_is_made_again<S: NotesService + ABackendTo
     assert_eq!(after.known_as.as_deref(), Some(held[0].0.as_str()));
 }
 
-the_same_of_both!(
-    a_note_the_backend_no_longer_holds_is_made_again,
-    test_a_document_the_backend_no_longer_holds_is_made_again,
-    test_a_page_the_backend_no_longer_holds_is_made_again
-);
+#[test]
+fn test_a_document_the_backend_no_longer_holds_is_made_again() {
+    a_note_the_backend_no_longer_holds_is_made_again(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_page_the_backend_no_longer_holds_is_made_again() {
+    a_note_the_backend_no_longer_holds_is_made_again(&ASectionOfPages::new());
+}
 
 // ── Deletion, and the container ─────────────────────────────────────────────
 
@@ -1097,11 +1121,15 @@ fn a_note_deleted_here_is_taken_away_and_does_not_come_back<S: NotesService + AB
     );
 }
 
-the_same_of_both!(
-    a_note_deleted_here_is_taken_away_and_does_not_come_back,
-    test_a_deleted_document_stays_deleted,
-    test_a_deleted_page_stays_deleted
-);
+#[test]
+fn test_a_deleted_document_stays_deleted() {
+    a_note_deleted_here_is_taken_away_and_does_not_come_back(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_deleted_page_stays_deleted() {
+    a_note_deleted_here_is_taken_away_and_does_not_come_back(&ASectionOfPages::new());
+}
 
 fn the_container_is_handed_back_exactly_as_it_was_given<S: NotesService + ABackendToDrive>(
     backend: &S,
@@ -1125,11 +1153,15 @@ fn the_container_is_handed_back_exactly_as_it_was_given<S: NotesService + ABacke
     }
 }
 
-the_same_of_both!(
-    the_container_is_handed_back_exactly_as_it_was_given,
-    test_a_collection_address_arrives_as_it_was_given,
-    test_a_three_part_section_arrives_as_it_was_given
-);
+#[test]
+fn test_a_collection_address_arrives_as_it_was_given() {
+    the_container_is_handed_back_exactly_as_it_was_given(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_three_part_section_arrives_as_it_was_given() {
+    the_container_is_handed_back_exactly_as_it_was_given(&ASectionOfPages::new());
+}
 
 // ── The two questions that are about one backend each ───────────────────────
 

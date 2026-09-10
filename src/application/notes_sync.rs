@@ -293,15 +293,20 @@ async fn push_what_is_waiting<S: NotesService>(
             Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
                 hold_both_copies_of(cache, service, container, &note, version_now, result).await;
             }
-            // The backend does not hold the note this computer thinks it does.
-            // Task 2 is where a note that has gone at the other end is settled,
-            // because that is the task about deletions and it needs the record
-            // of them to tell "somebody deleted it there" from "this computer
-            // deleted it and the backend has caught up".
-            Ok(WhatTheBackendSaid::ItIsNotThere) => result.errors.push(format!(
-                "Note {}: the backend no longer holds it, so nothing was sent",
-                note.id
-            )),
+            // The backend does not hold the note this computer thinks it does,
+            // so what this computer holds is a name the backend has never
+            // given. The seam's contract says such a note is one to create
+            // rather than one to look up, and offering it afresh is the only
+            // ending that does not leave the change waiting here for ever
+            // while the same sentence arrives on every sync from now on.
+            //
+            // Not a resurrection of something deleted. A note deleted here
+            // leaves a record and never reaches this loop at all; what reaches
+            // it is a note somebody still has, holding a change they made,
+            // whose copy at the other end has gone.
+            Ok(WhatTheBackendSaid::ItIsNotThere) => {
+                offer_it_as_a_new_note(cache, service, container, &note, result).await;
+            }
             // The string is for the log. Nothing reads it out: text a crate
             // wrote for a developer is not text to speak to somebody whose
             // notes did not sync.
@@ -316,6 +321,54 @@ async fn push_what_is_waiting<S: NotesService>(
             }
             Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
         }
+    }
+}
+
+/// Offer a note the backend turns out not to hold as one it has never held.
+///
+/// Offered once, not in a loop. A backend that refuses the create as well has
+/// said something else, and that answer is reported the way any other is.
+///
+/// The identifier is dropped rather than kept, because a name the backend has
+/// never given is not a name: keeping it would send the next change to the same
+/// place and get the same answer for ever.
+async fn offer_it_as_a_new_note<S: NotesService>(
+    cache: &MessageCache,
+    service: &S,
+    container: &str,
+    note: &NoteEntry,
+    result: &mut NoteSyncResult,
+) {
+    match service
+        .leave_a_note_saying(container, None, &note.title, &note.body)
+        .await
+    {
+        Ok(WhatTheBackendSaid::Done(there)) => {
+            match cache.a_backend_took_the_note(&note.id, &there.named, there.version.as_deref()) {
+                Ok(()) => result.sent += 1,
+                Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+            }
+        }
+        Ok(WhatTheBackendSaid::NotAllowedToChangeAnything) => {
+            result.waiting_on_the_setting += 1;
+        }
+        Ok(WhatTheBackendSaid::NotSignedIn) => result.needs_sign_in = true,
+        // A backend that says it does not hold a note it was asked to make is
+        // saying something this code cannot act on, and the same is true of a
+        // clash reported for a note it has never held.
+        Ok(WhatTheBackendSaid::ItIsNotThere) | Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => {
+            result.errors.push(format!(
+                "Note {}: the backend would not make a note it says it does not hold",
+                note.id
+            ));
+        }
+        Ok(WhatTheBackendSaid::CouldNotBeReached(said)) => {
+            result.errors.push(format!("Note {}: {said}", note.id));
+        }
+        Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+            result.waiting_on_the_setting += 1;
+        }
+        Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
     }
 }
 
@@ -365,6 +418,29 @@ async fn hold_both_copies_of<S: NotesService>(
         }
     };
 
+    hold_these_two_copies(cache, note, container, &said, version_now, result);
+}
+
+/// Write down both copies of one note and what each says.
+///
+/// Apart from [`hold_both_copies_of`] because the two callers arrive holding
+/// different things. The push is told a marker and has to fetch the words; the
+/// read has already fetched them, and asking again would be a second request
+/// for an answer in hand.
+///
+/// `version_now` is what the backend said the marker was when it reported the
+/// disagreement, used only where what was fetched carries none. Without a
+/// marker written down, the next sync finds the same disagreement and asks the
+/// same question again, and a choice that has to be made every sync is not a
+/// choice.
+fn hold_these_two_copies(
+    cache: &MessageCache,
+    note: &NoteEntry,
+    container: &str,
+    said: &crate::application::notes_backend::ANoteAsItStands,
+    version_now: Option<String>,
+    result: &mut NoteSyncResult,
+) {
     let held = crate::data::message_cache::held_conflicts::AHeldConflict {
         id: note.id.clone(),
         account_id: note.account_id.clone(),
@@ -484,6 +560,27 @@ async fn take_what_has_arrived<S: NotesService>(
                 continue;
             }
         };
+        // A change nobody has sent is not written over by a read.
+        //
+        // The push is where a clash is normally found, and the push does not
+        // always run. The setting can refuse it, nobody may be signed in, the
+        // request can fail. In each of those the waiting flag stays set on
+        // purpose, so that fixing the cause still sends the change, and a read
+        // that wrote the backend's copy over it in the same sync made that
+        // promise false: the change was gone and the flag was cleared, with a
+        // count saying one change was waiting and nothing saying it no longer
+        // was.
+        //
+        // `05.1-03` put the whole conflict story on the push side, which is
+        // where a backend with a marker reports one. Nothing asked what happens
+        // when the push never reaches the backend at all.
+        if let Some(here) = ours
+            && here.pending
+            && (here.title != said.title || here.body != said.body)
+        {
+            hold_these_two_copies(cache, here, container, &said, None, result);
+            continue;
+        }
         match write_it_down(cache, account_id, ours, &said) {
             Ok(()) => result.stored += 1,
             Err(e) => result

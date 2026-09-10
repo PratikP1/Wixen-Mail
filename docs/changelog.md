@@ -6,6 +6,24 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **A note change waiting on the Allow Changes setting is no longer lost.** If
+  the setting held your change back and the same note had also changed at the
+  server, the sync used to say one change was waiting and then write the
+  server's copy over it in the same run, leaving nothing waiting and saying
+  nothing about it. Now both copies are kept and you are asked which to keep,
+  through the same window your contacts and calendar already use. The same
+  applies when the change could not be sent for any other reason, such as
+  nobody being signed in.
+
+- **A note whose copy at the server has gone is sent again instead of being
+  reported for ever.** If somebody removed the server's copy of a note you
+  still have, every sync from then on reported a problem about it and your
+  change never left this computer. It is now sent as a new note, which is what
+  the note folder and the sync always meant by a note the server does not know
+  about.
+
 ### Added
 
 - **Notes can now be sent to a calendar server and read back from one.** If an

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 505 records have arrived since and have not been through it.
+# 508 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18585,4 +18585,102 @@ red = [
 tests_last_seen = [
     { file = "src/application/notes_backend.rs", tests = 20 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# ── 05.1-04: what a second implementation of the notes seam guards ──────────
+#
+# All three were taken by hand on 2026-09-10 on a clean tree with nothing else
+# building, at eight threads, with `--no-fail-fast`. Each was measured twice
+# over: `cargo test --lib` and then the suite.
+#
+# **The library saw none of them.** 6,802 library tests passed under every one
+# of these three breaks. That is the sentence this plan exists to produce: the
+# properties below are the ones a single implementation could not guard,
+# because with one backend behind a seam there is nothing to disagree with.
+#
+# Each carries `suite`, so it runs on a commit that changes the source it is
+# about rather than only on one that changes the test file.
+
+# Measured 2026-09-10: 6,802 passed in the library, exactly two failed in the
+# suite. The push is where a clash is normally found, and the push does not
+# always run; the read had no guard at all, so a change the setting held was
+# written over inside the same sync that counted it as waiting.
+[[guard]]
+name = "a change nobody has sent is not written over by the read"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''        if let Some(here) = ours
+            && here.pending
+            && (here.title != said.title || here.body != said.body)
+        {
+            hold_these_two_copies(cache, here, container, &said, None, result);
+            continue;
+        }
+        match write_it_down(cache, account_id, ours, &said) {'''
+after = '''        match write_it_down(cache, account_id, ours, &said) {'''
+red = [
+    "test_the_setting_and_a_document_that_moved_do_not_lose_the_change",
+    "test_the_setting_and_a_page_that_moved_do_not_lose_the_change",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
+]
+
+# Measured 2026-09-10: 6,802 passed in the library, exactly two failed in the
+# suite. The break is the arm exactly as `05.1-03` wrote it, which is the shape
+# somebody reaches for: a name the backend does not know is reported, and the
+# change waits here for ever while the same sentence arrives on every sync.
+[[guard]]
+name = "a note the backend no longer holds is made again rather than reported for ever"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''            Ok(WhatTheBackendSaid::ItIsNotThere) => {
+                offer_it_as_a_new_note(cache, service, container, &note, result).await;
+            }'''
+after = '''            Ok(WhatTheBackendSaid::ItIsNotThere) => result.errors.push(format!(
+                "Note {}: the backend no longer holds it, so nothing was sent",
+                note.id
+            )),'''
+red = [
+    "test_a_document_the_backend_no_longer_holds_is_made_again",
+    "test_a_page_the_backend_no_longer_holds_is_made_again",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
+]
+
+# Measured 2026-09-10: 6,802 passed in the library, exactly nine failed in the
+# suite. The break reads a container as an address and keeps its last part,
+# which is what "a container is one identifier" looks like when somebody writes
+# it down. The five that stayed green are the ones whose work is all on the
+# push side, which the break does not touch.
+#
+# The plan asked for a record whose break is the sync naming a concrete backend
+# type. That one cannot be measured: the sync is generic over the trait, so
+# naming a type there does not redden a test, it stops the crate compiling, and
+# a run has no red list to compare. This is the same property with a break a run
+# can see.
+[[guard]]
+name = "the sync hands a container back exactly as it was given"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''    let there = match service.notes_it_holds(container).await {'''
+after = '''    let container = container.rsplit('/').next().unwrap_or(container);
+    let there = match service.notes_it_holds(container).await {'''
+red = [
+    "test_a_backend_that_gives_no_marker_loses_a_change_made_at_the_other_end_and_says_nothing",
+    "test_a_change_at_a_section_of_pages_arrives_here",
+    "test_a_collection_address_arrives_as_it_was_given",
+    "test_a_marker_that_stood_still_while_the_note_moved_hides_the_change_from_the_read",
+    "test_a_note_changed_here_reaches_a_section_of_pages",
+    "test_a_note_made_here_reaches_a_section_of_pages",
+    "test_a_page_only_the_backend_has_arrives_here",
+    "test_a_page_the_backend_no_longer_holds_is_made_again",
+    "test_a_three_part_section_arrives_as_it_was_given",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
 ]
