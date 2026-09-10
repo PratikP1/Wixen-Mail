@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 494 records have arrived since and have not been through it.
+# 498 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11956,7 +11956,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -12808,7 +12808,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -16999,7 +16999,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -17600,42 +17600,56 @@ tests_last_seen = [
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
 ]
 
-# ── A copy line on a panel where copying means nothing ──────────────────────
+# ── A copy line missing from a panel where copying works ────────────────────
 #
-# What it costs a person: they arrow down the menu on a reminder, meet "Copy to
-# another list", choose it, and are told to choose a task first. A reminder is
-# sorted into a bucket worked out from when it is due, and a bucket is not a
-# place, so there is nowhere for the copy to go. A line that does nothing is a
-# stop somebody lands on, hears, and learns nothing from, and it costs a moment
-# every time it is passed.
+# What it costs a person: they arrow down the menu on a task, find no way to
+# make a second copy of it in another list, and the only route left is to type
+# it again. The menu and the command have to agree in both directions, and this
+# is the direction that reads as an absence rather than as a mistake.
 #
-# The break is the one somebody adding a sixth module would make: the menu
-# widened and the command not. It is written on the reminders list because that
-# is the kind the command refuses and the menu is one line away from offering.
+# **This record was wrong from 2026-09-08 until 2026-09-10, and how it went
+# wrong is the thing worth keeping.** Its break used to add a second copy line
+# to the reminders menu, on the reasoning that a reminder is sorted into a
+# bucket worked out from when it is due and a bucket is not a place. 05-05 gave
+# a reminder the one container it really has, its account, and put
+# "Cop&y to another account" on that menu. From that commit the break was
+# adding a line the menu already had, so it reddened
+# `test_no_menu_offers_the_same_thing_twice` and
+# `test_no_two_entries_in_one_menu_share_a_mnemonic`, which are about
+# duplicates, and left the test this record names green. A record whose break
+# reddens two checks it does not name and not the one it does is a guard
+# nobody wrote down standing where a guard somebody wrote down used to be.
 #
-# Measured 2026-09-08 with `WIXEN_TEST_THREADS=4 cargo test --all-targets
-# --no-fail-fast` on a clean tree. One test, and not the ordering check beside
-# it: a reminder is offered no move either, so that one has nothing to sit
-# beside and steps over the kind.
+# Nothing said so, and nothing could have. The count check saw 17 tests before
+# and 17 after, because 05-05 added no test to this file. Only the runner asks
+# the question this failed, and it was asked on 2026-09-10 because a different
+# plan added a test here and the count check printed the remedy.
+#
+# The break is now the direction the name promises: the copy line taken off the
+# task menu, which is the edit somebody makes while tidying a list they think
+# is repetitive.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,106 passed
+# and two failed. The ordering check is the second, and it belongs: it asserts
+# that a copy sits next to the move it is the twin of, so a menu that loses its
+# copy line loses the pairing too.
 [[guard]]
 name = "the copy line is on exactly the menus whose command accepts one"
 file = "src/application/context_menu.rs"
-before = """    entry("Mar&k done or not done", Action::ToggleComplete),
-    entry("&Delete", Action::DeleteItem),
-];
-
-static TASKS: &[Entry] = &["""
-after = """    entry("Mar&k done or not done", Action::ToggleComplete),
-    entry("Cop&y to another list", Action::CopyItem),
-    entry("&Delete", Action::DeleteItem),
-];
-
-static TASKS: &[Entry] = &["""
+before = """static TASKS: &[Entry] = &[
+    entry("&New task", Action::NewItem),
+    entry("Mo&ve to another list", Action::MoveItem),
+    entry("Cop&y to another list", Action::CopyItem),"""
+after = """static TASKS: &[Entry] = &[
+    entry("&New task", Action::NewItem),
+    entry("Mo&ve to another list", Action::MoveItem),"""
 red = [
     "application::context_menu::tests::test_a_copy_is_offered_exactly_where_it_means_something",
+    "application::context_menu::tests::test_a_copy_sits_beside_the_move_it_is_the_twin_of",
 ]
 tests_last_seen = [
-    { file = "src/application/context_menu.rs", tests = 17 },
+    { file = "src/application/context_menu.rs", tests = 18 },
 ]
 
 # ── A contact left in a group it was only passing through ───────────────────
@@ -18135,4 +18149,178 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/notes.rs", tests = 13 },
+]
+
+# ── A menu offering a sync that cannot happen, or hiding one that can ───────
+#
+# What it costs a person: they arrow onto a note folder, meet "Sync notes now",
+# choose it, and nothing happens, because their account has no notes backend
+# and never had one. Or the opposite, which is quieter and worse: their notes
+# do reach a server and the menu never says so, so the only way to send them is
+# to wait and hope. Both are the note editor stub in a different coat, which is
+# the failure this project has already shipped once.
+#
+# The menu used to hold a constant and a comment saying notes go nowhere. Both
+# were true and neither could stop being true, because there was nothing to
+# ask. `application::notes_backend` is the answer now and this menu asks it.
+#
+# The break is the two arms swapped, which offers the sync exactly where it
+# cannot happen and hides it exactly where it can. Two other breaks were
+# considered and rejected. Returning the same list from both arms is caught by
+# the compiler before any test runs, because `NOTE_FOLDERS_WITH_SYNC` then has
+# no reader and `-D warnings` refuses it, so it would prove nothing. Putting
+# the constant back into `entries_for` reddens nothing at all today, because
+# every account answers the same, and that is written down here rather than
+# left for somebody to rediscover: this record does not cover it.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,107 passed
+# and exactly two failed. The second is the older absence check, which is kept
+# rather than replaced precisely because it asserts against a literal: it goes
+# red here while an assertion computed from the seam would not.
+[[guard]]
+name = "the note folder menu offers a sync exactly where the seam says one exists"
+file = "src/application/context_menu.rs"
+before = """    match notes.goes_somewhere_else() {
+        true => NOTE_FOLDERS_WITH_SYNC,
+        false => NOTE_FOLDERS,
+    }"""
+after = """    match notes.goes_somewhere_else() {
+        true => NOTE_FOLDERS,
+        false => NOTE_FOLDERS_WITH_SYNC,
+    }"""
+red = [
+    "application::context_menu::tests::test_notes_are_not_offered_a_sync_they_cannot_do",
+    "application::context_menu::tests::test_the_note_folder_menu_offers_a_sync_exactly_where_the_seam_says_one_exists",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
+]
+
+# ── Two places deciding where one account's notes go ────────────────────────
+#
+# The other direction, and a different property. The record above holds the
+# menu to the seam's answer. This one holds the seam to being the only answer:
+# where a new note is filed, what the note folder menu offers, and the sentence
+# the settings screen says all read the same function, so none of them can come
+# to believe something the others do not.
+#
+# That is not hypothetical here. `new_item::supports` used to answer for notes
+# with a `false` and a comment giving the reason per provider, and the menu
+# held a constant with the same reason written out again. Two copies of one
+# fact, in two files, is how a menu comes to offer a sync a screen calls
+# impossible. `supports` asks here now.
+#
+# The break is the seam's fallback arm answering that a backend exists, which
+# is what a half-finished first backend looks like: `05.1-03` wires CalDAV and
+# puts it in the arm that catches everything rather than in the arm for the
+# provider that has it. It is the constant rather than the removal on purpose,
+# because a removal is caught by the compiler.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,104 passed
+# and five failed. Three are the seam's own; the fourth is the note folder menu
+# reached through `entries_for`, which asks about an account nobody named; and
+# the fifth is in `new_item`, which is the one that proves `supports` really
+# asks here rather than keeping its own answer.
+[[guard]]
+name = "where a new note is filed and what its menu offers come from one answer"
+file = "src/application/notes_backend.rs"
+before = """        // mail server, and a note "in" one would live in a database on this
+        // computer while claiming to belong somewhere else.
+        _ => NotesBackend::ThisComputer,"""
+after = """        // mail server, and a note "in" one would live in a database on this
+        // computer while claiming to belong somewhere else.
+        _ => NotesBackend::CalDavJournal,"""
+red = [
+    "application::context_menu::tests::test_notes_are_not_offered_a_sync_they_cannot_do",
+    "application::new_item::tests::test_a_container_goes_where_the_things_it_holds_go",
+    "application::notes_backend::tests::test_a_default_account_that_is_not_there_is_the_same_as_none",
+    "application::notes_backend::tests::test_an_account_whose_provider_this_build_does_not_recognise_keeps_its_notes_here",
+    "application::notes_backend::tests::test_an_account_with_no_provider_at_all_keeps_its_notes_here",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/new_item.rs", tests = 42 },
+    { file = "src/application/notes_backend.rs", tests = 12 },
+]
+
+# ── A sentence that says the same thing whatever the answer was ─────────────
+#
+# What it costs a person: they open Settings, read that their notes are kept
+# on this computer and that this account has no notes backend, and their notes
+# have been going to a server for weeks. Or the reverse, which is what ships
+# today: the sentence is right by accident because every account answers the
+# same, and nothing would notice when one stops.
+#
+# This is the note editor stub in the shape a sentence can take. That editor
+# filled itself with "Note 1" and "(Note content loaded here)" on every
+# selection, and it looked finished. A sentence that ignores what it was told
+# looks finished in exactly the same way, and reads as an answer rather than as
+# a placeholder, which is worse.
+#
+# The break is the one somebody writes by copying the arm above and forgetting
+# to change the words. It is the constant rather than the removal on purpose:
+# a function that stopped taking the answer at all would not compile.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,114 passed
+# and exactly one failed.
+[[guard]]
+name = "the settings sentence says where the notes really go"
+file = "src/application/notes_backend.rs"
+before = '''        NotesBackend::CalDavJournal => format!(
+            "Notes in {account_named} are kept on this computer and sent to that \
+             account's calendar server."
+        ),'''
+after = '''        NotesBackend::CalDavJournal => format!(
+            "Notes in {account_named} are kept on this computer. This account has no \
+             notes backend, so nothing sends them anywhere."
+        ),'''
+red = [
+    "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
+]
+tests_last_seen = [
+    { file = "src/application/notes_backend.rs", tests = 12 },
+]
+
+# ── A sentence only one screen reader hears ─────────────────────────────────
+#
+# The other half, and a different failure. The one above is the words being
+# wrong. This is the words being right and one of the two people who need them
+# never hearing them.
+#
+# Windows has two accessibility channels and this program needs both. A static
+# text's own label serves UI Automation, which is what Narrator reads.
+# `set_accessible_name` writes the MSAA name, which is what NVDA reads. Drop
+# the second line and the sentence is on screen, is read by Narrator, and is
+# silent to the screen reader most of this program's users have. Nothing about
+# the panel looks wrong.
+#
+# This project has already shipped that mistake at scale: sixteen widgets were
+# "named" with `set_name()`, which sets an internal wxWidgets identifier and
+# never reaches the accessibility tree at all. It compiled and passed 324
+# tests. Guardrail 2 is written about it.
+#
+# The break is the `set_accessible_name` line taken out, which is what somebody
+# writes when they decide the label is enough.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,114 passed
+# and exactly one failed. What it cannot see, said here rather than left to be
+# assumed: it reads the screen's source. A control built correctly and never
+# given focus, or a name a real screen reader announces differently, keeps this
+# green. Only a screen reader answers that, and nobody has run one.
+[[guard]]
+name = "the settings sentence about notes reaches both windows accessibility channels"
+file = "src/presentation/wx_settings.rs"
+before = """    set_accessible_name(&notes_answer, &where_notes_go);
+    notes_sec.add(&notes_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+after = """    notes_sec.add(&notes_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+red = [
+    "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]

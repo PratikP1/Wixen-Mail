@@ -246,18 +246,26 @@ pub fn supports(account: &Account, kind: ItemKind) -> bool {
         ItemKind::Contact => provider.is_some_and(|p| CONTACT_PROVIDERS.contains(&p.as_str())),
         ItemKind::Event => provider.is_some_and(|p| CALENDAR_PROVIDERS.contains(&p.as_str())),
         ItemKind::Task => provider.is_some_and(|p| TASK_PROVIDERS.contains(&p.as_str())),
-        // Notes are false for a reason per provider rather than one reason.
-        // Google Keep's API is Workspace-only, so a consumer Gmail account
-        // cannot use it at all. OneNote could carry them, and has not been
-        // written: a OneNote page is an HTML document in a section in a
-        // notebook rather than a title and a body, so the mapping is a
-        // decision rather than an afternoon.
+        // Asked rather than answered again here. The reason per provider used
+        // to be written out in this comment, and it is now written where the
+        // answer is given: `application::notes_backend` says where an
+        // account's notes go, the note folder menu asks the same place, and
+        // the settings screen says the same answer out loud. Three copies of
+        // one fact is how a menu comes to offer a sync a screen calls
+        // impossible.
         //
+        // The answer is still false for every account, so nothing about where
+        // a new note is filed changes today. It changes the moment a backend
+        // ships, and that is the point: a note made in an account whose notes
+        // reach a server belongs to that account.
+        ItemKind::Note => {
+            crate::application::notes_backend::for_account(Some(account)).goes_somewhere_else()
+        }
         // Reminders stay false everywhere and always will. In Outlook and
         // Exchange a reminder is a property of an event or a task rather than
         // an item, and Google folded Reminders into Tasks in 2023, so there is
         // nothing on either side to sync a standalone reminder to.
-        ItemKind::Reminder | ItemKind::Note => false,
+        ItemKind::Reminder => false,
     }
 }
 

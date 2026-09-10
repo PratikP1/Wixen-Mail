@@ -68,6 +68,7 @@ pub mod message_files;
 pub mod message_id;
 pub mod messages;
 pub mod new_item;
+pub mod notes_backend;
 pub mod occurrences;
 pub mod opening;
 pub mod opening_pgp;

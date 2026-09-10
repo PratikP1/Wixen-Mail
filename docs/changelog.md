@@ -8,6 +8,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Your notes still stay on this computer, and one place now says so.** Nothing
+  about where your notes are kept has changed. What changed is that the answer
+  is given in one place instead of being written out separately in three.
+
+  The menu on a note folder used to leave "Sync notes now" off because of a
+  comment saying notes go nowhere. It now asks where that account's notes go
+  and offers the line only if the answer is somewhere. Today the answer is the
+  same for every account, so the menu looks exactly as it did.
+
+  Where a new note is filed asks the same place, so a menu cannot come to offer
+  a sync that the rest of the program says is impossible.
+
+  Known limitation: no notes backend exists. This is the shape a backend goes
+  behind, and nothing here talks to a server or offers a switch that would.
+
+### Added
+
+- **Settings now says where your notes go.** Calendar and PIM, in a new Notes
+  section at the end of the tab. It names your default account and says
+  whether that account's notes leave this computer.
+
+  Today it says they do not, and that it is because the account has no notes
+  backend. That is the answer rather than a placeholder: a Gmail account will
+  go on having none, because the Google Keep API is only available to
+  Workspace accounts.
+
+  There is no switch, because there is nothing to choose. A control that
+  changes nothing is worse than a sentence that tells you where you stand.
+
+  The sentence comes from the same place the note folder menu asks, so the two
+  cannot come to say different things.
+
+  Known limitation: nobody has heard this section with a screen reader. Whether
+  it is found where it was put, and whether the sentence is heard as an answer
+  rather than as an apology, has not been tested.
+
 - **What a note is kept as, said plainly.** A note's body is stored exactly as
   you typed it. Nothing is tidied on the way in and nothing on the way out, so
   the text that comes back is the text that went in, down to the trailing

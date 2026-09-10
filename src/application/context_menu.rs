@@ -30,6 +30,7 @@
 //! thing that differs between them is the list, and the list can be tested.
 
 use crate::application::new_item::{ContainerKind, ItemKind};
+use crate::application::notes_backend::NotesBackend;
 
 /// What has focus when the menu key is pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,6 +251,15 @@ const fn entry(label: &'static str, action: Action) -> Entry {
 }
 
 /// What to offer for whatever has focus.
+///
+/// A note folder is the one row a [`Focus`] cannot fully answer, because where
+/// an account's notes go is a fact about the account and a `Focus` names no
+/// account. This answers for an account nobody has named, which is what
+/// [`crate::application::notes_backend::for_account`] is asked with `None`
+/// for, and the running program takes the other route: the notes sidebar knows
+/// which account it is showing and calls [`note_folder_entries`] with that
+/// account's answer. Both go through the same function, so the two cannot come
+/// to offer different things.
 pub fn entries_for(focus: Focus) -> &'static [Entry] {
     match focus {
         Focus::Messages => MESSAGES,
@@ -268,7 +278,9 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
         Focus::Items(ItemKind::Mail) => MESSAGES,
         Focus::Containers(ContainerKind::Calendar) => CALENDARS,
         Focus::Containers(ContainerKind::TaskList) => TASK_LISTS,
-        Focus::Containers(ContainerKind::NoteFolder) => NOTE_FOLDERS,
+        Focus::Containers(ContainerKind::NoteFolder) => {
+            note_folder_entries(&crate::application::notes_backend::for_account(None))
+        }
         Focus::Containers(ContainerKind::ContactGroup) => CONTACT_GROUPS,
     }
 }
@@ -437,12 +449,45 @@ static TASK_LISTS: &[Entry] = &[
     entry("&Sync tasks now", Action::SyncNow),
 ];
 
-// No sync: notes are kept on this computer and go nowhere, so offering to
-// sync them would be offering something that cannot happen.
+// No sync, for an account whose notes stay on this computer. Which used to be
+// every account by a rule written here, and is now every account by an answer
+// given somewhere else: `application::notes_backend` says where an account's
+// notes go, and this menu asks it rather than knowing. What is offered is
+// unchanged, because nothing has a notes backend yet.
 static NOTE_FOLDERS: &[Entry] = &[
     entry("&New folder", Action::NewContainer),
     entry("&Delete this folder", Action::DeleteContainer),
 ];
+
+// The same folder, in an account whose notes reach a server. Nothing answers
+// this yet: `05.1-03` puts a CalDAV journal behind it.
+//
+// The letter is s, which neither of the two above claims, and it is the letter
+// the other three container menus already give their own sync line.
+static NOTE_FOLDERS_WITH_SYNC: &[Entry] = &[
+    entry("&New folder", Action::NewContainer),
+    entry("&Delete this folder", Action::DeleteContainer),
+    entry("&Sync notes now", Action::SyncNow),
+];
+
+/// What to offer on a note folder, given where that account's notes go.
+///
+/// The one menu here whose answer is not a constant. Every other row's list
+/// depends on nothing but which row it is; a note folder's depends on the
+/// account, because an account whose notes reach a server can be asked to
+/// send them now and an account whose notes stay here cannot.
+///
+/// The decision is [`NotesBackend::goes_somewhere_else`] rather than a second
+/// reading of the variants, so this and where a new note is filed cannot come
+/// to disagree about one account. What holds that honest is that the test
+/// beside this writes its expected column down as literals, one row per
+/// answer, instead of asking the same function twice.
+pub fn note_folder_entries(notes: &NotesBackend) -> &'static [Entry] {
+    match notes.goes_somewhere_else() {
+        true => NOTE_FOLDERS_WITH_SYNC,
+        false => NOTE_FOLDERS,
+    }
+}
 
 static CONTACT_GROUPS: &[Entry] = &[
     // First, because it is what a group is for.
@@ -712,6 +757,45 @@ mod tests {
             .collect();
 
         assert!(!offered.contains(&Action::SyncNow));
+    }
+
+    #[test]
+    fn test_the_note_folder_menu_offers_a_sync_exactly_where_the_seam_says_one_exists() {
+        // One row per answer the seam can give, and the expected column is
+        // written down rather than worked out. That is the difference between
+        // this and a check that cannot fail: the four tests above compare a
+        // menu against a predicate in another module, so a break inside this
+        // file moves one side only. A notes check written that way would
+        // compare the menu against the seam and would have both sides come
+        // from the seam, so making the seam always answer that a backend
+        // exists would move them together and nothing would go red.
+        //
+        // The last row is the decision `NotesBackend::Other` forces: a build
+        // that meets the name of a backend it does not recognise has no
+        // client for it, so it cannot sync to it. The note is still read and
+        // still kept, which is what the variant is for.
+        use crate::application::notes_backend::NotesBackend;
+
+        let expected = [
+            (NotesBackend::ThisComputer, false),
+            (NotesBackend::CalDavJournal, true),
+            (NotesBackend::Other("something-later".to_string()), false),
+        ];
+
+        for (backend, offers_a_sync) in expected {
+            let offered: Vec<Action> = note_folder_entries(&backend)
+                .iter()
+                .map(|e| e.action)
+                .collect();
+            assert_eq!(
+                offered.contains(&Action::SyncNow),
+                offers_a_sync,
+                "{backend:?}: the menu and what is written down disagree"
+            );
+            // Whatever the answer, a folder can still be made and removed.
+            assert!(offered.contains(&Action::NewContainer), "{backend:?}");
+            assert!(offered.contains(&Action::DeleteContainer), "{backend:?}");
+        }
     }
 
     #[test]
