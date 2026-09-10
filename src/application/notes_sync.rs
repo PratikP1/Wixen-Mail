@@ -38,10 +38,10 @@
 //! mean something at both ends is a decision somebody has to make about what a
 //! folder *is* at each backend, and this plan does not make it.
 
-use crate::application::notes_backend::NotesService;
-use crate::application::summing_up::SummingUp;
+use crate::application::notes_backend::{ANoteThere, NotesService, WhatTheBackendSaid};
+use crate::application::summing_up::{SummingUp, how_many};
 use crate::common::Result;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{MessageCache, NoteEntry};
 
 /// What one notes sync did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -104,31 +104,243 @@ impl NoteSyncResult {
     }
 }
 
-/// A count and the thing it counts, in one place.
-///
-/// The same routine the calendar and task syncs use, so "1 note" and
-/// "2 notes" are decided once rather than by each clause writing its own `s`.
-fn how_many(count: usize, thing: &str) -> String {
-    crate::service::caldav::how_many(count, thing)
-}
-
 /// Send what is waiting, then take what has arrived.
 ///
-/// `container` is opaque and is handed straight back to the backend. Nothing
-/// here parses it, splits it or builds one, which is a requirement of the seam
-/// rather than a habit: a CalDAV journal collection is one address and a
-/// OneNote page lives four levels down, so anything that took a container
+/// `container` is opaque and is handed straight back. Nothing here parses it,
+/// splits it or builds one, which is a requirement of the seam rather than a
+/// habit: one backend's container is one address and another's is four levels
+/// of hierarchy flattened into a string, so anything that took a container
 /// apart would be reading one backend's addressing.
+///
+/// The push goes first. A change made here that has not left is the thing most
+/// easily lost, and running the read first would answer the disagreement with
+/// the backend's copy before anybody had offered ours.
 pub async fn sync_notes<S: NotesService>(
     cache: &MessageCache,
     service: &S,
     account_id: &str,
     container: &str,
 ) -> Result<NoteSyncResult> {
-    // Not written yet. This is the RED half of `05.1-03` task 1, and the
-    // commit that carries it names the tests it leaves failing.
-    let _ = (cache, service, account_id, container);
-    Ok(NoteSyncResult::default())
+    let mut result = NoteSyncResult::default();
+    push_what_is_waiting(cache, service, account_id, container, &mut result).await;
+    take_what_has_arrived(cache, service, account_id, container, &mut result).await;
+    Ok(result)
+}
+
+/// Offer every note changed here that nobody has been told about.
+async fn push_what_is_waiting<S: NotesService>(
+    cache: &MessageCache,
+    service: &S,
+    account_id: &str,
+    container: &str,
+    result: &mut NoteSyncResult,
+) {
+    let waiting = match cache.notes_waiting_to_be_sent(account_id) {
+        Ok(waiting) => waiting,
+        Err(e) => {
+            result.errors.push(format!(
+                "The notes waiting to be sent could not be read: {e}"
+            ));
+            return;
+        }
+    };
+
+    for note in waiting {
+        // Built here rather than kept as a field, because the two columns are
+        // one fact about one pairing and a backend is handed the pairing.
+        let known_as = note.known_as.as_ref().map(|named| ANoteThere {
+            named: named.clone(),
+            version: note.known_version.clone(),
+        });
+        let said = service
+            .leave_a_note_saying(container, known_as.as_ref(), &note.title, &note.body)
+            .await;
+        match said {
+            Ok(WhatTheBackendSaid::Done(there)) => {
+                match cache.a_backend_took_the_note(
+                    &note.id,
+                    &there.named,
+                    there.version.as_deref(),
+                ) {
+                    // The note's id, not its title. This goes to the log, and a
+                    // title is the person's own words in the same way a message
+                    // body is. The id finds the row.
+                    Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+                    Ok(()) => result.sent += 1,
+                }
+            }
+            // Held by what this program is allowed to change, before anything
+            // left the machine. Counted rather than pushed into `errors`,
+            // because nothing went wrong: as an error it is "1 problem" on
+            // every sync until the setting changes. Nothing else happens here
+            // on purpose, and that is the load-bearing half: the flag stays
+            // set, so turning the setting on still sends it.
+            Ok(WhatTheBackendSaid::NotAllowedToChangeAnything) => {
+                result.waiting_on_the_setting += 1;
+            }
+            // Said in words rather than counted. An account that keeps being
+            // refused is "1 problem" every sync forever, and the count is all
+            // the status line shows.
+            Ok(WhatTheBackendSaid::NotSignedIn) => result.needs_sign_in = true,
+            // Both copies moved. Which one is kept is not decided here and is
+            // not decided by the backend either: `conflict_choice` is where it
+            // is asked, and holding both copies is task 2 of `05.1-03`. Until
+            // then the note goes on waiting and the refusal is said rather
+            // than swallowed.
+            Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => result.errors.push(format!(
+                "Note {}: the backend's copy moved first, so nothing was sent",
+                note.id
+            )),
+            // The backend does not hold the note this computer thinks it does.
+            // Task 2 is where a note that has gone at the other end is settled,
+            // because that is the task about deletions and it needs the record
+            // of them to tell "somebody deleted it there" from "this computer
+            // deleted it and the backend has caught up".
+            Ok(WhatTheBackendSaid::ItIsNotThere) => result.errors.push(format!(
+                "Note {}: the backend no longer holds it, so nothing was sent",
+                note.id
+            )),
+            // The string is for the log. Nothing reads it out: text a crate
+            // wrote for a developer is not text to speak to somebody whose
+            // notes did not sync.
+            Ok(WhatTheBackendSaid::CouldNotBeReached(said)) => {
+                result.errors.push(format!("Note {}: {said}", note.id));
+            }
+            // The same refusal as `NotAllowedToChangeAnything`, arriving as an
+            // error because the gate stops a request before the client is even
+            // asked. Both are the setting, and both are counted.
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
+            Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+        }
+    }
+}
+
+/// Take down whatever the backend holds that this computer does not have.
+async fn take_what_has_arrived<S: NotesService>(
+    cache: &MessageCache,
+    service: &S,
+    account_id: &str,
+    container: &str,
+    result: &mut NoteSyncResult,
+) {
+    let there = match service.notes_it_holds(container).await {
+        Ok(there) => there,
+        Err(e) => {
+            // Said rather than reported as an empty container. A read that
+            // could not happen and a container with nothing in it are the same
+            // silence, and only one of them means somebody's notes are missing.
+            result
+                .errors
+                .push(format!("The notes at the backend could not be read: {e}"));
+            return;
+        }
+    };
+    let here = match cache.get_all_notes_for_account(account_id) {
+        Ok(here) => here,
+        Err(e) => {
+            result
+                .errors
+                .push(format!("The notes on this computer could not be read: {e}"));
+            return;
+        }
+    };
+
+    for one in there {
+        let ours = here
+            .iter()
+            .find(|note| note.known_as.as_deref() == Some(one.named.as_str()));
+        if the_marker_stayed_still(ours.and_then(|note| note.known_version.as_deref()), &one) {
+            result.unchanged += 1;
+            continue;
+        }
+        let said = match service.what_a_note_says(container, &one).await {
+            Ok(Some(said)) => said,
+            // Gone between the listing and the reading, which is ordinary
+            // rather than wrong: somebody deleted it at the other end while
+            // this was running.
+            Ok(None) => continue,
+            Err(e) => {
+                result
+                    .errors
+                    .push(format!("A note at the backend could not be read: {e}"));
+                continue;
+            }
+        };
+        match write_it_down(cache, account_id, ours, &said) {
+            Ok(()) => result.stored += 1,
+            Err(e) => result
+                .errors
+                .push(format!("A note from the backend could not be kept: {e}")),
+        }
+    }
+}
+
+/// Whether the backend's copy is the one this computer already has.
+///
+/// A missing marker is not evidence that a copy stayed still, it is no
+/// evidence at all, so a backend that gives none has every copy treated as
+/// having moved. `contacts_sync::the_marker_moved` says the same thing for a
+/// contact and for the same reason, and the seam's contract writes it down as
+/// a requirement rather than leaving each caller to decide.
+///
+/// Compared for equality and nothing else. A backend does not promise its
+/// marker is opaque, orderable or tied to the content, so ordering two of them
+/// or reading one as a date would be one backend's reading of the word.
+fn the_marker_stayed_still(ours: Option<&str>, theirs: &ANoteThere) -> bool {
+    match (ours, theirs.version.as_deref()) {
+        (Some(ours), Some(theirs)) => ours == theirs,
+        _ => false,
+    }
+}
+
+/// Keep what the backend said, over the note it belongs to or as a new one.
+fn write_it_down(
+    cache: &MessageCache,
+    account_id: &str,
+    ours: Option<&NoteEntry>,
+    said: &crate::application::notes_backend::ANoteAsItStands,
+) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let note = match ours {
+        // Everything else about the row stays: which folder somebody filed it
+        // in, whether they pinned it, when they made it. None of those is the
+        // backend's to say, and writing a whole row from what arrived is how a
+        // sync comes to unpin somebody's note.
+        Some(ours) => NoteEntry {
+            title: said.title.clone(),
+            body: said.body.clone(),
+            known_as: Some(said.known_as.named.clone()),
+            known_version: said.known_as.version.clone(),
+            // It is now exactly what the backend holds, so there is nothing
+            // left to send. Left waiting, the next push would write the
+            // backend's own words back at it on every sync forever.
+            pending: false,
+            updated_at: now,
+            ..ours.clone()
+        },
+        None => NoteEntry {
+            id: format!("note-{}", uuid::Uuid::new_v4()),
+            account_id: account_id.to_string(),
+            // The account's first note folder. Folders on this computer are
+            // not mirrored at the backend and this does not pretend they are:
+            // what a folder means at each backend is a decision somebody has
+            // to make, and the module header says so rather than leaving a
+            // reader to work out why every arrival lands in one place.
+            folder_id: Some(cache.ensure_default_note_folder(account_id)?.id),
+            title: said.title.clone(),
+            body: said.body.clone(),
+            format: crate::data::message_cache::NoteBody::AsTyped,
+            pinned: false,
+            created_at: now.clone(),
+            updated_at: now,
+            pending: false,
+            known_as: Some(said.known_as.named.clone()),
+            known_version: said.known_as.version.clone(),
+        },
+    };
+    cache.save_note(&note)
 }
 
 #[cfg(test)]
@@ -137,7 +349,7 @@ mod tests {
     use crate::application::notes_backend::{ANoteAsItStands, ANoteThere, WhatTheBackendSaid};
     use crate::common::temp_home::TempHome;
     use crate::common::{Error, Result as OurResult};
-    use crate::data::message_cache::{NoteBody, NoteEntry, NoteFolderEntry};
+    use crate::data::message_cache::{NoteBody, NoteFolderEntry};
     use std::sync::Mutex;
 
     const ACCOUNT: &str = "acct-1";

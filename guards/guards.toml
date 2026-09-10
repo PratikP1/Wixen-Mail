@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 498 records have arrived since and have not been through it.
+# 500 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17572,12 +17572,14 @@ after = """        match self {
 }"""
 red = [
     "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_copying_a_task_a_provider_holds_leaves_the_provider_owed_nothing",
+    "test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own",
     "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
     "test_the_copy_of_an_event_a_provider_holds_makes_no_claim_on_the_providers_own",
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
 # The same failure one step later, at the write rather than at the decision.
@@ -17593,11 +17595,12 @@ before = """                task.id = new_id("task");
 after = """                task.remote_updated = None;"""
 red = [
     "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_copying_a_task_a_provider_holds_leaves_the_provider_owed_nothing",
     "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
 # ── A copy line missing from a panel where copying works ────────────────────
@@ -18098,7 +18101,7 @@ red = [
     "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 18 },
 ]
 
 # ── The word beside a note saying what its body is written in ───────────────
@@ -18131,7 +18134,7 @@ red = [
     "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 18 },
 ]
 
 # The other half. The word is still read correctly and is thrown away on the
@@ -18148,7 +18151,7 @@ red = [
     "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 18 },
 ]
 
 # ── A menu offering a sync that cannot happen, or hiding one that can ───────
@@ -18242,7 +18245,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 12 },
+    { file = "src/application/notes_backend.rs", tests = 16 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18281,7 +18284,7 @@ red = [
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 12 },
+    { file = "src/application/notes_backend.rs", tests = 16 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18323,4 +18326,73 @@ red = [
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 60 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# A change made by the one writer that does not go through `save_note` is still
+# sent.
+#
+# `toggle_note_pin` writes its own `UPDATE`, so an invariant kept only in
+# `save_note` is bypassed by it and nothing says so. Pinning is a change
+# somebody made and would expect their backend to be told about, and the shape
+# of the bug is already in this project's changelog against a task: a move
+# changed a row, nothing marked it as waiting, nothing ever pushed it, and the
+# status line said the change had been made.
+#
+# The break is the half-fix rather than a wholesale removal: the flag stays in
+# `save_note` and comes out of the one writer that does not use it, which is
+# exactly what somebody writes who read `save_note` and stopped there.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,769 passed
+# in the library and exactly one failed.
+#
+# A second candidate was considered and rejected: taking the flag out of
+# `save_note` instead. That reddens the storage round trip as well, so it
+# measures "the flag is written at all" rather than "the writer that bypasses
+# the upsert sets it too", which is the thing nothing else would catch.
+[[guard]]
+name = "a note changed by the writer that bypasses the upsert is still sent"
+file = "src/data/message_cache/notes.rs"
+before = '''                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1, pending = 1
+                 WHERE id = ?2",'''
+after = '''                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1 WHERE id = ?2",'''
+red = [
+    "data::message_cache::notes::tests::test_pinning_a_note_leaves_it_waiting_to_be_sent",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 18 },
+]
+
+# A copy of a note makes a second note at the backend rather than writing over
+# the first.
+#
+# A note carries what its backend calls it in a column of its own, the way an
+# event does, so minting a new identifier is not enough on its own. Kept, the
+# push asks the backend to change its copy of the original rather than make a
+# second one, and the original is the one that moves. That is data loss at
+# somebody's server rather than a wrong row here, which is why the event and
+# task arms above this one in `file_under` both carry a comment about it.
+#
+# The break is what an executor writes who follows a plan that says to add the
+# columns and does not mention the copy branch, which is what nearly happened:
+# the arm carried a comment saying a note has no provider identity, and that
+# comment stopped being true in the same commit as the columns arrived.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. Exactly one
+# test failed, in this suite, and the library was untouched.
+[[guard]]
+name = "a copied note makes a second note at the backend rather than overwriting the first"
+file = "src/presentation/managers.rs"
+suite = "a_copy_leaves_the_original_where_it_was"
+before = '''                note.id = new_id("note");
+                note.known_as = None;
+                note.known_version = None;'''
+after = '''                note.id = new_id("note");'''
+red = [
+    "test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own",
+]
+tests_last_seen = [
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]

@@ -286,11 +286,21 @@ impl MessageCache {
     }
 
     /// Toggle pin status of a note.
+    ///
+    /// Leaves the note waiting to be sent, and that half is the one worth
+    /// reading. This writes its own `UPDATE` and does not go through
+    /// [`Self::save_note`], so an invariant kept only there is bypassed by it,
+    /// silently and for ever. Pinning is a change somebody made and would
+    /// expect their backend to be told about, and the shape of the bug is
+    /// already in this project's changelog: a move changed a row, nothing
+    /// marked it as waiting, nothing ever pushed it, and the status line said
+    /// the change had been made.
     pub fn toggle_note_pin(&self, note_id: &str) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn
             .execute(
-                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1 WHERE id = ?2",
+                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1, pending = 1
+                 WHERE id = ?2",
                 rusqlite::params![now, note_id],
             )
             .map_err(|e| Error::Other(format!("Failed to toggle note pin: {}", e)))?;

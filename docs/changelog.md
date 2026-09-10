@@ -6,6 +6,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Notes can now be sent to a calendar server and read back from one.** If an
+  account already has a calendar you added by its address, that same server
+  holds journal entries, and your notes for that account now go there under
+  the same sign-in. Nothing else changes: an account with no calendar server
+  keeps its notes on this computer, and Settings goes on saying so.
+
+  A note you change here waits until it has been sent, and pinning a note or
+  moving it between folders counts as a change. Copying a note makes a second
+  note at the server rather than writing over the first.
+
+  A change this program is not allowed to make is not a failure. It stays here,
+  it goes on waiting, and the sync says so in the same words your calendar,
+  task and contact syncs already use: turn on Allow Changes in Settings to send
+  it.
+
+  Known limitation, and it is a large one: **nothing here has ever met a real
+  server.** Every part of this has been driven against a stand-in written in
+  this repository, which proves the program agrees with itself and says nothing
+  about anybody's calendar server.
+
 ### Changed
 
 - **Your notes still stay on this computer, and one place now says so.** Nothing
