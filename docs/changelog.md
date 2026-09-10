@@ -6,6 +6,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **What a note is kept as, said plainly.** A note's body is stored exactly as
+  you typed it. Nothing is tidied on the way in and nothing on the way out, so
+  the text that comes back is the text that went in, down to the trailing
+  space and the line endings.
+
+  That is what makes the headings and lists in a note readable. The reading
+  looks for whatever structure is in the words you wrote rather than turning
+  them into something else first, so a note with a heading on it is spoken as
+  a heading, and a note with no structure in it is spoken as it stands with
+  nothing added.
+
+  There was no test that put a note's body through storage and back until now.
+  There is one, and it is aimed: a trailing space catches a tidy-up somebody
+  adds later, Windows line endings catch a normalisation, an emoji catches a
+  byte-length assumption, and a backslash before a newline catches an escape
+  pass.
+
+  Your notes are kept in the same database as your cached mail, and that
+  database is not encrypted. Anybody who can read the file can read your
+  notes.
+
+  Known limitation: nobody has heard a note with headings and lists in it read
+  back by a screen reader. Whether the structure is clearer to listen to than
+  the flat text it replaced is the whole argument for keeping notes as
+  Markdown, and it has never been tested with one.
+
 ### Added
 
 - **Moving or copying something now tells you whether it has gone anywhere.**
