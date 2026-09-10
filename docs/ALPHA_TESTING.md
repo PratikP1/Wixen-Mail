@@ -141,10 +141,20 @@ Written down so you do not spend time reporting things already on the list.
   |---|---|
   | One copy, in the new list | It worked |
   | The task in both lists | The second step has not happened yet. The next sync should tidy it |
+  | Still in the old list, and nowhere else | Nothing was sent, and nothing will be. See below |
   | The task in neither list | Tell us straight away. This is the failure the whole design exists to prevent |
 
   Moving a task takes two syncs to finish, so seeing it in both lists for a
   short while is normal.
+
+  The third row happens when you move the task into a list you made on this
+  computer, rather than into one that came from Google. Lists you make here stay
+  here, so Google is never told about them, and it is never asked to create the
+  new copy or to remove the old one. In Wixen Mail the task has moved and shows
+  in the list you chose. In your browser nothing has changed at all.
+
+  Nothing is lost, and nothing needs reporting. To move the task at Google as
+  well, move it into one of the lists that came from Google.
 
   When you move a task that came from Google, Wixen Mail says "and has not
   reached the account yet", or tells you to turn on Allow Changes if that is
