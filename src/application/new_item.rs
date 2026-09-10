@@ -239,7 +239,7 @@ const TASK_PROVIDERS: [&str; 2] = ["gmail", "outlook"];
 ///
 /// Mail is the one every account can hold, because being a mail account is
 /// what makes it an account.
-pub fn supports(account: &Account, kind: ItemKind) -> bool {
+pub fn supports(account: &Account, kind: ItemKind, a_calendar_server: bool) -> bool {
     let provider = provider_key(account);
     match kind {
         ItemKind::Mail => true,
@@ -259,7 +259,8 @@ pub fn supports(account: &Account, kind: ItemKind) -> bool {
         // ships, and that is the point: a note made in an account whose notes
         // reach a server belongs to that account.
         ItemKind::Note => {
-            crate::application::notes_backend::for_account(Some(account)).goes_somewhere_else()
+            crate::application::notes_backend::for_account(Some(account), a_calendar_server)
+                .goes_somewhere_else()
         }
         // Reminders stay false everywhere and always will. In Outlook and
         // Exchange a reminder is a property of an event or a task rather than
@@ -282,6 +283,7 @@ pub fn destination(
     kind: ItemKind,
     accounts: &[Account],
     default_id: Option<&str>,
+    a_calendar_server: bool,
 ) -> Option<Destination> {
     let default = default_id.and_then(|id| accounts.iter().find(|account| account.id == id));
 
@@ -298,7 +300,9 @@ pub fn destination(
         // Deliberately not "the first account that supports it". A contact
         // appearing in an account somebody was not thinking about is worse
         // than one they can find on this computer, where they put it.
-        Some(account) if supports(account, kind) => Some(Destination::Account(account.id.clone())),
+        Some(account) if supports(account, kind, a_calendar_server) => {
+            Some(Destination::Account(account.id.clone()))
+        }
         _ => Some(Destination::Local),
     }
 }
@@ -332,13 +336,14 @@ pub fn container_destination(
     kind: ContainerKind,
     accounts: &[Account],
     default_id: Option<&str>,
+    a_calendar_server: bool,
 ) -> Destination {
     if matches!(kind, ContainerKind::ContactGroup) {
         return Destination::Local;
     }
     // Never `None` for a container: `destination` only refuses mail, and a
     // container is not mail.
-    destination(kind.holds(), accounts, default_id).unwrap_or(Destination::Local)
+    destination(kind.holds(), accounts, default_id, a_calendar_server).unwrap_or(Destination::Local)
 }
 
 /// Which account a compose window sends from.
@@ -413,8 +418,8 @@ mod tests {
     fn test_a_gmail_account_holds_contacts_and_events() {
         let gmail = account("a1", "me@gmail.com");
 
-        assert!(supports(&gmail, ItemKind::Contact));
-        assert!(supports(&gmail, ItemKind::Event));
+        assert!(supports(&gmail, ItemKind::Contact, false));
+        assert!(supports(&gmail, ItemKind::Event, false));
     }
 
     #[test]
@@ -424,9 +429,12 @@ mod tests {
         // claiming to belong to an account.
         let plain = account("a1", "me@myhost.example");
 
-        assert!(supports(&plain, ItemKind::Mail));
+        assert!(supports(&plain, ItemKind::Mail, false));
         for kind in [ItemKind::Contact, ItemKind::Event, ItemKind::Task] {
-            assert!(!supports(&plain, kind), "{kind:?} should not be offered");
+            assert!(
+                !supports(&plain, kind, false),
+                "{kind:?} should not be offered"
+            );
         }
     }
 
@@ -437,7 +445,7 @@ mod tests {
         // the rule: the flag and the sync behind it move together.
         for address in ["me@gmail.com", "me@outlook.com"] {
             assert!(
-                supports(&account("a1", address), ItemKind::Task),
+                supports(&account("a1", address), ItemKind::Task, false),
                 "{address} should sync tasks"
             );
         }
@@ -457,7 +465,7 @@ mod tests {
             let account = account("a1", address);
             for kind in [ItemKind::Note, ItemKind::Reminder] {
                 assert!(
-                    !supports(&account, kind),
+                    !supports(&account, kind, false),
                     "{address}: {kind:?} claimed to sync"
                 );
             }
@@ -471,7 +479,7 @@ mod tests {
             account("a2", "me@work.example"),
         ];
 
-        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"));
+        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"), false);
 
         assert_eq!(where_to, Some(Destination::Account("a1".to_string())));
     }
@@ -524,7 +532,7 @@ mod tests {
             ItemKind::Contact,
         ] {
             assert_eq!(
-                destination(kind, &[], None),
+                destination(kind, &[], None, false),
                 Some(Destination::Local),
                 "{kind:?} had nowhere to go"
             );
@@ -535,7 +543,7 @@ mod tests {
     fn test_an_item_the_default_account_cannot_hold_goes_local() {
         let accounts = vec![account("a1", "me@myhost.example")];
 
-        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"));
+        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"), false);
 
         assert_eq!(where_to, Some(Destination::Local));
     }
@@ -549,7 +557,7 @@ mod tests {
             account("a2", "me@gmail.com"),
         ];
 
-        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"));
+        let where_to = destination(ItemKind::Contact, &accounts, Some("a1"), false);
 
         assert_eq!(where_to, Some(Destination::Local));
     }
@@ -564,7 +572,7 @@ mod tests {
 
         for kind in [ItemKind::Note, ItemKind::Reminder] {
             assert_eq!(
-                destination(kind, &accounts, Some("a1")),
+                destination(kind, &accounts, Some("a1"), false),
                 Some(Destination::Local),
                 "{kind:?}"
             );
@@ -579,7 +587,7 @@ mod tests {
         let accounts = vec![account("a1", "me@gmail.com")];
 
         assert_eq!(
-            destination(ItemKind::Task, &accounts, Some("a1")),
+            destination(ItemKind::Task, &accounts, Some("a1"), false),
             Some(Destination::Account("a1".to_string()))
         );
     }
@@ -589,7 +597,7 @@ mod tests {
         // Somebody with one account still expects the key to open a message.
         let accounts = vec![account("a1", "me@gmail.com")];
 
-        let where_to = destination(ItemKind::Mail, &accounts, None);
+        let where_to = destination(ItemKind::Mail, &accounts, None, false);
 
         assert_eq!(where_to, Some(Destination::Account("a1".to_string())));
     }
@@ -598,13 +606,13 @@ mod tests {
     fn test_mail_with_no_account_at_all_has_nowhere_to_go() {
         // Unlike every other kind: a message cannot be sent from this
         // computer alone, so this is the one case that has to say no.
-        assert_eq!(destination(ItemKind::Mail, &[], None), None);
+        assert_eq!(destination(ItemKind::Mail, &[], None, false), None);
     }
 
     #[test]
     fn test_a_note_can_be_made_before_any_account_exists() {
         assert_eq!(
-            destination(ItemKind::Note, &[], None),
+            destination(ItemKind::Note, &[], None, false),
             Some(Destination::Local)
         );
     }
@@ -654,15 +662,15 @@ mod tests {
 
         for container in ContainerKind::ALL {
             assert_eq!(
-                destination(container.holds(), &accounts, Some("a1")),
-                destination(container.holds(), &accounts, Some("a1")),
+                destination(container.holds(), &accounts, Some("a1"), false),
+                destination(container.holds(), &accounts, Some("a1"), false),
             );
         }
 
         // The mail-only account holds none of them, so all four are local.
         for container in ContainerKind::ALL {
             assert_eq!(
-                destination(container.holds(), &accounts, Some("a1")),
+                destination(container.holds(), &accounts, Some("a1"), false),
                 Some(Destination::Local),
                 "{container:?}"
             );
@@ -674,7 +682,12 @@ mod tests {
         let accounts = vec![account("a1", "me@gmail.com")];
 
         assert_eq!(
-            destination(ContainerKind::Calendar.holds(), &accounts, Some("a1")),
+            destination(
+                ContainerKind::Calendar.holds(),
+                &accounts,
+                Some("a1"),
+                false
+            ),
             Some(Destination::Account("a1".to_string()))
         );
     }
@@ -688,12 +701,12 @@ mod tests {
         let accounts = vec![account("a1", "me@gmail.com")];
 
         assert_eq!(
-            container_destination(ContainerKind::ContactGroup, &accounts, Some("a1")),
+            container_destination(ContainerKind::ContactGroup, &accounts, Some("a1"), false),
             Destination::Local
         );
         // The other three still follow the things they hold.
         assert_eq!(
-            container_destination(ContainerKind::Calendar, &accounts, Some("a1")),
+            container_destination(ContainerKind::Calendar, &accounts, Some("a1"), false),
             Destination::Account("a1".to_string())
         );
     }

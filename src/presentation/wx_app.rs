@@ -3353,12 +3353,23 @@ impl WxMailApp {
                 // window is open.
                 wire_context_menu(&notes_sb.tree, {
                     let state = state.clone();
+                    let message_cache = message_cache.clone();
                     move || {
                         let s = lock_state(&state);
-                        let notes = crate::application::notes_backend::for_default_account(
-                            s.default_account_id.as_deref(),
-                            &s.accounts,
-                        );
+                        // Whether that account has a calendar server is a
+                        // stored fact, so the seam is asked through the store.
+                        // With no store open nothing has been read yet and no
+                        // account can have one, which is the same answer.
+                        let notes = match message_cache.as_ref() {
+                            Some(cache) => {
+                                crate::application::notes_backend::for_the_default_account_in(
+                                    cache,
+                                    s.default_account_id.as_deref(),
+                                    &s.accounts,
+                                )
+                            }
+                            None => crate::application::notes_backend::NotesBackend::ThisComputer,
+                        };
                         Some(crate::application::context_menu::note_folder_entries(
                             &notes,
                         ))
@@ -5071,8 +5082,14 @@ impl WxMailApp {
                             // account's notes go, and that is answered from its
                             // provider rather than from its id.
                             let accounts = lock_state(&state).accounts.clone();
-                            let palette =
-                                handle_settings(&frame, &ui_tx, &runtime, &accounts, &a11y);
+                            let palette = handle_settings(
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &accounts,
+                                &message_cache,
+                                &a11y,
+                            );
                             // The notification area follows what was just
                             // saved. Without this, ticking that box did nothing
                             // until the next start, and closing the window
@@ -14664,7 +14681,7 @@ fn open_for_scanning(
             // The accounts as this window has them. A fresh scan profile has
             // none, so the Notes section says so rather than naming one.
             let accounts = lock_state(state).accounts.clone();
-            handle_settings(frame, tx, rt, &accounts, a11y);
+            handle_settings(frame, tx, rt, &accounts, cache, a11y);
         }
         ScanTarget::Accounts => {
             // A fresh profile has no accounts, so nothing here is old enough
@@ -15611,6 +15628,7 @@ fn handle_settings(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     accounts: &[crate::data::account::Account],
+    cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
 ) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
@@ -15631,7 +15649,20 @@ fn handle_settings(
         }
     };
     let config = mgr.app_config().clone();
-    match wx_settings::show_settings_dialog(frame, &config, accounts, a11y) {
+    // Whether the default account has a calendar server, which is what decides
+    // where its notes go. Read here rather than in the dialog because it is a
+    // row in the message cache and the dialog has no handle on one. With no
+    // store open nothing has been read yet, and no account can have one.
+    let a_calendar_server = cache.as_ref().is_some_and(|cache| {
+        crate::application::notes_backend::default_account(
+            Some(config.default_account_id.as_str()),
+            accounts,
+        )
+        .is_some_and(|account| {
+            crate::application::notes_backend::has_a_calendar_server(cache, &account.id)
+        })
+    });
+    match wx_settings::show_settings_dialog(frame, &config, accounts, a_calendar_server, a11y) {
         wx_settings::SettingsResult::Updated(new_config) => {
             // Applied to the running application, not only written to disk.
             // Saving a preference that needs a restart to take effect is a
@@ -23466,6 +23497,9 @@ mod tests {
                 pinned: false,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-07-26".into(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
 

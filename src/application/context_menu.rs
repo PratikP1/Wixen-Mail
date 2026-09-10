@@ -279,7 +279,11 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
         Focus::Containers(ContainerKind::Calendar) => CALENDARS,
         Focus::Containers(ContainerKind::TaskList) => TASK_LISTS,
         Focus::Containers(ContainerKind::NoteFolder) => {
-            note_folder_entries(&crate::application::notes_backend::for_account(None))
+            // No account, and therefore no store to ask whether that account
+            // has a calendar server, which is the fact the seam needs. Both
+            // absences say the same thing, which is that this route cannot
+            // answer for a particular account and does not pretend to.
+            note_folder_entries(&crate::application::notes_backend::for_account(None, false))
         }
         Focus::Containers(ContainerKind::ContactGroup) => CONTACT_GROUPS,
     }

@@ -1197,6 +1197,29 @@ pub struct NoteEntry {
     /// answers the same way. [`NoteBody`] says why, and why it is not dropped.
     pub format: NoteBody,
     pub pinned: bool,
+    /// Changed here and not yet sent to the account's notes backend.
+    ///
+    /// Every write path that changes what a note says sets it and the push
+    /// clears it. That includes the two that do not go through `save_note`:
+    /// `toggle_note_pin` writes its own `UPDATE`, and a move through
+    /// `presentation::managers::file_under` files the note somewhere else.
+    /// A change that never sets this is a change that never leaves.
+    pub pending: bool,
+    /// What the account's notes backend calls this note, when one holds it.
+    ///
+    /// Opaque. Nothing here parses it, splits it or builds one:
+    /// `docs/development/the-notes-seam.md` says so as a requirement on any
+    /// backend. `None` is a note no backend has ever held, which is a note to
+    /// create rather than one to look up.
+    pub known_as: Option<String>,
+    /// The version marker that backend last gave for its copy.
+    ///
+    /// Compared for equality and for nothing else. A backend does not promise
+    /// it is opaque, and does not promise it changes only when the content
+    /// does: ordering two of them, parsing one as a date, or reading a changed
+    /// one as proof the text changed are all CalDAV readings the seam document
+    /// rules out.
+    pub known_version: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -2715,6 +2738,32 @@ impl MessageCache {
         // reads as nothing held, which is the right answer for a task this
         // program has never seen a progress word for.
         self.ensure_column_exists("tasks", "remote_status", "TEXT")?;
+        // A note changed here and not yet sent to whatever backend the account
+        // has. The same three columns a task and a contact already carry, for
+        // the same reason, and they arrive together because a flag with no
+        // identity beside it cannot say what to update.
+        //
+        // Defaults to 0, so every note already on somebody's disk is treated as
+        // agreeing with a backend. That is the right assumption: until this
+        // shipped, a note went nowhere at all, so there was nothing to disagree
+        // with.
+        self.ensure_column_exists("notes", "pending", "INTEGER NOT NULL DEFAULT 0")?;
+        // What the account's notes backend calls this note, and the version
+        // marker it last gave. Opaque, both of them:
+        // `docs/development/the-notes-seam.md` requires that nothing here
+        // parses, splits or builds either one.
+        //
+        // On the note rather than in a table of its own, which is where a
+        // contact's identity lives. A note has one backend at a time, because
+        // `notes_backend::for_account` gives one answer per account and a note
+        // belongs to one account, so the failure `ProviderIdentity`'s comment
+        // records cannot happen here: there is no second address book for a
+        // refused push to lose the change at. If a note ever has two backends
+        // this becomes a `note_identities` table keyed by note and backend, and
+        // `pending` moves onto it, because that is the moment one push can be
+        // accepted and another refused in the same run.
+        self.ensure_column_exists("notes", "provider_note_id", "TEXT")?;
+        self.ensure_column_exists("notes", "provider_version", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.

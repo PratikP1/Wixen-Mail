@@ -97,6 +97,17 @@ fn a_gmail_account() -> Account {
     }
 }
 
+/// A note folder on this account.
+fn a_note_folder(id: &str) -> NoteFolderEntry {
+    NoteFolderEntry {
+        id: id.to_string(),
+        account_id: ACCOUNT.to_string(),
+        name: "Ideas".to_string(),
+        display_order: 0,
+        created_at: String::new(),
+    }
+}
+
 #[test]
 fn test_a_list_made_here_on_a_gmail_account_has_nothing_to_be_sent() {
     // The fixture that tells the right question from the wrong one, and the
@@ -111,7 +122,7 @@ fn test_a_list_made_here_on_a_gmail_account_has_nothing_to_be_sent() {
         .expect("a list made here");
 
     assert!(
-        supports(&a_gmail_account(), ItemKind::Task),
+        supports(&a_gmail_account(), ItemKind::Task, false),
         "the fixture is not on an account that syncs tasks, so it cannot tell \
          the account question from the list question"
     );
@@ -137,21 +148,14 @@ fn test_a_list_a_provider_gave_out_has_something_to_be_sent() {
 }
 
 #[test]
-fn test_a_note_has_nothing_to_be_sent_wherever_it_is_filed() {
-    // A note goes nowhere at all, so there is nothing to wait for and nothing
-    // a setting could be holding. `05.1-03` is the plan that gives notes
-    // somewhere to go, and it comes through the same write, so this is one of
-    // the answers it has to change.
+fn test_a_note_on_an_account_with_nowhere_to_send_it_has_nothing_to_be_sent() {
+    // An account with no notes backend. The note is kept here and nothing is
+    // waiting, so a move of it must not be announced as though something were
+    // on its way to a server.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store(&dir);
     cache
-        .save_note_folder(&NoteFolderEntry {
-            id: "notefolder-1".to_string(),
-            account_id: ACCOUNT.to_string(),
-            name: "Ideas".to_string(),
-            display_order: 0,
-            created_at: String::new(),
-        })
+        .save_note_folder(&a_note_folder("notefolder-1"))
         .expect("a folder for notes");
 
     assert!(!will_have_to_be_sent(
@@ -159,6 +163,46 @@ fn test_a_note_has_nothing_to_be_sent_wherever_it_is_filed() {
         ItemKind::Note,
         "notefolder-1"
     ));
+}
+
+#[test]
+fn test_a_note_on_an_account_with_a_calendar_server_has_something_to_be_sent() {
+    // The fixture the note arm exists for. Where an account's notes go is
+    // answered by `application::notes_backend`, and an account with a calendar
+    // on a calendar server has journal entries on that same server under that
+    // same sign-in. So a note filed into one of its folders really is waiting,
+    // and a move of it has to say so, the same as a task and an event do.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store(&dir);
+    cache
+        .save_account(&a_gmail_account())
+        .expect("an account to look the folder up against");
+    cache
+        .save_note_folder(&a_note_folder("notefolder-1"))
+        .expect("a folder for notes");
+    cache
+        .save_calendar(&CalendarContainer {
+            caldav_url: Some("https://example.test/dav/cal".to_string()),
+            ..a_calendar("cal-server", "caldav")
+        })
+        .expect("a calendar on a calendar server");
+
+    assert!(
+        will_have_to_be_sent(&cache, ItemKind::Note, "notefolder-1"),
+        "a note filed into a folder of an account whose notes reach a server \
+         is reported as having nowhere to go"
+    );
+}
+
+#[test]
+fn test_a_note_folder_that_is_no_longer_there_has_nothing_to_be_sent() {
+    // The same gap the calendar case below covers: between the chooser and the
+    // write, the folder can go. What this must not do is claim on the way past
+    // that something is on its way to an account.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store(&dir);
+
+    assert!(!will_have_to_be_sent(&cache, ItemKind::Note, "gone"));
 }
 
 #[test]

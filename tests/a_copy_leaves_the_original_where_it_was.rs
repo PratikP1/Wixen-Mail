@@ -27,7 +27,8 @@ use wixen_mail::application::destinations::{
 use wixen_mail::application::new_item::ItemKind;
 use wixen_mail::application::tasks_sync::a_provider_holds;
 use wixen_mail::data::message_cache::{
-    CalendarContainer, CalendarEventEntry, MessageCache, TaskEntry, TaskListEntry,
+    CalendarContainer, CalendarEventEntry, MessageCache, NoteBody, NoteEntry, NoteFolderEntry,
+    TaskEntry, TaskListEntry,
 };
 use wixen_mail::presentation::managers::file_under;
 
@@ -445,4 +446,134 @@ fn test_the_copy_of_an_event_a_provider_holds_makes_no_claim_on_the_providers_ow
         "the original moved"
     );
     assert_eq!(original.provider_event_id, Some("uid-1".to_string()));
+}
+
+/// A note folder on this account.
+fn a_note_folder(id: &str, name: &str) -> NoteFolderEntry {
+    NoteFolderEntry {
+        id: id.to_string(),
+        account_id: ACCOUNT.to_string(),
+        name: name.to_string(),
+        display_order: 0,
+        created_at: String::new(),
+    }
+}
+
+/// A note the backend already holds, in that folder.
+fn a_note_a_backend_holds(id: &str, folder: &str) -> NoteEntry {
+    NoteEntry {
+        id: id.to_string(),
+        account_id: ACCOUNT.to_string(),
+        folder_id: Some(folder.to_string()),
+        title: "Wiring colours".to_string(),
+        body: "Brown is live".to_string(),
+        format: NoteBody::AsTyped,
+        pinned: false,
+        created_at: String::new(),
+        updated_at: String::new(),
+        pending: false,
+        known_as: Some("there-1".to_string()),
+        known_version: Some("v1".to_string()),
+    }
+}
+
+#[test]
+fn test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own() {
+    // A note carries what its backend calls it in a column of its own, the way
+    // an event does, so minting a new identifier is not enough on its own.
+    // Kept, the push would ask the backend to change its copy of the original
+    // rather than make a second one, and the original would be the one that
+    // moved. That is data loss at somebody's server, and it is what the two
+    // arms above this one in `file_under` are commented against.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store(&dir);
+    cache
+        .save_note_folder(&a_note_folder("notefolder-home", "Ideas"))
+        .expect("a folder");
+    cache
+        .save_note_folder(&a_note_folder("notefolder-elsewhere", "Later"))
+        .expect("another folder");
+    cache
+        .save_note(&a_note_a_backend_holds("note-1", "notefolder-home"))
+        .expect("a note the backend holds");
+
+    let landed = file_under(
+        &cache,
+        ItemKind::Note,
+        "note-1",
+        "notefolder-elsewhere",
+        ACCOUNT,
+        Filing::Copying,
+    )
+    .expect("the copy to be written");
+
+    let copy = cache
+        .get_note(&landed)
+        .expect("the store to answer")
+        .expect("the copy to be there");
+    assert_eq!(copy.known_as, None, "the copy claims the backend's note");
+    assert_eq!(
+        copy.known_version, None,
+        "the copy carries the backend's version marker, so the first push \
+         would overwrite the original at the server"
+    );
+    assert!(copy.pending, "the copy will never be created anywhere");
+
+    let original = cache
+        .get_note("note-1")
+        .expect("the store to answer")
+        .expect("the original to still be there");
+    assert_eq!(
+        original.folder_id,
+        Some("notefolder-home".to_string()),
+        "the original moved"
+    );
+    assert_eq!(original.known_as.as_deref(), Some("there-1"));
+}
+
+#[test]
+fn test_a_note_moved_to_another_folder_is_left_waiting_to_be_sent() {
+    // The other half of the same write, and the one nothing would have caught.
+    // A move changes the note, so the backend has to be told; a move that
+    // changed the row and marked nothing is the bug the changelog already
+    // records against a task, said as a success while the change reached
+    // nobody.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store(&dir);
+    cache
+        .save_note_folder(&a_note_folder("notefolder-home", "Ideas"))
+        .expect("a folder");
+    cache
+        .save_note_folder(&a_note_folder("notefolder-elsewhere", "Later"))
+        .expect("another folder");
+    cache
+        .save_note(&a_note_a_backend_holds("note-1", "notefolder-home"))
+        .expect("a note the backend holds");
+
+    let landed = file_under(
+        &cache,
+        ItemKind::Note,
+        "note-1",
+        "notefolder-elsewhere",
+        ACCOUNT,
+        Filing::Moving,
+    )
+    .expect("the move to be written");
+
+    let moved = cache
+        .get_note(&landed)
+        .expect("the store to answer")
+        .expect("the note to still be there");
+    assert_eq!(moved.folder_id, Some("notefolder-elsewhere".to_string()));
+    assert!(
+        moved.pending,
+        "the note moved and nothing says the backend has not been told, so the \
+         move reaches it on some later change or never"
+    );
+    assert_eq!(
+        moved.known_as.as_deref(),
+        Some("there-1"),
+        "a move gave up what the backend calls the note, so the push would \
+         create a second one"
+    );
 }

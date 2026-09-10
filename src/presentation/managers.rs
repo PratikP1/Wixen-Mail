@@ -2461,7 +2461,18 @@ pub fn new_pim_item(
         let s = lock_state(state);
         (s.accounts.clone(), s.default_account_id.clone())
     };
-    let Some(destination) = new_item::destination(kind, &accounts, default_id.as_deref()) else {
+    // Whether the default account has a calendar server, which is what decides
+    // where its notes go and therefore which account a new note is filed
+    // under. Read from the store here rather than answered again in
+    // `new_item`, which is handed accounts and never a store.
+    let a_calendar_server =
+        crate::application::notes_backend::default_account(default_id.as_deref(), &accounts)
+            .is_some_and(|account| {
+                crate::application::notes_backend::has_a_calendar_server(&cache, &account.id)
+            });
+    let Some(destination) =
+        new_item::destination(kind, &accounts, default_id.as_deref(), a_calendar_server)
+    else {
         return send_refusal(tx, rt, "Add an account before composing a message");
     };
 
@@ -2855,7 +2866,13 @@ pub fn new_container(
     // perfectly well, so the fallback is this computer rather than a refusal.
     // A contact group is always this computer, because nothing carries one
     // anywhere.
-    let destination = new_item::container_destination(kind, &accounts, default_id.as_deref());
+    let a_calendar_server =
+        crate::application::notes_backend::default_account(default_id.as_deref(), &accounts)
+            .is_some_and(|account| {
+                crate::application::notes_backend::has_a_calendar_server(&cache, &account.id)
+            });
+    let destination =
+        new_item::container_destination(kind, &accounts, default_id.as_deref(), a_calendar_server);
 
     // Said before the name is typed rather than after it is saved. A group is
     // the one container somebody is likely to expect their provider to already
@@ -3187,6 +3204,17 @@ fn store_new_item(
             pinned: filled.ticked(FieldName::Pinned),
             created_at: stamp.clone(),
             updated_at: stamp,
+            // Made here, so it has to go up at the next sync, exactly as a
+            // task made here does. An account whose notes stay on this
+            // computer never runs a notes sync, so the flag simply sits there
+            // and costs nothing; the alternative, asking the seam here, would
+            // be a second place deciding where an account's notes go.
+            pending: true,
+            // No backend has ever held this note, so there is nothing it is
+            // called anywhere else and no version to compare against. The push
+            // reads that as a note to create rather than one to update.
+            known_as: None,
+            known_version: None,
         }),
         // Both have their own paths: mail opens the composer, a contact opens
         // the contact dialog, and neither is a title in a box.
@@ -5209,6 +5237,9 @@ mod tests {
                 pinned: false,
                 created_at: now_stamp(),
                 updated_at: now_stamp(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .expect("a note to move");
 

@@ -1660,6 +1660,13 @@ fn a_note_from(item: &TheItem<'_>, going_to: WhereItIsGoing<'_>) -> NoteEntry {
         pinned: false,
         created_at: made,
         updated_at: changed,
+        // An imported note is not a change somebody made here waiting to go
+        // somewhere else. Marking it waiting would send a whole data file's
+        // worth of notes to whatever backend the account it was imported into
+        // has, which nobody asked for by choosing to import a file.
+        pending: false,
+        known_as: None,
+        known_version: None,
     }
 }
 

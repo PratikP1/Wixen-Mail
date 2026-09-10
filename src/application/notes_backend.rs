@@ -34,6 +34,7 @@
 //! `docs/development/the-notes-seam.md`.
 
 use crate::data::account::Account;
+use crate::data::message_cache::MessageCache;
 
 /// Where an account's notes go.
 ///
@@ -89,6 +90,30 @@ impl NotesBackend {
     }
 }
 
+/// Whether this account has a calendar held on a calendar server.
+///
+/// The one lookup that turns a stored row into the fact
+/// [`for_account`] is given, so that "does this account have a calendar
+/// server" is answered in the same place as "where do its notes go" rather
+/// than at each screen that asks.
+///
+/// A calendar somebody added by its address carries the word
+/// [`crate::application::calendar_source::ON_A_SERVER`] and the address it was
+/// found at. Both are asked for: the word alone would count a row half written
+/// by a discovery that failed, and an address alone would count a published
+/// feed, which is read and never written to.
+pub fn has_a_calendar_server(cache: &MessageCache, account_id: &str) -> bool {
+    cache
+        .get_calendars_for_account(account_id)
+        .unwrap_or_default()
+        .iter()
+        .any(|calendar| {
+            calendar.source_provider.as_deref()
+                == Some(crate::application::calendar_source::ON_A_SERVER)
+                && calendar.caldav_url.is_some()
+        })
+}
+
 /// Where this account's notes go.
 ///
 /// `None` is every part of the program that has no account in hand, and it is
@@ -96,9 +121,30 @@ impl NotesBackend {
 /// has signed in anywhere are kept here, so the answer is the same one an
 /// account with no provider gets.
 ///
-/// Every arm answers the same today and each says why in its own words,
-/// because the reasons are different and only one of them is going to change.
-pub fn for_account(account: Option<&Account>) -> NotesBackend {
+/// `a_calendar_server` is [`has_a_calendar_server`], asked by the caller
+/// because this takes an [`Account`] and the answer is in the store. It is a
+/// second argument rather than a store handle so that the words a screen says
+/// can still be driven without one.
+///
+/// # Why a calendar server decides it, and why it is asked first
+///
+/// A CalDAV server holds journal entries in the same place it holds calendars,
+/// under the same sign-in. So an account that already has a calendar on a
+/// server already has everywhere a note needs to go and everything needed to
+/// get there, and nobody has to type a second address or a second password.
+/// That is what `05.1-03`'s threat register anticipates when it asks whether
+/// this backend reuses the sign-in of a calendar somebody already added: it
+/// does, and one server signed in to once is one credential owner rather than
+/// two.
+///
+/// It is asked before the provider, because it is a fact about this account
+/// and the provider arms are facts about a mail service. Somebody with a
+/// Fastmail calendar added to their Gmail account has a place for their
+/// journal entries whatever Google Keep does or does not offer.
+pub fn for_account(account: Option<&Account>, a_calendar_server: bool) -> NotesBackend {
+    if a_calendar_server {
+        return NotesBackend::CalDavJournal;
+    }
     let provider = account.and_then(crate::application::mail_auth::provider_of);
     match provider.as_deref() {
         // Google Keep's API is Workspace only, so a consumer Gmail account
@@ -139,8 +185,28 @@ pub fn default_account<'a>(
 }
 
 /// Where the default account's notes go.
-pub fn for_default_account(default_id: Option<&str>, accounts: &[Account]) -> NotesBackend {
-    for_account(default_account(default_id, accounts))
+pub fn for_default_account(
+    default_id: Option<&str>,
+    accounts: &[Account],
+    a_calendar_server: bool,
+) -> NotesBackend {
+    for_account(default_account(default_id, accounts), a_calendar_server)
+}
+
+/// Where the default account's notes go, asked of the store.
+///
+/// The form every part of the running program uses, because every part of it
+/// holds a store. Kept beside [`for_default_account`] rather than replacing it
+/// so that the words a screen says can still be driven with no store at all,
+/// which is what lets the three sentences below be tested without one.
+pub fn for_the_default_account_in(
+    cache: &MessageCache,
+    default_id: Option<&str>,
+    accounts: &[Account],
+) -> NotesBackend {
+    let account = default_account(default_id, accounts);
+    let server = account.is_some_and(|account| has_a_calendar_server(cache, &account.id));
+    for_account(account, server)
 }
 
 /// What a screen says about where an account's notes go.
@@ -161,9 +227,12 @@ pub fn for_default_account(default_id: Option<&str>, accounts: &[Account]) -> No
 /// consumer Gmail account still has none: Google Keep's API is Workspace only.
 /// "Notes do not sync yet" would have to be rewritten and, worse, would tell
 /// somebody to wait for something that is not coming.
-pub fn where_they_go(account: Option<&Account>) -> String {
+pub fn where_they_go(account: Option<&Account>, a_calendar_server: bool) -> String {
     match account {
-        Some(account) => where_they_go_for(&for_account(Some(account)), &account.display_name()),
+        Some(account) => where_they_go_for(
+            &for_account(Some(account), a_calendar_server),
+            &account.display_name(),
+        ),
         // Before any account is set up, and after the default one is deleted.
         // A blank where the sentence should be is worse than the answer, which
         // is that the notes are here.
@@ -206,8 +275,9 @@ pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String 
 pub fn where_the_default_accounts_notes_go(
     default_id: Option<&str>,
     accounts: &[Account],
+    a_calendar_server: bool,
 ) -> String {
-    where_they_go(default_account(default_id, accounts))
+    where_they_go(default_account(default_id, accounts), a_calendar_server)
 }
 
 /// What one backend calls a note, and how it says whether that copy has moved.
@@ -231,6 +301,32 @@ pub struct ANoteThere {
     pub named: String,
     /// The version marker this backend last gave, when it gives one.
     pub version: Option<String>,
+}
+
+/// One note as a backend holds it now: what it is called there, and what it
+/// says.
+///
+/// Apart from [`ANoteThere`], which is identity and nothing else, because the
+/// two are asked for at different times and at different prices. A sync asks
+/// what a container holds on every run and has to be able to do that cheaply;
+/// it asks what one note says only for the ones whose marker moved.
+///
+/// # This was missing, and nothing could arrive without it
+///
+/// `05.1-02` shipped [`NotesService`] with three operations and no way to read
+/// a note's words: `notes_it_holds` answers identities, and the other two
+/// write. A sync built on that could discover that a backend held a note it
+/// had never seen and had nothing to write down. `05.1-03`, the first
+/// implementation, is where that was found, which is what a first
+/// implementation is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ANoteAsItStands {
+    /// What the backend calls it, and the marker its copy carries now.
+    pub known_as: ANoteThere,
+    /// What the note is called.
+    pub title: String,
+    /// What it says, in whatever the backend gave, unchanged.
+    pub body: String,
 }
 
 /// What a backend said when it was asked to do something.
@@ -326,6 +422,23 @@ pub trait NotesService {
         container: &str,
     ) -> impl std::future::Future<Output = crate::common::Result<Vec<ANoteThere>>> + Send;
 
+    /// What one note the backend holds says now.
+    ///
+    /// `None` where the backend no longer holds it, which is not an error:
+    /// somebody deleted it at the other end between the listing and this.
+    ///
+    /// Asked for one note rather than folded into [`Self::notes_it_holds`] so
+    /// that a container of five hundred notes is not read whole on every sync
+    /// to find the two that moved. A backend that really answers both in one
+    /// request, which a CalDAV `REPORT` does, is free to remember what it
+    /// already read; a backend that cannot, which OneNote cannot because a
+    /// page's content is a second call, is not asked to pretend it can.
+    fn what_a_note_says(
+        &self,
+        container: &str,
+        known_as: &ANoteThere,
+    ) -> impl std::future::Future<Output = crate::common::Result<Option<ANoteAsItStands>>> + Send;
+
     /// Leave the backend's copy of one note saying this.
     ///
     /// Not "replace the body", which is an operation some backends do not have.
@@ -358,10 +471,105 @@ pub trait NotesService {
 mod tests {
     use super::*;
 
+    use crate::common::temp_home::TempHome;
+    use crate::data::message_cache::CalendarContainer;
+
     fn account(id: &str, email: &str) -> Account {
         let mut account = Account::new("Work".to_string(), email.to_string());
         account.id = id.to_string();
         account
+    }
+
+    fn a_store() -> TempHome<MessageCache> {
+        TempHome::named("wixen_notes_backend_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None).expect("a store to write into")
+        })
+    }
+
+    /// A calendar of this account's, from wherever the caller says.
+    fn a_calendar(id: &str, came_from: &str, at: Option<&str>) -> CalendarContainer {
+        CalendarContainer {
+            id: id.to_string(),
+            account_id: "a1".to_string(),
+            name: "Work".to_string(),
+            color: String::new(),
+            source_provider: Some(came_from.to_string()),
+            caldav_url: at.map(str::to_string),
+            subscription_url: None,
+            is_default: false,
+            is_visible: true,
+            is_read_only: false,
+            display_order: 0,
+            etag: None,
+            ctag: None,
+            sync_token: None,
+            refresh_interval_minutes: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_an_account_with_a_calendar_server_has_somewhere_to_put_its_notes() {
+        // The arm that makes this seam answer anything but "here", and the
+        // whole reason `05.1-03` can reach production at all. A server holding
+        // somebody's calendar holds their journal entries in the same place
+        // under the same sign-in, so nobody has to type a second address.
+        let cache = a_store();
+        cache
+            .save_calendar(&a_calendar(
+                "cal-1",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://example.test/dav/cal"),
+            ))
+            .expect("a calendar on a server");
+
+        assert!(has_a_calendar_server(&cache, "a1"));
+        assert_eq!(
+            for_account(Some(&account("a1", "me@gmail.com")), true),
+            NotesBackend::CalDavJournal,
+            "an account with a calendar server was told its notes stay here"
+        );
+    }
+
+    #[test]
+    fn test_a_feed_somebody_subscribed_to_is_not_somewhere_to_put_notes() {
+        // A published feed is read and never written to, so it is not a place
+        // a note can go. Asked as its own fixture because the row looks almost
+        // the same: it is a calendar, on this account, that came from a URL.
+        let cache = a_store();
+        cache
+            .save_calendar(&a_calendar(
+                "cal-feed",
+                crate::application::calendar_source::FROM_A_FEED,
+                Some("https://example.test/holidays.ics"),
+            ))
+            .expect("a feed");
+
+        assert!(!has_a_calendar_server(&cache, "a1"));
+    }
+
+    #[test]
+    fn test_a_calendar_row_with_no_address_on_it_is_not_a_server() {
+        // Half a row, which is what a discovery that failed part way leaves.
+        // The word alone would count it, and a note offered to an address that
+        // is not there is a sync that fails on every run.
+        let cache = a_store();
+        cache
+            .save_calendar(&a_calendar(
+                "cal-half",
+                crate::application::calendar_source::ON_A_SERVER,
+                None,
+            ))
+            .expect("half a calendar");
+
+        assert!(!has_a_calendar_server(&cache, "a1"));
+    }
+
+    #[test]
+    fn test_an_account_with_no_calendars_at_all_has_no_calendar_server() {
+        let cache = a_store();
+        assert!(!has_a_calendar_server(&cache, "a1"));
     }
 
     #[test]
@@ -369,7 +577,7 @@ mod tests {
         // Google Keep's API is Workspace only. This is not a gap waiting to be
         // filled: it is still the answer after all three backends ship.
         assert_eq!(
-            for_account(Some(&account("a1", "me@gmail.com"))),
+            for_account(Some(&account("a1", "me@gmail.com")), false),
             NotesBackend::ThisComputer
         );
     }
@@ -380,7 +588,7 @@ mod tests {
         // which is a different sentence from "not yet" and is the true one
         // today.
         assert_eq!(
-            for_account(Some(&account("a1", "me@outlook.com"))),
+            for_account(Some(&account("a1", "me@outlook.com")), false),
             NotesBackend::ThisComputer
         );
     }
@@ -391,7 +599,7 @@ mod tests {
         // this build has never heard of has no notes backend this build can
         // talk to, and saying so is an answer.
         assert_eq!(
-            for_account(Some(&account("a1", "me@myhost.example"))),
+            for_account(Some(&account("a1", "me@myhost.example")), false),
             NotesBackend::ThisComputer
         );
     }
@@ -400,7 +608,7 @@ mod tests {
     fn test_an_account_with_no_provider_at_all_keeps_its_notes_here() {
         // Every plain IMAP and POP account, and somebody who has not signed in
         // anywhere yet. Both reach this through `None`.
-        assert_eq!(for_account(None), NotesBackend::ThisComputer);
+        assert_eq!(for_account(None, false), NotesBackend::ThisComputer);
     }
 
     #[test]
@@ -426,8 +634,8 @@ mod tests {
         ];
 
         assert_eq!(
-            for_default_account(Some("a2"), &accounts),
-            for_account(Some(&accounts[1]))
+            for_default_account(Some("a2"), &accounts, false),
+            for_account(Some(&accounts[1]), false)
         );
     }
 
@@ -436,7 +644,7 @@ mod tests {
         // The settings screen can only reach the default account, so a
         // sentence saying "your notes" would read as a statement about all of
         // them. It is not one now and will be less so once a backend ships.
-        let said = where_they_go(Some(&account("a1", "me@gmail.com")));
+        let said = where_they_go(Some(&account("a1", "me@gmail.com")), false);
 
         assert!(said.contains("Work"), "{said}");
     }
@@ -448,7 +656,7 @@ mod tests {
         // Workspace only, so this sentence has real work left in it. "Not yet"
         // would have to be rewritten and would tell somebody to wait for
         // something that is not coming.
-        let said = where_they_go(Some(&account("a1", "me@gmail.com")));
+        let said = where_they_go(Some(&account("a1", "me@gmail.com")), false);
 
         assert!(said.contains("no notes backend"), "{said}");
         assert!(said.contains("on this computer"), "{said}");
@@ -460,7 +668,7 @@ mod tests {
         // Before any account is set up, and after the default one is deleted.
         // Both reach a screen, and a blank where the sentence should be is
         // worse than the answer, which is that the notes are here.
-        let said = where_the_default_accounts_notes_go(None, &[]);
+        let said = where_the_default_accounts_notes_go(None, &[], false);
 
         assert!(said.contains("on this computer"), "{said}");
         assert!(!said.is_empty());
@@ -528,9 +736,12 @@ mod tests {
         // can be made before any account exists. Neither is a reason to
         // refuse an answer.
         assert_eq!(
-            for_default_account(Some("gone"), &[]),
+            for_default_account(Some("gone"), &[], false),
             NotesBackend::ThisComputer
         );
-        assert_eq!(for_default_account(None, &[]), NotesBackend::ThisComputer);
+        assert_eq!(
+            for_default_account(None, &[], false),
+            NotesBackend::ThisComputer
+        );
     }
 }

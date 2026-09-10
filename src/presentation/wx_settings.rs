@@ -142,9 +142,10 @@ pub fn show_settings_dialog(
     parent: &Frame,
     config: &AppConfig,
     accounts: &[Account],
+    a_calendar_server: bool,
     a11y: &Arc<Accessibility>,
 ) -> SettingsResult {
-    let widgets = build_settings_dialog(parent, config, accounts, a11y);
+    let widgets = build_settings_dialog(parent, config, accounts, a_calendar_server, a11y);
     if widgets.dialog.show_modal() != ID_OK {
         return SettingsResult::Cancelled;
     }
@@ -188,10 +189,15 @@ pub fn show_settings_dialog(
 /// has no handle on. Where an account's notes go is answered from its
 /// provider, so the id alone cannot answer it and the accounts have to arrive
 /// with the configuration.
+/// `a_calendar_server` is the other half of that same answer, and it arrives
+/// the same way and for the same reason: whether the default account has a
+/// calendar on a calendar server is a row in the message cache, which this
+/// dialog has no handle on either.
 pub fn build_settings_dialog(
     parent: &Frame,
     config: &AppConfig,
     accounts: &[Account],
+    a_calendar_server: bool,
     a11y: &Arc<Accessibility>,
 ) -> SettingsWidgets {
     let dlg = Dialog::builder(parent, "Settings")
@@ -264,7 +270,7 @@ pub fn build_settings_dialog(
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
     let (default_reminder, day_starts, day_ends, calendar_view) =
-        build_calendar_pim_tab(&pim_panel, config, accounts);
+        build_calendar_pim_tab(&pim_panel, config, accounts, a_calendar_server);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
     // ── Tab 6: Feedback
@@ -1723,6 +1729,7 @@ fn build_calendar_pim_tab(
     panel: &Panel,
     config: &AppConfig,
     accounts: &[Account],
+    a_calendar_server: bool,
 ) -> (TextCtrl, Choice, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -1827,6 +1834,7 @@ fn build_calendar_pim_tab(
     let where_notes_go = crate::application::notes_backend::where_the_default_accounts_notes_go(
         Some(config.default_account_id.as_str()),
         accounts,
+        a_calendar_server,
     );
     let notes_answer = StaticText::builder(panel)
         .with_label(&where_notes_go)

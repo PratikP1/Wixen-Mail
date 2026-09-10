@@ -65,6 +65,16 @@ impl NoteBody {
     }
 }
 
+/// The columns [`MessageCache::map_note_row`] reads, in the order it reads them.
+///
+/// One list rather than a copy in each query. Five queries read a note, and a
+/// column added to the reader and missed in one of them is a note read with
+/// another column's value in it. SQL is a string here, so nothing but this
+/// would say so.
+const NOTE_COLUMNS: &str = "id, account_id, folder_id, title, body, format, pinned, \
+                            created_at, updated_at, pending, provider_note_id, \
+                            provider_version";
+
 impl MessageCache {
     // ── Note Folders ────────────────────────────────────────────────────────
 
@@ -163,15 +173,19 @@ impl MessageCache {
             .execute(
                 "INSERT INTO notes (
                     id, account_id, folder_id, title, body, format, pinned,
-                    created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    created_at, updated_at, pending, provider_note_id,
+                    provider_version
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                 ON CONFLICT(id) DO UPDATE SET
                     folder_id = excluded.folder_id,
                     title = excluded.title,
                     body = excluded.body,
                     format = excluded.format,
                     pinned = excluded.pinned,
-                    updated_at = excluded.updated_at",
+                    updated_at = excluded.updated_at,
+                    pending = excluded.pending,
+                    provider_note_id = excluded.provider_note_id,
+                    provider_version = excluded.provider_version",
                 rusqlite::params![
                     n.id,
                     n.account_id,
@@ -182,6 +196,9 @@ impl MessageCache {
                     n.pinned,
                     n.created_at,
                     n.updated_at,
+                    n.pending,
+                    n.known_as,
+                    n.known_version,
                 ],
             )
             .map_err(|e| Error::Other(format!("Failed to save note: {}", e)))?;
@@ -192,12 +209,11 @@ impl MessageCache {
     pub fn get_notes_for_folder(&self, folder_id: &str) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, account_id, folder_id, title, body, format, pinned,
-                        created_at, updated_at
-                 FROM notes WHERE folder_id = ?1
-                 ORDER BY pinned DESC, updated_at DESC",
-            )
+            .prepare_cached(&format!(
+                "SELECT {NOTE_COLUMNS}
+                     FROM notes WHERE folder_id = ?1
+                     ORDER BY pinned DESC, updated_at DESC"
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare notes query: {}", e)))?;
 
         let rows = stmt
@@ -215,12 +231,11 @@ impl MessageCache {
     pub fn get_all_notes_for_account(&self, account_id: &str) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, account_id, folder_id, title, body, format, pinned,
-                        created_at, updated_at
-                 FROM notes WHERE account_id = ?1
-                 ORDER BY pinned DESC, updated_at DESC",
-            )
+            .prepare_cached(&format!(
+                "SELECT {NOTE_COLUMNS}
+                     FROM notes WHERE account_id = ?1
+                     ORDER BY pinned DESC, updated_at DESC"
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare notes query: {}", e)))?;
 
         let rows = stmt
@@ -242,11 +257,7 @@ impl MessageCache {
     pub fn get_note(&self, note_id: &str) -> Result<Option<NoteEntry>> {
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, account_id, folder_id, title, body, format, pinned,
-                        created_at, updated_at
-                 FROM notes WHERE id = ?1",
-            )
+            .prepare_cached(&format!("SELECT {NOTE_COLUMNS} FROM notes WHERE id = ?1"))
             .map_err(|e| Error::Other(format!("Failed to prepare note query: {}", e)))?;
 
         let mut rows = stmt
@@ -291,12 +302,12 @@ impl MessageCache {
         let pattern = super::like_pattern(query);
         let mut stmt = self
             .conn
-            .prepare_cached(
-                "SELECT id, account_id, folder_id, title, body, format, pinned,
-                        created_at, updated_at
-                 FROM notes WHERE account_id = ?1 AND (title LIKE ?2 ESCAPE '!' OR body LIKE ?2 ESCAPE '!')
-                 ORDER BY pinned DESC, updated_at DESC",
-            )
+            .prepare_cached(&format!(
+                "SELECT {NOTE_COLUMNS}
+                     FROM notes WHERE account_id = ?1
+                       AND (title LIKE ?2 ESCAPE '!' OR body LIKE ?2 ESCAPE '!')
+                     ORDER BY pinned DESC, updated_at DESC"
+            ))
             .map_err(|e| Error::Other(format!("Failed to prepare note search: {}", e)))?;
 
         let rows = stmt
@@ -330,7 +341,93 @@ impl MessageCache {
             pinned: row.get(6)?,
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
+            pending: row.get(9)?,
+            known_as: row.get(10)?,
+            known_version: row.get(11)?,
         })
+    }
+
+    /// One note folder, or nothing.
+    ///
+    /// By its own identifier rather than by walking an account's folders,
+    /// because the two callers that need it have a folder in hand and not an
+    /// account: a filing says which folder it is going into, and the sync is
+    /// told which folder it is syncing.
+    pub fn get_note_folder(&self, folder_id: &str) -> Result<Option<NoteFolderEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, account_id, name, display_order, created_at
+                 FROM note_folders WHERE id = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare a note folder query: {}", e)))?;
+        let mut rows = stmt
+            .query_map(rusqlite::params![folder_id], |row| {
+                Ok(NoteFolderEntry {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    display_order: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query a note folder: {}", e)))?;
+        match rows.next() {
+            Some(row) => Ok(Some(row.map_err(|e| {
+                Error::Other(format!("Failed to read a note folder row: {}", e))
+            })?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Every note changed here and not yet sent.
+    ///
+    /// The same question `pending_tasks` answers for a task, asked the same
+    /// way, so a note the push has to offer is found by one column rather than
+    /// by comparing what is here against what a backend last said.
+    pub fn notes_waiting_to_be_sent(&self, account_id: &str) -> Result<Vec<NoteEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {NOTE_COLUMNS}
+                 FROM notes WHERE account_id = ?1 AND pending = 1
+                 ORDER BY updated_at"
+            ))
+            .map_err(|e| {
+                Error::Other(format!("Failed to prepare the waiting notes query: {}", e))
+            })?;
+        let rows = stmt
+            .query_map(rusqlite::params![account_id], Self::map_note_row)
+            .map_err(|e| Error::Other(format!("Failed to query the waiting notes: {}", e)))?;
+        let mut notes = Vec::new();
+        for row in rows {
+            notes.push(row.map_err(|e| Error::Other(format!("Failed to read a note: {}", e)))?);
+        }
+        Ok(notes)
+    }
+
+    /// The backend has taken this note, and calls it this.
+    ///
+    /// Written as one statement rather than by reading the note, changing three
+    /// fields and saving it again. The read-change-save shape would carry the
+    /// title and body that were in hand when the push started back over
+    /// whatever somebody typed while it was in flight, which is a change made
+    /// and lost with nothing said.
+    pub fn a_backend_took_the_note(
+        &self,
+        note_id: &str,
+        named: &str,
+        version: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE notes
+                 SET pending = 0, provider_note_id = ?2, provider_version = ?3
+                 WHERE id = ?1",
+                rusqlite::params![note_id, named, version],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))?;
+        Ok(())
     }
 }
 
@@ -383,6 +480,9 @@ mod tests {
                     pinned: false,
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
+                    pending: false,
+                    known_as: None,
+                    known_version: None,
                 })
                 .unwrap();
         }
@@ -422,6 +522,9 @@ mod tests {
             pinned: false,
             created_at: now.clone(),
             updated_at: now,
+            pending: false,
+            known_as: None,
+            known_version: None,
         };
         cache.save_note(&n).unwrap();
 
@@ -460,6 +563,9 @@ mod tests {
                     pinned: false,
                     created_at: now.clone(),
                     updated_at: now.clone(),
+                    pending: false,
+                    known_as: None,
+                    known_version: None,
                 })
                 .unwrap();
         }
@@ -492,6 +598,9 @@ line two
                 pinned: false,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-01-01".into(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
 
@@ -556,6 +665,9 @@ line two
                     pinned: false,
                     created_at: "2026-01-01".to_string(),
                     updated_at: "2026-01-01".to_string(),
+                    pending: false,
+                    known_as: None,
+                    known_version: None,
                 })
                 .unwrap();
 
@@ -588,6 +700,9 @@ line two
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
 
@@ -643,6 +758,9 @@ line two
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
         cache
@@ -685,6 +803,9 @@ line two
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
         cache
@@ -740,6 +861,9 @@ line two
                     pinned: false,
                     created_at: "2026-01-01".to_string(),
                     updated_at: "2026-01-01".to_string(),
+                    pending: false,
+                    known_as: None,
+                    known_version: None,
                 })
                 .unwrap();
         }
@@ -759,6 +883,167 @@ line two
         );
     }
 
+    /// Whether a note is waiting to be sent survives storage.
+    ///
+    /// The column is what a push reads to find its work, so a flag that is
+    /// written and not read back is a change that never leaves, said as a
+    /// success.
+    #[test]
+    fn test_whether_a_note_is_waiting_to_be_sent_comes_back_as_it_went_in() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let mut note = NoteEntry {
+            id: "n1".to_string(),
+            account_id: "acct-1".to_string(),
+            folder_id: Some(folder.id.clone()),
+            title: "Wiring colours".to_string(),
+            body: "Brown is live".to_string(),
+            format: NoteBody::AsTyped,
+            pinned: false,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+            pending: true,
+            known_as: Some("there-1".to_string()),
+            known_version: Some("v1".to_string()),
+        };
+        cache.save_note(&note).unwrap();
+
+        let loaded = cache.get_note("n1").unwrap().expect("the note");
+        assert!(
+            loaded.pending,
+            "a note waiting to be sent came back settled"
+        );
+        assert_eq!(loaded.known_as.as_deref(), Some("there-1"));
+        assert_eq!(loaded.known_version.as_deref(), Some("v1"));
+
+        note.pending = false;
+        cache.save_note(&note).unwrap();
+        let settled = cache.get_note("n1").unwrap().expect("the note");
+        assert!(
+            !settled.pending,
+            "a note that stopped waiting was written back as still waiting"
+        );
+    }
+
+    /// Only the notes with something to send are offered to a backend.
+    #[test]
+    fn test_the_notes_offered_to_a_backend_are_the_ones_with_something_to_send() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        for (id, waiting) in [("waiting", true), ("settled", false)] {
+            cache
+                .save_note(&NoteEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    folder_id: Some(folder.id.clone()),
+                    title: id.to_string(),
+                    body: String::new(),
+                    format: NoteBody::AsTyped,
+                    pinned: false,
+                    created_at: "2026-01-01".to_string(),
+                    updated_at: "2026-01-01".to_string(),
+                    pending: waiting,
+                    known_as: None,
+                    known_version: None,
+                })
+                .unwrap();
+        }
+
+        let waiting = cache.notes_waiting_to_be_sent("acct-1").unwrap();
+
+        assert_eq!(
+            waiting.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(),
+            ["waiting"],
+            "the push was handed the wrong set of notes"
+        );
+    }
+
+    /// A note the backend took stops waiting and remembers what it is called.
+    #[test]
+    fn test_a_note_a_backend_took_stops_waiting_and_keeps_what_it_is_called_there() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: true,
+                known_as: None,
+                known_version: None,
+            })
+            .unwrap();
+
+        cache
+            .a_backend_took_the_note("n1", "there-1", Some("v1"))
+            .unwrap();
+
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert!(!after.pending);
+        assert_eq!(after.known_as.as_deref(), Some("there-1"));
+        assert_eq!(after.known_version.as_deref(), Some("v1"));
+    }
+
+    /// Pinning a note marks it as waiting to be sent.
+    ///
+    /// [`MessageCache::toggle_note_pin`] writes its own `UPDATE` and does not
+    /// go through [`MessageCache::save_note`], so an invariant kept only in
+    /// `save_note` is bypassed by it. Pinning is a change somebody made and
+    /// would expect to reach their backend, and the shape of the bug this
+    /// avoids is already in the changelog: a move changed a row, nothing
+    /// marked it, nothing ever pushed it, and the status line said the change
+    /// had been made.
+    #[test]
+    fn test_pinning_a_note_leaves_it_waiting_to_be_sent() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: Some("there-1".to_string()),
+                known_version: Some("v1".to_string()),
+            })
+            .unwrap();
+
+        cache.toggle_note_pin("n1").unwrap();
+
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert!(after.pinned);
+        assert!(
+            after.pending,
+            "pinning changed the note and left nothing saying so, so the pin \
+             reaches the backend on some later change or never"
+        );
+    }
+
+    #[test]
+    fn test_one_note_folder_can_be_found_by_its_own_name() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+
+        let found = cache
+            .get_note_folder(&folder.id)
+            .unwrap()
+            .expect("the folder that was just made");
+        assert_eq!(found.account_id, "acct-1");
+        assert!(cache.get_note_folder("not-a-folder").unwrap().is_none());
+    }
+
     #[test]
     fn test_saving_a_note_twice_updates_rather_than_duplicates() {
         let cache = test_cache();
@@ -773,6 +1058,9 @@ line two
             pinned: false,
             created_at: "2026-01-01".into(),
             updated_at: "2026-01-01".into(),
+            pending: false,
+            known_as: None,
+            known_version: None,
         };
         cache.save_note(&note).unwrap();
         note.body = "edited".into();
