@@ -6,13 +6,11 @@
 //! test, by putting a second implementation behind the same seam and finding
 //! out what had really been shaped around the first.
 //!
-//! ```text
-//! grep -rn "caldav\|CalDav\|VJOURNAL\|OneNote" src/application/notes_sync.rs
-//! ```
-//!
-//! That returning nothing is an acceptance criterion of the plan that wrote
-//! this file, and it is quoted here so the next person can re-run it rather
-//! than trust it.
+//! `05.1-03` set that as an acceptance criterion and checks it by grepping this
+//! file for the name of every backend this program will speak. The command is
+//! deliberately not quoted here: written out, it would put those names in this
+//! file and the check would answer with its own quotation for ever. It is in
+//! `05.1-03-SUMMARY.md`, where it can be re-run rather than trusted.
 //!
 //! # What a sync does, in order
 //!
@@ -187,8 +185,8 @@ async fn send_the_deletions<S: NotesService>(
             named,
             // Deliberately not passed on. Somebody asked for the note to go,
             // and a version that had moved on would make the removal fail for
-            // ever. `CalDavClient::delete_event`'s own comment settles the
-            // same question the same way for an event.
+            // ever. The calendar sync's own removal settles the same question
+            // the same way, and its comment says so where it is written.
             version: None,
         };
         match service.take_a_note_away(container, &known_as).await {
