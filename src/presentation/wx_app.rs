@@ -3221,10 +3221,10 @@ impl WxMailApp {
             // not hand it up from a native list or tree. A handler on the
             // frame was written first and never once fired.
             {
-                use crate::application::context_menu::Focus;
+                use crate::application::context_menu::{Focus, entries_for};
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
-                wire_context_menu(&msg_list, || Some(Focus::Messages));
+                wire_context_menu(&msg_list, || Some(entries_for(Focus::Messages)));
                 // The one control here holding twelve kinds of row. Which menu
                 // each offers is a question about the row, so it is answered in
                 // `folder_tree` where a row's identity lives and a test can
@@ -3237,26 +3237,31 @@ impl WxMailApp {
                             .selected_folder
                             .as_ref()
                             .and_then(folder_tree::which_menu_a_row_offers)
+                            .map(entries_for)
                     }
                 });
 
                 wire_context_menu(&pim_refs.contact_list, || {
-                    Some(Focus::Items(ItemKind::Contact))
+                    Some(entries_for(Focus::Items(ItemKind::Contact)))
                 });
                 wire_context_menu(&pim_refs.cal_event_list, || {
-                    Some(Focus::Items(ItemKind::Event))
+                    Some(entries_for(Focus::Items(ItemKind::Event)))
                 });
                 wire_context_menu(&pim_refs.reminder_list, || {
-                    Some(Focus::Items(ItemKind::Reminder))
+                    Some(entries_for(Focus::Items(ItemKind::Reminder)))
                 });
-                wire_context_menu(&pim_refs.task_list, || Some(Focus::Items(ItemKind::Task)));
-                wire_context_menu(&pim_refs.note_list, || Some(Focus::Items(ItemKind::Note)));
+                wire_context_menu(&pim_refs.task_list, || {
+                    Some(entries_for(Focus::Items(ItemKind::Task)))
+                });
+                wire_context_menu(&pim_refs.note_list, || {
+                    Some(entries_for(Focus::Items(ItemKind::Note)))
+                });
 
                 wire_context_menu(&contacts_sb.tree, || {
-                    Some(Focus::Containers(ContainerKind::ContactGroup))
+                    Some(entries_for(Focus::Containers(ContainerKind::ContactGroup)))
                 });
                 wire_context_menu(&cal_sb.tree, || {
-                    Some(Focus::Containers(ContainerKind::Calendar))
+                    Some(entries_for(Focus::Containers(ContainerKind::Calendar)))
                 });
 
                 // Hiding and showing a calendar.
@@ -3334,10 +3339,30 @@ impl WxMailApp {
                     }
                 });
                 wire_context_menu(&tasks_sb.tree, || {
-                    Some(Focus::Containers(ContainerKind::TaskList))
+                    Some(entries_for(Focus::Containers(ContainerKind::TaskList)))
                 });
-                wire_context_menu(&notes_sb.tree, || {
-                    Some(Focus::Containers(ContainerKind::NoteFolder))
+                // The one sidebar whose menu is not a constant. Where an
+                // account's notes go decides whether "Sync notes now" belongs
+                // on it, and a `Focus` names no account, so this asks for
+                // itself. The account is the default one, which is where a new
+                // note is filed and therefore which account's folders this
+                // sidebar is showing.
+                //
+                // Asked at the moment the key is pressed, like the mail folder
+                // tree above, because the default account can change while the
+                // window is open.
+                wire_context_menu(&notes_sb.tree, {
+                    let state = state.clone();
+                    move || {
+                        let s = lock_state(&state);
+                        let notes = crate::application::notes_backend::for_default_account(
+                            s.default_account_id.as_deref(),
+                            &s.accounts,
+                        );
+                        Some(crate::application::context_menu::note_folder_entries(
+                            &notes,
+                        ))
+                    }
                 });
             }
 
@@ -9652,24 +9677,32 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
 ///
 /// `skip` is called in every path so the control keeps its own use of every
 /// other key.
-/// Give a control the menu key, and let it say where it is when the key is
+/// Give a control the menu key, and let it say what to offer when the key is
 /// pressed.
 ///
-/// `where_it_is` is asked at that moment rather than fixed at wiring time,
+/// `what_to_offer` is asked at that moment rather than fixed at wiring time,
 /// because one control can hold more than one kind of row: the mail folder
 /// tree carries twelve kinds, and a menu that offered a folder's commands on
-/// any of the other nine offered entries that could not work. Ten of the
+/// any of the other nine offered entries that could not work. Nine of the
 /// eleven controls answer with a constant.
+///
+/// It answers a list rather than a [`crate::application::context_menu::Focus`]
+/// because one control's menu is not a fact about the row alone. A note
+/// folder's depends on where that account's notes go, which
+/// `application::notes_backend` answers and which a `Focus` names no account
+/// to ask about. Nine of the others still name a focus and hand
+/// `context_menu::entries_for` its answer at the call site, so what changed
+/// is which of the two ends the question is asked at, not that it is asked.
 ///
 /// `None` means the key does nothing on this row, which is a decision rather
 /// than an oversight. `folder_tree::which_menu_a_row_offers` answers it for
 /// the four rows of that tree that name no account and hold nothing of their
 /// own, and the reminders sidebar makes the same call by having no menu at all
 /// rather than an empty one.
-fn wire_context_menu<W, F>(control: &W, where_it_is: F)
+fn wire_context_menu<W, F>(control: &W, what_to_offer: F)
 where
     W: WxWidget + WxEvtHandler + Copy + 'static,
-    F: Fn() -> Option<crate::application::context_menu::Focus> + 'static,
+    F: Fn() -> Option<&'static [crate::application::context_menu::Entry]> + 'static,
 {
     /// `WXK_WINDOWS_MENU`, the key between the right Windows key and Ctrl.
     ///
@@ -9688,8 +9721,8 @@ where
         if !asked {
             return;
         }
-        if let Some(focus) = where_it_is() {
-            crate::presentation::wx_context_menu::show(&owner, focus);
+        if let Some(entries) = what_to_offer() {
+            crate::presentation::wx_context_menu::show(&owner, entries);
         }
     });
 }

@@ -20,7 +20,7 @@
 //! [`command_for`] is the other direction, and the test below walks every
 //! action to make sure none of them is left without one.
 
-use crate::application::context_menu::{Action, Focus, entries_for};
+use crate::application::context_menu::{Action, Entry};
 use wxdragon::prelude::*;
 
 /// Which command id an action raises.
@@ -90,12 +90,19 @@ pub const fn command_for(action: Action) -> Id {
     }
 }
 
-/// Show the menu for whatever has focus, at wherever the event asked for.
+/// Show a menu, at wherever the event asked for.
 ///
 /// The chosen line raises an ordinary menu event, which bubbles to the frame
 /// and lands in the same handler the menu bar uses.
-pub fn show(on: &dyn WxWidget, focus: Focus) {
-    let entries = entries_for(focus);
+///
+/// Takes the list rather than a
+/// [`crate::application::context_menu::Focus`] because one control's menu is
+/// not a fact about the row alone: a note folder's depends on where that
+/// account's notes go, and a `Focus` names no account to ask about. The nine
+/// controls whose menu is a fact about the row still call
+/// [`crate::application::context_menu::entries_for`] at the call site and hand
+/// the answer here.
+pub fn show(on: &dyn WxWidget, entries: &[Entry]) {
     if entries.is_empty() {
         return;
     }
@@ -113,7 +120,7 @@ pub fn show(on: &dyn WxWidget, focus: Focus) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::context_menu::Focus;
+    use crate::application::context_menu::{Focus, entries_for};
 
     #[test]
     fn test_every_action_has_a_command_behind_it() {

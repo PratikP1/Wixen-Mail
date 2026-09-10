@@ -8,6 +8,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Your notes still stay on this computer, and one place now says so.** Nothing
+  about where your notes are kept has changed. What changed is that the answer
+  is given in one place instead of being written out separately in three.
+
+  The menu on a note folder used to leave "Sync notes now" off because of a
+  comment saying notes go nowhere. It now asks where that account's notes go
+  and offers the line only if the answer is somewhere. Today the answer is the
+  same for every account, so the menu looks exactly as it did.
+
+  Where a new note is filed asks the same place, so a menu cannot come to offer
+  a sync that the rest of the program says is impossible.
+
+  Known limitation: no notes backend exists. This is the shape a backend goes
+  behind, and nothing here talks to a server or offers a switch that would.
+
 - **What a note is kept as, said plainly.** A note's body is stored exactly as
   you typed it. Nothing is tidied on the way in and nothing on the way out, so
   the text that comes back is the text that went in, down to the trailing
