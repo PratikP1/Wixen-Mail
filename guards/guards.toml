@@ -3371,7 +3371,7 @@ red = [
     "test_the_new_installation_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3384,7 +3384,7 @@ red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── A record in this file that had stopped naming one place ─────────────────
@@ -3410,7 +3410,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3428,7 +3428,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── A change the mail server refused, reported as one that happened ─────────
@@ -3663,7 +3663,7 @@ red = [
     "test_no_mutation_result_is_read_from_the_lists_written_for_people",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3676,7 +3676,7 @@ red = [
     "test_what_a_change_touched_is_asked_the_same_way_in_both_places",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3689,7 +3689,7 @@ red = [
     "test_no_mutation_run_has_its_failure_swallowed",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3702,7 +3702,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── A run the suite never finished against, read as one that found nothing ───
@@ -3739,7 +3739,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3754,7 +3754,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3767,7 +3767,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -3780,7 +3780,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── A reason a mail server already punctuated, punctuated again ──────────────
@@ -3900,7 +3900,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 11 },
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────
@@ -5495,7 +5495,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -5864,7 +5864,7 @@ red = [
     "test_the_machinery_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── A meeting that repeats, on its way to Google ────────────────────────────
@@ -6152,7 +6152,7 @@ red = [
     "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 suite = "house_style"
 
@@ -11132,7 +11132,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 [[guard]]
@@ -13367,7 +13367,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
-    { file = "tests/house_style.rs", tests = 64 },
+    { file = "tests/house_style.rs", tests = 67 },
 ]
 
 # ── The two integration guards that named no source file ────────────────────

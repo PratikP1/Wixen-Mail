@@ -62,6 +62,20 @@ RECORD = ROOT / "guards" / "guards.toml"
 # eight would be worse.
 TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "8")
 
+# What one record really costs, said once so the two places that quote it cannot
+# drift apart.
+#
+# Measured 2026-09-10 at `eda2719`, 8 threads: 29s to rebuild after a one-line
+# source change, 66s for the library run. So an unfiltered record is 95s, and a
+# `--named-only` one is the same rebuild plus a scoped run of a few seconds.
+#
+# This replaces "about 112 seconds a record against 24", which was taken before
+# the library suite was halved on 2026-09-09 by building the schema once a
+# process instead of once a test. Every sweep estimate divides by this number,
+# so it is the one figure in this file worth re-taking rather than inheriting:
+# time a rebuild and a library run, add them, and correct this line.
+THE_COST_OF_ASKING_PROPERLY = "about 95 seconds a record against 35."
+
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
 
@@ -326,8 +340,11 @@ def what_the_tree_holds_now(guard: Guard) -> list[tuple[str, int]]:
 
     The files its red list names, and the file it breaks. A unit test lives
     beside what it covers, so a test arriving in the guarded file is at least as
-    likely to reach the break as one arriving anywhere else, and 34 of the 548
-    records break a Rust file no test in their red list lives in. "the question
+    likely to reach the break as one arriving anywhere else, and 83 of the 683
+    records break a Rust file no test in their red list lives in. Re-measured
+    2026-09-10 with this module's own `the_file_a_test_lives_in`, because two
+    hand derivations of the same figure answered 219 and 183 by mishandling
+    `mod.rs` and the suite short-circuit. The old figure here was 34 of 548. "the question
     about which days focuses the answer it ticks" breaks
     `src/presentation/wx_which_days.rs` and every test it names is in
     `wx_calendar.rs`, so without this a test written next to the code that
@@ -1034,7 +1051,7 @@ def main() -> int:
             return 1
         whole = len(guards)
         guards = [g for g in guards if could_have_gone_stale(g, changed)]
-        # Said out loud, because a run that quietly measured 14 of 536 and
+        # Said out loud, because a run that quietly measured 14 of 683 and
         # printed a clean result would read as a clean sweep. It is not one,
         # and the sentence below is the only place anybody learns that.
         print(
@@ -1192,8 +1209,16 @@ def main() -> int:
         # gets quoted into a summary and a clean-looking one that answered half
         # the question is how a weaker check becomes indistinguishable from the
         # stronger one it replaced.
+        # `how_many` rather than a bare count, for the reason `how_many` exists:
+        # the sibling line below already has a singular branch and this one did
+        # not, so somebody watched a real run print "All 1 guards".
+        opening = (
+            "The guard still reddens the tests its record names."
+            if len(guards) == 1
+            else f"All {len(guards)} guards still redden the tests their records name."
+        )
         print(
-            f"All {len(guards)} guards still redden the tests their records name.\n"
+            f"{opening}\n"
             "\n"
             "**This run did not ask whether anything else went red.** It ran\n"
             "only the modules those tests live in, so a test elsewhere that the\n"
@@ -1201,8 +1226,8 @@ def main() -> int:
             "names too few still reads as correct here. That is the direction 21\n"
             "of the 23 records found wrong on 2026-09-01 were wrong in.\n"
             "\n"
-            "Run the same selection without --named-only to ask it. That is\n"
-            "about 112 seconds a record against 24."
+            f"Run the same selection without --named-only to ask it. That is\n"
+            f"{THE_COST_OF_ASKING_PROPERLY}"
         )
         return 0
     print(

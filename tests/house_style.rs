@@ -4520,6 +4520,99 @@ fn test_the_mutation_report_still_obeys_its_own_examples() {
     );
 }
 
+/// How many worked examples a `python -m doctest -v` run really checked.
+///
+/// A verbose run ends with a line reading "54 tests in 37 items.", and that
+/// number is the only place such a run says whether it looked at anything at
+/// all. `python -m doctest` exits zero on a file holding no examples, so a
+/// check reading only the exit status cannot tell a file whose examples all
+/// pass from one whose examples were deleted. Zero for output that says
+/// nothing, so an unreadable run fails rather than reads as a large one.
+fn how_many_examples_ran(said: &str) -> usize {
+    said.lines()
+        .filter_map(|line| line.split_once(" tests in "))
+        .filter_map(|(count, _)| count.trim().parse().ok())
+        .next_back()
+        .unwrap_or(0)
+}
+
+#[test]
+fn test_the_count_of_worked_examples_can_tell_a_run_from_a_silence() {
+    // The companion this file asks every document-reading guard for: proof the
+    // reading can see the thing it exists to refuse. Without it the floor in
+    // the test below is a number compared against whatever the parser happened
+    // to return, and a parser that returns nothing useful reads as a clean run.
+    assert_eq!(
+        how_many_examples_ran("54 tests in 37 items.\n54 passed.\nTest passed.\n"),
+        54,
+        "the summary line of a real run was not read"
+    );
+
+    // What a file with every example deleted really prints, which is the case
+    // the floor exists to refuse.
+    assert_eq!(
+        how_many_examples_ran("0 tests in 37 items.\n0 passed.\n"),
+        0,
+        "a run that checked nothing was read as one that checked something"
+    );
+
+    // Nothing at all, which is what a run that could not start says.
+    assert_eq!(
+        how_many_examples_ran(""),
+        0,
+        "output holding no summary was read as a run"
+    );
+}
+
+#[test]
+fn test_the_guard_runner_still_obeys_its_own_examples() {
+    // The same hole as the mutation report above, in the script that measures
+    // guard records, and it stayed open longer. `scripts/guards.py` carries its
+    // rules as worked examples, and the only thing that ran them was
+    // `scripts/guards.sh`, which `CLAUDE.md` schedules once a phase. So those
+    // rules held on sweep days and on no other day.
+    //
+    // It cost twice on 2026-09-09. Two fixes to that script could not carry a
+    // `Fails-until-green:` trailer, because the commit gate rightly refuses a
+    // trailer naming a test that never ran, and both reds had to be taken by
+    // hand instead.
+    //
+    // Two failures, told apart. Missing python fails rather than skips, and a
+    // run that checked nothing fails too: `python -m doctest` exits zero on a
+    // file with no examples in it, so without the floor below, deleting every
+    // example in that script would read exactly like keeping them all green.
+    let examples = std::process::Command::new("python")
+        .args(["-m", "doctest", "-v", "scripts/guards.py"])
+        .output()
+        .unwrap_or_else(|e| {
+            panic!(
+                "python could not be run, so the rules the guard runner \
+                 follows went unchecked: {e}.\nInstall python and put it on \
+                 the path; the guard run needs it too."
+            )
+        });
+
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&examples.stdout),
+        String::from_utf8_lossy(&examples.stderr)
+    );
+
+    assert!(
+        examples.status.success(),
+        "the guard runner no longer does what its own examples say it does.\n{said}"
+    );
+
+    // A floor rather than the exact number, so adding an example does not fail
+    // this and removing most of them does. It held 54 on 2026-09-10.
+    let ran = how_many_examples_ran(&said);
+    assert!(
+        ran >= 40,
+        "the run reported {ran} worked examples, so it passed by checking \
+         almost nothing.\n{said}"
+    );
+}
+
 #[test]
 fn test_no_mutation_run_has_its_failure_swallowed() {
     // The script is the artefact. What this cannot see is whether a failing
@@ -5081,10 +5174,11 @@ fn how_many_tests(count: usize) -> String {
 /// The command that re-measures exactly the records this found, and nothing
 /// else.
 ///
-/// The whole point of naming them. A full run of the record is 548 builds and
-/// 548 suite runs, which is hours, and somebody told only that a record may be
-/// stale has no cheaper option than that. Told which records, they have one
-/// that costs a build and a run each.
+/// The whole point of naming them. A full run of the record is 683 builds and
+/// 683 suite runs, which is eighteen hours at the 95 seconds a record measured
+/// on 2026-09-10, and somebody told only that a record may be stale has no
+/// cheaper option than that. Told which records, they have one that costs a
+/// build and a run each.
 fn how_to_re_measure(names: &[String]) -> String {
     let quoted: Vec<String> = names.iter().map(|name| format!("\"{name}\"")).collect();
     format!("scripts/guards.sh --remeasure {}", quoted.join(" "))
@@ -5119,10 +5213,12 @@ fn how_to_re_measure(names: &[String]) -> String {
 /// changed, and one of the two that left had been made blind to the break by
 /// somebody improving it.
 ///
-/// And what it costs when it fires is not flat. 471 of the 548 records name one
+/// And what it costs when it fires is not flat. 510 of the 683 records name one
 /// file, so their remedy is one build and one run. The largest shared modules
 /// are named by many: a test added to `src/application/contacts_sync.rs` flags
-/// 74 records, and at a build and a run each that is hours rather than minutes.
+/// 77 records, and at 95 seconds each that is two hours rather than minutes.
+/// All four figures re-measured 2026-09-10 at `eda2719`; they read 471, 548 and
+/// 74 before, taken when the file held 548 records.
 /// `CLAUDE.md` already says there is no clever selection that makes that quick.
 /// It also says guard re-measurement belongs off the critical path, which is
 /// the honest answer here: run the command it prints in the background and let
@@ -5421,29 +5517,6 @@ fn test_the_recorded_count_check_can_tell_a_drift_from_an_agreement() {
         "a file that did not move was named as though it had: {said}"
     );
 
-    // Which way it moved. Guardrail 4 in CLAUDE.md: when a check can fail two
-    // ways, make it say which. A file that gained a test and a file that lost
-    // one are different situations for whoever reads this, and the message used
-    // to be one shape for both, leaving the direction to be worked out from two
-    // numbers in a line naming up to 41 records at once.
-    assert!(
-        said.contains("gained"),
-        "a file that gained tests did not say that is what it did: {said}"
-    );
-
-    // Losing one counts too. A deleted test can be the one the record rested on.
-    let fewer = [("src/a.rs".to_string(), 11), ("src/b.rs".to_string(), 3)];
-    let losing = what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer)
-        .expect("a file that lost a test to be reported");
-    assert!(
-        losing.contains("lost"),
-        "a file that lost a test did not say that is what it did: {losing}"
-    );
-    assert!(
-        losing.contains("12") && losing.contains("11"),
-        "the loss was reported without both numbers: {losing}"
-    );
-
     // A record that has never been counted at all. Silence must not read as
     // agreement, or adding a record buys it an exemption for ever.
     assert!(
@@ -5457,6 +5530,59 @@ fn test_the_recorded_count_check_can_tell_a_drift_from_an_agreement() {
     assert!(
         what_the_recorded_counts_get_wrong("a guard", &agreed, &elsewhere).is_some(),
         "a red list that now names a different file was not reported"
+    );
+}
+
+#[test]
+fn test_the_recorded_count_check_says_which_way_a_count_moved() {
+    // Guardrail 4 in CLAUDE.md: when a check can fail two ways, make it say
+    // which. A file that gained a test and a file that lost one are different
+    // situations for whoever has to act on the line, and the message used to be
+    // one shape for both, leaving the direction to be worked out from two
+    // numbers in a line that can name 41 records at once.
+    //
+    // Its own test, rather than three more assertions inside the drift check
+    // above. That is where they were first written, on 2026-09-09, and the
+    // reason was that a new test in this file makes every guard record naming
+    // it want re-measuring. That cost is paid by the commit this arrives in, so
+    // the behaviour gets a test named for what it checks.
+    //
+    // Both directions asserted both ways round. Asking only whether the word is
+    // there passes on a message carrying both words, which is the shape a badly
+    // worded fix takes.
+    let agreed = [("src/a.rs".to_string(), 12)];
+
+    let more = [("src/a.rs".to_string(), 15)];
+    let gaining = what_the_recorded_counts_get_wrong("a guard", &agreed, &more)
+        .expect("a file that gained tests to be reported");
+    assert!(
+        gaining.contains("gained"),
+        "a file that gained tests did not say that is what it did: {gaining}"
+    );
+    assert!(
+        !gaining.contains("lost"),
+        "a file that gained tests was also reported as having lost some: {gaining}"
+    );
+    assert!(
+        gaining.contains("12") && gaining.contains("15"),
+        "the gain was reported without both numbers: {gaining}"
+    );
+
+    // Losing one counts too. A deleted test can be the one the record rested on.
+    let fewer = [("src/a.rs".to_string(), 11)];
+    let losing = what_the_recorded_counts_get_wrong("a guard", &agreed, &fewer)
+        .expect("a file that lost a test to be reported");
+    assert!(
+        losing.contains("lost"),
+        "a file that lost a test did not say that is what it did: {losing}"
+    );
+    assert!(
+        !losing.contains("gained"),
+        "a file that lost a test was also reported as having gained some: {losing}"
+    );
+    assert!(
+        losing.contains("12") && losing.contains("11"),
+        "the loss was reported without both numbers: {losing}"
     );
 }
 
