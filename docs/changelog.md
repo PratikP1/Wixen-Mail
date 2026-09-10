@@ -29,6 +29,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   database is not encrypted. Anybody who can read the file can read your
   notes.
 
+  The database keeps a word beside each note saying what its body is written
+  in. It has said the same thing on every note this program has ever written
+  and nothing read it, and that is now written down as the answer rather than
+  left looking like a switch somebody forgot to wire up. One place decides the
+  word, so a second part of the program cannot spell it differently. A word
+  put there by something else survives being read and saved again instead of
+  being quietly replaced, and a note whose row does not carry the word at all
+  is read rather than refused. Nothing about your notes changes.
+
   Known limitation: nobody has heard a note with headings and lists in it read
   back by a screen reader. Whether the structure is clearer to listen to than
   the flat text it replaced is the whole argument for keeping notes as

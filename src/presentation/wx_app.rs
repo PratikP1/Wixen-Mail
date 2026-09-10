@@ -23419,7 +23419,7 @@ mod tests {
                 folder_id: Some(folder.id.clone()),
                 title: "Shopping".into(),
                 body: "milk, eggs".into(),
-                format: "plain".into(),
+                format: crate::data::message_cache::NoteBody::AsTyped,
                 pinned: false,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-07-26".into(),

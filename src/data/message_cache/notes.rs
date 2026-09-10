@@ -3,6 +3,68 @@
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, NoteEntry, NoteFolderEntry};
 
+/// What a note's body is written in, as the `format` column spells it.
+///
+/// Every note this program has ever written says the same thing here, and
+/// nothing reads it to decide anything. That is the answer rather than an
+/// oversight waiting for a feature, and this is where it is written down so
+/// the next person reading the schema does not have to work it out again.
+///
+/// A note's body is text. `application::long_text`'s module header states the
+/// rule it is read by: what is stored is exactly what was typed, markdown is
+/// legible as it stands, and anything that is not markdown is simply text with
+/// no structure in it rather than an error. The reading looks for whatever
+/// structure is there and finds none where there is none, so there is no fork
+/// here for a column to pick.
+///
+/// Making the reader obey this column would be a loss rather than a feature.
+/// Every row holds `plain`, the note editor labels its box "Body, in Markdown",
+/// and `NoteItem::read_full` speaks the body's structure. A reader that took
+/// the column at its word would stop reading headings and lists in every note
+/// that already exists.
+///
+/// What the column can honestly be is the place a note that came from
+/// somewhere else says what it is. [`NoteBody::Other`] is how it keeps that
+/// open, following [`crate::data::message_cache::AddressBook`], whose own doc
+/// comment gives the reason: a word this code does not recognise is still
+/// somebody else's answer, and forgetting it rewrites their row on the next
+/// save without anybody having asked for that.
+///
+/// The stored word stays `plain` because that is what every shipped row holds.
+/// Changing it would sort the notes on somebody's disk into ones written
+/// before a build and ones written after, for no reader's benefit, since no
+/// reader consults it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoteBody {
+    /// Whatever was typed, read for whatever structure is in it. The one
+    /// answer this program writes.
+    AsTyped,
+    /// A word some other build, or some other program, put there.
+    Other(String),
+}
+
+impl NoteBody {
+    /// The word the column holds.
+    ///
+    /// One place answers this, so a second writer cannot spell it differently.
+    /// It used to be a literal at each write site, which is how a column comes
+    /// to hold two words for one fact.
+    pub fn as_stored(&self) -> &str {
+        match self {
+            NoteBody::AsTyped => "plain",
+            NoteBody::Other(word) => word,
+        }
+    }
+
+    /// What a stored word means.
+    pub fn from_stored(value: &str) -> Self {
+        match value {
+            "plain" => NoteBody::AsTyped,
+            other => NoteBody::Other(other.to_string()),
+        }
+    }
+}
+
 impl MessageCache {
     // ── Note Folders ────────────────────────────────────────────────────────
 
@@ -116,7 +178,7 @@ impl MessageCache {
                     n.folder_id,
                     n.title,
                     n.body,
-                    n.format,
+                    n.format.as_stored(),
                     n.pinned,
                     n.created_at,
                     n.updated_at,
@@ -256,7 +318,15 @@ impl MessageCache {
             folder_id: row.get(2)?,
             title: row.get(3)?,
             body: row.get(4)?,
-            format: row.get(5)?,
+            format: match row.get::<_, Option<String>>(5)? {
+                Some(word) => NoteBody::from_stored(&word),
+                // The column carries a default and no NOT NULL, so a null is a
+                // row written by something that did not name it. The schema's
+                // own answer for that row is the default, and refusing to read
+                // somebody's note over a word nothing consults is the worse of
+                // the two.
+                None => NoteBody::AsTyped,
+            },
             pinned: row.get(6)?,
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
@@ -309,7 +379,7 @@ mod tests {
                     folder_id: Some(folder.clone()),
                     title: "A note".to_string(),
                     body: "Something worth keeping".to_string(),
-                    format: "plain".to_string(),
+                    format: NoteBody::AsTyped,
                     pinned: false,
                     created_at: chrono::Utc::now().to_rfc3339(),
                     updated_at: chrono::Utc::now().to_rfc3339(),
@@ -348,7 +418,7 @@ mod tests {
             folder_id: Some(nf.id.clone()),
             title: "Meeting Notes".to_string(),
             body: "Discussed roadmap for Q2.".to_string(),
-            format: "plain".to_string(),
+            format: NoteBody::AsTyped,
             pinned: false,
             created_at: now.clone(),
             updated_at: now,
@@ -386,7 +456,7 @@ mod tests {
                     folder_id: Some(nf.id.clone()),
                     title: title.to_string(),
                     body: body.to_string(),
-                    format: "plain".to_string(),
+                    format: NoteBody::AsTyped,
                     pinned: false,
                     created_at: now.clone(),
                     updated_at: now.clone(),
@@ -418,7 +488,7 @@ line two
                 folder_id: Some(folder.id.clone()),
                 title: "Long note".into(),
                 body: body.clone(),
-                format: "plain".into(),
+                format: NoteBody::AsTyped,
                 pinned: false,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-01-01".into(),
@@ -482,7 +552,7 @@ line two
                     folder_id: Some(folder.id.clone()),
                     title: "A note".to_string(),
                     body: (*body).to_string(),
-                    format: "plain".to_string(),
+                    format: NoteBody::AsTyped,
                     pinned: false,
                     created_at: "2026-01-01".to_string(),
                     updated_at: "2026-01-01".to_string(),
@@ -514,7 +584,7 @@ line two
                 folder_id: Some(folder.id.clone()),
                 title: "Nothing yet".to_string(),
                 body: String::new(),
-                format: "plain".to_string(),
+                format: NoteBody::AsTyped,
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
@@ -523,6 +593,29 @@ line two
 
         let loaded = cache.get_note("empty").unwrap().expect("the empty note");
         assert_eq!(loaded.body, "", "an empty note came back holding something");
+    }
+
+    /// The one answer this program writes is one word in one place.
+    ///
+    /// It can only assert a constant, and that is the honest shape of it: the
+    /// column has held the same word on every note ever written here, so there
+    /// is no information in it to test. What the assertion is really for is a
+    /// rename. Change the word and every note already on somebody's disk stops
+    /// being recognised by the build that reads it next, which is a schema
+    /// change wearing the clothes of a tidy-up.
+    #[test]
+    fn test_what_this_program_says_a_notes_body_is_written_in_is_one_word() {
+        assert_eq!(
+            NoteBody::AsTyped.as_stored(),
+            "plain",
+            "the word shipped rows hold was changed, which orphans every one of them"
+        );
+        assert_eq!(NoteBody::from_stored("plain"), NoteBody::AsTyped);
+        assert_eq!(
+            NoteBody::Other("text/html".to_string()).as_stored(),
+            "text/html",
+            "a word from somewhere else was not written back as it arrived"
+        );
     }
 
     /// A note whose stored form says nothing at all is still read.
@@ -546,7 +639,7 @@ line two
                 folder_id: Some(folder.id.clone()),
                 title: "From somewhere else".to_string(),
                 body: "Worth keeping".to_string(),
-                format: "plain".to_string(),
+                format: NoteBody::AsTyped,
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
@@ -565,7 +658,8 @@ line two
             .expect("a note was refused because a word nothing reads was missing from its row")
             .expect("the note that was just saved");
         assert_eq!(
-            loaded.format, "plain",
+            loaded.format,
+            NoteBody::AsTyped,
             "a row with nothing in the column did not read as what the schema defaults to"
         );
     }
@@ -587,7 +681,7 @@ line two
                 folder_id: Some(folder.id.clone()),
                 title: "From a later build".to_string(),
                 body: "Worth keeping".to_string(),
-                format: "plain".to_string(),
+                format: NoteBody::AsTyped,
                 pinned: false,
                 created_at: "2026-01-01".to_string(),
                 updated_at: "2026-01-01".to_string(),
@@ -642,7 +736,7 @@ line two
                     folder_id: Some(folder.id.clone()),
                     title: "A note".to_string(),
                     body: body.to_string(),
-                    format: "plain".to_string(),
+                    format: NoteBody::AsTyped,
                     pinned: false,
                     created_at: "2026-01-01".to_string(),
                     updated_at: "2026-01-01".to_string(),
@@ -675,7 +769,7 @@ line two
             folder_id: Some(folder.id.clone()),
             title: "Draft".into(),
             body: "first".into(),
-            format: "plain".into(),
+            format: NoteBody::AsTyped,
             pinned: false,
             created_at: "2026-01-01".into(),
             updated_at: "2026-01-01".into(),

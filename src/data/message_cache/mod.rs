@@ -20,6 +20,7 @@ pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
+pub use notes::NoteBody;
 pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
@@ -1192,7 +1193,9 @@ pub struct NoteEntry {
     pub folder_id: Option<String>,
     pub title: String,
     pub body: String,
-    pub format: String,
+    /// What the body is written in, which every note this program writes
+    /// answers the same way. [`NoteBody`] says why, and why it is not dropped.
+    pub format: NoteBody,
     pub pinned: bool,
     pub created_at: String,
     pub updated_at: String,
