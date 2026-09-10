@@ -61,6 +61,18 @@ pub struct NoteSyncResult {
     /// kept is [`crate::application::conflict_choice`]'s question and it is
     /// asked of the person rather than answered here.
     pub held: usize,
+    /// Notes the backend could not keep exactly as they were typed.
+    ///
+    /// Not a failure and not a problem. The note went, and what came back is
+    /// what the backend can hold: a format that cannot carry a run of spaces or
+    /// a trailing one hands back something equivalent and not identical, and no
+    /// client speaking it can do better.
+    ///
+    /// Counted and said, because the alternative is the two copies quietly
+    /// differing from the moment of the first push, with nothing said until
+    /// something at the other end moves a marker and the read writes the
+    /// backend's version of somebody's note over theirs.
+    pub not_kept_exactly: usize,
     /// Changes still waiting because this program is not allowed to change
     /// anything on this account.
     ///
@@ -115,6 +127,17 @@ impl NoteSyncResult {
             // drifted and only one was corrected.
             said.sentence(crate::application::allowed::changes_waiting_here(
                 self.waiting_on_the_setting,
+            ));
+        }
+        if self.not_kept_exactly > 0 {
+            // Written here rather than beside the other three sentences,
+            // because nothing else says it. `allowed::changes_waiting_here` and
+            // `conflict_choice`'s question are shared by four syncs and live
+            // where all four can reach them; this is about a notes backend and
+            // has one caller.
+            said.sentence(format!(
+                "{} could not be kept exactly by your notes backend",
+                how_many(self.not_kept_exactly, "note")
             ));
         }
         said.spoken()

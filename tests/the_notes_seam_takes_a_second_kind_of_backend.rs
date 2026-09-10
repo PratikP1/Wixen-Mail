@@ -118,6 +118,13 @@ trait ABackendToDrive: NotesService {
     /// The seam says a container is opaque and is handed back unchanged. That
     /// is checkable only by recording what really arrived.
     fn containers_it_was_handed(&self) -> Vec<String>;
+
+    /// The service wrote to a note without changing what it says.
+    ///
+    /// Real, and named in the seam's own contract: a marker is not promised to
+    /// change only when the content does. A re-index, a move between sections,
+    /// a migration. What it costs is the subject of two tests below.
+    fn the_other_end_touched_it_without_changing_it(&self, named: &str);
 }
 
 // ── The first shape: one document, one address, one strong marker ───────────
@@ -362,6 +369,16 @@ impl ABackendToDrive for ACollectionOfDocuments {
 
     fn containers_it_was_handed(&self) -> Vec<String> {
         self.containers.lock().expect("the containers seen").clone()
+    }
+
+    fn the_other_end_touched_it_without_changing_it(&self, named: &str) {
+        let tag = self.a_new_tag();
+        let mut documents = self.documents.lock().expect("the documents");
+        let held = documents
+            .iter_mut()
+            .find(|held| held.at == named)
+            .expect("a document the server could touch");
+        held.tag = tag;
     }
 }
 
@@ -715,6 +732,16 @@ impl ABackendToDrive for ASectionOfPages {
 
     fn containers_it_was_handed(&self) -> Vec<String> {
         self.containers.lock().expect("the containers seen").clone()
+    }
+
+    fn the_other_end_touched_it_without_changing_it(&self, named: &str) {
+        let now = self.now();
+        let mut pages = self.pages.lock().expect("the pages");
+        let page = pages
+            .iter_mut()
+            .find(|page| page.name == named)
+            .expect("a page the service could touch");
+        page.changed_at = now;
     }
 }
 
@@ -1345,4 +1372,193 @@ fn test_the_name_a_page_backend_gives_moves_when_the_body_does_and_the_seam_keep
         second,
         "this computer is holding a name the backend no longer uses"
     );
+}
+
+// ── The round trip, and what a backend cannot promise about it ──────────────
+
+/// A note with the things a body really holds and a format really loses.
+///
+/// Markdown, because that is what PIM-04 says a note's stored form is: two
+/// levels of indentation that mean something, a run of spaces used to line
+/// something up, and a trailing space at the end of a line. Every one of those
+/// is a byte somebody typed on purpose and none of them is safe everywhere.
+const AS_IT_WAS_TYPED: &str = "# Wiring colours\n\n- Live is brown\n  - Older cable: red\n- Neutral is blue\n\nTerminal  Colour\nL         brown \n";
+
+fn a_note_goes_out_and_comes_back<S: NotesService + ABackendToDrive>(
+    backend: &S,
+) -> (String, String) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    a_sync(&cache, backend);
+    let there = backend.what_it_holds();
+    assert_eq!(there.len(), 1, "{there:?}");
+    (the_note_here(&cache, "note-1").body, there[0].2.clone())
+}
+
+#[test]
+fn test_a_note_is_the_bytes_it_went_out_as_after_a_round_trip_through_a_collection_of_documents() {
+    // Compared on bytes and never on anything parsed. Two documents that parse
+    // to the same structure can be two different byte strings, and the byte
+    // string is the criterion.
+    let (here, there) = a_note_goes_out_and_comes_back(&ACollectionOfDocuments::new());
+
+    assert_eq!(here, AS_IT_WAS_TYPED);
+    assert_eq!(there, AS_IT_WAS_TYPED, "a byte moved on the way out");
+}
+
+#[test]
+fn test_a_note_a_section_of_pages_could_not_keep_says_exactly_which_bytes_moved() {
+    // The other answer, and the one phase 5.2 will really meet. A page is an
+    // HTML document, HTML collapses a run of whitespace to one space and cannot
+    // hold one at the end of a line, so the indentation that makes a nested
+    // list a nested list does not survive.
+    //
+    // Named rather than summarised. "It normalises" is a sentence somebody
+    // reads past; the three lines below are what it costs.
+    let (here, there) = a_note_goes_out_and_comes_back(&ASectionOfPages::new());
+
+    assert_eq!(
+        here, AS_IT_WAS_TYPED,
+        "the copy on this computer is not what was typed"
+    );
+    assert_ne!(there, AS_IT_WAS_TYPED);
+
+    let moved: Vec<(&str, &str)> = AS_IT_WAS_TYPED
+        .lines()
+        .zip(there.lines())
+        .filter(|(typed, kept)| typed != kept)
+        .collect();
+    assert_eq!(
+        moved,
+        vec![
+            ("  - Older cable: red", "- Older cable: red"),
+            ("Terminal  Colour", "Terminal Colour"),
+            ("L         brown ", "L brown"),
+        ],
+        "the bytes that moved are not the ones written down here"
+    );
+}
+
+fn a_backend_that_could_not_keep_a_note_says_so<S: NotesService + ABackendToDrive>(
+    backend: &S,
+    expected: usize,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+
+    let did = a_sync(&cache, backend);
+
+    assert_eq!(
+        did.not_kept_exactly, expected,
+        "a backend that could not keep a note reported that it took it: {did:?}"
+    );
+    // And what it kept is what this computer now holds, so the two agree from
+    // the moment of the push rather than diverging in silence until something
+    // at the other end moves a marker.
+    let here = the_note_here(&cache, "note-1");
+    assert_eq!(here.body, backend.what_it_holds()[0].2);
+    assert!(!here.pending, "{here:?}");
+}
+
+#[test]
+fn test_a_collection_of_documents_that_kept_the_note_says_nothing_about_keeping_it() {
+    // The half that stops this being a count that is always one. A backend that
+    // kept the bytes says nothing, so the sentence a person hears is about a
+    // real loss rather than about every sync.
+    a_backend_that_could_not_keep_a_note_says_so(&ACollectionOfDocuments::new(), 0);
+}
+
+#[test]
+fn test_a_section_of_pages_that_could_not_keep_a_note_says_so_rather_than_reporting_it_took_it() {
+    a_backend_that_could_not_keep_a_note_says_so(&ASectionOfPages::new(), 1);
+}
+
+#[test]
+fn test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    let could_not = a_sync(&cache, &ASectionOfPages::new()).summary();
+
+    assert!(could_not.contains("could not be kept"), "{could_not}");
+    assert!(could_not.contains("notes backend"), "{could_not}");
+
+    let elsewhere = tempfile::tempdir().expect("a directory");
+    let second = a_store(&elsewhere);
+    a_note_made_here(&second, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    let kept = a_sync(&second, &ACollectionOfDocuments::new()).summary();
+
+    assert!(!kept.contains("could not be kept"), "{kept}");
+}
+
+fn a_note_the_other_end_only_touched_is_not_written_down_again<
+    S: NotesService + ABackendToDrive,
+>(
+    backend: &S,
+) {
+    // A marker that moved for a reason the content did not cause. The contract
+    // already says a backend may do this, and called the cost a fetch nobody
+    // needed. It is more than that: the row was rewritten, its changed time
+    // became the time of the sync, and the sync counted a note as stored when
+    // nothing was.
+    //
+    // `NoteSyncResult::stored`'s own comment says it must not be the number
+    // seen, because a sync that rewrites everything every time can only report
+    // the size of the container. This is how it came to.
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    a_sync(&cache, backend);
+    let after_the_push = the_note_here(&cache, "note-1");
+    let named = after_the_push.known_as.clone().expect("a name");
+
+    backend.the_other_end_touched_it_without_changing_it(&named);
+    let did = a_sync(&cache, backend);
+
+    assert_eq!(
+        did.stored, 0,
+        "a note nothing changed was counted as stored: {did:?}"
+    );
+    assert_eq!(did.unchanged, 1, "{did:?}");
+    let after = the_note_here(&cache, "note-1");
+    assert_eq!(
+        after.updated_at, after_the_push.updated_at,
+        "the row was written again, so the note's changed time is now the sync's"
+    );
+    assert_eq!(after.body, after_the_push.body);
+    // The marker is still written down, or the next sync asks the same
+    // question and the one after that as well.
+    assert_ne!(
+        after.known_version, after_the_push.known_version,
+        "the marker the backend gives now was not written down"
+    );
+}
+
+#[test]
+fn test_a_document_the_server_only_touched_is_not_written_down_again() {
+    a_note_the_other_end_only_touched_is_not_written_down_again(&ACollectionOfDocuments::new());
+}
+
+#[test]
+fn test_a_page_the_service_only_touched_is_not_written_down_again() {
+    a_note_the_other_end_only_touched_is_not_written_down_again(&ASectionOfPages::new());
+}
+
+#[test]
+fn test_the_stored_form_of_a_note_did_not_change_to_take_a_second_backend() {
+    // PIM-08's first line, asked of the store rather than of the seam. A note
+    // written the way every note has always been written reads back the bytes
+    // it went in as, its format is still the one word this program writes, and
+    // nothing about a second kind of backend needed a migration to say so.
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+
+    let here = the_note_here(&cache, "note-1");
+    assert_eq!(here.body, AS_IT_WAS_TYPED);
+    assert_eq!(here.format, NoteBody::AsTyped);
+    assert_eq!(here.known_as, None);
+    assert_eq!(here.known_version, None);
 }
