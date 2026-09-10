@@ -1060,11 +1060,23 @@ write path added by this milestone passes through that gate.
     the rendered structure: `read_aloud.rs:351` does for a note exactly what `read_aloud.rs:332`
     does for a contact's notes, which is the precedent this requirement names. What is left of
     PIM-04 is the three criteria about sync, and those are PIM-07's work.
-    **One loose end inside PIM-04.** The `notes.format` column is written as the literal
-    `"plain"` at six sites and read by no production code, while the editor and the reader both
-    treat the body as Markdown. It is a stored answer nothing asks, which is the shape this
-    project keeps having to remove. Either it becomes meaningful, or it goes, or the phase
-    records why it stays.
+    **The loose end inside PIM-04 is closed, by `05.1-01` on 2026-09-10.** It used to read:
+    the `notes.format` column is written as the literal `"plain"` at six sites and read by no
+    production code, so it is a stored answer nothing asks. Two of those three numbers were
+    wrong when they were written, and the census taken over the whole tree found two production
+    write sites, `managers.rs`'s `store_new_item` and `outlook_data_file.rs`'s `a_note_from`,
+    with the other nine inside `#[cfg(test)]` blocks.
+    Of the three answers the requirement offered, the column records why it stays, and dropping
+    it was never available because `CLAUDE.md`'s schema rule forbids dropping or renaming a
+    column that shipped. The reason is in `NoteBody`'s doc comment in
+    `src/data/message_cache/notes.rs`, where the next reader of the schema meets it: making the
+    reader obey the column would stop headings and lists being read in every note that already
+    exists, and `long_text.rs`'s header already settles the question the column pretends to ask.
+    The literal is gone either way. `NoteEntry.format` is the `NoteBody` enum, so the two
+    production writers cannot spell it differently, and a word this build did not write survives
+    being read and written back rather than being replaced.
+    **The byte-identical round trip now has a test that goes through storage** rather than
+    through a formatter, in `notes.rs`, with a guard record whose break is a trim in `save_note`.
 
   - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer.
   - **Decided 2026-08-29 by Pratik.** Not one target. A note has a backend chosen by the

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 215
+open_count: 217
 waived_count: 0
 fixed_count: 15
-total_count: 230
-last_updated: 2026-09-09T21:16:53.634Z
+total_count: 232
+last_updated: 2026-09-10T14:51:05.860Z
 ---
 
 # Broken Windows Ledger
@@ -245,6 +245,8 @@ last_updated: 2026-09-09T21:16:53.634Z
 | 228 | 05 | deviation | src/service/tasks_api.rs |  | google_task_to_entry sets created_at to empty, so a moved task loses when it was made once Google names the new copy. Pre-existing for every task created here and synced; a provider move now traverses it too | open |  | 2026-09-09T21:16:52.197Z |  |
 | 229 | 05 | unrun-verify | src/application/tasks_sync.rs |  | No test asserts that a task's fields survive the round trip through a provider's answer to the create. The Scripted fake returns a bare task, so the title comes back as Untitled task; a real provider echoes the body. Field survival is asserted on the local write only | open |  | 2026-09-09T21:16:52.910Z |  |
 | 230 | 05 | unrun-verify | src/presentation/managers.rs |  | Nobody has heard what a move of a provider-held task says. The clause is 05-06's and unchanged, and whether it carries the fact that the provider has not been told yet without wearing after twenty moves is a judgement about hearing it | open |  | 2026-09-09T21:16:53.634Z |  |
+| 231 | 05.1 | unrun-verify | src/presentation/read_aloud.rs |  | Nobody has heard a note whose Markdown is read back as structure. Whether "heading level 1, Shopping, bullet, milk" is clearer to listen to than the flat text it replaced is the whole argument for storing Markdown, and it has never been put to a screen reader | open |  | 2026-09-10T14:50:56.612Z |  |
+| 232 | 05.1 | unrun-verify | src/data/message_cache/notes.rs |  | No database written by another build has ever been opened. NoteBody::Other and the null-column path are driven only by rows this repository's own tests wrote with raw SQL, so what a real second writer puts in that column is a guess | open |  | 2026-09-10T14:51:05.860Z |  |
 
 ````json
 [
@@ -3006,6 +3008,30 @@ last_updated: 2026-09-09T21:16:53.634Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-09T21:16:53.634Z",
+    "resolved_at": null
+  },
+  {
+    "id": 231,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/presentation/read_aloud.rs",
+    "line": null,
+    "description": "Nobody has heard a note whose Markdown is read back as structure. Whether \"heading level 1, Shopping, bullet, milk\" is clearer to listen to than the flat text it replaced is the whole argument for storing Markdown, and it has never been put to a screen reader",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T14:50:56.612Z",
+    "resolved_at": null
+  },
+  {
+    "id": 232,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/data/message_cache/notes.rs",
+    "line": null,
+    "description": "No database written by another build has ever been opened. NoteBody::Other and the null-column path are driven only by rows this repository's own tests wrote with raw SQL, so what a real second writer puts in that column is a guess",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T14:51:05.860Z",
     "resolved_at": null
   }
 ]
