@@ -6,6 +6,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **A sync now says when your notes backend could not keep a note exactly as
+  you typed it.** A calendar server's journal format has one way of writing a
+  line break and no way of writing a carriage return inside a value, so a note
+  typed on Windows loses its carriage returns on the way out. This was already
+  written down as a known limitation and there was no way for you to find out
+  it had happened to one of your notes. The sync now says "1 note could not be
+  kept exactly by your notes backend", and the copy on this computer is brought
+  into line with the copy at the server in the same moment, so the two do not
+  quietly differ until something at the server changes and brings its version
+  down over yours.
+
+- **A note change waiting on the Allow Changes setting is no longer lost.** If
+  the setting held your change back and the same note had also changed at the
+  server, the sync used to say one change was waiting and then write the
+  server's copy over it in the same run, leaving nothing waiting and saying
+  nothing about it. Now both copies are kept and you are asked which to keep,
+  through the same window your contacts and calendar already use. The same
+  applies when the change could not be sent for any other reason, such as
+  nobody being signed in.
+
+- **A note whose copy at the server has gone is sent again instead of being
+  reported for ever.** If somebody removed the server's copy of a note you
+  still have, every sync from then on reported a problem about it and your
+  change never left this computer. It is now sent as a new note, which is what
+  the note folder and the sync always meant by a note the server does not know
+  about.
+
 ### Added
 
 - **Notes can now be sent to a calendar server and read back from one.** If an

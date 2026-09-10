@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 229
+open_count: 236
 waived_count: 0
 fixed_count: 17
-total_count: 246
-last_updated: 2026-09-10T20:50:53.826Z
+total_count: 253
+last_updated: 2026-09-10T23:33:50.847Z
 ---
 
 # Broken Windows Ledger
@@ -261,6 +261,13 @@ last_updated: 2026-09-10T20:50:53.826Z
 | 244 | 05.1 | unrun-verify | src/application/conflict_choice.rs |  | Whether a held note conflict read aloud is answerable without seeing both copies. The words say note rather than contact now, and nobody has heard the question. | open |  | 2026-09-10T20:50:22.983Z |  |
 | 245 | 05.1 | stub | src/application/notes_backend.rs |  | An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen. | open |  | 2026-09-10T20:50:23.697Z |  |
 | 246 | 05.1 | stub | src/application/notes_sync.rs |  | Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end. | open |  | 2026-09-10T20:50:24.407Z |  |
+| 247 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether the sentence somebody hears when the read holds a change the setting had refused is understood by ear, and whether it is told apart from the clash the push reports. Both reach conflict_choice and both say a note is waiting to be chosen; nobody has heard either. | open |  | 2026-09-10T23:33:07.431Z |  |
+| 248 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether the sentence 1 note could not be kept exactly by your notes backend is understood by ear, and whether it is distinguishable from the other four sentences a notes sync can say. It is a new sentence in a status line that already carries four. | open |  | 2026-09-10T23:33:08.090Z |  |
+| 249 | 05.1 | unrun-verify | tests/the_notes_seam_takes_a_second_kind_of_backend.rs |  | Whether the four constraints the second implementation is shaped from are what a real Graph OneNote client meets. They are a reading of three Microsoft pages on 2026-09-06, not a measurement of the service, and a documented API can differ from the service behind it. | open |  | 2026-09-10T23:33:48.158Z |  |
+| 250 | 05.1 | unrun-verify | src/application/notes_backend.rs |  | Whether a seam proven against an implementation in this repository's own tests can be implemented from a separate crate. An integration test sees only what is pub, which is the stronger placement, but it is still built against the same source tree in the same commit. | open |  | 2026-09-10T23:33:48.816Z |  |
+| 251 | 05.1 | unrun-verify | docs/development/the-notes-seam.md |  | How wide a OneNote lastModifiedDateTime tick really is, and so how likely it is that a write this program makes and an edit somebody makes at the service carry one marker. Requirement 4 of the seam's contract turns on it and nothing here can measure it. | open |  | 2026-09-10T23:33:49.479Z |  |
+| 252 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether replacing the copy here with what the backend could keep is what somebody wants. The alternative is keeping their bytes and telling them the two copies differ; this was decided on the argument that a loss somebody watches happen is better than one that arrives weeks later, and nobody has been asked. | open |  | 2026-09-10T23:33:50.138Z |  |
+| 253 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether making a note again when the backend says it no longer holds it is right where somebody deleted it at the other end on purpose. The seam's contract says a name the backend never gave is a note to create; a deletion made at the backend is not propagated here at all, so the two rules can disagree about one note. | open |  | 2026-09-10T23:33:50.847Z |  |
 
 ````json
 [
@@ -3214,6 +3221,90 @@ last_updated: 2026-09-10T20:50:53.826Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T20:50:24.407Z",
+    "resolved_at": null
+  },
+  {
+    "id": 247,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether the sentence somebody hears when the read holds a change the setting had refused is understood by ear, and whether it is told apart from the clash the push reports. Both reach conflict_choice and both say a note is waiting to be chosen; nobody has heard either.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:07.431Z",
+    "resolved_at": null
+  },
+  {
+    "id": 248,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether the sentence 1 note could not be kept exactly by your notes backend is understood by ear, and whether it is distinguishable from the other four sentences a notes sync can say. It is a new sentence in a status line that already carries four.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:08.090Z",
+    "resolved_at": null
+  },
+  {
+    "id": 249,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "tests/the_notes_seam_takes_a_second_kind_of_backend.rs",
+    "line": null,
+    "description": "Whether the four constraints the second implementation is shaped from are what a real Graph OneNote client meets. They are a reading of three Microsoft pages on 2026-09-06, not a measurement of the service, and a documented API can differ from the service behind it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:48.158Z",
+    "resolved_at": null
+  },
+  {
+    "id": 250,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "Whether a seam proven against an implementation in this repository's own tests can be implemented from a separate crate. An integration test sees only what is pub, which is the stronger placement, but it is still built against the same source tree in the same commit.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:48.816Z",
+    "resolved_at": null
+  },
+  {
+    "id": 251,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "docs/development/the-notes-seam.md",
+    "line": null,
+    "description": "How wide a OneNote lastModifiedDateTime tick really is, and so how likely it is that a write this program makes and an edit somebody makes at the service carry one marker. Requirement 4 of the seam's contract turns on it and nothing here can measure it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:49.479Z",
+    "resolved_at": null
+  },
+  {
+    "id": 252,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether replacing the copy here with what the backend could keep is what somebody wants. The alternative is keeping their bytes and telling them the two copies differ; this was decided on the argument that a loss somebody watches happen is better than one that arrives weeks later, and nobody has been asked.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:50.138Z",
+    "resolved_at": null
+  },
+  {
+    "id": 253,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether making a note again when the backend says it no longer holds it is right where somebody deleted it at the other end on purpose. The seam's contract says a name the backend never gave is a note to create; a deletion made at the backend is not propagated here at all, so the two rules can disagree about one note.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T23:33:50.847Z",
     "resolved_at": null
   }
 ]
