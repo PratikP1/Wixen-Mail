@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.1
 current_phase_name: Notes and contacts reach a server
-current_plan: 1
+current_plan: 2
 status: executing
-stopped_at: 05.1-01 merged at e2c0399; phase 05.1 continues at 05.1-02
-last_updated: "2026-09-10T14:59:22.771Z"
+stopped_at: 05.1-02 merged at 50533c5; phase 05.1 continues at 05.1-03
+last_updated: "2026-09-10T17:42:11.757Z"
 last_activity: 2026-09-10
-state_head: e2c0399b116c2d9f1a4c76a69496293ee18e8f28
+state_head: 50533c570e84f265a8cdc2ca37003a155004ec6b
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 72
+  completed_plans: 73
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,10 +29,40 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **1 of 6 plans done.** 05.1-01 a note's body proven byte-identical through storage, and the column that has said "plain" on every note ever written now says in its own words why it stays. `main` is at `e2c0399` after the merge, version `0.103.0`, and nothing is pushed.
+Phase: 05.1 (Notes and contacts reach a server). **2 of 6 plans done.** 05.1-02 one place answers where an account's notes go, and the note folder menu, the settings screen and where a new note is filed all ask it. `main` is at `50533c5` after the merge, version `0.104.0`, and nothing is pushed.
 
-Current Plan: 1
+Current Plan: 2
 Total Plans in Phase: 6
+
+**What 05.1-02 built.** `application::notes_backend`, and three things that stopped
+answering the question for themselves. The note folder menu held a constant and a
+comment; `new_item::supports` answered it a second time as a `false` with the
+reason per provider written out beside it; the settings screen said nothing at
+all. The answer is a which rather than a yes or no, with a variant for a word
+this build does not recognise, following `AddressBook` for the reason that
+type's own comment gives.
+
+Nothing an account can be answers anything but "they stay on this computer", and
+that is not a gap. A consumer Gmail account has no notes backend after all three
+ship, because Google Keep's API is Workspace only, so the settings sentence says
+"this account has no notes backend" rather than "not yet". A sentence written as
+"not yet" has to be rewritten later and meanwhile tells somebody to wait for
+something that is not coming.
+
+The running program really asks. `wire_context_menu` takes the list rather than a
+`Focus`, because a note folder's menu is not a fact about the row alone and a
+`Focus` names no account; the notes sidebar reads the default account out of the
+window state and asks the seam. The settings dialog gained an `accounts`
+parameter for the same reason: `AppConfig` names the default account by id and
+holds no roster, and an id says nothing about a provider. That correction was in
+the plan and the plan had it wrong.
+
+The one repair worth carrying forward: the remeasure a count check printed found
+that "the copy line is on exactly the menus whose command accepts one" stopped
+guarding what it says on 2026-09-08, when 05-05 put a copy line on the reminders
+menu and turned that record's break into adding a duplicate. It reddened two
+duplicate checks it does not name and left the one it does name green, for three
+days, with no count moving and nothing able to say so.
 
 **What 05.1-01 built.** Two things, and only the second changes any code that
 runs. The first is a test that puts a note's body through `save_note` and
@@ -260,7 +290,7 @@ Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
 37 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
-Status: Executing Phase 05.1
+Status: Ready to execute
 verification recorded criterion 3 as the one partial of eight, and it closes it.
 The phase wants re-verifying against that report, which is annotated as
 superseded rather than left to be read as current.
@@ -430,6 +460,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05 P06 | 3h | 3 tasks | 12 files |
 | Phase 05 P08 | 5h | 2 tasks | 12 files |
 | Phase 05.1 P01 | 64 | 2 tasks | 11 files |
+| Phase 05.1 P02 | 2h 20m | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -641,8 +672,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T14:58:08.776Z
-Stopped at: 05.1-01 merged at e2c0399; phase 05.1 continues at 05.1-02
+Last session: 2026-09-10T17:42:11.445Z
+Stopped at: 05.1-02 merged at 50533c5; phase 05.1 continues at 05.1-03
 
 Earlier: Completed 04.2-05-PLAN.md
 

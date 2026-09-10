@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 217
+open_count: 222
 waived_count: 0
 fixed_count: 15
-total_count: 232
-last_updated: 2026-09-10T14:51:05.860Z
+total_count: 237
+last_updated: 2026-09-10T17:40:44.830Z
 ---
 
 # Broken Windows Ledger
@@ -247,6 +247,11 @@ last_updated: 2026-09-10T14:51:05.860Z
 | 230 | 05 | unrun-verify | src/presentation/managers.rs |  | Nobody has heard what a move of a provider-held task says. The clause is 05-06's and unchanged, and whether it carries the fact that the provider has not been told yet without wearing after twenty moves is a judgement about hearing it | open |  | 2026-09-09T21:16:53.634Z |  |
 | 231 | 05.1 | unrun-verify | src/presentation/read_aloud.rs |  | Nobody has heard a note whose Markdown is read back as structure. Whether "heading level 1, Shopping, bullet, milk" is clearer to listen to than the flat text it replaced is the whole argument for storing Markdown, and it has never been put to a screen reader | open |  | 2026-09-10T14:50:56.612Z |  |
 | 232 | 05.1 | unrun-verify | src/data/message_cache/notes.rs |  | No database written by another build has ever been opened. NoteBody::Other and the null-column path are driven only by rows this repository's own tests wrote with raw SQL, so what a real second writer puts in that column is a guess | open |  | 2026-09-10T14:51:05.860Z |  |
+| 233 | 05.1 | unrun-verify | src/presentation/wx_settings.rs |  | Nobody has heard the Notes section on the Calendar and PIM tab. Whether it is found where it was put, last on the tab after Working Day, by somebody moving through the sections in order with a screen reader, has never been tried | open |  | 2026-09-10T17:40:28.476Z |  |
+| 234 | 05.1 | unrun-verify | src/application/notes_backend.rs |  | Nobody has heard the sentence saying an account has no notes backend. Whether it is heard as an answer or as an apology is the whole question about wording it that way, and it has never been put to a screen reader | open |  | 2026-09-10T17:40:42.877Z |  |
+| 235 | 05.1 | unrun-verify | src/application/context_menu.rs |  | The note folder menu has never been opened with a backend behind it, because none exists. Every account answers that its notes stay here, so the arm that offers Sync notes now is driven only by tests | open |  | 2026-09-10T17:40:43.531Z |  |
+| 236 | 05.1 | stub | src/application/notes_backend.rs |  | NotesService has no implementor and no caller. It is the contract 05.1-03 and 05.1-04 are held to, and until one of them lands nothing has ever executed a line of it | open |  | 2026-09-10T17:40:44.182Z |  |
+| 237 | 05.1 | unrun-verify | docs/development/the-notes-seam.md |  | The notes seam contract is reasoning from Microsoft's documentation and from what this repository already does, not from a backend that has run. Its own table names one assumption it knows is weakest, that one note maps to one thing at the backend, and 05.2-03 is required to report where it was wrong | open |  | 2026-09-10T17:40:44.830Z |  |
 
 ````json
 [
@@ -3032,6 +3037,66 @@ last_updated: 2026-09-10T14:51:05.860Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T14:51:05.860Z",
+    "resolved_at": null
+  },
+  {
+    "id": 233,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Nobody has heard the Notes section on the Calendar and PIM tab. Whether it is found where it was put, last on the tab after Working Day, by somebody moving through the sections in order with a screen reader, has never been tried",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:40:28.476Z",
+    "resolved_at": null
+  },
+  {
+    "id": 234,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "Nobody has heard the sentence saying an account has no notes backend. Whether it is heard as an answer or as an apology is the whole question about wording it that way, and it has never been put to a screen reader",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:40:42.877Z",
+    "resolved_at": null
+  },
+  {
+    "id": 235,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/context_menu.rs",
+    "line": null,
+    "description": "The note folder menu has never been opened with a backend behind it, because none exists. Every account answers that its notes stay here, so the arm that offers Sync notes now is driven only by tests",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:40:43.531Z",
+    "resolved_at": null
+  },
+  {
+    "id": 236,
+    "kind": "stub",
+    "phase": "05.1",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "NotesService has no implementor and no caller. It is the contract 05.1-03 and 05.1-04 are held to, and until one of them lands nothing has ever executed a line of it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:40:44.182Z",
+    "resolved_at": null
+  },
+  {
+    "id": 237,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "docs/development/the-notes-seam.md",
+    "line": null,
+    "description": "The notes seam contract is reasoning from Microsoft's documentation and from what this repository already does, not from a backend that has run. Its own table names one assumption it knows is weakest, that one note maps to one thing at the backend, and 05.2-03 is required to report where it was wrong",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:40:44.830Z",
     "resolved_at": null
   }
 ]
