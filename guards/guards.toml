@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 496 records have arrived since and have not been through it.
+# 498 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -11956,7 +11956,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -12808,7 +12808,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -16999,7 +16999,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 59 },
+    { file = "src/data/config.rs", tests = 60 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18242,5 +18242,85 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 7 },
+    { file = "src/application/notes_backend.rs", tests = 12 },
+]
+
+# ── A sentence that says the same thing whatever the answer was ─────────────
+#
+# What it costs a person: they open Settings, read that their notes are kept
+# on this computer and that this account has no notes backend, and their notes
+# have been going to a server for weeks. Or the reverse, which is what ships
+# today: the sentence is right by accident because every account answers the
+# same, and nothing would notice when one stops.
+#
+# This is the note editor stub in the shape a sentence can take. That editor
+# filled itself with "Note 1" and "(Note content loaded here)" on every
+# selection, and it looked finished. A sentence that ignores what it was told
+# looks finished in exactly the same way, and reads as an answer rather than as
+# a placeholder, which is worse.
+#
+# The break is the one somebody writes by copying the arm above and forgetting
+# to change the words. It is the constant rather than the removal on purpose:
+# a function that stopped taking the answer at all would not compile.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,114 passed
+# and exactly one failed.
+[[guard]]
+name = "the settings sentence says where the notes really go"
+file = "src/application/notes_backend.rs"
+before = '''        NotesBackend::CalDavJournal => format!(
+            "Notes in {account_named} are kept on this computer and sent to that \
+             account's calendar server."
+        ),'''
+after = '''        NotesBackend::CalDavJournal => format!(
+            "Notes in {account_named} are kept on this computer. This account has no \
+             notes backend, so nothing sends them anywhere."
+        ),'''
+red = [
+    "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
+]
+tests_last_seen = [
+    { file = "src/application/notes_backend.rs", tests = 12 },
+]
+
+# ── A sentence only one screen reader hears ─────────────────────────────────
+#
+# The other half, and a different failure. The one above is the words being
+# wrong. This is the words being right and one of the two people who need them
+# never hearing them.
+#
+# Windows has two accessibility channels and this program needs both. A static
+# text's own label serves UI Automation, which is what Narrator reads.
+# `set_accessible_name` writes the MSAA name, which is what NVDA reads. Drop
+# the second line and the sentence is on screen, is read by Narrator, and is
+# silent to the screen reader most of this program's users have. Nothing about
+# the panel looks wrong.
+#
+# This project has already shipped that mistake at scale: sixteen widgets were
+# "named" with `set_name()`, which sets an internal wxWidgets identifier and
+# never reaches the accessibility tree at all. It compiled and passed 324
+# tests. Guardrail 2 is written about it.
+#
+# The break is the `set_accessible_name` line taken out, which is what somebody
+# writes when they decide the label is enough.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 7,114 passed
+# and exactly one failed. What it cannot see, said here rather than left to be
+# assumed: it reads the screen's source. A control built correctly and never
+# given focus, or a name a real screen reader announces differently, keeps this
+# green. Only a screen reader answers that, and nobody has run one.
+[[guard]]
+name = "the settings sentence about notes reaches both windows accessibility channels"
+file = "src/presentation/wx_settings.rs"
+before = """    set_accessible_name(&notes_answer, &where_notes_go);
+    notes_sec.add(&notes_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+after = """    notes_sec.add(&notes_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+red = [
+    "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]

@@ -308,7 +308,9 @@ fn check_settings(
         theme: "light".to_string(),
         ..AppConfig::default()
     };
-    let widgets = wx_settings::build_settings_dialog(parent, &config, a11y);
+    // No accounts: this walk is about colour, and the one section that reads
+    // them says so in words rather than refusing to build.
+    let widgets = wx_settings::build_settings_dialog(parent, &config, &[], a11y);
 
     check(
         "settings dialog",

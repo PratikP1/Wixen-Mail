@@ -159,7 +159,12 @@ pub fn for_default_account(default_id: Option<&str>, accounts: &[Account]) -> No
 pub fn where_they_go(account: Option<&Account>) -> String {
     match account {
         Some(account) => where_they_go_for(&for_account(Some(account)), &account.display_name()),
-        None => "Notes are kept on this computer.".to_string(),
+        // Before any account is set up, and after the default one is deleted.
+        // A blank where the sentence should be is worse than the answer, which
+        // is that the notes are here.
+        None => "Notes are kept on this computer. There is no default account, so \
+                 nothing sends them anywhere."
+            .to_string(),
     }
 }
 
@@ -171,8 +176,25 @@ pub fn where_they_go(account: Option<&Account>) -> String {
 /// arm that already ships. That is the "test double that cannot fail" shape,
 /// and splitting the words from the lookup is what avoids it here.
 pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String {
-    let _ = (backend, account_named);
-    "Notes are kept on this computer.".to_string()
+    match backend {
+        NotesBackend::ThisComputer => format!(
+            "Notes in {account_named} are kept on this computer. This account has no \
+             notes backend, so nothing sends them anywhere."
+        ),
+        NotesBackend::CalDavJournal => format!(
+            "Notes in {account_named} are kept on this computer and sent to that \
+             account's calendar server."
+        ),
+        // Named rather than described, because somebody working out why their
+        // notes are not moving needs the word to say when they ask. It is
+        // shown in quotation marks so it reads as a name this program is
+        // repeating rather than as a word it chose.
+        NotesBackend::Other(word) => format!(
+            "Notes in {account_named} name a notes backend this version does not \
+             recognise, \"{word}\", so they are kept on this computer and nothing \
+             sends them anywhere."
+        ),
+    }
 }
 
 /// The same, for the default account, which is the only one a screen can reach.

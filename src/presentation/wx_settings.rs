@@ -11,6 +11,7 @@ use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
 use crate::common::paths::AppPaths;
+use crate::data::account::Account;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
@@ -140,9 +141,10 @@ fn section(parent: &Panel, label: &str) -> StaticBoxSizer {
 pub fn show_settings_dialog(
     parent: &Frame,
     config: &AppConfig,
+    accounts: &[Account],
     a11y: &Arc<Accessibility>,
 ) -> SettingsResult {
-    let widgets = build_settings_dialog(parent, config, a11y);
+    let widgets = build_settings_dialog(parent, config, accounts, a11y);
     if widgets.dialog.show_modal() != ID_OK {
         return SettingsResult::Cancelled;
     }
@@ -180,9 +182,16 @@ pub fn show_settings_dialog(
 /// independent disk read that could in principle disagree with the config
 /// already in hand, including the very Theme dropdown this dialog is about
 /// to build.
+/// `accounts` is the list this window is showing, and it is here for one
+/// section. `AppConfig` names the default account by id and holds no roster,
+/// and the accounts themselves live in the message cache, which this dialog
+/// has no handle on. Where an account's notes go is answered from its
+/// provider, so the id alone cannot answer it and the accounts have to arrive
+/// with the configuration.
 pub fn build_settings_dialog(
     parent: &Frame,
     config: &AppConfig,
+    accounts: &[Account],
     a11y: &Arc<Accessibility>,
 ) -> SettingsWidgets {
     let dlg = Dialog::builder(parent, "Settings")
@@ -255,7 +264,7 @@ pub fn build_settings_dialog(
     // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
     let (default_reminder, day_starts, day_ends, calendar_view) =
-        build_calendar_pim_tab(&pim_panel, config);
+        build_calendar_pim_tab(&pim_panel, config, accounts);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
 
     // ── Tab 6: Feedback
@@ -1710,7 +1719,11 @@ fn build_permissions_tab(
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
-fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choice, Choice, Choice) {
+fn build_calendar_pim_tab(
+    panel: &Panel,
+    config: &AppConfig,
+    accounts: &[Account],
+) -> (TextCtrl, Choice, Choice, Choice) {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Calendar View
@@ -1788,6 +1801,43 @@ fn build_calendar_pim_tab(panel: &Panel, config: &AppConfig) -> (TextCtrl, Choic
         (day.ends as u32).min(HOURS.len() as u32 - 1),
     );
     sizer.add_sizer(&day_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // -- Notes
+    //
+    // Last on the tab, and deliberately. The three sections above are one run:
+    // the calendar, the reminders it raises, and the working day it draws.
+    // Somebody moving through by keyboard meets sections in order and cannot
+    // skim, so the tab's other subject starting after the first one finishes
+    // is what they expect. Putting Notes between Calendar and Reminders would
+    // split a group that belongs together, and putting it first would answer a
+    // question about notes on a tab whose name puts the calendar first.
+    //
+    // A sentence rather than a control, because there is nothing to choose. No
+    // account has a notes backend, so a switch would be a control that does
+    // nothing, which this program has removed repeatedly. The moment a backend
+    // gives somebody a real choice, that is a setting and it arrives with the
+    // work that introduces the choice.
+    //
+    // It answers for the default account, which is the one a new note is filed
+    // under. This screen cannot reach any other: it is handed a configuration
+    // and the accounts, and there is nothing on it that names one account
+    // rather than another.
+    let notes_sec = section(panel, "Notes");
+
+    let where_notes_go = crate::application::notes_backend::where_the_default_accounts_notes_go(
+        Some(config.default_account_id.as_str()),
+        accounts,
+    );
+    let notes_answer = StaticText::builder(panel)
+        .with_label(&where_notes_go)
+        .build();
+    // Both Windows channels from the one string. The label serves UI
+    // Automation, which is what Narrator reads from a native control's own
+    // text; this serves MSAA, which is what NVDA reads.
+    set_accessible_name(&notes_answer, &where_notes_go);
+    notes_sec.add(&notes_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
+    sizer.add_sizer(&notes_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
     (rem_field, day_starts, day_ends, view_choice)

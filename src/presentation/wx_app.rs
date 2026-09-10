@@ -5066,7 +5066,13 @@ impl WxMailApp {
                             spawn_tasks_sync(app);
                         }
                         _ if id == ID_SETTINGS => {
-                            let palette = handle_settings(&frame, &ui_tx, &runtime, &a11y);
+                            // The accounts come with the configuration because
+                            // the Notes section asks where the default
+                            // account's notes go, and that is answered from its
+                            // provider rather than from its id.
+                            let accounts = lock_state(&state).accounts.clone();
+                            let palette =
+                                handle_settings(&frame, &ui_tx, &runtime, &accounts, &a11y);
                             // The notification area follows what was just
                             // saved. Without this, ticking that box did nothing
                             // until the next start, and closing the window
@@ -14655,7 +14661,10 @@ fn open_for_scanning(
             // with no folder tree, message list or module panel of its own
             // for a caller to repaint, and the scan process is killed by the
             // workflow once the walk is done.
-            handle_settings(frame, tx, rt, a11y);
+            // The accounts as this window has them. A fresh scan profile has
+            // none, so the Notes section says so rather than naming one.
+            let accounts = lock_state(state).accounts.clone();
+            handle_settings(frame, tx, rt, &accounts, a11y);
         }
         ScanTarget::Accounts => {
             // A fresh profile has no accounts, so nothing here is old enough
@@ -15601,6 +15610,7 @@ fn handle_settings(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    accounts: &[crate::data::account::Account],
     a11y: &Arc<Accessibility>,
 ) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
@@ -15621,7 +15631,7 @@ fn handle_settings(
         }
     };
     let config = mgr.app_config().clone();
-    match wx_settings::show_settings_dialog(frame, &config, a11y) {
+    match wx_settings::show_settings_dialog(frame, &config, accounts, a11y) {
         wx_settings::SettingsResult::Updated(new_config) => {
             // Applied to the running application, not only written to disk.
             // Saving a preference that needs a restart to take effect is a

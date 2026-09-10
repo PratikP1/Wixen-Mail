@@ -23,6 +23,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   Known limitation: no notes backend exists. This is the shape a backend goes
   behind, and nothing here talks to a server or offers a switch that would.
 
+### Added
+
+- **Settings now says where your notes go.** Calendar and PIM, in a new Notes
+  section at the end of the tab. It names your default account and says
+  whether that account's notes leave this computer.
+
+  Today it says they do not, and that it is because the account has no notes
+  backend. That is the answer rather than a placeholder: a Gmail account will
+  go on having none, because the Google Keep API is only available to
+  Workspace accounts.
+
+  There is no switch, because there is nothing to choose. A control that
+  changes nothing is worse than a sentence that tells you where you stand.
+
+  The sentence comes from the same place the note folder menu asks, so the two
+  cannot come to say different things.
+
+  Known limitation: nobody has heard this section with a screen reader. Whether
+  it is found where it was put, and whether the sentence is heard as an answer
+  rather than as an apology, has not been tested.
+
 - **What a note is kept as, said plainly.** A note's body is stored exactly as
   you typed it. Nothing is tidied on the way in and nothing on the way out, so
   the text that comes back is the text that went in, down to the trailing
