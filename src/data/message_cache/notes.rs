@@ -437,6 +437,141 @@ line two
         assert!(cache.get_note("does-not-exist").unwrap().is_none());
     }
 
+    /// A body that went into storage comes back as the same bytes.
+    ///
+    /// The editor calls its box "Body, in Markdown" and the reader looks for
+    /// whatever structure is in what was typed, so everything downstream rests
+    /// on the text arriving unchanged. Nothing asserted that through storage
+    /// until now: `long_text`'s own round-trip tests put text through a
+    /// formatter and back, which says nothing about SQLite, about the upsert,
+    /// or about a tidy-up somebody adds to `save_note` later.
+    ///
+    /// Each fixture is aimed at a particular wrong implementation rather than
+    /// chosen for size. A body that is merely long tests nothing.
+    #[test]
+    fn test_a_notes_body_comes_back_the_bytes_it_went_in_as() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let fixtures = [
+            (
+                "a trailing space, which a trim added while tidying would take",
+                "Remember the space at the end ",
+            ),
+            (
+                "Windows line endings, which a normalisation would rewrite",
+                "one\r\ntwo\r\n",
+            ),
+            (
+                "a character outside the basic multilingual plane, which a \
+                 byte-length assumption would cut in half",
+                "Dinner at seven 🍜 and a walk after",
+            ),
+            (
+                "a backslash before a newline, which an escape pass would read \
+                 as an instruction",
+                "C:\\Users\\notes\\\nand the line after it",
+            ),
+        ];
+
+        for (n, (aimed_at, body)) in fixtures.iter().enumerate() {
+            let id = format!("note-{n}");
+            cache
+                .save_note(&NoteEntry {
+                    id: id.clone(),
+                    account_id: "acct-1".to_string(),
+                    folder_id: Some(folder.id.clone()),
+                    title: "A note".to_string(),
+                    body: (*body).to_string(),
+                    format: "plain".to_string(),
+                    pinned: false,
+                    created_at: "2026-01-01".to_string(),
+                    updated_at: "2026-01-01".to_string(),
+                })
+                .unwrap();
+
+            let loaded = cache
+                .get_note(&id)
+                .unwrap()
+                .expect("the note that was just saved");
+            assert_eq!(
+                loaded.body, *body,
+                "a body with {aimed_at} did not come back as it went in"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_note_with_nothing_in_it_comes_back_with_nothing_in_it() {
+        // An empty body is the case a NOT NULL column with a default invites
+        // somebody to fill in, and a note that quietly acquires words nobody
+        // typed is worse than one that is empty.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "empty".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "Nothing yet".to_string(),
+                body: String::new(),
+                format: "plain".to_string(),
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+            })
+            .unwrap();
+
+        let loaded = cache.get_note("empty").unwrap().expect("the empty note");
+        assert_eq!(loaded.body, "", "an empty note came back holding something");
+    }
+
+    /// What was stored is read for whatever structure is in it, both ways.
+    ///
+    /// This is the promise the note editor's own accessible description makes,
+    /// asserted from the far side of storage rather than from a formatter's
+    /// own tests: a note with headings and lists in it is spoken as headings
+    /// and lists, and a note with none is spoken as it was written with
+    /// nothing added.
+    #[test]
+    fn test_a_stored_body_is_read_for_whatever_structure_is_in_it() {
+        use crate::application::long_text;
+
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        for (id, body) in [
+            ("structured", "# Shopping\n\n- milk\n- eggs\n"),
+            ("flat", "Ring the plumber back on Tuesday."),
+        ] {
+            cache
+                .save_note(&NoteEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    folder_id: Some(folder.id.clone()),
+                    title: "A note".to_string(),
+                    body: body.to_string(),
+                    format: "plain".to_string(),
+                    pinned: false,
+                    created_at: "2026-01-01".to_string(),
+                    updated_at: "2026-01-01".to_string(),
+                })
+                .unwrap();
+        }
+
+        let structured = cache.get_note("structured").unwrap().expect("the note");
+        assert_eq!(
+            long_text::spoken(&structured.body),
+            "heading level 1, Shopping\nbullet, milk\nbullet, eggs",
+            "the structure somebody typed did not survive storage"
+        );
+
+        let flat = cache.get_note("flat").unwrap().expect("the note");
+        assert_eq!(
+            long_text::spoken(&flat.body),
+            "Ring the plumber back on Tuesday.",
+            "a note with no structure in it was given some"
+        );
+    }
+
     #[test]
     fn test_saving_a_note_twice_updates_rather_than_duplicates() {
         let cache = test_cache();
