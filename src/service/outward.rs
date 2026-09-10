@@ -639,7 +639,7 @@ const CLIENTS: [&str; 4] = [
 /// What it can see is the thing that was missing: a write added to one of these
 /// files and never measured fails here instead of being remembered.
 #[cfg(test)]
-const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
+const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 23] = [
     (
         "src/service/google_api.rs",
         "create_contact",
@@ -765,6 +765,18 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 21] = [
         "delete_event",
         "src/application/caldav_sync.rs",
         "DELETE /cal/e-1.ics",
+    ),
+    (
+        "src/service/caldav.rs",
+        "write_a_document",
+        "src/service/caldav_journal.rs",
+        "PUT /dav/sam/notes/",
+    ),
+    (
+        "src/service/caldav.rs",
+        "remove_a_document",
+        "src/service/caldav_journal.rs",
+        "DELETE /dav/sam/notes/n-1.ics",
     ),
 ];
 

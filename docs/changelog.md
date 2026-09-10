@@ -33,6 +33,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the question says "note" rather than borrowing the words for a contact.
   Nothing is sent and nothing is written over until you answer.
 
+  Changing a note keeps everything else the server had on it. Anything set in
+  another program, such as categories, is left exactly where it was rather than
+  thrown away by a note written from nothing.
+
+  Known limitation about what survives the journey: **Windows line endings in a
+  note's body become plain ones.** The format a calendar server exchanges has
+  one way of writing a line break and no way of writing a carriage return
+  inside a value at all, so a body typed with CRLF comes back with LF. Nothing
+  else changes: a trailing space, a backslash, a comma, an emoji and a line in
+  your note that looks like part of the format all survive. Notes kept on this
+  computer are unaffected; this is only about a note that goes to a server.
+
   Known limitation, and it is a large one: **nothing here has ever met a real
   server.** Every part of this has been driven against a stand-in written in
   this repository, which proves the program agrees with itself and says nothing

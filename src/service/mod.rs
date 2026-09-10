@@ -5,6 +5,7 @@
 pub mod attachment_name;
 pub mod cache;
 pub mod caldav;
+pub mod caldav_journal;
 pub mod credentials;
 pub mod default_apps;
 pub mod default_apps_registration;
@@ -18,6 +19,7 @@ pub mod mailbox_archive;
 pub mod microsoft_graph;
 pub mod mime;
 pub mod network;
+pub mod note_document;
 pub mod oauth;
 pub mod oauth_credentials;
 pub mod outlook_data_file;

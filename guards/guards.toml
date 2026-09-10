@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 502 records have arrived since and have not been through it.
+# 504 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18461,4 +18461,80 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 17 },
+]
+
+# A note's body comes back the bytes it went out as.
+#
+# The calendar's own reader trims a property's value, which is right for a zone
+# name or a status word and wrong for a note: a body is somebody's text and a
+# trailing space is part of it. RFC 5545 section 3.1 puts the value immediately
+# after the delimiter colon, so there is nothing there to strip that was not in
+# the value.
+#
+# The break is using the calendar's reader, which is what somebody writes who
+# notices there is already a routine for this and does not ask what it does to
+# the ends of a value. It is how the defect arrived in the first place: the
+# first version of this file used `value_named_on` and the trailing-space
+# fixture found it.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,796 passed
+# and exactly two failed. The second is the folding fixture, whose body ends in
+# a space for a different reason and catches this too.
+[[guard]]
+name = "a note's body comes back from a document the bytes it went out as"
+file = "src/service/note_document.rs"
+before = '''        title: inside
+            .iter()
+            .find_map(|line| the_whole_value_on(line, "SUMMARY"))'''
+after = '''        title: inside
+            .iter()
+            .find_map(|line| value_named_on(line, "SUMMARY"))'''
+red = [
+    "service::note_document::tests::test_a_body_long_enough_to_be_broken_across_lines_is_put_back_together",
+    "service::note_document::tests::test_a_note_written_as_a_document_comes_back_the_bytes_it_went_in_as",
+]
+tests_last_seen = [
+    { file = "src/service/note_document.rs", tests = 9 },
+]
+
+# Changing a note keeps everything in the server's document this program does
+# not own.
+#
+# A whole document written from nothing is the shorter code and throws away
+# every property this program has never modelled: categories somebody set in
+# another program, the class, the status. It is a change made here destroying
+# something at somebody's server, which is worse than a wrong row on this
+# computer, and it is silent.
+#
+# The break leaves the server's own summary and description in the document with
+# the new ones written beside them. That failure really happened here, to the
+# calendar writer: it read `SUMMARY ` as a different name from `SUMMARY`, left
+# the server's title in place and wrote the new one after it, and two titles
+# went to somebody's calendar.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,796 passed
+# and exactly two failed.
+#
+# No third record was added for matching a property name without regard to case.
+# `src/service/note_document.rs` is on `FILES_THAT_READ_OR_WRITE_A_DOCUMENT` in
+# `src/service/caldav.rs`, so
+# `test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case`
+# already reads this file's source and holds it to that rule, and a second
+# record for one rule is the shape `03-09` warned about.
+[[guard]]
+name = "changing a note keeps what the server has that this program does not own"
+file = "src/service/note_document.rs"
+before = '''        if inside && is_one_of_ours(line) {
+            continue;
+        }
+        written.push(line.clone());'''
+after = '''        written.push(line.clone());'''
+red = [
+    "service::note_document::tests::test_a_property_the_server_wrote_in_another_case_is_replaced_rather_than_doubled",
+    "service::note_document::tests::test_changing_a_note_keeps_what_this_program_does_not_own",
+]
+tests_last_seen = [
+    { file = "src/service/note_document.rs", tests = 9 },
 ]
