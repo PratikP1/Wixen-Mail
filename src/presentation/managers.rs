@@ -3032,7 +3032,9 @@ fn store_new_item(
 ) -> crate::common::Result<()> {
     use crate::application::item_fields::FieldName;
     use crate::application::new_item::ItemKind;
-    use crate::data::message_cache::{CalendarEventEntry, NoteEntry, ReminderEntry, TaskEntry};
+    use crate::data::message_cache::{
+        CalendarEventEntry, NoteBody, NoteEntry, ReminderEntry, TaskEntry,
+    };
     use chrono::Utc;
 
     let now = Utc::now();
@@ -3181,7 +3183,7 @@ fn store_new_item(
             folder_id: container_id.map(str::to_string),
             title: title.clone(),
             body: filled.text(FieldName::Notes).to_string(),
-            format: "plain".to_string(),
+            format: NoteBody::AsTyped,
             pinned: filled.ticked(FieldName::Pinned),
             created_at: stamp.clone(),
             updated_at: stamp,
@@ -5203,7 +5205,7 @@ mod tests {
                 folder_id: Some("folder-a".to_string()),
                 title: "Wiring colours".to_string(),
                 body: "Brown is live".to_string(),
-                format: "plain".to_string(),
+                format: crate::data::message_cache::NoteBody::AsTyped,
                 pinned: false,
                 created_at: now_stamp(),
                 updated_at: now_stamp(),

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 491 records have arrived since and have not been through it.
+# 494 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18049,4 +18049,90 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/tasks.rs", tests = 21 },
     { file = "tests/a_half_finished_task_move.rs", tests = 8 },
+]
+
+# ── A note's body, on its way through storage ───────────────────────────────
+#
+# The break is the tidy-up nobody argues about: trim the body before storing
+# it. It is written here because everything a person meets treats a note's body
+# as the exact text they typed. The editor calls its box "Body, in Markdown",
+# the reader looks for whatever structure is in it, and a backend after this
+# has to hand the same bytes to a server. A trim is one word and it makes all
+# three quietly untrue for a note ending in a space or a newline.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building. 6,732 passed and exactly two failed.
+#
+# One of the two predates this record and is here by accident rather than by
+# design. `test_get_note_returns_the_full_body` is about the list preview being
+# truncated while the editor's copy is not, and its fixture happens to end in a
+# newline, so a trim reddens it without anybody having meant it to. That is
+# worth writing down rather than counting as coverage: the accident goes the
+# moment somebody tidies that fixture, and then this record would be short by
+# one and nothing would say so. The round-trip test beside it names the wrong
+# implementation each of its four fixtures is aimed at, so it does not depend
+# on an accident.
+[[guard]]
+name = "a note's body is stored the bytes it was typed as"
+file = "src/data/message_cache/notes.rs"
+before = """                    n.title,
+                    n.body,"""
+after = """                    n.title,
+                    n.body.trim(),"""
+red = [
+    "data::message_cache::notes::tests::test_a_notes_body_comes_back_the_bytes_it_went_in_as",
+    "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 13 },
+]
+
+# ── The word beside a note saying what its body is written in ───────────────
+#
+# Two records rather than one, because the round trip has two halves and each
+# has its own edit. `AddressBook` is the shape both follow: a word this code
+# does not recognise is still somebody else's answer, and forgetting it
+# rewrites their row on the next save without anybody asking for that.
+#
+# The first plausible break was taken and then a second was measured beside
+# it, because `CLAUDE.md` says the first is often the weak one and it was:
+# losing the word on the way in reddens one test, losing it on the way out
+# reddens two. Both are edits somebody writes while tidying, and neither is
+# covered by the other, so both are written down.
+#
+# Both measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a
+# clean tree with nothing else building. 6,736 passed with one red for the
+# first and 6,735 passed with two for the second.
+# The break here is reading the column and then dropping what it said, which is
+# the shape that still reads as consulting it. A break that stopped consulting
+# it altogether would be caught by the compiler and would prove nothing.
+[[guard]]
+name = "a stored form this build did not write survives being read"
+file = "src/data/message_cache/notes.rs"
+before = """            "plain" => NoteBody::AsTyped,
+            other => NoteBody::Other(other.to_string()),"""
+after = """            "plain" => NoteBody::AsTyped,
+            _ => NoteBody::AsTyped,"""
+red = [
+    "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 13 },
+]
+
+# The other half. The word is still read correctly and is thrown away on the
+# way back to the database, which is the half a read-only test cannot see.
+[[guard]]
+name = "a stored form this build did not write survives being written back"
+file = "src/data/message_cache/notes.rs"
+before = """            NoteBody::AsTyped => "plain",
+            NoteBody::Other(word) => word,"""
+after = """            NoteBody::AsTyped => "plain",
+            NoteBody::Other(_) => "plain","""
+red = [
+    "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
+    "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 13 },
 ]

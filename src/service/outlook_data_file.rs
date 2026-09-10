@@ -82,7 +82,8 @@
 use crate::common::types::EmailAddress;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{
-    AddressEntry, CalendarEventEntry, ContactEntry, EmailEntry, NoteEntry, PhoneEntry, TaskEntry,
+    AddressEntry, CalendarEventEntry, ContactEntry, EmailEntry, NoteBody, NoteEntry, PhoneEntry,
+    TaskEntry,
 };
 use crate::service::mime::ParsedMessage;
 use outlook_pst::messaging::folder::Folder;
@@ -1642,9 +1643,20 @@ fn a_note_from(item: &TheItem<'_>, going_to: WhereItIsGoing<'_>) -> NoteEntry {
             .map(str::to_string)
             .unwrap_or_else(|| the_first_line_of(&body)),
         body,
-        // Outlook's notes are words and nothing else. Anything else here would
-        // send the markup reader at text that is not markup.
-        format: "plain".to_string(),
+        // Outlook's notes are words and nothing else, and this used to say
+        // that writing anything else here would send the markup reader at text
+        // that is not markup. The column never did that job: nothing consults
+        // it, so the word protected nothing.
+        //
+        // What really decides is `application::long_text`. Its reading returns
+        // text with no markup in it exactly as written, so an imported note
+        // that is words and nothing else is still spoken as words and nothing
+        // else. The case the old comment feared, an Outlook line that happens
+        // to start with `#` or `-`, is real and the column never covered it
+        // either; `long_text::from_markup` records the decision taken about
+        // provider text that reads like a marker, which is to let it read as
+        // one rather than putting a backslash into a box somebody edits.
+        format: NoteBody::AsTyped,
         pinned: false,
         created_at: made,
         updated_at: changed,
@@ -3266,7 +3278,7 @@ mod tests {
 
         assert_eq!(note.title, "Bernoulli numbers");
         assert_eq!(note.body, "The seventh is the one to check.");
-        assert_eq!(note.format, "plain");
+        assert_eq!(note.format, NoteBody::AsTyped);
         assert_eq!(note.created_at, "2026-02-11T09:15:00+00:00");
         assert_eq!(note.updated_at, "2026-02-12T16:40:00+00:00");
         assert_eq!(note.account_id, "acct-1");

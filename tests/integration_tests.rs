@@ -654,7 +654,7 @@ fn test_contact_item_display_conversion() {
 /// aloud read the preview back.
 #[test]
 fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
-    use wixen_mail::data::message_cache::NoteEntry;
+    use wixen_mail::data::message_cache::{NoteBody, NoteEntry};
     use wixen_mail::presentation::read_aloud::{ReadAloud, Reading};
     use wixen_mail::presentation::ui_types::NoteItem;
 
@@ -667,7 +667,7 @@ fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
             folder_id: None,
             title: "Trip".to_string(),
             body: "# Packing\n\n- Passport\n- Charger".to_string(),
-            format: "plain".to_string(),
+            format: NoteBody::AsTyped,
             pinned: false,
             created_at: "2026-07-31T00:00:00Z".to_string(),
             updated_at: "2026-07-31T00:00:00Z".to_string(),

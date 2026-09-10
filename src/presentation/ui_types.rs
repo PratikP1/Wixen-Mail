@@ -2228,7 +2228,7 @@ mod tests {
     // Without them the panels render and stay empty forever.
 
     use crate::data::message_cache::{
-        CalendarContainer, CalendarEventEntry, NoteEntry, NoteFolderEntry, ReminderEntry,
+        CalendarContainer, CalendarEventEntry, NoteBody, NoteEntry, NoteFolderEntry, ReminderEntry,
         TaskEntry, TaskListEntry,
     };
 
@@ -3143,7 +3143,7 @@ mod tests {
             folder_id: Some("nf1".into()),
             title: "Shopping".into(),
             body: body.into(),
-            format: "plain".into(),
+            format: NoteBody::AsTyped,
             pinned: true,
             created_at: "2026-01-01".into(),
             updated_at: "2026-07-26".into(),
