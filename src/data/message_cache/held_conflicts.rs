@@ -59,6 +59,13 @@ fn stored_kind(other: TheOtherCopy) -> &'static str {
 fn kind_from_stored(stored: &str) -> TheOtherCopy {
     match stored {
         "calendar-item" => TheOtherCopy::ACalendar,
+        // Added with the variant, and not by the compiler. The catch-all below
+        // is about a word a *later* build writes, which is not the same as a
+        // word this build writes: without this arm a note conflict this very
+        // build held would be read back as a contact, and the question somebody
+        // hears after a restart would say "your address book" and "contact"
+        // about a note. Nothing about that fails to compile and nothing lints.
+        "note" => TheOtherCopy::ANotesBackend,
         _ => TheOtherCopy::AnAddressBook,
     }
 }
@@ -263,6 +270,9 @@ impl MessageCache {
         let Some(held) = self.the_conflict_held_for(id)? else {
             return Ok(());
         };
+        if held.copies.other_copy == TheOtherCopy::ANotesBackend {
+            return self.settle_a_held_note(id, &held, chosen);
+        }
         let at = AddressBook::from_stored(&held.at);
         let mut contacts = self.get_contacts_for_account(&held.account_id)?;
         if let Some(position) = contacts.iter().position(|contact| contact.id == id) {
@@ -281,6 +291,50 @@ impl MessageCache {
                 }
             };
             self.save_contact(&settled)?;
+        }
+        self.let_the_hold_go(id)
+    }
+
+    /// Settle a held note conflict, and let the hold go.
+    ///
+    /// The two endings are the mirror image of the contact ones and the reason
+    /// is worth stating, because the obvious symmetry is the wrong one.
+    ///
+    /// The contacts read compares what the two copies say, so taking theirs can
+    /// write the marker down and let the next sync fold their copy in. The
+    /// notes read compares markers and nothing else, which is what the seam's
+    /// contract requires of it: a backend does not promise its marker is
+    /// orderable, parseable or tied to the content, so equality is the only
+    /// comparison available.
+    ///
+    /// **Taking theirs** therefore leaves the marker exactly as stale as it
+    /// was. That is what makes the next read see a difference, fetch their
+    /// copy and write it down. Bringing the marker up to date here would make
+    /// the read answer "unchanged" and the copy somebody chose would never
+    /// arrive.
+    ///
+    /// **Keeping what is here** does bring the marker up to date, and leaves
+    /// the change waiting. The push then offers it again carrying a marker the
+    /// backend will accept, and the read in the same sync sees the markers
+    /// agree and leaves it alone.
+    fn settle_a_held_note(&self, id: &str, held: &AHeldConflict, chosen: WhichCopy) -> Result<()> {
+        if let Some(note) = self.get_note(id)? {
+            let settled = match choosing(chosen) {
+                WhatChoosingCallsFor::TakeTheirsAndSendNothing => {
+                    crate::data::message_cache::NoteEntry {
+                        pending: false,
+                        ..note
+                    }
+                }
+                WhatChoosingCallsFor::KeepWhatIsHereAndSendIt => {
+                    crate::data::message_cache::NoteEntry {
+                        pending: true,
+                        known_version: held.their_version.clone(),
+                        ..note
+                    }
+                }
+            };
+            self.save_note(&settled)?;
         }
         self.let_the_hold_go(id)
     }
@@ -373,6 +427,113 @@ mod tests {
         assert!(asked.contains("note"), "{asked}");
         assert!(!asked.contains("contact"), "{asked}");
         assert!(!asked.contains("address book"), "{asked}");
+    }
+
+    /// A note somebody kept goes on waiting, carrying a marker they will take.
+    ///
+    /// Written in the green half of task 2 rather than the red, and said here
+    /// rather than left to be noticed. Settling a note was not in the plan at
+    /// all: `settle_a_held_conflict` looks contacts up and calls `save_contact`,
+    /// so a held note conflict would have had its hold let go with the choice
+    /// applied to nothing. A question somebody answers and nothing acts on is
+    /// worse than one that is never asked.
+    #[test]
+    fn test_keeping_the_note_that_is_here_leaves_it_waiting_with_their_marker() {
+        let cache = a_cache("keep_mine");
+        let folder = cache
+            .ensure_default_note_folder("an account")
+            .expect("a folder");
+        cache
+            .save_note(&crate::data::message_cache::NoteEntry {
+                id: "n1".to_string(),
+                account_id: "an account".to_string(),
+                folder_id: Some(folder.id),
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+                format: crate::data::message_cache::NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: true,
+                known_as: Some("there-1".to_string()),
+                known_version: Some("the one from before".to_string()),
+            })
+            .expect("a note");
+        cache
+            .hold_a_conflict(&AHeldConflict {
+                copies: BothCopies {
+                    what_it_is_called: "Wiring colours".to_string(),
+                    other_copy: TheOtherCopy::ANotesBackend,
+                    here: vec![AField::new("Body", "Brown is live")],
+                    theirs: vec![AField::new("Body", "Blue is neutral")],
+                },
+                ..a_conflict("n1")
+            })
+            .expect("a hold");
+
+        cache
+            .settle_a_held_conflict("n1", WhichCopy::Here)
+            .expect("the choice");
+
+        let note = cache.get_note("n1").expect("the store").expect("the note");
+        assert!(note.pending, "the copy somebody kept is never sent");
+        assert_eq!(
+            note.known_version.as_deref(),
+            Some("the marker they had when this was found"),
+            "the push offers a marker the backend has already moved past, so \
+             the same disagreement is found on every sync from here on"
+        );
+        assert!(!cache.is_held_for_a_choice("n1").expect("the hold"));
+    }
+
+    /// Taking their copy stops the change waiting and leaves the marker stale.
+    #[test]
+    fn test_taking_their_note_lets_the_next_read_fetch_it() {
+        let cache = a_cache("take_theirs");
+        let folder = cache
+            .ensure_default_note_folder("an account")
+            .expect("a folder");
+        cache
+            .save_note(&crate::data::message_cache::NoteEntry {
+                id: "n1".to_string(),
+                account_id: "an account".to_string(),
+                folder_id: Some(folder.id),
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+                format: crate::data::message_cache::NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: true,
+                known_as: Some("there-1".to_string()),
+                known_version: Some("the one from before".to_string()),
+            })
+            .expect("a note");
+        cache
+            .hold_a_conflict(&AHeldConflict {
+                copies: BothCopies {
+                    what_it_is_called: "Wiring colours".to_string(),
+                    other_copy: TheOtherCopy::ANotesBackend,
+                    here: vec![AField::new("Body", "Brown is live")],
+                    theirs: vec![AField::new("Body", "Blue is neutral")],
+                },
+                ..a_conflict("n1")
+            })
+            .expect("a hold");
+
+        cache
+            .settle_a_held_conflict("n1", WhichCopy::TheProviders)
+            .expect("the choice");
+
+        let note = cache.get_note("n1").expect("the store").expect("the note");
+        assert!(!note.pending, "the copy somebody gave up is still sent");
+        assert_eq!(
+            note.known_version.as_deref(),
+            Some("the one from before"),
+            "the marker was brought up to date, so the next read answers \
+             'unchanged' and the copy somebody chose never arrives"
+        );
+        assert!(!cache.is_held_for_a_choice("n1").expect("the hold"));
     }
 
     /// The kind a row carries is the one the variant asked for.

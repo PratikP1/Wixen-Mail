@@ -141,9 +141,89 @@ pub async fn sync_notes<S: NotesService>(
     container: &str,
 ) -> Result<NoteSyncResult> {
     let mut result = NoteSyncResult::default();
+    // Before the push reads what it is owed and before the read asks what was
+    // deleted, so that both work from the same answer.
+    if let Err(e) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+        cache,
+        chrono::Utc::now(),
+    ) {
+        result.errors.push(format!(
+            "The deletions remembered here could not be swept: {e}"
+        ));
+    }
+    send_the_deletions(cache, service, account_id, container, &mut result).await;
     push_what_is_waiting(cache, service, account_id, container, &mut result).await;
     take_what_has_arrived(cache, service, account_id, container, &mut result).await;
     Ok(result)
+}
+
+/// Ask the backend to remove every note somebody deleted here.
+///
+/// A record with no backend name on it is a note that never left this
+/// computer. There is nothing to ask for and nothing a read could name it by,
+/// so it is a memory from the moment it is written rather than work the push
+/// owes.
+async fn send_the_deletions<S: NotesService>(
+    cache: &MessageCache,
+    service: &S,
+    account_id: &str,
+    container: &str,
+    result: &mut NoteSyncResult,
+) {
+    let owed = match cache.deleted_notes(account_id) {
+        Ok(owed) => owed,
+        Err(e) => {
+            result.errors.push(format!(
+                "The deletions waiting to be sent could not be read: {e}"
+            ));
+            return;
+        }
+    };
+    for gone in owed.into_iter().filter(|gone| gone.so_far.still_owed()) {
+        let Some(named) = gone.known_as.clone() else {
+            continue;
+        };
+        let known_as = ANoteThere {
+            named,
+            // Deliberately not passed on. Somebody asked for the note to go,
+            // and a version that had moved on would make the removal fail for
+            // ever. `CalDavClient::delete_event`'s own comment settles the
+            // same question the same way for an event.
+            version: None,
+        };
+        match service.take_a_note_away(container, &known_as).await {
+            Ok(WhatTheBackendSaid::Done(_)) | Ok(WhatTheBackendSaid::ItIsNotThere) => {
+                // Gone at the other end either way, and the record stays. It
+                // stops being work the push has and becomes the only thing
+                // standing between the note and a read that is still naming
+                // it.
+                match cache.a_backend_took_the_deletion_of_a_note(
+                    &gone.id,
+                    &crate::application::deletions::written(chrono::Utc::now()),
+                ) {
+                    Ok(()) => result.sent += 1,
+                    Err(e) => result.errors.push(format!("Note {}: {e}", gone.id)),
+                }
+            }
+            // The record is not marked taken, so turning the setting on still
+            // sends it.
+            Ok(WhatTheBackendSaid::NotAllowedToChangeAnything) => {
+                result.waiting_on_the_setting += 1;
+            }
+            Ok(WhatTheBackendSaid::NotSignedIn) => result.needs_sign_in = true,
+            Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => result.errors.push(format!(
+                "Note {}: the backend's copy moved first, so it was not removed",
+                gone.id
+            )),
+            Ok(WhatTheBackendSaid::CouldNotBeReached(said)) => {
+                result.errors.push(format!("Note {}: {said}", gone.id));
+            }
+            Err(e) if crate::service::outward::was_refused_by_the_gate(&e) => {
+                result.waiting_on_the_setting += 1;
+            }
+            Err(e) => result.errors.push(format!("Note {}: {e}", gone.id)),
+        }
+    }
 }
 
 /// Offer every note changed here that nobody has been told about.
@@ -165,6 +245,13 @@ async fn push_what_is_waiting<S: NotesService>(
     };
 
     for note in waiting {
+        // A note waiting on somebody's choice is not offered again. A later
+        // sync must not resolve what the person has not, and offering it would
+        // get the same answer and write a second hold over the first every
+        // time.
+        if cache.is_held_for_a_choice(&note.id).unwrap_or(false) {
+            continue;
+        }
         // Built here rather than kept as a field, because the two columns are
         // one fact about one pairing and a backend is handed the pairing.
         let known_as = note.known_as.as_ref().map(|named| ANoteThere {
@@ -201,15 +288,13 @@ async fn push_what_is_waiting<S: NotesService>(
             // refused is "1 problem" every sync forever, and the count is all
             // the status line shows.
             Ok(WhatTheBackendSaid::NotSignedIn) => result.needs_sign_in = true,
-            // Both copies moved. Which one is kept is not decided here and is
-            // not decided by the backend either: `conflict_choice` is where it
-            // is asked, and holding both copies is task 2 of `05.1-03`. Until
-            // then the note goes on waiting and the refusal is said rather
-            // than swallowed.
-            Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => result.errors.push(format!(
-                "Note {}: the backend's copy moved first, so nothing was sent",
-                note.id
-            )),
+            // Both copies moved. Which one is kept is not decided here and was
+            // not decided by the backend either: it wrote nothing and handed
+            // the question over, which is what the seam's contract requires of
+            // it. Both copies are held and somebody is asked.
+            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
+                hold_both_copies_of(cache, service, container, &note, version_now, result).await;
+            }
             // The backend does not hold the note this computer thinks it does.
             // Task 2 is where a note that has gone at the other end is settled,
             // because that is the task about deletions and it needs the record
@@ -233,6 +318,88 @@ async fn push_what_is_waiting<S: NotesService>(
             }
             Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
         }
+    }
+}
+
+/// Keep both copies of a note that moved in two places, and ask nobody.
+///
+/// The backend's words have to be fetched, because a backend that reports the
+/// disagreement reports a marker and not a document, and somebody choosing
+/// needs to hear what each copy actually says. A difference on its own reads as
+/// an instruction to reconstruct the two copies in your head.
+///
+/// A fetch that fails leaves the note waiting and says so. Holding with one
+/// side empty would be a question nobody can answer.
+async fn hold_both_copies_of<S: NotesService>(
+    cache: &MessageCache,
+    service: &S,
+    container: &str,
+    note: &NoteEntry,
+    version_now: Option<String>,
+    result: &mut NoteSyncResult,
+) {
+    let Some(named) = note.known_as.clone() else {
+        // The backend cannot have an older copy of a note it has never held.
+        result.errors.push(format!(
+            "Note {}: the backend said its copy moved first for a note it has \
+             never held",
+            note.id
+        ));
+        return;
+    };
+    let theirs = ANoteThere {
+        named,
+        version: version_now.clone(),
+    };
+    let said = match service.what_a_note_says(container, &theirs).await {
+        Ok(Some(said)) => said,
+        Ok(None) => {
+            result.errors.push(format!(
+                "Note {}: the backend said its copy moved first and then had no \
+                 copy to show",
+                note.id
+            ));
+            return;
+        }
+        Err(e) => {
+            result.errors.push(format!("Note {}: {e}", note.id));
+            return;
+        }
+    };
+
+    let held = crate::data::message_cache::held_conflicts::AHeldConflict {
+        id: note.id.clone(),
+        account_id: note.account_id.clone(),
+        // The container, which is opaque and is stored rather than read. It is
+        // "which one is on the other side" for a note in the way an address
+        // book's name is for a contact.
+        at: container.to_string(),
+        copies: crate::application::conflict_choice::BothCopies {
+            what_it_is_called: note.title.clone(),
+            other_copy: crate::application::conflict_choice::TheOtherCopy::ANotesBackend,
+            // Named the way somebody would say them rather than by column, and
+            // in the order the note editor asks for them, because these are
+            // read aloud.
+            here: vec![
+                crate::application::conflict_choice::AField::new("Title", note.title.clone()),
+                crate::application::conflict_choice::AField::new("Body", note.body.clone()),
+            ],
+            theirs: vec![
+                crate::application::conflict_choice::AField::new("Title", said.title.clone()),
+                crate::application::conflict_choice::AField::new("Body", said.body.clone()),
+            ],
+        },
+        // What the other copy carries now, so settling writes it down. Without
+        // it the marker here is still the one from before the backend moved,
+        // and the very next sync finds the same disagreement and asks the same
+        // question again: a choice that has to be made every sync is not a
+        // choice.
+        their_version: said.known_as.version.clone().or(version_now),
+        held_at: chrono::Utc::now().to_rfc3339(),
+    };
+    match cache.hold_a_conflict(&held) {
+        Ok(()) => result.held += 1,
+        Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
     }
 }
 
@@ -266,10 +433,42 @@ async fn take_what_has_arrived<S: NotesService>(
         }
     };
 
+    // Asked before anything is written down, which is the whole of the rule
+    // `application::deletions` states. Built from every record the account
+    // holds, still owed or already taken, because "did this computer delete
+    // it" does not depend on whether the backend has been told yet.
+    let deleted_here: crate::application::deletions::DeletedHere =
+        match cache.deleted_notes(account_id) {
+            Ok(gone) => gone
+                .into_iter()
+                .filter_map(|record| record.known_as)
+                .collect(),
+            Err(e) => {
+                result.errors.push(format!(
+                    "What was deleted here could not be read, so nothing was taken down: {e}"
+                ));
+                return;
+            }
+        };
+
     for one in there {
+        // A note this computer deleted is not written back down, however long
+        // the backend's own list goes on naming it. Without this the note comes
+        // back on the screen under the backend's own identifier, with nothing
+        // left to say it was ever deleted, which is what the deletion record
+        // exists to prevent.
+        if deleted_here.holds(&one.named) {
+            continue;
+        }
         let ours = here
             .iter()
             .find(|note| note.known_as.as_deref() == Some(one.named.as_str()));
+        // A note waiting on somebody's choice is not written over by a later
+        // sync. Losing the hold is losing the choice and one of the two copies
+        // with it.
+        if ours.is_some_and(|note| cache.is_held_for_a_choice(&note.id).unwrap_or(false)) {
+            continue;
+        }
         if the_marker_stayed_still(ours.and_then(|note| note.known_version.as_deref()), &one) {
             result.unchanged += 1;
             continue;

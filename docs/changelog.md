@@ -23,6 +23,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   task and contact syncs already use: turn on Allow Changes in Settings to send
   it.
 
+  A note you delete stays deleted. The fact of the deletion outlives the note,
+  so a server whose own list has not caught up cannot put it back on your
+  screen, and deleting a folder leaves a record for every note that was in it.
+
+  A note you changed here that also changed at the server is not resolved for
+  you. Both copies are kept and you are asked which to keep, through the same
+  Choose Which Copy to Keep window your contacts and calendar already use, and
+  the question says "note" rather than borrowing the words for a contact.
+  Nothing is sent and nothing is written over until you answer.
+
   Known limitation, and it is a large one: **nothing here has ever met a real
   server.** Every part of this has been driven against a stand-in written in
   this repository, which proves the program agrees with itself and says nothing

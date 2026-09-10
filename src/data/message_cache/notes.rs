@@ -133,7 +133,15 @@ impl MessageCache {
     }
 
     /// Delete a note folder and all its notes.
+    ///
+    /// Leaves a record for every note it held. The notes go in one statement,
+    /// so a rule applied one note at a time is bypassed by this, and without
+    /// the records a folder full of synced notes comes back note by note on
+    /// the next read.
     pub fn delete_note_folder(&self, folder_id: &str) -> Result<()> {
+        for note in self.get_notes_for_folder(folder_id)? {
+            self.record_a_deleted_note(&note)?;
+        }
         self.conn
             .execute(
                 "DELETE FROM notes WHERE folder_id = ?1",
