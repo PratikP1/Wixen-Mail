@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 504 records have arrived since and have not been through it.
+# 505 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18245,7 +18245,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 16 },
+    { file = "src/application/notes_backend.rs", tests = 20 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18269,22 +18269,32 @@ tests_last_seen = [
 # Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
 # tree with nothing else building, at the default eight threads. 7,114 passed
 # and exactly one failed.
+#
+# Re-measured the same day, because `05.1-03` changed the words this break
+# replaces and the per-commit check said so at once: the sentence now says it is
+# experimental and that no build has ever sent a note to a real server, which is
+# a warning that has to reach somebody before they rely on it. The break is the
+# same one, the arm copied from its neighbour, and it now reddens two tests
+# rather than one.
 [[guard]]
 name = "the settings sentence says where the notes really go"
 file = "src/application/notes_backend.rs"
 before = '''        NotesBackend::CalDavJournal => format!(
             "Notes in {account_named} are kept on this computer and sent to that \
-             account's calendar server."
+             account's calendar server. This is experimental. No build has ever \
+             sent a note to a real server, so expect problems, and turning on \
+             Allow Changes is what lets a note go at all."
         ),'''
 after = '''        NotesBackend::CalDavJournal => format!(
             "Notes in {account_named} are kept on this computer. This account has no \
              notes backend, so nothing sends them anywhere."
         ),'''
 red = [
+    "application::notes_backend::tests::test_an_account_whose_notes_reach_a_server_is_told_that_has_never_been_tried",
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 16 },
+    { file = "src/application/notes_backend.rs", tests = 20 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18537,4 +18547,42 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/note_document.rs", tests = 9 },
+]
+
+# Choosing Sync now on a note folder really runs a sync.
+#
+# This is the stub shape this project has met before: eight update variants were
+# handled in the window and sent by nothing, and five modules rendered empty in
+# every build. A handler that reports success and calls nothing looks finished
+# from every side, and a test asking only whether the menu offers the command
+# passes against it.
+#
+# The break is exactly that: the arm keeps its status line and stops calling the
+# sync. It builds and it lints, because the handle it stops using is used by the
+# arms beside it.
+#
+# The guard reads the window's source, which is what `data::config`'s own screen
+# checks do and for the same reason: a window needs a display and a running
+# application. What it cannot see, said here rather than assumed: it does not
+# press a key, and nobody has heard what comes back.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,801 passed in
+# the library and exactly one failed.
+[[guard]]
+name = "asking for a notes sync reaches the sync rather than reporting one"
+file = "src/presentation/wx_app.rs"
+before = '''                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    spawn_notes_sync(app);
+                                }'''
+after = '''                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                }'''
+red = [
+    "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
+]
+tests_last_seen = [
+    { file = "src/application/notes_backend.rs", tests = 20 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

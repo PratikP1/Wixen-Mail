@@ -14,6 +14,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   the same sign-in. Nothing else changes: an account with no calendar server
   keeps its notes on this computer, and Settings goes on saying so.
 
+  Press the menu key on a note folder and choose "Sync notes now". Settings, on
+  the Calendar and PIM tab, says where that account's notes go and says plainly
+  that this has never been tried against a real server.
+
   A note you change here waits until it has been sent, and pinning a note or
   moving it between folders counts as a change. Copying a note makes a second
   note at the server rather than writing over the first.

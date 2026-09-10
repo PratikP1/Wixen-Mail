@@ -19,19 +19,27 @@
 //! subjects in one file is how the next person comes to believe there is one
 //! question.
 //!
-//! # Nothing here talks to a server
+//! # This is where a backend is chosen, and the only place
 //!
-//! No backend is implemented. This answers which one an account uses, and
-//! today the answer is the same for every account: their notes stay on this
-//! computer. `05.1-03` puts a CalDAV journal behind
-//! [`NotesBackend::CalDavJournal`], and phase 5.2 adds OneNote. Neither of
-//! those changes the shape of the question, which is the point of asking it
-//! here first.
+//! One backend exists. An account with a calendar on a calendar server sends
+//! its notes to that server's journal entries, under the same sign-in, and
+//! every other account keeps its notes here. Phase 5.2 adds OneNote, and it is
+//! a second arm in two matches rather than a change anywhere else: the sync
+//! itself, [`crate::application::notes_sync`], names no backend at all and a
+//! grep of that file proves it.
 //!
-//! [`NotesService`] is the same statement in a second form: the operations a
-//! backend performs, with nothing behind them. What a backend has to answer,
-//! and what it may not decide for itself, is written out in
-//! `docs/development/the-notes-seam.md`.
+//! [`NotesService`] says what a backend has to do, and
+//! `docs/development/the-notes-seam.md` says what it must not decide for
+//! itself. [`crate::service::caldav_journal`] is the first implementation.
+//!
+//! # Nothing here has ever met a real server
+//!
+//! No account, no calendar server and no journal collection has been used with
+//! this program. Every part of this has been driven against a stand-in written
+//! in this repository, which proves the program agrees with itself and says
+//! nothing about anybody's server. The settings screen says so where somebody
+//! reads it before they rely on it, and `.planning/WINDOWS.md` names each
+//! unknown separately.
 
 use crate::data::account::Account;
 use crate::data::message_cache::MessageCache;
@@ -209,6 +217,95 @@ pub fn for_the_default_account_in(
     for_account(account, server)
 }
 
+/// What one run of an account's notes sync did, or why it did nothing.
+///
+/// Three answers rather than a result and an error, because two of the three
+/// are not failures and reporting them as ones is how "1 problem" appears on a
+/// status line every time somebody presses a key that was never going to do
+/// anything.
+#[derive(Debug)]
+pub enum WhatTheNotesSyncDid {
+    /// This account's notes stay on this computer, so nothing was asked of
+    /// anybody.
+    TheyStayHere,
+    /// This account's notes go to a server nobody has signed in to.
+    ///
+    /// The one thing on this list only the person can fix, so it is told apart
+    /// from the others and reaches them in words.
+    NobodyIsSignedIn,
+    /// It ran, and this is what it did.
+    ItRan(crate::application::notes_sync::NoteSyncResult),
+}
+
+/// The calendar on a calendar server that this account's notes go beside.
+///
+/// The first one, in the order the store answers, which is the order the
+/// sidebar shows them in. An account with two calendar servers is a real thing
+/// and this takes the first of them; that is a limit rather than a decision,
+/// and it is in the ledger rather than left as a surprise.
+pub fn the_calendar_server_of(
+    cache: &MessageCache,
+    account_id: &str,
+) -> Option<crate::data::message_cache::CalendarContainer> {
+    cache
+        .get_calendars_for_account(account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|calendar| {
+            calendar.source_provider.as_deref()
+                == Some(crate::application::calendar_source::ON_A_SERVER)
+                && calendar.caldav_url.is_some()
+        })
+}
+
+/// Send this account's notes wherever they go, and take back what has arrived.
+///
+/// The one place a backend is chosen, which is what this module is for. The
+/// sync itself is [`crate::application::notes_sync`] and it names no backend:
+/// everything about which client is built and where it is pointed is decided
+/// here, in the match below, so a second backend is a second arm and changes
+/// nothing else.
+pub async fn sync_the_notes_of(
+    cache: &MessageCache,
+    account: &Account,
+) -> crate::common::Result<WhatTheNotesSyncDid> {
+    match for_account(Some(account), has_a_calendar_server(cache, &account.id)) {
+        // Asked nothing of anybody, which is the point: an account whose notes
+        // stay here is never offered this command in the first place, and
+        // reaching it by another route still costs nobody a request.
+        NotesBackend::ThisComputer | NotesBackend::Other(_) => {
+            Ok(WhatTheNotesSyncDid::TheyStayHere)
+        }
+        NotesBackend::CalDavJournal => {
+            let Some(calendar) = the_calendar_server_of(cache, &account.id) else {
+                // The answer above came from the same lookup, so this is only
+                // reached if the row went between the two.
+                return Ok(WhatTheNotesSyncDid::TheyStayHere);
+            };
+            let Some(container) = calendar.caldav_url.clone() else {
+                return Ok(WhatTheNotesSyncDid::TheyStayHere);
+            };
+            let Some(service) =
+                crate::service::caldav_journal::AJournalOnACalendarServer::for_account(
+                    &account.id,
+                    &calendar.id,
+                )
+            else {
+                return Ok(WhatTheNotesSyncDid::NobodyIsSignedIn);
+            };
+            Ok(WhatTheNotesSyncDid::ItRan(
+                crate::application::notes_sync::sync_notes(
+                    cache,
+                    &service,
+                    &account.id,
+                    &container,
+                )
+                .await?,
+            ))
+        }
+    }
+}
+
 /// What a screen says about where an account's notes go.
 ///
 /// The words live here rather than in the settings screen for the reason
@@ -255,9 +352,19 @@ pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String 
             "Notes in {account_named} are kept on this computer. This account has no \
              notes backend, so nothing sends them anywhere."
         ),
+        // It says it is experimental where somebody meets it before they rely
+        // on it, which is `CLAUDE.md`'s rule about a warning that only exists
+        // in a changelog. `calendar_source::NOT_TRIED_FOR_REAL` says the same
+        // thing on the window that adds a calendar server, and this is a second
+        // sentence rather than that one because it is about a second thing:
+        // somebody who added a calendar months ago and has just found the notes
+        // sync never saw that window today, and what has never been tried here
+        // is the note half rather than the calendar half.
         NotesBackend::CalDavJournal => format!(
             "Notes in {account_named} are kept on this computer and sent to that \
-             account's calendar server."
+             account's calendar server. This is experimental. No build has ever \
+             sent a note to a real server, so expect problems, and turning on \
+             Allow Changes is what lets a note go at all."
         ),
         // Named rather than described, because somebody working out why their
         // notes are not moving needs the word to say when they ask. It is
@@ -570,6 +677,102 @@ mod tests {
     fn test_an_account_with_no_calendars_at_all_has_no_calendar_server() {
         let cache = a_store();
         assert!(!has_a_calendar_server(&cache, "a1"));
+    }
+
+    fn run<F: std::future::Future>(work: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime")
+            .block_on(work)
+    }
+
+    #[test]
+    fn test_an_account_whose_notes_stay_here_is_never_asked_for_a_backend() {
+        // Nothing is built, nothing is pointed anywhere and nobody is asked.
+        // The assertion that matters is the answer rather than the absence: a
+        // sync that did nothing because nothing exists yet would pass a test
+        // written the other way round before any of this was built.
+        let cache = a_store();
+        let said =
+            run(sync_the_notes_of(&cache, &account("a1", "me@gmail.com"))).expect("an answer");
+
+        assert!(
+            matches!(said, WhatTheNotesSyncDid::TheyStayHere),
+            "{said:?}"
+        );
+    }
+
+    #[test]
+    fn test_an_account_with_a_server_nobody_has_signed_in_to_is_told_so() {
+        // Its own answer rather than an error, because it is the one thing on
+        // the list only the person can fix and a count says "1 problem" on
+        // every sync forever while telling them nothing.
+        let cache = a_store();
+        cache
+            .save_calendar(&a_calendar(
+                "cal-nobody-signed-in-to",
+                crate::application::calendar_source::ON_A_SERVER,
+                Some("https://example.test/dav/cal"),
+            ))
+            .expect("a calendar on a server");
+
+        let said =
+            run(sync_the_notes_of(&cache, &account("a1", "me@gmail.com"))).expect("an answer");
+
+        assert!(
+            matches!(said, WhatTheNotesSyncDid::NobodyIsSignedIn),
+            "{said:?}"
+        );
+    }
+
+    /// Asking for a sync really runs one.
+    ///
+    /// Read as source, which is what `data::config`'s own screen checks do and
+    /// for the same reason: the window needs a display and a running
+    /// application, and nothing about it can be driven from a test. What this
+    /// catches is the stub shape this project has met before, where a handler
+    /// reports success and calls nothing, and a test that only asks whether the
+    /// menu offers the command passes against it every time.
+    ///
+    /// What it cannot see is said here rather than left to be assumed. It reads
+    /// two names out of one file. It does not press a key, does not open a
+    /// window, and says nothing about whether the status line that comes back
+    /// is heard.
+    #[test]
+    fn test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one() {
+        let window = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the main window's source");
+        assert!(
+            !window.is_empty(),
+            "the main window could not be read, so this proves nothing"
+        );
+
+        // The command reaches the spawn.
+        assert!(
+            window.contains("PimModule::Notes => {") && window.contains("spawn_notes_sync(app);"),
+            "choosing Sync now on a note folder does not reach a notes sync, so \
+             the command is a stop somebody lands on that does nothing"
+        );
+        // And the spawn reaches the work, rather than reporting that it did.
+        assert!(
+            window.contains("sync_the_notes_of(&cache, &account)"),
+            "the notes sync handler never asks for a sync, so it reports one \
+             that never happened"
+        );
+    }
+
+    #[test]
+    fn test_an_account_whose_notes_reach_a_server_is_told_that_has_never_been_tried() {
+        // A warning that only exists in a changelog is a warning nobody gets.
+        // This one is on the settings screen, beside the sentence saying where
+        // the notes go, which is where somebody looks before they trust it.
+        let said = where_they_go_for(&NotesBackend::CalDavJournal, "Work");
+
+        assert!(said.contains("experimental"), "{said}");
+        assert!(said.contains("real server"), "{said}");
+        // And what it costs them to find out, said rather than implied.
+        assert!(said.contains("Allow Changes"), "{said}");
     }
 
     #[test]

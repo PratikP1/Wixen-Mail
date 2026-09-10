@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 222
+open_count: 229
 waived_count: 0
-fixed_count: 15
-total_count: 237
-last_updated: 2026-09-10T17:40:44.830Z
+fixed_count: 17
+total_count: 246
+last_updated: 2026-09-10T20:50:53.826Z
 ---
 
 # Broken Windows Ledger
@@ -249,9 +249,18 @@ last_updated: 2026-09-10T17:40:44.830Z
 | 232 | 05.1 | unrun-verify | src/data/message_cache/notes.rs |  | No database written by another build has ever been opened. NoteBody::Other and the null-column path are driven only by rows this repository's own tests wrote with raw SQL, so what a real second writer puts in that column is a guess | open |  | 2026-09-10T14:51:05.860Z |  |
 | 233 | 05.1 | unrun-verify | src/presentation/wx_settings.rs |  | Nobody has heard the Notes section on the Calendar and PIM tab. Whether it is found where it was put, last on the tab after Working Day, by somebody moving through the sections in order with a screen reader, has never been tried | open |  | 2026-09-10T17:40:28.476Z |  |
 | 234 | 05.1 | unrun-verify | src/application/notes_backend.rs |  | Nobody has heard the sentence saying an account has no notes backend. Whether it is heard as an answer or as an apology is the whole question about wording it that way, and it has never been put to a screen reader | open |  | 2026-09-10T17:40:42.877Z |  |
-| 235 | 05.1 | unrun-verify | src/application/context_menu.rs |  | The note folder menu has never been opened with a backend behind it, because none exists. Every account answers that its notes stay here, so the arm that offers Sync notes now is driven only by tests | open |  | 2026-09-10T17:40:43.531Z |  |
-| 236 | 05.1 | stub | src/application/notes_backend.rs |  | NotesService has no implementor and no caller. It is the contract 05.1-03 and 05.1-04 are held to, and until one of them lands nothing has ever executed a line of it | open |  | 2026-09-10T17:40:44.182Z |  |
+| 235 | 05.1 | unrun-verify | src/application/context_menu.rs |  | The note folder menu has never been opened with a backend behind it, because none exists. Every account answers that its notes stay here, so the arm that offers Sync notes now is driven only by tests | fixed |  | 2026-09-10T17:40:43.531Z | 2026-09-10T20:50:53.826Z |
+| 236 | 05.1 | stub | src/application/notes_backend.rs |  | NotesService has no implementor and no caller. It is the contract 05.1-03 and 05.1-04 are held to, and until one of them lands nothing has ever executed a line of it | fixed |  | 2026-09-10T17:40:44.182Z | 2026-09-10T20:50:53.090Z |
 | 237 | 05.1 | unrun-verify | docs/development/the-notes-seam.md |  | The notes seam contract is reasoning from Microsoft's documentation and from what this repository already does, not from a backend that has run. Its own table names one assumption it knows is weakest, that one note maps to one thing at the backend, and 05.2-03 is required to report where it was wrong | open |  | 2026-09-10T17:40:44.830Z |  |
+| 238 | 05.1 | unrun-verify | src/service/caldav_journal.rs |  | Whether a real calendar server accepts the journal document this writes. The whole write path is untried: if a server refuses it, every note push fails and nothing anybody has run would have said so. | open |  | 2026-09-10T20:49:58.456Z |  |
+| 239 | 05.1 | unrun-verify | src/service/caldav.rs |  | Whether a real server's own listing names a journal entry the way this reads it. The listing is a PROPFIND at one level down and the collection's own block is skipped by hand; a server that answers in another shape reports an empty container, which reads as a clean sync over somebody's missing notes. | open |  | 2026-09-10T20:50:19.482Z |  |
+| 240 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether a real server's version marker survives a round trip. Everything about when a note is taken down rests on comparing the marker for equality, so a server that changes it on every read makes every note arrive on every sync and one that never changes it makes none arrive at all. | open |  | 2026-09-10T20:50:20.164Z |  |
+| 241 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether a real server takes a deletion. The record of a deletion is kept until the server has taken it and for a week after, so a server that refuses the removal leaves the note owed for ever and one that answers in a way this misreads lets the note come back. | open |  | 2026-09-10T20:50:20.825Z |  |
+| 242 | 05.1 | unrun-verify | src/service/caldav_journal.rs |  | Whether a real server raises a clash the way the stand-in does. The disagreement is found by reading the document's version before writing rather than by a 412, so a server that gives no version marker at all would never report one and a change made in two places would be written over in silence. | open |  | 2026-09-10T20:50:21.497Z |  |
+| 243 | 05.1 | unrun-verify | src/application/notes_backend.rs |  | Whether the notes sync summary is distinguishable by ear from the calendar, task and contact summaries when several run together. Nobody has heard any of them. | open |  | 2026-09-10T20:50:22.241Z |  |
+| 244 | 05.1 | unrun-verify | src/application/conflict_choice.rs |  | Whether a held note conflict read aloud is answerable without seeing both copies. The words say note rather than contact now, and nobody has heard the question. | open |  | 2026-09-10T20:50:22.983Z |  |
+| 245 | 05.1 | stub | src/application/notes_backend.rs |  | An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen. | open |  | 2026-09-10T20:50:23.697Z |  |
+| 246 | 05.1 | stub | src/application/notes_sync.rs |  | Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end. | open |  | 2026-09-10T20:50:24.407Z |  |
 
 ````json
 [
@@ -3070,10 +3079,10 @@ last_updated: 2026-09-10T17:40:44.830Z
     "file": "src/application/context_menu.rs",
     "line": null,
     "description": "The note folder menu has never been opened with a backend behind it, because none exists. Every account answers that its notes stay here, so the arm that offers Sync notes now is driven only by tests",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-10T17:40:43.531Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-10T20:50:53.826Z"
   },
   {
     "id": 236,
@@ -3082,10 +3091,10 @@ last_updated: 2026-09-10T17:40:44.830Z
     "file": "src/application/notes_backend.rs",
     "line": null,
     "description": "NotesService has no implementor and no caller. It is the contract 05.1-03 and 05.1-04 are held to, and until one of them lands nothing has ever executed a line of it",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-10T17:40:44.182Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-10T20:50:53.090Z"
   },
   {
     "id": 237,
@@ -3097,6 +3106,114 @@ last_updated: 2026-09-10T17:40:44.830Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T17:40:44.830Z",
+    "resolved_at": null
+  },
+  {
+    "id": 238,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/caldav_journal.rs",
+    "line": null,
+    "description": "Whether a real calendar server accepts the journal document this writes. The whole write path is untried: if a server refuses it, every note push fails and nothing anybody has run would have said so.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:49:58.456Z",
+    "resolved_at": null
+  },
+  {
+    "id": 239,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/caldav.rs",
+    "line": null,
+    "description": "Whether a real server's own listing names a journal entry the way this reads it. The listing is a PROPFIND at one level down and the collection's own block is skipped by hand; a server that answers in another shape reports an empty container, which reads as a clean sync over somebody's missing notes.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:19.482Z",
+    "resolved_at": null
+  },
+  {
+    "id": 240,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether a real server's version marker survives a round trip. Everything about when a note is taken down rests on comparing the marker for equality, so a server that changes it on every read makes every note arrive on every sync and one that never changes it makes none arrive at all.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:20.164Z",
+    "resolved_at": null
+  },
+  {
+    "id": 241,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Whether a real server takes a deletion. The record of a deletion is kept until the server has taken it and for a week after, so a server that refuses the removal leaves the note owed for ever and one that answers in a way this misreads lets the note come back.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:20.825Z",
+    "resolved_at": null
+  },
+  {
+    "id": 242,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/caldav_journal.rs",
+    "line": null,
+    "description": "Whether a real server raises a clash the way the stand-in does. The disagreement is found by reading the document's version before writing rather than by a 412, so a server that gives no version marker at all would never report one and a change made in two places would be written over in silence.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:21.497Z",
+    "resolved_at": null
+  },
+  {
+    "id": 243,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "Whether the notes sync summary is distinguishable by ear from the calendar, task and contact summaries when several run together. Nobody has heard any of them.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:22.241Z",
+    "resolved_at": null
+  },
+  {
+    "id": 244,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/conflict_choice.rs",
+    "line": null,
+    "description": "Whether a held note conflict read aloud is answerable without seeing both copies. The words say note rather than contact now, and nobody has heard the question.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:22.983Z",
+    "resolved_at": null
+  },
+  {
+    "id": 245,
+    "kind": "stub",
+    "phase": "05.1",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:23.697Z",
+    "resolved_at": null
+  },
+  {
+    "id": 246,
+    "kind": "stub",
+    "phase": "05.1",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T20:50:24.407Z",
     "resolved_at": null
   }
 ]

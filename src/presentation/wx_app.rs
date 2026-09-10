@@ -4159,9 +4159,15 @@ impl WxMailApp {
                                     send_status(&ui_tx, &runtime, "Tasks sync requested...");
                                     spawn_tasks_sync(app);
                                 }
-                                // Notes go nowhere and mail has its own Check
-                                // Mail, so neither is offered this.
-                                PimModule::Notes | PimModule::Mail | PimModule::Reminders => {
+                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    spawn_notes_sync(app);
+                                }
+                                // Mail has its own Check Mail, and a reminder
+                                // is a property of something else everywhere
+                                // this program can reach, so neither is
+                                // offered this.
+                                PimModule::Mail | PimModule::Reminders => {
                                     send_status(
                                         &ui_tx,
                                         &runtime,
@@ -20798,6 +20804,90 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         )));
         // The panel is showing what was there before this ran.
         let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Tasks));
+    });
+}
+
+/// Send this account's notes wherever they go, on a blocking thread.
+///
+/// The same shape as [`spawn_tasks_sync`] above, so there is one pattern here
+/// and not two: the store is opened on the worker because `MessageCache` is not
+/// `Send`, the work is asked for by one call, and what comes back becomes a
+/// status line and a repaint.
+///
+/// Which backend is used and where it is pointed are not decided here.
+/// [`crate::application::notes_backend::sync_the_notes_of`] is the one place
+/// that chooses, which is what lets a second backend be a second arm there and
+/// nothing at all in this file.
+fn spawn_notes_sync(app: AppHandles<'_>) {
+    use crate::application::notes_backend::{WhatTheNotesSyncDid, sync_the_notes_of};
+
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let accounts = state
+        .lock()
+        .ok()
+        .map(|s| s.accounts.clone())
+        .unwrap_or_default();
+    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let aid = account_id.as_deref().unwrap_or("default");
+        let Some(account) = accounts.iter().find(|account| account.id == aid).cloned() else {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(
+                "Notes could not be synced: no account is open".into(),
+            ));
+            return;
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(
+                "Notes could not be synced: there is nowhere to keep them".into(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Notes could not be synced: {e}"
+                )));
+                return;
+            }
+        };
+
+        let said = match handle.block_on(sync_the_notes_of(&cache, &account)) {
+            Ok(said) => said,
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Notes could not be synced: {e}"
+                )));
+                return;
+            }
+        };
+
+        let status = match said {
+            WhatTheNotesSyncDid::TheyStayHere => {
+                "This account's notes are kept on this computer, so there is \
+                 nothing to sync"
+                    .to_string()
+            }
+            WhatTheNotesSyncDid::NobodyIsSignedIn => {
+                "Nobody is signed in to the server this account's notes go to".to_string()
+            }
+            WhatTheNotesSyncDid::ItRan(result) => {
+                // The messages go to the log and the count goes on screen,
+                // because the status line has one line and a failure per note
+                // would fill it. A note's title is the person's own words in
+                // the same way a message body is, and none of these carry one.
+                for problem in &result.errors {
+                    tracing::warn!("Notes sync: {}", problem);
+                }
+                format!("Notes synced: {}", result.summary())
+            }
+        };
+        let _ = tx.try_send(UIUpdate::StatusUpdated(status));
+        // The panel is showing what was there before this ran.
+        let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Notes));
     });
 }
 
