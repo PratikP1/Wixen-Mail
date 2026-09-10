@@ -457,6 +457,8 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
   5. The seam is shaped so a hosted note service can be added later without a migration. Preparing for it means the seam does not forbid it, not that anything half exists.
   6. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist.
 
+**Criteria 4, 5 and 6 are not phase 5's to close, and are left above so the split is visible rather than tidied away.** The nine-plan phase 5 was cut into three when it was planned, at the line between moving what is already on this computer and reaching a server for the first time. Criterion 6 and the CalDAV half of 4 and 5 belong to phase 5.1. The OneNote half of 4 and 5 belongs to phase 5.2. Both restate their half in their own words below rather than pointing back here, because a criterion nobody can read without following a cross-reference is one nobody checks. Phase 5's eight plans closed 1, 2 and 3.
+
 **Plans**: TBD
 
 - [x] 05-01-PLAN.md
@@ -467,6 +469,54 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
 - [x] 05-06-PLAN.md
 - [x] 05-07-PLAN.md
 - [x] 05-08-PLAN.md
+
+**UI hint**: yes
+
+### Phase 5.1: Notes and contacts reach a server (INSERTED)
+
+**Goal**: Notes reach a server through one seam that knows nothing about which backend it is talking to, and contacts get a second address book by its own address.
+**Depends on**: Phase 5, which moves notes and contacts around on this computer before either of them reaches a server
+**Requirements**: PIM-04, PIM-05, PIM-07, PIM-08
+**Success Criteria** (what must be TRUE):
+
+  1. A local note is a first-class Markdown document, and the database agrees. The `notes.format` column has held the word "plain" on every row since notes shipped, while the editor labels the box "Body, in Markdown" and the reader parses it as Markdown. That column either means something or is honestly retired. A note typed here, saved, closed and read back is byte-identical, proven by a test that goes through storage rather than through a formatter.
+  2. A synced note reaches its account's backend through one seam, and CalDAV VJOURNAL is the first thing behind it. A note deleted here stays deleted, which needs a record of the deletion that the other three modules have and notes do not.
+  3. Where an account type has no notes backend, the settings screen says so rather than offering a switch that does nothing. It says this account has no notes backend, not "not yet": a consumer Gmail account still has none after all three backends ship, because Google Keep's API is Workspace only.
+  4. The seam takes a second implementation without changing shape, proven by writing one rather than by arguing it. The second is shaped from the four things OneNote really does, so it disagrees where a real second backend would, and it lives only in tests. Phase 5.2 replaces it with the real client and reports where it was wrong.
+  5. A user adds a CardDAV address book by its own address, and contacts sync both ways through the vCard reader and writer that already exist. That needs somewhere to keep the address, its credentials owner, its change marker and whether it is visible, and no table or column can hold any of those today.
+  6. The new address book screen is heard with a real screen reader before the phase closes. It is the one thing in this phase no test in this repository can settle.
+
+**Nothing here can be finished against a real server.** No account, no CalDAV server and no CardDAV server has ever been used with this program. Every parser these plans build is tested against text this repository wrote, and a round trip proves a reader and a writer agree with each other and says nothing about anybody else's server. Each plan owes `.planning/WINDOWS.md` an entry per unrun thing rather than one entry covering all of them.
+
+**Plans**: TBD
+
+- [ ] 05.1-01-PLAN.md
+- [ ] 05.1-02-PLAN.md
+- [ ] 05.1-03-PLAN.md
+- [ ] 05.1-04-PLAN.md
+- [ ] 05.1-05-PLAN.md
+- [ ] 05.1-06-PLAN.md
+
+**UI hint**: yes
+
+### Phase 5.2: Notes in OneNote (INSERTED)
+
+**Goal**: OneNote goes behind the notes seam, and what the seam turns out to have assumed about CalDAV is written down rather than absorbed.
+**Depends on**: Phase 5.1, which builds the seam and its first backend
+**Requirements**: PIM-07, and the second half of PIM-08's proof
+**Success Criteria** (what must be TRUE):
+
+  1. A note reaches OneNote through the same seam, with no special case inside the seam for the fact that a OneNote page is an HTML document inside a section inside a notebook rather than a title and a body.
+  2. The seam holds a backend that has no ETag. OneNote's concurrency is a timestamp the service owns, a page's body cannot be replaced, and most replaces need an identifier Graph generated and may move, so every write is preceded by a read of the page's current identifiers.
+  3. What the mapping loses is written where a user meets it, not discovered by them. A OneNote page cannot come back character for character, so PIM-04's byte-identical criterion is decided for this backend rather than met, and the decision is recorded with its cost.
+  4. Where phase 5.1's seam had assumed CalDAV is reported, including every place the test-only second implementation turned out to be wrong. That report is the second half of PIM-08's proof, and this phase is required to produce it rather than to conclude the seam was fine.
+  5. The two green tests that assert notes have no backend say the true thing afterwards: inverted for Outlook accounts, still true for Gmail ones.
+
+**Plans**: TBD
+
+- [ ] 05.2-01-PLAN.md
+- [ ] 05.2-02-PLAN.md
+- [ ] 05.2-03-PLAN.md
 
 **UI hint**: yes
 
