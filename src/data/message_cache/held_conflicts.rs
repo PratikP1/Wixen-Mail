@@ -46,6 +46,7 @@ fn stored_kind(other: TheOtherCopy) -> &'static str {
     match other {
         TheOtherCopy::AnAddressBook => "contact",
         TheOtherCopy::ACalendar => "calendar-item",
+        TheOtherCopy::ANotesBackend => "note",
     }
 }
 
@@ -326,6 +327,70 @@ mod tests {
             },
             their_version: Some("the marker they had when this was found".to_string()),
             held_at: "2026-09-05T10:00:00Z".to_string(),
+        }
+    }
+
+    /// A held note conflict is still a note conflict after a restart.
+    ///
+    /// The round trip rather than the two sentences, and the difference is the
+    /// whole point of this test. `called()` and `the_thing()` are exhaustive
+    /// matches, so the compiler names them when a variant is added and they are
+    /// right the moment somebody answers them. Neither goes near the database.
+    /// [`kind_from_stored`] matches on a `&str` with a catch-all, so a kind it
+    /// does not know reads as a contact, silently: a held note conflict written
+    /// with `kind = "note"` would come back as
+    /// [`TheOtherCopy::AnAddressBook`], and the question read aloud after a
+    /// restart would say "your address book" and "contact" about a note.
+    ///
+    /// That compiles, passes clippy under `-D warnings`, and passes every test
+    /// that only quotes the two sentences.
+    #[test]
+    fn test_a_held_note_conflict_comes_back_as_a_note_and_not_as_a_contact() {
+        let cache = a_cache("a_held_note");
+        let held = AHeldConflict {
+            copies: BothCopies {
+                what_it_is_called: "Wiring colours".to_string(),
+                other_copy: TheOtherCopy::ANotesBackend,
+                here: vec![AField::new("Body", "Brown is live")],
+                theirs: vec![AField::new("Body", "Blue is neutral")],
+            },
+            ..a_conflict("n1")
+        };
+        cache.hold_a_conflict(&held).expect("a hold");
+
+        let read_back = cache
+            .the_conflict_held_for("n1")
+            .expect("the store to answer")
+            .expect("the hold");
+
+        assert_eq!(
+            read_back.copies.other_copy,
+            TheOtherCopy::ANotesBackend,
+            "a held note conflict came back as something else, so the question \
+             says the wrong word about it after a restart"
+        );
+        let asked = read_back.copies.what_is_being_asked();
+        assert!(asked.contains("note"), "{asked}");
+        assert!(!asked.contains("contact"), "{asked}");
+        assert!(!asked.contains("address book"), "{asked}");
+    }
+
+    /// The kind a row carries is the one the variant asked for.
+    ///
+    /// The half above cannot see a writer and a reader that are wrong in the
+    /// same direction, so the stored word is asserted on its own as well.
+    #[test]
+    fn test_the_word_written_for_a_note_conflict_is_the_word_read_back() {
+        for kind in [
+            TheOtherCopy::AnAddressBook,
+            TheOtherCopy::ACalendar,
+            TheOtherCopy::ANotesBackend,
+        ] {
+            assert_eq!(
+                kind_from_stored(stored_kind(kind)),
+                kind,
+                "the word written for {kind:?} is read back as something else"
+            );
         }
     }
 

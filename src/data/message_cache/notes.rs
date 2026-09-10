@@ -1,7 +1,9 @@
 //! Note and NoteFolder CRUD operations.
 
 use crate::common::{Error, Result};
-use crate::data::message_cache::{MessageCache, NoteEntry, NoteFolderEntry};
+use crate::data::message_cache::{
+    DeletedNote, MessageCache, NoteEntry, NoteFolderEntry, TheDeletionSoFar,
+};
 
 /// What a note's body is written in, as the `format` column spells it.
 ///
@@ -275,13 +277,103 @@ impl MessageCache {
     }
 
     /// Delete a note.
+    ///
+    /// Leaves a record of the deletion, because a deleted row cannot carry a
+    /// "not yet sent" flag and a deletion the backend is never told about is a
+    /// note that comes back on the next read. [`crate::application::deletions`]
+    /// states the rule; this follows it rather than restating it.
     pub fn delete_note(&self, note_id: &str) -> Result<()> {
+        // Read before the row goes, because afterwards there is nothing left
+        // to say what the backend called it, and that is what a removal names.
+        if let Ok(Some(note)) = self.get_note(note_id) {
+            self.record_a_deleted_note(&note)?;
+        }
         self.conn
             .execute(
                 "DELETE FROM notes WHERE id = ?1",
                 rusqlite::params![note_id],
             )
             .map_err(|e| Error::Other(format!("Failed to delete note: {}", e)))?;
+        Ok(())
+    }
+
+    /// Write down that this note was deleted here.
+    fn record_a_deleted_note(&self, note: &NoteEntry) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO deleted_notes
+                    (id, account_id, folder_id, provider_note_id, deleted_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    note.id,
+                    note.account_id,
+                    note.folder_id,
+                    note.known_as,
+                    chrono::Utc::now().to_rfc3339(),
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a deleted note: {}", e)))?;
+        Ok(())
+    }
+
+    /// Every note this computer deleted, whether the backend has been told or
+    /// not.
+    ///
+    /// Both, because two questions are asked of this list. The push asks what
+    /// it still has to send and reads [`DeletedNote::so_far`] to find it; the
+    /// read asks what this computer deleted, which a record the backend has
+    /// already taken answers just as much as one still owed. Those two used to
+    /// be one question everywhere in this program and stopped being the same
+    /// answer at the worst possible moment.
+    pub fn deleted_notes(&self, account_id: &str) -> Result<Vec<DeletedNote>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, account_id, folder_id, provider_note_id, deleted_at, taken_at
+                 FROM deleted_notes WHERE account_id = ?1 ORDER BY deleted_at",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare the deletions query: {}", e)))?;
+        let rows = stmt
+            .query_map(rusqlite::params![account_id], |row| {
+                Ok(DeletedNote {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    folder_id: row.get(2)?,
+                    known_as: row.get(3)?,
+                    deleted_at: row.get(4)?,
+                    so_far: TheDeletionSoFar::from_stored(row.get(5)?),
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query the deletions: {}", e)))?;
+        let mut gone = Vec::new();
+        for row in rows {
+            gone.push(row.map_err(|e| Error::Other(format!("Failed to read a deletion: {}", e)))?);
+        }
+        Ok(gone)
+    }
+
+    /// The backend has taken this deletion.
+    ///
+    /// The record stays. It stops being work the push has and becomes the only
+    /// thing standing between the note and a read that is still naming it:
+    /// dropping it here is what let a thing somebody deleted come back in the
+    /// very sync that deleted it, three times in this program before the rule
+    /// was written down. `let_go_of_deletions_taken_before` releases it later.
+    ///
+    /// The moment comes from the caller, written by `deletions::written`, so
+    /// that the stamp on a record and the cutoff it is compared against are
+    /// written the same way.
+    pub fn a_backend_took_the_deletion_of_a_note(
+        &self,
+        note_id: &str,
+        taken_at: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE deleted_notes SET taken_at = ?2 WHERE id = ?1",
+                rusqlite::params![note_id, taken_at],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record a deletion as taken: {}", e)))?;
         Ok(())
     }
 
@@ -1038,6 +1130,157 @@ line two
             after.pending,
             "pinning changed the note and left nothing saying so, so the pin \
              reaches the backend on some later change or never"
+        );
+    }
+
+    /// Deleting a note leaves a record naming what the backend called it.
+    #[test]
+    fn test_deleting_a_note_leaves_a_record_of_the_deletion() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "Going".to_string(),
+                body: "Gone".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: Some("there-1".to_string()),
+                known_version: Some("v1".to_string()),
+            })
+            .unwrap();
+
+        cache.delete_note("n1").unwrap();
+
+        let gone = cache.deleted_notes("acct-1").unwrap();
+        assert_eq!(gone.len(), 1, "{gone:?}");
+        assert_eq!(gone[0].id, "n1");
+        assert_eq!(
+            gone[0].known_as.as_deref(),
+            Some("there-1"),
+            "the record does not name what the backend calls the note, so \
+             nothing can ask for it to be removed"
+        );
+        assert!(
+            gone[0].so_far.still_owed(),
+            "the deletion reads as already taken, so the backend is never told"
+        );
+    }
+
+    /// Deleting a folder leaves a record for every note it held.
+    ///
+    /// The folder delete removes them all in one statement, so a rule applied
+    /// one note at a time is bypassed by it. Without this, deleting a folder
+    /// full of synced notes brings every one of them back on the next read.
+    #[test]
+    fn test_deleting_a_note_folder_leaves_a_record_for_every_note_in_it() {
+        let cache = test_cache();
+        let going = NoteFolderEntry {
+            id: "folder-going".to_string(),
+            account_id: "acct-1".to_string(),
+            name: "Old ideas".to_string(),
+            display_order: 1,
+            created_at: "2026-01-01".to_string(),
+        };
+        cache.save_note_folder(&going).unwrap();
+        for (id, there) in [("n1", "there-1"), ("n2", "there-2")] {
+            cache
+                .save_note(&NoteEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    folder_id: Some(going.id.clone()),
+                    title: id.to_string(),
+                    body: String::new(),
+                    format: NoteBody::AsTyped,
+                    pinned: false,
+                    created_at: "2026-01-01".to_string(),
+                    updated_at: "2026-01-01".to_string(),
+                    pending: false,
+                    known_as: Some(there.to_string()),
+                    known_version: None,
+                })
+                .unwrap();
+        }
+
+        cache.delete_note_folder(&going.id).unwrap();
+
+        let mut gone: Vec<String> = cache
+            .deleted_notes("acct-1")
+            .unwrap()
+            .into_iter()
+            .filter_map(|record| record.known_as)
+            .collect();
+        gone.sort();
+        assert_eq!(
+            gone,
+            ["there-1", "there-2"],
+            "a folder deleted whole left some of its notes with nothing saying \
+             they were deleted, so they come back on the next read"
+        );
+    }
+
+    /// A deletion the backend has taken is remembered rather than dropped.
+    #[test]
+    fn test_a_deletion_has_two_lives_and_the_second_is_a_memory() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "Going".to_string(),
+                body: "Gone".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: Some("there-1".to_string()),
+                known_version: None,
+            })
+            .unwrap();
+        cache.delete_note("n1").unwrap();
+
+        let now = chrono::Utc::now();
+        cache
+            .a_backend_took_the_deletion_of_a_note(
+                "n1",
+                &crate::application::deletions::written(now),
+            )
+            .unwrap();
+
+        let taken = &cache.deleted_notes("acct-1").unwrap()[0];
+        assert!(
+            !taken.so_far.still_owed(),
+            "the push still owes a deletion the backend has already taken"
+        );
+
+        // And the clock, and nothing else, is what lets it go.
+        crate::application::deletions::let_go_of_what_was_remembered_long_enough(&cache, now)
+            .unwrap();
+        assert_eq!(
+            cache.deleted_notes("acct-1").unwrap().len(),
+            1,
+            "a memory was let go of the moment the backend took it, so a read \
+             still naming the note writes it straight back down"
+        );
+
+        let long_after = now
+            + crate::application::deletions::HOW_LONG_A_DELETION_IS_REMEMBERED
+            + chrono::Duration::days(1);
+        crate::application::deletions::let_go_of_what_was_remembered_long_enough(
+            &cache, long_after,
+        )
+        .unwrap();
+        assert!(
+            cache.deleted_notes("acct-1").unwrap().is_empty(),
+            "nothing lets a memory go, so the table grows for ever"
         );
     }
 

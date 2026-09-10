@@ -1224,6 +1224,34 @@ pub struct NoteEntry {
     pub updated_at: String,
 }
 
+/// A note deleted here that its backend has not been told about.
+///
+/// A deleted row cannot carry a "not yet sent" flag, so the fact of the
+/// deletion has to outlive it. Without this a note deleted here comes back on
+/// the next read, under the backend's own identifier, with nothing left saying
+/// it was ever deleted. `application::deletions` states the rule for all four
+/// kinds of thing this program deletes and is worth reading before changing
+/// any of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedNote {
+    /// The identifier the row here had, which is what the note is found by.
+    pub id: String,
+    pub account_id: String,
+    /// The folder it was in, kept because a folder deleted whole leaves one of
+    /// these per note and the record is the only thing left that says where
+    /// they were.
+    pub folder_id: Option<String>,
+    /// What the backend called it, where a backend held it at all.
+    ///
+    /// `None` for a note that never left this computer. There is nothing to
+    /// ask a backend to remove, and nothing a read could name it by either, so
+    /// such a record is a memory of a deletion and never work the push owes.
+    pub known_as: Option<String>,
+    pub deleted_at: String,
+    /// Whether the backend has taken it yet.
+    pub so_far: TheDeletionSoFar,
+}
+
 /// Sync state tracker for incremental sync (Google sync tokens, MS delta links)
 #[derive(Debug, Clone)]
 pub struct SyncState {
@@ -2271,6 +2299,32 @@ impl MessageCache {
                     e
                 ))
             })?;
+
+        // ── Deleted notes ───────────────────────────────────────────────
+        //
+        // The same reason as `deleted_tasks` and `deleted_calendar_events`: a
+        // deleted row cannot carry a "not yet sent" flag, so the fact of the
+        // deletion has to outlive the row. Without this a note deleted here
+        // comes back on the next read, under the backend's own identifier,
+        // with nothing left saying it was ever deleted.
+        //
+        // The row is kept after the backend takes the deletion, so that no
+        // read writes the note back down, and let go of by the clock
+        // afterwards. `application::deletions` holds the rule and says why the
+        // two lives are different things.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS deleted_notes (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                folder_id TEXT,
+                provider_note_id TEXT,
+                deleted_at TEXT NOT NULL,
+                taken_at TEXT
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create deleted_notes table: {}", e)))?;
 
         // ── Note folders ────────────────────────────────────────────────
         self.conn
@@ -3765,6 +3819,7 @@ impl MessageCache {
             "deleted_contacts",
             "deleted_calendar_events",
             "deleted_tasks",
+            "deleted_notes",
         ] {
             self.conn
                 .execute(

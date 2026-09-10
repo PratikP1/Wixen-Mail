@@ -54,8 +54,15 @@ pub struct NoteSyncResult {
     pub stored: usize,
     /// Notes the backend had not touched since the last sync.
     pub unchanged: usize,
-    /// Changes made here that reached the backend.
+    /// Changes made here that reached the backend, deletions among them.
     pub sent: usize,
+    /// Notes that moved here and at the backend since the last sync, and are
+    /// held for somebody to choose between.
+    ///
+    /// Nothing is written and nothing is sent for one of these. Which copy is
+    /// kept is [`crate::application::conflict_choice`]'s question and it is
+    /// asked of the person rather than answered here.
+    pub held: usize,
     /// Changes still waiting because this program is not allowed to change
     /// anything on this account.
     ///
@@ -91,6 +98,18 @@ impl NoteSyncResult {
             // status line that grows with the number of failures pushes
             // everything else off it.
             said.count(how_many(self.errors.len(), "problem"));
+        }
+        if self.held > 0 {
+            // The sentence the contacts and calendar syncs already say about a
+            // disagreement, with the hole filled in for a note. One set of
+            // words with a hole in it cannot drift from itself, which is what
+            // `TheOtherCopy`'s own doc comment is about.
+            said.sentence(
+                crate::application::conflict_choice::how_many_are_waiting_to_be_chosen(
+                    self.held,
+                    crate::application::conflict_choice::TheOtherCopy::ANotesBackend,
+                ),
+            );
         }
         if self.waiting_on_the_setting > 0 {
             // The task, calendar and contacts syncs all say this, so it is
@@ -406,6 +425,9 @@ mod tests {
         RefusedByTheSetting,
         /// Nobody is signed in.
         NotSignedIn,
+        /// The backend's copy moved since this computer last looked, so it
+        /// wrote nothing and handed the question back.
+        ItMovedFirst,
     }
 
     /// A notes backend that answers from a script rather than a socket.
@@ -444,6 +466,9 @@ mod tests {
     impl Scripted {
         /// The marker the backend hands out for a copy it has just written.
         const A_NEW_MARKER: &'static str = "v2";
+        /// The marker it says its own copy carries, when it says that copy
+        /// moved first.
+        const THE_MARKER_IT_HAS_NOW: &'static str = "moved-on";
     }
 
     impl NotesService for Scripted {
@@ -498,6 +523,9 @@ mod tests {
                 }),
                 Writes::RefusedByTheSetting => WhatTheBackendSaid::NotAllowedToChangeAnything,
                 Writes::NotSignedIn => WhatTheBackendSaid::NotSignedIn,
+                Writes::ItMovedFirst => WhatTheBackendSaid::ItMovedFirst {
+                    version_now: Some(Self::THE_MARKER_IT_HAS_NOW.to_string()),
+                },
             })
         }
 
@@ -517,6 +545,9 @@ mod tests {
                 Writes::Accepted => WhatTheBackendSaid::Done(known_as.clone()),
                 Writes::RefusedByTheSetting => WhatTheBackendSaid::NotAllowedToChangeAnything,
                 Writes::NotSignedIn => WhatTheBackendSaid::NotSignedIn,
+                Writes::ItMovedFirst => WhatTheBackendSaid::ItMovedFirst {
+                    version_now: Some(Self::THE_MARKER_IT_HAS_NOW.to_string()),
+                },
             })
         }
     }
@@ -783,6 +814,258 @@ mod tests {
 
         assert!(result.errors.is_empty(), "{result:?}");
         assert_eq!(result.stored, 0, "{result:?}");
+    }
+
+    #[test]
+    fn test_a_note_deleted_here_is_offered_to_the_backend_for_deletion() {
+        let cache = a_store();
+        let mut note = a_note("n1", "Going", "Gone");
+        note.known_as = Some("there-1".to_string());
+        note.known_version = Some("v1".to_string());
+        cache.save_note(&note).expect("a note the backend holds");
+        cache.delete_note("n1").expect("the deletion");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(
+            *service.taken_away.lock().expect("what was removed"),
+            ["there-1"],
+            "the backend was never asked to remove the note"
+        );
+        assert_eq!(result.sent, 1, "{result:?}");
+        let record = &cache.deleted_notes(ACCOUNT).expect("the deletions")[0];
+        assert!(
+            !record.so_far.still_owed(),
+            "the deletion is still owed after the backend took it, so it is \
+             sent again on every sync"
+        );
+    }
+
+    #[test]
+    fn test_a_deletion_the_backend_has_taken_is_still_remembered() {
+        // The half that is easy to get wrong and impossible to see. Dropping
+        // the record the moment the backend takes it leaves the read with
+        // nothing to consult while the backend's own list is still naming the
+        // note, and that is what puts a deleted note back on the screen in the
+        // very sync that deleted it.
+        let cache = a_store();
+        let mut note = a_note("n1", "Going", "Gone");
+        note.known_as = Some("there-1".to_string());
+        cache.save_note(&note).expect("a note the backend holds");
+        cache.delete_note("n1").expect("the deletion");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(
+            cache.deleted_notes(ACCOUNT).expect("the deletions").len(),
+            1,
+            "the record went the moment the backend took it, so nothing is \
+             left to stop a read writing the note back down"
+        );
+    }
+
+    #[test]
+    fn test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it() {
+        // The case the rule is about, driven rather than assumed. The backend's
+        // own list has not caught up, so it still names the note, and the read
+        // has to skip it. A fake whose list simply does not name it would pass
+        // against a read that consults nothing.
+        let cache = a_store();
+        let mut note = a_note("n1", "Going", "Gone");
+        note.known_as = Some("there-1".to_string());
+        cache.save_note(&note).expect("a note the backend holds");
+        cache.delete_note("n1").expect("the deletion");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some("v1".to_string()),
+                },
+                title: "Going".to_string(),
+                body: "Gone".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(result.stored, 0, "{result:?}");
+        assert!(
+            cache
+                .get_all_notes_for_account(ACCOUNT)
+                .expect("what is here")
+                .is_empty(),
+            "a note somebody deleted came back in the sync that deleted it"
+        );
+    }
+
+    #[test]
+    fn test_a_note_that_moved_in_both_places_is_held_rather_than_written_over() {
+        let cache = a_store();
+        let mut note = a_note("n1", "What is here", "The words typed here");
+        note.pending = true;
+        note.known_as = Some("there-1".to_string());
+        note.known_version = Some("v1".to_string());
+        cache.save_note(&note).expect("a note changed here");
+        let service = Scripted {
+            writes: Writes::ItMovedFirst,
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some(Scripted::THE_MARKER_IT_HAS_NOW.to_string()),
+                },
+                title: "What they have".to_string(),
+                body: "The words typed there".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(result.held, 1, "{result:?}");
+        assert_eq!(result.stored, 0, "the backend's copy was written over here");
+        assert_eq!(result.sent, 0, "{result:?}");
+        assert!(
+            cache.is_held_for_a_choice("n1").expect("the hold"),
+            "both copies moved and nothing is holding the question"
+        );
+
+        let held = cache
+            .the_conflict_held_for("n1")
+            .expect("the store to answer")
+            .expect("the hold");
+        assert_eq!(
+            held.copies.fields_that_differ(),
+            ["Title", "Body"],
+            "somebody choosing is not told what differs"
+        );
+        assert_eq!(
+            held.their_version.as_deref(),
+            Some(Scripted::THE_MARKER_IT_HAS_NOW),
+            "the marker the other copy carries now was not written down, so the \
+             same question is asked on every sync from here on"
+        );
+
+        let here = cache.get_note("n1").expect("the note").expect("the note");
+        assert_eq!(
+            here.body, "The words typed here",
+            "the copy here was written over while the question was being asked"
+        );
+    }
+
+    #[test]
+    fn test_a_note_held_for_a_choice_is_not_offered_again_on_the_next_sync() {
+        // A later sync must not resolve what the person has not. Without this
+        // the push offers the note again, gets the same answer, and writes a
+        // second hold over the first every time.
+        let cache = a_store();
+        let mut note = a_note("n1", "What is here", "The words typed here");
+        note.pending = true;
+        note.known_as = Some("there-1".to_string());
+        note.known_version = Some("v1".to_string());
+        cache.save_note(&note).expect("a note changed here");
+        let service = Scripted {
+            writes: Writes::ItMovedFirst,
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some(Scripted::THE_MARKER_IT_HAS_NOW.to_string()),
+                },
+                title: "What they have".to_string(),
+                body: "The words typed there".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("the first sync");
+        let asked_once = service.written.lock().expect("what was written").len();
+        // The note is still waiting after the first sync, which is what makes
+        // the count below mean anything. Without this the test passes against a
+        // read that wrote the backend's copy over the unsent change: nothing is
+        // waiting any more, so of course nothing is offered again.
+        let after_one = cache.get_note("n1").expect("the note").expect("the note");
+        assert!(after_one.pending, "the change here was given up");
+        assert_eq!(after_one.body, "The words typed here");
+
+        let second = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a second sync");
+
+        assert_eq!(
+            service.written.lock().expect("what was written").len(),
+            asked_once,
+            "the held note was offered again while somebody had still not chosen"
+        );
+        assert_eq!(second.stored, 0, "{second:?}");
+        assert_eq!(second.held, 0, "the same question was asked a second time");
+    }
+
+    #[test]
+    fn test_a_note_changed_only_here_is_sent_and_is_not_held() {
+        // The first of the two cases a hold-everything implementation gets
+        // wrong. Asked because "a conflict is held" is satisfied by holding
+        // every note there is.
+        let cache = a_store();
+        let mut note = a_note("n1", "Wiring colours", "Brown is live");
+        note.pending = true;
+        note.known_as = Some("there-1".to_string());
+        note.known_version = Some("v1".to_string());
+        cache.save_note(&note).expect("a note changed here");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some("v1".to_string()),
+                },
+                title: "Wiring colours".to_string(),
+                body: "Brown is live".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(result.sent, 1, "{result:?}");
+        assert_eq!(result.held, 0, "a note only this computer changed was held");
+    }
+
+    #[test]
+    fn test_a_note_changed_only_at_the_backend_is_taken_and_is_not_held() {
+        // The second. Nothing is waiting here, so there is nothing to lose and
+        // no question to ask.
+        let cache = a_store();
+        let mut note = a_note("n1", "Old title", "Old words");
+        note.known_as = Some("there-1".to_string());
+        note.known_version = Some("v1".to_string());
+        cache.save_note(&note).expect("a note nobody changed here");
+        let service = Scripted {
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some("v9".to_string()),
+                },
+                title: "New title".to_string(),
+                body: "New words".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(result.stored, 1, "{result:?}");
+        assert_eq!(
+            result.held, 0,
+            "a note only the backend changed was held, so somebody is asked a \
+             question that has one answer"
+        );
     }
 
     #[test]
