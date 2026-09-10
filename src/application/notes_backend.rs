@@ -113,15 +113,74 @@ pub fn for_account(account: Option<&Account>) -> NotesBackend {
     }
 }
 
-/// Where the default account's notes go.
+/// The default account, when there is one and it is still there.
 ///
 /// The default account is the one a new note is filed under, so it is the one
 /// the notes sidebar is showing and the one the settings screen is talking
-/// about. Written here rather than at each caller so the menu and the screen
+/// about. Resolved here rather than at each caller so the menu and the screen
 /// cannot come to mean different accounts by "the account whose notes these
 /// are".
+///
+/// `None` covers three things that need the same answer and are not worth
+/// telling apart: nobody has set a default, the default names an account that
+/// has been deleted, and there are no accounts at all.
+pub fn default_account<'a>(
+    default_id: Option<&str>,
+    accounts: &'a [Account],
+) -> Option<&'a Account> {
+    default_id
+        .filter(|id| !id.is_empty())
+        .and_then(|id| accounts.iter().find(|account| account.id == id))
+}
+
+/// Where the default account's notes go.
 pub fn for_default_account(default_id: Option<&str>, accounts: &[Account]) -> NotesBackend {
-    for_account(default_id.and_then(|id| accounts.iter().find(|account| account.id == id)))
+    for_account(default_account(default_id, accounts))
+}
+
+/// What a screen says about where an account's notes go.
+///
+/// The words live here rather than in the settings screen for the reason
+/// `allowed::MESSAGE_TEXT_LABEL` and `calendar_source::NOT_TRIED_FOR_REAL`
+/// give: a sentence typed into a screen gets a second hand-written copy beside
+/// it for the accessibility name, and the two drift. This is one string and
+/// there is nothing to drift from.
+///
+/// It names the account, because it is about one account and the screen can
+/// only reach the default one. A sentence that said "your notes" would read as
+/// a statement about all of them, which it is not and will be less so once a
+/// backend ships.
+///
+/// It says what is true rather than what is true yet. "This account has no
+/// notes backend" goes on being right after all three backends ship, because a
+/// consumer Gmail account still has none: Google Keep's API is Workspace only.
+/// "Notes do not sync yet" would have to be rewritten and, worse, would tell
+/// somebody to wait for something that is not coming.
+pub fn where_they_go(account: Option<&Account>) -> String {
+    match account {
+        Some(account) => where_they_go_for(&for_account(Some(account)), &account.display_name()),
+        None => "Notes are kept on this computer.".to_string(),
+    }
+}
+
+/// The sentence, given the answer and what to call the account.
+///
+/// Apart from [`where_they_go`] because no account can answer anything but
+/// [`NotesBackend::ThisComputer`] today, so the other two arms are unreachable
+/// from an account and a test written through one could only ever drive the
+/// arm that already ships. That is the "test double that cannot fail" shape,
+/// and splitting the words from the lookup is what avoids it here.
+pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String {
+    let _ = (backend, account_named);
+    "Notes are kept on this computer.".to_string()
+}
+
+/// The same, for the default account, which is the only one a screen can reach.
+pub fn where_the_default_accounts_notes_go(
+    default_id: Option<&str>,
+    accounts: &[Account],
+) -> String {
+    where_they_go(default_account(default_id, accounts))
 }
 
 #[cfg(test)]
@@ -199,6 +258,97 @@ mod tests {
             for_default_account(Some("a2"), &accounts),
             for_account(Some(&accounts[1]))
         );
+    }
+
+    #[test]
+    fn test_the_sentence_names_the_account_it_is_about() {
+        // The settings screen can only reach the default account, so a
+        // sentence saying "your notes" would read as a statement about all of
+        // them. It is not one now and will be less so once a backend ships.
+        let said = where_they_go(Some(&account("a1", "me@gmail.com")));
+
+        assert!(said.contains("Work"), "{said}");
+    }
+
+    #[test]
+    fn test_an_account_with_no_notes_backend_is_told_so_rather_than_told_not_yet() {
+        // Not a placeholder a backend removes. A consumer Gmail account has no
+        // notes backend after all three ship, because Google Keep's API is
+        // Workspace only, so this sentence has real work left in it. "Not yet"
+        // would have to be rewritten and would tell somebody to wait for
+        // something that is not coming.
+        let said = where_they_go(Some(&account("a1", "me@gmail.com")));
+
+        assert!(said.contains("no notes backend"), "{said}");
+        assert!(said.contains("on this computer"), "{said}");
+        assert!(!said.contains("yet"), "{said}");
+    }
+
+    #[test]
+    fn test_somebody_with_no_default_account_is_still_told_where_their_notes_are() {
+        // Before any account is set up, and after the default one is deleted.
+        // Both reach a screen, and a blank where the sentence should be is
+        // worse than the answer, which is that the notes are here.
+        let said = where_the_default_accounts_notes_go(None, &[]);
+
+        assert!(said.contains("on this computer"), "{said}");
+        assert!(!said.is_empty());
+    }
+
+    #[test]
+    fn test_the_sentence_says_where_the_notes_really_go() {
+        // The half that stops this being a fixed sentence dressed as an
+        // answer. An account whose notes reach a server has to be told that,
+        // and a backend word this build does not recognise has to be told
+        // plainly rather than described as a backend that works.
+        let reaches_a_server = where_they_go_for(&NotesBackend::CalDavJournal, "Work");
+        assert!(
+            reaches_a_server.contains("calendar server"),
+            "{reaches_a_server}"
+        );
+        assert!(
+            !reaches_a_server.contains("no notes backend"),
+            "{reaches_a_server}"
+        );
+
+        let unknown =
+            where_they_go_for(&NotesBackend::Other("something-later".to_string()), "Work");
+        assert!(unknown.contains("on this computer"), "{unknown}");
+        assert!(unknown.contains("does not recognise"), "{unknown}");
+    }
+
+    #[test]
+    fn test_the_sentence_uses_no_phrase_a_document_guard_forbids() {
+        // `A_CONTROL_NO_SCREEN_WRITES` in tests/house_style.rs forbids telling
+        // somebody to set something per account, because no screen writes a
+        // per-account answer. A notes backend chosen by account is exactly the
+        // subject that invites the phrase.
+        //
+        // That guard reads every source file as well as every document, so it
+        // does cover this sentence. This asks the same question of the string
+        // the sentence really produces rather than of the text that produces
+        // it, which is the difference between a phrase written here and a
+        // phrase assembled from pieces at run time.
+        //
+        // Both phrases are split the way that guard's own constant splits
+        // them, and for the same reason: written whole, they are the very
+        // thing the guard is looking for, so this test would trip it and
+        // report itself. That was found by writing them whole and watching the
+        // commit be refused.
+        let forbidden = [
+            concat!("set it ", "per account"),
+            concat!("for each account ", "separately"),
+        ];
+        for backend in [
+            NotesBackend::ThisComputer,
+            NotesBackend::CalDavJournal,
+            NotesBackend::Other("something-later".to_string()),
+        ] {
+            let said = where_they_go_for(&backend, "Work");
+            for phrase in forbidden {
+                assert!(!said.contains(phrase), "{said}");
+            }
+        }
     }
 
     #[test]

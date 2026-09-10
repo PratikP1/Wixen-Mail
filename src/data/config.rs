@@ -2311,6 +2311,63 @@ mod every_setting_is_acted_on {
     }
 
     #[test]
+    fn test_where_an_accounts_notes_go_is_said_by_a_screen() {
+        // The third of the hand-named companions, and it is here for a reason
+        // neither of its neighbours gives. Where an account's notes go is not
+        // a setting at all: there is nothing to choose while every account
+        // answers the same, and a switch would be the control that does
+        // nothing this program has removed repeatedly. So no field is added to
+        // `AppConfig`, the mirror guard below does not bind it, and nothing
+        // else would notice if the sentence were never shown.
+        //
+        // It is worth a check anyway, because the failure is the same one:
+        // somebody wondering whether their notes leave this computer has
+        // nowhere to look, and the honest answer is already worked out and
+        // thrown away.
+        let settings_screen = what_ships_in(THE_SETTINGS_SCREEN);
+        assert!(
+            !settings_screen.is_empty(),
+            "the settings screen could not be read, so this proves nothing"
+        );
+
+        // The screen asks rather than repeating the answer. A sentence typed
+        // into the screen would be a second copy of something the menu and
+        // where a new note is filed both read from one place.
+        assert!(
+            settings_screen.contains("where_the_default_accounts_notes_go"),
+            "the settings screen does not ask where the notes go, so anything \
+             it says about them is a sentence of its own that can drift from \
+             what the note folder menu offers"
+        );
+
+        // And the answer reaches somebody. A screen that works the sentence
+        // out and shows it nowhere passes every line above this one, which is
+        // exactly what `test_whether_message_text_may_be_fetched_is_offered_by_a_screen`
+        // was written about.
+        assert!(
+            settings_screen.contains(".with_label(&where_notes_go)"),
+            "the sentence is worked out and not put on a control, so nobody \
+             reads it"
+        );
+        assert!(
+            settings_screen.contains("set_accessible_name(&notes_answer, &where_notes_go)"),
+            "the sentence is on one Windows accessibility channel only, so \
+             Narrator and NVDA do not say the same thing"
+        );
+
+        // The section is in the panel's layout. Building a section, filling
+        // it, and never adding it is not hypothetical here: the Allow Changes
+        // section on the Permissions tab was built and left out for long
+        // enough that the one sentence saying none of this has run against a
+        // real account had nowhere to appear.
+        assert!(
+            settings_screen.contains("sizer.add_sizer(&notes_sec"),
+            "the Notes section is built and never put into the tab, so it is \
+             not on the screen at all"
+        );
+    }
+
+    #[test]
     fn test_every_setting_somebody_can_change_is_offered_by_a_screen() {
         // The mirror of the test above, and the reason it is needed is that
         // the test above cannot ask this. It skips `config.rs` and
