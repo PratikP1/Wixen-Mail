@@ -1100,21 +1100,25 @@ write path added by this milestone passes through that gate.
     offering a switch that does nothing.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
-  - Evidence: re-checked 2026-09-04 and still accurate. Neither "VJOURNAL" nor "OneNote" occurs
-    anywhere in `src/`. The existing `*_sync.rs` files are the shape to follow, and this is the
-    phase's largest genuine build.
-    Two things the previous evidence did not carry that a plan needs. **The schema work is
-    real.** The `notes` and `note_folders` tables (`src/data/message_cache/mod.rs:2028` to 2056)
-    carry no `pending`, no provider id and no version marker, and `NoteEntry` has nine fields,
-    none of them a sync field. Every other synced kind has all three, and the project's rule is
-    additive columns through `ensure_column_exists`. **A green test asserts the opposite of this
-    requirement and nothing names it.** `test_notes_are_not_offered_a_sync_they_cannot_do`
-    (`src/application/context_menu.rs:611` to 620) asserts the note-folder context menu does not
-    offer `Action::SyncNow`. It is correct today and must be inverted in the same commit that
-    adds a backend.
-    `new_item.rs:16` to 33 is where the "backend chosen by account type" reasoning already
-    lives, in prose, and its `syncs` predicate returns `false` for `Note` today. That predicate
-    is the natural seam.
+  - Evidence: rewritten 2026-09-10 by `05.1-03`, which made most of the old wording false.
+    **All four `[D]` lines below now hold structurally, and the requirement is not ticked**,
+    because the last one is about a real server and no build has met one.
+    `application::notes_backend` decides where an account's notes go and is the only place that
+    chooses a backend. `application::notes_sync` is the sync and knows no backend: a grep of it
+    for "caldav", "CalDav", "VJOURNAL" and "OneNote" returns nothing, which is checked rather
+    than claimed. `service::caldav_journal` is the first implementation, behind
+    `NotesService`, and `service::note_document` reads and writes the document it exchanges with
+    no network in it.
+    The schema work the old evidence called for is done, additively: `notes` carries `pending`,
+    `provider_note_id` and `provider_version` through `ensure_column_exists`, and
+    `deleted_notes` was created with `CREATE TABLE IF NOT EXISTS`, because
+    `application::deletions`'s rule needs a record that outlives the row.
+    The old evidence's two pointers were both wrong and are corrected here rather than left.
+    `new_item.rs` has no `syncs` predicate; the function is `supports`, and `05.1-02` made it
+    ask the seam rather than keep a second answer. And
+    `test_notes_are_not_offered_a_sync_they_cannot_do` did not need inverting: `05.1-02` made
+    the menu ask the seam, so that test asserts the arm for an account whose notes really do
+    stay here and it is still correct.
 
   - [D] One trait or enum decides where a note goes, and the account's protocol picks the
     backend. An account with no notes backend keeps its notes local and says so, rather than

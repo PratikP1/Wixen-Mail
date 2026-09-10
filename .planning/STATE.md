@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.1
 current_phase_name: Notes and contacts reach a server
-current_plan: 2
+current_plan: 4
 status: executing
-stopped_at: 05.1-02 merged at 50533c5; phase 05.1 continues at 05.1-03
-last_updated: "2026-09-10T17:42:11.757Z"
+stopped_at: Completed 05.1-03-PLAN.md
+last_updated: "2026-09-10T21:34:07.972Z"
 last_activity: 2026-09-10
-state_head: 50533c570e84f265a8cdc2ca37003a155004ec6b
+state_head: 1ef6f93f0ccb01c7fd9babe427b7896afcf23160
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 73
+  completed_plans: 74
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,10 +29,30 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **2 of 6 plans done.** 05.1-02 one place answers where an account's notes go, and the note folder menu, the settings screen and where a new note is filed all ask it. `main` is at `50533c5` after the merge, version `0.104.0`, and nothing is pushed.
+Phase: 05.1 (Notes and contacts reach a server). **3 of 6 plans done.** 05.1-03 gave the seam its first backend: a note made here reaches a calendar server's journal entries, a note changed there arrives, a deletion stays deleted and a note that moved in two places is a question somebody is asked. `main` is at `1ef6f93`, merge `d881dec`, version `0.105.0`, `guards/guards.toml` holds 697 records, and nothing is pushed.
 
-Current Plan: 2
+Current Plan: 4
 Total Plans in Phase: 6
+
+**What 05.1-03 built, and the two premises it found false.** The seam had no way
+to read a note's words: `notes_it_holds` answered identities and the other two
+operations wrote, so a sync built on it could learn that a backend held a note it
+had never seen and have nothing to write down. A fourth operation was added. And
+nothing could make an account answer `CalDavJournal`, so the whole backend would
+have been unreachable from production; an account with a calendar on a calendar
+server now answers it, because that server holds journal entries in the same
+place under the same sign-in, which is what the plan's own threat register
+anticipated.
+
+A third finding is for whoever writes `05.1-04` and `05.2-03`: the round trip
+cannot be byte-identical, and the phase README says this backend is the only
+candidate whose can be. The format has one escape for a line break and no way to
+write a carriage return inside a value, so a body typed on Windows comes back
+with plain line endings. Everything else survives, including a trailing space,
+which took a reader of its own: the calendar's reader trims.
+
+Nothing here has met a server. Nine ledger entries name the unknowns one at a
+time, 238 to 246.
 
 **What 05.1-02 built.** `application::notes_backend`, and three things that stopped
 answering the question for themselves. The note folder menu held a constant and a
@@ -672,8 +692,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T17:42:11.445Z
-Stopped at: 05.1-02 merged at 50533c5; phase 05.1 continues at 05.1-03
+Last session: 2026-09-10T21:33:52.822Z
+Stopped at: Completed 05.1-03-PLAN.md
 
 Earlier: Completed 04.2-05-PLAN.md
 
