@@ -79,6 +79,27 @@ a shipped requirement**, and a requirement change is not a paragraph in a plan. 
 is a question for Pratik with evidence in front of it, which is what `05.2-01` is
 arranged to produce.
 
+**Corrected 2026-09-10: this phase is the second to meet that problem, not the
+first, and the paragraph above was written believing it was the first.** `05.1-03`
+built the CalDAV backend and found the round trip cannot be byte-identical there
+either. RFC 5545 section 3.3.11 gives one escape for a line break and no way to
+write a carriage return inside a value, so a note typed on Windows comes back with
+plain line feeds from any calendar server. The phase 5.1 README's decision table
+said CalDAV "is the only candidate whose round trip can be byte-identical", and
+that sentence is what sent this problem here as though it belonged to OneNote
+alone.
+
+Three things change for `05.2-01`. The evidence it puts in front of Pratik covers
+both backends rather than one, so the question is what the criterion should say
+rather than whether OneNote may be excused from it. It is not discovering the
+problem, so it must not report it as new; `src/service/note_document.rs`'s header
+and `05.1-03-SUMMARY.md` carry the first measurement, and `.planning/REQUIREMENTS.md`
+carries the refutation under PIM-04. And the gap between the two backends is one of
+degree on this axis and not of kind: CalDAV loses carriage returns and keeps
+everything else, OneNote cannot round-trip the source at all. Say which is which
+rather than folding them together, because the answer for a backend that loses one
+byte class is not obviously the answer for one that loses the form.
+
 **And the ordering argument, which is the real one.** PIM-08 asks that the seam
 take a second implementation with no migration. A second implementation written
 in the same week as the seam, by the same person, against the same assumptions,

@@ -215,7 +215,9 @@ Written down so you do not spend time reporting things already on the list.
   about it is new in this version: the client, the local folders, the sync, and
   the policy that removes mail from the server. Mail is left on the server
   unless you turn that off, which is the setting to be careful with.
-- **Notes do not sync anywhere.** They stay on this computer.
+- **Notes only sync if you added a calendar by its address.** Everything else
+  keeps its notes on this computer, including Gmail and Outlook accounts. The
+  entry higher up this page says what happens when they do sync.
 - **The cached mail on this computer is not encrypted.** Anybody who can read
   your user folder can read your mail. Passwords and tokens are not in there,
   they are in the Windows credential store.

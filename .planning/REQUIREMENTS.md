@@ -1048,9 +1048,14 @@ write path added by this milestone passes through that gate.
     user meets them, not left only in the changelog.
 
 - [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
-  - Evidence: re-checked 2026-09-04 and still accurate. `ls src/application/*sync*.rs` returns
+  - Evidence: **that paragraph stopped being true on 2026-09-10, when `05.1-03` created
+    `src/application/notes_sync.rs` and a CalDAV account started sending its notes.** It read:
+    re-checked 2026-09-04 and still accurate, `ls src/application/*sync*.rs` returns
     `caldav_sync`, `collection_sync`, `contacts_sync`, `mail_sync`, `pop_sync`, `sync_marker`
-    and `tasks_sync`, and no `notes_sync.rs`.
+    and `tasks_sync`, and no `notes_sync.rs`. It is kept because the requirement is still open
+    and the reason has changed: notes now sync for an account whose calendar came from a CalDAV
+    server, and stay on this computer for every other account, which is most of them. Nothing
+    has met a real server.
     **Three of the six criteria below already ship, and the requirement did not know it.** The
     content model was not invented twice: `long_text.rs` is the shared Markdown reader,
     `pulldown-cmark` is imported there at line 17, and the notes editor labels its box "Body, in
@@ -1078,7 +1083,9 @@ write path added by this milestone passes through that gate.
     **The byte-identical round trip now has a test that goes through storage** rather than
     through a formatter, in `notes.rs`, with a guard record whose break is a trim in `save_note`.
 
-  - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer.
+  - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer. **Corrected 2026-09-10 in that
+    page and here: they stay on this computer unless the account's calendar came from a CalDAV
+    server, and the page now says which accounts sync and what a sync loses.**
   - **Decided 2026-08-29 by Pratik.** Not one target. A note has a backend chosen by the
     account it belongs to, the local note itself is a first-class Markdown document, and the
     seam is shaped so a hosted service can be added later without a migration. That is three
@@ -1092,12 +1099,29 @@ write path added by this milestone passes through that gate.
   - [D] The stored form is the Markdown source. What a note round-trips through any backend is
     that source, so a note edited here and read back is byte-identical when nothing changed.
 
+    **The "any backend" half of that was refuted on 2026-09-10 by `05.1-03`, the first backend
+    to exist.** It holds through storage, which `05.1-01` proved with a test that goes through
+    `save_note` and `get_note`. It cannot hold through a calendar server: RFC 5545 section
+    3.3.11 gives one escape for a line break and no way to write a carriage return inside a
+    value at all, so a body typed on Windows comes back with plain line feeds. Everything else
+    survives, and `src/service/note_document.rs`'s header carries the measurement.
+
+    This was expected to be OneNote's problem alone, and phase 5.2 was cut partly on that
+    belief. It is the format's problem, not the service's, so the criterion has to be decided
+    for the backend that already shipped rather than only for the one that has not. What the
+    decision is remains open: either this criterion is reworded to be about storage, or it is
+    reworded to name what each backend may lose, and phase 5.2 arrives second rather than
+    first. `docs/ALPHA_TESTING.md` and `docs/changelog.md` already tell a user plainly.
+
   - [D] A screen reader reads the rendered structure, not the raw source: headings announce as
     headings and lists as lists, the way a contact's notes already do.
 
   - [D] Note sync goes through `Allowed::personal_information`.
   - [D] Until a backend is live, the settings screen says notes do not sync yet, rather than
-    offering a switch that does nothing.
+    offering a switch that does nothing. **Reworded in the product by `05.1-02` and left here
+    with its old shape visible.** The screen says this account has no notes backend, not "not
+    yet", because a consumer Gmail account still has none after all three backends ship. A
+    backend is now live for CalDAV accounts, and the same screen names where those notes go.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
   - Evidence: rewritten 2026-09-10 by `05.1-03`, which made most of the old wording false.
