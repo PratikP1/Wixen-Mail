@@ -30,6 +30,7 @@
 //! thing that differs between them is the list, and the list can be tested.
 
 use crate::application::new_item::{ContainerKind, ItemKind};
+use crate::application::notes_backend::NotesBackend;
 
 /// What has focus when the menu key is pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -444,6 +445,17 @@ static NOTE_FOLDERS: &[Entry] = &[
     entry("&Delete this folder", Action::DeleteContainer),
 ];
 
+/// What to offer on a note folder, given where that account's notes go.
+///
+/// The one menu here whose answer is not a constant. Every other row's list
+/// depends on nothing but which row it is; a note folder's depends on the
+/// account, because an account whose notes reach a server can be asked to
+/// send them now and an account whose notes stay here cannot.
+pub fn note_folder_entries(notes: &NotesBackend) -> &'static [Entry] {
+    let _ = notes;
+    NOTE_FOLDERS
+}
+
 static CONTACT_GROUPS: &[Entry] = &[
     // First, because it is what a group is for.
     entry("&Write to this group", Action::WriteToGroup),
@@ -712,6 +724,45 @@ mod tests {
             .collect();
 
         assert!(!offered.contains(&Action::SyncNow));
+    }
+
+    #[test]
+    fn test_the_note_folder_menu_offers_a_sync_exactly_where_the_seam_says_one_exists() {
+        // One row per answer the seam can give, and the expected column is
+        // written down rather than worked out. That is the difference between
+        // this and a check that cannot fail: the four tests above compare a
+        // menu against a predicate in another module, so a break inside this
+        // file moves one side only. A notes check written that way would
+        // compare the menu against the seam and would have both sides come
+        // from the seam, so making the seam always answer that a backend
+        // exists would move them together and nothing would go red.
+        //
+        // The last row is the decision `NotesBackend::Other` forces: a build
+        // that meets the name of a backend it does not recognise has no
+        // client for it, so it cannot sync to it. The note is still read and
+        // still kept, which is what the variant is for.
+        use crate::application::notes_backend::NotesBackend;
+
+        let expected = [
+            (NotesBackend::ThisComputer, false),
+            (NotesBackend::CalDavJournal, true),
+            (NotesBackend::Other("something-later".to_string()), false),
+        ];
+
+        for (backend, offers_a_sync) in expected {
+            let offered: Vec<Action> = note_folder_entries(&backend)
+                .iter()
+                .map(|e| e.action)
+                .collect();
+            assert_eq!(
+                offered.contains(&Action::SyncNow),
+                offers_a_sync,
+                "{backend:?}: the menu and what is written down disagree"
+            );
+            // Whatever the answer, a folder can still be made and removed.
+            assert!(offered.contains(&Action::NewContainer), "{backend:?}");
+            assert!(offered.contains(&Action::DeleteContainer), "{backend:?}");
+        }
     }
 
     #[test]
