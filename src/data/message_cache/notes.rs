@@ -525,6 +525,99 @@ line two
         assert_eq!(loaded.body, "", "an empty note came back holding something");
     }
 
+    /// A note whose stored form says nothing at all is still read.
+    ///
+    /// The column is `format TEXT DEFAULT 'plain'` and carries no NOT NULL, so
+    /// a row that arrived without one holds a null rather than a word. Every
+    /// note this program has ever written has a word in it, which means the
+    /// only way to meet a null is a row from somewhere else: an older build, a
+    /// later one, or a sync that names a subset of the columns.
+    ///
+    /// Refusing the note is the wrong answer to that. It is somebody's note,
+    /// and what is missing from the row is a word nothing consults.
+    #[test]
+    fn test_a_note_whose_stored_form_says_nothing_is_still_read() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "From somewhere else".to_string(),
+                body: "Worth keeping".to_string(),
+                format: "plain".to_string(),
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+            })
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE notes SET format = NULL WHERE id = ?1",
+                rusqlite::params!["n1"],
+            )
+            .unwrap();
+
+        let loaded = cache
+            .get_note("n1")
+            .expect("a note was refused because a word nothing reads was missing from its row")
+            .expect("the note that was just saved");
+        assert_eq!(
+            loaded.format, "plain",
+            "a row with nothing in the column did not read as what the schema defaults to"
+        );
+    }
+
+    /// A word this build did not write survives being read and written back.
+    ///
+    /// `AddressBook::Other` is this project's worked example and its doc
+    /// comment says why: a word this code does not recognise is still somebody
+    /// else's answer, and forgetting it rewrites their row on the next save
+    /// without anybody asking for that.
+    #[test]
+    fn test_a_stored_form_this_build_did_not_write_survives_being_written_back() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note(&NoteEntry {
+                id: "n1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(folder.id.clone()),
+                title: "From a later build".to_string(),
+                body: "Worth keeping".to_string(),
+                format: "plain".to_string(),
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+            })
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE notes SET format = 'text/html' WHERE id = ?1",
+                rusqlite::params!["n1"],
+            )
+            .unwrap();
+
+        let read_back = cache.get_note("n1").unwrap().expect("the note");
+        cache.save_note(&read_back).unwrap();
+
+        let still_there: String = cache
+            .conn
+            .query_row(
+                "SELECT format FROM notes WHERE id = ?1",
+                rusqlite::params!["n1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            still_there, "text/html",
+            "a word this build does not recognise was lost by reading the note and saving it again"
+        );
+    }
+
     /// What was stored is read for whatever structure is in it, both ways.
     ///
     /// This is the promise the note editor's own accessible description makes,
