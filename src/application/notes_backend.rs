@@ -27,6 +27,11 @@
 //! [`NotesBackend::CalDavJournal`], and phase 5.2 adds OneNote. Neither of
 //! those changes the shape of the question, which is the point of asking it
 //! here first.
+//!
+//! [`NotesService`] is the same statement in a second form: the operations a
+//! backend performs, with nothing behind them. What a backend has to answer,
+//! and what it may not decide for itself, is written out in
+//! `docs/development/the-notes-seam.md`.
 
 use crate::data::account::Account;
 
@@ -203,6 +208,150 @@ pub fn where_the_default_accounts_notes_go(
     accounts: &[Account],
 ) -> String {
     where_they_go(default_account(default_id, accounts))
+}
+
+/// What one backend calls a note, and how it says whether that copy has moved.
+///
+/// Both halves belong to the pairing of a note and a backend rather than to the
+/// note, which is the shape
+/// [`crate::data::message_cache::ProviderIdentity`] already takes for a
+/// contact, and its own comment says what went wrong before it did: a flag kept
+/// on the contact meant a push refused at one address book either lost the
+/// change at the other or resent it to both for ever.
+///
+/// `version` is an `Option` because not every backend gives one, and a backend
+/// that does give one does not promise it is opaque or that it changes only
+/// when the content does. A OneNote page has no ETag at all: what it has is a
+/// `lastModifiedDateTime` the service writes. Reading a version marker as an
+/// opaque token that means "this is the copy I saw" is therefore a CalDAV
+/// assumption, and `docs/development/the-notes-seam.md` says so in writing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ANoteThere {
+    /// What this backend calls the note. Opaque to everything here.
+    pub named: String,
+    /// The version marker this backend last gave, when it gives one.
+    pub version: Option<String>,
+}
+
+/// What a backend said when it was asked to do something.
+///
+/// Separate variants rather than one error string, and the reason is not
+/// tidiness. A crate's error text is written for whoever is reading a stack
+/// trace, and what reaches somebody here is read aloud. The three that a
+/// person can do something about have to be told apart from the ones they
+/// cannot, because the sentence differs and so does what it asks of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatTheBackendSaid {
+    /// It did what was asked, and this is what it calls the note now.
+    ///
+    /// A write may change the answer. A OneNote page's body cannot be
+    /// replaced, only appended to, so a backend may have to remove a page and
+    /// make another one to leave it saying what was asked; that changes its
+    /// identity, and the caller has to be told rather than left holding the
+    /// old one.
+    Done(ANoteThere),
+    /// This backend does not hold that note.
+    ///
+    /// Not an error. Somebody deleted it at the other end, and what the caller
+    /// does about it is written down rather than guessed at.
+    ItIsNotThere,
+    /// The backend's copy moved since this computer last looked.
+    ///
+    /// Nothing was written. Which copy is kept is not the backend's decision,
+    /// and this variant exists so that it cannot quietly make one:
+    /// [`crate::application::conflict_choice`] is where that is asked, and
+    /// this is how a backend hands the question over.
+    ItMovedFirst {
+        /// What the backend says the marker is now, so the hold that is about
+        /// to be written can record it and the next sync does not ask the same
+        /// question again.
+        version_now: Option<String>,
+    },
+    /// Nobody is signed in to this account.
+    ///
+    /// Its own variant rather than one more failure, because it is the one
+    /// thing on this list only the person can fix, and a count says "1 problem"
+    /// on every sync forever while telling them nothing.
+    NotSignedIn,
+    /// Refused because of what this program is allowed to change.
+    ///
+    /// Apart from [`Self::NotSignedIn`] because what fixes it is different: one
+    /// is a sign-in and one is a setting on the settings screen, and the
+    /// sentence has to name the right one.
+    NotAllowedToChangeAnything,
+    /// It could not be reached at all, and this is what was said.
+    ///
+    /// The string is for the log. Nothing reads it out: text a crate wrote for
+    /// a developer is not text to speak to somebody whose notes did not sync.
+    CouldNotBeReached(String),
+}
+
+/// What a notes sync asks of a service.
+///
+/// Named for what it is rather than for any provider's HTTP, which is the
+/// argument [`crate::application::tasks_sync`]'s own `TaskService` makes about
+/// itself: saying it in the type is what lets the deciding be tested, because
+/// every decision a sync makes can then be driven without an account.
+///
+/// **Nothing implements this.** No backend exists, nothing here opens a
+/// connection, and there is no fake either: a second implementation written
+/// the same day as the interface, by the same person, against the same
+/// assumptions, agrees with the interface and proves nothing. `05.1-04` writes
+/// one shaped from what OneNote really does, which is a different thing, and
+/// `05.1-03` writes the first real one.
+///
+/// The methods are written as functions returning a future rather than as
+/// `async fn`, and that is not a style choice. Two lints pull opposite ways
+/// here and the bind is worth recording rather than rediscovering.
+/// `pub(crate)`, which is where `TaskService` sits, is `dead_code` for a trait
+/// with no implementor, and this has none on purpose. `pub` is reachable from
+/// the crate root so `dead_code` does not fire, but `async fn` in a public
+/// trait warns, because a caller cannot then name a `Send` bound on the
+/// future. Both are build failures under `-D warnings` and silencing either
+/// with an `allow` is what `CLAUDE.md` forbids, so what is left is the
+/// desugared form the lint itself suggests. It says the `Send` bound out loud,
+/// which a sync spawned on the runtime needs anyway, so the shape the lints
+/// forced is also the more honest one.
+///
+/// A container is an opaque string the backend hands out and this code never
+/// takes apart. A CalDAV journal lives in one collection at one address; a
+/// OneNote page lives four levels down, in a section in a section group in a
+/// notebook. "Which container" is therefore not one identifier everywhere, and
+/// anything here that split a container on a separator would be reading a
+/// CalDAV address.
+pub trait NotesService {
+    /// Every note this backend holds in one place, and what it calls each.
+    fn notes_it_holds(
+        &self,
+        container: &str,
+    ) -> impl std::future::Future<Output = crate::common::Result<Vec<ANoteThere>>> + Send;
+
+    /// Leave the backend's copy of one note saying this.
+    ///
+    /// Not "replace the body", which is an operation some backends do not have.
+    /// What a backend is asked for is the end state, and how it reaches it is
+    /// its own business as long as it reports what it ended up calling the
+    /// note.
+    ///
+    /// `known_as` is `None` for a note the backend has never held.
+    fn leave_a_note_saying(
+        &self,
+        container: &str,
+        known_as: Option<&ANoteThere>,
+        title: &str,
+        body: &str,
+    ) -> impl std::future::Future<Output = crate::common::Result<WhatTheBackendSaid>> + Send;
+
+    /// Take one note away.
+    ///
+    /// `Done` carries what the backend called the note it removed, because the
+    /// record of the deletion outlives the row and has to name it. See
+    /// [`crate::application::deletions`] for why that record exists at all.
+    fn take_a_note_away(
+        &self,
+        container: &str,
+        known_as: &ANoteThere,
+    ) -> impl std::future::Future<Output = crate::common::Result<WhatTheBackendSaid>> + Send;
 }
 
 #[cfg(test)]
