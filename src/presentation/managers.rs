@@ -2461,7 +2461,18 @@ pub fn new_pim_item(
         let s = lock_state(state);
         (s.accounts.clone(), s.default_account_id.clone())
     };
-    let Some(destination) = new_item::destination(kind, &accounts, default_id.as_deref()) else {
+    // Whether the default account has a calendar server, which is what decides
+    // where its notes go and therefore which account a new note is filed
+    // under. Read from the store here rather than answered again in
+    // `new_item`, which is handed accounts and never a store.
+    let a_calendar_server =
+        crate::application::notes_backend::default_account(default_id.as_deref(), &accounts)
+            .is_some_and(|account| {
+                crate::application::notes_backend::has_a_calendar_server(&cache, &account.id)
+            });
+    let Some(destination) =
+        new_item::destination(kind, &accounts, default_id.as_deref(), a_calendar_server)
+    else {
         return send_refusal(tx, rt, "Add an account before composing a message");
     };
 
@@ -2855,7 +2866,13 @@ pub fn new_container(
     // perfectly well, so the fallback is this computer rather than a refusal.
     // A contact group is always this computer, because nothing carries one
     // anywhere.
-    let destination = new_item::container_destination(kind, &accounts, default_id.as_deref());
+    let a_calendar_server =
+        crate::application::notes_backend::default_account(default_id.as_deref(), &accounts)
+            .is_some_and(|account| {
+                crate::application::notes_backend::has_a_calendar_server(&cache, &account.id)
+            });
+    let destination =
+        new_item::container_destination(kind, &accounts, default_id.as_deref(), a_calendar_server);
 
     // Said before the name is typed rather than after it is saved. A group is
     // the one container somebody is likely to expect their provider to already
@@ -3187,6 +3204,17 @@ fn store_new_item(
             pinned: filled.ticked(FieldName::Pinned),
             created_at: stamp.clone(),
             updated_at: stamp,
+            // Made here, so it has to go up at the next sync, exactly as a
+            // task made here does. An account whose notes stay on this
+            // computer never runs a notes sync, so the flag simply sits there
+            // and costs nothing; the alternative, asking the seam here, would
+            // be a second place deciding where an account's notes go.
+            pending: true,
+            // No backend has ever held this note, so there is nothing it is
+            // called anywhere else and no version to compare against. The push
+            // reads that as a note to create rather than one to update.
+            known_as: None,
+            known_version: None,
         }),
         // Both have their own paths: mail opens the composer, a contact opens
         // the contact dialog, and neither is a title in a box.
@@ -5209,6 +5237,9 @@ mod tests {
                 pinned: false,
                 created_at: now_stamp(),
                 updated_at: now_stamp(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .expect("a note to move");
 
@@ -6685,9 +6716,10 @@ fn moving_can_be_told(
 ///
 /// A calendar is told apart by what it came from rather than by a prefix, so
 /// the calendar sync's own answer is asked rather than a second one written
-/// here. A note is never waiting, because a note goes nowhere at all;
-/// `05.1-03` is the plan that gives notes somewhere to go, and it comes through
-/// [`file_under`], so this is one of the places it has to change.
+/// here. A note is answered the same way, from
+/// [`crate::application::notes_backend`], which is the one place that says
+/// where an account's notes go. That answer needs the folder's account and the
+/// store, both of which are here, and it needs neither to be guessed at.
 ///
 /// Public for the reason [`file_under`] is: this is a decision about rows, the
 /// fixture that tells the right question from the wrong one is a stored list
@@ -6719,8 +6751,33 @@ pub fn will_have_to_be_sent(
             | WhereAChangeGoes::Outlook => true,
             WhereAChangeGoes::OnlyReadable | WhereAChangeGoes::KeptHere => false,
         },
-        // A note goes nowhere, so there is never anything to wait for.
-        ItemKind::Note => false,
+        // Where that folder's account sends its notes, asked of the one place
+        // that answers it. A note folder names an account and the account's
+        // answer is the whole of it, so this is still a question about the
+        // destination rather than about the account somebody happens to be
+        // looking at: file a note into another account's folder and the answer
+        // comes from that account.
+        //
+        // A folder that is not there answers no. Between the chooser and the
+        // write somebody else's sync can take it away, and claiming on the way
+        // past that something is on its way to an account is the one thing
+        // this must not do.
+        ItemKind::Note => cache
+            .get_note_folder(into)
+            .ok()
+            .flatten()
+            .and_then(|folder| {
+                let accounts = cache.load_accounts().unwrap_or_default();
+                let account = accounts
+                    .iter()
+                    .find(|account| account.id == folder.account_id)
+                    .cloned()?;
+                Some(crate::application::notes_backend::for_account(
+                    Some(&account),
+                    crate::application::notes_backend::has_a_calendar_server(cache, &account.id),
+                ))
+            })
+            .is_some_and(|backend| backend.goes_somewhere_else()),
         // None of these three reaches a filing that says where it went.
         // `kept_in` gives them no container, so the chooser is never opened
         // for one; a contact and a reminder take their own paths before it and
@@ -6940,11 +6997,18 @@ pub fn file_under(
                 ))
             })?;
             note.folder_id = Some(into.to_string());
+            note.pending = true;
             if filing.makes_a_new_row() {
-                // Nothing else to clear. A note has no provider identity and
-                // no waiting flag, because a note goes nowhere. `05.1-03` is
-                // what gives it both, and it comes through here.
+                // A note keeps what its backend calls it in columns of its
+                // own, the way an event does, so a new identifier is not
+                // enough on its own. Kept, the push would ask the backend to
+                // change its copy of the original rather than make a second
+                // one, and the original would be the one that moved: that is
+                // data loss at somebody's server. The version marker goes with
+                // the name because it describes that same copy.
                 note.id = new_id("note");
+                note.known_as = None;
+                note.known_version = None;
             }
             cache.save_note(&note)?;
             Ok(note.id)

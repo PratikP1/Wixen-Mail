@@ -310,7 +310,7 @@ fn check_settings(
     };
     // No accounts: this walk is about colour, and the one section that reads
     // them says so in words rather than refusing to build.
-    let widgets = wx_settings::build_settings_dialog(parent, &config, &[], a11y);
+    let widgets = wx_settings::build_settings_dialog(parent, &config, &[], false, a11y);
 
     check(
         "settings dialog",

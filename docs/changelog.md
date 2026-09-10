@@ -6,6 +6,54 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Notes can now be sent to a calendar server and read back from one.** If an
+  account already has a calendar you added by its address, that same server
+  holds journal entries, and your notes for that account now go there under
+  the same sign-in. Nothing else changes: an account with no calendar server
+  keeps its notes on this computer, and Settings goes on saying so.
+
+  Press the menu key on a note folder and choose "Sync notes now". Settings, on
+  the Calendar and PIM tab, says where that account's notes go and says plainly
+  that this has never been tried against a real server.
+
+  A note you change here waits until it has been sent, and pinning a note or
+  moving it between folders counts as a change. Copying a note makes a second
+  note at the server rather than writing over the first.
+
+  A change this program is not allowed to make is not a failure. It stays here,
+  it goes on waiting, and the sync says so in the same words your calendar,
+  task and contact syncs already use: turn on Allow Changes in Settings to send
+  it.
+
+  A note you delete stays deleted. The fact of the deletion outlives the note,
+  so a server whose own list has not caught up cannot put it back on your
+  screen, and deleting a folder leaves a record for every note that was in it.
+
+  A note you changed here that also changed at the server is not resolved for
+  you. Both copies are kept and you are asked which to keep, through the same
+  Choose Which Copy to Keep window your contacts and calendar already use, and
+  the question says "note" rather than borrowing the words for a contact.
+  Nothing is sent and nothing is written over until you answer.
+
+  Changing a note keeps everything else the server had on it. Anything set in
+  another program, such as categories, is left exactly where it was rather than
+  thrown away by a note written from nothing.
+
+  Known limitation about what survives the journey: **Windows line endings in a
+  note's body become plain ones.** The format a calendar server exchanges has
+  one way of writing a line break and no way of writing a carriage return
+  inside a value at all, so a body typed with CRLF comes back with LF. Nothing
+  else changes: a trailing space, a backslash, a comma, an emoji and a line in
+  your note that looks like part of the format all survive. Notes kept on this
+  computer are unaffected; this is only about a note that goes to a server.
+
+  Known limitation, and it is a large one: **nothing here has ever met a real
+  server.** Every part of this has been driven against a stand-in written in
+  this repository, which proves the program agrees with itself and says nothing
+  about anybody's calendar server.
+
 ### Changed
 
 - **Your notes still stay on this computer, and one place now says so.** Nothing

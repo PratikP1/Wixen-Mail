@@ -76,14 +76,28 @@ pub enum TheOtherCopy {
     AnAddressBook,
     /// A calendar item, at a CalDAV server.
     ACalendar,
+    /// A note, wherever that account's notes are kept.
+    ///
+    /// Named for the seam rather than for one backend, because
+    /// [`crate::application::notes_backend`] answers three ways and all three
+    /// reach this same question.
+    ANotesBackend,
 }
 
 impl TheOtherCopy {
     /// What to call it in the middle of a sentence.
+    ///
+    /// "Your notes backend" and not "your notes", although the shorter one
+    /// reads better beside the two above it. These words go into five
+    /// sentences and one of them is "What {} has", which needs something
+    /// singular; "What your notes has" is not English. The phrase is already
+    /// the one the settings screen says out loud, in "this account has no
+    /// notes backend", so it is a word somebody meets before they meet this.
     pub fn called(self) -> &'static str {
         match self {
             TheOtherCopy::AnAddressBook => "your address book",
             TheOtherCopy::ACalendar => "your calendar",
+            TheOtherCopy::ANotesBackend => "your notes backend",
         }
     }
 
@@ -92,6 +106,7 @@ impl TheOtherCopy {
         match self {
             TheOtherCopy::AnAddressBook => "contact",
             TheOtherCopy::ACalendar => "calendar item",
+            TheOtherCopy::ANotesBackend => "note",
         }
     }
 }

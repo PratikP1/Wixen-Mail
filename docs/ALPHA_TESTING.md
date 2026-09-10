@@ -114,6 +114,28 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
+- **Notes can now go to a calendar server, and no build has ever sent one to a
+  real server.** If you added a calendar by its address, that same server is
+  where your notes for that account now go, under the same sign-in. Settings
+  says so, on the Calendar and PIM tab, and says it is experimental.
+
+  Every part of it has been driven against a stand-in written for the tests, so
+  we know the program asks for the right things in the right order and we do
+  not know what a real server says back. What we do not know, one thing at a
+  time: whether a server accepts the document this writes at all, whether its
+  own listing names a note the way this reads it, whether the version marker it
+  gives survives a round trip, whether it takes a deletion, and whether it
+  reports a clash the way the stand-in does.
+
+  If you try it on notes you care about, keep a copy. Turning Allow Changes off
+  for that account stops anything leaving this computer while you look.
+
+  One thing that does change on the way: **a note's line endings.** The format
+  calendar servers exchange has one way of writing a line break, so a note you
+  typed on Windows comes back with plain line breaks rather than Windows ones.
+  Nothing else about the text changes, and notes kept on this computer are not
+  affected at all.
+
 - **Moving a task to another list is the one thing on this page that could lose
   a task.** Press the menu key on a task and choose "Move to another list", or
   press `Ctrl+Shift+V`. Events and notes have the same command.

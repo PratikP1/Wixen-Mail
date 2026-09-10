@@ -3147,6 +3147,9 @@ mod tests {
             pinned: true,
             created_at: "2026-01-01".into(),
             updated_at: "2026-07-26".into(),
+            pending: false,
+            known_as: None,
+            known_version: None,
         }
     }
 

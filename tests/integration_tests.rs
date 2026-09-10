@@ -671,6 +671,9 @@ fn test_a_note_written_in_markdown_is_read_back_with_its_structure() {
             pinned: false,
             created_at: "2026-07-31T00:00:00Z".to_string(),
             updated_at: "2026-07-31T00:00:00Z".to_string(),
+            pending: false,
+            known_as: None,
+            known_version: None,
         })
         .expect("the note saves");
 

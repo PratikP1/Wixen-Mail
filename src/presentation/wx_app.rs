@@ -3353,12 +3353,23 @@ impl WxMailApp {
                 // window is open.
                 wire_context_menu(&notes_sb.tree, {
                     let state = state.clone();
+                    let message_cache = message_cache.clone();
                     move || {
                         let s = lock_state(&state);
-                        let notes = crate::application::notes_backend::for_default_account(
-                            s.default_account_id.as_deref(),
-                            &s.accounts,
-                        );
+                        // Whether that account has a calendar server is a
+                        // stored fact, so the seam is asked through the store.
+                        // With no store open nothing has been read yet and no
+                        // account can have one, which is the same answer.
+                        let notes = match message_cache.as_ref() {
+                            Some(cache) => {
+                                crate::application::notes_backend::for_the_default_account_in(
+                                    cache,
+                                    s.default_account_id.as_deref(),
+                                    &s.accounts,
+                                )
+                            }
+                            None => crate::application::notes_backend::NotesBackend::ThisComputer,
+                        };
                         Some(crate::application::context_menu::note_folder_entries(
                             &notes,
                         ))
@@ -4148,9 +4159,15 @@ impl WxMailApp {
                                     send_status(&ui_tx, &runtime, "Tasks sync requested...");
                                     spawn_tasks_sync(app);
                                 }
-                                // Notes go nowhere and mail has its own Check
-                                // Mail, so neither is offered this.
-                                PimModule::Notes | PimModule::Mail | PimModule::Reminders => {
+                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    spawn_notes_sync(app);
+                                }
+                                // Mail has its own Check Mail, and a reminder
+                                // is a property of something else everywhere
+                                // this program can reach, so neither is
+                                // offered this.
+                                PimModule::Mail | PimModule::Reminders => {
                                     send_status(
                                         &ui_tx,
                                         &runtime,
@@ -5071,8 +5088,14 @@ impl WxMailApp {
                             // account's notes go, and that is answered from its
                             // provider rather than from its id.
                             let accounts = lock_state(&state).accounts.clone();
-                            let palette =
-                                handle_settings(&frame, &ui_tx, &runtime, &accounts, &a11y);
+                            let palette = handle_settings(
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &accounts,
+                                &message_cache,
+                                &a11y,
+                            );
                             // The notification area follows what was just
                             // saved. Without this, ticking that box did nothing
                             // until the next start, and closing the window
@@ -14664,7 +14687,7 @@ fn open_for_scanning(
             // The accounts as this window has them. A fresh scan profile has
             // none, so the Notes section says so rather than naming one.
             let accounts = lock_state(state).accounts.clone();
-            handle_settings(frame, tx, rt, &accounts, a11y);
+            handle_settings(frame, tx, rt, &accounts, cache, a11y);
         }
         ScanTarget::Accounts => {
             // A fresh profile has no accounts, so nothing here is old enough
@@ -15611,6 +15634,7 @@ fn handle_settings(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     accounts: &[crate::data::account::Account],
+    cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
 ) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
@@ -15631,7 +15655,20 @@ fn handle_settings(
         }
     };
     let config = mgr.app_config().clone();
-    match wx_settings::show_settings_dialog(frame, &config, accounts, a11y) {
+    // Whether the default account has a calendar server, which is what decides
+    // where its notes go. Read here rather than in the dialog because it is a
+    // row in the message cache and the dialog has no handle on one. With no
+    // store open nothing has been read yet, and no account can have one.
+    let a_calendar_server = cache.as_ref().is_some_and(|cache| {
+        crate::application::notes_backend::default_account(
+            Some(config.default_account_id.as_str()),
+            accounts,
+        )
+        .is_some_and(|account| {
+            crate::application::notes_backend::has_a_calendar_server(cache, &account.id)
+        })
+    });
+    match wx_settings::show_settings_dialog(frame, &config, accounts, a_calendar_server, a11y) {
         wx_settings::SettingsResult::Updated(new_config) => {
             // Applied to the running application, not only written to disk.
             // Saving a preference that needs a restart to take effect is a
@@ -20770,6 +20807,90 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
     });
 }
 
+/// Send this account's notes wherever they go, on a blocking thread.
+///
+/// The same shape as [`spawn_tasks_sync`] above, so there is one pattern here
+/// and not two: the store is opened on the worker because `MessageCache` is not
+/// `Send`, the work is asked for by one call, and what comes back becomes a
+/// status line and a repaint.
+///
+/// Which backend is used and where it is pointed are not decided here.
+/// [`crate::application::notes_backend::sync_the_notes_of`] is the one place
+/// that chooses, which is what lets a second backend be a second arm there and
+/// nothing at all in this file.
+fn spawn_notes_sync(app: AppHandles<'_>) {
+    use crate::application::notes_backend::{WhatTheNotesSyncDid, sync_the_notes_of};
+
+    let AppHandles { state, tx, rt } = app;
+    let tx = tx.clone();
+    let accounts = state
+        .lock()
+        .ok()
+        .map(|s| s.accounts.clone())
+        .unwrap_or_default();
+    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        let aid = account_id.as_deref().unwrap_or("default");
+        let Some(account) = accounts.iter().find(|account| account.id == aid).cloned() else {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(
+                "Notes could not be synced: no account is open".into(),
+            ));
+            return;
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(
+                "Notes could not be synced: there is nowhere to keep them".into(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Notes could not be synced: {e}"
+                )));
+                return;
+            }
+        };
+
+        let said = match handle.block_on(sync_the_notes_of(&cache, &account)) {
+            Ok(said) => said,
+            Err(e) => {
+                let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
+                    "Notes could not be synced: {e}"
+                )));
+                return;
+            }
+        };
+
+        let status = match said {
+            WhatTheNotesSyncDid::TheyStayHere => {
+                "This account's notes are kept on this computer, so there is \
+                 nothing to sync"
+                    .to_string()
+            }
+            WhatTheNotesSyncDid::NobodyIsSignedIn => {
+                "Nobody is signed in to the server this account's notes go to".to_string()
+            }
+            WhatTheNotesSyncDid::ItRan(result) => {
+                // The messages go to the log and the count goes on screen,
+                // because the status line has one line and a failure per note
+                // would fill it. A note's title is the person's own words in
+                // the same way a message body is, and none of these carry one.
+                for problem in &result.errors {
+                    tracing::warn!("Notes sync: {}", problem);
+                }
+                format!("Notes synced: {}", result.summary())
+            }
+        };
+        let _ = tx.try_send(UIUpdate::StatusUpdated(status));
+        // The panel is showing what was there before this ran.
+        let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Notes));
+    });
+}
+
 /// Spawn calendar sync on a blocking thread (MessageCache is not Send).
 pub(crate) fn spawn_calendar_sync(
     state: &Arc<StdMutex<WxUIState>>,
@@ -23466,6 +23587,9 @@ mod tests {
                 pinned: false,
                 created_at: "2026-01-01".into(),
                 updated_at: "2026-07-26".into(),
+                pending: false,
+                known_as: None,
+                known_version: None,
             })
             .unwrap();
 

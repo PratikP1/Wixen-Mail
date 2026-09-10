@@ -360,15 +360,32 @@ impl CalDavClient {
         username: &str,
         password: &str,
     ) -> Result<HeldAtTheServer> {
+        self.document_at(event_url, username, password, "Reading an event")
+            .await
+    }
+
+    /// One document the server holds, and the version it is at.
+    ///
+    /// What [`Self::fetch_event`] always was, with the sentence a refusal is
+    /// reported under handed in rather than fixed. A journal entry is fetched
+    /// exactly the same way and by the same words, and "Reading an event" is
+    /// the wrong thing to say about somebody's note.
+    pub async fn document_at(
+        &self,
+        url: &str,
+        username: &str,
+        password: &str,
+        doing: &str,
+    ) -> Result<HeldAtTheServer> {
         let response = self
             .http
-            .reading(event_url)
+            .reading(url)
             .basic_auth(username, Some(password))
             .send()
             .await
             .map_err(|e| Error::Network(format!("CalDAV GET failed: {}", e)))?;
 
-        refused_with(&response, "Reading an event")?;
+        refused_with(&response, doing)?;
 
         let tag = named_version(response.headers());
         let document = response
@@ -376,6 +393,138 @@ impl CalDavClient {
             .await
             .map_err(|e| Error::Network(format!("CalDAV response read error: {}", e)))?;
         Ok(HeldAtTheServer { document, tag })
+    }
+
+    /// Every journal entry one collection holds, by address and version.
+    ///
+    /// A `PROPFIND` at one level down rather than a `REPORT` with a component
+    /// filter, because this asks only what is there and at what version, and
+    /// every server that speaks the protocol answers this without being told
+    /// what kind of thing it is looking for. What each one really is is decided
+    /// when it is read, by
+    /// [`crate::service::note_document::the_note_in`], which is where the
+    /// answer belongs: a document that is not a journal entry is refused there
+    /// with a reason rather than counted here by a filter this program wrote.
+    ///
+    /// The collection's own block is left out. A server answers `Depth: 1` with
+    /// the collection itself first, and reading that as a note would ask for a
+    /// whole calendar as though it were a document.
+    ///
+    /// Never run against a live server.
+    pub async fn journal_entries_in(
+        &self,
+        collection_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let asking = r#"<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:getetag/>
+    <d:resourcetype/>
+  </d:prop>
+</d:propfind>"#;
+
+        let response = self
+            .http
+            .reading_with(crate::service::outward::AskWith::Propfind, collection_url)?
+            .header("Depth", "1")
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .basic_auth(username, Some(password))
+            .body(asking.to_string())
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV PROPFIND failed: {}", e)))?;
+
+        if !response.status().is_success() && response.status().as_u16() != 207 {
+            let status = response.status();
+            return Err(Error::Api {
+                status: status.as_u16(),
+                provider: CALENDAR_SERVER.to_string(),
+                message: format!("PROPFIND returned {status}"),
+            });
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV response read error: {}", e)))?;
+
+        let here = resolved_against("", collection_url);
+        Ok(response_blocks(&body)
+            .filter(|block| !names_a_collection(block))
+            .filter_map(|block| {
+                let href = extract_xml_value(block, "d:href")?;
+                let at = resolved_against(&href, collection_url);
+                (at.trim_end_matches('/') != here.trim_end_matches('/'))
+                    .then(|| (at, extract_xml_value(block, "d:getetag")))
+            })
+            .collect())
+    }
+
+    /// Write a document to one address, and say what version it is at now.
+    ///
+    /// `known_version` is the version being written over, where one is known.
+    /// With none, the write refuses to replace anything already there, which is
+    /// what makes a create a create: without it, a create that landed on an
+    /// identifier somebody else had already used would write over a stranger's
+    /// document, silently. [`Self::create_event`] takes the same care and its
+    /// comment says the same thing.
+    ///
+    /// Never run against a live server.
+    pub async fn write_a_document(
+        &self,
+        url: &str,
+        username: &str,
+        password: &str,
+        document: &str,
+        known_version: Option<&str>,
+        doing: &str,
+    ) -> Result<Option<String>> {
+        let mut request = self
+            .http
+            .changing(reqwest::Method::PUT, url, doing)?
+            .header("Content-Type", "text/calendar; charset=utf-8")
+            .basic_auth(username, Some(password));
+        request = match known_version {
+            Some(version) => request.header("If-Match", version),
+            None => request.header("If-None-Match", "*"),
+        };
+
+        let response = request
+            .body(document.to_string())
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV PUT failed: {}", e)))?;
+
+        refused_with(&response, doing)?;
+        Ok(named_version(response.headers()))
+    }
+
+    /// Take one document away.
+    ///
+    /// No version is named, deliberately, for the reason
+    /// [`Self::delete_event`]'s own comment gives: somebody asked for the thing
+    /// to go, and a version that had moved on would make the removal fail for
+    /// ever.
+    ///
+    /// Never run against a live server.
+    pub async fn remove_a_document(
+        &self,
+        url: &str,
+        username: &str,
+        password: &str,
+        doing: &str,
+    ) -> Result<()> {
+        let response = self
+            .http
+            .changing(reqwest::Method::DELETE, url, doing)?
+            .basic_auth(username, Some(password))
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV DELETE failed: {}", e)))?;
+
+        refused_with(&response, doing)
     }
 
     /// Create a new event on a CalDAV calendar.
@@ -563,6 +712,21 @@ fn names_a_calendar_collection(block: &str) -> bool {
             let after = block[at + opening.len()..].chars().next();
             // `<c:calendar/>` or `<c:calendar>`, and never
             // `<c:calendar-proxy-read/>` or `<c:calendar-home-set/>`.
+            matches!(after, Some('/') | Some('>')) || after.is_some_and(char::is_whitespace)
+        })
+    })
+}
+
+/// Whether a block describes a collection rather than a document inside one.
+///
+/// A `Depth: 1` answer opens with the collection itself and then lists what is
+/// in it, and a server is free to put other collections in there too. Reading
+/// one of those as a document would ask for a whole calendar as though it were
+/// a note.
+fn names_a_collection(block: &str) -> bool {
+    ["<d:collection", "<D:collection"].iter().any(|opening| {
+        block.match_indices(opening).any(|(at, _)| {
+            let after = block[at + opening.len()..].chars().next();
             matches!(after, Some('/') | Some('>')) || after.is_some_and(char::is_whitespace)
         })
     })
@@ -1438,7 +1602,7 @@ fn moment_after(dtstart: &str, duration: chrono::Duration) -> Option<String> {
 /// the punctuation out of whatever string arrived turned an ordinary date into
 /// a date where a date and time was required, quietly, and only a server would
 /// have noticed.
-fn ical_utc_stamp(at: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn ical_utc_stamp(at: chrono::DateTime<chrono::Utc>) -> String {
     at.format("%Y%m%dT%H%M%SZ").to_string()
 }
 
@@ -2806,7 +2970,7 @@ fn opens_or_closes_a_component(line: &str) -> bool {
 /// reading it here and not there. Read by one side only, the server's own title
 /// stayed in the document, the new one was written beside it, two titles went
 /// to the calendar and which one shows is up to the calendar program.
-fn property_name(line: &str) -> Option<&str> {
+pub(crate) fn property_name(line: &str) -> Option<&str> {
     let named = line.trim_start();
     let end = named.find([';', ':'])?;
     let name = named[..end].trim_end();
@@ -2832,7 +2996,7 @@ fn property_name(line: &str) -> Option<&str> {
 /// repeat rule, and it looked like this function's fault, but the cause was the
 /// reader and the writer deciding separately where the event ended. That is
 /// fixed at [`events_in`], which is the only place either of them asks.
-fn as_one_value(text: &str) -> String {
+pub(crate) fn as_one_value(text: &str) -> String {
     let mut written = String::with_capacity(text.len());
     // One pair of characters is one line break. Left as two, a note typed on a
     // Windows machine would come out with a blank line between every line.
@@ -2880,7 +3044,7 @@ fn as_one_value(text: &str) -> String {
 /// written `\N` comes back written `\n`, and a comma or semicolon a producer
 /// left unmarked goes back marked. Both are the same value written the one way
 /// this program writes it.
-fn as_typed(value: &str) -> String {
+pub(crate) fn as_typed(value: &str) -> String {
     let mut written = String::with_capacity(value.len());
     let mut characters = value.chars();
     while let Some(character) = characters.next() {
@@ -4707,8 +4871,9 @@ mod tests {
     /// as a file that does most of its own work.
     const SHIPPED_CODE_IS_AT_LEAST_ONE_PART_IN: usize = 10;
 
-    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 8] = [
+    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 9] = [
         "src/service/caldav.rs",
+        "src/service/note_document.rs",
         "src/service/ical_subscription.rs",
         "src/service/vtimezone.rs",
         "src/application/caldav_sync.rs",

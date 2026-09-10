@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 498 records have arrived since and have not been through it.
+# 505 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -17572,12 +17572,14 @@ after = """        match self {
 }"""
 red = [
     "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_copying_a_task_a_provider_holds_leaves_the_provider_owed_nothing",
+    "test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own",
     "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
     "test_the_copy_of_an_event_a_provider_holds_makes_no_claim_on_the_providers_own",
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
 # The same failure one step later, at the write rather than at the decision.
@@ -17593,11 +17595,12 @@ before = """                task.id = new_id("task");
 after = """                task.remote_updated = None;"""
 red = [
     "test_a_task_copied_into_another_list_is_on_both_lists",
+    "test_copying_a_task_a_provider_holds_leaves_the_provider_owed_nothing",
     "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 7 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
 # ── A copy line missing from a panel where copying works ────────────────────
@@ -18098,7 +18101,7 @@ red = [
     "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 21 },
 ]
 
 # ── The word beside a note saying what its body is written in ───────────────
@@ -18131,7 +18134,7 @@ red = [
     "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 21 },
 ]
 
 # The other half. The word is still read correctly and is thrown away on the
@@ -18148,7 +18151,7 @@ red = [
     "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 13 },
+    { file = "src/data/message_cache/notes.rs", tests = 21 },
 ]
 
 # ── A menu offering a sync that cannot happen, or hiding one that can ───────
@@ -18242,7 +18245,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 12 },
+    { file = "src/application/notes_backend.rs", tests = 20 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18266,22 +18269,32 @@ tests_last_seen = [
 # Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
 # tree with nothing else building, at the default eight threads. 7,114 passed
 # and exactly one failed.
+#
+# Re-measured the same day, because `05.1-03` changed the words this break
+# replaces and the per-commit check said so at once: the sentence now says it is
+# experimental and that no build has ever sent a note to a real server, which is
+# a warning that has to reach somebody before they rely on it. The break is the
+# same one, the arm copied from its neighbour, and it now reddens two tests
+# rather than one.
 [[guard]]
 name = "the settings sentence says where the notes really go"
 file = "src/application/notes_backend.rs"
 before = '''        NotesBackend::CalDavJournal => format!(
             "Notes in {account_named} are kept on this computer and sent to that \
-             account's calendar server."
+             account's calendar server. This is experimental. No build has ever \
+             sent a note to a real server, so expect problems, and turning on \
+             Allow Changes is what lets a note go at all."
         ),'''
 after = '''        NotesBackend::CalDavJournal => format!(
             "Notes in {account_named} are kept on this computer. This account has no \
              notes backend, so nothing sends them anywhere."
         ),'''
 red = [
+    "application::notes_backend::tests::test_an_account_whose_notes_reach_a_server_is_told_that_has_never_been_tried",
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 12 },
+    { file = "src/application/notes_backend.rs", tests = 20 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18323,4 +18336,253 @@ red = [
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 60 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# A change made by the one writer that does not go through `save_note` is still
+# sent.
+#
+# `toggle_note_pin` writes its own `UPDATE`, so an invariant kept only in
+# `save_note` is bypassed by it and nothing says so. Pinning is a change
+# somebody made and would expect their backend to be told about, and the shape
+# of the bug is already in this project's changelog against a task: a move
+# changed a row, nothing marked it as waiting, nothing ever pushed it, and the
+# status line said the change had been made.
+#
+# The break is the half-fix rather than a wholesale removal: the flag stays in
+# `save_note` and comes out of the one writer that does not use it, which is
+# exactly what somebody writes who read `save_note` and stopped there.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,769 passed
+# in the library and exactly one failed.
+#
+# A second candidate was considered and rejected: taking the flag out of
+# `save_note` instead. That reddens the storage round trip as well, so it
+# measures "the flag is written at all" rather than "the writer that bypasses
+# the upsert sets it too", which is the thing nothing else would catch.
+[[guard]]
+name = "a note changed by the writer that bypasses the upsert is still sent"
+file = "src/data/message_cache/notes.rs"
+before = '''                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1, pending = 1
+                 WHERE id = ?2",'''
+after = '''                "UPDATE notes SET pinned = NOT pinned, updated_at = ?1 WHERE id = ?2",'''
+red = [
+    "data::message_cache::notes::tests::test_pinning_a_note_leaves_it_waiting_to_be_sent",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 21 },
+]
+
+# A copy of a note makes a second note at the backend rather than writing over
+# the first.
+#
+# A note carries what its backend calls it in a column of its own, the way an
+# event does, so minting a new identifier is not enough on its own. Kept, the
+# push asks the backend to change its copy of the original rather than make a
+# second one, and the original is the one that moves. That is data loss at
+# somebody's server rather than a wrong row here, which is why the event and
+# task arms above this one in `file_under` both carry a comment about it.
+#
+# The break is what an executor writes who follows a plan that says to add the
+# columns and does not mention the copy branch, which is what nearly happened:
+# the arm carried a comment saying a note has no provider identity, and that
+# comment stopped being true in the same commit as the columns arrived.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. Exactly one
+# test failed, in this suite, and the library was untouched.
+[[guard]]
+name = "a copied note makes a second note at the backend rather than overwriting the first"
+file = "src/presentation/managers.rs"
+suite = "a_copy_leaves_the_original_where_it_was"
+before = '''                note.id = new_id("note");
+                note.known_as = None;
+                note.known_version = None;'''
+after = '''                note.id = new_id("note");'''
+red = [
+    "test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own",
+]
+tests_last_seen = [
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
+    { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# A note somebody deleted is not written back down by the read that follows.
+#
+# `application::deletions` states the rule and this follows it: the record of
+# the deletion outlives the row, and every read asks the records before it
+# writes anything down. Without that a note deleted here comes back on the next
+# read, under the backend's own identifier, with nothing left saying it was ever
+# deleted, and it reads as the deletion having quietly failed.
+#
+# The break is the check taken out, which is the edit somebody makes while
+# tidying a loop they think is over-defensive. The reorder the plan describes,
+# asking the record after the write instead of before, is the same defect and
+# could not be written as one contiguous replacement here, because the question
+# and the write are at opposite ends of the loop body. Said rather than left as
+# a smaller break presented as the plan's.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,783 passed
+# and exactly one failed.
+[[guard]]
+name = "a note deleted here is not written back down while the backend still names it"
+file = "src/application/notes_sync.rs"
+before = '''        if deleted_here.holds(&one.named) {
+            continue;
+        }
+        let ours = here'''
+after = '''        let ours = here'''
+red = [
+    "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+]
+
+# The losing copy of a note is held for somebody rather than written over.
+#
+# A backend that says its copy moved first has written nothing and handed the
+# question over, which is what the seam's contract requires of it. Doing nothing
+# with that answer is not neutral: the note is still waiting, so the read in the
+# same sync sees the markers differ, fetches the backend's copy and writes it
+# over the change nobody sent. An edit made and lost looks exactly like an edit
+# that never saved.
+#
+# The break is exactly that, an arm that takes the answer and does nothing, which
+# is what somebody writes who reads `ItMovedFirst` as "nothing to do here".
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,782 passed
+# and exactly two failed. The second one is the load-bearing half of the pair:
+# it says the note is still waiting and still says what was typed here after the
+# first sync, which is what stops "it was not offered again" passing against a
+# sync that gave the change up.
+[[guard]]
+name = "a note that moved in two places is held rather than written over"
+file = "src/application/notes_sync.rs"
+before = '''            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
+                hold_both_copies_of(cache, service, container, &note, version_now, result).await;
+            }'''
+after = '''            Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => {}'''
+red = [
+    "application::notes_sync::tests::test_a_note_held_for_a_choice_is_not_offered_again_on_the_next_sync",
+    "application::notes_sync::tests::test_a_note_that_moved_in_both_places_is_held_rather_than_written_over",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+]
+
+# A note's body comes back the bytes it went out as.
+#
+# The calendar's own reader trims a property's value, which is right for a zone
+# name or a status word and wrong for a note: a body is somebody's text and a
+# trailing space is part of it. RFC 5545 section 3.1 puts the value immediately
+# after the delimiter colon, so there is nothing there to strip that was not in
+# the value.
+#
+# The break is using the calendar's reader, which is what somebody writes who
+# notices there is already a routine for this and does not ask what it does to
+# the ends of a value. It is how the defect arrived in the first place: the
+# first version of this file used `value_named_on` and the trailing-space
+# fixture found it.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,796 passed
+# and exactly two failed. The second is the folding fixture, whose body ends in
+# a space for a different reason and catches this too.
+[[guard]]
+name = "a note's body comes back from a document the bytes it went out as"
+file = "src/service/note_document.rs"
+before = '''        title: inside
+            .iter()
+            .find_map(|line| the_whole_value_on(line, "SUMMARY"))'''
+after = '''        title: inside
+            .iter()
+            .find_map(|line| value_named_on(line, "SUMMARY"))'''
+red = [
+    "service::note_document::tests::test_a_body_long_enough_to_be_broken_across_lines_is_put_back_together",
+    "service::note_document::tests::test_a_note_written_as_a_document_comes_back_the_bytes_it_went_in_as",
+]
+tests_last_seen = [
+    { file = "src/service/note_document.rs", tests = 9 },
+]
+
+# Changing a note keeps everything in the server's document this program does
+# not own.
+#
+# A whole document written from nothing is the shorter code and throws away
+# every property this program has never modelled: categories somebody set in
+# another program, the class, the status. It is a change made here destroying
+# something at somebody's server, which is worse than a wrong row on this
+# computer, and it is silent.
+#
+# The break leaves the server's own summary and description in the document with
+# the new ones written beside them. That failure really happened here, to the
+# calendar writer: it read `SUMMARY ` as a different name from `SUMMARY`, left
+# the server's title in place and wrote the new one after it, and two titles
+# went to somebody's calendar.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,796 passed
+# and exactly two failed.
+#
+# No third record was added for matching a property name without regard to case.
+# `src/service/note_document.rs` is on `FILES_THAT_READ_OR_WRITE_A_DOCUMENT` in
+# `src/service/caldav.rs`, so
+# `test_nothing_that_reads_or_writes_a_calendar_document_matches_a_name_by_case`
+# already reads this file's source and holds it to that rule, and a second
+# record for one rule is the shape `03-09` warned about.
+[[guard]]
+name = "changing a note keeps what the server has that this program does not own"
+file = "src/service/note_document.rs"
+before = '''        if inside && is_one_of_ours(line) {
+            continue;
+        }
+        written.push(line.clone());'''
+after = '''        written.push(line.clone());'''
+red = [
+    "service::note_document::tests::test_a_property_the_server_wrote_in_another_case_is_replaced_rather_than_doubled",
+    "service::note_document::tests::test_changing_a_note_keeps_what_this_program_does_not_own",
+]
+tests_last_seen = [
+    { file = "src/service/note_document.rs", tests = 9 },
+]
+
+# Choosing Sync now on a note folder really runs a sync.
+#
+# This is the stub shape this project has met before: eight update variants were
+# handled in the window and sent by nothing, and five modules rendered empty in
+# every build. A handler that reports success and calls nothing looks finished
+# from every side, and a test asking only whether the menu offers the command
+# passes against it.
+#
+# The break is exactly that: the arm keeps its status line and stops calling the
+# sync. It builds and it lints, because the handle it stops using is used by the
+# arms beside it.
+#
+# The guard reads the window's source, which is what `data::config`'s own screen
+# checks do and for the same reason: a window needs a display and a running
+# application. What it cannot see, said here rather than assumed: it does not
+# press a key, and nobody has heard what comes back.
+#
+# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
+# tree with nothing else building, at the default eight threads. 6,801 passed in
+# the library and exactly one failed.
+[[guard]]
+name = "asking for a notes sync reaches the sync rather than reporting one"
+file = "src/presentation/wx_app.rs"
+before = '''                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    spawn_notes_sync(app);
+                                }'''
+after = '''                                PimModule::Notes => {
+                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                }'''
+red = [
+    "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
+]
+tests_last_seen = [
+    { file = "src/application/notes_backend.rs", tests = 20 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

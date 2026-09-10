@@ -17,6 +17,17 @@
 //! that arrives with a stop of its own has it taken off, because trusting every
 //! caller to leave it off is what this replaces.
 
+/// A count with the thing it counts, so a message reads as a sentence.
+///
+/// Re-exported rather than moved. It is about counting and plurals and knows
+/// nothing about calendars, so this is where it belongs and
+/// [`crate::service::caldav`] is where it happens to live. Moving it would
+/// change that file's test count, which twenty-nine guard records fingerprint,
+/// and that is a price worth paying when something is wrong rather than for
+/// tidiness. Every caller reaching it through this name is one caller nearer
+/// the right home.
+pub(crate) use crate::service::caldav::how_many;
+
 /// A summary built from its parts, punctuated in one place.
 ///
 /// The opening is a label and a list of counts, so it is left without a full

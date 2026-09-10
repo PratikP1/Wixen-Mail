@@ -1197,8 +1197,59 @@ pub struct NoteEntry {
     /// answers the same way. [`NoteBody`] says why, and why it is not dropped.
     pub format: NoteBody,
     pub pinned: bool,
+    /// Changed here and not yet sent to the account's notes backend.
+    ///
+    /// Every write path that changes what a note says sets it and the push
+    /// clears it. That includes the two that do not go through `save_note`:
+    /// `toggle_note_pin` writes its own `UPDATE`, and a move through
+    /// `presentation::managers::file_under` files the note somewhere else.
+    /// A change that never sets this is a change that never leaves.
+    pub pending: bool,
+    /// What the account's notes backend calls this note, when one holds it.
+    ///
+    /// Opaque. Nothing here parses it, splits it or builds one:
+    /// `docs/development/the-notes-seam.md` says so as a requirement on any
+    /// backend. `None` is a note no backend has ever held, which is a note to
+    /// create rather than one to look up.
+    pub known_as: Option<String>,
+    /// The version marker that backend last gave for its copy.
+    ///
+    /// Compared for equality and for nothing else. A backend does not promise
+    /// it is opaque, and does not promise it changes only when the content
+    /// does: ordering two of them, parsing one as a date, or reading a changed
+    /// one as proof the text changed are all CalDAV readings the seam document
+    /// rules out.
+    pub known_version: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// A note deleted here that its backend has not been told about.
+///
+/// A deleted row cannot carry a "not yet sent" flag, so the fact of the
+/// deletion has to outlive it. Without this a note deleted here comes back on
+/// the next read, under the backend's own identifier, with nothing left saying
+/// it was ever deleted. `application::deletions` states the rule for all four
+/// kinds of thing this program deletes and is worth reading before changing
+/// any of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedNote {
+    /// The identifier the row here had, which is what the note is found by.
+    pub id: String,
+    pub account_id: String,
+    /// The folder it was in, kept because a folder deleted whole leaves one of
+    /// these per note and the record is the only thing left that says where
+    /// they were.
+    pub folder_id: Option<String>,
+    /// What the backend called it, where a backend held it at all.
+    ///
+    /// `None` for a note that never left this computer. There is nothing to
+    /// ask a backend to remove, and nothing a read could name it by either, so
+    /// such a record is a memory of a deletion and never work the push owes.
+    pub known_as: Option<String>,
+    pub deleted_at: String,
+    /// Whether the backend has taken it yet.
+    pub so_far: TheDeletionSoFar,
 }
 
 /// Sync state tracker for incremental sync (Google sync tokens, MS delta links)
@@ -2249,6 +2300,32 @@ impl MessageCache {
                 ))
             })?;
 
+        // ── Deleted notes ───────────────────────────────────────────────
+        //
+        // The same reason as `deleted_tasks` and `deleted_calendar_events`: a
+        // deleted row cannot carry a "not yet sent" flag, so the fact of the
+        // deletion has to outlive the row. Without this a note deleted here
+        // comes back on the next read, under the backend's own identifier,
+        // with nothing left saying it was ever deleted.
+        //
+        // The row is kept after the backend takes the deletion, so that no
+        // read writes the note back down, and let go of by the clock
+        // afterwards. `application::deletions` holds the rule and says why the
+        // two lives are different things.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS deleted_notes (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                folder_id TEXT,
+                provider_note_id TEXT,
+                deleted_at TEXT NOT NULL,
+                taken_at TEXT
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create deleted_notes table: {}", e)))?;
+
         // ── Note folders ────────────────────────────────────────────────
         self.conn
             .execute(
@@ -2715,6 +2792,32 @@ impl MessageCache {
         // reads as nothing held, which is the right answer for a task this
         // program has never seen a progress word for.
         self.ensure_column_exists("tasks", "remote_status", "TEXT")?;
+        // A note changed here and not yet sent to whatever backend the account
+        // has. The same three columns a task and a contact already carry, for
+        // the same reason, and they arrive together because a flag with no
+        // identity beside it cannot say what to update.
+        //
+        // Defaults to 0, so every note already on somebody's disk is treated as
+        // agreeing with a backend. That is the right assumption: until this
+        // shipped, a note went nowhere at all, so there was nothing to disagree
+        // with.
+        self.ensure_column_exists("notes", "pending", "INTEGER NOT NULL DEFAULT 0")?;
+        // What the account's notes backend calls this note, and the version
+        // marker it last gave. Opaque, both of them:
+        // `docs/development/the-notes-seam.md` requires that nothing here
+        // parses, splits or builds either one.
+        //
+        // On the note rather than in a table of its own, which is where a
+        // contact's identity lives. A note has one backend at a time, because
+        // `notes_backend::for_account` gives one answer per account and a note
+        // belongs to one account, so the failure `ProviderIdentity`'s comment
+        // records cannot happen here: there is no second address book for a
+        // refused push to lose the change at. If a note ever has two backends
+        // this becomes a `note_identities` table keyed by note and backend, and
+        // `pending` moves onto it, because that is the moment one push can be
+        // accepted and another refused in the same run.
+        self.ensure_column_exists("notes", "provider_note_id", "TEXT")?;
+        self.ensure_column_exists("notes", "provider_version", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.
@@ -3716,6 +3819,7 @@ impl MessageCache {
             "deleted_contacts",
             "deleted_calendar_events",
             "deleted_tasks",
+            "deleted_notes",
         ] {
             self.conn
                 .execute(
