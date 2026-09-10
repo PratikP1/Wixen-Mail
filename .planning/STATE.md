@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.1
 current_phase_name: Notes and contacts reach a server
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 05.1-03-PLAN.md
-last_updated: "2026-09-10T21:34:07.972Z"
+stopped_at: Completed 05.1-04-PLAN.md
+last_updated: "2026-09-10T23:57:09.486Z"
 last_activity: 2026-09-10
-state_head: 1ef6f93f0ccb01c7fd9babe427b7896afcf23160
+state_head: 2f4d86fcfa7a82d1d09c18d2e135febca9326431
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 74
+  completed_plans: 75
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,10 +29,33 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **3 of 6 plans done.** 05.1-03 gave the seam its first backend: a note made here reaches a calendar server's journal entries, a note changed there arrives, a deletion stays deleted and a note that moved in two places is a question somebody is asked. `main` is at `1ef6f93`, merge `d881dec`, version `0.105.0`, `guards/guards.toml` holds 697 records, and nothing is pushed.
+Phase: 05.1 (Notes and contacts reach a server). **4 of 6 plans done.** 05.1-04 put a second implementation behind the notes seam, shaped from what a OneNote page really does, and found four places the contract was written about CalDAV. Two of them were bugs in code that ships. `main` is at `2f4d86f`, version `0.106.0`, `guards/guards.toml` holds 702 records with the census reading 192 and 510, `.planning/WINDOWS.md` reaches 253, and nothing is pushed.
 
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
+
+**What 05.1-04 found, and what to carry into 05.1-05 and phase 5.2.** The
+largest is that a version marker is not optional. The seam said it was, and the
+same absence reads as "treat every copy as moved" on the read half and as
+"nothing moved there" on the push half. A backend that gives none therefore
+destroys a change made at the other end and says nothing, and no code change
+reconciles the two readings without keeping the last copy seen, which PIM-08
+forbids. The requirement moved to the backend instead.
+
+Two were bugs in shipped code, and neither was a second backend's problem: the
+read wrote the backend's copy over a change the setting had refused, in the same
+sync that counted it as waiting; and a note the backend says it no longer holds
+was reported as a problem for ever rather than made again. Six thousand eight
+hundred library tests passed with either fix removed.
+
+The seam gained one field. `WhatTheBackendSaid::Done` carries what a backend
+could keep, because only a backend can tell its own reshaping of what it was
+handed from a change somebody made at the other end. The calendar backend uses
+it too, for the carriage returns RFC 5545 cannot carry, so a limitation that had
+lived in a changelog now reaches the person whose note it is.
+
+Seven ledger entries, 247 to 253. Nothing here has met a server and nothing has
+been heard.
 
 **What 05.1-03 built, and the two premises it found false.** The seam had no way
 to read a note's words: `notes_it_holds` answered identities and the other two
@@ -481,6 +504,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05 P08 | 5h | 2 tasks | 12 files |
 | Phase 05.1 P01 | 64 | 2 tasks | 11 files |
 | Phase 05.1 P02 | 2h 20m | 3 tasks | 12 files |
+| Phase 05.1 P04 | 1h 35m | 3 tasks | 9 files |
 
 ## Accumulated Context
 
