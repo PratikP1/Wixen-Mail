@@ -126,8 +126,8 @@ anything it could not remove, so a leftover is something you are told about rath
 something you find. Two cases are the exception, and Checking what an uninstall did, below,
 says which.
 
-Your mail itself is not affected. It is on your provider's server, and Wixen Mail only ever
-held a copy. Signing in from a new installation, or from any other mail application, brings
+Your mail itself is not affected. It is still on your mail service's server, at Google or
+wherever your account lives, and Wixen Mail only ever held a copy. Signing in from a new installation, or from any other mail application, brings
 it all back.
 
 If you are moving Wixen Mail to another drive rather than getting rid of it, copy

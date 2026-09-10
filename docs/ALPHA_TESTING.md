@@ -18,9 +18,9 @@ Microsoft. None of that has run against a real account. Expect bugs.
 Wixen Mail splits that answer in two, under a setting called Allow Changes.
 Mail starts switched off: a message that has been sent cannot be recalled.
 Changing your tasks, contacts and calendar starts switched on: those changes
-go to your provider, and a task in the wrong place can be moved back. The
-next section says what each answer covers and how to change it, but read
-this first.
+are sent to Google or Microsoft, and a task in the wrong place can be moved
+back. The next section says what each answer covers and how to change it, but
+read this first.
 
 ## What Wixen Mail is allowed to change
 
@@ -30,7 +30,7 @@ amounts.
 | | What it covers | Default |
 |---|---|---|
 | Mail | Sending, deleting, moving, copying, marking read on the server, filing a copy in Sent, sending read receipts, changing subscriptions | **Off** |
-| Tasks, contacts and calendar | Sending your changes back to your provider | On |
+| Tasks, contacts and calendar | Sending your changes back to Google or Microsoft | On |
 
 A message that has been sent cannot be recalled, and a message deleted from a
 server may have been the only copy. A task in the wrong place can be moved
@@ -77,7 +77,7 @@ In rough order of how useful it is to know.
    these matter more than crashes.
 2. **The message list and reading a message.** This is the most used path and
    the one most likely to meet mail shaped in a way nobody anticipated.
-3. **Signing in.** Especially if your provider is not Gmail or Outlook.
+3. **Signing in.** Especially with anything that is not Gmail or Outlook.
 4. **Anything that claims to have worked and did not.** A status line saying a
    message was sent when it was not, a count that does not match what you can
    see, a setting that does not take effect.
@@ -90,10 +90,11 @@ In rough order of how useful it is to know.
    so it is worth a specific listen: arrow down the list and say whether you
    hear "ticked" and "not ticked" as well as the folder name, and whether it
    changes when you press Space.
-7. **Whether the folder list matches what your provider shows you.** New in
-   this version, and the part most likely to differ between providers. On Gmail
-   in particular: whether your labels are all there, whether anything appears
-   twice, and whether the count beside a folder matches the web interface.
+7. **Whether the folder list matches what you see in your webmail.** New in
+   this version, and the part most likely to differ between one mail service and
+   another. On Gmail in particular: whether your labels are all there, whether
+   anything appears twice, and whether the count beside a folder matches what
+   the website shows.
 8. **Deleting, moving and copying a message.** All three are new and all three
    change what is on the server. Say what you heard and what you then found on
    another device, because the two disagreeing is the failure worth catching.
@@ -113,42 +114,51 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
-- **Moving a task between lists has never reached a provider, and this is the
-  one thing on this page that could lose a task.** The command is there: press
-  the menu key on a task and choose "Move to another list", or use
-  `Ctrl+Shift+V`. Events and notes have the same command.
+- **Moving a task to another list is the one thing on this page that could lose
+  a task.** Press the menu key on a task and choose "Move to another list", or
+  press `Ctrl+Shift+V`. Events and notes have the same command.
 
-  Until now this worked only on tasks made on this computer, and a task your
-  account already held was refused. It is no longer refused. Moving one asks
-  your provider to make the task again in the new list and then to delete it
-  from the old one, and the order is deliberate: the new copy is created first,
-  so a failure between the two leaves the task in **both** lists at your
-  provider rather than in neither. On this computer it is in exactly one list at
-  every moment, whatever happens.
+  This used to work only on tasks you had made here, and refused any task that
+  came from Google or Microsoft. It no longer refuses them.
 
-  What no build has done is make either call to a real account, because no
-  account has ever been used with this program. Whether Google or Microsoft
-  really accepts a new copy in a second list while the first still holds the
-  task, and really accepts the delete that follows, is untested. If you try this
-  on an account that matters, the thing worth checking afterwards is your task
-  lists at the provider, in a browser or on a phone: one copy in the new list is
-  what should be there, two is a failure that the next sync should tidy, and
-  none is the failure this was built to prevent and is worth telling us about
-  straight away.
+  Here is what happens when you move one. Wixen Mail asks Google to make the
+  task again in the new list, and then, once that has worked, asks it to remove
+  the task from the old list. That order is on purpose. If something goes wrong
+  between the two steps, you are left with the task in **both** lists, which you
+  can see and tidy up. The other order would risk leaving it in neither, which
+  you could not see at all. On this computer the task is in exactly one list the
+  whole time, whatever happens.
 
-  What you hear when you move something says whether the account has been told:
-  a move into a list or calendar your account holds ends "and has not reached
-  the account yet", or names Allow Changes where that setting is off. Nobody has
-  heard it, and whether it is useful or wearing after the twentieth move is one
-  of the things worth telling us.
+  **We have never done this with a real Google or Microsoft account.** Nobody
+  has, with this program. Every test so far has used a stand-in that says yes to
+  everything, so we know the program asks for the right things in the right
+  order, and we do not know what Google says back.
 
-  Moving an event between calendars is still refused, and says so. That is the
-  same job for a different kind of item and it has not been built.
-- **Contacts and reminders move too, and those moves reach nothing by design.**
-  A contact moves between groups and a reminder moves between accounts, with
-  the same two keys. Neither contact groups nor reminders are synced anywhere,
-  so a move there is finished on this computer and there is no provider waiting
-  to hear about it. Nobody has heard either command with a screen reader.
+  So if you try it on an account you care about, check your task lists
+  afterwards, in a browser or on your phone:
+
+  | What you see | What it means |
+  |---|---|
+  | One copy, in the new list | It worked |
+  | The task in both lists | The second step has not happened yet. The next sync should tidy it |
+  | The task in neither list | Tell us straight away. This is the failure the whole design exists to prevent |
+
+  Moving a task takes two syncs to finish, so seeing it in both lists for a
+  short while is normal.
+
+  When you move a task that came from Google, Wixen Mail says "and has not
+  reached the account yet", or tells you to turn on Allow Changes if that is
+  what is stopping it. Nobody has heard that said aloud. Whether it helps, or
+  becomes tiring after the twentieth move, is worth telling us.
+
+  Moving an event to another calendar is still refused, and says so. It is the
+  same idea for a different kind of thing, and it has not been built.
+- **Moving a contact or a reminder stays on this computer, by design.** A
+  contact moves between groups and a reminder moves to another account, using
+  the same two keys. Neither contact groups nor reminders are sent to Google or
+  Microsoft at all, so nothing needs to be told about the move and there is
+  nothing to go wrong at the far end. Nobody has heard either command with a
+  screen reader.
 - **Importing a file can join two people who share a name.** Two cards in one
   imported file are read as one person when nothing but their addresses tells
   them apart. Two people with the same name, and nothing else on their cards,

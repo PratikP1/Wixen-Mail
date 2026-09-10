@@ -12,7 +12,7 @@ what is finished.
 
 - Native Windows controls with toolbar, three-pane layout, and modern styling
 - Keyboard navigation throughout, and an accessibility layer built for NVDA, JAWS and Narrator. An automated suite drives real NVDA in CI against specific interactions; most of the application has not had a full manual pass
-- Multiple account management with provider auto-detection and OAuth 2.0
+- Several accounts at once. Type an address and it works out the server settings for you, and signs in through Google or Microsoft where that is what the account uses
 - SMTP sending over TLS, with an outbox that retries rather than losing a failed send
 - Composition with formatting toolbar, attachments, signatures, and preview-before-send
 - Contact management with vCard import/export, groups, and autocomplete
