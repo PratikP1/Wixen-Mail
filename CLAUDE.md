@@ -312,9 +312,23 @@ finding could not reach a plan that was already written.
 
 **The scripts that decide all this have their own suites, and the gate runs
 them.** `scripts/*.test.sh` runs on every invocation of `check.sh`, in every
-mode, before anything else, and in CI. It costs milliseconds. For one day these
-suites existed and nothing ran them, which is guardrail 4 exactly: a check
-nobody reads is worse than no check, because it reads as covered.
+mode, before anything else, and in CI. For one day these suites existed and
+nothing ran them, which is guardrail 4 exactly: a check nobody reads is worse
+than no check, because it reads as covered.
+
+**They cost 108 seconds, not the milliseconds this paragraph used to claim.**
+Measured 2026-09-10 at `eda2719`, running every `scripts/*.test.sh` in turn, the
+way `check.sh` does. That is paid on every commit in every mode, so it is the
+floor under the cheapest possible run: a documents-only commit cannot come in
+under it however narrow the rest of the scoping gets.
+
+Where the figure came from is worth knowing, because the same mistake is
+available to the next person. These suites did once cost milliseconds. They grew
+a case at a time, each addition genuinely cheap, and nothing re-measured the
+total: `which-checks.test.sh` alone went from 28.7s to 34.4s in one sitting on
+2026-09-09 when seven cases were added to it. A cost that grows only in
+increments nobody prices is the shape this project keeps meeting, and this
+sentence sat wrong for long enough to be quoted in scheduling decisions.
 
 Never silence a lint with `#[allow(...)]` to get a commit through. Fix the code, or if the lint is
 genuinely wrong for this case, add the allow with a comment saying why.
