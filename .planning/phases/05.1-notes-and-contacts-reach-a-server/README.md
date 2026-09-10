@@ -4,6 +4,25 @@ Six plans, one per wave. Assembled 2026-09-06 against `main` at `9611b70`,
 version `0.75.0`, `guards/guards.toml` holding 632 records, Rust floor `1.88`.
 Nothing in the repository was changed while these were written.
 
+**Corrected 2026-09-10 against `main` at `1aba3a5`, and none of these six plans
+has executed yet.** Phase 5 landed in between. Version is `0.102.0` and
+`guards/guards.toml` holds 683 records; every figure below and in each plan has
+been corrected in place with the old one named beside it. Three corrections are
+about the work rather than the numbers, and they are in `05.1-02`, `05.1-03`,
+`05.1-05` and `05.1-06`, marked at the top of the tasks they change.
+
+**One thing was wrong in all six from the day they were written**: the
+`phase:` frontmatter, every `@`-include of a dependency summary, and every
+`<output>` line named
+`05.1-notes-and-contacts-reach-a-server-for-the-first-time`. That directory has
+never existed. The `-for-the-first-time` suffix is in this README's own title, and
+`ls .planning/phases/` gives `05.1-notes-and-contacts-reach-a-server`. Every
+include therefore loaded nothing, and following an `<output>` line would have
+made a second phase directory that
+`tests/the_planning_files_agree_with_themselves.rs` normalises to the same key as
+the real one, so one silently replaces the other and the plan-count and
+summary-count checks compare against whichever won.
+
 This is an inserted phase, following the precedent of
 `02.1-what-phase-1-found-on-its-way-past`, which is tagged `(INSERTED)` in the
 roadmap and whose files are named `02.1-08-SUMMARY.md`. It is the second of three
@@ -211,10 +230,17 @@ one when the seam starts answering.
 
 ## Costs every plan is written around
 
-**Guard records, re-measured at `9611b70`: 632 records.** The old drafts of these
-plans said 617. Phases 4 and 4.2 landed in between. Count records rather than
-mentions, with the awk in `CLAUDE.md`; a grep for `contacts_sync` answers 363
-against 77 real records.
+**Guard records, re-measured 2026-09-10 at `1aba3a5`: 683 records.** This said
+632, measured at `9611b70`, and the drafts before it said 617. Phase 5 landed in
+between this time. Count records rather than mentions, with the awk in
+`CLAUDE.md`; a grep for `contacts_sync` answers 363 against 77 real records.
+
+**The per-file figures moved with the total**, and every plan's own table has
+been corrected in place with the old figure named beside the new one. On
+2026-09-10: `managers.rs` 45, `wx_app.rs` 47, `contacts.rs` 35,
+`caldav_sync.rs` 25, `wx_settings.rs` 2, `config.rs` 3, `context_menu.rs` 1,
+`read_aloud.rs` 3. Unchanged: `contacts_sync.rs` 77, `caldav.rs` 29,
+`long_text.rs` 18, `mod.rs` 11, `forget.rs` 1, `notes.rs` 0.
 
 | file | records | test functions |
 |---|---|---|
@@ -246,8 +272,9 @@ them: `wx_app.rs` 40 records to 42, `config.rs` 52 tests to 53, and
 there, and it now costs one record. One is still cheap, and the plan now says the
 real number and says that it moved.
 
-**The census at the top of `guards/guards.toml` moved with it.** Line 79 says 192
-and line 80 says 440, and 192 plus 440 is 632.
+**The census at the top of `guards/guards.toml` moved with it.** Re-read
+2026-09-10: line 79 says 192 and line 80 says 491, and 192 plus 491 is 683. This
+used to say 440 and 632.
 `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
 adds them and compares, inside the commit gate, so a plan adding a record bumps
 line 80 in the same commit. Read both lines before trusting either.
@@ -263,16 +290,33 @@ that plan never opened. `main` is clean at that floor, so nothing is owed. New
 code here is linted against 1.88 with `-D warnings`, where a let-chain suggestion
 is a build failure and not a hint.
 
-**A commit touching `Cargo.toml` makes `scripts/which-checks.sh` answer `all`**,
-the whole gate at roughly 311 to 353 seconds warm. Run those commits detached and
-never pipe `check.sh` into anything whose exit status is then read.
+**Corrected 2026-09-10. This used to say a commit touching `Cargo.toml` makes
+`scripts/which-checks.sh` answer `all`, the whole gate at roughly 311 to 353
+seconds warm, and that those commits must be run detached. That stopped being
+true on 2026-09-09.** The script now carries `only_the_packages_own_version_moved`
+and escalates only when a manifest diff is more than this package's own
+`version = "..."` line. Every version bump in these six plans sits beside source,
+so those commits answer `affected`.
+
+**The danger has flipped and every plan says so now.** An executor who believes
+the full gate already ran on each commit can skip the `scripts/check.sh all` a
+branch owes before the merge, and the release build and the whole suite then run
+for the first time on `main`. Run it once, before the merge.
+
+Never pipe `check.sh` into anything whose exit status is then read; that part is
+unchanged.
 
 **A red commit is allowed only on a branch**, must name every failing test in
 `Fails-until-green:` trailers at column 0, and every named test must have run and
 failed with nothing else failing. Where adding a test makes the count check red
 at the same time, name that check as one of the failures.
 
-**`WIXEN_TEST_THREADS=4`** halves a guard run and does nothing for `check.sh`.
+**Corrected 2026-09-10: this used to say `WIXEN_TEST_THREADS=4` halves a guard
+run. Leave it alone.** `scripts/guards.py` defaults to 8 now, and its comment
+records the re-measurement, taken 2026-09-09 at `10effea` over 6,720 library
+tests on 24 cores: 4 threads 161s, 8 threads 140s. Setting 4 is about 15% slower
+than doing nothing. The half about it doing nothing for `check.sh` still stands.
+Budget roughly 95 seconds a record, and re-take that rate rather than quoting it.
 
 **A guard living in `tests/` needs a record with `suite = "<file name without
 .rs>"`**, or it runs on every commit except the ones that could break it.
@@ -304,7 +348,12 @@ actuals (1.17, 1.29, 1.29, 0.48, 1.18, 0.78). Six samples with that spread is
 - **The address book screen by ear.** `05.1-06`'s checkpoint covers it, and it is
   the one thing here a human has to do.
 
-`.planning/WINDOWS.md` ends at entry 119 before this phase. Each plan says which
+`.planning/WINDOWS.md` ends at entry 230 before this phase, corrected 2026-09-10
+from the 119 this used to say. Read its last row rather than either number, and
+add entries through `gsd-tools windows` rather than by typing into the table: the
+ledger has a JSON half and `test_both_halves_of_the_ledger_say_the_same_thing`
+holds the two together, so a hand-typed row reverts on the next tool write. Each
+plan says which
 entries it owes, one entry per unrun thing rather than one entry for all of them,
 because an entry saying "this has never been tried" tells the next reader nothing
 about which part to try first.

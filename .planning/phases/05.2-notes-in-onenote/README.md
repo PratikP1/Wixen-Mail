@@ -4,6 +4,21 @@ Three plans, one per wave. Assembled 2026-09-06 against `main` at `9611b70`,
 version `0.75.0`, `guards/guards.toml` holding 632 records, Rust floor `1.88`.
 Nothing in the repository was changed while these were written.
 
+**Corrected 2026-09-10 against `main` at `1aba3a5`, and none of these three plans
+has executed yet.** Phase 5 landed in between. Version is `0.102.0` and
+`guards/guards.toml` holds 683 records. Two corrections are about the work rather
+than the figures: `05.2-01`'s round trip cannot read the shape OneNote hands back
+without a decision this README's phase never made, and `05.2-02`'s notes
+permission has to go into two scope lists, not one.
+
+**One thing was wrong in all three from the day they were written**: the `phase:`
+frontmatter, the `@`-includes and the `<output>` lines named
+`05.2-a-page-in-a-section-in-a-notebook-is-not-a-title-and-a-body`, which has
+never existed as a directory. The phase title in the heading above is where that
+spelling comes from; `ls .planning/phases/` gives `05.2-notes-in-onenote`, and
+`.planning/ROADMAP.md` names the phase "Phase 5.2: Notes in OneNote". Two of the
+plans also named the 5.1 phase directory wrongly in the same way.
+
 An inserted phase, following the precedent of
 `02.1-what-phase-1-found-on-its-way-past`, which is tagged `(INSERTED)` in the
 roadmap and whose files are named `02.1-08-SUMMARY.md`. It is the third of three
@@ -140,18 +155,19 @@ a comment with its reason, the way `occurrences.rs` bounds its expansion with
 
 ## Costs every plan is written around
 
-**Guard records, measured at `9611b70`, 632 records in the file.** Re-measure at
-the tree you are on, with the awk in `CLAUDE.md`, because phases 5 and 5.1 land
-first and both add records. These are the figures before either.
+**Guard records: 683 in the file, re-measured 2026-09-10 at `1aba3a5`.** This
+used to say 632, measured at `9611b70`, before phase 5 landed. Re-measure at the
+tree you are on, with the awk in `CLAUDE.md`, because 5.1 lands before this phase
+and adds records. These are the figures after phase 5 and before 5.1.
 
 | file | records | test functions |
 |---|---|---|
 | `src/application/long_text.rs` | 18 | 38 |
-| `src/data/config.rs` | 2 | 53 |
+| `src/data/config.rs` | 3 (was 2) | 59 (was 53) |
 | `src/service/outward.rs` | 10 | 38 |
 | `src/application/new_item.rs` | 1 | 42 |
-| `src/presentation/wx_settings.rs` | 1 | 0 |
-| `src/application/context_menu.rs` | 0 | 15 |
+| `src/presentation/wx_settings.rs` | 2 (was 1) | 0 |
+| `src/application/context_menu.rs` | 1 (was 0) | 17 (was 15) |
 | `src/application/conflict_choice.rs` | 0 | 17 |
 | `src/data/message_cache/notes.rs` | 0 | 7 |
 | `src/service/microsoft_graph.rs` | 0 | 33 |
@@ -169,17 +185,30 @@ free.
 **The census at the top of `guards/guards.toml`.** Line 79 and line 80 hold two
 numbers that
 `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
-adds and compares with the `[[guard]]` count. At `9611b70` they were 192 and 440
-against 632 records; phases 5 and 5.1 will have moved the second. Read both lines
-rather than trusting these.
+adds and compares with the `[[guard]]` count. Re-read 2026-09-10: they are 192
+and 491 against 683 records. At `9611b70` they were 192 and 440 against 632, and
+phase 5 moved the second. Phase 5.1 will move it again. Read both lines rather
+than trusting either pair.
 
 **The Rust floor is 1.88**, raised by `04-09` from 1.87 because rPGP declares it.
 New code here is linted against it with `-D warnings`, where a let-chain
 suggestion is a build failure and not a hint.
 
-**A commit touching `Cargo.toml` makes `scripts/which-checks.sh` answer `all`**,
-the whole gate at roughly 311 to 353 seconds warm. Run those detached and never
-pipe `check.sh` into anything whose exit status is then read.
+**Corrected 2026-09-10. This used to say a commit touching `Cargo.toml` makes
+`scripts/which-checks.sh` answer `all`, the whole gate at roughly 311 to 353
+seconds warm, and that those commits must be run detached. That stopped being
+true on 2026-09-09.** The script now carries
+`only_the_packages_own_version_moved` and escalates only when a manifest diff is
+more than this package's own `version = "..."` line, so a version bump beside
+source answers `affected`. The exception is the paragraph below: a diff that adds
+a dependency does still answer `all`.
+
+**The danger has flipped.** An executor who believes the full gate already ran on
+each commit can skip the `scripts/check.sh all` a branch owes before the merge,
+and the release build and the whole suite then run for the first time on `main`.
+
+Never pipe `check.sh` into anything whose exit status is then read; that part is
+unchanged.
 
 **A red commit is allowed only on a branch**, must name every failing test in
 `Fails-until-green:` trailers at column 0, and every named test must have run and
@@ -213,8 +242,15 @@ which will be seventeen more samples than this set had.
   timestamp the service owns is a weaker answer than an ETag, and how much weaker
   cannot be measured without two clients writing the same page.
 
-`.planning/WINDOWS.md` ends at entry 119 before phase 5. Each plan says which
-entries it owes, one entry per unrun thing rather than one entry for all of them.
+`.planning/WINDOWS.md` ends at entry 230 after phase 5, corrected 2026-09-10 from
+the "entry 119 before phase 5" this used to say. Read its last row rather than
+either number, and add entries through `gsd-tools windows` rather than by typing
+into the table: the ledger has a JSON half and
+`test_both_halves_of_the_ledger_say_the_same_thing` holds the two together, so a
+hand-typed row reverts on the next tool write. Each plan says which entries it
+owes, one entry per unrun thing rather than one entry for all of them. **`05.2-03`
+named the ledger in five places and gave no task the job of writing to it; that is
+corrected in the plan.**
 
 ## What is owed to documents, and belongs to whoever lands these
 
