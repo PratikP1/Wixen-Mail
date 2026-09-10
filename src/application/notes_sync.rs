@@ -213,7 +213,7 @@ async fn send_the_deletions<S: NotesService>(
             version: None,
         };
         match service.take_a_note_away(container, &known_as).await {
-            Ok(WhatTheBackendSaid::Done(_)) | Ok(WhatTheBackendSaid::ItIsNotThere) => {
+            Ok(WhatTheBackendSaid::Done { .. }) | Ok(WhatTheBackendSaid::ItIsNotThere) => {
                 // Gone at the other end either way, and the record stays. It
                 // stops being work the push has and becomes the only thing
                 // standing between the note and a read that is still naming
@@ -283,7 +283,10 @@ async fn push_what_is_waiting<S: NotesService>(
             .leave_a_note_saying(container, known_as.as_ref(), &note.title, &note.body)
             .await;
         match said {
-            Ok(WhatTheBackendSaid::Done(there)) => {
+            Ok(WhatTheBackendSaid::Done {
+                known_as: there,
+                what_it_could_keep,
+            }) => {
                 match cache.a_backend_took_the_note(
                     &note.id,
                     &there.named,
@@ -293,7 +296,10 @@ async fn push_what_is_waiting<S: NotesService>(
                     // title is the person's own words in the same way a message
                     // body is. The id finds the row.
                     Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
-                    Ok(()) => result.sent += 1,
+                    Ok(()) => {
+                        result.sent += 1;
+                        keep_what_the_backend_could(cache, &note, what_it_could_keep, result);
+                    }
                 }
             }
             // Held by what this program is allowed to change, before anything
@@ -347,6 +353,57 @@ async fn push_what_is_waiting<S: NotesService>(
     }
 }
 
+/// Write down what the backend kept, where it could not keep what it was given.
+///
+/// Nothing to do in the ordinary case, which is a backend that kept the bytes.
+///
+/// # Why the copy here becomes the copy there
+///
+/// The two have to agree, and the only moment when this program can tell a
+/// backend's own normalising from a change somebody made at the other end is
+/// this one, because the backend has just said which it is. Left alone, the two
+/// copies differ from the moment of the first push with nothing said, and the
+/// first thing that moves a marker at the backend, which the seam's contract
+/// says may happen for reasons the content did not cause, brings the backend's
+/// version of somebody's note down over theirs with no question asked.
+///
+/// So the loss happens once, at the moment somebody asked for a sync, and is
+/// counted so the sync can say it. That is the difference between a limit of a
+/// format and a note that changed for no reason anybody can see.
+fn keep_what_the_backend_could(
+    cache: &MessageCache,
+    note: &NoteEntry,
+    what_it_could_keep: Option<crate::application::notes_backend::WhatTheBackendKept>,
+    result: &mut NoteSyncResult,
+) {
+    let Some(kept) = what_it_could_keep else {
+        return;
+    };
+    let changed = NoteEntry {
+        title: kept.title,
+        body: kept.body,
+        // It is now exactly what the backend holds, so there is nothing left to
+        // send. The identity and the marker were written a moment ago by
+        // `a_backend_took_the_note` and are read back rather than guessed at,
+        // because writing the ones in hand would put back the ones from before
+        // the push.
+        pending: false,
+        updated_at: chrono::Utc::now().to_rfc3339(),
+        ..match cache.get_note(&note.id) {
+            Ok(Some(now)) => now,
+            Ok(None) => return,
+            Err(e) => {
+                result.errors.push(format!("Note {}: {e}", note.id));
+                return;
+            }
+        }
+    };
+    match cache.save_note(&changed) {
+        Ok(()) => result.not_kept_exactly += 1,
+        Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+    }
+}
+
 /// Offer a note the backend turns out not to hold as one it has never held.
 ///
 /// Offered once, not in a loop. A backend that refuses the create as well has
@@ -366,9 +423,15 @@ async fn offer_it_as_a_new_note<S: NotesService>(
         .leave_a_note_saying(container, None, &note.title, &note.body)
         .await
     {
-        Ok(WhatTheBackendSaid::Done(there)) => {
+        Ok(WhatTheBackendSaid::Done {
+            known_as: there,
+            what_it_could_keep,
+        }) => {
             match cache.a_backend_took_the_note(&note.id, &there.named, there.version.as_deref()) {
-                Ok(()) => result.sent += 1,
+                Ok(()) => {
+                    result.sent += 1;
+                    keep_what_the_backend_could(cache, note, what_it_could_keep, result);
+                }
                 Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
             }
         }
@@ -583,6 +646,32 @@ async fn take_what_has_arrived<S: NotesService>(
                 continue;
             }
         };
+        // What arrived is what is here already. The marker moved and the words
+        // did not, which the seam's contract says a backend is allowed to do
+        // and which it calls the cost of a fetch nobody needed. It is more than
+        // that if the row is written again: the note's changed time becomes the
+        // time of the sync, so somebody's list of what they last worked on
+        // becomes a list of what they last synced, and `stored` counts a note
+        // that was not.
+        //
+        // The marker is still written down, or the next sync fetches the same
+        // note again and the one after that as well.
+        if let Some(here) = ours
+            && here.title == said.title
+            && here.body == said.body
+        {
+            match cache.a_backend_took_the_note(
+                &here.id,
+                &said.known_as.named,
+                said.known_as.version.as_deref(),
+            ) {
+                Ok(()) => result.unchanged += 1,
+                Err(e) => result
+                    .errors
+                    .push(format!("A note from the backend could not be kept: {e}")),
+            }
+            continue;
+        }
         // A change nobody has sent is not written over by a read.
         //
         // The push is where a clash is normally found, and the push does not
@@ -832,7 +921,7 @@ mod tests {
                 Writes::NothingIsSent => {
                     WhatTheBackendSaid::CouldNotBeReached("the backend said no".to_string())
                 }
-                Writes::Accepted => WhatTheBackendSaid::Done(ANoteThere {
+                Writes::Accepted => WhatTheBackendSaid::done(ANoteThere {
                     named: known_as
                         .map(|there| there.named.clone())
                         .unwrap_or_else(|| format!("made-for-{title}")),
@@ -859,7 +948,7 @@ mod tests {
                 Writes::NothingIsSent => {
                     WhatTheBackendSaid::CouldNotBeReached("the backend said no".to_string())
                 }
-                Writes::Accepted => WhatTheBackendSaid::Done(known_as.clone()),
+                Writes::Accepted => WhatTheBackendSaid::done(known_as.clone()),
                 Writes::RefusedByTheSetting => WhatTheBackendSaid::NotAllowedToChangeAnything,
                 Writes::NotSignedIn => WhatTheBackendSaid::NotSignedIn,
                 Writes::ItMovedFirst => WhatTheBackendSaid::ItMovedFirst {

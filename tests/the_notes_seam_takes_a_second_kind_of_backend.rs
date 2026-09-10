@@ -59,7 +59,7 @@
 use std::sync::Mutex;
 
 use wixen_mail::application::notes_backend::{
-    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendSaid,
+    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendKept, WhatTheBackendSaid,
 };
 use wixen_mail::application::notes_sync::{NoteSyncResult, sync_notes};
 use wixen_mail::common::Result;
@@ -250,7 +250,7 @@ impl NotesService for ACollectionOfDocuments {
                 .whole_bodies_written
                 .lock()
                 .expect("the whole-body count") += 1;
-            return Ok(WhatTheBackendSaid::Done(ANoteThere {
+            return Ok(WhatTheBackendSaid::done(ANoteThere {
                 named: at,
                 version: Some(tag),
             }));
@@ -272,7 +272,7 @@ impl NotesService for ACollectionOfDocuments {
             .whole_bodies_written
             .lock()
             .expect("the whole-body count") += 1;
-        Ok(WhatTheBackendSaid::Done(ANoteThere {
+        Ok(WhatTheBackendSaid::done(ANoteThere {
             named: there.named.clone(),
             version: Some(tag),
         }))
@@ -291,7 +291,7 @@ impl NotesService for ACollectionOfDocuments {
         match documents.iter().position(|held| held.at == known_as.named) {
             Some(at) => {
                 documents.remove(at);
-                Ok(WhatTheBackendSaid::Done(known_as.clone()))
+                Ok(WhatTheBackendSaid::done(known_as.clone()))
             }
             None => Ok(WhatTheBackendSaid::ItIsNotThere),
         }
@@ -448,6 +448,20 @@ fn as_a_page_keeps_it(body: &str) -> String {
         .join("\n")
 }
 
+/// What a page really kept, where that is not what it was handed.
+///
+/// Answered from the page itself rather than from the rule, so that a change to
+/// what the service does cannot leave this saying it kept what it did not.
+fn what_a_page_could_keep(page: &APage, title: &str, body: &str) -> Option<WhatTheBackendKept> {
+    if page.title == title && page.body == body {
+        return None;
+    }
+    Some(WhatTheBackendKept {
+        title: page.title.clone(),
+        body: page.body.clone(),
+    })
+}
+
 impl ASectionOfPages {
     fn new() -> Self {
         Self {
@@ -599,11 +613,15 @@ impl NotesService for ASectionOfPages {
                 changed_at: now,
             };
             let said = self.the_marker_of(&page);
+            let could_keep = what_a_page_could_keep(&page, title, body);
             pages.push(page);
-            return Ok(WhatTheBackendSaid::Done(ANoteThere {
-                named: name,
-                version: said,
-            }));
+            return Ok(WhatTheBackendSaid::Done {
+                known_as: ANoteThere {
+                    named: name,
+                    version: said,
+                },
+                what_it_could_keep: could_keep,
+            });
         };
         let Some(at) = pages.iter().position(|page| page.name == there.named) else {
             return Ok(WhatTheBackendSaid::ItIsNotThere);
@@ -621,10 +639,14 @@ impl NotesService for ASectionOfPages {
             pages[at].title = title.to_string();
             pages[at].changed_at = now;
             let said = self.the_marker_of(&pages[at]);
-            return Ok(WhatTheBackendSaid::Done(ANoteThere {
-                named: there.named.clone(),
-                version: said,
-            }));
+            let could_keep = what_a_page_could_keep(&pages[at], title, body);
+            return Ok(WhatTheBackendSaid::Done {
+                known_as: ANoteThere {
+                    named: there.named.clone(),
+                    version: said,
+                },
+                what_it_could_keep: could_keep,
+            });
         }
         // A body cannot be replaced. Reaching the asked-for end state means
         // removing this page and making another, and the note is called
@@ -637,11 +659,15 @@ impl NotesService for ASectionOfPages {
             changed_at: now,
         };
         let said = self.the_marker_of(&page);
+        let could_keep = what_a_page_could_keep(&page, title, body);
         pages.push(page);
-        Ok(WhatTheBackendSaid::Done(ANoteThere {
-            named: name,
-            version: said,
-        }))
+        Ok(WhatTheBackendSaid::Done {
+            known_as: ANoteThere {
+                named: name,
+                version: said,
+            },
+            what_it_could_keep: could_keep,
+        })
     }
 
     async fn take_a_note_away(
@@ -660,7 +686,7 @@ impl NotesService for ASectionOfPages {
         match pages.iter().position(|page| page.name == known_as.named) {
             Some(at) => {
                 pages.remove(at);
-                Ok(WhatTheBackendSaid::Done(known_as.clone()))
+                Ok(WhatTheBackendSaid::done(known_as.clone()))
             }
             None => Ok(WhatTheBackendSaid::ItIsNotThere),
         }
@@ -1418,9 +1444,14 @@ fn test_a_note_a_section_of_pages_could_not_keep_says_exactly_which_bytes_moved(
     // reads past; the three lines below are what it costs.
     let (here, there) = a_note_goes_out_and_comes_back(&ASectionOfPages::new());
 
+    // The two copies agree afterwards, which is the decision this plan made and
+    // the one it costs most to get wrong either way. Left as it was typed, the
+    // copy here and the copy there differ from this moment with nothing said,
+    // until the first thing that moves a marker at the backend brings the
+    // backend's version down over somebody's note for no reason they can see.
     assert_eq!(
-        here, AS_IT_WAS_TYPED,
-        "the copy on this computer is not what was typed"
+        here, there,
+        "the two copies disagree after a sync that said it worked"
     );
     assert_ne!(there, AS_IT_WAS_TYPED);
 

@@ -26,7 +26,7 @@
 //! entry in `.planning/WINDOWS.md` rather than one entry covering all of them.
 
 use crate::application::notes_backend::{
-    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendSaid,
+    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendKept, WhatTheBackendSaid,
 };
 use crate::common::{Error, Result};
 use crate::service::caldav::{CalDavClient, sign_in};
@@ -96,6 +96,40 @@ impl AJournalOnACalendarServer {
             }
             // The string is for the log. Nothing reads it out.
             other => WhatTheBackendSaid::CouldNotBeReached(other.to_string()),
+        }
+    }
+
+    /// What this backend will hand back for a document it is about to write,
+    /// where that is not what it was given.
+    ///
+    /// Read back through the same reader a later sync will use, rather than
+    /// reasoned about. The format has one escape for a line break and no way to
+    /// write a carriage return inside a value at all, so a body typed on a
+    /// Windows machine goes out as one break and comes back as a line feed.
+    /// [`crate::service::note_document`]'s own header carries the measurement
+    /// and the section of RFC 5545 it comes from.
+    ///
+    /// `None` where the document gives back exactly what it was handed, which
+    /// is every note with no carriage return in it. Saying nothing is the
+    /// ordinary answer and the sync says nothing to anybody about it.
+    fn what_this_document_gives_back(
+        document: &str,
+        title: &str,
+        body: &str,
+    ) -> Option<WhatTheBackendKept> {
+        match note_document::the_note_in(document) {
+            Ok(back) if back.title == title && back.body == body => None,
+            Ok(back) => Some(WhatTheBackendKept {
+                title: back.title,
+                body: back.body,
+            }),
+            // A document this backend wrote that this backend cannot read is a
+            // fault rather than a limit of the format, and there is nothing
+            // useful to hand the caller about what was kept. It is answered as
+            // "kept exactly" because the alternative writes a copy nobody can
+            // read over somebody's note. `note_document`'s own round-trip test
+            // is what says this arm is unreachable.
+            Err(_) => None,
         }
     }
 
@@ -201,7 +235,12 @@ impl NotesService for AJournalOnACalendarServer {
                     )
                     .await
                 {
-                    Ok(version) => WhatTheBackendSaid::Done(ANoteThere { named: at, version }),
+                    Ok(version) => WhatTheBackendSaid::Done {
+                        known_as: ANoteThere { named: at, version },
+                        what_it_could_keep: Self::what_this_document_gives_back(
+                            &document, title, body,
+                        ),
+                    },
                     Err(e) => Self::what_that_means(e),
                 },
             );
@@ -252,10 +291,13 @@ impl NotesService for AJournalOnACalendarServer {
                 )
                 .await
             {
-                Ok(version) => WhatTheBackendSaid::Done(ANoteThere {
-                    named: there.named.clone(),
-                    version,
-                }),
+                Ok(version) => WhatTheBackendSaid::Done {
+                    known_as: ANoteThere {
+                        named: there.named.clone(),
+                        version,
+                    },
+                    what_it_could_keep: Self::what_this_document_gives_back(&document, title, body),
+                },
                 Err(e) => Self::what_that_means(e),
             },
         )
@@ -277,7 +319,7 @@ impl NotesService for AJournalOnACalendarServer {
                 )
                 .await
             {
-                Ok(()) => WhatTheBackendSaid::Done(known_as.clone()),
+                Ok(()) => WhatTheBackendSaid::done(known_as.clone()),
                 Err(e) => Self::what_that_means(e),
             },
         )
@@ -314,6 +356,46 @@ mod tests {
             .to_string()
     }
 
+    #[test]
+    fn test_a_body_this_format_cannot_carry_is_said_rather_than_reported_as_taken() {
+        // `05.1-03` measured this and wrote it into a changelog and a module
+        // header, where the person whose note it is never meets it. The format
+        // has one escape for a line break and no way to write a carriage return
+        // inside a value, so a body typed on a Windows machine goes out as one
+        // break and comes back as a line feed.
+        //
+        // What is new is that the backend now says so, which is the only place
+        // the difference between a format's limit and a change somebody made at
+        // the other end is knowable. Read back through the reader a later sync
+        // will really use, so a change to either half cannot leave this
+        // claiming a byte survived that did not.
+        let windows = "Live is brown.\r\nNeutral is blue.\r\n";
+        let document = note_document::a_document_saying("n-1", "Wiring colours", windows);
+
+        let kept = AJournalOnACalendarServer::what_this_document_gives_back(
+            &document,
+            "Wiring colours",
+            windows,
+        )
+        .expect("a body with carriage returns in it does not survive this format");
+
+        assert_eq!(kept.title, "Wiring colours", "the title is not the loss");
+        assert_eq!(kept.body, "Live is brown.\nNeutral is blue.\n");
+
+        // And the ordinary note, which is every note without one, says nothing.
+        // Without this the answer could be "not kept exactly" for everything and
+        // the sentence somebody hears would arrive on every sync.
+        let ordinary = "Live is brown.\nNeutral is blue.\n";
+        assert!(
+            AJournalOnACalendarServer::what_this_document_gives_back(
+                &note_document::a_document_saying("n-2", "Wiring colours", ordinary),
+                "Wiring colours",
+                ordinary,
+            )
+            .is_none()
+        );
+    }
+
     #[tokio::test]
     async fn test_a_new_note_is_written_inside_the_collection_rather_than_beside_it() {
         // The address was built by sticking the identifier onto the end of the
@@ -342,7 +424,7 @@ mod tests {
         // silently.
         assert!(request.contains("if-none-match: *"), "{request}");
         assert!(
-            matches!(said, WhatTheBackendSaid::Done(_)),
+            matches!(said, WhatTheBackendSaid::Done { .. }),
             "{said:?} for a write the server took"
         );
     }
@@ -371,7 +453,7 @@ mod tests {
             !request.to_ascii_lowercase().contains("if-match:"),
             "{request}"
         );
-        assert!(matches!(said, WhatTheBackendSaid::Done(_)), "{said:?}");
+        assert!(matches!(said, WhatTheBackendSaid::Done { .. }), "{said:?}");
     }
 
     #[tokio::test]

@@ -208,6 +208,76 @@ the note is called afterwards.
    happened. It does not return a string for somebody to read out: text a crate
    wrote for a developer is not text to speak to somebody whose notes did not
    sync.
+4. A backend that reached the end state but could not keep the bytes it was
+   given says what it kept, in `Done`'s `what_it_could_keep`. The next section
+   is about that.
+
+## Bytes: what a backend must hand back
+
+**A backend that cannot hand back the bytes it was given says so at the moment
+it takes them.**
+
+PIM-04 says a note's stored form is the Markdown source and that a note edited
+here and read back is byte-identical when nothing changed. Two formats this
+program already speaks break that, and neither is unusual.
+
+A calendar journal document has one escape for a line break and no way to write
+a carriage return inside a value at all. A body typed on a Windows machine goes
+out with CRLF and comes back with LF. `service::note_document`'s header carries
+the measurement and the section of RFC 5545 it comes from.
+
+A OneNote page is an HTML document, and HTML collapses a run of whitespace to
+one space and cannot hold one at the end of a line. So this note:
+
+```
+- Live is brown
+  - Older cable: red
+```
+
+comes back as two items at the same level, because the two spaces that made the
+second one a child of the first are gone.
+
+**Why the backend has to be the one to say it.** Whatever is driving a backend
+sees only that the copy there and the copy here differ. It cannot tell a
+backend's own reshaping of what it was handed from a change somebody made at the
+other end, and the two want opposite answers: one is a limit of a format and
+nobody needs asking about it, the other is somebody's edit and must not be
+thrown away. Only the backend knows which, and only in the moment it writes.
+
+**What it costs to leave it unsaid**, which is the state before this section
+existed. The two copies differ from the moment of the first push and nothing
+says so. Every later sync compares markers, finds them equal, and reports the
+note unchanged, so the difference is invisible for as long as nothing at the
+backend moves. The first thing that does move a marker, which the section on
+markers says a backend is allowed to do for reasons the content did not cause,
+brings the backend's version of somebody's note down over theirs with no
+question asked and no sentence anywhere.
+
+**Requirements on any backend:**
+
+1. A backend that could not keep what it was handed reports what it did keep.
+   `None` is a promise that the bytes survived, not a way of saying nothing is
+   known.
+2. It answers from its own copy rather than from a rule about itself. A backend
+   that works out the answer from what it believes it does goes on claiming a
+   byte survived after the day it stops surviving.
+3. It never resolves the difference. Reporting is the whole of a backend's part.
+   What is written down here, and what somebody is told, is decided in
+   `application::notes_sync` for every backend at once.
+
+**What the sync does with it, so that a backend can rely on it.** The copy here
+becomes the copy the backend kept, at the moment of the push, and the sync
+counts it and says so. The loss happens once, while somebody is watching the
+sync they asked for, instead of arriving weeks later as a note that changed for
+no reason they can see. It is the only moment at which the two cases can be told
+apart.
+
+**A backend that cannot round-trip is allowed, and this is the price.** The copy
+here is not what was typed once a note has been to such a backend. That is a
+real cost and it is why the first requirement is a report rather than a refusal:
+refusing the backend would mean refusing OneNote, which is a service people use,
+and pretending the bytes survived would mean losing them quietly. Between saying
+so once and losing them quietly, saying so once is better.
 
 ## Containers: the identifier that is not one identifier
 

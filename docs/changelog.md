@@ -8,6 +8,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **A sync now says when your notes backend could not keep a note exactly as
+  you typed it.** A calendar server's journal format has one way of writing a
+  line break and no way of writing a carriage return inside a value, so a note
+  typed on Windows loses its carriage returns on the way out. This was already
+  written down as a known limitation and there was no way for you to find out
+  it had happened to one of your notes. The sync now says "1 note could not be
+  kept exactly by your notes backend", and the copy on this computer is brought
+  into line with the copy at the server in the same moment, so the two do not
+  quietly differ until something at the server changes and brings its version
+  down over yours.
+
 - **A note change waiting on the Allow Changes setting is no longer lost.** If
   the setting held your change back and the same note had also changed at the
   server, the sync used to say one change was waiting and then write the

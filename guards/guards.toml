@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 508 records have arrived since and have not been through it.
+# 510 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18624,7 +18624,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 17 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
 # Measured 2026-09-10: 6,802 passed in the library, exactly two failed in the
@@ -18648,7 +18648,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 17 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
 # Measured 2026-09-10: 6,802 passed in the library, exactly nine failed in the
@@ -18682,5 +18682,65 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 17 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 23 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+]
+
+# Measured 2026-09-10: 6,803 passed in the library, exactly four failed in the
+# suite. The break is the call site dropping the answer, which is the shape the
+# code had before this plan and the one somebody restores by deleting a line
+# that looks like bookkeeping.
+#
+# What it defends is not a count. Without this call the copy here and the copy
+# at the backend differ from the moment of the first push with nothing said, and
+# the first thing that moves a marker at the backend brings the backend's
+# version of somebody's note down over theirs.
+[[guard]]
+name = "what a backend could not keep is written down rather than reported as taken"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''                    Ok(()) => {
+                        result.sent += 1;
+                        keep_what_the_backend_could(cache, &note, what_it_could_keep, result);
+                    }'''
+after = '''                    Ok(()) => {
+                        result.sent += 1;
+                    }'''
+red = [
+    "test_a_note_a_section_of_pages_could_not_keep_says_exactly_which_bytes_moved",
+    "test_a_page_the_service_only_touched_is_not_written_down_again",
+    "test_a_section_of_pages_that_could_not_keep_a_note_says_so_rather_than_reporting_it_took_it",
+    "test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+]
+
+# Measured 2026-09-10: exactly one failed in the library and the suite was
+# untouched. The break is the comparison stopping being one on bytes, which is
+# the change somebody makes to stop a backend reporting a loss it really has:
+# put the two line endings into the same shape first and the loss disappears
+# from the answer while going on happening to somebody's note.
+#
+# **The first candidate break proved nothing and is written down rather than
+# discarded.** Trimming both sides before comparing reddened not one test in
+# 6,803, because a carriage return inside a body is not at either end and `trim`
+# never sees it. A weaker break than the defect is the commonest way a guard
+# comes to guard nothing, and this one was found by measuring rather than by
+# reasoning about it.
+[[guard]]
+name = "what a backend kept is compared on bytes and on nothing parsed"
+file = "src/service/caldav_journal.rs"
+before = '''            Ok(back) if back.title == title && back.body == body => None,'''
+after = '''            Ok(back)
+                if back.title == title
+                    && back.body.replace("\r\n", "\n") == body.replace("\r\n", "\n") =>
+            {
+                None
+            }'''
+red = [
+    "service::caldav_journal::tests::test_a_body_this_format_cannot_carry_is_said_rather_than_reported_as_taken",
+]
+tests_last_seen = [
+    { file = "src/service/caldav_journal.rs", tests = 6 },
 ]

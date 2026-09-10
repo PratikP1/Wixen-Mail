@@ -436,6 +436,29 @@ pub struct ANoteAsItStands {
     pub body: String,
 }
 
+/// What a backend kept, where it could not keep what it was handed.
+///
+/// Only a backend knows this, which is why it is said here rather than worked
+/// out by whatever is driving one. A sync comparing what came back later
+/// against what it sent cannot tell a backend's own normalising from a change
+/// somebody made at the other end, and guessing either way is how somebody's
+/// note is quietly rewritten or a real change is quietly dropped.
+///
+/// Two formats in this program already lose bytes and neither is exotic. A
+/// calendar journal document has one escape for a line break and no way to
+/// write a carriage return inside a value, so a body typed on a Windows machine
+/// comes back with plain line feeds. A OneNote page is an HTML document, and
+/// HTML collapses a run of whitespace to one space and cannot hold one at the
+/// end of a line, so the indentation that makes a nested list a nested list
+/// does not survive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatTheBackendKept {
+    /// What the note is called at the backend now.
+    pub title: String,
+    /// What the backend's copy says now.
+    pub body: String,
+}
+
 /// What a backend said when it was asked to do something.
 ///
 /// Separate variants rather than one error string, and the reason is not
@@ -452,7 +475,20 @@ pub enum WhatTheBackendSaid {
     /// make another one to leave it saying what was asked; that changes its
     /// identity, and the caller has to be told rather than left holding the
     /// old one.
-    Done(ANoteThere),
+    Done {
+        /// What the backend calls the note now.
+        known_as: ANoteThere,
+        /// What it really kept, where that is not what it was handed.
+        ///
+        /// `None` from a backend that kept the bytes, which is the ordinary
+        /// answer and the one [`WhatTheBackendSaid::done`] gives.
+        ///
+        /// Its own field rather than a second variant, because "it worked" and
+        /// "it worked and the copy there is not quite the copy here" are one
+        /// outcome with one thing to write down afterwards, and splitting them
+        /// would give every caller two arms to keep in step.
+        what_it_could_keep: Option<WhatTheBackendKept>,
+    },
     /// This backend does not hold that note.
     ///
     /// Not an error. Somebody deleted it at the other end, and what the caller
@@ -487,6 +523,19 @@ pub enum WhatTheBackendSaid {
     /// The string is for the log. Nothing reads it out: text a crate wrote for
     /// a developer is not text to speak to somebody whose notes did not sync.
     CouldNotBeReached(String),
+}
+
+impl WhatTheBackendSaid {
+    /// It did what was asked and kept exactly what it was given.
+    ///
+    /// The ordinary answer, and a removal's only one: a note taken away has no
+    /// copy left to have kept anything differently.
+    pub fn done(known_as: ANoteThere) -> Self {
+        Self::Done {
+            known_as,
+            what_it_could_keep: None,
+        }
+    }
 }
 
 /// What a notes sync asks of a service.
