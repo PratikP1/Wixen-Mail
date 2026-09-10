@@ -2,13 +2,20 @@
 
 This is the contract behind `application::notes_backend`. It is written as
 requirements on **any** backend, not as a description of the one that happens to
-be built first, and it is meant to be found wrong: `05.2-03` is required to
-report every place it turned out to assume CalDAV.
+be built first, and it is meant to be found wrong.
 
-Nothing implements it yet. `NotesService` names the three operations and has no
-implementor, and `NotesBackend` answers which backend an account uses and
-answers `ThisComputer` for every account there is. That is the state this
-document describes.
+Two implementations exist and they disagree with each other on purpose.
+`service::caldav_journal` is real, ships, and speaks to a calendar server's
+journal entries. The second lives in
+`tests/the_notes_seam_takes_a_second_kind_of_backend.rs`, is shaped from what
+Microsoft's reference says a OneNote page does, and exists to find out which
+sentences below were about backends and which were about CalDAV. It found four.
+They are listed near the end of this document, hardest first, and phase 5.2 is
+expected to add to that list when it replaces the second one with a real client.
+
+`NotesService` names four operations. `NotesBackend` answers which backend an
+account uses, and an account with a calendar on a calendar server answers
+`CalDavJournal`.
 
 ## What is already decided elsewhere, and is not re-decided here
 
@@ -50,20 +57,45 @@ already of a note held by one backend and also kept here.
    or build one.
 2. A name it has never given is not a name. A note this program has that the
    backend does not know about is a note to create, not a note to look up.
-3. A version marker is optional. A backend that gives none is a backend whose
-   copy is always treated as having moved, which is what
-   `contacts_sync::the_marker_moved` already does and for the reason its comment
-   gives: a missing marker is not evidence that a copy stayed still, it is no
-   evidence at all.
+3. **A version marker is required of any backend this program writes to.** This
+   sentence used to read "a version marker is optional. A backend that gives
+   none is a backend whose copy is always treated as having moved", and it was
+   the largest thing `05.1-04` found wrong. The reading is right for the read
+   half and it is the exact opposite of what the same absence means to the push
+   half, where no marker means nothing is known to have moved at the backend, so
+   this computer's copy goes over whatever is there. Two readings of one absence,
+   in one sync. A backend that gives no marker therefore destroys a change made
+   at the other end and says nothing about it, which was measured before this
+   requirement was written.
+
+   No code change reconciles the two readings. Telling them apart needs the copy
+   the backend last had, and PIM-08 forbids keeping one: the stored form does not
+   change to accommodate a backend. So the requirement moves to the backend, and
+   a service with no opaque token uses whatever it does have. A OneNote page's
+   `lastModifiedDateTime` is a marker under requirement 4's reading, which is
+   why that requirement is written the way it is.
 4. **A version marker is not promised to be opaque, and is not promised to
-   change only when the content does.** This is the sentence most likely to be
-   found wrong later, so it is written first. A CalDAV ETag is an opaque token
-   the server changes when the resource changes. A OneNote page has no ETag and
-   no `eTag` property at all; what it has is `lastModifiedDateTime`, which the
-   service writes and which moves for reasons the content did not cause.
-   Anything here that compares markers must be a comparison for equality and
-   nothing else. Ordering two markers, parsing one as a date, or treating a
-   changed marker as proof that the text changed are all CalDAV readings.
+   change only when the content does. It is promised to change whenever the
+   content does.** A CalDAV ETag is an opaque token the server changes when the
+   resource changes. A OneNote page has no ETag and no `eTag` property at all;
+   what it has is `lastModifiedDateTime`, which the service writes and which
+   moves for reasons the content did not cause. Anything here that compares
+   markers must be a comparison for equality and nothing else. Ordering two
+   markers, parsing one as a date, or treating a changed marker as proof that
+   the text changed are all CalDAV readings.
+
+   The last sentence of the first paragraph is new, and it is the direction this
+   document had not written down. A marker that moves when the content did not
+   costs a fetch nobody needed. A marker that stands still when the content did
+   move costs somebody their note: the sync reports it unchanged and the change
+   never arrives. An ETag cannot do that. A clock reading can, because a clock
+   has a resolution and two changes inside one of its ticks carry one reading.
+
+   What that means for a backend built on a timestamp, and OneNote is one: a
+   write this program makes and an edit somebody makes at the service inside the
+   same tick are one marker, and the second is lost. Nothing in this repository
+   can say how wide that window really is. It is entry 251 in
+   `.planning/WINDOWS.md`.
 
 **What a word this build does not recognise means.** A stored backend name this
 version has never heard of becomes `NotesBackend::Other`, which follows
@@ -102,6 +134,21 @@ the sentences somebody hears be tested without a running window.
    version markers rather than clocks, and by nothing else. A backend does not
    get to add a fourth answer to that enum's four.
 
+**And one requirement on whatever drives a backend, which is where this was
+found wrong.** A clash is reported by the push, and the push does not always
+run. The setting can refuse it, nobody may be signed in, the request can fail.
+In each of those the change stays here and stays marked as waiting, so that
+fixing the cause still sends it. The read that follows in the same sync must not
+write the backend's copy over that change. It used to, which made the promise
+false: the sync counted one change as waiting and destroyed it a moment later,
+and the count was the only thing anybody was told.
+
+So the read holds both copies through `conflict_choice` when the copy here has
+an unsent change and what arrived says something else. Six thousand eight hundred
+and two library tests passed with that guard removed. It is
+`tests/the_notes_seam_takes_a_second_kind_of_backend.rs` that catches it, and it
+catches it for both backends, so this was never a second backend's problem.
+
 **What a notes backend adds to the conflict model, and it is one line.**
 `TheOtherCopy` has two variants today, `AnAddressBook` and `ACalendar`, each
 carrying the words used in a sentence. Its doc comment explains that it is a
@@ -134,21 +181,19 @@ reason to lose anything.
 
 ## The deletion record, which the requirement does not name and the seam needs
 
-**A backend needs a record of deletions that outlives the row, and there is no
-such table for notes.**
+**A backend needs a record of deletions that outlives the row.** This section
+was written when there was no such table for notes. `05.1-03` built
+`deleted_notes` and the requirements below are what it was built to.
 
 `application::deletions` states one rule for everything this computer deletes: a
 note of the deletion outlives the row, because a deleted row cannot carry a "not
 yet sent" flag, and every read asks the notes before writing anything down.
 
-Contacts, calendar events and tasks each have one. Notes do not:
+Contacts, calendar events, tasks and now notes each have one:
 
 ```bash
 grep -n "CREATE TABLE IF NOT EXISTS deleted" src/data/message_cache/mod.rs
 ```
-
-That finds `deleted_contacts`, `deleted_calendar_events` and `deleted_tasks`,
-and none of them is notes. `05.1-03` builds the missing one.
 
 Without it the first backend rediscovers the exact bug `deletions.rs` was
 written about, in its own words:
@@ -311,10 +356,138 @@ assume nothing is a contract nobody checks.
 | A container is one identifier | Held, by making it opaque | A four-level hierarchy flattens into one string the backend owns |
 | A backend can be asked for everything in one container | Held | Both candidates can list. Nothing here has been written against a backend that cannot |
 | One note maps to one thing at the backend | **Held, and this is the weakest one** | A OneNote page is an HTML document with a structure of its own, and reducing it to a title and a body loses whatever else was on the page. `new_item.rs` has said since before this document that the mapping is a decision somebody has to make rather than an afternoon's work. This contract does not make it |
+| A backend hands back the bytes it was given | **Given up, and it was never true** | Neither format this program speaks can promise it. A backend now says what it kept, and the section on bytes is the requirement |
+| A version marker is optional | **Given up** | The absence reads as "treat every copy as moved" on the read and as "nothing moved there" on the push. See the entry below |
+
+## Where the second implementation found this was about CalDAV
+
+Four places, in the order they cost most to find. Read them in this order: it is
+the order the next person should check their own backend against, because the
+ones at the top are the ones no amount of reading the contract would have
+surfaced.
+
+The commits are on branch `a-second-backend-disagrees-and-the-seam-says-where`,
+merged into `main` for `05.1-04`.
+
+### 1. A version marker is not optional
+
+**What the second implementation could not do.** Give no marker and remain safe.
+It was written that way first, because the plan's own reading of Microsoft's
+reference said OneNote has no ETag, which is true. Driven through one sync it
+destroyed a change somebody had made at the other end and reported nothing.
+
+**What the seam said.** "A version marker is optional. A backend that gives none
+is a backend whose copy is always treated as having moved."
+
+**What it says now.** A marker is required of any backend this program writes to,
+and requirement 4 says what a service with no opaque token may use instead. The
+measurement is kept as a test rather than as an argument:
+`test_a_backend_that_gives_no_marker_loses_a_change_made_at_the_other_end_and_says_nothing`.
+
+**Why this was the expensive one.** The sentence is right. It is right about the
+read half, and it is the exact opposite of what the same absence means to the
+push half, and nothing about reading it makes that visible. It took writing a
+backend that took the sentence at its word.
+
+**Commit:** `9a238bb`.
+
+### 2. The clash story lived entirely on the push
+
+**What the second implementation could not do.** Nothing, and that is the point.
+The failure is in both backends and was found while writing tests for the
+second one.
+
+**What the seam said.** That a backend reports `ItMovedFirst` and writes
+nothing, and that the driver holds both copies. It said nothing about the sync
+whose push never reached a backend at all.
+
+**What it says now.** The section on conflict carries a requirement on whatever
+drives a backend: a change nobody has sent is not written over by the read.
+
+**Commits:** `9a238bb` for the failing test, `458da20` for the fix.
+
+### 3. A backend cannot say what it could not keep
+
+**What the second implementation could not do.** Report honestly. A page is an
+HTML document and HTML collapses whitespace, so what it kept was never what it
+was handed, and `Done` had no way to say so.
+
+**What the seam said.** That `Done` carries an identity, because a write may
+change one. Nothing about the words.
+
+**What it says now.** `Done` carries `what_it_could_keep`, and the section on
+bytes is the requirement. The calendar backend uses it as well, for the carriage
+returns RFC 5545 cannot carry, which `05.1-03` had measured and written into a
+changelog where nobody meets it.
+
+**Commits:** `847626c` for the failing tests, `6fe4580` for the fix.
+
+### 4. A marker that stands still while the note moves
+
+**What the second implementation could not do.** Promise that its marker moves
+whenever its content does, because a clock reading has a resolution.
+
+**What the seam said.** That a marker is not promised to change only when the
+content does. That is the harmless direction and it was the only one written
+down.
+
+**What it says now.** Requirement 4 carries both directions and says which one
+costs somebody their note.
+
+**Commits:** `847626c`, and the measurement is
+`test_a_marker_that_stood_still_while_the_note_moved_hides_the_change_from_the_read`.
+
+### And four the second implementation could not shake
+
+Worth as much as the list above, because a contract nobody could break is a
+contract nobody checked.
+
+- **A container is opaque.** Handed a three-part string where the first backend
+  gets one address, nothing in the sync took either apart. A guard record's
+  break is the sync keeping a container's last part, and it reddens nine tests.
+- **A write may change what a note is called.** The second backend gives a new
+  name every time a body changes, which the first never does, and the seam kept
+  up without changing shape.
+- **A backend is asked for an end state and not for an edit.** The second
+  backend has no operation that replaces a body and was never asked for one.
+- **A backend does not resolve a clash.** Both hand the question over, and both
+  reach the same sentence through `conflict_choice`.
+
+## What a second implementation in this repository does not prove
+
+Four things, and they are the boundary of the claim rather than hedging.
+
+**It was written by whoever had just read this document.** It is shaped by what
+the seam made easy as well as by the four constraints it was drawn from. The
+four constraints are what stop it agreeing by construction; nothing stops it
+agreeing by habit everywhere else.
+
+**It is not a network.** Nothing in it has met a timeout, a partial response, a
+redirect, a rate limit, or a sign-in that expired in the middle of an operation.
+Every failure it produces is one somebody chose to write.
+
+**Its four constraints are a reading of documentation on a date.** Read on
+2026-09-06 from `learn.microsoft.com/en-us/graph/api/resources/onenotepage`,
+`learn.microsoft.com/en-us/graph/onenote-update-page` and
+`learn.microsoft.com/en-us/graph/api/resources/onenote-api-overview`. A page can
+change and a service can differ from its own page. Whether these four are what a
+real Graph client meets is entry 249 in `.planning/WINDOWS.md`.
+
+**The fourth one does not apply, and here is why.** It would have read: an
+implementation inside the crate can see private items, so it says nothing about
+whether anything outside could be compiled against the seam. This one lives in
+`tests/`, which links the library the way another crate would and sees only what
+is `pub`. It compiles, so `NotesService`, `ANoteThere`, `ANoteAsItStands`,
+`WhatTheBackendSaid`, `WhatTheBackendKept` and `notes_sync::sync_notes` are all
+reachable from outside. What that still does not prove is that they are reachable
+from outside the *repository*: an integration test is built against the same
+source tree, so a change that breaks a published API breaks it here in the same
+commit rather than a version later.
 
 ## What has never been checked
 
 No account, no calendar server and no OneNote tenant has ever been used with
-this program. Every sentence above is reasoning from documentation and from what
-this repository already does, not from a backend that has run. The first
-implementation will find something, and `05.2-03` is required to say what.
+this program. Every sentence above is reasoning from documentation, from what
+this repository already does, and from two implementations neither of which has
+opened a socket. Phase 5.2 replaces the second one with a real Graph client and
+is required to report every place it was wrong.
