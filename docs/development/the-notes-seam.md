@@ -324,6 +324,91 @@ refusing the backend would mean refusing OneNote, which is a service people use,
 and pretending the bytes survived would mean losing them quietly. Between saying
 so once and losing them quietly, saying so once is better.
 
+## What each backend really hands back, measured
+
+Two backends now exist on paper and one of them ships, and neither hands back
+what it was given. They fail differently, and folding them together would hide
+the choice rather than inform it.
+
+**A calendar journal loses one class of byte and keeps every other.** A body
+typed on a Windows machine goes out with CRLF and comes back with LF, because
+RFC 5545 section 3.3.11 gives one escape for a line break and no way to write a
+carriage return inside a value. A trailing space, a backslash, a comma, an
+emoji and a line that looks like a property name all survive.
+`service::note_document`'s header carries that measurement, and `05.1-03` found
+it by building the thing.
+
+**A OneNote page loses the form and keeps most of the words.** It is not a
+wider version of the calendar's problem. A page holds HTML, so what crosses is
+a structure rather than a source, and the Markdown that comes back is rendered
+afresh from that structure. Nothing round-trips because nothing is stored.
+
+### What a note kept in OneNote comes back as
+
+Every row below is run by
+`service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true`,
+which reads this table out of this file and puts each left-hand cell through
+the pair. A row that stops being true fails the build. The table cannot say
+something the tests do not.
+
+In the cells, `\n` is a line break, `\|` a vertical bar, `\g` a backtick and
+`\e` nothing at all, because none of those can be written inside a table cell.
+
+**The middle step is a model of the service and not the service.** Nobody here
+has a OneNote tenant. Every transformation in the model names the section of
+`learn.microsoft.com/en-us/graph/onenote-input-output-html` it was read from on
+2026-09-11. What this measures is what this program does with what the
+reference says the service returns. It does not measure what the service
+returns. That is entry 266 in `.planning/WINDOWS.md`.
+
+| What was typed | What comes back | Where it goes |
+|---|---|---|
+| `# Colours` | `# Colours` | nowhere, it survives |
+| `###### Colours` | `###### Colours` | nowhere, it survives, and so does every level between |
+| `- Milk\n- Bread` | `- Milk\n- Bread` | nowhere, it survives |
+| `1. Milk\n2. Bread` | `1. Milk\n2. Bread` | nowhere, it survives |
+| `Two fuses went at once.` | `Two fuses went at once.` | nowhere, it survives |
+| `- Milk\n- Bread\n\n## Then` | `- Milk\n- Bread\n\n## Then` | nowhere, it survives, and a heading straight after a list is where a reader most needs it to |
+| `- Live is brown\n  - Older cable: red` | `- Live is brown  Older cable: red` | **this program.** The nesting reaches the page and comes back from it. `from_markup`'s list pass reads only an item's direct inline content, so the inner item is swallowed into the outer one |
+| `- One\n  - Two\n    - Three` | `- One  Two  Three` | **this program**, the same way, and three levels become one bullet |
+| `> Bring the blue folder` | `Bring the blue folder` | **OneNote.** `blockquote` is in no list the reference names, so it is cut before the page is sent |
+| `Turn the power **off** first.` | `Turn the power off first.` | **OneNote.** The reference says a character style comes back as inline CSS on a span that was not in the input, and a span carries no meaning this reader can read |
+| `Turn the power *off* first.` | `Turn the power off first.` | **OneNote**, the same way |
+| `Turn the power ~~off~~ first.` | `Turn the power off first.` | **OneNote**, the same way, and this is the one that changes what a note means: a job crossed off and a job still to do read alike afterwards |
+| `Run \gfusebox --check\g first.` | `Run fusebox --check first.` | **OneNote.** `code` is in no list the reference names |
+| `\g\g\g\nfusebox --check\nfusebox --repair\n\g\g\g` | `fusebox --check fusebox --repair` | **OneNote**, and this is the sharpest one. Neither `pre` nor `code` is named, so a code block has no representation on a page at all, and HTML then collapses the line breaks that were its meaning. Two commands become one line that runs neither |
+| `Before\n\n---\n\nAfter` | `Before\n\nAfter` | **OneNote**, and it is the only construct that leaves nothing behind: `hr` is not named and has no text inside it to keep |
+| `[The manual](https://example.org/manual)` | `The manual` | **this program.** The address reaches the page and comes back. `from_markup` contributes a link's words and not its address, deliberately, so a note keeps its words and loses its links |
+| `![The fuse box](https://example.org/fusebox.png)` | `The fuse box` | **this program.** The picture reaches the page and comes back with its description. `from_markup` emits the description alone, so the picture stops being one |
+| `![](https://example.org/fusebox.png)` | `image with no description` | **this program**, the same way, and the sentence is deliberate: a picture nobody described is the sender's gap to be shown rather than ours to hide |
+| `\| Left \| Right \|\n\| --- \| --- \|\n\| one \| two \|` | `Left\n\nRight\n\none\n\ntwo` | **both.** OneNote does not name `th`, so the header row is written as an ordinary row on the way out. `from_markup` has no table arm at all, so every cell comes back as its own paragraph and which column it was in is gone |
+| `Line one\nLine two` | `Line one  Line two` | **this program.** `as_markup` turns a soft break into a hard one on purpose, so the break reaches the page and somebody looking at it in OneNote sees two lines. `from_markup`'s inline pass turns a `br` back into a space |
+| ` ` | `\e` | **the format.** HTML collapses a run of whitespace and cannot hold one at the end of a line |
+| `\e` | `\e` | nowhere. An empty note costs nothing |
+
+**The hidden source div was tried and it does not work.** A `data-id` survives
+and a div carrying one is preserved, so a hidden div holding the Markdown
+source looks like a way to make the round trip exact. Put through the same
+model, `# Colours\n\n- Live is brown\n- Neutral is blue` comes back as
+`# Colours - Live is brown - Neutral is blue`: the div survives and the source
+inside it is still text in an HTML document, so its blank lines and the line
+starts that made it Markdown are gone. It would not be free even where it
+worked, because it puts a second copy of every note inside that note, which is
+the drift `long_text::as_markup`'s own comment says the matched pair exists to
+prevent. The measurement is
+`test_a_hidden_div_carrying_the_source_does_not_bring_it_back`.
+
+### Reading the two columns together
+
+Seven of the twenty-two rows survive. Of the fifteen that do not, seven are
+OneNote's doing, six are this program's own reader, one is both, and one is
+HTML's rather than anybody's. That split matters: the seven are facts about
+somebody else's service and cannot be argued with, and the six are decisions
+`from_markup` made for reading a message, where a link read aloud as an address
+helps nobody and a note is a different job. **Changing those six is a plan
+rather than a line**, because that module is shared with every message body and
+signature this program renders.
+
 ## Containers: the identifier that is not one identifier
 
 **A container is an opaque string the backend hands out, and this program never

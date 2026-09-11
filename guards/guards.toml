@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 517 records have arrived since and have not been through it.
+# 519 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19017,4 +19017,99 @@ red = [
 tests_last_seen = [
     { file = "src/application/address_book_source.rs", tests = 16 },
     { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# ── A page sent with elements OneNote has never named ───────────────────────
+#
+# What OneNote accepts in a page's body is a published list, and `ammonia`'s
+# default allowlist is a browser's idea of safe HTML rather than that list. It
+# holds `pre`, `code`, `blockquote` and `hr`, none of which the reference
+# names. Sending one is not refused and not reported: the service does
+# something with it that is written down nowhere, and what somebody's note
+# looks like afterwards is unknown rather than measured.
+#
+# The break is a widening rather than a deletion, because widening is what
+# somebody does to make a construct survive. Two names are added to the list of
+# elements this program sends, and everything else about the file stays: both
+# conversions still run, the round trip still holds, the sanitising still
+# removes a script. Only the question of whether the page was checked against
+# the published set goes red.
+#
+# One test of 6,906 reddens, and that is the guard rather than a shortfall in
+# it. One test reads a produced page against the reference's own list, and it
+# is the only place that comparison is made. Measured by hand on 2026-09-11
+# against a green tree with `cargo test --lib --no-fail-fast` at the default
+# eight threads: 6,905 passed and exactly one failed, in 63.86 seconds.
+[[guard]]
+name = "a page is checked against the elements OneNote names"
+file = "src/service/onenote_page.rs"
+before = '''const ELEMENTS_THIS_PROGRAM_SENDS: [&str; 28] = [
+    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ol", "ul", "li", "table", "tr", "td", "span",
+    "br", "a", "img", "b", "i", "u", "em", "strong", "strike", "sup", "sub", "del", "cite",
+];'''
+after = '''const ELEMENTS_THIS_PROGRAM_SENDS: [&str; 30] = [
+    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ol", "ul", "li", "table", "tr", "td", "span",
+    "br", "a", "img", "b", "i", "u", "em", "strong", "strike", "sup", "sub", "del", "cite", "pre",
+    "code",
+];'''
+#
+# Re-measured on 2026-09-11, later the same day, when the fidelity measurement
+# added 24 tests to the file this record names. The red list is unchanged at one
+# test, measured rather than assumed: none of the new tests reads a produced
+# page's elements, so widening the list leaves all of them green. 6,929 passed
+# and one failed.
+red = [
+    "service::onenote_page::tests::test_the_page_holds_nothing_the_reference_does_not_name",
+]
+tests_last_seen = [
+    { file = "src/service/onenote_page.rs", tests = 48 },
+]
+
+# ── A page's body read without being taken out of its divs ──────────────────
+#
+# The finding that makes the fidelity measurement about OneNote rather than
+# about this program's own reader. `long_text::from_markup`'s block pass has one
+# arm for `p` and `div` together, so a `div` is read as a single paragraph and
+# every heading, list and blank line inside it is concatenated into one run of
+# text. OneNote wraps all body content in at least one `div`, so a page handed
+# over unflattened comes back as one paragraph and a fidelity table measured
+# through that path reports every construct as lost and blames Microsoft for it.
+#
+# The break is the flattening replaced by the ordinary clean that was there
+# before anybody noticed, which is what somebody writes who reads the
+# sanitising as the point of this function and the tag removal as tidying.
+#
+# Measured by hand on 2026-09-11 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,919 passed
+# and 11 failed, in 62.08 seconds.
+#
+# The break this plan's own text asked for was measured first and reddens
+# nothing. It was to compare a round trip on parsed structures rather than on
+# bytes, which is the change somebody makes to turn a red table green. It
+# cannot redden anything while the table records what really happens: a looser
+# comparison passes a true row as readily as a strict one. 6,930 passed and
+# none failed. Written down rather than left out, because a candidate break
+# that reddens nothing is a finding about the break.
+[[guard]]
+name = "a page's body is taken out of its divs before it is read"
+file = "src/service/onenote_page.rs"
+before = '''    let mut everything_but_divs = ammonia::Builder::default();
+    everything_but_divs.rm_tags(["div"]);
+    everything_but_divs.clean(html).to_string()'''
+after = '''    ammonia::clean(html)'''
+red = [
+    "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
+    "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
+    "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
+    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_as_one_item",
+    "service::onenote_page::tests::test_a_nested_list_comes_back_as_one_item",
+    "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
+    "service::onenote_page::tests::test_a_table_comes_back_as_its_cells_one_to_a_paragraph",
+    "service::onenote_page::tests::test_an_ordered_list_comes_back",
+    "service::onenote_page::tests::test_an_unordered_list_comes_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_microsofts_own_page_comes_back_with_its_heading_as_a_heading",
+]
+tests_last_seen = [
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
