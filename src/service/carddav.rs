@@ -36,7 +36,7 @@
 //! else's client, are two further questions and neither is answered here.
 
 use crate::common::{Error, Result};
-use crate::data::message_cache::ContactEntry;
+use crate::data::message_cache::{ContactEntry, MessageCache};
 use crate::service::caldav::{extract_xml_value, resolved_against, response_blocks};
 
 /// What this program asks a server when it wants to know which address books
@@ -106,7 +106,7 @@ pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressB
 
     let mut address_books = Vec::new();
     for block in response_blocks(xml) {
-        let href = extract_xml_value(block, "d:href").unwrap_or_default();
+        let href = value_in(block, "d:href").unwrap_or_default();
         // An address book with nowhere to ask is worse than none: every later
         // request for it resolves the empty address against the base and goes
         // somewhere nobody chose.
@@ -118,9 +118,9 @@ pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressB
         }
         address_books.push(CardDavAddressBook {
             url: resolved_against(&href, base_url),
-            display_name: extract_xml_value(block, "d:displayname")
+            display_name: value_in(block, "d:displayname")
                 .unwrap_or_else(|| "Untitled".to_string()),
-            ctag: extract_xml_value(block, "cs:getctag"),
+            ctag: value_in(block, "cs:getctag"),
         });
     }
     Ok(address_books)
@@ -223,9 +223,106 @@ pub struct CardsFromAServer {
 /// [`address_books_in`] gives, and every card goes through
 /// `MessageCache::contact_from_vcard_block`, which is the same code a file
 /// import uses. Nothing here reads a property off a card.
-pub fn cards_in(_xml: &str, _base_url: &str, _account_id: &str) -> Result<CardsFromAServer> {
-    // The red half of red/green.
-    Ok(CardsFromAServer::default())
+pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFromAServer> {
+    if !xml.to_ascii_lowercase().contains("multistatus") {
+        return Err(Error::Protocol(
+            "That address did not answer with the cards in an address book. \
+             Nothing here was changed."
+                .to_string(),
+        ));
+    }
+
+    let mut sent = CardsFromAServer::default();
+    for block in response_blocks(xml) {
+        let Some(card) = the_card_in(block) else {
+            continue;
+        };
+        let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {
+            sent.could_not_be_read += 1;
+            continue;
+        };
+        let href = value_in(block, "d:href").unwrap_or_default();
+        sent.cards.push(CardOnAServer {
+            // Nothing rather than the address book's own address when the
+            // server said none. An empty address resolved against the base is
+            // the collection itself, and a change written there is written
+            // over every card in it.
+            url: match href.is_empty() {
+                true => String::new(),
+                false => resolved_against(&href, base_url),
+            },
+            version: value_in(block, "d:getetag"),
+            contact,
+        });
+    }
+    Ok(sent)
+}
+
+/// The card's own text in a response block.
+///
+/// Three spellings of the element are tried, because the namespace prefix is
+/// the document's own choice and this cannot step over it the way
+/// [`names_an_address_book`] does: an element's value is taken by name here,
+/// not found by scanning. A server writing a fourth spelling is read as having
+/// sent no card, which is a real gap and has never been tried against one.
+fn the_card_in(block: &str) -> Option<String> {
+    ["card:address-data", "C:address-data", "address-data"]
+        .iter()
+        .find_map(|named| value_in(block, named))
+}
+
+/// One element's value, with XML's own escaping taken off.
+///
+/// Everything this file takes out of a document comes through here, so a value
+/// reaches the rest of the program as the text it is rather than as the text
+/// XML needed to carry it. An address book called `Sam &amp; Co` is read out to
+/// somebody, and that is not a name.
+///
+/// The calendar's reader does not do this: it hands the document it takes out
+/// straight to the calendar parser. That is a gap there rather than a decision,
+/// and this plan does not reach into that file to fix it.
+fn value_in(block: &str, tag: &str) -> Option<String> {
+    extract_xml_value(block, tag).map(|value| xml_unescaped(&value))
+}
+
+/// Text with the five references XML defines turned back into the characters
+/// they stand for.
+///
+/// Only those five, and only once. A reference this does not know is left
+/// exactly as it arrived, which is what keeps an entity a document declared for
+/// itself from ever being expanded: the document may declare what it likes and
+/// this reads the declaration as text and the reference as text. Reading once
+/// rather than until nothing changes is the other half of that, so a document
+/// writing `&amp;lt;` gets back `&lt;` and not `<`.
+fn xml_unescaped(text: &str) -> String {
+    const REFERENCES: [(&str, char); 5] = [
+        ("&amp;", '&'),
+        ("&lt;", '<'),
+        ("&gt;", '>'),
+        ("&quot;", '"'),
+        ("&apos;", '\''),
+    ];
+    let mut plain = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        plain.push_str(&rest[..at]);
+        let from_the_ampersand = &rest[at..];
+        match REFERENCES
+            .iter()
+            .find(|(reference, _)| from_the_ampersand.starts_with(reference))
+        {
+            Some((reference, letter)) => {
+                plain.push(*letter);
+                rest = &from_the_ampersand[reference.len()..];
+            }
+            None => {
+                plain.push('&');
+                rest = &from_the_ampersand[1..];
+            }
+        }
+    }
+    plain.push_str(rest);
+    plain
 }
 
 #[cfg(test)]
@@ -756,10 +853,10 @@ mod tests {
 
     /// One response block carrying a card, the way a server sends it: the
     /// card's text is XML escaped inside the element.
-    fn a_card_block(href: &str, etag: &str, card: &str) -> String {
-        let marker = match etag.is_empty() {
-            true => String::new(),
-            false => format!("<d:getetag>{etag}</d:getetag>"),
+    fn a_card_block(href: &str, etag: Option<&str>, card: &str) -> String {
+        let marker = match etag {
+            None => String::new(),
+            Some(given) => format!("<d:getetag>{given}</d:getetag>"),
         };
         format!(
             "  <d:response>\n    \
@@ -787,12 +884,12 @@ mod tests {
             "{}{}",
             a_card_block(
                 "/carddav/sam/contacts/grace.vcf",
-                "\"one\"",
+                Some("\"one\""),
                 &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour")
             ),
             a_card_block(
                 "/carddav/sam/contacts/ada.vcf",
-                "\"two\"",
+                Some("\"two\""),
                 &a_readable_card("Ada Lovelace", "ada@example.com", "Wrote it down first")
             )
         ));
@@ -817,14 +914,17 @@ mod tests {
         // structured field. Getting them back proves the card went through the
         // shared reader rather than through something written beside it.
         let street = "12 High Street\\; Flat 2";
+        // Two spaces after the break: the format's own continuation space, and
+        // then the space that belongs to "United Kingdom". Unfolding takes off
+        // exactly one, which is the rule that once ran two words together here.
         let card = format!(
             "BEGIN:VCARD\nVERSION:3.0\nFN:Grace Hopper\nEMAIL:grace@example.com\n\
-             ADR;TYPE=HOME:;;{street};Newcastle;Tyne and Wear;NE1 1AA;United\n Kingdom\n\
+             ADR;TYPE=HOME:;;{street};Newcastle;Tyne and Wear;NE1 1AA;United\n  Kingdom\n\
              END:VCARD\n"
         );
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"1\"",
+            Some("\"1\""),
             &card,
         ));
 
@@ -843,12 +943,12 @@ mod tests {
             "{}{}",
             a_card_block(
                 "/carddav/sam/contacts/nobody.vcf",
-                "\"one\"",
+                Some("\"one\""),
                 "BEGIN:VCARD\nVERSION:3.0\nFN:Nobody\nEND:VCARD\n"
             ),
             a_card_block(
                 "/carddav/sam/contacts/grace.vcf",
-                "\"two\"",
+                Some("\"two\""),
                 &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour")
             )
         ));
@@ -867,7 +967,7 @@ mod tests {
         // in is a marker the server does not recognise on the way out.
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"abc-123\"",
+            Some("\"abc-123\""),
             &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour"),
         ));
 
@@ -879,19 +979,24 @@ mod tests {
     #[test]
     fn test_a_version_marker_that_is_empty_and_one_that_is_absent_are_the_same_answer() {
         // The same decision as the address book's change marker, taken once
-        // for both rather than twice.
+        // for both rather than twice: an element that is there and holds
+        // nothing, and an element that is not there, are one answer.
         let card = a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour");
         let empty = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"\"",
+            Some(""),
             &card,
         ));
-        let absent = a_multistatus(&a_card_block("/carddav/sam/contacts/grace.vcf", "", &card));
+        let absent = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            None,
+            &card,
+        ));
 
         let from_empty = cards_in(&empty, AT, SOMEBODY).expect("a multistatus to be read");
         let from_absent = cards_in(&absent, AT, SOMEBODY).expect("a multistatus to be read");
 
-        assert_eq!(from_empty.cards[0].version.as_deref(), Some("\"\""));
+        assert_eq!(from_empty.cards[0].version, None);
         assert_eq!(from_absent.cards[0].version, None);
     }
 
@@ -921,7 +1026,7 @@ mod tests {
         );
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"1\"",
+            Some("\"1\""),
             &card,
         ));
 
@@ -947,7 +1052,7 @@ mod tests {
         );
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"1\"",
+            Some("\"1\""),
             &card,
         ));
 
@@ -968,7 +1073,7 @@ mod tests {
         );
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
-            "\"1\"",
+            Some("\"1\""),
             &card,
         ));
 

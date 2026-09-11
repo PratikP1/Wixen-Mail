@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 512 records have arrived since and have not been through it.
+# 513 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18784,7 +18784,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/service/carddav.rs", tests = 19 },
+    { file = "src/service/carddav.rs", tests = 30 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -18812,5 +18812,47 @@ red = [
     "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 19 },
+    { file = "src/service/carddav.rs", tests = 30 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,832 passed and exactly one failed.
+#
+# The break is a line joining step added here, dropping the lines the card
+# format broke in two instead of leaving them to the reader that knows what a
+# fold is. That is the second card reader being born: nobody sits down to write
+# one, somebody adds a little card handling at the place they are standing, and
+# from then on a card read from a file and a card read from a server mean
+# different things.
+#
+# **The break the plan asked for was replaced, and the reason is worth keeping.**
+# It asked for a property read inline here. Reading one property inline does not
+# change anything a test can see, because the shared reader has already filled
+# that field with the same text; to make it visible the inline read has to also
+# be wrong, which means writing a whole second reader rather than making the one
+# edit somebody really makes. This break is one edit and it is wrong in the way
+# the real thing is wrong.
+#
+# The first candidate was joining the folded lines here rather than dropping
+# them. It reddened nothing, because joining them correctly is what the reader
+# does anyway, so the result was the same card by a longer road.
+[[guard]]
+name = "a card from a server is read by the reader a file import uses, not here"
+file = "src/service/carddav.rs"
+before = '''        let Some(card) = the_card_in(block) else {
+            continue;
+        };'''
+after = '''        let Some(card) = the_card_in(block) else {
+            continue;
+        };
+        let card = card
+            .lines()
+            .filter(|line| !line.starts_with(' '))
+            .collect::<Vec<_>>()
+            .join("\n");'''
+red = [
+    "service::carddav::tests::test_a_cards_text_goes_through_the_reader_a_file_import_uses",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 30 },
 ]
