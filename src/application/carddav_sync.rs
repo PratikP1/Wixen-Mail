@@ -27,10 +27,12 @@
 //! `SyncResult` or in an error message can carry a password, because the sync
 //! never has one.
 
-use crate::application::contacts_sync::SyncResult;
+use crate::application::contacts_sync::{
+    self, Contacts, HowFarAChangeGoes, SyncResult, WhoseCopyWins,
+};
 use crate::common::Result;
-use crate::data::message_cache::{AddressBookContainer, MessageCache};
-use crate::service::carddav::CardsFromAServer;
+use crate::data::message_cache::{AddressBook, AddressBookContainer, ContactEntry, MessageCache};
+use crate::service::carddav::{CardDavClient, CardOnAServer, CardsFromAServer};
 
 /// What a contacts sync asks of a CardDAV address book.
 ///
@@ -80,15 +82,398 @@ pub trait CardsOnAServer {
     fn remove(&self, card_url: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
+/// A real address book server, with the sign-in it was given.
+///
+/// The sign-in is held here and nowhere else in the sync. Loaded once, from the
+/// credential store, where the screen that added the address book put it.
+pub struct AnAddressBookServer {
+    client: CardDavClient,
+    user_name: String,
+    password: String,
+}
+
+impl AnAddressBookServer {
+    /// The server one address book lives on, or nothing when this computer has
+    /// no whole sign-in for it.
+    ///
+    /// Half a sign-in is not a sign-in: sending a blank password gets a refusal
+    /// that reads as a broken account, so an address book with only one half
+    /// stored is left alone until somebody types the other.
+    pub fn for_the(book: &AddressBookContainer) -> Option<Self> {
+        let (user_name, password) = crate::service::carddav::sign_in::load(&book.id)?;
+        Some(Self {
+            client: CardDavClient::for_account(&book.account_id),
+            user_name,
+            password,
+        })
+    }
+}
+
+impl CardsOnAServer for AnAddressBookServer {
+    async fn change_marker(&self, address_book_url: &str) -> Result<Option<String>> {
+        self.client
+            .change_marker(address_book_url, &self.user_name, &self.password)
+            .await
+    }
+
+    async fn whats_in(&self, address_book_url: &str, account_id: &str) -> Result<CardsFromAServer> {
+        self.client
+            .cards(
+                address_book_url,
+                &self.user_name,
+                &self.password,
+                account_id,
+            )
+            .await
+    }
+
+    async fn write(
+        &self,
+        card_url: &str,
+        vcard: &str,
+        version: Option<&str>,
+    ) -> Result<Option<String>> {
+        self.client
+            .write_card(card_url, &self.user_name, &self.password, vcard, version)
+            .await
+    }
+
+    async fn remove(&self, card_url: &str) -> Result<()> {
+        self.client
+            .delete_card(card_url, &self.user_name, &self.password)
+            .await
+    }
+}
+
 /// Sync contacts both ways with one CardDAV address book.
+///
+/// The order is the one `sync_google_contacts` uses and it is not arbitrary.
+/// Deletions go first, because deleting a contact takes the row and any change
+/// waiting in it, so there is nothing left for the change push to find. The
+/// change push goes before the read, because the other order sends a value the
+/// read has just written and the push undoes the thing it was told to accept.
+///
+/// Every decision about whose copy survives is `contacts_sync`'s. Nothing here
+/// answers one.
 pub async fn sync_carddav_address_book<B: CardsOnAServer>(
     cache: &MessageCache,
     server: &B,
     book: &AddressBookContainer,
 ) -> Result<SyncResult> {
-    // RED: nothing is asked and nothing is sent, and it reports a clean run.
-    let _ = (cache, server, book);
-    Ok(SyncResult::default())
+    let filed_under = book.the_word_its_contacts_are_filed_under();
+    let account_id = book.account_id.as_str();
+    let mut result = SyncResult::default();
+
+    contacts_sync::forget_the_deletions_remembered_long_enough(cache, &mut result);
+
+    for note in contacts_sync::deletions_waiting_for(cache, account_id, &filed_under, &mut result) {
+        // The address book's own name for this card is its whole address, so
+        // this is the card to take away.
+        let sent = server.remove(&note.provider_contact_id).await;
+        contacts_sync::count_the_deletion(cache, &sent, &note, &book.name, &mut result);
+    }
+    let everybody_deleted_here =
+        contacts_sync::contacts_deleted_here(cache, account_id, &filed_under, &mut result);
+
+    let still_built_on_an_old_copy =
+        push_changes_to(cache, server, book, &filed_under, &mut result).await;
+
+    // Asked before the cards are. The marker is what the server moves whenever
+    // anything in the address book changes, so an unmoved one means every card
+    // is the card this computer already has, and asking for them is the whole
+    // address book over the wire to learn that nothing happened.
+    //
+    // A server that gives no marker answers `None`, and `the_marker_moved`
+    // reads that as moved, so those are read in full every time. That is the
+    // answer that claims least: a missing marker is no evidence, not evidence
+    // of stillness.
+    let marker_now = server.change_marker(&book.url).await?;
+    if !contacts_sync::the_marker_moved(marker_now.as_deref(), book.ctag.as_deref()) {
+        return Ok(result);
+    }
+
+    let arrived = server.whats_in(&book.url, account_id).await?;
+    if arrived.could_not_be_read > 0 {
+        // Said rather than swallowed. An address book that really is empty and
+        // one whose cards could none of them be read are different facts, and
+        // the second is the one somebody goes looking for a broken program
+        // over.
+        result.errors.push(format!(
+            "{} card(s) in {} could not be read and were passed over.",
+            arrived.could_not_be_read, book.name
+        ));
+    }
+
+    for card in &arrived.cards {
+        if card.url.is_empty() {
+            continue;
+        }
+        // Somebody this computer deleted. Whether the address book has taken
+        // the deletion or not, writing her back down puts a contact somebody
+        // deleted on the screen again.
+        if everybody_deleted_here.holds(&card.url) {
+            continue;
+        }
+        take_in_one_card(
+            cache,
+            card,
+            &filed_under,
+            &still_built_on_an_old_copy,
+            &mut result,
+        )?;
+    }
+
+    // Written down only after the read succeeded. Moved on after a read that
+    // failed, everything that changed in between is never asked for again.
+    let mut seen = book.clone();
+    seen.ctag = marker_now;
+    cache.save_address_book(&seen)?;
+
+    Ok(result)
+}
+
+/// Send the address book everything made or changed here that it has not had.
+///
+/// Answers with the changes it offered and could not get in, which
+/// [`contacts_sync::keep_a_change_this_sync_could_not_send`] needs so that the
+/// read in the same sync does not destroy them.
+async fn push_changes_to<B: CardsOnAServer>(
+    cache: &MessageCache,
+    server: &B,
+    book: &AddressBookContainer,
+    filed_under: &AddressBook,
+    result: &mut SyncResult,
+) -> Contacts {
+    let mut still_built_on_an_old_copy = Contacts::default();
+
+    // Changes to contacts this address book already holds.
+    //
+    // To every address book that knows the contact, because a CardDAV address
+    // book is not where a contact came from in the sense the other setting
+    // means: a card is the whole contact, and there is no field this address
+    // book owns and the others do not.
+    for (contact, card_url) in contacts_sync::changes_waiting_for(
+        cache,
+        &book.account_id,
+        filed_under,
+        HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem,
+        result,
+    ) {
+        let version = contacts_sync::version_given_by(&contact, filed_under);
+        let sent = server
+            .write(
+                &card_url,
+                &MessageCache::vcard_block_from_contact(&contact),
+                version.as_deref(),
+            )
+            .await;
+        match &sent {
+            Ok(now) => {
+                let told = contact.told(filed_under, now.as_deref());
+                if let Err(unwritten) = cache.save_contact(&told) {
+                    result.errors.push(format!(
+                        "Contact {} was sent to {} and the note saying so could not be \
+                         written: {unwritten}",
+                        contact.id, book.name
+                    ));
+                }
+            }
+            Err(refused) if the_address_book_had_moved_past_it(refused) => {
+                still_built_on_an_old_copy.note(&contact.id);
+            }
+            Err(_) => {}
+        }
+        contacts_sync::count_the_attempt(&sent.map(|_| ()), &contact.id, &book.name, result);
+    }
+
+    // Contacts made here that no address book knows yet.
+    let locals = match cache.get_contacts_for_account(&book.account_id) {
+        Ok(locals) => locals,
+        Err(unreadable) => {
+            result.errors.push(format!(
+                "The contacts waiting to be sent could not be read: {unreadable}"
+            ));
+            return still_built_on_an_old_copy;
+        }
+    };
+    for local in locals.iter().filter(|local| made_here(local)) {
+        // The address is chosen here rather than by the server, which is what
+        // CardDAV asks for: a PUT to an address nothing is at makes the card.
+        // The contact's own identifier goes in the path, escaped, because one
+        // holding a space breaks the request line and one holding a hash
+        // truncates the address at the fragment.
+        let card_url = format!(
+            "{}/{}.vcf",
+            book.url.trim_end_matches('/'),
+            crate::service::outward::in_a_path(&local.id)
+        );
+        let sent = server
+            .write(
+                &card_url,
+                &MessageCache::vcard_block_from_contact(local),
+                None,
+            )
+            .await;
+        match sent {
+            Ok(now) => {
+                let mut told = local
+                    .also_known_to(filed_under.clone(), &card_url, now.as_deref())
+                    // The address book has it, and no other is owed it: a
+                    // create only happens for a contact no address book knew.
+                    // Left marked as waiting, the next read counts the address
+                    // book's own copy as having replaced an edit and tells
+                    // somebody they lost work they still have.
+                    .told(filed_under, now.as_deref());
+                told.source_provider = Some(filed_under.as_stored().to_string());
+                told.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
+                if let Err(unwritten) = cache.save_contact(&told) {
+                    // Never given up on. The card is already at the server, so
+                    // stopping here abandons the contacts behind this one.
+                    result.errors.push(format!(
+                        "Contact {} was added to {} and the note saying so could not be \
+                         written: {unwritten}",
+                        local.id, book.name
+                    ));
+                }
+                result.created_remote.note(&local.id);
+            }
+            Err(refused) if crate::service::outward::was_refused_by_the_gate(&refused) => {
+                result.waiting_on_the_setting.note(&local.id);
+            }
+            Err(failed) => result.errors.push(format!(
+                "Contact {} could not be added to {}: {failed}",
+                local.id, book.name
+            )),
+        }
+    }
+
+    still_built_on_an_old_copy
+}
+
+/// Whether this contact was made on this computer and no address book has it.
+///
+/// `pending` is what says made here. Without it every address harvested from a
+/// message header goes into somebody's real address book, and nobody asked for
+/// their mail history to be copied there.
+fn made_here(contact: &ContactEntry) -> bool {
+    contact.pending && contact.known_to.is_empty()
+}
+
+/// Whether the server turned a write down because the copy it was built on has
+/// moved.
+///
+/// A CardDAV server answers a failed `If-Match` with 412. It is not a failure
+/// somebody can act on: the next sync builds the change again on whatever the
+/// address book holds by then.
+fn the_address_book_had_moved_past_it(refused: &crate::common::Error) -> bool {
+    matches!(refused, crate::common::Error::Api { status: 412, .. })
+}
+
+/// Fold one card the address book sent into what is stored here.
+///
+/// Every decision in here is made somewhere else. This is the wiring between
+/// them and the order they are asked in, which is `sync_google_contacts`'s
+/// order because it is the same set of questions.
+fn take_in_one_card(
+    cache: &MessageCache,
+    card: &CardOnAServer,
+    filed_under: &AddressBook,
+    still_built_on_an_old_copy: &Contacts,
+    result: &mut SyncResult,
+) -> Result<()> {
+    let locals = cache.get_contacts_for_account(&card.contact.account_id)?;
+    let Some(local) =
+        contacts_sync::the_stored_contact_this_is(&locals, filed_under, &card.url, &card.contact)
+    else {
+        cache.save_contact(&card.contact.also_known_to(
+            filed_under.clone(),
+            &card.url,
+            card.version.as_deref(),
+        ))?;
+        result.created_local.note(&card.contact.id);
+        return Ok(());
+    };
+
+    // A contact waiting on somebody's choice is left exactly as it is. Without
+    // this the sync after the one that raised the question answers it, and
+    // keeping both copies buys nothing but a slower overwrite.
+    if cache.is_held_for_a_choice(&local.id)? {
+        return Ok(());
+    }
+
+    let last_seen = contacts_sync::version_given_by(local, filed_under);
+    let answer = contacts_sync::keep_a_change_this_sync_could_not_send(
+        contacts_sync::whose_copy_wins(
+            contacts_sync::the_copy_here_holds_work_nobody_has_sent(local),
+            card.version.as_deref(),
+            last_seen.as_deref(),
+        ),
+        local,
+        result,
+        still_built_on_an_old_copy,
+    );
+    if answer == WhoseCopyWins::KeepWhatIsHere {
+        return Ok(());
+    }
+    if answer == WhoseCopyWins::NeitherCopyMoved {
+        result.unchanged.note(&local.id);
+        return Ok(());
+    }
+    // Both copies moved and one of them is somebody's own work. Keep both and
+    // ask, rather than writing one over the other and saying afterwards which
+    // was thrown away.
+    if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+        && contacts_sync::the_copy_here_was_written_here(local)
+    {
+        return contacts_sync::hold_both_copies_of(
+            cache,
+            local,
+            &card.contact,
+            filed_under,
+            card.version.as_deref(),
+            result,
+        );
+    }
+
+    let merged = the_cards_fields_over(local, &card.contact).also_known_to(
+        filed_under.clone(),
+        &card.url,
+        card.version.as_deref(),
+    );
+    cache.save_contact(&contacts_sync::a_change_here_that_lost(
+        merged,
+        local,
+        filed_under,
+        answer,
+        result,
+    ))?;
+    result.updated_local.note(&local.id);
+    Ok(())
+}
+
+/// The stored contact with the card's copy of it folded in.
+///
+/// Wholesale, which Google's and Microsoft's are not, and the difference is in
+/// the format rather than in the decision. A Google person names the fields it
+/// carries and says nothing about the rest, so a merge there has to name each
+/// one. A card is the whole contact: every field this program knows is either
+/// written on it or absent from it, and absent means the contact does not have
+/// that field any more.
+///
+/// What is kept from here is only what is not the card's to say: the row's own
+/// identifier, which address books know this person, and whether a change is
+/// still owed to one of them.
+fn the_cards_fields_over(local: &ContactEntry, arriving: &ContactEntry) -> ContactEntry {
+    ContactEntry {
+        id: local.id.clone(),
+        account_id: local.account_id.clone(),
+        created_at: local.created_at.clone(),
+        known_to: local.known_to.clone(),
+        pending: local.pending,
+        favorite: local.favorite,
+        last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
+        ..arriving.clone()
+    }
 }
 
 #[cfg(test)]
@@ -99,7 +484,7 @@ mod tests {
     use crate::common::temp_home::TempHome;
     use crate::common::{Error, Result};
     use crate::data::account::Account;
-    use crate::data::message_cache::ContactEntry;
+    use crate::data::message_cache::ProviderIdentity;
     use crate::service::carddav::{CardOnAServer, CardsFromAServer};
     use std::sync::Mutex;
 
@@ -272,6 +657,31 @@ mod tests {
         }
     }
 
+    /// A contact this address book already holds, changed here since it last
+    /// had it.
+    ///
+    /// The waiting flag is set by hand. `also_known_to` deliberately does not
+    /// raise it: whether a change is owed to an address book is not something a
+    /// read can answer, so a pull naming the contact again must not clear a
+    /// push that has not gone through.
+    fn changed_here(
+        name: &str,
+        email: &str,
+        filed_under: &AddressBook,
+        card_url: &str,
+        version: &str,
+    ) -> ContactEntry {
+        let mut contact = a_contact("here-1", name, email);
+        contact.pending = true;
+        contact.known_to = vec![ProviderIdentity {
+            address_book: filed_under.clone(),
+            provider_contact_id: card_url.to_string(),
+            provider_version: Some(version.to_string()),
+            change_is_waiting: true,
+        }];
+        contact
+    }
+
     /// A contact made on this computer that no address book knows yet.
     fn made_here(name: &str, email: &str) -> ContactEntry {
         let mut contact = a_contact("here-1", name, email);
@@ -374,6 +784,11 @@ mod tests {
         // in the red half: "nothing was refused" and "nothing was attempted"
         // are the same silence.
         assert_eq!(result.created_remote.count(), 1);
+        // That something really was sent is asserted first. Without it this
+        // passes against a sync that sends nothing at all, which is what it did
+        // in the red half: "nothing was refused" and "nothing was attempted"
+        // are the same silence.
+        assert_eq!(result.created_remote.count(), 1);
         assert_eq!(result.waiting_on_the_setting.count(), 0);
         let said = crate::application::contacts_sync::what_the_contacts_sync_did(&result);
         assert!(
@@ -451,20 +866,27 @@ mod tests {
         let book = an_address_book(&cache);
         let filed_under = book.the_word_its_contacts_are_filed_under();
         let card_url = "https://dav.example.com/books/work/ann.vcf";
-        let here = made_here("Ann Here", "ann@example.com").also_known_to(
-            filed_under,
+        let here = changed_here(
+            "Ann Here",
+            "ann@example.com",
+            &filed_under,
             card_url,
-            Some("\"v1\""),
+            "\"v1\"",
         );
         cache.save_contact(&here).expect("she saves");
         let server = Scripted {
             marker: Some("\"ctag-2\"".to_string()),
             writes: Writes::Accepted,
             marker_after_a_write: Some("\"v2\"".to_string()),
+            // What the address book holds once the push has gone in: this
+            // computer's copy, under the marker the write gave it. A fake that
+            // went on serving the old card would be a server that took a write
+            // and did not keep it, and the read that follows would then read
+            // its own push as somebody else's change.
             cards: vec![a_card_for(
                 card_url,
-                "\"v1\"",
-                "Ann Example",
+                "\"v2\"",
+                "Ann Here",
                 "ann@example.com",
             )],
             ..Scripted::default()
@@ -478,7 +900,15 @@ mod tests {
         // `test_a_sync_that_sent_everything_does_not_name_the_setting` gives:
         // "not held and not written over" is true of a sync that never ran.
         assert_eq!(result.updated_remote.count(), 1);
+        // That the sync did anything at all is asserted first, for the reason
+        // `test_a_sync_that_sent_everything_does_not_name_the_setting` gives:
+        // "not held and not written over" is true of a sync that never ran.
+        assert_eq!(result.updated_remote.count(), 1);
         assert_eq!(result.held_for_you_to_choose.count(), 0);
+        // Neither copy moved, because the marker the push was given is the one
+        // the read found. Counted as unchanged rather than as another update,
+        // which is what says the push wrote down the marker it was handed.
+        assert_eq!(result.unchanged.count(), 1);
         let stored = cache.get_contacts_for_account("a1").expect("the contacts");
         assert_eq!(stored[0].name, "Ann Here");
     }
@@ -491,10 +921,12 @@ mod tests {
         let book = an_address_book(&cache);
         let filed_under = book.the_word_its_contacts_are_filed_under();
         let card_url = "https://dav.example.com/books/work/ann.vcf";
-        let here = made_here("Ann Here", "ann@example.com").also_known_to(
-            filed_under,
+        let here = changed_here(
+            "Ann Here",
+            "ann@example.com",
+            &filed_under,
             card_url,
-            Some("\"v1\""),
+            "\"v1\"",
         );
         cache.save_contact(&here).expect("she saves");
         let server = Scripted {
