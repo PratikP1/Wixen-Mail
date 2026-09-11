@@ -63,7 +63,7 @@ use wixen_mail::application::notes_backend::{
 };
 use wixen_mail::application::notes_sync::{NoteSyncResult, sync_notes};
 use wixen_mail::common::Result;
-use wixen_mail::data::message_cache::{MessageCache, NoteBody, NoteEntry};
+use wixen_mail::data::message_cache::{MessageCache, NoteBody, NoteEntry, NoteFolderEntry};
 
 /// The account every fixture here stores under.
 const ACCOUNT: &str = "acct";
@@ -796,11 +796,30 @@ fn run<F: std::future::Future>(work: F) -> F::Output {
         .block_on(work)
 }
 
-/// A note somebody made here, waiting to be sent.
-fn a_note_made_here(cache: &MessageCache, id: &str, title: &str, body: &str) -> NoteEntry {
-    let folder = cache
-        .ensure_default_note_folder(ACCOUNT)
-        .expect("a note folder");
+/// The note folder one container is, made if it is not there yet.
+///
+/// What `notes_backend` does before it asks for a sync, and the reason it has
+/// to happen in these fixtures too: one backend container is one note folder,
+/// so a note waiting to be sent to a container has to be in that container's
+/// folder or the push is not about it.
+///
+/// Idempotent, so the two fixtures below can both ask without either having to
+/// know whether the other went first.
+fn the_folder_for(cache: &MessageCache, container: &str) -> NoteFolderEntry {
+    cache
+        .a_note_folder_for(ACCOUNT, container, "Notes")
+        .expect("the folder this container is")
+}
+
+/// A note somebody made here, in this container's folder, waiting to be sent.
+fn a_note_made_here(
+    cache: &MessageCache,
+    container: &str,
+    id: &str,
+    title: &str,
+    body: &str,
+) -> NoteEntry {
+    let folder = the_folder_for(cache, container);
     let now = "2026-09-10T09:00:00Z".to_string();
     let note = NoteEntry {
         id: id.to_string(),
@@ -832,6 +851,7 @@ fn the_note_here(cache: &MessageCache, id: &str) -> NoteEntry {
 
 /// One sync of this account's notes against this backend.
 fn a_sync<S: NotesService + ABackendToDrive>(cache: &MessageCache, backend: &S) -> NoteSyncResult {
+    the_folder_for(cache, &backend.container());
     run(sync_notes(cache, backend, ACCOUNT, &backend.container())).expect("a sync")
 }
 
@@ -856,7 +876,13 @@ fn a_sync<S: NotesService + ABackendToDrive>(cache: &MessageCache, backend: &S) 
 fn a_note_made_here_reaches_the_backend<S: NotesService + ABackendToDrive>(backend: &S) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
 
     let did = a_sync(&cache, backend);
 
@@ -898,7 +924,13 @@ fn a_note_changed_here_is_written_without_replacing_a_whole_body<
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
 
     let sent = the_note_here(&cache, "note-1");
@@ -938,7 +970,13 @@ fn test_a_note_changed_here_reaches_a_section_of_pages() {
 fn a_note_changed_at_the_backend_arrives_here<S: NotesService + ABackendToDrive>(backend: &S) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
     let named = the_note_here(&cache, "note-1")
         .known_as
@@ -1008,7 +1046,13 @@ fn a_note_changed_in_both_places_is_held_for_somebody_to_choose<
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
     let sent = the_note_here(&cache, "note-1");
     let named = sent.known_as.clone().expect("a name from the backend");
@@ -1056,7 +1100,13 @@ fn a_change_the_setting_held_is_not_written_over_by_the_read<S: NotesService + A
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
     let sent = the_note_here(&cache, "note-1");
     let named = sent.known_as.clone().expect("a name from the backend");
@@ -1104,7 +1154,13 @@ fn a_note_the_backend_no_longer_holds_is_made_again<S: NotesService + ABackendTo
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
     let sent = the_note_here(&cache, "note-1");
     let named = sent.known_as.clone().expect("a name from the backend");
@@ -1154,7 +1210,13 @@ fn a_note_deleted_here_is_taken_away_and_does_not_come_back<S: NotesService + AB
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
 
     cache.delete_note("note-1").expect("the note to go");
@@ -1189,7 +1251,13 @@ fn the_container_is_handed_back_exactly_as_it_was_given<S: NotesService + ABacke
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, backend);
 
     let handed = backend.containers_it_was_handed();
@@ -1227,7 +1295,13 @@ fn test_a_backend_with_no_operation_that_replaces_a_body_is_never_asked_for_one(
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     let pages = ASectionOfPages::new();
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &pages.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, &pages);
     let sent = the_note_here(&cache, "note-1");
     cache
@@ -1247,7 +1321,13 @@ fn test_a_backend_with_no_operation_that_replaces_a_body_is_never_asked_for_one(
     let documents = ACollectionOfDocuments::new();
     let elsewhere = tempfile::tempdir().expect("a directory");
     let second = a_store(&elsewhere);
-    a_note_made_here(&second, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &second,
+        &documents.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&second, &documents);
     assert_eq!(documents.whole_bodies_written(), 1);
 }
@@ -1262,7 +1342,13 @@ fn test_a_container_that_is_not_the_shape_this_backend_needs_is_said_rather_than
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     let pages = ASectionOfPages::new();
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &pages.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
 
     let did = run(sync_notes(
         &cache,
@@ -1296,7 +1382,13 @@ fn test_a_backend_that_gives_no_marker_loses_a_change_made_at_the_other_end_and_
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     let blind = ASectionOfPages::that_gives_no_marker();
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &blind.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, &blind);
     let sent = the_note_here(&cache, "note-1");
     let named = sent.known_as.clone().expect("a name from the backend");
@@ -1343,7 +1435,13 @@ fn test_a_marker_that_stood_still_while_the_note_moved_hides_the_change_from_the
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     let pages = ASectionOfPages::new();
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &pages.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, &pages);
     let named = the_note_here(&cache, "note-1")
         .known_as
@@ -1373,7 +1471,13 @@ fn test_the_name_a_page_backend_gives_moves_when_the_body_does_and_the_seam_keep
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     let pages = ASectionOfPages::new();
-    a_note_made_here(&cache, "note-1", "Wiring colours", "Live is brown.");
+    a_note_made_here(
+        &cache,
+        &pages.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
     a_sync(&cache, &pages);
     let first = the_note_here(&cache, "note-1")
         .known_as
@@ -1415,7 +1519,13 @@ fn a_note_goes_out_and_comes_back<S: NotesService + ABackendToDrive>(
 ) -> (String, String) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
     a_sync(&cache, backend);
     let there = backend.what_it_holds();
     assert_eq!(there.len(), 1, "{there:?}");
@@ -1477,7 +1587,13 @@ fn a_backend_that_could_not_keep_a_note_says_so<S: NotesService + ABackendToDriv
 ) {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
 
     let did = a_sync(&cache, backend);
 
@@ -1510,16 +1626,30 @@ fn test_a_section_of_pages_that_could_not_keep_a_note_says_so_rather_than_report
 fn test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not() {
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
-    let could_not = a_sync(&cache, &ASectionOfPages::new()).summary();
+    let pages = ASectionOfPages::new();
+    a_note_made_here(
+        &cache,
+        &pages.container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
+    let could_not = a_sync(&cache, &pages).summary();
 
     assert!(could_not.contains("could not be kept"), "{could_not}");
     assert!(could_not.contains("notes backend"), "{could_not}");
 
     let elsewhere = tempfile::tempdir().expect("a directory");
     let second = a_store(&elsewhere);
-    a_note_made_here(&second, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
-    let kept = a_sync(&second, &ACollectionOfDocuments::new()).summary();
+    let documents = ACollectionOfDocuments::new();
+    a_note_made_here(
+        &second,
+        &documents.container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
+    let kept = a_sync(&second, &documents).summary();
 
     assert!(!kept.contains("could not be kept"), "{kept}");
 }
@@ -1540,7 +1670,13 @@ fn a_note_the_other_end_only_touched_is_not_written_down_again<
     // the size of the container. This is how it came to.
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
     a_sync(&cache, backend);
     let after_the_push = the_note_here(&cache, "note-1");
     let named = after_the_push.known_as.clone().expect("a name");
@@ -1585,7 +1721,15 @@ fn test_the_stored_form_of_a_note_did_not_change_to_take_a_second_backend() {
     // nothing about a second kind of backend needed a migration to say so.
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
-    a_note_made_here(&cache, "note-1", "Wiring colours", AS_IT_WAS_TYPED);
+    // Any container will do: this one is about the store rather than about a
+    // backend, and no sync runs below.
+    a_note_made_here(
+        &cache,
+        &ACollectionOfDocuments::new().container(),
+        "note-1",
+        "Wiring colours",
+        AS_IT_WAS_TYPED,
+    );
 
     let here = the_note_here(&cache, "note-1");
     assert_eq!(here.body, AS_IT_WAS_TYPED);

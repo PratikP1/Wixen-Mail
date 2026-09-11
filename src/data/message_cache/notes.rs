@@ -746,24 +746,33 @@ impl MessageCache {
         }
     }
 
-    /// Every note changed here and not yet sent.
+    /// Every note in this folder changed here and not yet sent.
     ///
     /// The same question `pending_tasks` answers for a task, asked the same
     /// way, so a note the push has to offer is found by one column rather than
     /// by comparing what is here against what a backend last said.
-    pub fn notes_waiting_to_be_sent(&self, account_id: &str) -> Result<Vec<NoteEntry>> {
+    ///
+    /// By the folder rather than by the account, because one folder is one
+    /// backend container and a push is about one container. Asked of the
+    /// account, a loop over an account's containers offers every waiting note
+    /// to whichever runs first, which creates it in the wrong place and marks
+    /// it sent, so the container it belongs to is never offered it.
+    pub fn notes_in_this_folder_waiting_to_be_sent(
+        &self,
+        folder_id: &str,
+    ) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
             .prepare_cached(&format!(
                 "SELECT {NOTE_COLUMNS}
-                 FROM notes WHERE account_id = ?1 AND pending = 1
+                 FROM notes WHERE folder_id = ?1 AND pending = 1
                  ORDER BY updated_at"
             ))
             .map_err(|e| {
                 Error::Other(format!("Failed to prepare the waiting notes query: {}", e))
             })?;
         let rows = stmt
-            .query_map(rusqlite::params![account_id], Self::map_note_row)
+            .query_map(rusqlite::params![folder_id], Self::map_note_row)
             .map_err(|e| Error::Other(format!("Failed to query the waiting notes: {}", e)))?;
         let mut notes = Vec::new();
         for row in rows {
@@ -1316,7 +1325,9 @@ line two
                 .unwrap();
         }
 
-        let waiting = cache.notes_waiting_to_be_sent("acct-1").unwrap();
+        let waiting = cache
+            .notes_in_this_folder_waiting_to_be_sent(&folder.id)
+            .unwrap();
 
         assert_eq!(
             waiting.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(),

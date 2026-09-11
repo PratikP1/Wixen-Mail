@@ -18603,7 +18603,7 @@ red = [
     "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
 ]
 
 # The losing copy of a note is held for somebody rather than written over.
@@ -18615,28 +18615,58 @@ tests_last_seen = [
 # over the change nobody sent. An edit made and lost looks exactly like an edit
 # that never saved.
 #
-# The break is exactly that, an arm that takes the answer and does nothing, which
-# is what somebody writes who reads `ItMovedFirst` as "nothing to do here".
+# The break used to be exactly that, an arm that takes the answer and does
+# nothing, which is what somebody writes who reads `ItMovedFirst` as "nothing to
+# do here". **It stopped reddening anything and nothing said so**, which is the
+# finding this record now carries rather than the measurement it used to.
 #
-# Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
-# tree with nothing else building, at the default eight threads. 6,782 passed
-# and exactly two failed. The second one is the load-bearing half of the pair:
-# it says the note is still waiting and still says what was typed here after the
-# first sync, which is what stops "it was not offered again" passing against a
-# sync that gave the change up.
+# Measured by hand on 2026-09-11 while closing ledger 274. Gutted, the arm
+# leaves the note waiting, and the read's own hold, added by the record named
+# "a change nobody has sent is not written over by the read", then catches
+# exactly the same case and holds the two copies anyway. Both named tests stayed
+# green. Gutting both arms at once reddens both tests, which is what proves the
+# second arm is what was covering for the first.
+#
+# Nothing about the scoping work of 2026-09-11 caused it: neither the arm nor
+# the read's hold condition was touched. The two records were written the same
+# day, 2026-09-10, and the second one made the first one's break harmless within
+# hours. The count check could not see it, because both records already named a
+# tree with 17 tests and the overlap changes no count. Only a run asks this, and
+# it was asked today because five tests arrived in this file and the count check
+# printed the remedy. That is the second time in this file a record went quiet
+# this way, and the reminder-menu record above tells the first.
+#
+# The break is now the direction the name promises: the arm takes the backend's
+# word for it and marks the note as no longer waiting, which is what somebody
+# writes who reads `ItMovedFirst` as "the backend won". That clears the flag the
+# read's hold is conditioned on, so the read writes the backend's copy over the
+# change nobody sent and neither arm can cover for the other.
+#
+# Measured 2026-09-11 with `cargo test --lib application::notes_sync::` at the
+# default eight threads: 20 passed and exactly the two named failed. The second
+# one is the load-bearing half of the pair: it says the note is still waiting and
+# still says what was typed here after the first sync, which is what stops "it
+# was not offered again" passing against a sync that gave the change up.
 [[guard]]
 name = "a note that moved in two places is held rather than written over"
 file = "src/application/notes_sync.rs"
 before = '''            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
                 hold_both_copies_of(cache, service, container, &note, version_now, result).await;
             }'''
-after = '''            Ok(WhatTheBackendSaid::ItMovedFirst { .. }) => {}'''
+after = '''            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
+                let _ = version_now;
+                let _ = cache.a_backend_took_the_note(
+                    &note.id,
+                    note.known_as.as_deref().unwrap_or_default(),
+                    None,
+                );
+            }'''
 red = [
     "application::notes_sync::tests::test_a_note_held_for_a_choice_is_not_offered_again_on_the_next_sync",
     "application::notes_sync::tests::test_a_note_that_moved_in_both_places_is_held_rather_than_written_over",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
 ]
 
 # A note's body comes back the bytes it went out as.
@@ -18782,14 +18812,14 @@ before = '''        if let Some(here) = ours
             hold_these_two_copies(cache, here, container, &said, None, result);
             continue;
         }
-        match write_it_down(cache, account_id, ours, &said) {'''
-after = '''        match write_it_down(cache, account_id, ours, &said) {'''
+        match write_it_down(cache, folder, ours, &said) {'''
+after = '''        match write_it_down(cache, folder, ours, &said) {'''
 red = [
     "test_the_setting_and_a_document_that_moved_do_not_lose_the_change",
     "test_the_setting_and_a_page_that_moved_do_not_lose_the_change",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18813,7 +18843,7 @@ red = [
     "test_a_page_the_backend_no_longer_holds_is_made_again",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18844,10 +18874,11 @@ red = [
     "test_a_note_made_here_reaches_a_section_of_pages",
     "test_a_page_only_the_backend_has_arrives_here",
     "test_a_page_the_backend_no_longer_holds_is_made_again",
+    "test_a_page_the_service_only_touched_is_not_written_down_again",
     "test_a_three_part_section_arrives_as_it_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18855,6 +18886,16 @@ tests_last_seen = [
 # suite. The break is the call site dropping the answer, which is the shape the
 # code had before this plan and the one somebody restores by deleting a line
 # that looks like bookkeeping.
+#
+# **The red list was one short from the day it was written**, corrected
+# 2026-09-11 while closing ledger 274.
+# `test_a_page_the_service_only_touched_is_not_written_down_again` asserts
+# `unchanged` is 1, and under this break the read never happens, so it was
+# always going to go red and was never named. Nothing about the scoping work of
+# that day caused it: neither the call site nor that test's assertions were
+# touched, and the test reaches the break through a path the scoping does not
+# cross. Only a run asks this question, and it was asked because five tests
+# arrived in this file and the count check printed the remedy.
 #
 # What it defends is not a count. Without this call the copy here and the copy
 # at the backend differ from the moment of the first push with nothing said, and
@@ -18878,7 +18919,7 @@ red = [
     "test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 17 },
+    { file = "src/application/notes_sync.rs", tests = 22 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
