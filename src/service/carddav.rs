@@ -36,6 +36,7 @@
 //! else's client, are two further questions and neither is answered here.
 
 use crate::common::{Error, Result};
+use crate::data::message_cache::ContactEntry;
 use crate::service::caldav::{extract_xml_value, resolved_against, response_blocks};
 
 /// What this program asks a server when it wants to know which address books
@@ -171,6 +172,60 @@ fn ends_a_name(next: Option<char>) -> bool {
 /// Whether that character may appear in a namespace prefix.
 fn a_name_character(letter: char) -> bool {
     letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_' | '.')
+}
+
+/// What this program asks for the cards in one address book.
+///
+/// Beside its reader for the reason [`ASKING_WHICH_ADDRESS_BOOKS`] is beside
+/// its own.
+pub const ASKING_FOR_THE_CARDS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<card:addressbook-query xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:getetag/>
+    <card:address-data/>
+  </d:prop>
+</card:addressbook-query>"#;
+
+/// One card a server holds, and the contact it says.
+#[derive(Debug, Clone)]
+pub struct CardOnAServer {
+    /// Where this one card lives, whole.
+    pub url: String,
+    /// The marker the server moves when this card changes, where it gives one.
+    /// Nothing where it does not, and an empty one is the same answer, which is
+    /// decided once at [`CardDavAddressBook::ctag`] for both markers.
+    pub version: Option<String>,
+    /// What the card says, read by the same code a file import uses. The
+    /// card's own text is on `contact.vcard_raw`, put there by that reader, so
+    /// it is not carried here a second time.
+    pub contact: ContactEntry,
+}
+
+/// What a server sent when asked for the cards in an address book.
+#[derive(Debug, Clone, Default)]
+pub struct CardsFromAServer {
+    /// The cards that could be read, in the order the server sent them.
+    pub cards: Vec<CardOnAServer>,
+    /// How many arrived that could not be read.
+    ///
+    /// Counted rather than dropped in silence, and not turned into a failure
+    /// here. An address book that really is empty and one whose cards could
+    /// none of them be read are different facts, and the second is the one
+    /// somebody goes looking for a broken program over. The file import makes
+    /// the same distinction, and whoever calls this has the count to say it
+    /// with.
+    pub could_not_be_read: usize,
+}
+
+/// The cards in a server's answer to [`ASKING_FOR_THE_CARDS`].
+///
+/// A hand written scan over response blocks, for the reason
+/// [`address_books_in`] gives, and every card goes through
+/// `MessageCache::contact_from_vcard_block`, which is the same code a file
+/// import uses. Nothing here reads a property off a card.
+pub fn cards_in(_xml: &str, _base_url: &str, _account_id: &str) -> Result<CardsFromAServer> {
+    // The red half of red/green.
+    Ok(CardsFromAServer::default())
 }
 
 #[cfg(test)]
@@ -692,6 +747,258 @@ mod tests {
         for property in ["displayname", "resourcetype", "getctag"] {
             assert!(
                 ASKING_WHICH_ADDRESS_BOOKS.contains(property),
+                "the request does not ask for {property}, which the reader reads"
+            );
+        }
+    }
+
+    // ── A server's answer with the cards in an address book ─────────────
+
+    /// One response block carrying a card, the way a server sends it: the
+    /// card's text is XML escaped inside the element.
+    fn a_card_block(href: &str, etag: &str, card: &str) -> String {
+        let marker = match etag.is_empty() {
+            true => String::new(),
+            false => format!("<d:getetag>{etag}</d:getetag>"),
+        };
+        format!(
+            "  <d:response>\n    \
+             <d:href>{href}</d:href>\n    \
+             <d:propstat>\n      \
+             <d:prop>\n        \
+             {marker}\n        \
+             <card:address-data>{card}</card:address-data>\n      \
+             </d:prop>\n      \
+             <d:status>HTTP/1.1 200 OK</d:status>\n    \
+             </d:propstat>\n  \
+             </d:response>\n"
+        )
+    }
+
+    /// A card as a server would carry it in an answer: real line breaks, and
+    /// the characters XML reserves written as references.
+    fn a_readable_card(name: &str, address: &str, note: &str) -> String {
+        format!("BEGIN:VCARD\nVERSION:3.0\nFN:{name}\nEMAIL:{address}\nNOTE:{note}\nEND:VCARD\n")
+    }
+
+    #[test]
+    fn test_an_answer_holding_two_cards_is_read_into_two_contacts() {
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            a_card_block(
+                "/carddav/sam/contacts/grace.vcf",
+                "\"one\"",
+                &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour")
+            ),
+            a_card_block(
+                "/carddav/sam/contacts/ada.vcf",
+                "\"two\"",
+                &a_readable_card("Ada Lovelace", "ada@example.com", "Wrote it down first")
+            )
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards.len(), 2);
+        assert_eq!(sent.could_not_be_read, 0);
+        assert_eq!(
+            sent.cards[0].url,
+            "https://dav.example.com/carddav/sam/contacts/grace.vcf"
+        );
+        assert_eq!(sent.cards[0].contact.name, "Grace Hopper");
+        assert_eq!(sent.cards[0].contact.email, "grace@example.com");
+        assert_eq!(sent.cards[1].contact.name, "Ada Lovelace");
+    }
+
+    #[test]
+    fn test_a_cards_text_goes_through_the_reader_a_file_import_uses() {
+        // Two things no reader written here would get right, and both are
+        // ordinary: a line the format broke in two, and a semicolon inside a
+        // structured field. Getting them back proves the card went through the
+        // shared reader rather than through something written beside it.
+        let street = "12 High Street\\; Flat 2";
+        let card = format!(
+            "BEGIN:VCARD\nVERSION:3.0\nFN:Grace Hopper\nEMAIL:grace@example.com\n\
+             ADR;TYPE=HOME:;;{street};Newcastle;Tyne and Wear;NE1 1AA;United\n Kingdom\n\
+             END:VCARD\n"
+        );
+        let answer = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"1\"",
+            &card,
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        let address = the_one_address(&sent.cards[0].contact);
+        assert_eq!(address.street, "12 High Street; Flat 2");
+        assert_eq!(address.country, "United Kingdom");
+    }
+
+    #[test]
+    fn test_a_card_that_cannot_be_read_is_counted_while_the_others_come_back() {
+        // Paired on purpose. A test with only the unreadable card in it is
+        // green against a reader that passes over everything.
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            a_card_block(
+                "/carddav/sam/contacts/nobody.vcf",
+                "\"one\"",
+                "BEGIN:VCARD\nVERSION:3.0\nFN:Nobody\nEND:VCARD\n"
+            ),
+            a_card_block(
+                "/carddav/sam/contacts/grace.vcf",
+                "\"two\"",
+                &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour")
+            )
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards.len(), 1, "the readable card came back");
+        assert_eq!(sent.cards[0].contact.name, "Grace Hopper");
+        assert_eq!(sent.could_not_be_read, 1, "the other was counted");
+    }
+
+    #[test]
+    fn test_a_cards_version_marker_is_kept_as_the_server_gave_it() {
+        // Kept byte for byte, quotation marks and all. A server compares what
+        // it is handed back against what it sent, so a marker tidied on the way
+        // in is a marker the server does not recognise on the way out.
+        let answer = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"abc-123\"",
+            &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour"),
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards[0].version.as_deref(), Some("\"abc-123\""));
+    }
+
+    #[test]
+    fn test_a_version_marker_that_is_empty_and_one_that_is_absent_are_the_same_answer() {
+        // The same decision as the address book's change marker, taken once
+        // for both rather than twice.
+        let card = a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour");
+        let empty = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"\"",
+            &card,
+        ));
+        let absent = a_multistatus(&a_card_block("/carddav/sam/contacts/grace.vcf", "", &card));
+
+        let from_empty = cards_in(&empty, AT, SOMEBODY).expect("a multistatus to be read");
+        let from_absent = cards_in(&absent, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(from_empty.cards[0].version.as_deref(), Some("\"\""));
+        assert_eq!(from_absent.cards[0].version, None);
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_a_multi_status_is_refused_when_asking_for_cards() {
+        let page = "<html><body>Please sign in to the network</body></html>";
+
+        let refusal = cards_in(page, AT, SOMEBODY).expect_err("a page that is not an answer");
+
+        let said = refusal.to_string();
+        assert!(
+            said.contains("did not answer with"),
+            "the refusal says what went wrong: {said}"
+        );
+    }
+
+    #[test]
+    fn test_card_text_arriving_with_escaped_xml_is_unescaped_before_the_card_reader_sees_it() {
+        // A card containing an ampersand or an angle bracket arrives with
+        // those characters written as references, because the card is text
+        // inside an XML element. A fixture with plain card text passes against
+        // a reader that does no unescaping at all.
+        let card = a_readable_card(
+            "Grace &amp; Ada",
+            "grace@example.com",
+            "Bells &amp; whistles, 3 &lt; 4",
+        );
+        let answer = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"1\"",
+            &card,
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards[0].contact.name, "Grace & Ada");
+        assert_eq!(
+            sent.cards[0].contact.notes.as_deref(),
+            Some("Bells & whistles, 3 < 4")
+        );
+    }
+
+    #[test]
+    fn test_a_reference_this_reader_does_not_know_is_left_as_the_text_it_is() {
+        // The other half of unescaping, and the one that matters for safety:
+        // the five references XML defines are turned back into their
+        // characters and anything else is left alone. An entity a document
+        // declared for itself is therefore never expanded.
+        let card = a_readable_card(
+            "Grace Hopper",
+            "grace@example.com",
+            "&somewhere; and &#65; too",
+        );
+        let answer = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"1\"",
+            &card,
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(
+            sent.cards[0].contact.notes.as_deref(),
+            Some("&somewhere; and &#65; too")
+        );
+    }
+
+    #[test]
+    fn test_a_line_in_a_card_that_looks_like_a_tag_is_read_as_card_text() {
+        let card = a_readable_card(
+            "Grace Hopper",
+            "grace@example.com",
+            "&lt;d:href&gt;not a tag&lt;/d:href&gt;",
+        );
+        let answer = a_multistatus(&a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            "\"1\"",
+            &card,
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(
+            sent.cards[0].contact.notes.as_deref(),
+            Some("<d:href>not a tag</d:href>")
+        );
+    }
+
+    #[test]
+    fn test_an_escaped_ampersand_in_an_address_books_name_comes_back_as_an_ampersand() {
+        // A name is read out to somebody. "Sam &amp; Co" is not a name.
+        let answer = a_multistatus(&an_address_book(
+            "/carddav/sam/contacts/",
+            "Sam &amp; Co",
+            "12",
+        ));
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found[0].display_name, "Sam & Co");
+    }
+
+    #[test]
+    fn test_the_request_for_cards_asks_for_every_property_the_reader_reads() {
+        for property in ["getetag", "address-data"] {
+            assert!(
+                ASKING_FOR_THE_CARDS.contains(property),
                 "the request does not ask for {property}, which the reader reads"
             );
         }
