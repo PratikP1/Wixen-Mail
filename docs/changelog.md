@@ -6,6 +6,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Changed
+
+- **Each calendar your notes go to is now its own note folder, and your notes
+  stop all landing in one place.** This changes what you see the next time you
+  open Notes, so it is worth reading before you do.
+
+  Your notes go beside your calendars, on the same server and under the same
+  sign-in. Until now an account had exactly one place for them: if you had two
+  calendar servers, Wixen Mail picked whichever came first and never said which,
+  and every note that arrived was filed in whatever note folder came first,
+  whatever folders you had made. Folders you made meant nothing at the other
+  end.
+
+  Now one place at the server is one folder here, named after the calendar. Two
+  calendar servers give you two folders, both sync, and nothing has to be
+  guessed. A note arriving from a server goes into the folder that server's
+  place is, and a note you move between two of those folders is moved at the
+  server too.
+
+  **Folders you make yourself now sit under "On this computer", the same words
+  the mail folder list uses.** Those stay here. Nothing is sent for them,
+  because making a folder here does not make one at your server, so there is
+  nowhere for the notes in it to go. Moving a note into one of them moves it
+  here and changes nothing at your server. Nothing is lost by that, and
+  `docs/ALPHA_TESTING.md` has a table of what you should see.
+
+  Two calendars on one account can share a name. Where that happens the second
+  folder is numbered, "Work" then "Work (2)". Which folder a note is really in
+  never depends on that name, so the numbering only changes what you read.
+
+  Nothing here has been run against a real account, for a note or for a move.
+
+- **Moving a note between two folders that came from a server now tells the
+  server.** It asks for the note to be made in the new place first, and only
+  once that has worked asks for it to be removed from the old one. If something
+  goes wrong between those two steps you are left with the note in **both**
+  places, which you can see and tidy up; the other order would risk leaving it
+  in neither. On this computer the note is in exactly one folder the whole time.
+  This is the same order, for the same reason, that moving a task between
+  Google lists already uses.
+
 ### Fixed
 
 - **A screen reader now tells you when a list is nested, and reads a table as a

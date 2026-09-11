@@ -28,13 +28,28 @@
 //! stops, which is what the seam's contract requires of every backend and of
 //! everything driving one.
 //!
-//! # One container per account, which is a limit and is said rather than hidden
+//! # One container is one note folder, so a sync is about one folder
 //!
-//! A sync is given one container. Note folders on this computer are not
-//! mirrored at the backend and nothing here pretends they are: a note arriving
-//! from the backend is filed in the account's first note folder. Folders that
-//! mean something at both ends is a decision somebody has to make about what a
-//! folder *is* at each backend, and this plan does not make it.
+//! A sync is given one container, and always was. What it is now given as well
+//! is the answer to which folder that container is: everything it offers, sends
+//! and files belongs to that one folder, and the caller in
+//! [`crate::application::notes_backend`] calls this once per folder an account
+//! has. Decided 2026-09-11 and written into
+//! `docs/development/the-notes-seam.md`.
+//!
+//! **That scoping is not tidiness, it is what stops a note being misfiled.**
+//! Offered every note the account has, a loop over two containers writes each
+//! waiting note into whichever container happens to run first: for OneNote that
+//! is somebody's note created in the wrong section and never made in the right
+//! one. The container is what every note is filed by, so it is what every one of
+//! the three passes below is scoped to.
+//!
+//! A folder somebody made here has no container and is never reached from here
+//! at all, because nothing calls a sync for a folder that names no backend.
+//!
+//! The container stays opaque throughout. It is compared for equality with what
+//! a folder holds and never split, ordered or read, which is requirement 1 of
+//! the seam's container section.
 
 use crate::application::notes_backend::{ANoteThere, NotesService, WhatTheBackendSaid};
 use crate::application::summing_up::{SummingUp, how_many};
@@ -94,6 +109,41 @@ pub struct NoteSyncResult {
 }
 
 impl NoteSyncResult {
+    /// Take in what a second container's sync did, so one account gets one
+    /// answer.
+    ///
+    /// An account has as many syncs as it has containers, and the person asked
+    /// for one thing. A status line naming only the last container is a status
+    /// line that hides whichever one had the problem.
+    ///
+    /// The counts add up and the errors join, both of which are the obvious
+    /// reading. [`NoteSyncResult::needs_sign_in`] is the one worth saying: it is
+    /// an or, because one container nobody is signed in to is a thing somebody
+    /// has to fix even when the other four went through.
+    pub fn absorb(&mut self, other: NoteSyncResult) {
+        let NoteSyncResult {
+            stored,
+            unchanged,
+            sent,
+            held,
+            not_kept_exactly,
+            waiting_on_the_setting,
+            needs_sign_in,
+            errors,
+        } = other;
+        // Taken apart by name rather than read field by field off a borrow, so
+        // that a field added to this struct is a compile error here. A count
+        // silently dropped is a container's work reported as nothing.
+        self.stored += stored;
+        self.unchanged += unchanged;
+        self.sent += sent;
+        self.held += held;
+        self.not_kept_exactly += not_kept_exactly;
+        self.waiting_on_the_setting += waiting_on_the_setting;
+        self.needs_sign_in |= needs_sign_in;
+        self.errors.extend(errors);
+    }
+
     /// What the status line says afterwards.
     pub fn summary(&self) -> String {
         let mut said = SummingUp::opening(format!("{} stored", how_many(self.stored, "note")));
@@ -172,9 +222,24 @@ pub async fn sync_notes<S: NotesService>(
             "The deletions remembered here could not be swept: {e}"
         ));
     }
-    send_the_deletions(cache, service, account_id, container, &mut result).await;
-    push_what_is_waiting(cache, service, account_id, container, &mut result).await;
-    take_what_has_arrived(cache, service, account_id, container, &mut result).await;
+    // Which folder this container is. Everything below is about that folder and
+    // nothing else, which is what stops one container being sent another's
+    // notes.
+    //
+    // No folder is a state the caller does not produce: `notes_backend` makes
+    // the folder before it asks for the sync. Said rather than guessed at all
+    // the same, because the guess available here is to file into whatever
+    // folder came first, and that guess is exactly what ledger 246 was.
+    let Some(folder) = cache.note_folder_holding(account_id, container)? else {
+        result.errors.push(
+            "No note folder on this account is that container, so nothing was synced.".to_string(),
+        );
+        return Ok(result);
+    };
+
+    send_the_deletions(cache, service, &folder, container, &mut result).await;
+    push_what_is_waiting(cache, service, &folder, container, &mut result).await;
+    take_what_has_arrived(cache, service, account_id, &folder, container, &mut result).await;
     Ok(result)
 }
 
@@ -184,14 +249,20 @@ pub async fn sync_notes<S: NotesService>(
 /// computer. There is nothing to ask for and nothing a read could name it by,
 /// so it is a memory from the moment it is written rather than work the push
 /// owes.
+///
+/// Only the records for this folder. A record says which folder the note was
+/// in, and that folder is one container, so a record belonging to another
+/// folder names a note this backend never held: asked to remove it, a backend
+/// answers "not there" on every sync from now on, and the container that really
+/// does hold the note is never asked at all.
 async fn send_the_deletions<S: NotesService>(
     cache: &MessageCache,
     service: &S,
-    account_id: &str,
+    folder: &crate::data::message_cache::NoteFolderEntry,
     container: &str,
     result: &mut NoteSyncResult,
 ) {
-    let owed = match cache.deleted_notes(account_id) {
+    let owed = match cache.deleted_notes(&folder.account_id) {
         Ok(owed) => owed,
         Err(e) => {
             result.errors.push(format!(
@@ -200,10 +271,40 @@ async fn send_the_deletions<S: NotesService>(
             return;
         }
     };
-    for gone in owed.into_iter().filter(|gone| gone.so_far.still_owed()) {
+    for gone in owed
+        .into_iter()
+        .filter(|gone| gone.so_far.still_owed())
+        .filter(|gone| gone.folder_id.as_deref() == Some(folder.id.as_str()))
+    {
         let Some(named) = gone.known_as.clone() else {
             continue;
         };
+        if let Some(waiting_for) = gone.waiting_for_note_id.as_deref() {
+            // Half of a move between two containers: this record is the old
+            // copy at the backend, and the new one has not reached its own
+            // container yet. Sending now asks the backend to destroy the only
+            // copy it has, and a failed create then leaves the note at no
+            // backend at all, where nothing says it was ever anywhere.
+            // `tasks_sync` holds a task's removal back on the same question and
+            // its comment carries the full argument.
+            //
+            // Arrived is the copy no longer waiting to be sent, and that one
+            // question covers both ways it stops waiting: the backend took it,
+            // or somebody deleted it before it ever went. Both mean send. The
+            // alternative for the second is a removal that waits for ever,
+            // which keeps the note off this computer and at the backend with
+            // nothing left to say why.
+            //
+            // A store that will not answer is not evidence the copy has gone.
+            // Waiting costs one more sync; not waiting costs the note.
+            let still_waiting = cache
+                .get_note(waiting_for)
+                .map(|found| found.is_some_and(|copy| copy.pending))
+                .unwrap_or(true);
+            if still_waiting {
+                continue;
+            }
+        }
         let known_as = ANoteThere {
             named,
             // Deliberately not passed on. Somebody asked for the note to go,
@@ -247,15 +348,22 @@ async fn send_the_deletions<S: NotesService>(
     }
 }
 
-/// Offer every note changed here that nobody has been told about.
+/// Offer every note in this folder that changed here and nobody was told about.
+///
+/// In this folder, which is the half that matters. A note belongs to one folder
+/// and a folder is one container, so the folder is the whole of the answer to
+/// which backend a change goes to. Asked of the account instead, a loop over two
+/// containers offers every waiting note to the first container that runs, which
+/// creates it in the wrong place and marks it sent, so the container it really
+/// belongs to is never offered it at all.
 async fn push_what_is_waiting<S: NotesService>(
     cache: &MessageCache,
     service: &S,
-    account_id: &str,
+    folder: &crate::data::message_cache::NoteFolderEntry,
     container: &str,
     result: &mut NoteSyncResult,
 ) {
-    let waiting = match cache.notes_waiting_to_be_sent(account_id) {
+    let waiting = match cache.notes_in_this_folder_waiting_to_be_sent(&folder.id) {
         Ok(waiting) => waiting,
         Err(e) => {
             result.errors.push(format!(
@@ -564,10 +672,19 @@ fn hold_these_two_copies(
 }
 
 /// Take down whatever the backend holds that this computer does not have.
+///
+/// Matched against every note the account has rather than against this folder's,
+/// which is deliberate and is the one pass that is not scoped. A note is found
+/// by what the backend calls it, and a note that has somehow ended up in another
+/// folder is still that note: matching only within this folder would write a
+/// second copy of it and leave two rows claiming one backend name. What is
+/// scoped is where a note the backend has never sent before is filed, which is
+/// this folder, because the container it arrived from is this folder's.
 async fn take_what_has_arrived<S: NotesService>(
     cache: &MessageCache,
     service: &S,
     account_id: &str,
+    folder: &crate::data::message_cache::NoteFolderEntry,
     container: &str,
     result: &mut NoteSyncResult,
 ) {
@@ -693,7 +810,7 @@ async fn take_what_has_arrived<S: NotesService>(
             hold_these_two_copies(cache, here, container, &said, None, result);
             continue;
         }
-        match write_it_down(cache, account_id, ours, &said) {
+        match write_it_down(cache, folder, ours, &said) {
             Ok(()) => result.stored += 1,
             Err(e) => result
                 .errors
@@ -723,7 +840,7 @@ fn the_marker_stayed_still(ours: Option<&str>, theirs: &ANoteThere) -> bool {
 /// Keep what the backend said, over the note it belongs to or as a new one.
 fn write_it_down(
     cache: &MessageCache,
-    account_id: &str,
+    folder: &crate::data::message_cache::NoteFolderEntry,
     ours: Option<&NoteEntry>,
     said: &crate::application::notes_backend::ANoteAsItStands,
 ) -> Result<()> {
@@ -747,13 +864,13 @@ fn write_it_down(
         },
         None => NoteEntry {
             id: format!("note-{}", uuid::Uuid::new_v4()),
-            account_id: account_id.to_string(),
-            // The account's first note folder. Folders on this computer are
-            // not mirrored at the backend and this does not pretend they are:
-            // what a folder means at each backend is a decision somebody has
-            // to make, and the module header says so rather than leaving a
-            // reader to work out why every arrival lands in one place.
-            folder_id: Some(cache.ensure_default_note_folder(account_id)?.id),
+            account_id: folder.account_id.clone(),
+            // The folder this container is, which is where a note in this
+            // container belongs. It used to be the account's first note folder,
+            // whatever that was, which is what ledger 246 recorded: folders
+            // somebody made here meant nothing at the other end and every
+            // arrival landed in one place.
+            folder_id: Some(folder.id.clone()),
             title: said.title.clone(),
             body: said.body.clone(),
             format: crate::data::message_cache::NoteBody::AsTyped,
@@ -779,6 +896,10 @@ mod tests {
 
     const ACCOUNT: &str = "acct-1";
     const CONTAINER: &str = "https://example.test/dav/journals/";
+    /// A second container on the same account, which is the arrangement this
+    /// whole module had to learn: one container is one folder, so an account
+    /// with two calendars has two folders and two syncs.
+    const ANOTHER_CONTAINER: &str = "https://example.test/dav/journals/home/";
 
     fn a_store() -> TempHome<MessageCache> {
         TempHome::named("wixen_notes_sync_", |dir| {
@@ -787,6 +908,7 @@ mod tests {
                 .save_note_folder(&NoteFolderEntry {
                     id: "folder-1".to_string(),
                     account_id: ACCOUNT.to_string(),
+                    container: Some(CONTAINER.to_string()),
                     name: "General".to_string(),
                     display_order: 0,
                     created_at: "2026-01-01".to_string(),
@@ -794,6 +916,21 @@ mod tests {
                 .expect("a folder for notes");
             cache
         })
+    }
+
+    /// The folder the second container is, on the same account.
+    fn a_second_folder(cache: &MessageCache) -> String {
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-2".to_string(),
+                account_id: ACCOUNT.to_string(),
+                container: Some(ANOTHER_CONTAINER.to_string()),
+                name: "Home".to_string(),
+                display_order: 1,
+                created_at: "2026-01-01".to_string(),
+            })
+            .expect("a second folder");
+        "folder-2".to_string()
     }
 
     /// A note on this computer, waiting or not.
@@ -1489,5 +1626,248 @@ mod tests {
 
         assert!(result.needs_sign_in, "{result:?}");
         assert!(result.errors.is_empty(), "{result:?}");
+    }
+
+    #[test]
+    fn test_only_the_notes_in_this_containers_folder_are_offered_to_it() {
+        // The whole reason the sync had to learn about folders. Offered every
+        // pending note, a loop over two containers writes a note into whichever
+        // one runs first, which for a OneNote account is somebody's note
+        // landing in the wrong section and never in the right one.
+        let cache = a_store();
+        let elsewhere = a_second_folder(&cache);
+        for (id, title, folder) in [
+            ("n1", "Belongs here", "folder-1"),
+            ("n2", "Belongs elsewhere", elsewhere.as_str()),
+        ] {
+            let mut note = a_note(id, title, "Words");
+            note.folder_id = Some(folder.to_string());
+            note.pending = true;
+            cache.save_note(&note).expect("a note waiting to be sent");
+        }
+        let service = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert_eq!(
+            *service.written.lock().expect("what was written"),
+            ["Belongs here"],
+            "a note in another container's folder was offered to this one"
+        );
+        assert!(
+            cache
+                .get_note("n2")
+                .expect("the other note is read")
+                .expect("the other note is there")
+                .pending,
+            "the other folder's note was marked as sent by a sync that was not \
+             about its container"
+        );
+    }
+
+    #[test]
+    fn test_a_note_arriving_is_filed_in_the_folder_the_container_is() {
+        // Ledger 246: every arrival used to land in the account's first note
+        // folder, so folders somebody made here meant nothing at the other end.
+        // This is the half that closes it.
+        let cache = a_store();
+        let elsewhere = a_second_folder(&cache);
+        let service = Scripted {
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some("v1".to_string()),
+                },
+                title: "From the other calendar".to_string(),
+                body: "Words".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, ANOTHER_CONTAINER)).expect("a sync");
+
+        let arrived = cache
+            .get_all_notes_for_account(ACCOUNT)
+            .expect("what is here");
+        assert_eq!(arrived.len(), 1, "{arrived:?}");
+        assert_eq!(
+            arrived[0].folder_id.as_deref(),
+            Some(elsewhere.as_str()),
+            "the note was filed in the account's first folder rather than in \
+             the folder its own container is"
+        );
+    }
+
+    #[test]
+    fn test_a_removal_is_only_offered_to_the_container_the_note_was_in() {
+        // A removal sent to the wrong container asks a backend to remove a note
+        // it does not hold, on every sync from now on, and leaves the one that
+        // does hold it untouched.
+        let cache = a_store();
+        let elsewhere = a_second_folder(&cache);
+        let mut note = a_note("n1", "Going", "Gone");
+        note.folder_id = Some(elsewhere.clone());
+        note.known_as = Some("there-1".to_string());
+        cache.save_note(&note).expect("a note the backend holds");
+        cache.delete_note("n1").expect("the deletion");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert!(
+            service
+                .taken_away
+                .lock()
+                .expect("what was removed")
+                .is_empty(),
+            "a container was asked to remove a note that was never in it"
+        );
+        assert!(
+            cache.deleted_notes(ACCOUNT).expect("the deletions")[0]
+                .so_far
+                .still_owed(),
+            "the removal was marked as taken by a container that never had the note"
+        );
+    }
+
+    #[test]
+    fn test_a_removal_waits_for_the_copy_a_move_is_making() {
+        // The safety argument of the whole move, asserted where it is enforced.
+        // Sent first, the removal asks the backend to destroy the only copy it
+        // has, and a failed create then leaves the note at no backend at all.
+        let cache = a_store();
+        let elsewhere = a_second_folder(&cache);
+        let mut note = a_note("n1", "Moving", "Words");
+        note.known_as = Some("there-1".to_string());
+        cache.save_note(&note).expect("a note the backend holds");
+        cache
+            .move_a_note_the_backend_holds(&note, &elsewhere, "n2")
+            .expect("the move");
+        let service = Scripted {
+            writes: Writes::Accepted,
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("the old container's sync");
+
+        assert!(
+            service
+                .taken_away
+                .lock()
+                .expect("what was removed")
+                .is_empty(),
+            "the removal went before the copy had reached the backend, so the \
+             backend can be left holding no copy at all"
+        );
+
+        // The copy's own container sends it, and the sync after that is free to
+        // send the removal.
+        run(sync_notes(&cache, &service, ACCOUNT, ANOTHER_CONTAINER)).expect("the new container");
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("the old container again");
+
+        assert_eq!(
+            *service.taken_away.lock().expect("what was removed"),
+            ["there-1"],
+            "the removal never went, so the note stays in both containers for ever"
+        );
+    }
+
+    #[test]
+    fn test_a_container_no_folder_holds_is_said_rather_than_synced_into_another_folder() {
+        // The reachable-by-nothing case, said rather than guessed at. Filing
+        // into whatever folder came first is what ledger 246 was, and a sync
+        // that silently did it again would be the same defect wearing the
+        // fix's clothes.
+        let cache = a_store();
+        let service = Scripted {
+            writes: Writes::Accepted,
+            holds: vec![ANoteAsItStands {
+                known_as: ANoteThere {
+                    named: "there-1".to_string(),
+                    version: Some("v1".to_string()),
+                },
+                title: "From nowhere".to_string(),
+                body: "Words".to_string(),
+            }],
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(
+            &cache,
+            &service,
+            ACCOUNT,
+            "https://example.test/dav/journals/nobody/",
+        ))
+        .expect("a sync");
+
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "a container no folder holds was synced without a word: {result:?}"
+        );
+        assert!(
+            cache
+                .get_all_notes_for_account(ACCOUNT)
+                .expect("what is here")
+                .is_empty(),
+            "a note was filed into a folder that is not its container's"
+        );
+    }
+
+    #[test]
+    fn test_an_accounts_containers_add_up_to_one_answer() {
+        // An account has as many syncs as it has containers and somebody asked
+        // for one thing. Reporting only the last container's is how the one
+        // that had the problem goes unmentioned.
+        let mut first = NoteSyncResult {
+            stored: 1,
+            unchanged: 2,
+            sent: 3,
+            held: 1,
+            not_kept_exactly: 1,
+            waiting_on_the_setting: 2,
+            needs_sign_in: false,
+            errors: vec!["the first container".to_string()],
+        };
+
+        first.absorb(NoteSyncResult {
+            stored: 10,
+            unchanged: 20,
+            sent: 30,
+            held: 2,
+            not_kept_exactly: 3,
+            waiting_on_the_setting: 4,
+            needs_sign_in: true,
+            errors: vec!["the second container".to_string()],
+        });
+
+        assert_eq!(
+            (
+                first.stored,
+                first.unchanged,
+                first.sent,
+                first.held,
+                first.not_kept_exactly,
+                first.waiting_on_the_setting
+            ),
+            (11, 22, 33, 3, 4, 6),
+            "one of the counts was dropped, so a container's work went unreported"
+        );
+        assert!(
+            first.needs_sign_in,
+            "one container nobody is signed in to stopped being said because \
+             another one went through"
+        );
+        assert_eq!(
+            first.errors,
+            ["the first container", "the second container"],
+            "a container's problems were dropped"
+        );
     }
 }

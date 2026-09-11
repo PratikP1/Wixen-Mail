@@ -3107,9 +3107,15 @@ fn store_new_container(
             display_order: 0,
             created_at: stamp,
         }),
+        // No container, and that is the decision rather than a gap. Making a
+        // folder here does not make a section at a backend: requirement 3 of
+        // the seam's container section says nothing creates a container through
+        // it, so a folder made here has nowhere to send anything and stays on
+        // this computer, shown under the words mail already uses.
         ContainerKind::NoteFolder => cache.save_note_folder(&NoteFolderEntry {
             id: new_id("notefolder"),
             account_id: account_id.to_string(),
+            container: None,
             name: name.to_string(),
             display_order: 0,
             created_at: stamp,
@@ -4728,6 +4734,7 @@ mod tests {
             .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
                 id: "folder-3".to_string(),
                 account_id: "account-1".to_string(),
+                container: None,
                 name: "House".to_string(),
                 display_order: 0,
                 created_at: String::new(),
@@ -5350,6 +5357,7 @@ mod tests {
                 .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
                     id: id.to_string(),
                     account_id: "acct".to_string(),
+                    container: None,
                     name: id.to_string(),
                     display_order: 0,
                     created_at: now_stamp(),
@@ -6589,7 +6597,7 @@ fn file_it(
     // no.
     let waiting = crate::application::pim_command::what_is_waiting(
         will_have_to_be_sent(cache, kind, &into.id)
-            || a_removal_will_have_to_be_sent(kind, filing, id),
+            || a_removal_will_have_to_be_sent(cache, kind, filing, id),
         crate::application::allowed::allowed_for(&account_id).personal_information,
     );
 
@@ -6881,12 +6889,20 @@ pub fn will_have_to_be_sent(
             | WhereAChangeGoes::Outlook => true,
             WhereAChangeGoes::OnlyReadable | WhereAChangeGoes::KeptHere => false,
         },
-        // Where that folder's account sends its notes, asked of the one place
-        // that answers it. A note folder names an account and the account's
-        // answer is the whole of it, so this is still a question about the
-        // destination rather than about the account somebody happens to be
-        // looking at: file a note into another account's folder and the answer
-        // comes from that account.
+        // Whether that folder is a backend container, which is the whole of the
+        // answer. One backend container is one note folder, decided 2026-09-11,
+        // so a folder holding one is a place a change really goes and a folder
+        // holding none is one nothing is ever sent from.
+        //
+        // **Asked of the folder and not of the account, which is the mistake
+        // this function exists to avoid** and which it used to make for a note.
+        // It used to ask where the folder's account sends its notes, so a note
+        // moved into a folder somebody made here on an account with a calendar
+        // server was announced as waiting to reach that server. Nothing is ever
+        // sent for it: requirement 3 of the seam's container section says
+        // nothing creates a container through the seam, so a folder made here
+        // has nowhere to go. The task arm makes the same distinction by the
+        // identifier of the list, for the same reason and in the same words.
         //
         // A folder that is not there answers no. Between the chooser and the
         // write somebody else's sync can take it away, and claiming on the way
@@ -6896,18 +6912,7 @@ pub fn will_have_to_be_sent(
             .get_note_folder(into)
             .ok()
             .flatten()
-            .and_then(|folder| {
-                let accounts = cache.load_accounts().unwrap_or_default();
-                let account = accounts
-                    .iter()
-                    .find(|account| account.id == folder.account_id)
-                    .cloned()?;
-                Some(crate::application::notes_backend::for_account(
-                    Some(&account),
-                    crate::application::notes_backend::has_a_calendar_server(cache, &account.id),
-                ))
-            })
-            .is_some_and(|backend| backend.goes_somewhere_else()),
+            .is_some_and(|folder| folder.container.is_some()),
         // None of these three reaches a filing that says where it went.
         // `kept_in` gives them no container, so the chooser is never opened
         // for one; a contact and a reminder take their own paths before it and
@@ -6951,6 +6956,7 @@ pub fn will_have_to_be_sent(
 /// stored list rather than a window, and a `#[test]` in this file costs 44 guard
 /// records a re-measurement each.
 pub fn a_removal_will_have_to_be_sent(
+    cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
     filing: crate::application::destinations::Filing,
     id: &str,
@@ -6967,19 +6973,37 @@ pub fn a_removal_will_have_to_be_sent(
         // and for [`will_have_to_be_sent`], so the prefixes stay known in one
         // place.
         ItemKind::Task => crate::application::tasks_sync::a_provider_holds(id),
+        // Whether a backend already holds a copy of this note, which is the
+        // same question the push asks to decide between creating a note and
+        // changing one: a name the backend gave it. A note in a folder made
+        // here has none, because nothing ever sent it anywhere, so there is
+        // nothing at any backend to remove.
+        //
+        // Asked of the note and not of where it is going, which is the split
+        // this function is for. A note a backend holds, moved into a folder
+        // somebody made here, is the filing where this says yes while
+        // [`will_have_to_be_sent`] says no: the backend still has its copy and
+        // something has to ask for it to go. Moving it into a folder made here
+        // does not cancel that, and announcing the move with nothing said would
+        // be a move reported as done while a backend was owed a removal.
+        //
+        // A note that is no longer there answers no, for the reason
+        // [`will_have_to_be_sent`]'s note arm gives: between the chooser and the
+        // write somebody else's sync can take the row away, and claiming on the
+        // way past that a backend is owed something is what must not happen.
+        ItemKind::Note => cache
+            .get_note(id)
+            .ok()
+            .flatten()
+            .is_some_and(|note| note.known_as.is_some()),
         // An event a server holds is refused a move by [`moving_can_be_told`]
         // before this is reached, so there is no move here that could owe one.
         // Written out rather than caught by a catch-all: if that refusal is ever
         // lifted, this arm has to answer rather than inherit "nothing is owed",
         // which is the answer that says nothing when something really is.
         //
-        // A note is held by nobody, and the other three are never filed into a
-        // container at all.
-        ItemKind::Event
-        | ItemKind::Note
-        | ItemKind::Mail
-        | ItemKind::Contact
-        | ItemKind::Reminder => false,
+        // The other three are never filed into a container at all.
+        ItemKind::Event | ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => false,
     }
 }
 
@@ -7126,6 +7150,39 @@ pub fn file_under(
                     "",
                 ))
             })?;
+            // A move of a note a backend holds, out of the container it holds
+            // it in, is a different write. The row carries what the backend
+            // calls the note there, so filing it under a new folder and marking
+            // it would ask the backend to change a note in a container it is
+            // not in. The task arm above asks the same question of a task and
+            // this is the note shape of it.
+            //
+            // **Whatever the destination is**, which is the task arm's rule
+            // copied rather than a second one written here, and the tempting
+            // edit is to branch on it. A folder somebody made here has no
+            // container, so it reads as a place nothing is sent to, and the
+            // obvious thing is to move the row and leave it as it was. That is
+            // wrong twice over: the row would keep the name the backend gave
+            // it, so the next sync of the old container would go on writing the
+            // backend's copy over a note somebody had moved onto this computer,
+            // and clearing the name instead would leave the backend's copy
+            // named by nothing, to arrive again as a new note.
+            //
+            // What really happens for a move onto this computer is the task's
+            // third outcome exactly. The copy here is this computer's own note,
+            // the backend is owed the removal of the one it has, and the
+            // removal waits for a copy that is in a folder no push ever reaches
+            // and so never goes. Nothing reaches the backend, the note is never
+            // written back down, and `docs/ALPHA_TESTING.md` says so in the
+            // words the task move already uses.
+            //
+            // Only for a move. A copy of a note a backend holds is the write
+            // below with a new identifier: the backend's own note is left
+            // exactly where it is, so nothing is owed and there is no removal
+            // to record.
+            if filing.needs_the_holder_told() && note.known_as.is_some() {
+                return move_what_a_backend_holds(cache, &note, into);
+            }
             note.folder_id = Some(into.to_string());
             note.pending = true;
             if filing.makes_a_new_row() {
@@ -7159,6 +7216,44 @@ pub fn file_under(
         ItemKind::Mail | ItemKind::Contact | ItemKind::Reminder => Err(Error::Other(
             crate::application::pim_command::is_not_kept_in_a_container(kind),
         )),
+    }
+}
+
+/// Start a move of a note a backend holds, and say which row is in the new
+/// folder.
+///
+/// The order, and the reason for it, are
+/// [`MessageCache::move_a_note_the_backend_holds`]'s, which is itself the task
+/// move's copied rather than decided again. Read
+/// [`MessageCache::move_a_task_the_provider_holds`] for the argument: that one
+/// is the decision's home and there is exactly one of it.
+///
+/// [`MessageCache::move_a_note_the_backend_holds`]: crate::data::message_cache::MessageCache::move_a_note_the_backend_holds
+/// [`MessageCache::move_a_task_the_provider_holds`]: crate::data::message_cache::MessageCache::move_a_task_the_provider_holds
+fn move_what_a_backend_holds(
+    cache: &MessageCache,
+    note: &crate::data::message_cache::NoteEntry,
+    into: &str,
+) -> crate::common::Result<String> {
+    use crate::application::new_item::ItemKind;
+    use crate::common::Error;
+    use crate::data::message_cache::MovedWhatTheBackendHolds;
+
+    let here = new_id("note");
+    match cache.move_a_note_the_backend_holds(note, into, &here)? {
+        MovedWhatTheBackendHolds::Moved => Ok(here),
+        // Somebody else's sync took the row away between the read above and
+        // this write. The transaction has already put back the copy and the
+        // record it had written, so nothing is left over to clean up.
+        MovedWhatTheBackendHolds::ItIsNotHereToMove => Err(Error::Other(
+            crate::application::pim_command::no_longer_there(ItemKind::Note, ""),
+        )),
+        // Already where it was asked to go, so the row it is in is the answer.
+        // The chooser leaves out the folder an item is in, so only a route that
+        // did not go through the chooser reaches this. Carrying the move out
+        // would write a second copy and ask the backend to remove the first,
+        // for a move that changes nothing.
+        MovedWhatTheBackendHolds::IntoTheFolderItIsAlreadyIn => Ok(note.id.clone()),
     }
 }
 

@@ -370,7 +370,7 @@ fn test_moving_a_task_a_provider_holds_leaves_something_to_send_wherever_it_goes
          question has to say nothing is waiting for it"
     );
     assert!(
-        a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Moving, HELD),
+        a_removal_will_have_to_be_sent(&cache, ItemKind::Task, Filing::Moving, HELD),
         "moving a task a provider holds leaves the provider owed a removal, and nothing \
          says so"
     );
@@ -382,18 +382,27 @@ fn test_nothing_is_owed_by_a_copy_or_by_a_task_no_provider_holds() {
     // "true for a task". A copy leaves the provider's own item exactly where it
     // is, so the provider is owed nothing and saying otherwise would announce a
     // change that never happens. A task no provider has seen has no copy
-    // anywhere else to remove. A note is held by nobody at all.
+    // anywhere else to remove.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store_holding_the_task(&dir);
+
     assert!(
-        !a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Copying, HELD),
+        !a_removal_will_have_to_be_sent(&cache, ItemKind::Task, Filing::Copying, HELD),
         "a copy claimed the provider was owed a removal of the original"
     );
     assert!(
-        !a_removal_will_have_to_be_sent(ItemKind::Task, Filing::Moving, "task-1"),
+        !a_removal_will_have_to_be_sent(&cache, ItemKind::Task, Filing::Moving, "task-1"),
         "a task no provider holds claimed a removal was owed somewhere"
     );
+    // A note can owe one now, which it could not when this file was written:
+    // one backend container is one note folder, so a note in a folder a backend
+    // gave really does have a copy there. What is asserted here is the same
+    // shape as the line above it, that an identifier naming no note of this
+    // account owes nothing. `tests/a_note_moves_between_folders.rs` is where
+    // the note's own three outcomes are.
     assert!(
-        !a_removal_will_have_to_be_sent(ItemKind::Note, Filing::Moving, HELD),
-        "a note claimed a removal was owed, and a note goes nowhere"
+        !a_removal_will_have_to_be_sent(&cache, ItemKind::Note, Filing::Moving, HELD),
+        "an identifier that names no note at all claimed a removal was owed"
     );
 }
 

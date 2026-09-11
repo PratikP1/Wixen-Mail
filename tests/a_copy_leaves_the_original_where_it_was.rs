@@ -448,11 +448,17 @@ fn test_the_copy_of_an_event_a_provider_holds_makes_no_claim_on_the_providers_ow
     assert_eq!(original.provider_event_id, Some("uid-1".to_string()));
 }
 
-/// A note folder on this account.
+/// A note folder on this account, which is one backend container.
+///
+/// A container each, because a note a backend holds lives in the folder that
+/// container is: one backend container is one note folder, decided 2026-09-11.
+/// A folder with no container is one somebody made here, and a note the backend
+/// holds cannot be in one of those except part-way through a move.
 fn a_note_folder(id: &str, name: &str) -> NoteFolderEntry {
     NoteFolderEntry {
         id: id.to_string(),
         account_id: ACCOUNT.to_string(),
+        container: Some(format!("https://example.test/dav/journals/{id}/")),
         name: name.to_string(),
         display_order: 0,
         created_at: String::new(),
@@ -538,6 +544,15 @@ fn test_a_note_moved_to_another_folder_is_left_waiting_to_be_sent() {
     // changed the row and marked nothing is the bug the changelog already
     // records against a task, said as a success while the change reached
     // nobody.
+    //
+    // **What the move does changed on 2026-09-11 and this test changed with
+    // it.** One backend container is one note folder, so moving a note between
+    // two folders is moving it between two containers, which at the backend is
+    // a create in the new one and a removal from the old. The row keeping the
+    // name the backend gave it used to be right, because an account had one
+    // container and a folder meant nothing at the other end. Now it would ask
+    // the backend to change its copy in the container the note is leaving,
+    // which is somebody's note lost at their server.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store(&dir);
     cache
@@ -571,9 +586,20 @@ fn test_a_note_moved_to_another_folder_is_left_waiting_to_be_sent() {
          move reaches it on some later change or never"
     );
     assert_eq!(
-        moved.known_as.as_deref(),
-        Some("there-1"),
-        "a move gave up what the backend calls the note, so the push would \
-         create a second one"
+        moved.known_as, None,
+        "the moved note kept the name the backend gave it in the container it \
+         left, so the push would change that copy rather than make one in the \
+         new container"
+    );
+    assert_eq!(
+        cache
+            .deleted_notes(ACCOUNT)
+            .expect("the store to answer")
+            .iter()
+            .map(|gone| (gone.known_as.clone(), gone.waiting_for_note_id.clone()))
+            .collect::<Vec<_>>(),
+        [(Some("there-1".to_string()), Some(landed.clone()))],
+        "the old container is owed no removal of the copy it still has, or the \
+         removal does not wait for the new one to arrive"
     );
 }

@@ -1231,11 +1231,22 @@ pub struct TaskItem {
 }
 
 /// Note folder item for UI display
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NoteFolderItem {
     pub id: String,
     pub name: String,
     pub note_count: usize,
+    /// Whether this folder is one somebody made here rather than one a backend
+    /// gave.
+    ///
+    /// A bool and not the container, which is deliberate. The container is
+    /// opaque and is a CalDAV collection address today; a screen has no use for
+    /// it, and putting one in a display type is how a URL ends up read aloud.
+    /// What a screen needs is which branch the folder goes under, and this is
+    /// that.
+    ///
+    /// [`crate::presentation::note_folder_tree`] is what reads it.
+    pub on_this_computer: bool,
 }
 
 /// Note item for UI display
@@ -1604,6 +1615,10 @@ impl NoteFolderItem {
             id: entry.id.clone(),
             name: entry.name.clone(),
             note_count,
+            // No container is a folder somebody made here. One backend
+            // container is one note folder, so the absence of one is the whole
+            // of the answer.
+            on_this_computer: entry.container.is_none(),
         }
     }
 }
@@ -3129,6 +3144,7 @@ mod tests {
         let entry = NoteFolderEntry {
             id: "nf1".into(),
             account_id: "a1".into(),
+            container: None,
             name: "Ideas".into(),
             display_order: 0,
             created_at: "2026-01-01".into(),

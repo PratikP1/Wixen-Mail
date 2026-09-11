@@ -22,7 +22,7 @@ pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
-pub use notes::NoteBody;
+pub use notes::{MovedWhatTheBackendHolds, NoteBody};
 pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
@@ -1182,6 +1182,31 @@ pub struct DeletedTask {
 pub struct NoteFolderEntry {
     pub id: String,
     pub account_id: String,
+    /// What the account's notes backend calls the place this folder is.
+    ///
+    /// One backend container is one note folder, which
+    /// `docs/development/the-notes-seam.md` decided on 2026-09-11. For a
+    /// calendar server that is one journal collection; for OneNote it is one
+    /// section, with whatever levels sit above it flattened into the string by
+    /// the backend. **Opaque.** It is stored, compared for equality and handed
+    /// back, and nothing here splits it, reads it as a URL or counts levels in
+    /// it. That is requirement 1 of the seam's container section, and the whole
+    /// reason the name below is a separate field.
+    ///
+    /// `None` for a folder somebody made here. Those stay on this computer, are
+    /// never synced, and are shown under
+    /// [`crate::application::local_folders::ON_THIS_COMPUTER`], which is the
+    /// branch phase 1 built for mail folders on no server. A folder no backend
+    /// gave has nowhere to send anything to.
+    pub container: Option<String>,
+    /// What somebody sees and hears, which for a backend-given folder is the
+    /// path its container sits at: `Work / Projects / Q3`.
+    ///
+    /// The name carries the path and the container carries the identity. They
+    /// are different jobs and this is why they are not one field: the name is
+    /// the backend's to change and a folder follows it, while the container is
+    /// what every note in the folder is filed by and must not move when a
+    /// section is renamed.
     pub name: String,
     pub display_order: i32,
     pub created_at: String,
@@ -1252,6 +1277,18 @@ pub struct DeletedNote {
     pub deleted_at: String,
     /// Whether the backend has taken it yet.
     pub so_far: TheDeletionSoFar,
+    /// The copy that has to reach the backend before this deletion may go.
+    ///
+    /// Set only by [`MessageCache::move_a_note_the_backend_holds`], and the
+    /// exact twin of [`DeletedTask::waiting_for_task_id`]. A move between two
+    /// backed folders is a create in the new container and a removal from the
+    /// old one, and this is what stops the removal being sent first: asked in
+    /// that order, a failed create leaves the backend holding no copy at all,
+    /// which nobody can see.
+    ///
+    /// `None` on every ordinary deletion, which owes nothing and waits for
+    /// nothing.
+    pub waiting_for_note_id: Option<String>,
 }
 
 /// Sync state tracker for incremental sync (Google sync tokens, MS delta links)
@@ -2848,6 +2885,33 @@ impl MessageCache {
         // accepted and another refused in the same run.
         self.ensure_column_exists("notes", "provider_note_id", "TEXT")?;
         self.ensure_column_exists("notes", "provider_version", "TEXT")?;
+        // What backend container this note folder is. One container is one note
+        // folder, decided 2026-09-11 in `docs/development/the-notes-seam.md`.
+        // Opaque, like the two above: stored, compared for equality and handed
+        // back, never parsed.
+        //
+        // NULL on every folder already on somebody's disk, which reads as a
+        // folder made here and is the right answer for all of them: until this
+        // shipped, every folder was one somebody made here or one this program
+        // made for them, and none of them meant anything at a backend. That is
+        // what ledger 246 recorded.
+        //
+        // A note carries no container of its own. Its folder's is the whole
+        // answer, because a note is in one folder and a folder is one
+        // container, so a column on `notes` would be a second copy of that fact
+        // able to disagree with the first.
+        self.ensure_column_exists("note_folders", "container", "TEXT")?;
+        // The copy a removal is waiting for, which is the note half of
+        // `deleted_tasks.waiting_for_task_id` and is there for the same reason.
+        // A note moving between two backed folders is a create in the new
+        // container and a removal from the old one, and this is what stops the
+        // removal going first.
+        //
+        // NULL on every record already on somebody's disk, which reads as an
+        // ordinary deletion waiting for nothing. That is right for all of them:
+        // until this shipped, no note could move between containers, because
+        // there was only ever one.
+        self.ensure_column_exists("deleted_notes", "waiting_for_note_id", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.

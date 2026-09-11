@@ -77,6 +77,51 @@ const NOTE_COLUMNS: &str = "id, account_id, folder_id, title, body, format, pinn
                             created_at, updated_at, pending, provider_note_id, \
                             provider_version";
 
+/// How a move of a note a backend holds ended.
+///
+/// Three answers rather than a bool, for the reason
+/// [`crate::data::message_cache::MovedWhatTheProviderHolds`] gives about a
+/// task: two of the three are not failures, and a move into the folder the note
+/// is already in is a request that changes nothing rather than one that went
+/// wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovedWhatTheBackendHolds {
+    /// The copy is in the new folder, the old row has gone, and the backend is
+    /// owed a removal once the copy has reached it.
+    Moved,
+    /// The row went between the caller reading it and this writing. Nothing was
+    /// written: the transaction rolled the copy and the record back.
+    ItIsNotHereToMove,
+    /// Asked for the folder it is already in, so nothing was done and the row
+    /// it is in is the answer.
+    IntoTheFolderItIsAlreadyIn,
+}
+
+/// The wanted name, or the first numbering of it nothing has taken.
+///
+/// `Work`, then `Work (2)`, then `Work (3)`. The Windows convention, which
+/// somebody meeting it in a list of folders has met before, and which a screen
+/// reader at its default punctuation level reads as "Work 2" rather than
+/// spelling the brackets out.
+///
+/// Unbounded on purpose, with no arbitrary ceiling to fall off. `taken` is
+/// asked of a list of folders that already exist, so at most one more than that
+/// many numbers can be taken and the loop ends. A bound would need an answer for
+/// the case past it, and every answer available there is worse than counting on.
+fn a_free_name(wanted: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(wanted) {
+        return wanted.to_string();
+    }
+    (2..)
+        .map(|n| format!("{wanted} ({n})"))
+        .find(|candidate| !taken(candidate))
+        // The iterator is infinite and `taken` is finite, so this is not
+        // reached. Said as the wanted name rather than by unwrapping, because
+        // this file does not unwrap and a name that collides is refused by the
+        // storage, which is a reported failure rather than a panic.
+        .unwrap_or_else(|| wanted.to_string())
+}
+
 impl MessageCache {
     // ── Note Folders ────────────────────────────────────────────────────────
 
@@ -84,14 +129,17 @@ impl MessageCache {
     pub fn save_note_folder(&self, nf: &NoteFolderEntry) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO note_folders (id, account_id, name, display_order, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO note_folders
+                    (id, account_id, container, name, display_order, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(id) DO UPDATE SET
+                    container = excluded.container,
                     name = excluded.name,
                     display_order = excluded.display_order",
                 rusqlite::params![
                     nf.id,
                     nf.account_id,
+                    nf.container,
                     nf.name,
                     nf.display_order,
                     nf.created_at
@@ -106,7 +154,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, name, display_order, created_at
+                "SELECT id, account_id, container, name, display_order, created_at
                  FROM note_folders WHERE account_id = ?1 ORDER BY display_order, name",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare note folders query: {}", e)))?;
@@ -116,9 +164,10 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    display_order: row.get(3)?,
-                    created_at: row.get(4)?,
+                    container: row.get(2)?,
+                    name: row.get(3)?,
+                    display_order: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query note folders: {}", e)))?;
@@ -158,6 +207,11 @@ impl MessageCache {
     }
 
     /// Ensure a default note folder exists.
+    ///
+    /// A folder made here, with no container, which is what an account with no
+    /// notes backend has and all it has. Nothing a backend gives arrives
+    /// through here: [`Self::a_note_folder_for`] is what turns a container into
+    /// a folder, and it will not adopt one of these.
     pub fn ensure_default_note_folder(&self, account_id: &str) -> Result<NoteFolderEntry> {
         let existing = self.get_note_folders_for_account(account_id)?;
         if let Some(first) = existing.into_iter().next() {
@@ -167,12 +221,103 @@ impl MessageCache {
         let nf = NoteFolderEntry {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
+            container: None,
             name: "General".to_string(),
             display_order: 0,
             created_at: now,
         };
         self.save_note_folder(&nf)?;
         Ok(nf)
+    }
+
+    /// The folder that is this backend container, or nothing.
+    ///
+    /// By the container and never by the name, because the name is the
+    /// backend's to change: a section renamed at OneNote has to keep its notes,
+    /// and a lookup by name would file them into a folder somebody made here
+    /// that happened to be called the same thing.
+    ///
+    /// The container is compared for equality and nothing else. Equality is not
+    /// parsing, so requirement 1 of the seam's container section holds: nothing
+    /// here splits it, orders it or reads any meaning out of it.
+    pub fn note_folder_holding(
+        &self,
+        account_id: &str,
+        container: &str,
+    ) -> Result<Option<NoteFolderEntry>> {
+        Ok(self
+            .get_note_folders_for_account(account_id)?
+            .into_iter()
+            .find(|folder| folder.container.as_deref() == Some(container)))
+    }
+
+    /// The note folder one backend container is, made if it is not there yet.
+    ///
+    /// One container is one folder, decided on 2026-09-11 and written into
+    /// `docs/development/the-notes-seam.md`. `called` is what the backend calls
+    /// the place, already flattened by the backend into a path a person reads:
+    /// `Work / Projects / Q3`.
+    ///
+    /// # The name follows the backend and the identity does not
+    ///
+    /// A folder already holding this container is renamed when the backend has
+    /// renamed it, and keeps its own identifier and every note in it. The other
+    /// way round, matching on the name, would lose a section's notes the first
+    /// time somebody renamed it.
+    ///
+    /// # Two containers wanting one name
+    ///
+    /// `note_folders` is unique on the account and the name, and that
+    /// constraint shipped, so it is worked with rather than dropped. Two
+    /// OneNote sections with one name sit at different paths and so arrive with
+    /// different names already. Two calendars on one account really can share a
+    /// display name, and a folder somebody made here can be called anything at
+    /// all. So a name already taken by a different folder is numbered:
+    /// `Work`, then `Work (2)`.
+    ///
+    /// **Nothing is ever filed by that name**, which is what makes the
+    /// numbering cosmetic rather than dangerous. Every note in this folder is
+    /// found through the container, so a clash changes what somebody reads and
+    /// never where a note goes. The alternative, refusing the second folder,
+    /// would drop a whole calendar's notes on the floor without a word.
+    pub fn a_note_folder_for(
+        &self,
+        account_id: &str,
+        container: &str,
+        called: &str,
+    ) -> Result<NoteFolderEntry> {
+        let here = self.get_note_folders_for_account(account_id)?;
+        let taken_by_somebody_else = |wanted: &str, mine: Option<&str>| {
+            here.iter()
+                .any(|folder| folder.name == wanted && folder.id.as_str() != mine.unwrap_or(""))
+        };
+
+        if let Some(mut already) = here
+            .iter()
+            .find(|folder| folder.container.as_deref() == Some(container))
+            .cloned()
+        {
+            if already.name != called {
+                already.name = a_free_name(called, |wanted| {
+                    taken_by_somebody_else(wanted, Some(&already.id))
+                });
+                self.save_note_folder(&already)?;
+            }
+            return Ok(already);
+        }
+
+        let folder = NoteFolderEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: account_id.to_string(),
+            container: Some(container.to_string()),
+            name: a_free_name(called, |wanted| taken_by_somebody_else(wanted, None)),
+            // After every folder already here, so a backend arriving on an
+            // account that already had folders does not reorder them.
+            display_order: here.len() as i32,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        self.save_note_folder(&folder)?;
+        Ok(folder)
     }
 
     // ── Notes ───────────────────────────────────────────────────────────────
@@ -305,6 +450,114 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Start a move of a note a backend holds, by writing both halves at once.
+    ///
+    /// # This is the task move, copied rather than decided again
+    ///
+    /// [`MessageCache::move_a_task_the_provider_holds`] settled the order and
+    /// its doc comment carries the whole argument. Read that one: it is the
+    /// home of the decision and this is a second application of it, not a
+    /// second answer. Two orderings of the same two steps, decided twice,
+    /// disagree the day either changes.
+    ///
+    /// The short of it. A move at the backend is a create in the new container
+    /// and a removal from the old one. The copy is written here first, under an
+    /// identifier this computer minted and marked as waiting, and the old
+    /// backend name is left a deletion record naming that copy as the thing
+    /// that has to arrive before the removal may go. A failure between the two
+    /// therefore leaves the note in **both** containers, which somebody can see
+    /// and tidy. The other order risks neither, which they could not see at all.
+    ///
+    /// On this computer there is no gap. One transaction writes the copy, the
+    /// record, and the removal of the old row, so at every instant exactly one
+    /// row is that note.
+    ///
+    /// # Why the copy carries no backend name
+    ///
+    /// A note in a new container is a note the backend has never seen. Keeping
+    /// the old name would make the next push ask the backend to change its copy
+    /// of the original rather than make a second one, and the original is the
+    /// one being moved away from: that is somebody's note lost at their server.
+    /// The version marker goes with the name because it describes that same
+    /// copy. [`crate::presentation::managers::file_under`] answers the same
+    /// question the same way when it makes a copy.
+    ///
+    /// **Nothing here has run against a real backend.** Nobody has, with this
+    /// program, for a note or for a task.
+    pub fn move_a_note_the_backend_holds(
+        &self,
+        note: &NoteEntry,
+        into_folder: &str,
+        new_id: &str,
+    ) -> Result<MovedWhatTheBackendHolds> {
+        if note.folder_id.as_deref() == Some(into_folder) {
+            return Ok(MovedWhatTheBackendHolds::IntoTheFolderItIsAlreadyIn);
+        }
+        let moving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to start a move of a note: {}", e)))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Through `save_note` rather than a second copy of its upsert written
+        // out here, for the reason the task move gives: it runs on this cache's
+        // one connection, which is the connection the transaction was opened
+        // on, so it is inside that transaction. A copy of the upsert would
+        // drift from the original the first time a column was added, and this
+        // file has added three.
+        self.save_note(&NoteEntry {
+            id: new_id.to_string(),
+            folder_id: Some(into_folder.to_string()),
+            known_as: None,
+            known_version: None,
+            pending: true,
+            updated_at: now.clone(),
+            ..note.clone()
+        })?;
+
+        moving
+            .execute(
+                "INSERT OR REPLACE INTO deleted_notes
+                    (id, account_id, folder_id, provider_note_id, deleted_at,
+                     waiting_for_note_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    note.id,
+                    note.account_id,
+                    note.folder_id,
+                    note.known_as,
+                    now,
+                    new_id,
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the backend is owed for a move: {}",
+                    e
+                ))
+            })?;
+
+        let taken_out = moving
+            .execute(
+                "DELETE FROM notes WHERE id = ?1",
+                rusqlite::params![note.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to take away the moved note: {}", e)))?;
+        if taken_out == 0 {
+            // Returned without committing, so the transaction is dropped and
+            // rolls back, which is what takes the copy and the record away
+            // again. There was nothing here to move, and the two things a move
+            // that did not happen would have left are a second note nobody
+            // asked for and a request to remove the first at the backend.
+            return Ok(MovedWhatTheBackendHolds::ItIsNotHereToMove);
+        }
+
+        moving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to move a note between folders: {}", e)))?;
+        Ok(MovedWhatTheBackendHolds::Moved)
+    }
+
     /// Write down that this note was deleted here.
     fn record_a_deleted_note(&self, note: &NoteEntry) -> Result<()> {
         self.conn
@@ -337,7 +590,8 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, folder_id, provider_note_id, deleted_at, taken_at
+                "SELECT id, account_id, folder_id, provider_note_id, deleted_at, taken_at,
+                        waiting_for_note_id
                  FROM deleted_notes WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare the deletions query: {}", e)))?;
@@ -350,6 +604,7 @@ impl MessageCache {
                     known_as: row.get(3)?,
                     deleted_at: row.get(4)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(5)?),
+                    waiting_for_note_id: row.get(6)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query the deletions: {}", e)))?;
@@ -467,7 +722,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, name, display_order, created_at
+                "SELECT id, account_id, container, name, display_order, created_at
                  FROM note_folders WHERE id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare a note folder query: {}", e)))?;
@@ -476,9 +731,10 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
-                    name: row.get(2)?,
-                    display_order: row.get(3)?,
-                    created_at: row.get(4)?,
+                    container: row.get(2)?,
+                    name: row.get(3)?,
+                    display_order: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query a note folder: {}", e)))?;
@@ -490,24 +746,33 @@ impl MessageCache {
         }
     }
 
-    /// Every note changed here and not yet sent.
+    /// Every note in this folder changed here and not yet sent.
     ///
     /// The same question `pending_tasks` answers for a task, asked the same
     /// way, so a note the push has to offer is found by one column rather than
     /// by comparing what is here against what a backend last said.
-    pub fn notes_waiting_to_be_sent(&self, account_id: &str) -> Result<Vec<NoteEntry>> {
+    ///
+    /// By the folder rather than by the account, because one folder is one
+    /// backend container and a push is about one container. Asked of the
+    /// account, a loop over an account's containers offers every waiting note
+    /// to whichever runs first, which creates it in the wrong place and marks
+    /// it sent, so the container it belongs to is never offered it.
+    pub fn notes_in_this_folder_waiting_to_be_sent(
+        &self,
+        folder_id: &str,
+    ) -> Result<Vec<NoteEntry>> {
         let mut stmt = self
             .conn
             .prepare_cached(&format!(
                 "SELECT {NOTE_COLUMNS}
-                 FROM notes WHERE account_id = ?1 AND pending = 1
+                 FROM notes WHERE folder_id = ?1 AND pending = 1
                  ORDER BY updated_at"
             ))
             .map_err(|e| {
                 Error::Other(format!("Failed to prepare the waiting notes query: {}", e))
             })?;
         let rows = stmt
-            .query_map(rusqlite::params![account_id], Self::map_note_row)
+            .query_map(rusqlite::params![folder_id], Self::map_note_row)
             .map_err(|e| Error::Other(format!("Failed to query the waiting notes: {}", e)))?;
         let mut notes = Vec::new();
         for row in rows {
@@ -573,6 +838,7 @@ mod tests {
         let going = NoteFolderEntry {
             id: "folder-going".to_string(),
             account_id: "acct-1".to_string(),
+            container: None,
             name: "Old ideas".to_string(),
             display_order: 1,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -1059,7 +1325,9 @@ line two
                 .unwrap();
         }
 
-        let waiting = cache.notes_waiting_to_be_sent("acct-1").unwrap();
+        let waiting = cache
+            .notes_in_this_folder_waiting_to_be_sent(&folder.id)
+            .unwrap();
 
         assert_eq!(
             waiting.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(),
@@ -1191,6 +1459,7 @@ line two
         let going = NoteFolderEntry {
             id: "folder-going".to_string(),
             account_id: "acct-1".to_string(),
+            container: None,
             name: "Old ideas".to_string(),
             display_order: 1,
             created_at: "2026-01-01".to_string(),
@@ -1332,5 +1601,450 @@ line two
         let loaded = cache.get_note("n1").unwrap().unwrap();
         assert_eq!(loaded.body, "edited");
         assert_eq!(loaded.title, "Final");
+    }
+
+    /// A calendar collection, standing in for whatever a backend hands out.
+    const A_CONTAINER: &str = "https://example.test/dav/journals/work/";
+    const ANOTHER_CONTAINER: &str = "https://example.test/dav/journals/home/";
+
+    #[test]
+    fn test_a_note_folder_keeps_the_container_it_was_given() {
+        // The column the whole arrangement rests on. Without it every folder
+        // reads as one somebody made here, which is the answer that sends
+        // nothing anywhere.
+        let cache = test_cache();
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-1".to_string(),
+                account_id: "acct-1".to_string(),
+                container: Some(A_CONTAINER.to_string()),
+                name: "Work".to_string(),
+                display_order: 0,
+                created_at: "2026-01-01".to_string(),
+            })
+            .expect("the folder is saved");
+
+        let read_back = cache
+            .get_note_folder("folder-1")
+            .expect("the folder is read")
+            .expect("the folder is there");
+        assert_eq!(
+            read_back.container.as_deref(),
+            Some(A_CONTAINER),
+            "the container went in and did not come back"
+        );
+        let in_the_account = cache
+            .get_note_folders_for_account("acct-1")
+            .expect("the account's folders are read");
+        assert_eq!(
+            in_the_account
+                .iter()
+                .map(|folder| folder.container.as_deref())
+                .collect::<Vec<_>>(),
+            [Some(A_CONTAINER)],
+            "the account's own list of folders lost the container"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_made_here_has_no_container_and_says_so() {
+        // The other half, and the one that decides whether anything is sent.
+        // A folder with no container is on this computer and is never synced.
+        //
+        // **This one has never been red and cannot be**, which is worth saying
+        // rather than leaving somebody to assume it drove anything. Absence is
+        // what the column reads as before it exists, so it passed against the
+        // failing half of its own pair. It is a guard: it goes red the day
+        // something starts handing `ensure_default_note_folder` a container,
+        // which would silently start syncing folders somebody made here.
+        let cache = test_cache();
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
+        assert_eq!(
+            made_here.container, None,
+            "a folder nobody's backend gave came back claiming a container"
+        );
+        assert_eq!(
+            cache
+                .get_note_folder(&made_here.id)
+                .expect("the folder is read")
+                .expect("the folder is there")
+                .container,
+            None,
+            "a folder made here grew a container on the way back out of storage"
+        );
+    }
+
+    #[test]
+    fn test_one_container_finds_the_one_folder_that_holds_it() {
+        let cache = test_cache();
+        for (id, container, name) in [
+            ("folder-work", A_CONTAINER, "Work"),
+            ("folder-home", ANOTHER_CONTAINER, "Home"),
+        ] {
+            cache
+                .save_note_folder(&NoteFolderEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    container: Some(container.to_string()),
+                    name: name.to_string(),
+                    display_order: 0,
+                    created_at: "2026-01-01".to_string(),
+                })
+                .expect("the folder is saved");
+        }
+
+        assert_eq!(
+            cache
+                .note_folder_holding("acct-1", ANOTHER_CONTAINER)
+                .expect("the lookup runs")
+                .map(|folder| folder.id),
+            Some("folder-home".to_string()),
+            "the second container did not find its own folder"
+        );
+        assert!(
+            cache
+                .note_folder_holding("acct-1", "https://example.test/dav/journals/nobody/")
+                .expect("the lookup runs")
+                .is_none(),
+            "a container no folder holds found one anyway"
+        );
+        assert!(
+            cache
+                .note_folder_holding("acct-2", A_CONTAINER)
+                .expect("the lookup runs")
+                .is_none(),
+            "one account's container found another account's folder"
+        );
+    }
+
+    #[test]
+    fn test_asking_twice_for_one_container_gives_one_folder() {
+        let cache = test_cache();
+        let first = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("a folder for the container");
+        let again = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the same folder for the same container");
+
+        assert_eq!(
+            first.id, again.id,
+            "one container came back as two folders, so its notes are in two places"
+        );
+        assert_eq!(
+            cache
+                .get_note_folders_for_account("acct-1")
+                .expect("the folders are read")
+                .len(),
+            1,
+            "asking twice made a second folder"
+        );
+    }
+
+    #[test]
+    fn test_a_container_renamed_at_the_backend_keeps_its_folder_and_its_notes() {
+        // The name follows and the identity does not. Matching on the name
+        // instead would lose a section's notes the first time somebody renamed
+        // it at OneNote.
+        let cache = test_cache();
+        let before = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("a folder for the container");
+        cache
+            .save_note(&NoteEntry {
+                id: "note-1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(before.id.clone()),
+                title: "Something".to_string(),
+                body: "in the folder".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: None,
+                known_version: None,
+            })
+            .expect("a note in the folder");
+
+        let after = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work / Projects / Q3")
+            .expect("the folder under its new name");
+
+        assert_eq!(
+            after.id, before.id,
+            "a renamed section came back as a new folder, so its notes were left behind"
+        );
+        assert_eq!(
+            after.name, "Work / Projects / Q3",
+            "the folder kept the name the backend no longer uses"
+        );
+        assert_eq!(
+            cache
+                .get_notes_for_folder(&before.id)
+                .expect("the notes are read")
+                .len(),
+            1,
+            "the note in the folder did not survive the rename"
+        );
+    }
+
+    #[test]
+    fn test_two_containers_wanting_one_name_get_two_folders() {
+        // Two calendars on one account really can share a display name, and
+        // `note_folders` is unique on the account and the name. Refusing the
+        // second would drop a whole calendar's notes with nothing said.
+        let cache = test_cache();
+        let first = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Notes")
+            .expect("a folder for the first container");
+        let second = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Notes")
+            .expect("a folder for the second container");
+
+        assert_ne!(
+            first.id, second.id,
+            "the second container was handed the first one's folder"
+        );
+        assert_eq!(first.name, "Notes");
+        assert_eq!(
+            second.name, "Notes (2)",
+            "the second folder was not told apart from the first"
+        );
+        assert_eq!(
+            second.container.as_deref(),
+            Some(ANOTHER_CONTAINER),
+            "the numbered folder lost the container it was made for"
+        );
+    }
+
+    #[test]
+    fn test_a_container_does_not_take_over_a_folder_somebody_made_here() {
+        // A folder made here is somebody's own and stays on this computer. A
+        // backend arriving with the same name must not adopt it, because that
+        // would start sending notes nobody asked to send.
+        let cache = test_cache();
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
+
+        let from_the_backend = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, &made_here.name)
+            .expect("a folder for the container");
+
+        assert_ne!(
+            from_the_backend.id, made_here.id,
+            "the backend took over a folder somebody made here"
+        );
+        assert_eq!(
+            cache
+                .get_note_folder(&made_here.id)
+                .expect("the folder is read")
+                .expect("the folder is still there")
+                .container,
+            None,
+            "a folder made here was given a container it never had"
+        );
+        assert_eq!(
+            from_the_backend.name, "General (2)",
+            "the backend's folder took the name of the one somebody made here"
+        );
+    }
+
+    /// A note the backend holds, in the folder one container is.
+    fn a_note_the_backend_holds(cache: &MessageCache, folder: &str, id: &str) -> NoteEntry {
+        let note = NoteEntry {
+            id: id.to_string(),
+            account_id: "acct-1".to_string(),
+            folder_id: Some(folder.to_string()),
+            title: "Shopping".to_string(),
+            body: "Bread and milk".to_string(),
+            format: NoteBody::AsTyped,
+            pinned: true,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+            pending: false,
+            known_as: Some("https://example.test/dav/journals/work/1.ics".to_string()),
+            known_version: Some("etag-1".to_string()),
+        };
+        cache.save_note(&note).expect("a note the backend holds");
+        note
+    }
+
+    #[test]
+    fn test_a_note_a_backend_holds_is_copied_into_the_new_folder_before_the_old_row_goes() {
+        // The order is the whole design and it is the task move's, copied. A
+        // failure between the two steps has to leave the note in both places
+        // rather than in neither, because only one of those can be seen.
+        let cache = test_cache();
+        let from = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let into = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Home")
+            .expect("the folder the other container is");
+        let note = a_note_the_backend_holds(&cache, &from.id, "note-1");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &into.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::Moved
+        );
+
+        let copy = cache
+            .get_note("note-2")
+            .expect("the copy is read")
+            .expect("the copy was written");
+        assert_eq!(
+            copy.folder_id.as_deref(),
+            Some(into.id.as_str()),
+            "the copy is not in the folder it was moved into"
+        );
+        assert!(
+            copy.pending,
+            "the copy is not waiting to be sent, so nothing will ever send it"
+        );
+        assert_eq!(
+            (copy.known_as, copy.known_version),
+            (None, None),
+            "the copy kept the name the backend gave the original, so the push \
+             would change the original rather than make a second note"
+        );
+        assert_eq!(copy.title, note.title);
+        assert_eq!(copy.body, note.body);
+        assert!(copy.pinned, "the copy lost something the backend never set");
+        assert!(
+            cache
+                .get_note("note-1")
+                .expect("the old row is read")
+                .is_none(),
+            "the note is in two folders on this computer"
+        );
+
+        let owed = cache.deleted_notes("acct-1").expect("the records are read");
+        assert_eq!(owed.len(), 1, "the backend was not left a removal to send");
+        assert_eq!(
+            owed[0].known_as, note.known_as,
+            "the record does not name the copy at the backend, so nothing can be removed"
+        );
+        assert_eq!(
+            owed[0].folder_id.as_deref(),
+            Some(from.id.as_str()),
+            "the record does not say which container to send the removal to"
+        );
+        assert_eq!(
+            owed[0].waiting_for_note_id.as_deref(),
+            Some("note-2"),
+            "the removal does not wait for the copy, so it can be sent first and \
+             leave the backend holding nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_move_of_a_note_that_has_gone_leaves_nothing_behind() {
+        // Somebody else's sync took the row away between the caller reading it
+        // and this writing. The copy and the record are already written by
+        // then, so both have to be undone, and the transaction is the only
+        // thing that undoes them.
+        let cache = test_cache();
+        let from = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let into = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Home")
+            .expect("the folder the other container is");
+        let note = a_note_the_backend_holds(&cache, &from.id, "note-1");
+        cache.delete_note("note-1").expect("somebody else's sync");
+        let records_before = cache.deleted_notes("acct-1").expect("the records are read");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &into.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::ItIsNotHereToMove
+        );
+
+        assert!(
+            cache
+                .get_note("note-2")
+                .expect("the copy is read")
+                .is_none(),
+            "a note nobody moved left a second copy behind"
+        );
+        assert_eq!(
+            cache.deleted_notes("acct-1").expect("the records are read"),
+            records_before,
+            "a move that did not happen changed what the backend is owed"
+        );
+    }
+
+    #[test]
+    fn test_a_note_moved_into_the_folder_it_is_in_is_left_alone() {
+        // Carrying it out would write a second copy and ask the backend to
+        // remove the first, for a move that changes nothing.
+        let cache = test_cache();
+        let here = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let note = a_note_the_backend_holds(&cache, &here.id, "note-1");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &here.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::IntoTheFolderItIsAlreadyIn
+        );
+
+        assert!(
+            cache
+                .get_note("note-1")
+                .expect("the note is read")
+                .is_some(),
+            "a move that changes nothing took the note away"
+        );
+        assert!(
+            cache
+                .get_note("note-2")
+                .expect("the copy is read")
+                .is_none(),
+            "a move that changes nothing made a second copy"
+        );
+        assert!(
+            cache
+                .deleted_notes("acct-1")
+                .expect("the records are read")
+                .is_empty(),
+            "a move that changes nothing asked the backend to remove the note"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_deletion_waits_for_nothing() {
+        // The other half of the column, and the one every deletion but a move
+        // takes. A record that waits for a copy nobody is making is a removal
+        // that never goes.
+        //
+        // **Never red, like its neighbour about a folder made here**, and for
+        // the same reason: absence is what a column reads as before it exists.
+        // It is a guard. It goes red the day an ordinary deletion starts naming
+        // something to wait for, which would hold that removal back for ever.
+        let cache = test_cache();
+        let folder = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        a_note_the_backend_holds(&cache, &folder.id, "note-1");
+
+        cache.delete_note("note-1").expect("the note is deleted");
+
+        let owed = cache.deleted_notes("acct-1").expect("the records are read");
+        assert_eq!(owed.len(), 1);
+        assert_eq!(
+            owed[0].waiting_for_note_id, None,
+            "an ordinary deletion is waiting for a copy nobody is making, so it \
+             will never be sent"
+        );
     }
 }
