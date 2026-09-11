@@ -120,7 +120,29 @@ impl NoteSyncResult {
     /// reading. [`NoteSyncResult::needs_sign_in`] is the one worth saying: it is
     /// an or, because one container nobody is signed in to is a thing somebody
     /// has to fix even when the other four went through.
-    pub fn absorb(&mut self, _other: NoteSyncResult) {}
+    pub fn absorb(&mut self, other: NoteSyncResult) {
+        let NoteSyncResult {
+            stored,
+            unchanged,
+            sent,
+            held,
+            not_kept_exactly,
+            waiting_on_the_setting,
+            needs_sign_in,
+            errors,
+        } = other;
+        // Taken apart by name rather than read field by field off a borrow, so
+        // that a field added to this struct is a compile error here. A count
+        // silently dropped is a container's work reported as nothing.
+        self.stored += stored;
+        self.unchanged += unchanged;
+        self.sent += sent;
+        self.held += held;
+        self.not_kept_exactly += not_kept_exactly;
+        self.waiting_on_the_setting += waiting_on_the_setting;
+        self.needs_sign_in |= needs_sign_in;
+        self.errors.extend(errors);
+    }
 
     /// What the status line says afterwards.
     pub fn summary(&self) -> String {

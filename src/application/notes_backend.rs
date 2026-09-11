@@ -247,10 +247,7 @@ pub enum WhatTheNotesSyncDid {
 ///
 /// In the order the store answers, which is the order the sidebar shows them
 /// in, so the folders come out in an order somebody recognises.
-fn the_calendar_servers_of(
-    cache: &MessageCache,
-    account_id: &str,
-) -> Vec<crate::data::message_cache::CalendarContainer> {
+fn the_calendar_servers_of(cache: &MessageCache, account_id: &str) -> Vec<ACalendarServersJournal> {
     cache
         .get_calendars_for_account(account_id)
         .unwrap_or_default()
@@ -258,9 +255,35 @@ fn the_calendar_servers_of(
         .filter(|calendar| {
             calendar.source_provider.as_deref()
                 == Some(crate::application::calendar_source::ON_A_SERVER)
-                && calendar.caldav_url.is_some()
+        })
+        // The address and the word are both asked for, the same pair
+        // [`has_a_calendar_server`] asks, so the two answers cannot disagree
+        // about one account. Resolved into the struct here rather than left as
+        // an `Option` for every caller to unwrap or branch on twice.
+        .filter_map(|calendar| {
+            Some(ACalendarServersJournal {
+                container: calendar.caldav_url.clone()?,
+                calendar_id: calendar.id,
+                called: calendar.name,
+            })
         })
         .collect()
+}
+
+/// One calendar server's journal entries, as the three facts a sync needs.
+///
+/// The address the notes are at, the calendar row the sign-in is stored under,
+/// and what to call the folder. Three fields rather than the whole calendar
+/// row, so that nothing downstream can reach for a calendar's colour or its
+/// read-only flag and start deciding something about notes from it.
+struct ACalendarServersJournal {
+    /// The opaque container, which is a CalDAV collection address here and is
+    /// never read as one outside `service::caldav_journal`.
+    container: String,
+    /// Which calendar row the sign-in for this server is stored under.
+    calendar_id: String,
+    /// What the calendar is called, which is what its note folder is called.
+    called: String,
 }
 
 /// The note folders this account's backends are, made if they are not there yet.
@@ -281,12 +304,29 @@ fn the_calendar_servers_of(
 /// same list, and two readings of "which containers does this account have"
 /// disagree the day either changes.
 pub fn note_folders_for_the_backends_of(
-    _cache: &MessageCache,
-    _account_id: &str,
+    cache: &MessageCache,
+    account_id: &str,
 ) -> crate::common::Result<Vec<crate::data::message_cache::NoteFolderEntry>> {
-    Err(crate::common::Error::Other(
-        "the folders an account's backends are is not built yet".to_string(),
-    ))
+    // One kind of backend answers today. A second one adds its containers to
+    // this list and changes nothing else, which is what the module header
+    // promises about a second arm.
+    the_calendar_servers_of(cache, account_id)
+        .iter()
+        .map(|journal| the_note_folder_for(cache, account_id, journal))
+        .collect()
+}
+
+/// The note folder one calendar server's journal entries are.
+///
+/// One function rather than the same two arguments written out at each site, so
+/// that the folder a sync runs against and the folder a screen shows are the
+/// same row by construction.
+fn the_note_folder_for(
+    cache: &MessageCache,
+    account_id: &str,
+    journal: &ACalendarServersJournal,
+) -> crate::common::Result<crate::data::message_cache::NoteFolderEntry> {
+    cache.a_note_folder_for(account_id, &journal.container, &journal.called)
 }
 
 /// Send this account's notes wherever they go, and take back what has arrived.
@@ -308,34 +348,51 @@ pub async fn sync_the_notes_of(
             Ok(WhatTheNotesSyncDid::TheyStayHere)
         }
         NotesBackend::CalDavJournal => {
-            let Some(calendar) = the_calendar_servers_of(cache, &account.id)
-                .into_iter()
-                .next()
-            else {
+            let journals = the_calendar_servers_of(cache, &account.id);
+            if journals.is_empty() {
                 // The answer above came from the same lookup, so this is only
                 // reached if the row went between the two.
                 return Ok(WhatTheNotesSyncDid::TheyStayHere);
-            };
-            let Some(container) = calendar.caldav_url.clone() else {
-                return Ok(WhatTheNotesSyncDid::TheyStayHere);
-            };
-            let Some(service) =
-                crate::service::caldav_journal::AJournalOnACalendarServer::for_account(
-                    &account.id,
-                    &calendar.id,
-                )
-            else {
+            }
+            let mut all = crate::application::notes_sync::NoteSyncResult::default();
+            let mut somebody_is_signed_in = false;
+            for journal in &journals {
+                // Made before the sync is asked for, because a sync is about
+                // one folder and this says which. The same call the list of
+                // folders is built from, so the folder a note is filed into and
+                // the folder a screen shows are one row by construction.
+                the_note_folder_for(cache, &account.id, journal)?;
+                let Some(service) =
+                    crate::service::caldav_journal::AJournalOnACalendarServer::for_account(
+                        &account.id,
+                        &journal.calendar_id,
+                    )
+                else {
+                    // One server nobody is signed in to does not stop the
+                    // others. Recorded on the result, so the summary carries it
+                    // whichever container it came from.
+                    all.needs_sign_in = true;
+                    continue;
+                };
+                somebody_is_signed_in = true;
+                all.absorb(
+                    crate::application::notes_sync::sync_notes(
+                        cache,
+                        &service,
+                        &account.id,
+                        &journal.container,
+                    )
+                    .await?,
+                );
+            }
+            if !somebody_is_signed_in {
+                // Nobody is signed in to any of them, which is the one thing on
+                // this list only the person can fix. Said in its own words
+                // rather than as a result whose every count is zero, which is
+                // what the enum's own comment asks for.
                 return Ok(WhatTheNotesSyncDid::NobodyIsSignedIn);
-            };
-            Ok(WhatTheNotesSyncDid::ItRan(
-                crate::application::notes_sync::sync_notes(
-                    cache,
-                    &service,
-                    &account.id,
-                    &container,
-                )
-                .await?,
-            ))
+            }
+            Ok(WhatTheNotesSyncDid::ItRan(all))
         }
     }
 }
@@ -1066,10 +1123,28 @@ mod tests {
                 .map(|folder| (folder.name.as_str(), folder.container.as_deref()))
                 .collect::<Vec<_>>(),
             [
-                ("Work", Some("https://example.test/dav/work")),
                 ("Home", Some("https://example.test/dav/home")),
+                ("Work", Some("https://example.test/dav/work")),
             ],
             "an account with two calendar servers did not get a folder for each"
+        );
+        // And in the order the sidebar shows the calendars in, which is what
+        // the doc comment promises and is the reason the pairs above read
+        // Home before Work rather than in the order they were stored.
+        // Compared against the store's own answer rather than written out, or
+        // this asserts an alphabetical coincidence of the fixture.
+        assert_eq!(
+            folders
+                .iter()
+                .map(|folder| folder.name.as_str())
+                .collect::<Vec<_>>(),
+            cache
+                .get_calendars_for_account("a1")
+                .expect("the calendars")
+                .iter()
+                .map(|calendar| calendar.name.as_str())
+                .collect::<Vec<_>>(),
+            "the folders are not in the order their calendars are"
         );
     }
 

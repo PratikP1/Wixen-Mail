@@ -18411,7 +18411,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 20 },
+    { file = "src/application/notes_backend.rs", tests = 23 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18460,7 +18460,7 @@ red = [
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 20 },
+    { file = "src/application/notes_backend.rs", tests = 23 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18603,7 +18603,7 @@ red = [
     "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
 ]
 
 # The losing copy of a note is held for somebody rather than written over.
@@ -18666,7 +18666,7 @@ red = [
     "application::notes_sync::tests::test_a_note_that_moved_in_both_places_is_held_rather_than_written_over",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
 ]
 
 # A note's body comes back the bytes it went out as.
@@ -18779,7 +18779,7 @@ red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 20 },
+    { file = "src/application/notes_backend.rs", tests = 23 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18819,7 +18819,7 @@ red = [
     "test_the_setting_and_a_page_that_moved_do_not_lose_the_change",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18843,7 +18843,7 @@ red = [
     "test_a_page_the_backend_no_longer_holds_is_made_again",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18878,7 +18878,7 @@ red = [
     "test_a_three_part_section_arrives_as_it_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
@@ -18919,7 +18919,7 @@ red = [
     "test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 22 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
 ]
 
