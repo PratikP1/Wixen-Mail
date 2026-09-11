@@ -34,9 +34,25 @@ pub enum Piece {
         text: String,
     },
     /// One item of a list. `ordered` is a numbered list.
+    ///
+    /// `depth` counts the outermost list as one. A list inside a list used to
+    /// arrive here with nothing saying so, so three levels of a wiring note
+    /// were read out as four bullets in a row and the thing the indentation
+    /// meant was gone.
     Item {
         ordered: bool,
+        depth: usize,
         text: String,
+    },
+    /// A table: what its columns are called, and its rows of cells.
+    ///
+    /// One piece rather than one per cell, because which column a cell was in
+    /// is the whole of what a table says and a cell on its own has lost it.
+    /// The headings are kept apart from the rows so that
+    /// [`spoken`] can say each cell with the column it belongs to.
+    Table {
+        columns: Vec<String>,
+        rows: Vec<Vec<String>>,
     },
     Quote(String),
     /// A picture, and whatever the person who wrote it said it shows.
@@ -149,6 +165,7 @@ impl Collector {
         } else if let Some(ordered) = was_item {
             Piece::Item {
                 ordered,
+                depth: 1,
                 text: said,
             }
         } else if was_quote {
@@ -193,6 +210,12 @@ fn the_same_words(pieces: &[Piece], written: &str) -> bool {
             | Piece::Quote(text)
             | Piece::Image(text)
             | Piece::Paragraph(text) => text.clone(),
+            Piece::Table { columns, rows } => columns
+                .iter()
+                .chain(rows.iter().flatten())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
         })
         .collect::<Vec<_>>()
         .join(" ");
@@ -233,6 +256,7 @@ pub fn spoken(written: &str) -> String {
             Piece::Item {
                 ordered: true,
                 text,
+                ..
             } => format!("numbered item, {text}"),
             Piece::Item { text, .. } => format!("bullet, {text}"),
             Piece::Quote(text) => format!("quote, {text}"),
@@ -245,6 +269,7 @@ pub fn spoken(written: &str) -> String {
             }
             Piece::Image(described) => format!("image, {described}"),
             Piece::Paragraph(text) => text.clone(),
+            Piece::Table { .. } => String::new(),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -649,6 +674,18 @@ pub fn first_line(written: &str) -> String {
                 format!("Image with {NO_DESCRIPTION}")
             }
             Piece::Image(described) => format!("Image: {described}"),
+            // A note that opens with a table. The column names say more about
+            // what the note holds than its first cell would.
+            Piece::Table { columns, rows } => {
+                let naming = match columns.iter().any(|cell| !cell.trim().is_empty()) {
+                    true => columns,
+                    false => rows.into_iter().next().unwrap_or_default(),
+                };
+                match naming.join(", ").trim() {
+                    "" => String::new(),
+                    named => format!("Table: {named}"),
+                }
+            }
         })
         .find(|text| !text.trim().is_empty())
         .unwrap_or_default()
@@ -824,6 +861,7 @@ Rear Admiral",
             structure("- Outer\n  1. Inner\n- Two").first(),
             Some(&Piece::Item {
                 ordered: false,
+                depth: 1,
                 text: "Outer".to_string()
             })
         );
@@ -831,6 +869,7 @@ Rear Admiral",
             structure("1. First\n   - inner\n2. Second").first(),
             Some(&Piece::Item {
                 ordered: true,
+                depth: 1,
                 text: "First".to_string()
             })
         );
@@ -846,9 +885,168 @@ Rear Admiral",
             pieces.last(),
             Some(&Piece::Item {
                 ordered: true,
+                depth: 1,
                 text: "Second".to_string()
             }),
             "{pieces:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_nested_list_says_how_deep_each_item_is() {
+        // Three levels of a wiring note used to be read out as four bullets in
+        // a row, and what the indentation meant was gone. A listener heard
+        // that the older cable was a separate job rather than part of the one
+        // above it.
+        let said =
+            spoken("- Live is brown\n  - Older cable: red\n    - Check first\n- Neutral is blue");
+
+        assert_eq!(
+            said,
+            "bullet, Live is brown\n\
+             bullet level 2, Older cable: red\n\
+             bullet level 3, Check first\n\
+             bullet level 1, Neutral is blue"
+        );
+    }
+
+    #[test]
+    fn test_the_depth_of_an_item_is_read_out_of_the_text_rather_than_assumed() {
+        // `spoken` can only say the level if `structure` carried one, and a
+        // depth that is always one is the shape without the measurement.
+        let pieces = structure("- One\n  - Two\n    - Three");
+
+        assert_eq!(
+            pieces
+                .iter()
+                .filter_map(|piece| match piece {
+                    Piece::Item { depth, .. } => Some(*depth),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "{pieces:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_list_that_never_nests_is_not_made_longer_to_listen_to() {
+        // Guardrail 5: feedback must be bounded. Saying the level on every
+        // item of a ten-item shopping list is ten words nobody needs, and a
+        // level said only when it changes is what a screen reader already
+        // does on a web page.
+        assert_eq!(
+            spoken("- Milk\n- Bread\n- Butter"),
+            "bullet, Milk\nbullet, Bread\nbullet, Butter"
+        );
+    }
+
+    #[test]
+    fn test_a_numbered_list_says_its_depth_in_the_same_words_as_a_bulleted_one() {
+        assert_eq!(
+            spoken("1. First\n   1. Inner\n2. Second"),
+            "numbered item, First\n\
+             numbered item level 2, Inner\n\
+             numbered item level 1, Second"
+        );
+    }
+
+    #[test]
+    fn test_a_table_is_not_read_as_one_run_of_words() {
+        // What it did before this: every cell of the table ran together with
+        // no space between them, so a screen reader said
+        // "NameRoleGraceAdmiral" as a single word.
+        let said = spoken("| Name | Role |\n| --- | --- |\n| Grace | Admiral |\n| Alan | Fellow |");
+
+        assert_eq!(
+            said,
+            "table, 2 columns, 2 rows\n\
+             row 1. Name: Grace. Role: Admiral\n\
+             row 2. Name: Alan. Role: Fellow"
+        );
+    }
+
+    #[test]
+    fn test_a_cell_whose_column_has_no_name_is_still_placed() {
+        // The heading is what says which column a cell was in. Where there is
+        // none, its number is the only answer left, and a bare value with
+        // nothing in front of it is the loss this is about.
+        let said = spoken("| Name |  |\n| --- | --- |\n| Grace | Admiral |");
+
+        assert!(said.contains("Name: Grace. column 2: Admiral"), "{said}");
+    }
+
+    #[test]
+    fn test_a_table_with_no_rows_under_it_still_says_its_headings() {
+        // A single-row table read back from a service that does not mark
+        // header cells becomes headings with nothing under them. Saying only
+        // "0 rows" would drop every word in it.
+        let said = spoken("| Left | Right |\n| --- | --- |");
+
+        assert_eq!(said, "table, 2 columns, 0 rows\nheadings. Left. Right");
+    }
+
+    #[test]
+    fn test_a_table_says_its_size_before_its_contents() {
+        // Guardrail 5 again: somebody who does not want to hear a twenty-row
+        // table needs to know it is one before it starts.
+        let said = spoken("| A |\n| --- |\n| one |");
+
+        assert!(said.starts_with("table, 1 column, 1 row"), "{said}");
+    }
+
+    #[test]
+    fn test_a_nested_list_in_a_providers_markup_comes_back_nested() {
+        // Worse than flattening before this: the inner item was swallowed
+        // into the outer one's text with no space, so "Live is brown" and
+        // "Older cable" arrived as "Live is brownOlder cable".
+        let converted = from_markup(
+            "<ul><li>Live is brown<ul><li>Older cable: red</li></ul></li><li>Neutral is blue</li></ul>",
+        );
+
+        assert_eq!(
+            converted,
+            "- Live is brown\n  - Older cable: red\n- Neutral is blue"
+        );
+    }
+
+    #[test]
+    fn test_a_table_in_a_providers_markup_comes_back_as_a_table() {
+        let converted = from_markup(
+            "<table><tr><th>Name</th><th>Role</th></tr>\
+             <tr><td>Grace</td><td>Admiral</td></tr></table>",
+        );
+
+        assert_eq!(
+            converted,
+            "| Name | Role |\n| --- | --- |\n| Grace | Admiral |"
+        );
+    }
+
+    #[test]
+    fn test_a_table_whose_header_row_is_ordinary_cells_still_gets_headings() {
+        // OneNote does not name `th`, so a header row arrives as ordinary
+        // cells. Read with no headings at all, every cell loses its column.
+        let converted = from_markup(
+            "<table><tr><td>Left</td><td>Right</td></tr><tr><td>one</td><td>two</td></tr></table>",
+        );
+
+        assert_eq!(converted, "| Left | Right |\n| --- | --- |\n| one | two |");
+    }
+
+    #[test]
+    fn test_a_bar_inside_a_cell_does_not_break_the_table_it_is_in() {
+        // A cell holding the character that separates cells would otherwise
+        // be read back as two cells, and every column after it would shift.
+        let converted = from_markup("<table><tr><td>a|b</td><td>c</td></tr></table>");
+
+        assert!(converted.contains(r"a\|b"), "{converted}");
+        assert_eq!(
+            structure(&converted),
+            vec![Piece::Table {
+                columns: vec!["a|b".to_string(), "c".to_string()],
+                rows: Vec::new(),
+            }]
         );
     }
 
