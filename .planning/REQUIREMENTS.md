@@ -1097,22 +1097,55 @@ write path added by this milestone passes through that gate.
     render Markdown, so the content model reuses what signatures use rather than inventing a
     second one.
 
-  - [D] The stored form is the Markdown source. What a note round-trips through any backend is
-    that source, so a note edited here and read back is byte-identical when nothing changed.
+  - [D] The stored form is the Markdown source, and a note saved here and read back from
+    storage is byte-identical when nothing changed.
 
-    **The "any backend" half of that was refuted on 2026-09-10 by `05.1-03`, the first backend
-    to exist.** It holds through storage, which `05.1-01` proved with a test that goes through
-    `save_note` and `get_note`. It cannot hold through a calendar server: RFC 5545 section
-    3.3.11 gives one escape for a line break and no way to write a carriage return inside a
-    value at all, so a body typed on Windows comes back with plain line feeds. Everything else
-    survives, and `src/service/note_document.rs`'s header carries the measurement.
+  - [D] Through a backend, the structure survives. Headings, lists including nested ones,
+    tables, links with their addresses, and pictures with their descriptions come back as what
+    they were. **This is not met today**, and what fails is named below.
 
-    This was expected to be OneNote's problem alone, and phase 5.2 was cut partly on that
-    belief. It is the format's problem, not the service's, so the criterion has to be decided
-    for the backend that already shipped rather than only for the one that has not. What the
-    decision is remains open: either this criterion is reworded to be about storage, or it is
-    reworded to name what each backend may lose, and phase 5.2 arrives second rather than
-    first. `docs/ALPHA_TESTING.md` and `docs/changelog.md` already tell a user plainly.
+  - [D] Where a backend cannot carry a construct at all, it says what it could not keep, at the
+    moment it takes the note, and the copy kept here becomes what came back. `WhatTheBackendKept`
+    in `src/application/notes_backend.rs` is the mechanism, built by `05.1-04`, and the calendar
+    backend already uses it for the carriage returns RFC 5545 cannot carry.
+
+    **Those three lines replaced one, on 2026-09-11, by Pratik's decision at `05.2-01`'s
+    checkpoint.** The line they replace read: the stored form is the Markdown source, what a note
+    round-trips through **any backend** is that source, so a note edited here and read back is
+    byte-identical when nothing changed. The word "any" was false for both backends that exist,
+    in two different ways, and neither was known when it was written.
+
+    A calendar server loses carriage returns and keeps every other byte: RFC 5545 section 3.3.11
+    gives one escape for a line break and no way to write a carriage return inside a value at
+    all, so a body typed on Windows comes back with plain line feeds. `05.1-03` measured it on
+    2026-09-10 and `src/service/note_document.rs`'s header carries the measurement. OneNote keeps
+    most of the words and loses the form, because nothing is stored there: what crosses is a
+    structure, and the Markdown that comes back is rendered afresh from it. `05.2-01` measured
+    twenty-two constructs on 2026-09-11 and seven survive. The table is in
+    `docs/development/the-notes-seam.md`, read out of the document by a test so it cannot drift.
+
+    **What fails the structure line today, and why the obvious fix is the wrong one.** Five of
+    the losses are this program's rather than a service's: a nested list at any depth, a table,
+    a link's address, a picture, and a line break inside a paragraph. All five happen in
+    `long_text::from_markup`. It would be a mistake to change it. That function is written for
+    **speaking**, not for storing, and its own comment says so: `spoken` returns a
+    paragraph-only field exactly as written, so a link that kept its address would be read aloud
+    as brackets, parentheses and every character of a URL. It contributes a picture's
+    description alone and refuses to invent one the sender never wrote. Both are right for the
+    job it has, and it has two other callers on that job, an event's description at
+    `calendar.rs:3037` and a task's body at `tasks_api.rs:542`, both reading what Google and
+    Microsoft hand back. Changing it to satisfy notes would make a Google task's description
+    read a URL aloud character by character, in shipped code, in a product whose first audience
+    cannot see the screen.
+
+    So the structure line needs a **second reader, for the storing job**, and not an edit to the
+    speaking one. That is unowned work and it is not `05.2-02`'s or `05.2-03`'s as they are
+    written. The remaining losses are OneNote's own, cannot be closed here, and are what the
+    third line above exists to report: a quote, bold, italic, struck-out text, inline code, a
+    code block and a horizontal rule.
+
+    `docs/ALPHA_TESTING.md` and `docs/changelog.md` already tell a user plainly what a calendar
+    server loses. Nothing yet tells them what OneNote would, because no OneNote backend ships.
 
   - [D] A screen reader reads the rendered structure, not the raw source: headings announce as
     headings and lists as lists, the way a contact's notes already do.

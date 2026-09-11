@@ -398,6 +398,28 @@ the drift `long_text::as_markup`'s own comment says the matched pair exists to
 prevent. The measurement is
 `test_a_hidden_div_carrying_the_source_does_not_bring_it_back`.
 
+**Five rows of that table say "this program", and reading them as defects in
+`from_markup` is the wrong conclusion.** A nested list, a table, a link's
+address, a picture and a line break inside a paragraph are all lost on the way
+back, and all five are lost there rather than at the service. But
+`long_text::from_markup` is a reader written for **speaking**, and its output is
+meant to be heard rather than stored. Its own doc comment gives the reason a
+link contributes its words and not its address: `spoken` returns a
+paragraph-only field exactly as written, so an address that survived would be
+read out as brackets, parentheses and every character of a URL. It emits a
+picture's description alone and will not invent one the sender never wrote,
+which `NO_DESCRIPTION` and guardrail 9 both exist for.
+
+It has two callers on that job outside notes, an event's description at
+`calendar.rs:3037` and a task's body at `tasks_api.rs:542`, both reading what
+Google and Microsoft hand back. So changing it to satisfy a note's round trip
+would make a Google task's description read a URL aloud character by character.
+
+A note's round trip needs a reader whose output is **stored and edited again**,
+which is a different answer to the same HTML. That reader does not exist, it is
+what PIM-04's structure criterion asks for after the rewording of 2026-09-11,
+and it belongs to no plan yet. Whoever writes it leaves `from_markup` alone.
+
 ### Reading the two columns together
 
 Seven of the twenty-two rows survive. Of the fifteen that do not, seven are

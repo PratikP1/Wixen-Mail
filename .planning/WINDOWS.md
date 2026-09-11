@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 252
+open_count: 253
 waived_count: 0
 fixed_count: 17
-total_count: 269
-last_updated: 2026-09-11T06:50:40.214Z
+total_count: 270
+last_updated: 2026-09-11T10:10:44.221Z
 ---
 
 # Broken Windows Ledger
@@ -284,6 +284,7 @@ last_updated: 2026-09-11T06:50:40.214Z
 | 267 | 05.2 | unrun-verify | src/service/onenote_page.rs |  | Whether a data-id on a div really survives a page update. The reference says a div carrying one is preserved where a div carrying no semantic information is flattened, and the hidden source div was measured against that reading rather than against a service. If a data-id does not survive an update, the wrapping div this reader flattens may not be there at all and what comes back is a different shape. | open |  | 2026-09-11T06:50:38.717Z |  |
 | 268 | 05.2 | unrun-verify | src/application/long_text.rs |  | Whether a note whose body came back through this pair is read aloud by a screen reader the way the original was. The whole reason the structure is preserved is that a heading announces as a heading and a list as a list. Seven of twenty-two constructs survive the round trip and six of the losses are this program's own reader, so what somebody hears after a note has been to OneNote is a different passage from what they typed, and nobody has heard either. | open |  | 2026-09-11T06:50:39.435Z |  |
 | 269 | 05.2 | unrun-verify | docs/development/the-notes-seam.md |  | Whether a Markdown code block coming back as a flattened paragraph is acceptable to somebody who keeps code in their notes. Two commands on two lines come back as one line that runs neither. That is a question for a person who uses OneNote and keeps notes that way, and no test can answer it. | open |  | 2026-09-11T06:50:40.214Z |  |
+| 270 | 05.2 | unmet-truth |  |  | PIM-04's structure criterion, reworded 2026-09-11 at 05.2-01's checkpoint, is not met. A nested list, a table, a link's address, a picture and a line break are lost on the way back from a backend, all five in long_text::from_markup. That function is a reader written for speaking, with two callers on that job outside notes, so it must not be changed to suit a note. A second reader whose output is stored and edited again is what the criterion asks for, and it belongs to no plan. | open |  | 2026-09-11T10:10:44.221Z |  |
 
 ````json
 [
@@ -3513,6 +3514,18 @@ last_updated: 2026-09-11T06:50:40.214Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T06:50:40.214Z",
+    "resolved_at": null
+  },
+  {
+    "id": 270,
+    "kind": "unmet-truth",
+    "phase": "05.2",
+    "file": "",
+    "line": null,
+    "description": "PIM-04's structure criterion, reworded 2026-09-11 at 05.2-01's checkpoint, is not met. A nested list, a table, a link's address, a picture and a line break are lost on the way back from a backend, all five in long_text::from_markup. That function is a reader written for speaking, with two callers on that job outside notes, so it must not be changed to suit a note. A second reader whose output is stored and edited again is what the criterion asks for, and it belongs to no plan.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T10:10:44.221Z",
     "resolved_at": null
   }
 ]
