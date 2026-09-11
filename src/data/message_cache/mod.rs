@@ -2901,6 +2901,17 @@ impl MessageCache {
         // container, so a column on `notes` would be a second copy of that fact
         // able to disagree with the first.
         self.ensure_column_exists("note_folders", "container", "TEXT")?;
+        // The copy a removal is waiting for, which is the note half of
+        // `deleted_tasks.waiting_for_task_id` and is there for the same reason.
+        // A note moving between two backed folders is a create in the new
+        // container and a removal from the old one, and this is what stops the
+        // removal going first.
+        //
+        // NULL on every record already on somebody's disk, which reads as an
+        // ordinary deletion waiting for nothing. That is right for all of them:
+        // until this shipped, no note could move between containers, because
+        // there was only ever one.
+        self.ensure_column_exists("deleted_notes", "waiting_for_note_id", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.

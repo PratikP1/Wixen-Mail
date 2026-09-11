@@ -486,13 +486,76 @@ impl MessageCache {
     /// program, for a note or for a task.
     pub fn move_a_note_the_backend_holds(
         &self,
-        _note: &NoteEntry,
-        _into_folder: &str,
-        _new_id: &str,
+        note: &NoteEntry,
+        into_folder: &str,
+        new_id: &str,
     ) -> Result<MovedWhatTheBackendHolds> {
-        Err(Error::Other(
-            "a move of a note a backend holds is not built yet".to_string(),
-        ))
+        if note.folder_id.as_deref() == Some(into_folder) {
+            return Ok(MovedWhatTheBackendHolds::IntoTheFolderItIsAlreadyIn);
+        }
+        let moving = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(format!("Failed to start a move of a note: {}", e)))?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Through `save_note` rather than a second copy of its upsert written
+        // out here, for the reason the task move gives: it runs on this cache's
+        // one connection, which is the connection the transaction was opened
+        // on, so it is inside that transaction. A copy of the upsert would
+        // drift from the original the first time a column was added, and this
+        // file has added three.
+        self.save_note(&NoteEntry {
+            id: new_id.to_string(),
+            folder_id: Some(into_folder.to_string()),
+            known_as: None,
+            known_version: None,
+            pending: true,
+            updated_at: now.clone(),
+            ..note.clone()
+        })?;
+
+        moving
+            .execute(
+                "INSERT OR REPLACE INTO deleted_notes
+                    (id, account_id, folder_id, provider_note_id, deleted_at,
+                     waiting_for_note_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    note.id,
+                    note.account_id,
+                    note.folder_id,
+                    note.known_as,
+                    now,
+                    new_id,
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the backend is owed for a move: {}",
+                    e
+                ))
+            })?;
+
+        let taken_out = moving
+            .execute(
+                "DELETE FROM notes WHERE id = ?1",
+                rusqlite::params![note.id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to take away the moved note: {}", e)))?;
+        if taken_out == 0 {
+            // Returned without committing, so the transaction is dropped and
+            // rolls back, which is what takes the copy and the record away
+            // again. There was nothing here to move, and the two things a move
+            // that did not happen would have left are a second note nobody
+            // asked for and a request to remove the first at the backend.
+            return Ok(MovedWhatTheBackendHolds::ItIsNotHereToMove);
+        }
+
+        moving
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to move a note between folders: {}", e)))?;
+        Ok(MovedWhatTheBackendHolds::Moved)
     }
 
     /// Write down that this note was deleted here.
@@ -527,7 +590,8 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, folder_id, provider_note_id, deleted_at, taken_at
+                "SELECT id, account_id, folder_id, provider_note_id, deleted_at, taken_at,
+                        waiting_for_note_id
                  FROM deleted_notes WHERE account_id = ?1 ORDER BY deleted_at",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare the deletions query: {}", e)))?;
@@ -540,7 +604,7 @@ impl MessageCache {
                     known_as: row.get(3)?,
                     deleted_at: row.get(4)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(5)?),
-                    waiting_for_note_id: None,
+                    waiting_for_note_id: row.get(6)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query the deletions: {}", e)))?;
