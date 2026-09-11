@@ -109,6 +109,19 @@ pub struct NoteSyncResult {
 }
 
 impl NoteSyncResult {
+    /// Take in what a second container's sync did, so one account gets one
+    /// answer.
+    ///
+    /// An account has as many syncs as it has containers, and the person asked
+    /// for one thing. A status line naming only the last container is a status
+    /// line that hides whichever one had the problem.
+    ///
+    /// The counts add up and the errors join, both of which are the obvious
+    /// reading. [`NoteSyncResult::needs_sign_in`] is the one worth saying: it is
+    /// an or, because one container nobody is signed in to is a thing somebody
+    /// has to fix even when the other four went through.
+    pub fn absorb(&mut self, _other: NoteSyncResult) {}
+
     /// What the status line says afterwards.
     pub fn summary(&self) -> String {
         let mut said = SummingUp::opening(format!("{} stored", how_many(self.stored, "note")));
@@ -1782,6 +1795,57 @@ mod tests {
                 .expect("what is here")
                 .is_empty(),
             "a note was filed into a folder that is not its container's"
+        );
+    }
+
+    #[test]
+    fn test_an_accounts_containers_add_up_to_one_answer() {
+        // An account has as many syncs as it has containers and somebody asked
+        // for one thing. Reporting only the last container's is how the one
+        // that had the problem goes unmentioned.
+        let mut first = NoteSyncResult {
+            stored: 1,
+            unchanged: 2,
+            sent: 3,
+            held: 1,
+            not_kept_exactly: 1,
+            waiting_on_the_setting: 2,
+            needs_sign_in: false,
+            errors: vec!["the first container".to_string()],
+        };
+
+        first.absorb(NoteSyncResult {
+            stored: 10,
+            unchanged: 20,
+            sent: 30,
+            held: 2,
+            not_kept_exactly: 3,
+            waiting_on_the_setting: 4,
+            needs_sign_in: true,
+            errors: vec!["the second container".to_string()],
+        });
+
+        assert_eq!(
+            (
+                first.stored,
+                first.unchanged,
+                first.sent,
+                first.held,
+                first.not_kept_exactly,
+                first.waiting_on_the_setting
+            ),
+            (11, 22, 33, 3, 4, 6),
+            "one of the counts was dropped, so a container's work went unreported"
+        );
+        assert!(
+            first.needs_sign_in,
+            "one container nobody is signed in to stopped being said because \
+             another one went through"
+        );
+        assert_eq!(
+            first.errors,
+            ["the first container", "the second container"],
+            "a container's problems were dropped"
         );
     }
 }

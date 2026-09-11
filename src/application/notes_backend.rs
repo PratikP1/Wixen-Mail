@@ -237,25 +237,56 @@ pub enum WhatTheNotesSyncDid {
     ItRan(crate::application::notes_sync::NoteSyncResult),
 }
 
-/// The calendar on a calendar server that this account's notes go beside.
+/// Every calendar server this account's notes go beside.
 ///
-/// The first one, in the order the store answers, which is the order the
-/// sidebar shows them in. An account with two calendar servers is a real thing
-/// and this takes the first of them; that is a limit rather than a decision,
-/// and it is in the ledger rather than left as a surprise.
-pub fn the_calendar_server_of(
+/// **All of them, which is what closed ledger 245.** This used to be
+/// `the_calendar_server_of`, which took the first the store answered with and
+/// nothing asked the person which. That was a limit nobody chose. One backend
+/// container is one note folder, decided 2026-09-11, so two calendar servers
+/// are two folders and there is no first to pick.
+///
+/// In the order the store answers, which is the order the sidebar shows them
+/// in, so the folders come out in an order somebody recognises.
+fn the_calendar_servers_of(
     cache: &MessageCache,
     account_id: &str,
-) -> Option<crate::data::message_cache::CalendarContainer> {
+) -> Vec<crate::data::message_cache::CalendarContainer> {
     cache
         .get_calendars_for_account(account_id)
         .unwrap_or_default()
         .into_iter()
-        .find(|calendar| {
+        .filter(|calendar| {
             calendar.source_provider.as_deref()
                 == Some(crate::application::calendar_source::ON_A_SERVER)
                 && calendar.caldav_url.is_some()
         })
+        .collect()
+}
+
+/// The note folders this account's backends are, made if they are not there yet.
+///
+/// One folder per container, named by what the backend calls the place. For a
+/// calendar server that is the calendar's own name; a backend with levels above
+/// a note flattens them into the name itself, which is requirement 2 of the
+/// seam's container section and the backend's business rather than this
+/// function's.
+///
+/// A folder somebody made here is not in this list and is never touched by it.
+/// It has no container, so there is nowhere to sync it to, and
+/// [`crate::data::message_cache::MessageCache::a_note_folder_for`] will not
+/// adopt one however its name reads.
+///
+/// The places a sync runs for, which is why it is one function rather than a
+/// lookup at each site: the list of folders and the list of syncs must be the
+/// same list, and two readings of "which containers does this account have"
+/// disagree the day either changes.
+pub fn note_folders_for_the_backends_of(
+    _cache: &MessageCache,
+    _account_id: &str,
+) -> crate::common::Result<Vec<crate::data::message_cache::NoteFolderEntry>> {
+    Err(crate::common::Error::Other(
+        "the folders an account's backends are is not built yet".to_string(),
+    ))
 }
 
 /// Send this account's notes wherever they go, and take back what has arrived.
@@ -277,7 +308,10 @@ pub async fn sync_the_notes_of(
             Ok(WhatTheNotesSyncDid::TheyStayHere)
         }
         NotesBackend::CalDavJournal => {
-            let Some(calendar) = the_calendar_server_of(cache, &account.id) else {
+            let Some(calendar) = the_calendar_servers_of(cache, &account.id)
+                .into_iter()
+                .next()
+            else {
                 // The answer above came from the same lookup, so this is only
                 // reached if the row went between the two.
                 return Ok(WhatTheNotesSyncDid::TheyStayHere);
@@ -994,6 +1028,108 @@ mod tests {
         assert_eq!(
             for_default_account(None, &[], false),
             NotesBackend::ThisComputer
+        );
+    }
+
+    /// A calendar of this account's, under a name of its own.
+    fn a_calendar_called(id: &str, name: &str, at: &str) -> CalendarContainer {
+        CalendarContainer {
+            name: name.to_string(),
+            ..a_calendar(
+                id,
+                crate::application::calendar_source::ON_A_SERVER,
+                Some(at),
+            )
+        }
+    }
+
+    #[test]
+    fn test_every_calendar_server_on_an_account_is_a_note_folder_of_its_own() {
+        // Ledger 245. An account with two calendar servers used to send its
+        // notes to whichever the store answered with first, and nothing asked
+        // the person which. With a folder for each there is no first to pick.
+        let cache = a_store();
+        for (id, name, at) in [
+            ("cal-1", "Work", "https://example.test/dav/work"),
+            ("cal-2", "Home", "https://example.test/dav/home"),
+        ] {
+            cache
+                .save_calendar(&a_calendar_called(id, name, at))
+                .expect("a calendar on a server");
+        }
+
+        let folders = note_folders_for_the_backends_of(&cache, "a1").expect("the folders");
+
+        assert_eq!(
+            folders
+                .iter()
+                .map(|folder| (folder.name.as_str(), folder.container.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("Work", Some("https://example.test/dav/work")),
+                ("Home", Some("https://example.test/dav/home")),
+            ],
+            "an account with two calendar servers did not get a folder for each"
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_that_is_on_no_server_is_not_a_note_folder() {
+        // A calendar made here and one somebody subscribed to are not places
+        // notes can be written. A folder for either is a folder whose every
+        // sync fails, or worse, one that looks like somewhere to file a note.
+        let cache = a_store();
+        cache
+            .save_calendar(&a_calendar("cal-here", "local", None))
+            .expect("a calendar made here");
+        cache
+            .save_calendar(&a_calendar("cal-feed", "subscription", None))
+            .expect("a calendar somebody subscribed to");
+
+        assert!(
+            note_folders_for_the_backends_of(&cache, "a1")
+                .expect("the folders")
+                .is_empty(),
+            "a calendar that holds nobody's journal entries became a note folder"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_somebody_made_here_is_not_a_place_this_account_syncs() {
+        // The other half of requirement 4: a folder made here has no container,
+        // so it is never one of the places a sync is run for, and it is left
+        // exactly as it was.
+        let cache = a_store();
+        let made_here = cache
+            .ensure_default_note_folder("a1")
+            .expect("a folder made here");
+        cache
+            .save_calendar(&a_calendar_called(
+                "cal-1",
+                "Work",
+                "https://example.test/dav/work",
+            ))
+            .expect("a calendar on a server");
+
+        let folders = note_folders_for_the_backends_of(&cache, "a1").expect("the folders");
+
+        assert_eq!(
+            folders.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+            [folders[0].id.as_str()],
+            "more places to sync than there are calendar servers"
+        );
+        assert_ne!(
+            folders[0].id, made_here.id,
+            "a folder somebody made here was turned into one a backend syncs"
+        );
+        assert_eq!(
+            cache
+                .get_note_folder(&made_here.id)
+                .expect("the folder is read")
+                .expect("the folder is still there")
+                .container,
+            None,
+            "a folder made here was given a container"
         );
     }
 }
