@@ -1,8 +1,9 @@
 # Ledger 274: one backend container is one note folder
 
-Branch `one-backend-container-is-one-note-folder`, fourteen commits, seven
+Branch `one-backend-container-is-one-note-folder`, fifteen commits, six
 red/green pairs. `scripts/check.sh all` passed on the branch before the merge,
-all four checks, not piped. Version `0.110.0`.
+all four checks, redirected to a file rather than piped. Merged at `eb80066`,
+where it passed again. Version `0.110.0`.
 
 Closes 274, and 245 and 246 with it.
 

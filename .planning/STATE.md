@@ -4,7 +4,7 @@ current_phase: 05.2
 current_phase_name: Notes in OneNote
 current_plan: 1
 status: verifying
-stopped_at: Ledger 274 closed on branch one-backend-container-is-one-note-folder, which closed 245 and 246 with it. 05.2-02 not started
+stopped_at: Ledger 274 closed and merged at eb80066, which closed 245 and 246 with it. 05.2-02 not started
 last_updated: "2026-09-11T18:20:00.000Z"
 last_activity: 2026-09-11
 state_head: cbd07669c92b5d3add7f85930e6f8571bbfa8a23
