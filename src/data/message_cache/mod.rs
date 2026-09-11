@@ -1182,6 +1182,31 @@ pub struct DeletedTask {
 pub struct NoteFolderEntry {
     pub id: String,
     pub account_id: String,
+    /// What the account's notes backend calls the place this folder is.
+    ///
+    /// One backend container is one note folder, which
+    /// `docs/development/the-notes-seam.md` decided on 2026-09-11. For a
+    /// calendar server that is one journal collection; for OneNote it is one
+    /// section, with whatever levels sit above it flattened into the string by
+    /// the backend. **Opaque.** It is stored, compared for equality and handed
+    /// back, and nothing here splits it, reads it as a URL or counts levels in
+    /// it. That is requirement 1 of the seam's container section, and the whole
+    /// reason the name below is a separate field.
+    ///
+    /// `None` for a folder somebody made here. Those stay on this computer, are
+    /// never synced, and are shown under
+    /// [`crate::application::local_folders::ON_THIS_COMPUTER`], which is the
+    /// branch phase 1 built for mail folders on no server. A folder no backend
+    /// gave has nowhere to send anything to.
+    pub container: Option<String>,
+    /// What somebody sees and hears, which for a backend-given folder is the
+    /// path its container sits at: `Work / Projects / Q3`.
+    ///
+    /// The name carries the path and the container carries the identity. They
+    /// are different jobs and this is why they are not one field: the name is
+    /// the backend's to change and a folder follows it, while the container is
+    /// what every note in the folder is filed by and must not move when a
+    /// section is renamed.
     pub name: String,
     pub display_order: i32,
     pub created_at: String,

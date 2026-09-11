@@ -3107,9 +3107,15 @@ fn store_new_container(
             display_order: 0,
             created_at: stamp,
         }),
+        // No container, and that is the decision rather than a gap. Making a
+        // folder here does not make a section at a backend: requirement 3 of
+        // the seam's container section says nothing creates a container through
+        // it, so a folder made here has nowhere to send anything and stays on
+        // this computer, shown under the words mail already uses.
         ContainerKind::NoteFolder => cache.save_note_folder(&NoteFolderEntry {
             id: new_id("notefolder"),
             account_id: account_id.to_string(),
+            container: None,
             name: name.to_string(),
             display_order: 0,
             created_at: stamp,
@@ -4728,6 +4734,7 @@ mod tests {
             .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
                 id: "folder-3".to_string(),
                 account_id: "account-1".to_string(),
+                container: None,
                 name: "House".to_string(),
                 display_order: 0,
                 created_at: String::new(),
@@ -5350,6 +5357,7 @@ mod tests {
                 .save_note_folder(&crate::data::message_cache::NoteFolderEntry {
                     id: id.to_string(),
                     account_id: "acct".to_string(),
+                    container: None,
                     name: id.to_string(),
                     display_order: 0,
                     created_at: now_stamp(),

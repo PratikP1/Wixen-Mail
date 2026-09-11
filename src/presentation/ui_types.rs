@@ -3129,6 +3129,7 @@ mod tests {
         let entry = NoteFolderEntry {
             id: "nf1".into(),
             account_id: "a1".into(),
+            container: None,
             name: "Ideas".into(),
             display_order: 0,
             created_at: "2026-01-01".into(),

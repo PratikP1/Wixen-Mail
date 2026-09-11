@@ -787,6 +787,7 @@ mod tests {
                 .save_note_folder(&NoteFolderEntry {
                     id: "folder-1".to_string(),
                     account_id: ACCOUNT.to_string(),
+                    container: None,
                     name: "General".to_string(),
                     display_order: 0,
                     created_at: "2026-01-01".to_string(),

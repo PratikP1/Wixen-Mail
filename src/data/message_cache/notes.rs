@@ -116,6 +116,7 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
+                    container: None,
                     name: row.get(2)?,
                     display_order: row.get(3)?,
                     created_at: row.get(4)?,
@@ -158,6 +159,11 @@ impl MessageCache {
     }
 
     /// Ensure a default note folder exists.
+    ///
+    /// A folder made here, with no container, which is what an account with no
+    /// notes backend has and all it has. Nothing a backend gives arrives
+    /// through here: [`Self::a_note_folder_for`] is what turns a container into
+    /// a folder, and it will not adopt one of these.
     pub fn ensure_default_note_folder(&self, account_id: &str) -> Result<NoteFolderEntry> {
         let existing = self.get_note_folders_for_account(account_id)?;
         if let Some(first) = existing.into_iter().next() {
@@ -167,12 +173,74 @@ impl MessageCache {
         let nf = NoteFolderEntry {
             id: uuid::Uuid::new_v4().to_string(),
             account_id: account_id.to_string(),
+            container: None,
             name: "General".to_string(),
             display_order: 0,
             created_at: now,
         };
         self.save_note_folder(&nf)?;
         Ok(nf)
+    }
+
+    /// The folder that is this backend container, or nothing.
+    ///
+    /// By the container and never by the name, because the name is the
+    /// backend's to change: a section renamed at OneNote has to keep its notes,
+    /// and a lookup by name would file them into a folder somebody made here
+    /// that happened to be called the same thing.
+    ///
+    /// The container is compared for equality and nothing else. Equality is not
+    /// parsing, so requirement 1 of the seam's container section holds: nothing
+    /// here splits it, orders it or reads any meaning out of it.
+    pub fn note_folder_holding(
+        &self,
+        account_id: &str,
+        container: &str,
+    ) -> Result<Option<NoteFolderEntry>> {
+        Ok(self
+            .get_note_folders_for_account(account_id)?
+            .into_iter()
+            .find(|folder| folder.container.as_deref() == Some(container)))
+    }
+
+    /// The note folder one backend container is, made if it is not there yet.
+    ///
+    /// One container is one folder, decided on 2026-09-11 and written into
+    /// `docs/development/the-notes-seam.md`. `called` is what the backend calls
+    /// the place, already flattened by the backend into a path a person reads:
+    /// `Work / Projects / Q3`.
+    ///
+    /// # The name follows the backend and the identity does not
+    ///
+    /// A folder already holding this container is renamed when the backend has
+    /// renamed it, and keeps its own identifier and every note in it. The other
+    /// way round, matching on the name, would lose a section's notes the first
+    /// time somebody renamed it.
+    ///
+    /// # Two containers wanting one name
+    ///
+    /// `note_folders` is unique on the account and the name, and that
+    /// constraint shipped, so it is worked with rather than dropped. Two
+    /// OneNote sections with one name sit at different paths and so arrive with
+    /// different names already. Two calendars on one account really can share a
+    /// display name, and a folder somebody made here can be called anything at
+    /// all. So a name already taken by a different folder is numbered:
+    /// `Work`, then `Work (2)`.
+    ///
+    /// **Nothing is ever filed by that name**, which is what makes the
+    /// numbering cosmetic rather than dangerous. Every note in this folder is
+    /// found through the container, so a clash changes what somebody reads and
+    /// never where a note goes. The alternative, refusing the second folder,
+    /// would drop a whole calendar's notes on the floor without a word.
+    pub fn a_note_folder_for(
+        &self,
+        _account_id: &str,
+        _container: &str,
+        _called: &str,
+    ) -> Result<NoteFolderEntry> {
+        Err(Error::Other(
+            "a note folder for a backend container is not built yet".to_string(),
+        ))
     }
 
     // ── Notes ───────────────────────────────────────────────────────────────
@@ -476,6 +544,7 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
+                    container: None,
                     name: row.get(2)?,
                     display_order: row.get(3)?,
                     created_at: row.get(4)?,
@@ -573,6 +642,7 @@ mod tests {
         let going = NoteFolderEntry {
             id: "folder-going".to_string(),
             account_id: "acct-1".to_string(),
+            container: None,
             name: "Old ideas".to_string(),
             display_order: 1,
             created_at: chrono::Utc::now().to_rfc3339(),
@@ -1191,6 +1261,7 @@ line two
         let going = NoteFolderEntry {
             id: "folder-going".to_string(),
             account_id: "acct-1".to_string(),
+            container: None,
             name: "Old ideas".to_string(),
             display_order: 1,
             created_at: "2026-01-01".to_string(),
@@ -1332,5 +1403,255 @@ line two
         let loaded = cache.get_note("n1").unwrap().unwrap();
         assert_eq!(loaded.body, "edited");
         assert_eq!(loaded.title, "Final");
+    }
+
+    /// A calendar collection, standing in for whatever a backend hands out.
+    const A_CONTAINER: &str = "https://example.test/dav/journals/work/";
+    const ANOTHER_CONTAINER: &str = "https://example.test/dav/journals/home/";
+
+    #[test]
+    fn test_a_note_folder_keeps_the_container_it_was_given() {
+        // The column the whole arrangement rests on. Without it every folder
+        // reads as one somebody made here, which is the answer that sends
+        // nothing anywhere.
+        let cache = test_cache();
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-1".to_string(),
+                account_id: "acct-1".to_string(),
+                container: Some(A_CONTAINER.to_string()),
+                name: "Work".to_string(),
+                display_order: 0,
+                created_at: "2026-01-01".to_string(),
+            })
+            .expect("the folder is saved");
+
+        let read_back = cache
+            .get_note_folder("folder-1")
+            .expect("the folder is read")
+            .expect("the folder is there");
+        assert_eq!(
+            read_back.container.as_deref(),
+            Some(A_CONTAINER),
+            "the container went in and did not come back"
+        );
+        let in_the_account = cache
+            .get_note_folders_for_account("acct-1")
+            .expect("the account's folders are read");
+        assert_eq!(
+            in_the_account
+                .iter()
+                .map(|folder| folder.container.as_deref())
+                .collect::<Vec<_>>(),
+            [Some(A_CONTAINER)],
+            "the account's own list of folders lost the container"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_made_here_has_no_container_and_says_so() {
+        // The other half, and the one that decides whether anything is sent.
+        // A folder with no container is on this computer and is never synced.
+        //
+        // **This one has never been red and cannot be**, which is worth saying
+        // rather than leaving somebody to assume it drove anything. Absence is
+        // what the column reads as before it exists, so it passed against the
+        // failing half of its own pair. It is a guard: it goes red the day
+        // something starts handing `ensure_default_note_folder` a container,
+        // which would silently start syncing folders somebody made here.
+        let cache = test_cache();
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
+        assert_eq!(
+            made_here.container, None,
+            "a folder nobody's backend gave came back claiming a container"
+        );
+        assert_eq!(
+            cache
+                .get_note_folder(&made_here.id)
+                .expect("the folder is read")
+                .expect("the folder is there")
+                .container,
+            None,
+            "a folder made here grew a container on the way back out of storage"
+        );
+    }
+
+    #[test]
+    fn test_one_container_finds_the_one_folder_that_holds_it() {
+        let cache = test_cache();
+        for (id, container, name) in [
+            ("folder-work", A_CONTAINER, "Work"),
+            ("folder-home", ANOTHER_CONTAINER, "Home"),
+        ] {
+            cache
+                .save_note_folder(&NoteFolderEntry {
+                    id: id.to_string(),
+                    account_id: "acct-1".to_string(),
+                    container: Some(container.to_string()),
+                    name: name.to_string(),
+                    display_order: 0,
+                    created_at: "2026-01-01".to_string(),
+                })
+                .expect("the folder is saved");
+        }
+
+        assert_eq!(
+            cache
+                .note_folder_holding("acct-1", ANOTHER_CONTAINER)
+                .expect("the lookup runs")
+                .map(|folder| folder.id),
+            Some("folder-home".to_string()),
+            "the second container did not find its own folder"
+        );
+        assert!(
+            cache
+                .note_folder_holding("acct-1", "https://example.test/dav/journals/nobody/")
+                .expect("the lookup runs")
+                .is_none(),
+            "a container no folder holds found one anyway"
+        );
+        assert!(
+            cache
+                .note_folder_holding("acct-2", A_CONTAINER)
+                .expect("the lookup runs")
+                .is_none(),
+            "one account's container found another account's folder"
+        );
+    }
+
+    #[test]
+    fn test_asking_twice_for_one_container_gives_one_folder() {
+        let cache = test_cache();
+        let first = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("a folder for the container");
+        let again = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the same folder for the same container");
+
+        assert_eq!(
+            first.id, again.id,
+            "one container came back as two folders, so its notes are in two places"
+        );
+        assert_eq!(
+            cache
+                .get_note_folders_for_account("acct-1")
+                .expect("the folders are read")
+                .len(),
+            1,
+            "asking twice made a second folder"
+        );
+    }
+
+    #[test]
+    fn test_a_container_renamed_at_the_backend_keeps_its_folder_and_its_notes() {
+        // The name follows and the identity does not. Matching on the name
+        // instead would lose a section's notes the first time somebody renamed
+        // it at OneNote.
+        let cache = test_cache();
+        let before = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("a folder for the container");
+        cache
+            .save_note(&NoteEntry {
+                id: "note-1".to_string(),
+                account_id: "acct-1".to_string(),
+                folder_id: Some(before.id.clone()),
+                title: "Something".to_string(),
+                body: "in the folder".to_string(),
+                format: NoteBody::AsTyped,
+                pinned: false,
+                created_at: "2026-01-01".to_string(),
+                updated_at: "2026-01-01".to_string(),
+                pending: false,
+                known_as: None,
+                known_version: None,
+            })
+            .expect("a note in the folder");
+
+        let after = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work / Projects / Q3")
+            .expect("the folder under its new name");
+
+        assert_eq!(
+            after.id, before.id,
+            "a renamed section came back as a new folder, so its notes were left behind"
+        );
+        assert_eq!(
+            after.name, "Work / Projects / Q3",
+            "the folder kept the name the backend no longer uses"
+        );
+        assert_eq!(
+            cache
+                .get_notes_for_folder(&before.id)
+                .expect("the notes are read")
+                .len(),
+            1,
+            "the note in the folder did not survive the rename"
+        );
+    }
+
+    #[test]
+    fn test_two_containers_wanting_one_name_get_two_folders() {
+        // Two calendars on one account really can share a display name, and
+        // `note_folders` is unique on the account and the name. Refusing the
+        // second would drop a whole calendar's notes with nothing said.
+        let cache = test_cache();
+        let first = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Notes")
+            .expect("a folder for the first container");
+        let second = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Notes")
+            .expect("a folder for the second container");
+
+        assert_ne!(
+            first.id, second.id,
+            "the second container was handed the first one's folder"
+        );
+        assert_eq!(first.name, "Notes");
+        assert_eq!(
+            second.name, "Notes (2)",
+            "the second folder was not told apart from the first"
+        );
+        assert_eq!(
+            second.container.as_deref(),
+            Some(ANOTHER_CONTAINER),
+            "the numbered folder lost the container it was made for"
+        );
+    }
+
+    #[test]
+    fn test_a_container_does_not_take_over_a_folder_somebody_made_here() {
+        // A folder made here is somebody's own and stays on this computer. A
+        // backend arriving with the same name must not adopt it, because that
+        // would start sending notes nobody asked to send.
+        let cache = test_cache();
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
+
+        let from_the_backend = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, &made_here.name)
+            .expect("a folder for the container");
+
+        assert_ne!(
+            from_the_backend.id, made_here.id,
+            "the backend took over a folder somebody made here"
+        );
+        assert_eq!(
+            cache
+                .get_note_folder(&made_here.id)
+                .expect("the folder is read")
+                .expect("the folder is still there")
+                .container,
+            None,
+            "a folder made here was given a container it never had"
+        );
+        assert_eq!(
+            from_the_backend.name, "General (2)",
+            "the backend's folder took the name of the one somebody made here"
+        );
     }
 }

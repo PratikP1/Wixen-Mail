@@ -453,6 +453,7 @@ fn a_note_folder(id: &str, name: &str) -> NoteFolderEntry {
     NoteFolderEntry {
         id: id.to_string(),
         account_id: ACCOUNT.to_string(),
+        container: None,
         name: name.to_string(),
         display_order: 0,
         created_at: String::new(),

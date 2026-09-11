@@ -102,6 +102,7 @@ fn a_note_folder(id: &str) -> NoteFolderEntry {
     NoteFolderEntry {
         id: id.to_string(),
         account_id: ACCOUNT.to_string(),
+        container: None,
         name: "Ideas".to_string(),
         display_order: 0,
         created_at: String::new(),
