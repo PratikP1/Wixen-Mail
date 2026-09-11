@@ -378,11 +378,11 @@ returns. That is entry 266 in `.planning/WINDOWS.md`.
 | `Run \gfusebox --check\g first.` | `Run fusebox --check first.` | **OneNote.** `code` is in no list the reference names |
 | `\g\g\g\nfusebox --check\nfusebox --repair\n\g\g\g` | `fusebox --check fusebox --repair` | **OneNote**, and this is the sharpest one. Neither `pre` nor `code` is named, so a code block has no representation on a page at all, and HTML then collapses the line breaks that were its meaning. Two commands become one line that runs neither |
 | `Before\n\n---\n\nAfter` | `Before\n\nAfter` | **OneNote**, and it is the only construct that leaves nothing behind: `hr` is not named and has no text inside it to keep |
-| `[The manual](https://example.org/manual)` | `The manual` | **this program.** The address reaches the page and comes back. `from_markup` contributes a link's words and not its address, deliberately, so a note keeps its words and loses its links |
-| `![The fuse box](https://example.org/fusebox.png)` | `The fuse box` | **this program.** The picture reaches the page and comes back with its description. `from_markup` emits the description alone, so the picture stops being one |
-| `![](https://example.org/fusebox.png)` | `image with no description` | **this program**, the same way, and the sentence is deliberate: a picture nobody described is the sender's gap to be shown rather than ours to hide |
+| `[The manual](https://example.org/manual)` | `[The manual](https://example.org/manual)` | nowhere, it survives, and until ledger 270 the address was dropped here. A note is read back with `from_markup_to_edit`, which keeps it. `from_markup` still drops it, correctly, for the callers that speak their text |
+| `![The fuse box](https://example.org/fusebox.png)` | `![The fuse box](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)` | **OneNote**, and it is no longer a lost picture. It comes home as a picture with its description. The address is the service's own: the reference says a page stores the picture and hands back a resource address for it, so the note now points at OneNote's copy rather than at where the picture came from |
+| `![](https://example.org/fusebox.png)` | `![](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)` | **OneNote**, the same way. The empty description is kept rather than replaced, so the sender's gap stays visible in a box somebody can type into. Read aloud it is still the sentence saying there is no description |
 | `\| Left \| Right \|\n\| --- \| --- \|\n\| one \| two \|` | `\| Left \| Right \|\n\| --- \| --- \|\n\| one \| two \|` | nowhere, it survives, and this is the surprise of ledger 270. OneNote still does not name `th`, so the header row is still written as ordinary cells. `from_markup` now reads the first row of a table as its heading row whether or not its cells say so, which is the only shape a markdown table has, so the demotion and the reading cancel. Every cell used to come back as its own paragraph with its column gone |
-| `Line one\nLine two` | `Line one  Line two` | **this program.** `as_markup` turns a soft break into a hard one on purpose, so the break reaches the page and somebody looking at it in OneNote sees two lines. `from_markup`'s inline pass turns a `br` back into a space |
+| `Line one\nLine two` | `Line one\nLine two` | nowhere, it survives, and until ledger 270 it came home as a space. `as_markup` turns a soft break into a hard one on purpose, so the break always reached the page and somebody looking at it in OneNote always saw two lines. `from_markup`'s inline pass still reads a `br` as a space, correctly, so that two spoken words do not run together |
 | ` ` | `\e` | **the format.** HTML collapses a run of whitespace and cannot hold one at the end of a line |
 | `\e` | `\e` | nowhere. An empty note costs nothing |
 
@@ -421,34 +421,50 @@ really did before this, measured rather than argued:
 survive `structure` and `from_markup`, and `spoken` says both. Three rows of
 the table above moved from lost to surviving as a result.
 
-**Three of them are correct for speaking and wrong for storing.** A link's
-address, a picture and a line break inside a paragraph are dropped on purpose.
-`from_markup`'s own doc comment gives the reason for the first: `spoken`
-returns a paragraph-only field exactly as written, so an address that survived
-would be read out as brackets, parentheses and every character of a URL. It
-emits a picture's description alone and will not invent one the sender never
-wrote, which `NO_DESCRIPTION` and guardrail 9 both exist for.
+**Three of them are correct for speaking and wrong for storing, and they got a
+second reader rather than a changed one.** A link's address, a picture and a
+line break inside a paragraph are dropped on purpose. `from_markup`'s own doc
+comment gives the reason for the first: `spoken` returns a paragraph-only field
+exactly as written, so an address that survived would be read out as brackets,
+parentheses and every character of a URL. It emits a picture's description
+alone and will not invent one the sender never wrote, which `NO_DESCRIPTION`
+and guardrail 9 both exist for.
 
 `from_markup` has two callers on that job outside notes, an event's description
 at `calendar.rs:3037` and a task's body at `tasks_api.rs:542`, both reading
 what Google and Microsoft hand back. Changing those three for a note's round
 trip would make a Google task's description read a URL aloud character by
-character.
+character, so `from_markup` is unchanged and three tests hold it to that.
 
-So those three need a reader whose output is **stored and edited again**, which
-is a different answer to the same HTML. That reader does not exist yet.
-Whoever writes it leaves `from_markup` alone for those three.
+`long_text::from_markup_to_edit` is the reader whose output is stored and
+edited again. `the_note_on` uses it, which is what makes it a feature rather
+than a function nobody calls. It is the same tree walk with a different answer
+at three arms rather than a second walk: two walks over the same tags are two
+things to change when a tag is added, and they drift the first time only one of
+them is. That is the argument `as_markup`'s own comment already makes about
+keeping one copy of a note instead of two.
+
+**One thing it cost to find out.** Read as a space, a `br` swallowed the
+whitespace an HTML document holds between its tags. Read as a line break it did
+not, so `Line one\nLine two` came home as `Line one\n Line two` with an indent
+nobody typed. `markup::tidied` takes it off.
 
 ### Reading the two columns together
 
-Ten of the twenty-two rows survive, up from seven before ledger 270. Of the
-twelve that do not, seven are OneNote's doing, four are this program's own
-reader, and one is HTML's rather than anybody's. That split matters: the seven
-are facts about somebody else's service and cannot be argued with, and the four
-are decisions `from_markup` made for reading a message, where a link read aloud
-as an address helps nobody and a note is a different job. **Changing those four
-is a plan rather than a line**, because that module is shared with every
-message body and signature this program renders.
+Twelve of the twenty-two rows survive, up from seven before ledger 270. Of the
+ten that do not, nine are OneNote's doing and one is HTML's rather than
+anybody's. **None is this program's own reader any more**, and that is the
+result worth stating plainly: every remaining loss is somebody else's, which is
+the condition guardrail 9 asks for. A gap this program cannot close is named
+rather than absorbed.
+
+Two of those nine are softer than the word "lost" suggests. A picture comes
+home as a picture with its description; what changes is its address, because
+OneNote stores the picture and hands back a resource address of its own. Seven
+are real losses and none of them can be argued with: a quote, bold, italic,
+struck-out text, inline code, a code block and a horizontal rule have no
+representation on a OneNote page at all. The struck-out one is still the
+sharpest, because a job crossed off and a job still to do read alike afterwards.
 
 The row that used to be counted as "both" is gone: the table row now survives,
 because OneNote's demotion of a header row to ordinary cells and this reader's

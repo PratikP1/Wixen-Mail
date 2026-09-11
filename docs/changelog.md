@@ -36,11 +36,25 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   words are said is settled; whether they are pleasant to listen to over a long
   table is not, and that needs a real NVDA run.
 
-- **A note kept in OneNote now comes back with its nesting and its tables
-  intact.** Three more of the twenty-two things measured in
+- **A note kept in OneNote now keeps its links, its pictures, its line breaks,
+  its nesting and its tables.** Twelve of the twenty-two things measured in
   `docs/development/the-notes-seam.md` now survive the round trip, up from
-  seven. A note stored there still loses a link's address, a picture and a line
-  break inside a paragraph.
+  seven, and none of what is still lost is this program's doing any more.
+
+  Before this, a note that went to OneNote and came back had lost the address
+  of every link in it, every picture had become just its description, and every
+  line break inside a paragraph had become a space. You would not have seen it
+  happen. You would have opened the note later and found the links gone.
+
+  Two things to know. A picture comes back pointing at OneNote's copy of it
+  rather than at wherever it came from, because that is what OneNote hands
+  back. And a quote, bold, italic, struck-out text, inline code, a code block
+  and a horizontal rule are still lost, because a OneNote page has no way to
+  hold any of them. The struck-out one is the one to watch: a job crossed off
+  and a job still to do come back looking the same.
+
+  Nothing here has been run against a real OneNote account. Every measurement
+  is against a model built from Microsoft's published reference.
 
 ### Added
 

@@ -494,10 +494,27 @@ pub fn as_markup(written: &str) -> String {
 }
 
 pub fn from_markup(html: &str) -> String {
+    read_markup(html, Keeping::OnlyWhatIsSpoken)
+}
+
+/// How much of the markup to keep, which depends on what happens to the result.
+///
+/// The walk below is one walk and differs at three arms. Which of the two is
+/// wanted is a fact about the caller, not about the HTML, so it travels with
+/// the call rather than being guessed from the tags.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Keeping {
+    /// Only what is worth hearing.
+    OnlyWhatIsSpoken,
+    /// Everything somebody typed, because they will edit it again.
+    EverythingTyped,
+}
+
+fn read_markup(html: &str, keeping: Keeping) -> String {
     let cleaned = ammonia::clean(html);
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
-    markup::blocks(*fragment.root_element().deref(), &mut out);
+    markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
     collapse_blank_lines(&out)
 }
 
@@ -521,7 +538,7 @@ pub fn from_markup(html: &str) -> String {
 /// the argument [`as_markup`]'s own comment already makes about keeping one
 /// copy of a note instead of two.
 pub fn from_markup_to_edit(html: &str) -> String {
-    from_markup(html)
+    read_markup(html, Keeping::EverythingTyped)
 }
 
 /// Squeeze runs of blank lines down to one, and trim the ends.
@@ -553,43 +570,44 @@ fn collapse_blank_lines(written: &str) -> String {
 /// needs three helpers that share nothing with the rest of the file: a block
 /// pass, an inline pass, and a list pass that counts.
 mod markup {
+    use super::Keeping;
     use ego_tree::NodeRef;
     use scraper::Node;
 
     /// Walk a node's children, emitting each block-level element it finds as a
     /// piece of markdown [`super::structure`] can read back.
-    pub(super) fn blocks(node: NodeRef<'_, Node>, out: &mut String) {
+    pub(super) fn blocks(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         for child in node.children() {
             match child.value() {
                 Node::Element(element) => match element.name() {
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                         let level = element.name()[1..].parse::<usize>().unwrap_or(1);
-                        push_paragraph(&format!("{} ", "#".repeat(level)), child, out);
+                        push_paragraph(&format!("{} ", "#".repeat(level)), child, out, keeping);
                     }
-                    "p" | "div" => push_paragraph("", child, out),
+                    "p" | "div" => push_paragraph("", child, out, keeping),
                     "ul" => {
-                        list(child, out, None, "");
+                        list(child, out, None, "", keeping);
                         out.push('\n');
                     }
                     "ol" => {
-                        list(child, out, Some(1), "");
+                        list(child, out, Some(1), "", keeping);
                         out.push('\n');
                     }
                     "li" => {
                         // A list item with no list around it. Malformed, but a
                         // bullet is a better answer than silently dropping it.
-                        push_item("- ", child, out);
+                        push_item("- ", child, out, keeping);
                     }
-                    "table" => table(child, out),
-                    "blockquote" => quote(child, out),
+                    "table" => table(child, out, keeping),
+                    "blockquote" => quote(child, out, keeping),
                     "br" => out.push('\n'),
                     // An image reached without a paragraph around it. Its own
                     // element, since it has no children for `inline` to walk.
                     "img" => {
-                        if let Some(alt) = element.attr("alt")
-                            && !alt.trim().is_empty()
-                        {
-                            out.push_str(alt.trim());
+                        let mut written = String::new();
+                        push_image(element, &mut written, keeping);
+                        if !written.is_empty() {
+                            out.push_str(&written);
                             out.push_str("\n\n");
                         }
                     }
@@ -600,7 +618,7 @@ mod markup {
                     // Anything else, a `body`, `span` or `article` this
                     // program does not otherwise care about, is a container
                     // rather than a leaf: what is inside it still matters.
-                    _ => blocks(child, out),
+                    _ => blocks(child, out, keeping),
                 },
                 Node::Text(text) => {
                     let trimmed = text.trim();
@@ -615,27 +633,81 @@ mod markup {
     }
 
     /// One paragraph or heading: its inline text, with a marker in front.
-    fn push_paragraph(marker: &str, node: NodeRef<'_, Node>, out: &mut String) {
+    fn push_paragraph(marker: &str, node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         let mut text = String::new();
-        inline(node, &mut text);
-        let text = text.trim();
+        inline(node, &mut text, keeping);
+        let text = tidied(&text);
         if !text.is_empty() {
             out.push_str(marker);
-            out.push_str(text);
+            out.push_str(&text);
             out.push_str("\n\n");
         }
     }
 
+    /// Inline text with the spacing a line break left behind taken off.
+    ///
+    /// An HTML document holds whitespace between its tags, so the text after a
+    /// `br` almost always starts with some. Read as a space it vanished into
+    /// the space the break became. Read as a line break, it lands at the start
+    /// of the next line as an indent nobody typed, and `Line one\nLine two`
+    /// came home as `Line one\n Line two`.
+    ///
+    /// A no-op for the speaking reading, whose inline text never holds a line
+    /// break at all.
+    fn tidied(text: &str) -> String {
+        text.split('\n')
+            .map(str::trim)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
+    }
+
     /// One list item, on its own line rather than followed by a blank one, so
     /// the items of a list stay together.
-    fn push_item(marker: &str, node: NodeRef<'_, Node>, out: &mut String) {
+    fn push_item(marker: &str, node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         let mut text = String::new();
-        inline(node, &mut text);
-        let text = text.trim();
+        inline(node, &mut text, keeping);
+        let text = tidied(&text);
         if !text.is_empty() {
             out.push_str(marker);
-            out.push_str(text);
+            out.push_str(&text);
             out.push('\n');
+        }
+    }
+
+    /// A picture, written as much of itself as the caller can use.
+    ///
+    /// Nothing at all where it is to be spoken and the sender described
+    /// nothing: [`super::structure`] would read `![](...)` back as a picture
+    /// and say so, but that is [`super::spoken`]'s job through the markdown a
+    /// person typed, and a block-level `img` reaching this walk with no
+    /// description has no words to contribute to a sentence. Where the text is
+    /// to be edited the picture is kept whole, description or not, because a
+    /// picture dropped from a note is a picture dropped for good and an empty
+    /// description is a box somebody can type into.
+    fn push_image(element: &scraper::node::Element, out: &mut String, keeping: Keeping) {
+        let described = element.attr("alt").map(str::trim).unwrap_or_default();
+        match keeping {
+            Keeping::OnlyWhatIsSpoken => out.push_str(described),
+            Keeping::EverythingTyped => {
+                let at = element.attr("src").map(str::trim).unwrap_or_default();
+                out.push_str(&format!("![{described}]({})", an_address(at)));
+            }
+        }
+    }
+
+    /// An address written so that reading it back gives the same address.
+    ///
+    /// A closing parenthesis inside one ends the link early and drops the rest
+    /// of the address into the note as ordinary words, and Wikipedia alone
+    /// makes that common. Markdown's answer is angle brackets around the
+    /// destination, used only where it is needed so an ordinary address is
+    /// spelled the way somebody typed it.
+    fn an_address(at: &str) -> String {
+        match at.contains(['(', ')', ' ', '<', '>']) {
+            true => format!("<{}>", at.replace(['<', '>'], "")),
+            false => at.to_string(),
         }
     }
 
@@ -657,7 +729,13 @@ mod markup {
     /// Two spaces under `- ` and three under `1. `. Indenting by a fixed amount
     /// instead would read back at the right depth and come back spelled
     /// differently from what somebody typed.
-    fn list(node: NodeRef<'_, Node>, out: &mut String, mut counter: Option<usize>, indent: &str) {
+    fn list(
+        node: NodeRef<'_, Node>,
+        out: &mut String,
+        mut counter: Option<usize>,
+        indent: &str,
+        keeping: Keeping,
+    ) {
         for child in node.children() {
             if let Node::Element(element) = child.value()
                 && element.name() == "li"
@@ -670,15 +748,15 @@ mod markup {
                     }
                     None => "- ".to_string(),
                 };
-                push_item(&format!("{indent}{marker}"), child, out);
+                push_item(&format!("{indent}{marker}"), child, out, keeping);
                 let deeper = format!("{indent}{}", " ".repeat(marker.len()));
                 for inside in child.children() {
                     match inside.value() {
                         Node::Element(nested) if nested.name() == "ul" => {
-                            list(inside, out, None, &deeper);
+                            list(inside, out, None, &deeper, keeping);
                         }
                         Node::Element(nested) if nested.name() == "ol" => {
-                            list(inside, out, Some(1), &deeper);
+                            list(inside, out, Some(1), &deeper, keeping);
                         }
                         _ => {}
                     }
@@ -696,9 +774,9 @@ mod markup {
     /// the reading that loses least: where it really was a heading row it is
     /// right, and where it was not, its cells are still said in full as the
     /// names of the columns under them.
-    fn table(node: NodeRef<'_, Node>, out: &mut String) {
+    fn table(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         let mut rows: Vec<Vec<String>> = Vec::new();
-        collect_rows(node, &mut rows);
+        collect_rows(node, &mut rows, keeping);
         let Some((headings, body)) = rows.split_first() else {
             return;
         };
@@ -711,7 +789,7 @@ mod markup {
     }
 
     /// Every `tr` under this node, however many `thead` or `tbody` wrap them.
-    fn collect_rows(node: NodeRef<'_, Node>, rows: &mut Vec<Vec<String>>) {
+    fn collect_rows(node: NodeRef<'_, Node>, rows: &mut Vec<Vec<String>>, keeping: Keeping) {
         for child in node.children() {
             let Node::Element(element) = child.value() else {
                 continue;
@@ -725,7 +803,7 @@ mod markup {
                         })
                         .map(|cell| {
                             let mut text = String::new();
-                            inline(cell, &mut text);
+                            inline(cell, &mut text, keeping);
                             text.trim().to_string()
                         })
                         .collect::<Vec<_>>();
@@ -733,7 +811,7 @@ mod markup {
                         rows.push(cells);
                     }
                 }
-                _ => collect_rows(child, rows),
+                _ => collect_rows(child, rows, keeping),
             }
         }
     }
@@ -757,49 +835,77 @@ mod markup {
     ///
     /// A quote holding no `<p>` of its own is read as one paragraph of quoted
     /// text, which is what a quote with no markup inside it amounts to.
-    fn quote(node: NodeRef<'_, Node>, out: &mut String) {
+    fn quote(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         let mut saw_a_paragraph = false;
         for child in node.children() {
             if let Node::Element(element) = child.value()
                 && element.name() == "p"
             {
                 saw_a_paragraph = true;
-                push_paragraph("> ", child, out);
+                push_paragraph("> ", child, out, keeping);
             }
         }
         if !saw_a_paragraph {
-            push_paragraph("> ", node, out);
+            push_paragraph("> ", node, out, keeping);
         }
     }
 
     /// The inline text inside a block: what a screen reader would hear read
     /// out, with the block-level structure around it left to the caller.
     ///
-    /// A link contributes its own text and not its address: a markdown link
-    /// written as `[text](url)` lands inside a paragraph, and
-    /// [`super::spoken`] returns a paragraph-only field exactly as written, so
-    /// the address would be read aloud character by character. An image
-    /// contributes its alt text when the sender gave it one and nothing when
-    /// they did not; inventing alt text the sender never wrote is not this
-    /// module's gap to paper over.
+    /// Three arms answer differently depending on `keeping`, and they are the
+    /// whole of the difference between the two readings.
+    ///
+    /// Read to be spoken, a link contributes its own text and not its address,
+    /// because a markdown link written as `[text](url)` lands inside a
+    /// paragraph and [`super::spoken`] returns a paragraph-only field exactly
+    /// as written, so the address would be read aloud character by character.
+    /// An image contributes its alt text, or the sentence saying the sender
+    /// gave none; inventing one they never wrote is not this module's gap to
+    /// paper over. A `br` is a space, or the words either side of it run
+    /// together.
+    ///
+    /// Read to be stored and edited again, all three are kept: an address a
+    /// link had, a picture as a picture, and a break as a break. Dropped
+    /// there, they are dropped from somebody's note for good on a round trip
+    /// they did not ask for.
     ///
     /// A list inside a list item is not inline and is skipped here, because
     /// [`list`] walks it at its own depth. Read from here it was appended to
     /// the item holding it with nothing between them, which ran two words
     /// together into one that was in neither.
-    fn inline(node: NodeRef<'_, Node>, out: &mut String) {
+    fn inline(node: NodeRef<'_, Node>, out: &mut String, keeping: Keeping) {
         for child in node.children() {
             match child.value() {
                 Node::Text(text) => out.push_str(text),
                 Node::Element(element) => match element.name() {
-                    "br" => out.push(' '),
+                    "br" => out.push(match keeping {
+                        Keeping::OnlyWhatIsSpoken => ' ',
+                        Keeping::EverythingTyped => '\n',
+                    }),
                     "ul" | "ol" => {}
-                    "img" => match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
-                        Some(alt) => out.push_str(alt),
-                        None => out.push_str(&format!("image with {}", super::NO_DESCRIPTION)),
+                    "img" => match keeping {
+                        Keeping::OnlyWhatIsSpoken => {
+                            match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
+                                Some(alt) => out.push_str(alt),
+                                None => {
+                                    out.push_str(&format!("image with {}", super::NO_DESCRIPTION))
+                                }
+                            }
+                        }
+                        Keeping::EverythingTyped => push_image(element, out, keeping),
                     },
+                    "a" if keeping == Keeping::EverythingTyped => {
+                        let mut words = String::new();
+                        inline(child, &mut words, keeping);
+                        let at = element.attr("href").map(str::trim).unwrap_or_default();
+                        match at.is_empty() {
+                            true => out.push_str(&words),
+                            false => out.push_str(&format!("[{words}]({})", an_address(at))),
+                        }
+                    }
                     "script" | "style" => {}
-                    _ => inline(child, out),
+                    _ => inline(child, out, keeping),
                 },
                 _ => {}
             }
@@ -821,14 +927,22 @@ mod markup {
         fn blocks_output(html: &str) -> String {
             let fragment = scraper::Html::parse_fragment(html);
             let mut out = String::new();
-            blocks(*fragment.root_element(), &mut out);
+            blocks(
+                *fragment.root_element(),
+                &mut out,
+                Keeping::OnlyWhatIsSpoken,
+            );
             out
         }
 
         fn inline_output(html: &str) -> String {
             let fragment = scraper::Html::parse_fragment(html);
             let mut out = String::new();
-            inline(*fragment.root_element(), &mut out);
+            inline(
+                *fragment.root_element(),
+                &mut out,
+                Keeping::OnlyWhatIsSpoken,
+            );
             out
         }
 

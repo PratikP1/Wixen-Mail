@@ -72,8 +72,16 @@ pub fn the_page_for(note: &ANoteOnAPage) -> String {
 
 /// The note a page's returned HTML carries.
 ///
-/// The body is flattened out of its `div` wrappers before
-/// [`long_text::from_markup`] sees it, and that is not a tidying step. That
+/// Read with [`long_text::from_markup_to_edit`] rather than
+/// [`long_text::from_markup`], because a note's body goes straight back into
+/// the box somebody typed it into. The speaking reader drops a link's address,
+/// turns a picture into its description and a line break into a space, all
+/// three correctly for speech and none of them recoverable once the note has
+/// been saved again. It is the reader a task's body and an event's description
+/// still use, since those are read aloud and not edited here.
+///
+/// The body is flattened out of its `div` wrappers before that reader sees it,
+/// and that is not a tidying step. That
 /// function's block pass has one arm for `p` and `div` together, so a `div` is
 /// read as a single paragraph and every heading, list and blank line inside it
 /// is concatenated into one run of text. OneNote wraps all body content in at
@@ -95,7 +103,7 @@ pub fn the_note_on(page: &str) -> ANoteOnAPage {
         title: first_named(root, "title")
             .map(|element| element.text().collect())
             .unwrap_or_default(),
-        body: long_text::from_markup(&without_the_wrapping_divs(&body)),
+        body: long_text::from_markup_to_edit(&without_the_wrapping_divs(&body)),
     }
 }
 
@@ -890,13 +898,20 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     #[test]
     fn test_a_picture_comes_back_as_a_picture() {
         // The `img` reaches the page and comes back from it with its `alt` and
-        // its `src` intact, so the picture was never lost at the service. It
-        // used to stop being a picture here, because a note was read back with
-        // `from_markup`, which emits a description alone because it is written
-        // for speech. A note's body is read with `from_markup_to_edit`.
+        // its description intact, so the picture was never lost at the service.
+        // It used to stop being a picture here, because a note was read back
+        // with `from_markup`, which emits a description alone because it is
+        // written for speech. A note's body is read with `from_markup_to_edit`.
+        //
+        // The address is the service's and not the one it went out with, and
+        // that is OneNote's doing rather than this program's: the reference
+        // says a page stores the picture and hands back its own resource
+        // address for it. So the picture comes home and points at OneNote's
+        // copy. That is a change somebody would notice if the original address
+        // mattered to them, and it is not a loss of the picture.
         assert_eq!(
             what_comes_back("![The fuse box](https://example.org/fusebox.png)"),
-            "![The fuse box](https://example.org/fusebox.png)"
+            "![The fuse box](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)"
         );
     }
 
@@ -908,7 +923,7 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
         // sentence saying so, which `long_text` tests separately.
         assert_eq!(
             what_comes_back("![](https://example.org/fusebox.png)"),
-            "![](https://example.org/fusebox.png)"
+            "![](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)"
         );
     }
 
