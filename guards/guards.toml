@@ -19405,5 +19405,5 @@ red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 38 },
+    { file = "src/service/microsoft_graph.rs", tests = 45 },
 ]

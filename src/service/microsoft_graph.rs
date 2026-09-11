@@ -519,17 +519,13 @@ pub struct AOneNoteSection {
 }
 
 /// One page of a listing, and where the next one is.
-///
-/// `pub` only until the walk that reads it lands in the next commit: a private
-/// item with no caller is dead code under a warnings-denied build, and a public
-/// one reachable from the crate root is not. Narrowed then.
 #[derive(Debug, Deserialize)]
-pub struct MsOneNoteListing<T> {
-    pub value: Vec<T>,
+struct MsOneNoteListing<T> {
+    value: Vec<T>,
     /// The whole address of the next page, when Graph sent one. Followed as it
     /// came: it is Graph's address and not one this code builds.
     #[serde(rename = "@odata.nextLink")]
-    pub next_link: Option<String>,
+    next_link: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -558,9 +554,7 @@ pub struct MsOneNotePage {
 /// already past what anybody keeps. A notebook that really is deeper is not
 /// dropped quietly; the read says it was cut short, and that is a separate
 /// question from whether the number is right.
-///
-/// `pub` for the reason [`MsOneNoteListing`] gives, and narrowed with it.
-pub const MOST_SECTION_GROUPS_DEEP: usize = 8;
+const MOST_SECTION_GROUPS_DEEP: usize = 8;
 
 /// How many further pages of one listing a read will follow.
 ///
@@ -569,9 +563,7 @@ pub const MOST_SECTION_GROUPS_DEEP: usize = 8;
 /// one is a loop this program would run until it was killed. Nothing in the
 /// reference bounds the chain, so this does. A hundred pages of a hundred
 /// notebooks is more than anybody has.
-///
-/// `pub` for the reason [`MsOneNoteListing`] gives, and narrowed with it.
-pub const MOST_PAGES_OF_ONE_LISTING: usize = 100;
+const MOST_PAGES_OF_ONE_LISTING: usize = 100;
 
 /// What a OneNote request the service refused comes back as.
 ///
@@ -912,9 +904,132 @@ impl MsGraphClient {
         &self,
         token: &str,
     ) -> Result<crate::service::tasks_api::PagedRead<AOneNoteSection>> {
-        // RED: not built yet. The tests below say what this has to do.
-        let _ = token;
-        Ok(crate::service::tasks_api::PagedRead::whole(Vec::new()))
+        use crate::service::tasks_api::PagedRead;
+
+        // Container, the names above it, and how many section groups deep it
+        // is. A work list rather than a function calling itself, because the
+        // bound is then a number this loop reads rather than a depth argument
+        // every call site has to remember to pass on.
+        let mut still_to_walk: Vec<(String, Vec<String>, usize)> = Vec::new();
+        let mut found = Vec::new();
+        let mut whole = true;
+
+        for notebook in self
+            .every_page_of::<MsOneNoteNotebook>(&self.onenote_url("notebooks"), token)
+            .await?
+        {
+            let named = named_by_graph(&notebook.id, "notebook")?;
+            still_to_walk.push((
+                format!("notebooks/{}", in_a_path(named)),
+                vec![notebook.display_name.clone()],
+                0,
+            ));
+        }
+
+        while let Some((container, above, groups_deep)) = still_to_walk.pop() {
+            for section in self
+                .every_page_of::<MsOneNoteSection>(
+                    &self.onenote_url(&format!("{container}/sections")),
+                    token,
+                )
+                .await?
+            {
+                let named = named_by_graph(&section.id, "section")?;
+                let mut path = above.clone();
+                path.push(section.display_name.clone());
+                found.push(AOneNoteSection {
+                    id: named.to_string(),
+                    path,
+                });
+            }
+
+            for group in self
+                .every_page_of::<MsOneNoteSectionGroup>(
+                    &self.onenote_url(&format!("{container}/sectionGroups")),
+                    token,
+                )
+                .await?
+            {
+                let named = named_by_graph(&group.id, "section group")?;
+                if groups_deep == MOST_SECTION_GROUPS_DEEP {
+                    // Found, named by its parent, and not walked into. The
+                    // read comes back cut short rather than short and silent,
+                    // which is the difference between a caller that can say
+                    // "some of your notebook was too deep to read" and one
+                    // that reports somebody's sections as deleted.
+                    whole = false;
+                    continue;
+                }
+                let mut inside = above.clone();
+                inside.push(group.display_name.clone());
+                still_to_walk.push((
+                    format!("sectionGroups/{}", in_a_path(named)),
+                    inside,
+                    groups_deep + 1,
+                ));
+            }
+        }
+
+        Ok(if whole {
+            PagedRead::whole(found)
+        } else {
+            PagedRead::cut_short(found)
+        })
+    }
+
+    /// Where one of OneNote's listings lives on this client's server.
+    fn onenote_url(&self, under: &str) -> String {
+        format!("{}/me/onenote/{under}", self.base)
+    }
+
+    /// Every item of a listing, following Graph's own next-page addresses.
+    ///
+    /// A page after the first is a whole address Graph handed back, followed as
+    /// it came rather than rebuilt, the way a stored delta link already is a
+    /// few hundred lines up.
+    ///
+    /// A chain longer than [`MOST_PAGES_OF_ONE_LISTING`] is refused rather than
+    /// cut short. A hundred pages of one listing is a server answering in a
+    /// circle, and answering a circle with "here is part of your notebook"
+    /// would let a sync read the part it got as the whole of it.
+    async fn every_page_of<T: serde::de::DeserializeOwned>(
+        &self,
+        first: &str,
+        token: &str,
+    ) -> Result<Vec<T>> {
+        let mut everything = Vec::new();
+        let mut next = Some(first.to_string());
+        let mut pages = 0_usize;
+        while let Some(url) = next.take() {
+            pages += 1;
+            if pages > MOST_PAGES_OF_ONE_LISTING {
+                return Err(Error::Protocol(format!(
+                    "OneNote went on offering another page of one listing past \
+                     {MOST_PAGES_OF_ONE_LISTING}, which is a server answering in a circle \
+                     rather than a notebook anybody has"
+                )));
+            }
+            let page: MsOneNoteListing<T> = self.onenote_get(&url, token).await?;
+            everything.extend(page.value);
+            next = page.next_link;
+        }
+        Ok(everything)
+    }
+
+    /// One OneNote read.
+    async fn onenote_get<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        token: &str,
+    ) -> Result<T> {
+        let resp = self
+            .http
+            .reading(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API GET failed: {e}")))?;
+        Self::read_onenote(resp).await
     }
 
     /// Make a page in a section, from the HTML a note becomes.
@@ -2181,13 +2296,13 @@ mod tests {
                 deep + 1
             ))
         }
-        // The notebook's own two listings, then two for each group followed.
-        // The group past the bound is named by its parent's listing and never
-        // asked about, so it costs no request.
+        // The notebook listing, the notebook's own two listings, then two for
+        // each group followed. The group past the bound is named by its
+        // parent's listing and never asked about, so it costs no request.
         let (address, _listening) = answering_as_asked(
             "200 OK",
             "application/json",
-            answering_each(2 + MOST_SECTION_GROUPS_DEEP * 2, route),
+            answering_each(1 + 2 + MOST_SECTION_GROUPS_DEEP * 2, route),
         )
         .await;
         let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
