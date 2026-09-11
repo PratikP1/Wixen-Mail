@@ -235,9 +235,18 @@ tree. Never pipe `check.sh` into anything you then test the result of. With the
 hook on, the commit itself runs them and a failure stops it.
 
 **What runs depends on where you are and what you changed, and
-`scripts/which-checks.sh` decides it.** On `main`, all four, whatever changed:
-every commit here lands on it. On a branch nobody builds, the slow half waits
-for the merge, and what runs is scoped to the change. A commit touching only
+`scripts/which-checks.sh` decides it.** On `main`, all four for anything that
+touches code: every commit here lands on it. **Corrected 2026-09-10, found by
+`05.1-05` while running the thing rather than reading about it.** This used to
+say "all four, whatever changed", and the script has not agreed with that
+sentence for some time: on `main`, a commit touching only `.md` and `.txt` files
+answers `docs_only` and runs formatting, clippy and the document-reading targets,
+with the reasoning written into the script at the branch that decides it. The
+rule the sentence was reaching for is elsewhere in this file and is the true one:
+a document change still runs the document-reading targets, because
+`tests/house_style.rs` reads documents and its em-dash guard has caught two real
+breaks in markdown. On a branch nobody builds, the slow half waits for the merge,
+and what runs is scoped to the change. A commit touching only
 documents runs formatting, clippy and the three targets that read documents; a
 commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
