@@ -11592,6 +11592,16 @@ pub(crate) fn load_module_data(
                 if let Err(e) = cache.ensure_default_note_folder(source) {
                     failures.push(format!("default note folder: {}", e));
                 }
+                // A folder for every backend container this account has, so
+                // somebody sees their calendars as note folders before the
+                // first sync rather than after it. The same call the sync makes,
+                // so the folder a note is filed into and the folder shown here
+                // are one row.
+                if let Err(e) = crate::application::notes_backend::note_folders_for_the_backends_of(
+                    cache, source,
+                ) {
+                    failures.push(format!("note folders from this account's backends: {}", e));
+                }
             }
             let notes = from_every(&sources, &mut failures, "notes", |id| {
                 cache.get_all_notes_for_account(id)
@@ -16791,12 +16801,33 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let was_on = what_the_cursor_was_on(&pim.notes_tree);
             pim.notes_tree.delete_all_items();
             if let Some(root) = pim.notes_tree.add_root("Note Folders", None, None) {
-                let rows: Vec<String> = folders
-                    .iter()
-                    .map(|f| format!("{} ({})", f.name, f.note_count))
-                    .collect();
-                for label in &rows {
-                    pim.notes_tree.append_item(&root, label, None, None);
+                // What goes where is decided in `note_folder_tree`, which can
+                // be driven from a test; this walks the answer. One backend
+                // container is one note folder, so the folders somebody made
+                // here go under the branch mail already uses for the folders
+                // that are on no server, and nothing else in this list is two
+                // kinds of thing wearing one shape.
+                use crate::presentation::note_folder_tree::{
+                    a_row_for, the_notes_tree, what_the_local_branch_says,
+                };
+                let tree = the_notes_tree(folders.clone());
+                for folder in &tree.from_a_backend {
+                    pim.notes_tree
+                        .append_item(&root, &a_row_for(folder), None, None);
+                }
+                if !tree.on_this_computer.is_empty()
+                    && let Some(here) = pim.notes_tree.append_item(
+                        &root,
+                        &what_the_local_branch_says(&tree.on_this_computer),
+                        None,
+                        None,
+                    )
+                {
+                    for folder in &tree.on_this_computer {
+                        pim.notes_tree
+                            .append_item(&here, &a_row_for(folder), None, None);
+                    }
+                    pim.notes_tree.expand(&here);
                 }
                 pim.notes_tree.expand(&root);
                 land_the_cursor(&pim.notes_tree, &root, was_on.as_deref());

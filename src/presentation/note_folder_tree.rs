@@ -53,9 +53,12 @@ pub struct TheNotesTree {
 /// The order within each branch is the order given, which is the store's:
 /// `display_order` then name, the same order the sidebar shows a calendar in.
 pub fn the_notes_tree(folders: Vec<NoteFolderItem>) -> TheNotesTree {
+    let (on_this_computer, from_a_backend) = folders
+        .into_iter()
+        .partition(|folder| folder.on_this_computer);
     TheNotesTree {
-        from_a_backend: folders,
-        on_this_computer: Vec::new(),
+        from_a_backend,
+        on_this_computer,
     }
 }
 
@@ -66,7 +69,7 @@ pub fn the_notes_tree(folders: Vec<NoteFolderItem>) -> TheNotesTree {
 /// says that, and a row that said it too would be the same fact twice for
 /// somebody moving through by keyboard.
 pub fn a_row_for(folder: &NoteFolderItem) -> String {
-    folder.name.clone()
+    format!("{} ({})", folder.name, folder.note_count)
 }
 
 /// What the branch holding the folders somebody made here says.
@@ -77,8 +80,12 @@ pub fn a_row_for(folder: &NoteFolderItem) -> String {
 /// Somebody who never opens the branch still hears whether there is anything in
 /// it.
 pub fn what_the_local_branch_says(folders: &[NoteFolderItem]) -> String {
-    let _ = (folders, how_many(0, "note"));
-    String::new()
+    let notes: usize = folders.iter().map(|folder| folder.note_count).sum();
+    format!(
+        "{}, {} in all",
+        crate::application::local_folders::ON_THIS_COMPUTER,
+        how_many(notes, "note")
+    )
 }
 
 #[cfg(test)]
