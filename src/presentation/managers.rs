@@ -6597,7 +6597,7 @@ fn file_it(
     // no.
     let waiting = crate::application::pim_command::what_is_waiting(
         will_have_to_be_sent(cache, kind, &into.id)
-            || a_removal_will_have_to_be_sent(kind, filing, id),
+            || a_removal_will_have_to_be_sent(cache, kind, filing, id),
         crate::application::allowed::allowed_for(&account_id).personal_information,
     );
 
@@ -6959,11 +6959,13 @@ pub fn will_have_to_be_sent(
 /// stored list rather than a window, and a `#[test]` in this file costs 44 guard
 /// records a re-measurement each.
 pub fn a_removal_will_have_to_be_sent(
+    cache: &MessageCache,
     kind: crate::application::new_item::ItemKind,
     filing: crate::application::destinations::Filing,
     id: &str,
 ) -> bool {
     use crate::application::new_item::ItemKind;
+    let _ = cache;
 
     // A copy leaves the provider's own item exactly where it is, so nothing is
     // owed anywhere. Asked first, because it is true of every kind.

@@ -97,13 +97,18 @@ fn a_gmail_account() -> Account {
     }
 }
 
-/// A note folder on this account.
-fn a_note_folder(id: &str) -> NoteFolderEntry {
+/// A note folder on this account, at a backend or on this computer.
+///
+/// The distinction the note arm now turns on. One backend container is one note
+/// folder, so a folder with a container is somewhere a change can be sent and a
+/// folder with none is somewhere nothing is ever sent from, whatever the
+/// account can do.
+fn a_note_folder(id: &str, container: Option<&str>) -> NoteFolderEntry {
     NoteFolderEntry {
         id: id.to_string(),
         account_id: ACCOUNT.to_string(),
-        container: None,
-        name: "Ideas".to_string(),
+        container: container.map(str::to_string),
+        name: id.to_string(),
         display_order: 0,
         created_at: String::new(),
     }
@@ -156,7 +161,7 @@ fn test_a_note_on_an_account_with_nowhere_to_send_it_has_nothing_to_be_sent() {
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store(&dir);
     cache
-        .save_note_folder(&a_note_folder("notefolder-1"))
+        .save_note_folder(&a_note_folder("notefolder-1", None))
         .expect("a folder for notes");
 
     assert!(!will_have_to_be_sent(
@@ -168,18 +173,19 @@ fn test_a_note_on_an_account_with_nowhere_to_send_it_has_nothing_to_be_sent() {
 
 #[test]
 fn test_a_note_on_an_account_with_a_calendar_server_has_something_to_be_sent() {
-    // The fixture the note arm exists for. Where an account's notes go is
-    // answered by `application::notes_backend`, and an account with a calendar
-    // on a calendar server has journal entries on that same server under that
-    // same sign-in. So a note filed into one of its folders really is waiting,
-    // and a move of it has to say so, the same as a task and an event do.
+    // The fixture the note arm exists for. One backend container is one note
+    // folder, so a folder holding a container is a place a change really goes,
+    // and a move into it has to say so the same as a task and an event do.
     let dir = tempfile::tempdir().expect("a directory to work in");
     let cache = a_store(&dir);
     cache
         .save_account(&a_gmail_account())
         .expect("an account to look the folder up against");
     cache
-        .save_note_folder(&a_note_folder("notefolder-1"))
+        .save_note_folder(&a_note_folder(
+            "notefolder-1",
+            Some("https://example.test/dav/journals/work/"),
+        ))
         .expect("a folder for notes");
     cache
         .save_calendar(&CalendarContainer {
@@ -192,6 +198,37 @@ fn test_a_note_on_an_account_with_a_calendar_server_has_something_to_be_sent() {
         will_have_to_be_sent(&cache, ItemKind::Note, "notefolder-1"),
         "a note filed into a folder of an account whose notes reach a server \
          is reported as having nowhere to go"
+    );
+}
+
+#[test]
+fn test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent() {
+    // The mistake this whole file exists for, in its note shape, and the one
+    // people find surprising. The account has a calendar server and its other
+    // folders really do sync, so "does this account send notes" answers yes and
+    // is the wrong question. A folder somebody made here has no container, so
+    // no backend is told about the move, no copy is made and nothing is
+    // removed. Announcing that a change had not reached the account would be a
+    // claim about a change that is never going anywhere.
+    let dir = tempfile::tempdir().expect("a directory to work in");
+    let cache = a_store(&dir);
+    cache
+        .save_account(&a_gmail_account())
+        .expect("an account to look the folder up against");
+    cache
+        .save_note_folder(&a_note_folder("made-here", None))
+        .expect("a folder somebody made here");
+    cache
+        .save_calendar(&CalendarContainer {
+            caldav_url: Some("https://example.test/dav/cal".to_string()),
+            ..a_calendar("cal-server", "caldav")
+        })
+        .expect("a calendar on a calendar server");
+
+    assert!(
+        !will_have_to_be_sent(&cache, ItemKind::Note, "made-here"),
+        "a note moved into a folder on this computer was announced as waiting \
+         to reach an account that will never be told about it"
     );
 }
 
