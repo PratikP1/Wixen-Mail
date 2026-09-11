@@ -888,26 +888,27 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_picture_comes_back_as_its_description_and_nothing_else() {
-        // Expected to come back as it went. The `img` reaches the page and
-        // comes back from it with its `alt` intact, so the picture is not lost
-        // at the service. `from_markup` emits the description on its own and
-        // never rebuilds `![...](...)`, so the picture stops being a picture.
-        // Lost here, not there.
+    fn test_a_picture_comes_back_as_a_picture() {
+        // The `img` reaches the page and comes back from it with its `alt` and
+        // its `src` intact, so the picture was never lost at the service. It
+        // used to stop being a picture here, because a note was read back with
+        // `from_markup`, which emits a description alone because it is written
+        // for speech. A note's body is read with `from_markup_to_edit`.
         assert_eq!(
             what_comes_back("![The fuse box](https://example.org/fusebox.png)"),
-            "The fuse box"
+            "![The fuse box](https://example.org/fusebox.png)"
         );
     }
 
     #[test]
-    fn test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so() {
-        // The same loss, and the sentence is deliberate rather than a stand-in:
-        // `long_text`'s own comment says a picture nobody described is the
-        // sender's gap to be shown rather than this program's to hide.
+    fn test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description() {
+        // Guardrail 9: the sender's missing description is the sender's gap to
+        // be shown. Keeping the picture is how it stays shown in a box
+        // somebody can type the description into. Read aloud it is still the
+        // sentence saying so, which `long_text` tests separately.
         assert_eq!(
             what_comes_back("![](https://example.org/fusebox.png)"),
-            "image with no description"
+            "![](https://example.org/fusebox.png)"
         );
     }
 
@@ -978,17 +979,18 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_link_comes_back_as_its_words_without_its_address() {
-        // Expected to come back as it went. The `a` and its `href` reach the
-        // page and come back, so the address is not lost at the service.
+    fn test_a_link_comes_back_with_its_address() {
+        // The `a` and its `href` always reached the page and came back, so the
+        // address was never lost at the service. It used to be lost here:
         // `from_markup`'s inline pass contributes a link's text and not its
-        // address, deliberately, with a comment saying that a paragraph-only
-        // field is read out as written and an address read aloud character by
-        // character helps nobody. That decision is right for reading a message
-        // and it costs a note its links.
+        // address, deliberately, because a paragraph-only field is read out as
+        // written and an address read aloud character by character helps
+        // nobody. That decision is right for reading a message aloud and it
+        // cost a note its links, which is why a note's body is now read with
+        // `from_markup_to_edit`.
         assert_eq!(
             what_comes_back("[The manual](https://example.org/manual)"),
-            "The manual"
+            "[The manual](https://example.org/manual)"
         );
     }
 
@@ -1011,18 +1013,17 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_line_break_comes_back_as_a_space() {
-        // Expected to come back as it went. `as_markup` turns a soft break
-        // into a hard one on purpose, with a comment saying a box somebody
-        // typed three lines into is not a document, so the break does reach
-        // the page as a `br` and OneNote keeps it: somebody looking at the
-        // page in OneNote sees their two lines.
+    fn test_a_line_break_comes_back_as_a_line_break() {
+        // `as_markup` turns a soft break into a hard one on purpose, with a
+        // comment saying a box somebody typed three lines into is not a
+        // document, so the break reaches the page as a `br` and OneNote keeps
+        // it: somebody looking at the page in OneNote sees their two lines.
         //
-        // It is `from_markup`'s inline pass that turns a `br` back into a
-        // space. Kept as it is rather than changed here, because that decision
-        // belongs to the module the whole program shares and changing it would
-        // reshape every message body and signature this program renders.
-        assert_eq!(what_comes_back("Line one\nLine two"), "Line one  Line two");
+        // It used to come home as a space, because `from_markup`'s inline pass
+        // reads a `br` as one so that two words do not run together in speech.
+        // That reading is kept for speech and a note's body is read with
+        // `from_markup_to_edit`, which keeps the break.
+        assert_eq!(what_comes_back("Line one\nLine two"), "Line one\nLine two");
     }
 
     #[test]

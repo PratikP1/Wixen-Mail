@@ -7235,8 +7235,8 @@ red = [
     "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
     "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
-    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
-    "service::onenote_page::tests::test_a_link_comes_back_as_its_words_without_its_address",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_line_break",
+    "service::onenote_page::tests::test_a_link_comes_back_with_its_address",
     "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_at_all_three_depths",
     "service::onenote_page::tests::test_a_nested_list_comes_back_nested",
     "service::onenote_page::tests::test_a_note_goes_out_as_a_page_and_the_page_comes_back_as_a_note",
@@ -7244,8 +7244,8 @@ red = [
     "service::onenote_page::tests::test_a_notes_title_is_not_repeated_as_a_heading_in_the_body",
     "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
     "service::onenote_page::tests::test_a_paragraph_comes_back",
-    "service::onenote_page::tests::test_a_picture_comes_back_as_its_description_and_nothing_else",
-    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_a_picture_comes_back_as_a_picture",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description",
     "service::onenote_page::tests::test_a_quote_comes_back_as_an_ordinary_paragraph",
     "service::onenote_page::tests::test_a_script_on_a_page_does_not_reach_the_note",
     "service::onenote_page::tests::test_a_style_element_on_a_page_does_not_reach_the_note",
@@ -8480,8 +8480,8 @@ after = '''                    "p" | "div" => blocks(child, out),'''
 red = [
     "application::long_text::markup::tests::test_a_paragraph_joins_its_inline_content_into_one_line",
     "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
-    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
-    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_line_break",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description",
     "service::onenote_page::tests::test_bold_comes_back_as_plain_words",
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
     "service::onenote_page::tests::test_italic_comes_back_as_plain_words",
@@ -8732,7 +8732,7 @@ before = '''                    "br" => out.push(' '),'''
 after = '''                    "br" => {}'''
 red = [
     "application::long_text::markup::tests::test_a_line_break_inside_inline_text_becomes_a_space",
-    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_line_break",
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
@@ -8753,8 +8753,8 @@ before = '''                    "img" => match element.attr("alt").map(str::trim
 after = '''                    "img" => {}'''
 red = [
     "application::long_text::markup::tests::test_an_image_inside_inline_text_contributes_its_alt_text",
-    "service::onenote_page::tests::test_a_picture_comes_back_as_its_description_and_nothing_else",
-    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_a_picture_comes_back_as_a_picture",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description",
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [

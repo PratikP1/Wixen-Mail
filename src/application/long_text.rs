@@ -501,6 +501,29 @@ pub fn from_markup(html: &str) -> String {
     collapse_blank_lines(&out)
 }
 
+/// The same markup, read for a box somebody will edit rather than for speech.
+///
+/// [`from_markup`] drops three things on purpose, and all three are right for
+/// its job and wrong for this one. A link keeps only its words, because
+/// [`spoken`] returns a paragraph-only field exactly as written and an address
+/// that survived would be read out as brackets, parentheses and every
+/// character of a URL. A picture becomes its description alone. A line break
+/// inside a paragraph becomes a space.
+///
+/// Read back into the box it came from, each of those is a loss somebody
+/// typed. A note kept at a service and edited here goes out, comes back, and
+/// is shown again: whatever this reader drops is dropped from their note for
+/// good, on a round trip they did not ask for and cannot see.
+///
+/// The same tree walk with a different answer at three arms, rather than a
+/// second walk. Two walks over the same tags are two things to change when a
+/// tag is added and they drift the first time only one of them is, which is
+/// the argument [`as_markup`]'s own comment already makes about keeping one
+/// copy of a note instead of two.
+pub fn from_markup_to_edit(html: &str) -> String {
+    from_markup(html)
+}
+
 /// Squeeze runs of blank lines down to one, and trim the ends.
 ///
 /// The block walk below closes every paragraph, heading and list with its own
@@ -1387,6 +1410,105 @@ Rear Admiral",
 
         assert!(converted.contains("Bring the papers"), "{converted}");
         assert!(!converted.contains("steal"), "{converted}");
+    }
+
+    #[test]
+    fn test_a_link_kept_for_editing_keeps_its_address() {
+        // Read back into the box it came from, a link that kept only its words
+        // is a link somebody typed and lost on a round trip they never asked
+        // for.
+        assert_eq!(
+            from_markup_to_edit(r#"<p>See the <a href="https://example.com/q">report</a></p>"#),
+            "See the [report](https://example.com/q)"
+        );
+    }
+
+    #[test]
+    fn test_a_link_read_for_speaking_still_loses_its_address() {
+        // The other half of the pair, and the reason there are two readings.
+        // This one must not change: `from_markup` has two callers outside
+        // notes, a Google task's body and a calendar event's description, and
+        // an address that survived into either would be read out character by
+        // character.
+        let said = from_markup(r#"<p>See the <a href="https://example.com/q">report</a></p>"#);
+
+        assert_eq!(said, "See the report");
+        assert!(!said.contains("example.com"), "{said}");
+    }
+
+    #[test]
+    fn test_a_picture_kept_for_editing_is_still_a_picture() {
+        assert_eq!(
+            from_markup_to_edit(
+                r#"<p>Before</p><img src="https://example.org/chart.png" alt="Revenue chart">"#
+            ),
+            "Before\n\n![Revenue chart](https://example.org/chart.png)"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_nobody_described_is_still_kept_for_editing() {
+        // Guardrail 9 the other way round: the sender's missing description is
+        // shown rather than hidden, and dropping the picture entirely would
+        // hide it. The speaking reader says so in words; this one keeps the
+        // picture so it can be typed over.
+        assert_eq!(
+            from_markup_to_edit(r#"<img src="https://example.org/chart.png" alt="">"#),
+            "![](https://example.org/chart.png)"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_read_for_speaking_is_still_its_description_alone() {
+        let said = from_markup(
+            r#"<p>Before</p><img src="https://example.org/chart.png" alt="Revenue chart">"#,
+        );
+
+        assert_eq!(said, "Before\n\nRevenue chart");
+    }
+
+    #[test]
+    fn test_a_line_break_kept_for_editing_is_still_a_line_break() {
+        // `as_markup` turns a line somebody typed into a `br` on purpose, so a
+        // reading that turns it back into a space loses a line every time a
+        // note goes out and comes home.
+        assert_eq!(from_markup_to_edit("<p>One<br>Two</p>"), "One\nTwo");
+    }
+
+    #[test]
+    fn test_a_line_break_read_for_speaking_is_still_a_space() {
+        // Without this the words either side run together into one.
+        assert_eq!(from_markup("<p>One<br>Two</p>"), "One Two");
+    }
+
+    #[test]
+    fn test_an_address_holding_a_bracket_is_written_so_it_can_be_read_back() {
+        // A closing parenthesis inside an address ends the link early, so the
+        // rest of the address lands in the note as ordinary words.
+        let written =
+            from_markup_to_edit(r#"<p><a href="https://example.org/a_(b)_c">Thing</a></p>"#);
+
+        assert_eq!(written, "[Thing](<https://example.org/a_(b)_c>)");
+        assert_eq!(
+            spoken(&written),
+            "Thing",
+            "the address did not survive being read back: {written}"
+        );
+    }
+
+    #[test]
+    fn test_the_two_readings_agree_about_everything_that_is_not_those_three() {
+        // The reason this is one walk with two answers rather than two walks.
+        // Every tag but a link, a picture and a line break must read the same
+        // both ways, and a second walk would drift here first.
+        let markup = "<h2>Agenda</h2>\
+             <ul><li>Budget<ul><li>Papers</li></ul></li></ul>\
+             <ol><li>First</li></ol>\
+             <blockquote><p>Ask about the invoice</p></blockquote>\
+             <table><tr><th>Name</th><th>Role</th></tr><tr><td>Grace</td><td>Admiral</td></tr></table>\
+             <p>Plain words</p>";
+
+        assert_eq!(from_markup(markup), from_markup_to_edit(markup));
     }
 
     #[test]
