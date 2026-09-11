@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 522 records have arrived since and have not been through it.
+# 523 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19403,6 +19403,41 @@ after = '''        let resp = reqwest::Client::new()
             .bearer_auth(token)'''
 red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
+]
+tests_last_seen = [
+    { file = "src/service/microsoft_graph.rs", tests = 45 },
+]
+
+# A walk of a notebook stops going deeper into section groups, and says it
+# stopped.
+#
+# The break raises the bound by one, which is what somebody writes who reads the
+# comparison as off by one. The walk then asks about a group the fixture has no
+# answer for, so the test fails on the request rather than on the sentence about
+# the bound, and the message is about a socket. That is worth knowing before
+# somebody reads a future failure of this record as a network problem. It is
+# also the fixture doing something the code stopped doing: a fixed number of
+# canned answers bounds the walk even when the walk has no bound of its own,
+# which is why this fails fast instead of running until it is killed.
+#
+# A second candidate was measured rather than assumed, because the first
+# plausible break is often the weak one. Taking out the `whole = false` leaves
+# the bound in place and the read claiming to be whole, which is the other half
+# of this rule. It reddens exactly the same one test, on the assertion that
+# names the rule: 6,987 passed, 1 failed, 66.25 seconds. So that single test
+# covers both halves, which is the finding, and the record keeps the break
+# against the bound because the bound is what holds a hostile answer off.
+#
+# Measured 2026-09-11 by hand on a clean tree with nothing else building, at the
+# default eight threads: 6,987 passed, 1 failed, 65.54 seconds. The red test is
+# new with this change.
+[[guard]]
+name = "a walk of a notebook stops at the bound and says it stopped"
+file = "src/service/microsoft_graph.rs"
+before = '''                if groups_deep == MOST_SECTION_GROUPS_DEEP {'''
+after = '''                if groups_deep == MOST_SECTION_GROUPS_DEEP + 1 {'''
+red = [
+    "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
 ]
 tests_last_seen = [
     { file = "src/service/microsoft_graph.rs", tests = 45 },
