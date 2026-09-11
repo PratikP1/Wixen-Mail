@@ -7216,16 +7216,60 @@ before = """pub fn from_markup(html: &str) -> String {
 after = """pub fn from_markup(html: &str) -> String {
     ammonia::clean(html)
 }"""
+# Measured 2026-09-11 for ledger 270. The record named five tests and the break
+# reddens forty. Thirty-one of the thirty-five it missed live in
+# `src/service/onenote_page.rs`, which arrived on 2026-09-11 and which this
+# record had never named, so the count check could not see them arrive: it
+# compares test counts for the files a record names, and a test added to a file
+# no record names is invisible to it. Four more are ledger 270's own. A record
+# naming five where the truth is forty is the shape this file exists to stop,
+# and nothing found it except running the remedy the count check printed.
 red = [
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
-    "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    "application::long_text::tests::test_a_bar_inside_a_cell_does_not_break_the_table_it_is_in",
+    "application::long_text::tests::test_a_nested_list_in_a_providers_markup_comes_back_nested",
+    "application::long_text::tests::test_a_table_in_a_providers_markup_comes_back_as_a_table",
+    "application::long_text::tests::test_a_table_whose_header_row_is_ordinary_cells_still_gets_headings",
     "application::long_text::tests::test_link_text_and_image_alt_text_survive_markup_being_read",
+    "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
+    "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
+    "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
+    "service::onenote_page::tests::test_a_link_comes_back_as_its_words_without_its_address",
+    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_at_all_three_depths",
+    "service::onenote_page::tests::test_a_nested_list_comes_back_nested",
+    "service::onenote_page::tests::test_a_note_goes_out_as_a_page_and_the_page_comes_back_as_a_note",
+    "service::onenote_page::tests::test_a_note_that_is_one_space_comes_back_empty",
+    "service::onenote_page::tests::test_a_notes_title_is_not_repeated_as_a_heading_in_the_body",
+    "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
+    "service::onenote_page::tests::test_a_paragraph_comes_back",
+    "service::onenote_page::tests::test_a_picture_comes_back_as_its_description_and_nothing_else",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_a_quote_comes_back_as_an_ordinary_paragraph",
+    "service::onenote_page::tests::test_a_script_on_a_page_does_not_reach_the_note",
+    "service::onenote_page::tests::test_a_style_element_on_a_page_does_not_reach_the_note",
+    "service::onenote_page::tests::test_a_table_comes_back_as_a_table",
+    "service::onenote_page::tests::test_an_empty_note_makes_a_page_and_comes_back_empty",
+    "service::onenote_page::tests::test_an_event_handler_attribute_on_a_page_does_not_reach_the_note",
+    "service::onenote_page::tests::test_an_ordered_list_comes_back",
+    "service::onenote_page::tests::test_an_unordered_list_comes_back",
+    "service::onenote_page::tests::test_bold_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_inline_code_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_italic_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
+    "service::onenote_page::tests::test_microsofts_own_page_comes_back_with_its_heading_as_a_heading",
+    "service::onenote_page::tests::test_microsofts_own_page_comes_back_with_its_title_and_its_paragraphs_apart",
+    "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_the_inline_span_styles_do_not_appear_in_what_comes_back",
     "service::tasks_api::tests::test_a_microsoft_task_arrives_from_json_with_its_progress_and_its_markup_read",
     "service::tasks_api::tests::test_a_microsoft_task_body_written_as_html_is_read_as_words_not_tags",
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -8405,60 +8449,107 @@ before = """                Node::Text(text) => {
                 }
                 _ => {}"""
 after = """                _ => {}"""
-red = ["application::long_text::markup::tests::test_bare_text_with_no_tag_around_it_becomes_a_paragraph"]
+# Measured 2026-09-11 for ledger 270. The record named one test and the break
+# reddens four. The other three live in `src/service/onenote_page.rs`, which
+# arrived on 2026-09-11 and which this record had never listed, so the count
+# check could not see them: it compares test counts for the files a record
+# names, and a test added to a file no record names is invisible to it. That
+# file is listed below now, so the next test added to it says so.
+red = [
+    "application::long_text::markup::tests::test_bare_text_with_no_tag_around_it_becomes_a_paragraph",
+    "service::onenote_page::tests::test_a_code_block_comes_back_as_one_line_of_words",
+    "service::onenote_page::tests::test_a_hidden_div_carrying_the_source_does_not_bring_it_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "blocks joins a p or div's inline content into one line"
 file = "src/application/long_text.rs"
-before = """                    "p" | "div" => push_paragraph("", child, out),
-                    "ul" => list(child, out, None),"""
-after = """                    "ul" => list(child, out, None),"""
+# Re-measured 2026-09-11 for ledger 270, which put a nested list and a table
+# through this walk and moved the arms either side of this one. The break used
+# to be the deletion of this arm, written as the two lines it sits above; that
+# spelling broke the moment a neighbour changed. It now reads the p or div as a
+# container rather than as one line of inline text, which is the same mistake
+# and depends on nothing but the arm itself.
+before = '''                    "p" | "div" => push_paragraph("", child, out),'''
+after = '''                    "p" | "div" => blocks(child, out),'''
 red = [
     "application::long_text::markup::tests::test_a_paragraph_joins_its_inline_content_into_one_line",
     "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_bold_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_italic_comes_back_as_plain_words",
+    "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "blocks turns a ul's items into a bulleted list"
 file = "src/application/long_text.rs"
-before = """                    "ul" => list(child, out, None),
-                    "ol" => list(child, out, Some(1)),"""
-after = """                    "ol" => list(child, out, Some(1)),"""
-red = ["application::long_text::markup::tests::test_a_bullet_list_does_not_run_into_the_paragraph_after_it"]
+# Re-measured 2026-09-11 for ledger 270. `list` gained an indent argument and
+# the arm gained a body, so the old break, which deleted this arm by naming the
+# one below it, matched nothing. Now it asks the walk to count a bullet list,
+# which is one edit inside the arm and survives a neighbour moving.
+before = '''                        list(child, out, None, "");'''
+after = '''                        list(child, out, Some(1), "");'''
+red = [
+    "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
+    "application::long_text::markup::tests::test_a_bullet_list_does_not_run_into_the_paragraph_after_it",
+    "application::long_text::tests::test_a_nested_list_in_a_providers_markup_comes_back_nested",
+    "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
+    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_at_all_three_depths",
+    "service::onenote_page::tests::test_a_nested_list_comes_back_nested",
+    "service::onenote_page::tests::test_a_note_goes_out_as_a_page_and_the_page_comes_back_as_a_note",
+    "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
+    "service::onenote_page::tests::test_an_unordered_list_comes_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "blocks counts an ol's items instead of bulleting them"
 file = "src/application/long_text.rs"
-before = """                    "ol" => list(child, out, Some(1)),
-                    "li" => {"""
-after = """                    "li" => {"""
-red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+# Re-measured 2026-09-11 for ledger 270, the mirror of the record above and
+# moved for the same reason.
+before = '''                        list(child, out, Some(1), "");'''
+after = '''                        list(child, out, None, "");'''
+red = [
+    "application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them",
+    "service::onenote_page::tests::test_an_ordered_list_comes_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "blocks still bullets a li with no list around it"
 file = "src/application/long_text.rs"
-before = """                    "li" => {
-                        // A list item with no list around it. Malformed, but a
-                        // bullet is a better answer than silently dropping it.
-                        push_item("- ", child, out);
-                    }
-                    "blockquote" => quote(child, out),"""
-after = """                    "blockquote" => quote(child, out),"""
+# Re-measured 2026-09-11 for ledger 270. A `table` arm now sits between this
+# one and the `blockquote` the old break named, so that spelling matched
+# nothing. The break is now the silent drop the arm's own comment argues
+# against, applied inside the arm.
+before = '''                        push_item("- ", child, out);'''
+after = '''                        let _ = &child;'''
 red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8472,7 +8563,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8483,7 +8574,7 @@ before = """                    "br" => out.push('\\n'),
 after = """                    // An image reached without a paragraph around it."""
 red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8497,7 +8588,7 @@ red = [
     "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8515,36 +8606,55 @@ after = """                    if trimmed.is_empty() {
                     }
                 }
                 _ => {}"""
+# Measured 2026-09-11 for ledger 270, and short for the same reason as the
+# record above: three of the five it reddens live in a file it never named.
 red = [
     "application::long_text::markup::tests::test_bare_text_with_no_tag_around_it_becomes_a_paragraph",
     "application::long_text::markup::tests::test_whitespace_only_text_contributes_nothing",
+    "service::onenote_page::tests::test_a_code_block_comes_back_as_one_line_of_words",
+    "service::onenote_page::tests::test_a_hidden_div_carrying_the_source_does_not_bring_it_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "list's numbered counter increments, not decrements, after each item"
 file = "src/application/long_text.rs"
-before = """                        push_item(&format!("{n}. "), child, out);
-                        *n += 1;"""
-after = """                        push_item(&format!("{n}. "), child, out);
-                        *n -= 1;"""
-red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+# Re-measured 2026-09-11 for ledger 270. `list` now builds the marker before it
+# advances the counter, so that a nested list can be indented by the marker's
+# width, and the two lines the old break named are no longer adjacent.
+before = '''                        *n += 1;'''
+after = '''                        *n -= 1;'''
+red = [
+    "application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them",
+    "service::onenote_page::tests::test_an_ordered_list_comes_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "list's numbered counter increases by exactly one, not scaled, after each item"
 file = "src/application/long_text.rs"
-before = """                        push_item(&format!("{n}. "), child, out);
-                        *n += 1;"""
-after = """                        push_item(&format!("{n}. "), child, out);
-                        *n *= 1;"""
-red = ["application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them"]
+# Re-measured 2026-09-11 for ledger 270, moved for the same reason as the
+# record above.
+before = '''                        *n += 1;'''
+after = '''                        *n *= 1;'''
+red = [
+    "application::long_text::markup::tests::test_a_numbered_list_counts_its_items_instead_of_bulleting_them",
+    "service::onenote_page::tests::test_an_ordered_list_comes_back",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+    "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
@@ -8572,7 +8682,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8588,7 +8698,7 @@ after = """            if let Node::Element(element) = child.value()
                 saw_a_paragraph = true;"""
 red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
@@ -8605,43 +8715,51 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 [[guard]]
 name = "inline reads a bare line break as a space"
 file = "src/application/long_text.rs"
-before = """                    "br" => out.push(' '),
-                    "img" => {
-                        if let Some(alt) = element.attr("alt") {
-                            out.push_str(alt);
-                        }
-                    }"""
-after = """                    "img" => {
-                        if let Some(alt) = element.attr("alt") {
-                            out.push_str(alt);
-                        }
-                    }"""
-red = ["application::long_text::markup::tests::test_a_line_break_inside_inline_text_becomes_a_space"]
+# Re-measured by hand 2026-09-11 for ledger 270, and this record had already
+# stopped working before that change touched it. Its old break quoted an `img`
+# arm reading `if let Some(alt) = element.attr("alt")`, which this file has not
+# held since the arm learned to say `image with no description`. `guards.sh`
+# refuses a break it cannot find rather than reporting the guard, so from that
+# rewrite until now this record said nothing and read as covered. The break is
+# now the one line the record is about.
+before = '''                    "br" => out.push(' '),'''
+after = '''                    "br" => {}'''
+red = [
+    "application::long_text::markup::tests::test_a_line_break_inside_inline_text_becomes_a_space",
+    "service::onenote_page::tests::test_a_line_break_comes_back_as_a_space",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
 name = "inline contributes an image's alt text"
 file = "src/application/long_text.rs"
-before = """                    "img" => {
-                        if let Some(alt) = element.attr("alt") {
-                            out.push_str(alt);
-                        }
-                    }
-                    "script" | "style" => {}
-                    _ => inline(child, out),"""
-after = """                    "script" | "style" => {}
-                    _ => inline(child, out),"""
-red = ["application::long_text::markup::tests::test_an_image_inside_inline_text_contributes_its_alt_text"]
+# Re-measured by hand 2026-09-11 for ledger 270, and stale for the same reason
+# and since the same rewrite as the record above: its break quoted an `img` arm
+# this file no longer holds, so it matched nothing and guarded nothing.
+before = '''                    "img" => match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
+                        Some(alt) => out.push_str(alt),
+                        None => out.push_str(&format!("image with {}", super::NO_DESCRIPTION)),
+                    },'''
+after = '''                    "img" => {}'''
+red = [
+    "application::long_text::markup::tests::test_an_image_inside_inline_text_contributes_its_alt_text",
+    "service::onenote_page::tests::test_a_picture_comes_back_as_its_description_and_nothing_else",
+    "service::onenote_page::tests::test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so",
+    "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
+]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
+    { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
 [[guard]]
@@ -8652,7 +8770,7 @@ before = """                    "script" | "style" => {}
 after = """                    _ => inline(child, out),"""
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 38 },
+    { file = "src/application/long_text.rs", tests = 50 },
 ]
 
 # ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
@@ -19101,10 +19219,10 @@ red = [
     "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
     "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
-    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_as_one_item",
-    "service::onenote_page::tests::test_a_nested_list_comes_back_as_one_item",
+    "service::onenote_page::tests::test_a_list_nested_three_deep_comes_back_at_all_three_depths",
+    "service::onenote_page::tests::test_a_nested_list_comes_back_nested",
     "service::onenote_page::tests::test_a_page_written_in_capitals_reads_the_same_as_one_in_small_letters",
-    "service::onenote_page::tests::test_a_table_comes_back_as_its_cells_one_to_a_paragraph",
+    "service::onenote_page::tests::test_a_table_comes_back_as_a_table",
     "service::onenote_page::tests::test_an_ordered_list_comes_back",
     "service::onenote_page::tests::test_an_unordered_list_comes_back",
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",

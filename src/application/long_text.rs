@@ -99,7 +99,7 @@ struct Collector {
     /// item holding a list is closed by that inner list's first item, by which
     /// point the inner list is already on the stack, so reading the kind at
     /// closing time announces a bullet as a numbered item and the reverse.
-    in_item: Option<bool>,
+    in_item: Option<OpenItem>,
     in_quote: bool,
     /// Whether the words arriving now are a picture's description rather than
     /// the text around it.
@@ -108,6 +108,31 @@ struct Collector {
     /// list must not end the outer one, or its remaining items become
     /// paragraphs.
     lists: Vec<bool>,
+    /// The table being read, if one is open.
+    table: Option<OpenTable>,
+}
+
+/// A list item that has started and not yet closed.
+///
+/// Both facts are taken when the item starts rather than when it closes, for
+/// the reason [`Collector::in_item`] gives: by closing time the inner list is
+/// already on the stack and both answers would be the inner list's.
+struct OpenItem {
+    ordered: bool,
+    depth: usize,
+}
+
+/// A table that has started and not yet closed.
+///
+/// `cells` is the row being read now. It is moved into `columns` when the
+/// header ends and pushed onto `rows` when an ordinary row ends, so a header
+/// written as cells directly and one wrapped in a row are read the same way.
+#[derive(Default)]
+struct OpenTable {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    cells: Vec<String>,
+    in_head: bool,
 }
 
 impl Collector {
@@ -123,9 +148,53 @@ impl Collector {
             // would otherwise swallow that item's words.
             Event::Start(Tag::Item) => {
                 self.finish();
-                self.in_item = Some(self.lists.last().copied().unwrap_or(false));
+                self.in_item = Some(OpenItem {
+                    ordered: self.lists.last().copied().unwrap_or(false),
+                    // The outermost list is one. A stray item with no list
+                    // around it is not deeper than the shallowest real one.
+                    depth: self.lists.len().max(1),
+                });
             }
             Event::Start(Tag::BlockQuote(_)) => self.in_quote = true,
+            Event::Start(Tag::Table(_)) => {
+                self.finish();
+                self.table = Some(OpenTable::default());
+            }
+            Event::Start(Tag::TableHead) => {
+                if let Some(table) = &mut self.table {
+                    table.in_head = true;
+                }
+            }
+            Event::End(TagEnd::TableCell) => {
+                let cell = std::mem::take(&mut self.text).trim().to_string();
+                if let Some(table) = &mut self.table {
+                    table.cells.push(cell);
+                }
+            }
+            Event::End(TagEnd::TableHead) => {
+                if let Some(table) = &mut self.table {
+                    table.columns = std::mem::take(&mut table.cells);
+                    table.in_head = false;
+                }
+            }
+            Event::End(TagEnd::TableRow) => {
+                if let Some(table) = &mut self.table
+                    && !table.in_head
+                {
+                    let row = std::mem::take(&mut table.cells);
+                    if !row.is_empty() {
+                        table.rows.push(row);
+                    }
+                }
+            }
+            Event::End(TagEnd::Table) => {
+                if let Some(table) = self.table.take() {
+                    self.pieces.push(Piece::Table {
+                        columns: table.columns,
+                        rows: table.rows,
+                    });
+                }
+            }
             // Closed first, so words before the picture stay their own piece
             // rather than being swallowed into its description.
             Event::Start(Tag::Image { .. }) => {
@@ -162,10 +231,10 @@ impl Collector {
         }
         self.pieces.push(if let Some(level) = heading {
             Piece::Heading { level, text: said }
-        } else if let Some(ordered) = was_item {
+        } else if let Some(item) = was_item {
             Piece::Item {
-                ordered,
-                depth: 1,
+                ordered: item.ordered,
+                depth: item.depth,
                 text: said,
             }
         } else if was_quote {
@@ -249,30 +318,130 @@ pub fn spoken(written: &str) -> String {
     {
         return written.trim().to_string();
     }
+    // How deep the list already is, as far as anybody listening knows. Cleared
+    // by anything that is not a list item, so a list after a heading starts
+    // again at the depth nobody has to be told.
+    let mut already_at = None;
     pieces
         .iter()
         .map(|piece| match piece {
-            Piece::Heading { level, text } => format!("heading level {level}, {text}"),
             Piece::Item {
-                ordered: true,
+                ordered,
+                depth,
                 text,
-                ..
-            } => format!("numbered item, {text}"),
-            Piece::Item { text, .. } => format!("bullet, {text}"),
-            Piece::Quote(text) => format!("quote, {text}"),
-            Piece::Image(described) if described.is_empty() => {
-                // Said rather than skipped. The sender left no description,
-                // and that is worth knowing: it is why the picture cannot be
-                // read out, and it is their omission rather than this
-                // application's.
-                format!("image with {NO_DESCRIPTION}")
+            } => {
+                let said = an_item_announced(*ordered, *depth, already_at, text);
+                already_at = Some(*depth);
+                said
             }
-            Piece::Image(described) => format!("image, {described}"),
-            Piece::Paragraph(text) => text.clone(),
-            Piece::Table { .. } => String::new(),
+            settled => {
+                already_at = None;
+                match settled {
+                    Piece::Heading { level, text } => format!("heading level {level}, {text}"),
+                    Piece::Table { columns, rows } => a_table_said(columns, rows),
+                    _ => a_settled_piece_said(settled),
+                }
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// One list item, with its depth said only where it is news.
+///
+/// A screen reader on a web page says "level 2" on entering a nested list and
+/// nothing on the items after it, and that is the convention followed here.
+/// Saying the level on every item of a ten-item shopping list is ten words
+/// nobody needs, which is the flooding guardrail 5 is about; saying it on none
+/// is the loss this function exists to close.
+///
+/// `already_at` is the depth the listener has last been told, or `None` at the
+/// start of a list, where the outermost depth is the one that needs no saying.
+fn an_item_announced(ordered: bool, depth: usize, already_at: Option<usize>, text: &str) -> String {
+    let kind = if ordered { "numbered item" } else { "bullet" };
+    if already_at.unwrap_or(1) == depth {
+        format!("{kind}, {text}")
+    } else {
+        format!("{kind} level {depth}, {text}")
+    }
+}
+
+/// A table read out a row at a time, each cell said with the column it was in.
+///
+/// The heading goes in front of every cell rather than being said once at the
+/// top, because this is speech nobody can move back through. Somebody who has
+/// reached the fourth cell of the third row cannot re-hear a heading given
+/// forty words ago, and working out the column from its position is a memory
+/// test rather than a reading. `name: value` is the form
+/// [`crate::presentation::read_aloud`] already uses for every other pair of a
+/// label and a value, joined the same way, so a table sounds like the rest of
+/// the application rather than like a second dialect.
+///
+/// The size comes first so somebody who does not want to hear a twenty-row
+/// table finds out before it starts, which is the other half of guardrail 5.
+fn a_table_said(columns: &[String], rows: &[Vec<String>]) -> String {
+    let mut said = vec![format!(
+        "table, {}, {}",
+        counted(columns.len(), "column"),
+        counted(rows.len(), "row")
+    )];
+    // A table whose header row is all there is. A service that does not mark
+    // header cells sends a one-row table as headings with nothing under them,
+    // and saying only the count would drop every word in it.
+    if rows.is_empty() {
+        said.push(format!("headings. {}", columns.join(". ")));
+    }
+    for (number, row) in rows.iter().enumerate() {
+        let cells = row
+            .iter()
+            .enumerate()
+            .map(|(at, cell)| format!("{}: {cell}", a_column_called(columns, at)))
+            .collect::<Vec<_>>()
+            .join(". ");
+        said.push(format!("row {}. {cells}", number + 1));
+    }
+    said.join("\n")
+}
+
+/// What the column at this position is called.
+///
+/// Its number where it has no name, because a bare value with nothing in front
+/// of it has lost the one thing a table was carrying.
+fn a_column_called(columns: &[String], at: usize) -> String {
+    match columns.get(at).map(|name| name.trim()) {
+        Some(named) if !named.is_empty() => named.to_string(),
+        _ => format!("column {}", at + 1),
+    }
+}
+
+/// A count with its noun, singular where it is one.
+///
+/// "1 columns" is a stumble in speech, and a listener hears every word of it.
+fn counted(how_many: usize, noun: &str) -> String {
+    match how_many {
+        1 => format!("1 {noun}"),
+        many => format!("{many} {noun}s"),
+    }
+}
+
+/// The pieces whose announcement does not depend on what came before them.
+fn a_settled_piece_said(piece: &Piece) -> String {
+    match piece {
+        Piece::Quote(text) => format!("quote, {text}"),
+        Piece::Image(described) if described.is_empty() => {
+            // Said rather than skipped. The sender left no description,
+            // and that is worth knowing: it is why the picture cannot be
+            // read out, and it is their omission rather than this
+            // application's.
+            format!("image with {NO_DESCRIPTION}")
+        }
+        Piece::Image(described) => format!("image, {described}"),
+        Piece::Paragraph(text) => text.clone(),
+        // Reached from the arm above only for the pieces that do not
+        // depend on what came before them, so a list item and a table have
+        // both already been answered.
+        Piece::Heading { .. } | Piece::Item { .. } | Piece::Table { .. } => String::new(),
+    }
 }
 
 /// A provider's own markup, read as the structure this module understands.
@@ -375,13 +544,20 @@ mod markup {
                         push_paragraph(&format!("{} ", "#".repeat(level)), child, out);
                     }
                     "p" | "div" => push_paragraph("", child, out),
-                    "ul" => list(child, out, None),
-                    "ol" => list(child, out, Some(1)),
+                    "ul" => {
+                        list(child, out, None, "");
+                        out.push('\n');
+                    }
+                    "ol" => {
+                        list(child, out, Some(1), "");
+                        out.push('\n');
+                    }
                     "li" => {
                         // A list item with no list around it. Malformed, but a
                         // bullet is a better answer than silently dropping it.
                         push_item("- ", child, out);
                     }
+                    "table" => table(child, out),
                     "blockquote" => quote(child, out),
                     "br" => out.push('\n'),
                     // An image reached without a paragraph around it. Its own
@@ -440,25 +616,118 @@ mod markup {
         }
     }
 
-    /// A `ul` or `ol`'s direct `li` children.
+    /// A `ul` or `ol`'s direct `li` children, and any list inside one of them.
     ///
     /// `counter` is `None` for a bullet list and `Some(1)` for a numbered one,
-    /// counting from one the way [`super::structure`] expects back.
-    fn list(node: NodeRef<'_, Node>, out: &mut String, mut counter: Option<usize>) {
+    /// counting from one the way [`super::structure`] expects back. `indent` is
+    /// the spacing in front of this list's own markers, empty at the top.
+    ///
+    /// A list inside an item is walked from here rather than left to
+    /// [`inline`], which is why that function ignores one. Read inline, an
+    /// inner item's words were appended to the outer item's with nothing
+    /// between them, so `Live is brown` and `Older cable` came back as
+    /// `Live is brownOlder cable`: worse than flattening, because it made a
+    /// word that neither of them contained.
+    ///
+    /// The inner list is indented by the width of the marker that opened the
+    /// item holding it, which is the column that item's own content starts at.
+    /// Two spaces under `- ` and three under `1. `. Indenting by a fixed amount
+    /// instead would read back at the right depth and come back spelled
+    /// differently from what somebody typed.
+    fn list(node: NodeRef<'_, Node>, out: &mut String, mut counter: Option<usize>, indent: &str) {
         for child in node.children() {
             if let Node::Element(element) = child.value()
                 && element.name() == "li"
             {
-                match &mut counter {
+                let marker = match &mut counter {
                     Some(n) => {
-                        push_item(&format!("{n}. "), child, out);
+                        let marker = format!("{n}. ");
                         *n += 1;
+                        marker
                     }
-                    None => push_item("- ", child, out),
+                    None => "- ".to_string(),
+                };
+                push_item(&format!("{indent}{marker}"), child, out);
+                let deeper = format!("{indent}{}", " ".repeat(marker.len()));
+                for inside in child.children() {
+                    match inside.value() {
+                        Node::Element(nested) if nested.name() == "ul" => {
+                            list(inside, out, None, &deeper);
+                        }
+                        Node::Element(nested) if nested.name() == "ol" => {
+                            list(inside, out, Some(1), &deeper);
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
+    }
+
+    /// A `table`'s rows, written back as a markdown table.
+    ///
+    /// The first row is the heading row, whether or not its cells are `th`.
+    /// Markdown has no table without one, and a service that does not mark
+    /// header cells, which OneNote is, would otherwise send back a table whose
+    /// columns have no names at all. Reading the first row as the heading is
+    /// the reading that loses least: where it really was a heading row it is
+    /// right, and where it was not, its cells are still said in full as the
+    /// names of the columns under them.
+    fn table(node: NodeRef<'_, Node>, out: &mut String) {
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        collect_rows(node, &mut rows);
+        let Some((headings, body)) = rows.split_first() else {
+            return;
+        };
+        out.push_str(&written_row(headings));
+        out.push_str(&format!("|{}\n", " --- |".repeat(headings.len().max(1))));
+        for row in body {
+            out.push_str(&written_row(row));
+        }
         out.push('\n');
+    }
+
+    /// Every `tr` under this node, however many `thead` or `tbody` wrap them.
+    fn collect_rows(node: NodeRef<'_, Node>, rows: &mut Vec<Vec<String>>) {
+        for child in node.children() {
+            let Node::Element(element) = child.value() else {
+                continue;
+            };
+            match element.name() {
+                "tr" => {
+                    let cells = child
+                        .children()
+                        .filter(|cell| {
+                            matches!(cell.value(), Node::Element(e) if e.name() == "td" || e.name() == "th")
+                        })
+                        .map(|cell| {
+                            let mut text = String::new();
+                            inline(cell, &mut text);
+                            text.trim().to_string()
+                        })
+                        .collect::<Vec<_>>();
+                    if !cells.is_empty() {
+                        rows.push(cells);
+                    }
+                }
+                _ => collect_rows(child, rows),
+            }
+        }
+    }
+
+    /// One row of a markdown table.
+    ///
+    /// A cell holding the character that separates cells is escaped, or the
+    /// row reads back as more cells than it has and every column after it
+    /// shifts. A cell holding a line break is joined, because a table row is
+    /// one line and a break in the middle of it ends the table.
+    fn written_row(cells: &[String]) -> String {
+        let written = cells
+            .iter()
+            .map(|cell| cell.replace('|', r"\|").replace(['\n', '\r'], " "))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        format!("| {written} |\n")
     }
 
     /// A `blockquote`'s paragraphs, each read back as its own quoted line.
@@ -490,12 +759,18 @@ mod markup {
     /// contributes its alt text when the sender gave it one and nothing when
     /// they did not; inventing alt text the sender never wrote is not this
     /// module's gap to paper over.
+    ///
+    /// A list inside a list item is not inline and is skipped here, because
+    /// [`list`] walks it at its own depth. Read from here it was appended to
+    /// the item holding it with nothing between them, which ran two words
+    /// together into one that was in neither.
     fn inline(node: NodeRef<'_, Node>, out: &mut String) {
         for child in node.children() {
             match child.value() {
                 Node::Text(text) => out.push_str(text),
                 Node::Element(element) => match element.name() {
                     "br" => out.push(' '),
+                    "ul" | "ol" => {}
                     "img" => match element.attr("alt").map(str::trim).filter(|a| !a.is_empty()) {
                         Some(alt) => out.push_str(alt),
                         None => out.push_str(&format!("image with {}", super::NO_DESCRIPTION)),

@@ -848,29 +848,31 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_nested_list_comes_back_as_one_item() {
-        // Expected to come back as it went, and it does not. The nesting
-        // reaches the page as a `ul` inside an `li` and comes back from it,
-        // so the service is not where this is lost: `from_markup`'s list pass
-        // reads only an `li`'s direct inline content, so the inner item's
-        // words are swallowed into the outer item's line.
+    fn test_a_nested_list_comes_back_nested() {
+        // It comes back as it went, and until ledger 270 it did not. The
+        // nesting always reached the page as a `ul` inside an `li` and always
+        // came back from it, so the service was never where this was lost:
+        // `from_markup`'s list pass read only an `li`'s direct inline content
+        // and the inner item's words were appended to the outer item's with
+        // nothing between them, which made `Live is brownOlder cable`.
         //
-        // The two spaces are the model's, standing for the whitespace an HTML
-        // document holds between the tags.
+        // The inner list is indented by the width of the marker that opened
+        // the item holding it, which is where somebody typing it puts it, so
+        // the bytes match rather than only the shape.
         assert_eq!(
             what_comes_back("- Live is brown\n  - Older cable: red"),
-            "- Live is brown  Older cable: red"
+            "- Live is brown\n  - Older cable: red"
         );
     }
 
     #[test]
-    fn test_a_list_nested_three_deep_comes_back_as_one_item() {
-        // The same loss as the test above, and worth its own case because a
-        // list three deep is what a screen reader user most relies on the
-        // levels of. All three levels arrive as one bullet.
+    fn test_a_list_nested_three_deep_comes_back_at_all_three_depths() {
+        // Worth its own case because a list three deep is what a screen reader
+        // user most relies on the levels of, and because two levels can be got
+        // right by a walk that only ever goes one deeper.
         assert_eq!(
             what_comes_back("- One\n  - Two\n    - Three"),
-            "- One  Two  Three"
+            "- One\n  - Two\n    - Three"
         );
     }
 
@@ -991,17 +993,20 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_table_comes_back_as_its_cells_one_to_a_paragraph() {
-        // Expected to come back as it went. The table reaches the page as a
-        // table and comes back as one, with its header row demoted to an
-        // ordinary row because the reference does not name `th`. What loses
-        // the rest is this reader: `from_markup` has no `table`, `tr` or `td`
-        // arm at all, so every cell falls through to its text and becomes a
-        // paragraph of its own. Nothing is dropped and the grid is gone, so
-        // which column a cell was in is no longer recoverable.
+    fn test_a_table_comes_back_as_a_table() {
+        // It comes back as it went, which is the surprise of ledger 270. The
+        // table reaches the page as a table and comes back as one, with its
+        // header row demoted to ordinary cells because the reference does not
+        // name `th`. `from_markup` reads the first row of a table as its
+        // heading row whether or not its cells say so, and a markdown table
+        // has no other shape, so the demotion and the reading cancel and the
+        // bytes match.
+        //
+        // Before ledger 270 every cell fell through to its own paragraph and
+        // which column it was in was gone.
         assert_eq!(
             what_comes_back("| Left | Right |\n| --- | --- |\n| one | two |"),
-            "Left\n\nRight\n\none\n\ntwo"
+            "| Left | Right |\n| --- | --- |\n| one | two |"
         );
     }
 
