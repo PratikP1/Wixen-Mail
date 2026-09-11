@@ -19405,7 +19405,7 @@ red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 45 },
+    { file = "src/service/microsoft_graph.rs", tests = 53 },
 ]
 
 # A walk of a notebook stops going deeper into section groups, and says it
@@ -19440,5 +19440,5 @@ red = [
     "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 45 },
+    { file = "src/service/microsoft_graph.rs", tests = 53 },
 ]

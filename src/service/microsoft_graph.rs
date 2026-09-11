@@ -708,9 +708,32 @@ pub fn changing_a_page_to(
     what_is_on_the_page_now: &[String],
     note: &crate::service::onenote_page::ANoteOnAPage,
 ) -> Vec<APatchCommand> {
-    // RED: not built yet.
-    let _ = (what_is_on_the_page_now, note);
-    Vec::new()
+    let mut commands = Vec::with_capacity(what_is_on_the_page_now.len() + 2);
+    // The title first. It is one of the two targets that is not a generated
+    // identifier, so it is the one command here that cannot be made stale by
+    // the page moving underneath the read.
+    commands.push(APatchCommand {
+        target: WhatAPatchNames::TheTitle,
+        action: WhatAPatchDoes::Replace,
+        content: Some(note.title.clone()),
+    });
+    // Then what is there, taken away one thing at a time, before the new
+    // content goes on. The other order would leave the new content underneath
+    // the old for as long as the request took, which nobody would see, and
+    // would leave it there for ever if the removals were refused.
+    for on_the_page in what_is_on_the_page_now {
+        commands.push(APatchCommand {
+            target: WhatAPatchNames::WhatGraphCalls(on_the_page.clone()),
+            action: WhatAPatchDoes::Delete,
+            content: None,
+        });
+    }
+    commands.push(APatchCommand {
+        target: WhatAPatchNames::TheBody,
+        action: WhatAPatchDoes::Append,
+        content: Some(crate::service::onenote_page::the_body_for(note)),
+    });
+    commands
 }
 
 /// What a OneNote request the service refused comes back as.
@@ -1164,6 +1187,38 @@ impl MsGraphClient {
         Ok(everything)
     }
 
+    /// A OneNote answer that is a document rather than a resource.
+    ///
+    /// A page's content comes back as HTML and not as JSON, so it is read as
+    /// the text it is. The refusal is classified exactly as
+    /// [`Self::read_onenote`] classifies one.
+    async fn read_onenote_text(resp: reqwest::Response) -> Result<String> {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("Failed to read OneNote response: {e}")))?;
+        if status.is_client_error() || status.is_server_error() {
+            return Err(onenote_refusal(status, &body));
+        }
+        Ok(body)
+    }
+
+    /// A OneNote answer that carries nothing.
+    ///
+    /// A page update that worked answers `204 No Content` with no body, so
+    /// there is nothing to read and reading it as JSON would fail against a
+    /// request that succeeded. What matters is the status and the refusal
+    /// behind it.
+    async fn read_onenote_without_an_answer(resp: reqwest::Response) -> Result<()> {
+        let status = resp.status();
+        if !status.is_client_error() && !status.is_server_error() {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        Err(onenote_refusal(status, &body))
+    }
+
     /// One OneNote read.
     async fn onenote_get<T: serde::de::DeserializeOwned>(
         &self,
@@ -1228,9 +1283,18 @@ impl MsGraphClient {
         token: &str,
         page_id: &str,
     ) -> Result<String> {
-        // RED: not built yet.
-        let _ = (token, page_id);
-        Ok(String::new())
+        let url = self.onenote_url(&format!(
+            "pages/{}/content?includeIDs=true",
+            in_a_path(page_id)
+        ));
+        let resp = self
+            .http
+            .reading(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API GET failed: {e}")))?;
+        Self::read_onenote_text(resp).await
     }
 
     /// Make a page say what a note says.
@@ -1248,16 +1312,56 @@ impl MsGraphClient {
         page_id: &str,
         note: &crate::service::onenote_page::ANoteOnAPage,
     ) -> Result<()> {
-        // RED: not built yet.
-        let _ = (token, page_id, note);
-        Ok(())
+        let there_now = self.page_content_with_identifiers(token, page_id).await?;
+        let commands = changing_a_page_to(
+            &crate::service::onenote_page::what_graph_calls_the_page_content(&there_now),
+            note,
+        );
+        let url = self.onenote_url(&format!("pages/{}/content", in_a_path(page_id)));
+        // No retry. The commands name things by identifiers the read before
+        // this one gave, and the reference says those move after an update, so
+        // a second attempt at the same request is a request built from a page
+        // that no longer exists. A change that failed is re-read and rebuilt,
+        // which is what calling this again does.
+        let resp = self
+            .http
+            .changing(
+                reqwest::Method::PATCH,
+                &url,
+                "change a note in this account",
+            )?
+            .bearer_auth(token)
+            .json(&commands)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API PATCH failed: {e}")))?;
+        Self::read_onenote_without_an_answer(resp).await
     }
 
     /// Take a page away.
     pub async fn delete_page(&self, token: &str, page_id: &str) -> Result<()> {
-        // RED: not built yet.
-        let _ = (token, page_id);
-        Ok(())
+        let url = self.onenote_url(&format!("pages/{}", in_a_path(page_id)));
+        let resp = self
+            .http
+            .changing(
+                reqwest::Method::DELETE,
+                &url,
+                "delete a note from this account",
+            )?
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API DELETE failed: {e}")))?;
+        // Gone and Not Found both count as done, for the reason `api_delete`
+        // gives three hundred lines down: the page is not there, which is the
+        // state that was asked for, and treating either as a failure means a
+        // removal re-sent on every sync for ever.
+        if resp.status() == reqwest::StatusCode::NOT_FOUND
+            || resp.status() == reqwest::StatusCode::GONE
+        {
+            return Ok(());
+        }
+        Self::read_onenote_without_an_answer(resp).await
     }
 
     /// One OneNote answer, read as the JSON resource it carries.

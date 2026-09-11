@@ -66,7 +66,7 @@ pub fn the_page_for(note: &ANoteOnAPage) -> String {
     format!(
         "<html>\n<head>\n<title>{}</title>\n</head>\n<body>\n{}\n</body>\n</html>\n",
         html_escape::encode_text(&note.title),
-        only_what_a_page_keeps(&long_text::as_markup(&note.body))
+        the_body_for(note)
     )
 }
 
@@ -84,9 +84,7 @@ pub fn the_page_for(note: &ANoteOnAPage) -> String {
 /// that adds it. The same test in a file no record names costs nothing and
 /// proves the same thing.
 pub fn the_body_for(note: &ANoteOnAPage) -> String {
-    // RED: not built yet.
-    let _ = note;
-    String::new()
+    only_what_a_page_keeps(&long_text::as_markup(&note.body))
 }
 
 /// The identifiers Graph generated for the things directly inside a page.
@@ -104,9 +102,14 @@ pub fn the_body_for(note: &ANoteOnAPage) -> String {
 /// Tested from `service::microsoft_graph`'s test module, for the reason
 /// [`the_body_for`] gives.
 pub fn what_graph_calls_the_page_content(page_html: &str) -> Vec<String> {
-    // RED: not built yet.
-    let _ = page_html;
-    Vec::new()
+    let document = scraper::Html::parse_document(page_html);
+    let Some(body) = first_named(document.root_element(), "body") else {
+        return Vec::new();
+    };
+    body.child_elements()
+        .filter_map(|element| element.value().attr("id"))
+        .map(str::to_string)
+        .collect()
 }
 
 /// The note a page's returned HTML carries.
