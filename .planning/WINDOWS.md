@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 255
+open_count: 256
 waived_count: 0
 fixed_count: 18
-total_count: 273
-last_updated: 2026-09-11T13:32:43.372Z
+total_count: 274
+last_updated: 2026-09-11T14:30:15.791Z
 ---
 
 # Broken Windows Ledger
@@ -288,6 +288,7 @@ last_updated: 2026-09-11T13:32:43.372Z
 | 271 | 05.2 | unrun-verify |  |  | Whether a nested list and a table are pleasant to listen to, not merely correct. A nested item is announced as 'bullet level 2, ...' and only when the level changes; a table as 'table, 2 columns, 2 rows' then 'row 1. Name: Grace. Role: Admiral', with the column heading repeated on every cell. Tests prove those exact words are produced. No screen reader has said them. The open questions are whether repeating a heading per cell floods a wide table, whether 'bullet level 2' is heard as a level or as part of the text, and whether a listener can follow a table with more than three columns at all. Only an NVDA pass can settle any of them. | open |  | 2026-09-11T13:32:06.681Z |  |
 | 272 | 05.2 | deviation | src/service/onenote_page.rs |  | A picture kept in OneNote comes back pointing at OneNote's copy of it rather than at the address it went out with. The reference says a page stores the picture and hands back a resource address of its own, so the note's Markdown now names graph.microsoft.com. The picture is not lost and the address is not the one somebody typed. Whether that matters to a person whose note linked to an image they host elsewhere is a product question nobody has been asked. Measured through the model, not against a real tenant. | open |  | 2026-09-11T13:32:22.029Z |  |
 | 273 | 05.2 | unrun-verify | src/application/long_text.rs |  | A block-level img in from_markup contributes its alt text with no marker saying it is a picture, and contributes nothing at all when the sender gave no alt. So a picture in a Google task's description or a calendar event's description is read aloud as an ordinary paragraph, or vanishes. Piece::Image's own doc comment and guardrail 9 both say a picture nobody described must still be announced, and the inline arm does that correctly; the block arm does not. Found by measurement during ledger 270 and deliberately left alone as out of scope: it is pre-existing, it is on the speaking path rather than the storing one, and fixing it changes what is stored for calendar and tasks. | open |  | 2026-09-11T13:32:22.877Z |  |
+| 274 | 05.2 | todo |  |  | A container is a note folder, decided 2026-09-11 and written into docs/development/the-notes-seam.md, and not yet built. note_folders needs an opaque container column, the sync has to loop over folders rather than take an account's first calendar, a backend-given folder is named by its flattened path, a folder made here sits under the words mail already uses for folders on this computer, and a note moving between two backed folders follows the task model's create-then-remove order. Closing this closes 245 and 246. | open |  | 2026-09-11T14:30:15.791Z |  |
 
 ````json
 [
@@ -3565,6 +3566,18 @@ last_updated: 2026-09-11T13:32:43.372Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T13:32:22.877Z",
+    "resolved_at": null
+  },
+  {
+    "id": 274,
+    "kind": "todo",
+    "phase": "05.2",
+    "file": "",
+    "line": null,
+    "description": "A container is a note folder, decided 2026-09-11 and written into docs/development/the-notes-seam.md, and not yet built. note_folders needs an opaque container column, the sync has to loop over folders rather than take an account's first calendar, a backend-given folder is named by its flattened path, a folder made here sits under the words mail already uses for folders on this computer, and a note moving between two backed folders follows the task model's create-then-remove order. Closing this closes 245 and 246.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T14:30:15.791Z",
     "resolved_at": null
   }
 ]

@@ -490,6 +490,91 @@ exactly one level above a note, would be reading a CalDAV address.
    this seam. None of those is an operation on this trait, and adding one is a
    decision rather than a line.
 
+### A container is a note folder, decided 2026-09-11
+
+**One backend container is one note folder on this computer.** Decided by
+Pratik, and it replaces the arrangement `05.1-03` shipped, where an account had
+exactly one container and every note arriving from a backend was filed in the
+account's first note folder, so folders somebody made here meant nothing at the
+other end. That was ledger 246, and it was recorded as a limit rather than
+defended as a design.
+
+What each backend's containers turn out to be:
+
+| Backend | One container is | So a note folder is |
+|---|---|---|
+| A calendar server | one journal collection | one calendar, by its own name |
+| OneNote | one section | one section, named by its path |
+
+**The sync loops, and the seam does not change.** `sync_notes` takes one
+container per call and always did. Nothing stopped calling it once per
+container, and that is the whole change on this side: the caller in
+`notes_backend` walks an account's folders instead of finding its first
+calendar. The opaque-container requirement above is untouched, and no code here
+learns what is inside a container string.
+
+**A folder's name carries the path; the container carries the identity.** They
+are different jobs and are not the same field. A OneNote section inside a group
+inside a notebook becomes a folder named `Work / Projects / Q3`. It sorts, it
+reads aloud as words rather than as punctuation, and it keeps the shape visible.
+
+**Note folders stay flat, and that is deliberate rather than unfinished.** A
+parent link mirroring OneNote's tree would give notes a second nesting model:
+mail folders already nest, by a parent link built in phase 1, and note folders
+share `ContainerKind`, the manager dialog and the move command with task lists
+and contact groups, neither of which nests. Diverging one of three siblings to
+gain a tree nobody asked for is the cost, and the flattened name buys most of
+what the tree was for.
+
+**This closes ledger 245 as well, which is why it was chosen over the
+alternatives.** `the_calendar_server_of` takes the first calendar server the
+store answers with and nothing asks the person which; that was a limit nobody
+chose. With a folder per container, two calendar servers are two folders and
+there is no first to pick.
+
+**A folder made here has no container, and says so where mail already says it.**
+Borrowed from mail rather than invented: phase 1 put the folders that are not on
+any server under a named branch, "On this computer", and a note folder somebody
+makes here belongs under the same words. It is kept, edited and moved like any
+other, and it is never synced, because a folder no backend gave has nowhere to
+go. Two kinds of folder in one undifferentiated list is the thing this avoids.
+
+**Making a folder does not make a section, in this version.** Nothing here
+creates a container at a backend, which is requirement 3 above and is unchanged.
+
+**Moving a note between two backed folders follows the task model exactly, and
+does not invent a second one.** Decided by Pratik on 2026-09-11. At the far end
+that is a page changing sections, which is a create followed by a delete, and
+`05-08` already answered that question for a task a provider holds. Copying the
+answer is the point: two orderings of the same two steps, decided twice, would
+disagree the day either changed.
+
+So, in the order `application::pim_command` already uses for a task:
+
+1. Ask the backend to make the note again in the new container.
+2. Only once that has worked, ask it to remove the note from the old one.
+
+**That order is the whole design and it is not arbitrary.** A failure between
+the two steps leaves the note in **both** folders, which somebody can see and
+tidy up. The other order risks leaving it in neither, which they could not see
+at all. On this computer the note is in exactly one folder the whole time,
+whatever happens at the backend.
+
+**Moving a note into a folder that is on this computer sends nothing**, which is
+the task model's third outcome and is the one people find surprising. A folder
+somebody made here has no container, so no backend is told about it and none is
+asked to create a copy or remove the old one. In Wixen Mail the note has moved
+and shows in the folder they chose. In OneNote or at the calendar server,
+nothing has changed at all. Nothing is lost and nothing needs reporting, and
+`docs/ALPHA_TESTING.md` says so in the same words it already uses for a task,
+because a person meeting this for the second time should not have to learn it
+twice.
+
+**Nobody has done this with a real account, for a note or for a task.** The task
+move has the same gap and the alpha page already carries its four outcomes as a
+table. The notes move earns the same table rather than a sentence, and the
+ledger earns an entry per unknown rather than one covering all of them.
+
 ## Where this document knows it has assumed CalDAV
 
 Written down rather than left to be found, because a contract that claims to
