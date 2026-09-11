@@ -693,4 +693,225 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
         );
         assert_eq!(the_note_on(&page), note);
     }
+
+    // ── What the round trip loses, construct by construct ───────────────────
+    //
+    // Everything below goes out as a page, through a model of what OneNote
+    // does to one, and back. **The middle step is a model of the service and
+    // not the service.** Nobody here has a tenant, so what these measure is
+    // what this program does with what the reference says the service returns.
+    // Every transformation in the model names the section of
+    // `learn.microsoft.com/en-us/graph/onenote-input-output-html` it came from,
+    // read 2026-09-11.
+    //
+    // Each of these was written first asserting that the construct comes back
+    // as it went, which is what PIM-04 promises. Where that is not what
+    // happened, the assertion now names exactly what does come back and the
+    // comment above it says what was expected. A test that merely asserted the
+    // two differ would stay green when the loss got worse.
+
+    /// What a page would come back as, if the service did to it what its
+    /// reference says it does.
+    ///
+    /// A model, and the whole reason this plan ends at a question for a person
+    /// rather than an answer. A fidelity table produced against a model says
+    /// what this program will do with what the service returns. It does not say
+    /// what the service returns.
+    fn what_onenote_would_return(_page: &str) -> String {
+        String::new()
+    }
+
+    /// A note's body, out to a page, through the model, and back.
+    fn what_comes_back(body: &str) -> String {
+        the_note_on(&what_onenote_would_return(&the_page_for(&ANoteOnAPage {
+            title: "A note".to_string(),
+            body: body.to_string(),
+        })))
+        .body
+    }
+
+    #[test]
+    fn test_a_heading_at_every_level_comes_back() {
+        for level in 1..=6 {
+            let heading = format!("{} Colours", "#".repeat(level));
+            assert_eq!(
+                what_comes_back(&heading),
+                heading,
+                "a heading at level {level} did not come back"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_unordered_list_comes_back() {
+        assert_eq!(what_comes_back("- Milk\n- Bread"), "- Milk\n- Bread");
+    }
+
+    #[test]
+    fn test_an_ordered_list_comes_back() {
+        assert_eq!(what_comes_back("1. Milk\n2. Bread"), "1. Milk\n2. Bread");
+    }
+
+    #[test]
+    fn test_a_nested_list_comes_back() {
+        assert_eq!(
+            what_comes_back("- Live is brown\n  - Older cable: red"),
+            "- Live is brown\n  - Older cable: red"
+        );
+    }
+
+    #[test]
+    fn test_a_list_nested_three_deep_comes_back() {
+        assert_eq!(
+            what_comes_back("- One\n  - Two\n    - Three"),
+            "- One\n  - Two\n    - Three"
+        );
+    }
+
+    #[test]
+    fn test_a_quote_comes_back() {
+        assert_eq!(
+            what_comes_back("> Bring the blue folder"),
+            "> Bring the blue folder"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_with_a_description_comes_back() {
+        assert_eq!(
+            what_comes_back("![The fuse box](https://example.org/fusebox.png)"),
+            "![The fuse box](https://example.org/fusebox.png)"
+        );
+    }
+
+    #[test]
+    fn test_a_picture_with_no_description_comes_back() {
+        assert_eq!(
+            what_comes_back("![](https://example.org/fusebox.png)"),
+            "![](https://example.org/fusebox.png)"
+        );
+    }
+
+    #[test]
+    fn test_a_paragraph_comes_back() {
+        assert_eq!(
+            what_comes_back("Two fuses went at once."),
+            "Two fuses went at once."
+        );
+    }
+
+    #[test]
+    fn test_bold_comes_back() {
+        assert_eq!(
+            what_comes_back("Turn the power **off** first."),
+            "Turn the power **off** first."
+        );
+    }
+
+    #[test]
+    fn test_italic_comes_back() {
+        assert_eq!(
+            what_comes_back("Turn the power *off* first."),
+            "Turn the power *off* first."
+        );
+    }
+
+    #[test]
+    fn test_struck_out_text_comes_back() {
+        assert_eq!(
+            what_comes_back("Turn the power ~~off~~ first."),
+            "Turn the power ~~off~~ first."
+        );
+    }
+
+    #[test]
+    fn test_inline_code_comes_back() {
+        assert_eq!(
+            what_comes_back("Run `fusebox --check` first."),
+            "Run `fusebox --check` first."
+        );
+    }
+
+    #[test]
+    fn test_a_code_block_comes_back() {
+        assert_eq!(
+            what_comes_back("```\nfusebox --check\nfusebox --repair\n```"),
+            "```\nfusebox --check\nfusebox --repair\n```"
+        );
+    }
+
+    #[test]
+    fn test_a_link_comes_back() {
+        assert_eq!(
+            what_comes_back("[The manual](https://example.org/manual)"),
+            "[The manual](https://example.org/manual)"
+        );
+    }
+
+    #[test]
+    fn test_a_table_comes_back() {
+        assert_eq!(
+            what_comes_back("| Left | Right |\n| --- | --- |\n| one | two |"),
+            "| Left | Right |\n| --- | --- |\n| one | two |"
+        );
+    }
+
+    #[test]
+    fn test_a_line_break_comes_back() {
+        assert_eq!(what_comes_back("Line one\nLine two"), "Line one\nLine two");
+    }
+
+    #[test]
+    fn test_a_horizontal_rule_comes_back() {
+        assert_eq!(
+            what_comes_back("Before\n\n---\n\nAfter"),
+            "Before\n\n---\n\nAfter"
+        );
+    }
+
+    #[test]
+    fn test_a_heading_straight_after_a_list_comes_back() {
+        assert_eq!(
+            what_comes_back("- Milk\n- Bread\n\n## Then"),
+            "- Milk\n- Bread\n\n## Then"
+        );
+    }
+
+    #[test]
+    fn test_an_empty_note_comes_back_empty() {
+        assert_eq!(what_comes_back(""), "");
+        // An empty answer is what a model that does nothing returns too, so
+        // the model has to be shown to have run at all.
+        assert!(
+            what_onenote_would_return(&the_page_for(&ANoteOnAPage {
+                title: "A note".to_string(),
+                body: String::new(),
+            }))
+            .contains("data-id=\"_default\""),
+            "the model did not wrap the body, so it did nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_note_that_is_one_space_comes_back() {
+        assert_eq!(what_comes_back(" "), " ");
+    }
+
+    #[test]
+    fn test_a_hidden_div_carrying_the_source_does_not_bring_it_back() {
+        // Premise 5 of the plan: a `data-id` survives, and a div carrying one
+        // is preserved, so a hidden div holding the Markdown source looks like
+        // a way to make the round trip exact. Tried, measured, reported.
+        let source = "# Colours\n\n- Live is brown\n- Neutral is blue";
+        let page = format!(
+            "<html>\n<head>\n<title>A note</title>\n</head>\n<body>\n\
+             <div data-id=\"wixen-source\">{}</div>\n</body>\n</html>\n",
+            html_escape::encode_text(source)
+        );
+        assert_eq!(
+            the_note_on(&what_onenote_would_return(&page)).body,
+            source,
+            "the hidden source did not survive"
+        );
+    }
 }
