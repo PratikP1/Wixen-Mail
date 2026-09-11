@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 511 records have arrived since and have not been through it.
+# 512 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18783,6 +18783,34 @@ red = [
     "service::carddav::tests::test_the_whole_file_export_and_the_one_card_writer_give_the_same_card",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 10 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
+    { file = "src/service/carddav.rs", tests = 19 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,821 passed and exactly one failed.
+#
+# The break is the resource type test replaced by asking only whether the block
+# is a collection at all, which is what a reader written in a hurry does. Every
+# folder on the server is then offered as an address book, and the first sync
+# writes somebody's contacts into whichever one they picked.
+#
+# A test that only counts what came back is green against that break and also
+# green against a reader that returns nothing, which is why the test this record
+# names holds one address book and one calendar in the same answer and asserts
+# both the count and which one came back.
+[[guard]]
+name = "a folder that is not an address book is not offered as one"
+file = "src/service/carddav.rs"
+before = '''        if !names_an_address_book(block) {
+            continue;
+        }'''
+after = '''        if !block.contains("collection") {
+            continue;
+        }'''
+red = [
+    "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 19 },
 ]

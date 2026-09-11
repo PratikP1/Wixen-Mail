@@ -35,7 +35,8 @@
 //! answer parses, and whether a card this writes is accepted by anybody
 //! else's client, are two further questions and neither is answered here.
 
-use crate::common::Result;
+use crate::common::{Error, Result};
+use crate::service::caldav::{extract_xml_value, resolved_against, response_blocks};
 
 /// What this program asks a server when it wants to know which address books
 /// are there.
@@ -78,9 +79,98 @@ pub struct CardDavAddressBook {
 /// This cannot be made to fetch anything, because there is nothing in it that
 /// fetches. The calendar's reader was written the same way for the same reason
 /// and this shares its parts rather than copying them.
-pub fn address_books_in(_xml: &str, _base_url: &str) -> Result<Vec<CardDavAddressBook>> {
-    // The red half of red/green.
-    Ok(Vec::new())
+///
+/// An answer that is not a multistatus is refused with a sentence rather than
+/// read as a server holding no address books. The two are different facts and a
+/// screen that cannot tell them apart says "none found" to somebody whose
+/// address is wrong. That follows `parse_report_events` and departs from
+/// `parse_propfind_calendars`, which refuses nothing; the departure is
+/// deliberate, so do not correct it back.
+///
+/// Two limits, said plainly rather than left to be discovered. The `d:` prefix
+/// on the DAV elements is assumed, so a server that declares the DAV namespace
+/// for unprefixed names is read as holding none; the calendar assumes the same
+/// and this has never been tried against a real server either way. And the scan
+/// for the address book element runs over the whole response block rather than
+/// over the resource type alone, the way the calendar's does, so a server
+/// sending a raw `<` inside a name it should have escaped could be read as
+/// offering an address book it does not have. The cost of that is one extra row
+/// in a list somebody chooses from.
+pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressBook>> {
+    if !xml.to_ascii_lowercase().contains("multistatus") {
+        return Err(Error::Protocol(
+            "That address did not answer with an address book. Nothing was added here.".to_string(),
+        ));
+    }
+
+    let mut address_books = Vec::new();
+    for block in response_blocks(xml) {
+        let href = extract_xml_value(block, "d:href").unwrap_or_default();
+        // An address book with nowhere to ask is worse than none: every later
+        // request for it resolves the empty address against the base and goes
+        // somewhere nobody chose.
+        if href.is_empty() {
+            continue;
+        }
+        if !names_an_address_book(block) {
+            continue;
+        }
+        address_books.push(CardDavAddressBook {
+            url: resolved_against(&href, base_url),
+            display_name: extract_xml_value(block, "d:displayname")
+                .unwrap_or_else(|| "Untitled".to_string()),
+            ctag: extract_xml_value(block, "cs:getctag"),
+        });
+    }
+    Ok(address_books)
+}
+
+/// Whether a block describes an address book rather than something else the
+/// server keeps beside them.
+///
+/// The local name is matched and the namespace prefix is stepped over, because
+/// the prefix is the document's own choice: one server writes
+/// `card:addressbook`, another writes `CR:addressbook`, and a server that
+/// declares the CardDAV namespace for unprefixed names writes `addressbook`.
+/// The calendar's reader matches two spellings and records in its own doc that
+/// a third reads as offering none, which is a gap this does not repeat.
+///
+/// The character after the name has to end it, so `addressbook-home-set`, which
+/// the standard also defines, is not read as an address book.
+fn names_an_address_book(block: &str) -> bool {
+    const NAME: &str = "addressbook";
+    block.match_indices(NAME).any(|(at, _)| {
+        an_element_opens_at(block, at) && ends_a_name(block[at + NAME.len()..].chars().next())
+    })
+}
+
+/// Whether an element name begins at that position: a `<` immediately before
+/// it, or a namespace prefix and its colon with a `<` in front of those.
+fn an_element_opens_at(text: &str, name_at: usize) -> bool {
+    let before = &text[..name_at];
+    if before.ends_with('<') {
+        return true;
+    }
+    let Some(before_colon) = before.strip_suffix(':') else {
+        return false;
+    };
+    match before_colon.rfind('<') {
+        Some(opening) => {
+            let prefix = &before_colon[opening + 1..];
+            !prefix.is_empty() && prefix.chars().all(a_name_character)
+        }
+        None => false,
+    }
+}
+
+/// Whether that character ends an element name rather than continuing it.
+fn ends_a_name(next: Option<char>) -> bool {
+    matches!(next, Some('/') | Some('>')) || next.is_some_and(char::is_whitespace)
+}
+
+/// Whether that character may appear in a namespace prefix.
+fn a_name_character(letter: char) -> bool {
+    letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_' | '.')
 }
 
 #[cfg(test)]

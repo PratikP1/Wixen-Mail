@@ -4885,8 +4885,9 @@ mod tests {
     /// as a file that does most of its own work.
     const SHIPPED_CODE_IS_AT_LEAST_ONE_PART_IN: usize = 10;
 
-    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 9] = [
+    const FILES_THAT_READ_OR_WRITE_A_DOCUMENT: [&str; 10] = [
         "src/service/caldav.rs",
+        "src/service/carddav.rs",
         "src/service/note_document.rs",
         "src/service/ical_subscription.rs",
         "src/service/vtimezone.rs",
