@@ -465,6 +465,73 @@ pub const NEEDS_SIGN_IN_FOR_NOTES: &str = "Sign in to this account again to use 
 /// no `eTag` property on an `onenotePage` and no `If-Match` in the update
 /// reference, so this backend's concurrency cannot be the one the calendar
 /// backend uses. What it is instead is `05.2-03`'s question and not this file's.
+/// One notebook, as the `notebook` resource names it.
+///
+/// Both fields required, and the name as much as the identifier. A folder here
+/// is named by the path of the section it stands for, so a notebook with no
+/// name is a folder nobody could find, and taking it would put an unnamed step
+/// in the middle of every path below it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteNotebook {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section group, which is the level of a notebook nobody remembers.
+///
+/// It can hold sections and further section groups, so it is the reason a walk
+/// of a notebook is a walk rather than two requests.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteSectionGroup {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section, as the `onenoteSection` resource names it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteSection {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section, and the name of everything above it.
+///
+/// The seam behind which this sits calls one backend container one note folder,
+/// and a OneNote container is a section. So a section has to arrive carrying
+/// where it sits, or the folder it becomes is one of several called "Notes"
+/// with nothing to tell them apart.
+///
+/// The path is the notebook, then each section group in turn, then the section
+/// itself, kept as the separate names they are. Joining them into one string is
+/// not done here: `docs/development/the-notes-seam.md` records that nobody has
+/// chosen the separator yet and that what a screen reader makes of it is
+/// unmeasured, and a decision nobody has taken should not be taken by the
+/// module that happens to have the parts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AOneNoteSection {
+    /// What Graph calls this section. The seam's opaque container.
+    pub id: String,
+    /// The notebook, then any section groups, then the section.
+    pub path: Vec<String>,
+}
+
+/// One page of a listing, and where the next one is.
+///
+/// `pub` only until the walk that reads it lands in the next commit: a private
+/// item with no caller is dead code under a warnings-denied build, and a public
+/// one reachable from the crate root is not. Narrowed then.
+#[derive(Debug, Deserialize)]
+pub struct MsOneNoteListing<T> {
+    pub value: Vec<T>,
+    /// The whole address of the next page, when Graph sent one. Followed as it
+    /// came: it is Graph's address and not one this code builds.
+    #[serde(rename = "@odata.nextLink")]
+    pub next_link: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MsOneNotePage {
@@ -476,6 +543,35 @@ pub struct MsOneNotePage {
     #[serde(default)]
     pub title: String,
 }
+
+/// How many section groups deep a walk of a notebook will follow.
+///
+/// A section group can hold section groups, with nothing in the reference
+/// saying how far. A walk with no bound holds whatever is waiting on it for as
+/// long as a server keeps answering, and a server answering its own group as
+/// its own child never stops at all. The same reasoning
+/// `application::occurrences` gives for `MOST_STEPS`.
+///
+/// Eight, which is a bound on a hostile or broken answer rather than a limit
+/// anybody meets: OneNote's own window shows a notebook as a tree somebody
+/// walks with the keyboard, and eight levels of group above a section is
+/// already past what anybody keeps. A notebook that really is deeper is not
+/// dropped quietly; the read says it was cut short, and that is a separate
+/// question from whether the number is right.
+///
+/// `pub` for the reason [`MsOneNoteListing`] gives, and narrowed with it.
+pub const MOST_SECTION_GROUPS_DEEP: usize = 8;
+
+/// How many further pages of one listing a read will follow.
+///
+/// The other end of the same threat. Graph pages a long listing by handing back
+/// the address of the next page, and a server that always hands back another
+/// one is a loop this program would run until it was killed. Nothing in the
+/// reference bounds the chain, so this does. A hundred pages of a hundred
+/// notebooks is more than anybody has.
+///
+/// `pub` for the reason [`MsOneNoteListing`] gives, and narrowed with it.
+pub const MOST_PAGES_OF_ONE_LISTING: usize = 100;
 
 /// What a OneNote request the service refused comes back as.
 ///
@@ -508,14 +604,26 @@ fn onenote_refusal(status: reqwest::StatusCode, body: &str) -> Error {
 /// naming the problem. `caldav::discover_calendars` refuses a collection with
 /// no address for the same reason.
 fn a_page_that_can_be_addressed(page: MsOneNotePage) -> Result<MsOneNotePage> {
-    if page.id.is_empty() {
-        return Err(Error::Protocol(
-            "OneNote answered with a page carrying no identifier, so nothing later could read, \
-             change or remove it"
-                .to_string(),
-        ));
-    }
+    named_by_graph(&page.id, "page")?;
     Ok(page)
+}
+
+/// The identifier Graph gave a thing, or a refusal saying what had none.
+///
+/// A present field holding the empty string parses perfectly well and is not a
+/// name. Everything this client does afterwards, a read, a change, a removal,
+/// or a walk into what is inside, names the thing by this, so an empty one is
+/// a thing nothing can be asked about. Refused with the kind of thing in the
+/// sentence, because "a section group" and "a page" send somebody looking in
+/// different places.
+fn named_by_graph<'a>(id: &'a str, what: &str) -> Result<&'a str> {
+    if id.is_empty() {
+        return Err(Error::Protocol(format!(
+            "OneNote answered with a {what} carrying no identifier, so nothing could be asked \
+             about it afterwards"
+        )));
+    }
+    Ok(id)
 }
 
 pub struct MsGraphClient {
@@ -787,6 +895,28 @@ impl MsGraphClient {
 
     // ── OneNote ─────────────────────────────────────────────────────────
 
+    /// Every section on the account, each carrying the names above it.
+    ///
+    /// Four levels, not three: a notebook holds sections and section groups,
+    /// and a section group holds both again. A reading that stopped at
+    /// notebook, section, page works for most notebooks and loses whole
+    /// branches of somebody's.
+    ///
+    /// The walk is bounded by [`MOST_SECTION_GROUPS_DEEP`], and a notebook that
+    /// goes deeper comes back with `complete` false rather than with its
+    /// deepest sections missing and nothing said. [`PagedRead`] rather than a
+    /// type of its own: its second field already means "this program ran out of
+    /// room rather than the provider running out of items", which is exactly
+    /// what a bound reached means here.
+    pub async fn every_section(
+        &self,
+        token: &str,
+    ) -> Result<crate::service::tasks_api::PagedRead<AOneNoteSection>> {
+        // RED: not built yet. The tests below say what this has to do.
+        let _ = token;
+        Ok(crate::service::tasks_api::PagedRead::whole(Vec::new()))
+    }
+
     /// Make a page in a section, from the HTML a note becomes.
     ///
     /// The body is whatever [`crate::service::onenote_page::the_page_for`]
@@ -975,7 +1105,7 @@ impl MsGraphClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::answering::{answering, asked_for, heard};
+    use crate::common::answering::{answering, answering_as_asked, asked_for, heard};
 
     /// A server that answers one read, and the client aimed at it.
     async fn a_graph_client_talking_to_itself()
@@ -1885,6 +2015,284 @@ mod tests {
         assert!(crate::service::tasks_api::asks_for_a_new_sign_in(
             &crate::common::Error::Authentication(said)
         ));
+    }
+
+    /// Where a captured request was sent, read out of its own `Host` header.
+    ///
+    /// A paged listing hands back the whole address of the next page, so a
+    /// fixture that pages has to name the loopback port. The port is not known
+    /// until the listener has bound, which is after the replies are built, so
+    /// the only place it can come from is the request being answered.
+    fn where_it_was_asked(request: &str) -> String {
+        let host = request
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(": ")?;
+                name.eq_ignore_ascii_case("host").then_some(value.trim())
+            })
+            .unwrap_or_default();
+        format!("http://{host}")
+    }
+
+    /// Several replies, each worked out from the address it is answering.
+    ///
+    /// A walk of a notebook asks for sections and section groups under every
+    /// container it finds, in whatever order its work list happens to take
+    /// them, so a fixture keyed on the address survives a change of order and
+    /// one keyed on the position in the sequence does not.
+    fn answering_each(
+        how_many: usize,
+        route: fn(&str, &str) -> String,
+    ) -> Vec<crate::common::answering::Reply> {
+        (0..how_many)
+            .map(|_| -> crate::common::answering::Reply {
+                Box::new(move |asked| {
+                    let request = asked.last().map(String::as_str).unwrap_or_default();
+                    route(asked_for(request), &where_it_was_asked(request))
+                })
+            })
+            .collect()
+    }
+
+    /// A listing Graph would answer with, with no further page after it.
+    fn one_page_of(items: &str) -> String {
+        format!(r#"{{"value":[{items}]}}"#)
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_listing_is_followed_to_its_last_page() {
+        fn route(asked: &str, base: &str) -> String {
+            match asked {
+                "GET /me/onenote/notebooks" => format!(
+                    r#"{{"value":[{{"id":"nb-1","displayName":"Work"}}],"@odata.nextLink":"{base}/the-rest-of-them"}}"#
+                ),
+                "GET /the-rest-of-them" => one_page_of(r#"{"id":"nb-2","displayName":"Home"}"#),
+                "GET /me/onenote/notebooks/nb-1/sections" => {
+                    one_page_of(r#"{"id":"s-1","displayName":"Projects"}"#)
+                }
+                "GET /me/onenote/notebooks/nb-2/sections" => {
+                    one_page_of(r#"{"id":"s-2","displayName":"Bills"}"#)
+                }
+                _ => one_page_of(""),
+            }
+        }
+        // Two pages of notebooks, then sections and section groups under each
+        // of the two notebooks.
+        let (address, _listening) =
+            answering_as_asked("200 OK", "application/json", answering_each(6, route)).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert!(read.complete, "nothing here is past any bound");
+        // The second notebook is only reachable by following the next link,
+        // so a client that read the first page and stopped fails here.
+        assert!(
+            read.items.contains(&AOneNoteSection {
+                id: "s-2".to_string(),
+                path: vec!["Home".to_string(), "Bills".to_string()],
+            }),
+            "{:?}",
+            read.items
+        );
+        assert!(
+            read.items.contains(&AOneNoteSection {
+                id: "s-1".to_string(),
+                path: vec!["Work".to_string(), "Projects".to_string()],
+            }),
+            "{:?}",
+            read.items
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_section_inside_a_section_group_arrives_with_the_group_in_its_path() {
+        fn route(asked: &str, _base: &str) -> String {
+            match asked {
+                "GET /me/onenote/notebooks" => one_page_of(r#"{"id":"nb-1","displayName":"Work"}"#),
+                "GET /me/onenote/notebooks/nb-1/sectionGroups" => {
+                    one_page_of(r#"{"id":"g-1","displayName":"Projects"}"#)
+                }
+                "GET /me/onenote/sectionGroups/g-1/sections" => {
+                    one_page_of(r#"{"id":"s-1","displayName":"Q3"}"#)
+                }
+                _ => one_page_of(""),
+            }
+        }
+        let (address, listening) =
+            answering_as_asked("200 OK", "application/json", answering_each(5, route)).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert_eq!(
+            read.items,
+            vec![AOneNoteSection {
+                id: "s-1".to_string(),
+                path: vec!["Work".to_string(), "Projects".to_string(), "Q3".to_string()],
+            }],
+            "a section three levels down carries all three names"
+        );
+        // The addresses, off the socket. Nothing hands the requests back until
+        // every reply has been served, so this is also the assertion that the
+        // walk asked five times and not four or six.
+        let asked = heard(listening, "the walk of the notebook")
+            .await
+            .expect("the requests");
+        let addresses: Vec<&str> = asked.iter().map(|r| asked_for(r)).collect();
+        assert!(
+            addresses.contains(&"GET /me/onenote/sectionGroups/g-1/sections"),
+            "{addresses:?}"
+        );
+        assert!(
+            addresses.contains(&"GET /me/onenote/notebooks/nb-1/sectionGroups"),
+            "{addresses:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so() {
+        // A notebook holding one chain of section groups, each inside the last,
+        // going one deeper than the walk will follow. Each group holds one
+        // section, so what did and did not get read is visible in the answer.
+        fn route(asked: &str, _base: &str) -> String {
+            if asked == "GET /me/onenote/notebooks" {
+                return one_page_of(r#"{"id":"nb-1","displayName":"Work"}"#);
+            }
+            let Some(under) = asked
+                .strip_prefix("GET /me/onenote/sectionGroups/g-")
+                .or_else(|| asked.strip_prefix("GET /me/onenote/notebooks/nb-1"))
+            else {
+                return one_page_of("");
+            };
+            let deep: usize = under
+                .split('/')
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            if under.ends_with("/sections") {
+                return one_page_of(&format!(
+                    r#"{{"id":"s-{deep}","displayName":"Papers {deep}"}}"#
+                ));
+            }
+            one_page_of(&format!(
+                r#"{{"id":"g-{}","displayName":"Group {}"}}"#,
+                deep + 1,
+                deep + 1
+            ))
+        }
+        // The notebook's own two listings, then two for each group followed.
+        // The group past the bound is named by its parent's listing and never
+        // asked about, so it costs no request.
+        let (address, _listening) = answering_as_asked(
+            "200 OK",
+            "application/json",
+            answering_each(2 + MOST_SECTION_GROUPS_DEEP * 2, route),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert!(
+            !read.complete,
+            "a notebook deeper than the walk follows has to say so"
+        );
+        // The positive half: everything down to the bound really did arrive.
+        let deepest_read = read
+            .items
+            .iter()
+            .find(|section| section.id == format!("s-{MOST_SECTION_GROUPS_DEEP}"));
+        assert!(deepest_read.is_some(), "{:?}", read.items);
+        assert!(
+            !read
+                .items
+                .iter()
+                .any(|section| section.id == format!("s-{}", MOST_SECTION_GROUPS_DEEP + 1)),
+            "nothing past the bound may arrive: {:?}",
+            read.items
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_that_is_not_json_at_all_is_refused_with_a_reason() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "text/html",
+            "<html><body>Sign in</body></html>".to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_with_no_name_is_refused_rather_than_read_as_one_with_none() {
+        // Half a notebook is not a notebook. The name is not decoration: a
+        // folder here is named by the path of the section it stands for, so a
+        // nameless notebook puts a nameless step in the middle of every path
+        // under it.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":"nb-1"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_whose_identifier_is_a_number_is_refused() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":42,"displayName":"Work"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_named_by_graph_with_nothing_is_refused_and_the_reason_says_what() {
+        // Present and empty, which parses perfectly and is not a name. This is
+        // the shape a required field cannot refuse on its own.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":"","displayName":"Work"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Protocol(said)) = refused else {
+            panic!("a refusal naming what had no identifier, not {refused:?}");
+        };
+        assert!(
+            said.contains("notebook"),
+            "the reason has to say which kind of thing had none: {said}"
+        );
     }
 
     #[tokio::test]
