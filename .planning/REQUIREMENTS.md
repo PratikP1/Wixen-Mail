@@ -1086,6 +1086,7 @@ write path added by this milestone passes through that gate.
   - [S] `docs/ALPHA_TESTING.md`: notes stay on this computer. **Corrected 2026-09-10 in that
     page and here: they stay on this computer unless the account's calendar came from a CalDAV
     server, and the page now says which accounts sync and what a sync loses.**
+
   - **Decided 2026-08-29 by Pratik.** Not one target. A note has a backend chosen by the
     account it belongs to, the local note itself is a first-class Markdown document, and the
     seam is shaped so a hosted service can be added later without a migration. That is three
@@ -1180,7 +1181,7 @@ write path added by this milestone passes through that gate.
     offering one. Preparing for it means the seam does not forbid it, not that anything half
     exists. A switch that does nothing is the failure this project has fixed repeatedly.
 
-- [ ] **PIM-05**: CardDAV for contacts.
+- [x] **PIM-05**: CardDAV for contacts.
   - Evidence: corrected 2026-09-04. Right about the gap, wrong about where the vCard code
     lives, in a way that would send a plan to the wrong file.
     The gap is real: `src/service/caldav.rs` covers calendars only, and
@@ -1817,7 +1818,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-04 | Phase 5 | Pending |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
-| PIM-05 | Phase 5 | Pending |
+| PIM-05 | Phase 5 | Complete |
 | FEEDBACK-01 | Phase 6 | Pending |
 | FEEDBACK-02 | Phase 6 | Pending |
 | FEEDBACK-03 | Phase 6 | Pending |

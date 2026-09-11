@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 05.1
 current_phase_name: Notes and contacts reach a server
 current_plan: 6
-status: executing
-stopped_at: Completed 05.1-05-PLAN.md
-last_updated: "2026-09-11T02:03:21.487Z"
-last_activity: 2026-09-10
-state_head: 31f13fbcbe91a60bf6f3368c63245a0fc3836b8a
+status: verifying
+stopped_at: Completed 05.1-06-PLAN.md, waiting on its screen reader checkpoint
+last_updated: "2026-09-11T05:18:53.979Z"
+last_activity: 2026-09-11
+state_head: ff70115925082d889cf6ff78269cd110afba4d27
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 76
+  completed_plans: 77
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,10 +29,39 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **5 of 6 plans done.** 05.1-05 lifted a per card reader and a per card writer out of two whole file functions, neither of which existed, and built the two CardDAV readers, all pure. `main` is at `31f13fb`, version `0.106.0`, `guards/guards.toml` holds 705 records with the census reading 192 and 513, `.planning/WINDOWS.md` reaches 259, and nothing is pushed.
+Phase: 05.1 (Notes and contacts reach a server). **All 6 plans built and merged, and the phase is not finished.** 05.1-06's checkpoint is open: a screen reader pass over the new address book screen, which is the one thing in this phase no test in this repository can settle. `main` is at `ff70115`, version `0.107.0`, `guards/guards.toml` holds 709 records with the census reading 192 and 517, `.planning/WINDOWS.md` reaches 265, and nothing is pushed.
 
 Current Plan: 6
 Total Plans in Phase: 6
+
+**What 05.1-06 built.** Somebody can add a CardDAV address book from Tools,
+"Add an Address Book by Address". The screen asks for the address and the
+sign-in, the server is asked what it has away from the thread that draws the
+window, and its answer becomes a list to choose from. The address book gets a
+row in a new `address_books` table, its sign-in goes to the credential store
+under `wixen-mail-carddav-{id}`, and the contacts sync walks an account's
+address books and syncs each one, which is the hop that makes everything under
+it a feature rather than a library nobody uses.
+
+The word an address book's contacts are filed under is built from its own id
+rather than the bare `carddav` the research proposed, because every question the
+contact merge asks is keyed on that word and two books sharing one are one book
+to all of them. The CardDAV sync decides nothing about whose copy wins: fifteen
+functions in `contacts_sync.rs` became `pub(crate)` so it can ask them.
+
+**Three checks caught things nobody asked them to.** The completeness guard
+`04-09` built found the new credential owner before any test was written for it,
+and was then found to be satisfied by a parameter named after a module; it now
+asks for the module followed by a path separator. `outward`'s census refused a
+file naming `reqwest` and on no list, so the two CardDAV writes have their verbs
+and addresses read off a socket. And its per-client floor of three writes turned
+out to be a measurement rather than a rule: a card is created and replaced by the
+same request, so this client has two, and the floor moved with the date and the
+reason on it.
+
+**PIM-05 is ticked and nothing has met a server.** Its fourth `[D]` line says in
+as many words that the transport stays untested until a live account exists.
+Ledger entries 260 to 265 say which parts that leaves unknown, one at a time.
 
 **What 05.1-05 built, and the four things it found.** PIM-05 asks contacts to
 sync through the vCard reader and writer that already exist rather than a second
@@ -364,7 +393,7 @@ Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
 37 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
-Status: Ready to execute
+Status: Phase complete, ready for verification.
 verification recorded criterion 3 as the one partial of eight, and it closes it.
 The phase wants re-verifying against that report, which is annotated as
 superseded rather than left to be read as current.
@@ -409,7 +438,7 @@ the headings so it cannot drift again. And three documents gave three different 
 which the newest, 5,269, was the unit count wearing the label of the total. The suite is 5,430:
 5,269 unit and 161 integration, from `cargo test --all-targets -- --list` on 2026-08-29.
 
-Last activity: 2026-09-10
+Last activity: 2026-09-11
 
 Written as one line because `gsd-tools query state.record-session` copies this
 paragraph's first physical line into the frontmatter and stops there, so a
@@ -536,6 +565,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05.1 P01 | 64 | 2 tasks | 11 files |
 | Phase 05.1 P02 | 2h 20m | 3 tasks | 12 files |
 | Phase 05.1 P04 | 1h 35m | 3 tasks | 9 files |
+| Phase 05.1 P06 | 155min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -750,8 +780,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-11T02:03:17.828Z
-Stopped at: Completed 05.1-05-PLAN.md
+Last session: 2026-09-11T05:18:52.559Z
+Stopped at: Completed 05.1-06-PLAN.md, waiting on its screen reader checkpoint
 
 Earlier: Completed 04.2-05-PLAN.md
 
