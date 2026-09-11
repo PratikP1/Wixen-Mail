@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 519 records have arrived since and have not been through it.
+# 521 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19313,4 +19313,59 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/onenote_page.rs", tests = 48 },
+]
+
+# A note a backend holds is copied into the new folder and the old container is
+# owed a removal, rather than having its row changed in place.
+#
+# The break is the routing branch taken out, which is the shape the note arm had
+# before 2026-09-11 and the one somebody restores by deleting a condition that
+# reads like a special case. With it gone the row keeps the name the backend
+# gave it in the container the note is leaving, so the next push asks the
+# backend to change that copy rather than make one in the new container. That is
+# somebody's note lost at their server, and it is the thing this whole
+# arrangement is arranged around.
+#
+# Two records with one break, because it reddens two suites and a record runs
+# one cargo target. This one is the new suite; the one below it is the older
+# file whose note assertions changed with the behaviour.
+#
+# Measured 2026-09-11 on a tree with nothing else building, at the default eight
+# threads.
+[[guard]]
+name = "a note a backend holds is copied into the new folder rather than moved in place"
+file = "src/presentation/managers.rs"
+suite = "a_note_moves_between_folders"
+before = '''            if filing.needs_the_holder_told() && note.known_as.is_some() {
+                return move_what_a_backend_holds(cache, &note, into);
+            }
+            note.folder_id = Some(into.to_string());'''
+after = '''            note.folder_id = Some(into.to_string());'''
+red = [
+    "test_a_note_a_backend_holds_is_created_in_the_new_folder_before_the_old_one_is_removed",
+    "test_a_note_moved_into_a_folder_on_this_computer_reaches_no_backend",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_note_moves_between_folders.rs", tests = 5 },
+]
+
+# The same break, measured against the older suite. Its note assertions were
+# right under the arrangement where an account had one container and are about
+# this one now.
+[[guard]]
+name = "a note moved between folders gives up the name the old container knew it by"
+file = "src/presentation/managers.rs"
+suite = "a_copy_leaves_the_original_where_it_was"
+before = '''            if filing.needs_the_holder_told() && note.known_as.is_some() {
+                return move_what_a_backend_holds(cache, &note, into);
+            }
+            note.folder_id = Some(into.to_string());'''
+after = '''            note.folder_id = Some(into.to_string());'''
+red = [
+    "test_a_note_moved_to_another_folder_is_left_waiting_to_be_sent",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
