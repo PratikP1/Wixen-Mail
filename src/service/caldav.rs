@@ -689,7 +689,13 @@ fn refused_with(response: &reqwest::Response, doing: &str) -> Result<()> {
 ///
 /// The character after the name has to end it, so `<d:responsedescription>`,
 /// which the standard also defines, is not read as a response.
-fn response_blocks(xml: &str) -> impl Iterator<Item = &str> {
+///
+/// Visible to the rest of the crate because an address book server answers
+/// with the same multistatus a calendar server does. `service::carddav` reads
+/// it with this rather than with a copy: a copy is a second answer to where a
+/// response block begins, and the namespace lesson above would have to be
+/// learned again there.
+pub(crate) fn response_blocks(xml: &str) -> impl Iterator<Item = &str> {
     xml.split("<d:response")
         .skip(1)
         .filter(|block| block.starts_with('>') || block.starts_with(char::is_whitespace))
@@ -767,7 +773,10 @@ fn parse_propfind_calendars(xml: &str, base_url: &str) -> Result<Vec<CalDavCalen
 /// A server answers with a path, `/dav/sam/work/e-1.ics`, and a path on its own
 /// is not a request that can be made. An address it gave whole is kept as it
 /// came, because it may point at another host entirely.
-fn resolved_against(href: &str, base_url: &str) -> String {
+///
+/// Shared with `service::carddav`, which asks the same question of the same
+/// kind of answer.
+pub(crate) fn resolved_against(href: &str, base_url: &str) -> String {
     if href.starts_with("http") {
         return href.to_string();
     }
@@ -1266,7 +1275,12 @@ pub(crate) fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
 /// way, and folding case here would make up a rule the format does not have.
 /// The namespace prefix is a separate question and is answered at
 /// [`names_a_calendar_collection`].
-fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
+///
+/// An element that is there and empty and an element that is not there at all
+/// both come back as nothing. `service::carddav` shares this one rather than
+/// growing a second extractor to tell them apart, which is written down in
+/// that file where the question arises.
+pub(crate) fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{}", tag);
     let close = format!("</{}>", tag);
     let start = xml.find(&open)?;

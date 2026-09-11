@@ -35,8 +35,57 @@
 //! answer parses, and whether a card this writes is accepted by anybody
 //! else's client, are two further questions and neither is answered here.
 
+use crate::common::Result;
+
+/// What this program asks a server when it wants to know which address books
+/// are there.
+///
+/// Beside the reader of the answer on purpose, the way the calendar keeps its
+/// own pair together. A request asking for one set of properties and a reader
+/// looking for another is a silence nobody can see: the server answers
+/// correctly, the reader finds nothing, and the address book reads as empty.
+pub const ASKING_WHICH_ADDRESS_BOOKS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" xmlns:card="urn:ietf:params:xml:ns:carddav">
+  <d:prop>
+    <d:displayname/>
+    <d:resourcetype/>
+    <cs:getctag/>
+  </d:prop>
+</d:propfind>"#;
+
+/// One address book a server said it holds.
+///
+/// Its own type rather than the calendar's. The two will grow apart, and a
+/// shared one would make each of them carry a field the other never fills.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardDavAddressBook {
+    /// Where it lives, whole, so it can be asked for without being rebuilt.
+    pub url: String,
+    /// What the server calls it, or "Untitled" when it said nothing.
+    pub display_name: String,
+    /// The marker a server moves when anything in the address book changes,
+    /// where the server gives one. Nothing where it does not.
+    pub ctag: Option<String>,
+}
+
+/// The address books in a server's answer to [`ASKING_WHICH_ADDRESS_BOOKS`].
+///
+/// A hand written scan over the answer's response blocks, and that is a
+/// security decision rather than a shortcut. A general purpose reader for this
+/// kind of document resolves an entity the document declares, and this
+/// document came from a server: an entity naming a file on this computer turns
+/// somebody's address book into a way to read that file and send it onward.
+/// This cannot be made to fetch anything, because there is nothing in it that
+/// fetches. The calendar's reader was written the same way for the same reason
+/// and this shares its parts rather than copying them.
+pub fn address_books_in(_xml: &str, _base_url: &str) -> Result<Vec<CardDavAddressBook>> {
+    // The red half of red/green.
+    Ok(Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{AddressEntry, ContactEntry, CustomFieldEntry, MessageCache};
 
@@ -330,6 +379,232 @@ mod tests {
 
         assert_eq!(back.name, "");
         assert_eq!(back.email, "grace@example.com");
+    }
+
+    // ── A server's answer about which address books it has ──────────────
+    //
+    // Every fixture below is written the way a server really answers: a
+    // multistatus carrying response blocks, each with an href, a propstat, a
+    // prop, a resourcetype and a displayname. A fixture built by printing what
+    // this code would produce tests nothing at all.
+
+    const AT: &str = "https://dav.example.com/carddav/sam/";
+
+    /// A whole answer with those blocks in it.
+    fn a_multistatus(blocks: &str) -> String {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" \
+             xmlns:card=\"urn:ietf:params:xml:ns:carddav\" \
+             xmlns:cs=\"http://calendarserver.org/ns/\">\n\
+             {blocks}</d:multistatus>\n"
+        )
+    }
+
+    /// One block describing an address book, with the resource type saying so.
+    fn an_address_book(href: &str, name: &str, ctag: &str) -> String {
+        one_block(
+            href,
+            name,
+            "<d:collection/><card:addressbook/>",
+            &format!("<cs:getctag>{ctag}</cs:getctag>"),
+        )
+    }
+
+    /// One block describing something else the server keeps beside them.
+    fn a_calendar(href: &str, name: &str) -> String {
+        one_block(href, name, "<d:collection/><c:calendar/>", "")
+    }
+
+    fn one_block(href: &str, name: &str, resource_type: &str, extra: &str) -> String {
+        format!(
+            "  <d:response>\n    \
+             <d:href>{href}</d:href>\n    \
+             <d:propstat>\n      \
+             <d:prop>\n        \
+             <d:displayname>{name}</d:displayname>\n        \
+             <d:resourcetype>{resource_type}</d:resourcetype>\n        \
+             {extra}\n      \
+             </d:prop>\n      \
+             <d:status>HTTP/1.1 200 OK</d:status>\n    \
+             </d:propstat>\n  \
+             </d:response>\n"
+        )
+    }
+
+    #[test]
+    fn test_two_address_books_come_back_with_their_addresses_and_their_names() {
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            an_address_book("/carddav/sam/contacts/", "Contacts", "12"),
+            an_address_book("/carddav/sam/work/", "Work", "34")
+        ));
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found.len(), 2);
+        assert_eq!(
+            found[0].url,
+            "https://dav.example.com/carddav/sam/contacts/"
+        );
+        assert_eq!(found[0].display_name, "Contacts");
+        assert_eq!(found[1].url, "https://dav.example.com/carddav/sam/work/");
+        assert_eq!(found[1].display_name, "Work");
+    }
+
+    #[test]
+    fn test_a_collection_that_is_not_an_address_book_is_left_out() {
+        // One of each in the same answer, and both the count and the identity
+        // asserted. Counting alone is green against a reader that returns
+        // nothing at all, which is the reader somebody writes by accident.
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            a_calendar("/carddav/sam/diary/", "Diary"),
+            an_address_book("/carddav/sam/contacts/", "Contacts", "12")
+        ));
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found.len(), 1, "only the address book is one");
+        assert_eq!(found[0].display_name, "Contacts");
+    }
+
+    #[test]
+    fn test_a_block_with_no_address_is_left_out() {
+        // An address book with nowhere to ask is worse than none: every
+        // request for it would go to whatever the empty address resolves to.
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            an_address_book("", "Nowhere", "12"),
+            an_address_book("/carddav/sam/contacts/", "Contacts", "34")
+        ));
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].display_name, "Contacts");
+    }
+
+    #[test]
+    fn test_an_answer_that_is_not_a_multi_status_is_refused_rather_than_read_as_empty() {
+        // A captive portal, a sign in page or a proxy's error page arrives
+        // with an ordinary 200 and holds no response block. Read as an answer
+        // it says the server has no address books, and somebody whose address
+        // is wrong is told their address book is empty.
+        let page = "<html><body>Please sign in to the network</body></html>";
+
+        let refusal = address_books_in(page, AT).expect_err("a page that is not an answer");
+
+        let said = refusal.to_string();
+        assert!(
+            said.contains("did not answer with an address book"),
+            "the refusal says what went wrong: {said}"
+        );
+    }
+
+    #[test]
+    fn test_an_address_book_named_with_a_prefix_this_code_does_not_expect_is_still_found() {
+        // A namespace prefix is the document's own choice. Apple's server
+        // writes `card:`, SabreDAV writes `card:` too, and Radicale writes
+        // `CR:`. A server may also declare the CardDAV namespace as the one
+        // unprefixed names belong to, so the element arrives with a bare name.
+        // A reader that matches one spelling reads every other server's answer
+        // as an empty list.
+        let answer = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <multistatus xmlns=\"DAV:\" xmlns:CR=\"urn:ietf:params:xml:ns:carddav\">\n  \
+             <d:response>\n    \
+             <d:href>/carddav/sam/contacts/</d:href>\n    \
+             <d:prop>\n      \
+             <d:displayname>Contacts</d:displayname>\n      \
+             <d:resourcetype><collection/><CR:addressbook/></d:resourcetype>\n    \
+             </d:prop>\n  \
+             </d:response>\n\
+             </multistatus>\n";
+
+        let found = address_books_in(answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].display_name, "Contacts");
+    }
+
+    #[test]
+    fn test_an_entity_in_the_answer_is_neither_fetched_nor_expanded() {
+        // The fixture really carries a declaration and a reference to it, or
+        // it would pass against a reader that expands one.
+        let answer = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <!DOCTYPE d:multistatus [\n  \
+             <!ENTITY somewhere SYSTEM \"file:///c:/windows/win.ini\">\n\
+             ]>\n\
+             <d:multistatus xmlns:d=\"DAV:\" \
+             xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n{}\
+             </d:multistatus>\n",
+            one_block(
+                "/carddav/sam/contacts/",
+                "&somewhere;",
+                "<d:collection/><card:addressbook/>",
+                ""
+            )
+        );
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].display_name, "&somewhere;",
+            "the reference came through as the text it is, unexpanded"
+        );
+        assert!(
+            !found[0].display_name.contains("fonts"),
+            "nothing on this computer was read"
+        );
+    }
+
+    #[test]
+    fn test_an_address_books_change_marker_is_kept_where_the_server_gives_one() {
+        let answer = a_multistatus(&an_address_book("/carddav/sam/contacts/", "Contacts", "99"));
+
+        let found = address_books_in(&answer, AT).expect("a multistatus to be read");
+
+        assert_eq!(found[0].ctag.as_deref(), Some("99"));
+    }
+
+    #[test]
+    fn test_a_change_marker_that_is_empty_and_one_that_is_absent_are_the_same_answer() {
+        // Decided in writing rather than discovered later: an empty marker and
+        // an absent one both come back as nothing. The one extractor this
+        // program has cannot tell them apart, a server sending an empty marker
+        // is sending no useful marker, and both mean the same to whoever asks
+        // next. Growing a second extractor to tell them apart would be a
+        // second thing to keep working for a distinction nobody acts on. The
+        // same answer is given to a card's version marker.
+        let empty = a_multistatus(&an_address_book("/carddav/sam/contacts/", "Contacts", ""));
+        let absent = a_multistatus(&one_block(
+            "/carddav/sam/contacts/",
+            "Contacts",
+            "<d:collection/><card:addressbook/>",
+            "",
+        ));
+
+        let from_empty = address_books_in(&empty, AT).expect("a multistatus to be read");
+        let from_absent = address_books_in(&absent, AT).expect("a multistatus to be read");
+
+        assert_eq!(from_empty[0].ctag, None);
+        assert_eq!(from_absent[0].ctag, None);
+    }
+
+    #[test]
+    fn test_the_request_asks_for_every_property_the_reader_reads() {
+        // The pair that cannot be allowed to drift. A request that stops
+        // asking for a property leaves the reader looking for something the
+        // server was never asked to send, and the answer is a silence rather
+        // than a failure.
+        for property in ["displayname", "resourcetype", "getctag"] {
+            assert!(
+                ASKING_WHICH_ADDRESS_BOOKS.contains(property),
+                "the request does not ask for {property}, which the reader reads"
+            );
+        }
     }
 
     #[test]
