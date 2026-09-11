@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 523 records have arrived since and have not been through it.
+# 524 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19438,6 +19438,42 @@ before = '''                if groups_deep == MOST_SECTION_GROUPS_DEEP {'''
 after = '''                if groups_deep == MOST_SECTION_GROUPS_DEEP + 1 {'''
 red = [
     "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
+]
+tests_last_seen = [
+    { file = "src/service/microsoft_graph.rs", tests = 53 },
+]
+
+# A change to a page is built from a read of that page taken immediately before
+# it, and from nothing else.
+#
+# The break builds the commands from the page this change is about to send
+# instead of from the page as it stands. That is the caching defect in its
+# plainest form: a page from some other moment, used to name things Graph has
+# generated names for since. The reference says those names "might change after
+# a page update", so a client working from any read but the last one names
+# things the page no longer answers to, and a fake with fixed identifiers can
+# never show it. The fixture moves them between reads for that reason.
+#
+# It is also exactly what somebody writes who thinks they know what is on the
+# page because they just put it there, which is why it is this break rather than
+# a contrived cache.
+#
+# Three tests red rather than one, and each is a different half. The second
+# change names nothing the second read said, the read before the write does not
+# happen at all, and the read-only client's test loses the read it waits for.
+# All three are new with this change.
+#
+# Measured 2026-09-11 by hand on a clean tree with nothing else building, at the
+# default eight threads: 6,993 passed, 3 failed, 57.65 seconds.
+[[guard]]
+name = "a change to a page is built from the read immediately before it"
+file = "src/service/microsoft_graph.rs"
+before = '''        let there_now = self.page_content_with_identifiers(token, page_id).await?;'''
+after = '''        let there_now = crate::service::onenote_page::the_page_for(note);'''
+red = [
+    "service::microsoft_graph::tests::test_a_change_reads_the_page_before_it_writes",
+    "service::microsoft_graph::tests::test_a_second_change_names_what_the_second_read_said_and_not_the_first",
+    "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_changes_no_page",
 ]
 tests_last_seen = [
     { file = "src/service/microsoft_graph.rs", tests = 53 },
