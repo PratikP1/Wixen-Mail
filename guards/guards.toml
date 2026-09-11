@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 521 records have arrived since and have not been through it.
+# 522 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19368,4 +19368,42 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
+]
+
+# A OneNote write goes out through the transport the client already holds, so
+# the Allow Changes gate is applied to it.
+#
+# The break is what somebody writes who wants a different timeout, or who adds
+# the next OneNote call from memory: a client built where the request is sent.
+# It compiles, it would work against a real server, and it takes the account's
+# Allow Changes answer out of the path entirely. The gate is applied where the
+# client is built, so a client built somewhere else is the whole of how it stops
+# applying.
+#
+# What stayed green matters as much as what went red. `outward.rs`'s write
+# census is the check somebody would expect to catch this, and it does not. It
+# recognises a write by the gate marker inside the method, so taking the marker
+# out takes the method off the census rather than failing it, and the
+# `MEASURED_ON_THE_WIRE` row only asks that the method still exists and that
+# some test asserts its request line, both still true. The one test below is
+# therefore the whole of the evidence that this gate applies.
+#
+# Measured 2026-09-11 by hand on a clean tree with nothing else building, at the
+# default eight threads: 6,980 passed, 1 failed, 69.99 seconds. The red test is
+# new with this change and is the only place the assertion is made.
+[[guard]]
+name = "a onenote page is made through the gated transport rather than a client of its own"
+file = "src/service/microsoft_graph.rs"
+before = '''        let resp = self
+            .http
+            .changing(reqwest::Method::POST, &url, "add a note to this account")?
+            .bearer_auth(token)'''
+after = '''        let resp = reqwest::Client::new()
+            .post(&url)
+            .bearer_auth(token)'''
+red = [
+    "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
+]
+tests_last_seen = [
+    { file = "src/service/microsoft_graph.rs", tests = 38 },
 ]
