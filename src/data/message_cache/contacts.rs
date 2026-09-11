@@ -780,183 +780,188 @@ impl MessageCache {
     /// [`import_contacts_from_vcard`]: MessageCache::import_contacts_from_vcard
     /// [`contact_from_vcard_block`]: MessageCache::contact_from_vcard_block
     pub fn vcard_block_from_contact(contact: &ContactEntry) -> String {
-        // The red half of red/green. The lift itself is the green half, and
-        // until it happens this says only who the card is about.
-        format!(
-            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:{}\r\nEND:VCARD\r\n",
-            contact.name
-        )
+        let mut card = String::new();
+        card.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
+        card.push_str(&Self::fold_vcard_line(&format!(
+            "FN:{}",
+            Self::escape_vcard_text(&contact.name)
+        )));
+        // The parts of the name this application actually holds, in the
+        // five fields RFC 2426 gives them, with the three it holds nothing
+        // for left empty. Nothing is split out of the whole name to fill
+        // them: splitting sends "Grace Brewster Murray Hopper" out with
+        // the wrong given name and brings "van der Berg" back as "Berg".
+        //
+        // Written for every contact, even one with no parts recorded,
+        // because a vCard 3.0 card without N is malformed and other
+        // clients are entitled to refuse it.
+        card.push_str(&Self::fold_vcard_line(&format!(
+            "N:{}",
+            Self::structured_value(&[
+                contact.family_name.as_deref().unwrap_or_default(),
+                contact.given_name.as_deref().unwrap_or_default(),
+                "",
+                "",
+                "",
+            ])
+        )));
+        if let Some(ref nick) = contact.nickname {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "NICKNAME:{}",
+                Self::escape_vcard_text(nick)
+            )));
+        }
+        // Multi-value emails (fall back to primary if no JSON)
+        if let Some(ref json) = contact.emails_json {
+            if let Ok(entries) = serde_json::from_str::<Vec<super::EmailEntry>>(json) {
+                for e in &entries {
+                    card.push_str(&Self::fold_vcard_line(&format!(
+                        "EMAIL;{}:{}",
+                        Self::vcard_type_parameter(&e.label),
+                        Self::escape_vcard_text(&e.address)
+                    )));
+                }
+            }
+        } else {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "EMAIL:{}",
+                Self::escape_vcard_text(&contact.email)
+            )));
+        }
+        // Multi-value phones (fall back to primary if no JSON)
+        if let Some(ref json) = contact.phones_json {
+            if let Ok(entries) = serde_json::from_str::<Vec<super::PhoneEntry>>(json) {
+                for p in &entries {
+                    card.push_str(&Self::fold_vcard_line(&format!(
+                        "TEL;{}:{}",
+                        Self::vcard_type_parameter(&p.label),
+                        Self::escape_vcard_text(&p.number)
+                    )));
+                }
+            }
+        } else if let Some(ref phone) = contact.phone {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "TEL:{}",
+                Self::escape_vcard_text(phone)
+            )));
+        }
+        // ORG names the organisation first and the unit inside it second,
+        // which is where a department belongs. One property carrying both,
+        // because two ORG lines is two answers to one question: with a
+        // company recorded the department used to be written nowhere at
+        // all, and with none it went out as a company called ";Research".
+        if contact.company.is_some() || contact.department.is_some() {
+            let company = contact.company.as_deref().unwrap_or_default();
+            let organisation = match contact.department.as_deref() {
+                Some(department) => Self::structured_value(&[company, department]),
+                None => Self::structured_value(&[company]),
+            };
+            card.push_str(&Self::fold_vcard_line(&format!("ORG:{organisation}")));
+        }
+        if let Some(ref job_title) = contact.job_title {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "TITLE:{}",
+                Self::escape_vcard_text(job_title)
+            )));
+        }
+        if let Some(ref website) = contact.website {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "URL:{}",
+                Self::escape_vcard_text(website)
+            )));
+        }
+        // Multi-value addresses (fall back to primary if no JSON)
+        if let Some(ref json) = contact.addresses_json {
+            if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
+                for a in &entries {
+                    card.push_str(&Self::fold_vcard_line(&format!(
+                        "ADR;{}:{}",
+                        Self::vcard_type_parameter(&a.label),
+                        Self::address_value(a)
+                    )));
+                }
+            }
+        } else if let Some(ref address) = contact.address {
+            // One line of words with no parts marked out, so it goes in
+            // the street field whole. It used to be written as a whole
+            // structured value whenever it held a semicolon, which put an
+            // address like "12 High Street; Flat 2" in the post office box
+            // field, where nothing reads it back.
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "ADR:{}",
+                Self::address_value(&super::AddressEntry {
+                    street: address.clone(),
+                    ..Default::default()
+                })
+            )));
+        }
+        if let Some(ref birthday) = contact.birthday {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "BDAY:{}",
+                Self::escape_vcard_text(birthday)
+            )));
+        }
+        if let Some(ref rel) = contact.relationship {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "X-RELATIONSHIP:{}",
+                Self::escape_vcard_text(rel)
+            )));
+        }
+        if let Some(ref photo_url) = contact.avatar_url {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "PHOTO:{}",
+                Self::escape_vcard_text(photo_url)
+            )));
+        } else if let Some(ref photo_data) = contact.avatar_data_base64 {
+            let compact_base64 = photo_data
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>();
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "PHOTO;ENCODING=b:{}",
+                compact_base64
+            )));
+        }
+        if let Some(ref notes) = contact.notes {
+            card.push_str(&Self::fold_vcard_line(&format!(
+                "NOTE:{}",
+                Self::escape_vcard_text(notes)
+            )));
+        }
+        // A field somebody named themselves, with the name and the value
+        // as the two parts of one X-CUSTOM property. The name used to be
+        // built into the property name instead, which forced it into
+        // capitals and turned its spaces into dashes, so "Blood type"
+        // could only ever come back as "BLOOD-TYPE". Kept as a value, it
+        // comes back as it was typed.
+        if let Some(ref json) = contact.custom_fields_json
+            && let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json)
+        {
+            for f in &fields {
+                card.push_str(&Self::fold_vcard_line(&format!(
+                    "X-CUSTOM:{}",
+                    Self::structured_value(&[&f.label, &f.value])
+                )));
+            }
+        }
+        card.push_str("END:VCARD\r\n");
+        card
     }
 
-    /// Export contacts to vCard 3.0 format
+    /// Every contact in an account as one vCard 3.0 file.
+    ///
+    /// One card per contact, each of them written by
+    /// [`vcard_block_from_contact`], which is the one answer in this program to
+    /// what a card looks like. This used to render every property inline here,
+    /// so there was no function that turned one contact into one card and
+    /// anything sending a single card to a server had to write a second one.
+    ///
+    /// [`vcard_block_from_contact`]: MessageCache::vcard_block_from_contact
     pub fn export_contacts_to_vcard(&self, account_id: &str) -> Result<String> {
         let contacts = self.get_contacts_for_account(account_id)?;
         let mut output = String::new();
         for c in contacts {
-            output.push_str("BEGIN:VCARD\r\nVERSION:3.0\r\n");
-            output.push_str(&Self::fold_vcard_line(&format!(
-                "FN:{}",
-                Self::escape_vcard_text(&c.name)
-            )));
-            // The parts of the name this application actually holds, in the
-            // five fields RFC 2426 gives them, with the three it holds nothing
-            // for left empty. Nothing is split out of the whole name to fill
-            // them: splitting sends "Grace Brewster Murray Hopper" out with
-            // the wrong given name and brings "van der Berg" back as "Berg".
-            //
-            // Written for every contact, even one with no parts recorded,
-            // because a vCard 3.0 card without N is malformed and other
-            // clients are entitled to refuse it.
-            output.push_str(&Self::fold_vcard_line(&format!(
-                "N:{}",
-                Self::structured_value(&[
-                    c.family_name.as_deref().unwrap_or_default(),
-                    c.given_name.as_deref().unwrap_or_default(),
-                    "",
-                    "",
-                    "",
-                ])
-            )));
-            if let Some(ref nick) = c.nickname {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "NICKNAME:{}",
-                    Self::escape_vcard_text(nick)
-                )));
-            }
-            // Multi-value emails (fall back to primary if no JSON)
-            if let Some(ref json) = c.emails_json {
-                if let Ok(entries) = serde_json::from_str::<Vec<super::EmailEntry>>(json) {
-                    for e in &entries {
-                        output.push_str(&Self::fold_vcard_line(&format!(
-                            "EMAIL;{}:{}",
-                            Self::vcard_type_parameter(&e.label),
-                            Self::escape_vcard_text(&e.address)
-                        )));
-                    }
-                }
-            } else {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "EMAIL:{}",
-                    Self::escape_vcard_text(&c.email)
-                )));
-            }
-            // Multi-value phones (fall back to primary if no JSON)
-            if let Some(ref json) = c.phones_json {
-                if let Ok(entries) = serde_json::from_str::<Vec<super::PhoneEntry>>(json) {
-                    for p in &entries {
-                        output.push_str(&Self::fold_vcard_line(&format!(
-                            "TEL;{}:{}",
-                            Self::vcard_type_parameter(&p.label),
-                            Self::escape_vcard_text(&p.number)
-                        )));
-                    }
-                }
-            } else if let Some(ref phone) = c.phone {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "TEL:{}",
-                    Self::escape_vcard_text(phone)
-                )));
-            }
-            // ORG names the organisation first and the unit inside it second,
-            // which is where a department belongs. One property carrying both,
-            // because two ORG lines is two answers to one question: with a
-            // company recorded the department used to be written nowhere at
-            // all, and with none it went out as a company called ";Research".
-            if c.company.is_some() || c.department.is_some() {
-                let company = c.company.as_deref().unwrap_or_default();
-                let organisation = match c.department.as_deref() {
-                    Some(department) => Self::structured_value(&[company, department]),
-                    None => Self::structured_value(&[company]),
-                };
-                output.push_str(&Self::fold_vcard_line(&format!("ORG:{organisation}")));
-            }
-            if let Some(ref job_title) = c.job_title {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "TITLE:{}",
-                    Self::escape_vcard_text(job_title)
-                )));
-            }
-            if let Some(ref website) = c.website {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "URL:{}",
-                    Self::escape_vcard_text(website)
-                )));
-            }
-            // Multi-value addresses (fall back to primary if no JSON)
-            if let Some(ref json) = c.addresses_json {
-                if let Ok(entries) = serde_json::from_str::<Vec<super::AddressEntry>>(json) {
-                    for a in &entries {
-                        output.push_str(&Self::fold_vcard_line(&format!(
-                            "ADR;{}:{}",
-                            Self::vcard_type_parameter(&a.label),
-                            Self::address_value(a)
-                        )));
-                    }
-                }
-            } else if let Some(ref address) = c.address {
-                // One line of words with no parts marked out, so it goes in
-                // the street field whole. It used to be written as a whole
-                // structured value whenever it held a semicolon, which put an
-                // address like "12 High Street; Flat 2" in the post office box
-                // field, where nothing reads it back.
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "ADR:{}",
-                    Self::address_value(&super::AddressEntry {
-                        street: address.clone(),
-                        ..Default::default()
-                    })
-                )));
-            }
-            if let Some(ref birthday) = c.birthday {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "BDAY:{}",
-                    Self::escape_vcard_text(birthday)
-                )));
-            }
-            if let Some(ref rel) = c.relationship {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "X-RELATIONSHIP:{}",
-                    Self::escape_vcard_text(rel)
-                )));
-            }
-            if let Some(ref photo_url) = c.avatar_url {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "PHOTO:{}",
-                    Self::escape_vcard_text(photo_url)
-                )));
-            } else if let Some(ref photo_data) = c.avatar_data_base64 {
-                let compact_base64 = photo_data
-                    .chars()
-                    .filter(|c| !c.is_whitespace())
-                    .collect::<String>();
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "PHOTO;ENCODING=b:{}",
-                    compact_base64
-                )));
-            }
-            if let Some(ref notes) = c.notes {
-                output.push_str(&Self::fold_vcard_line(&format!(
-                    "NOTE:{}",
-                    Self::escape_vcard_text(notes)
-                )));
-            }
-            // A field somebody named themselves, with the name and the value
-            // as the two parts of one X-CUSTOM property. The name used to be
-            // built into the property name instead, which forced it into
-            // capitals and turned its spaces into dashes, so "Blood type"
-            // could only ever come back as "BLOOD-TYPE". Kept as a value, it
-            // comes back as it was typed.
-            if let Some(ref json) = c.custom_fields_json
-                && let Ok(fields) = serde_json::from_str::<Vec<super::CustomFieldEntry>>(json)
-            {
-                for f in &fields {
-                    output.push_str(&Self::fold_vcard_line(&format!(
-                        "X-CUSTOM:{}",
-                        Self::structured_value(&[&f.label, &f.value])
-                    )));
-                }
-            }
-            output.push_str("END:VCARD\r\n");
+            output.push_str(&Self::vcard_block_from_contact(&c));
         }
         Ok(output)
     }

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 510 records have arrived since and have not been through it.
+# 511 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8865,8 +8865,8 @@ tests_last_seen = [
 [[guard]]
 name = "a department survives export even with no company recorded"
 file = "src/data/message_cache/contacts.rs"
-before = """            if c.company.is_some() || c.department.is_some() {"""
-after = """            if c.company.is_some() && c.department.is_some() {"""
+before = """        if contact.company.is_some() || contact.department.is_some() {"""
+after = """        if contact.company.is_some() && contact.department.is_some() {"""
 red = ["data::message_cache::contacts::tests::test_a_department_survives_export_even_with_no_company_recorded"]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
@@ -18743,4 +18743,46 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav_journal.rs", tests = 6 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,812 passed and exactly one failed.
+#
+# The break is the whole file export writing a property of its own beside the
+# card the shared writer gave it, which is what a second writer looks like while
+# it is being born. Somebody wants one more property in the exported file, the
+# loop is where they are standing, and they add it there. From that moment a
+# card written to a file and a card sent to a server are two different cards.
+#
+# **6,812 library tests passed under it, and that is the finding.** Every export
+# test in `contacts.rs` asks whether the file contains a line, so an extra
+# property is invisible to all of them. Only a test comparing the whole file
+# against the per card writer's own answer can see the two coming apart, and
+# before this plan there was no per card writer to compare against.
+#
+# The break deliberately does not change what `vcard_block_from_contact` writes.
+# Changing that changes both callers at once, which is the thing this record is
+# about not happening, so it reddens tests about `NICKNAME` and says nothing
+# about whether the two agree.
+[[guard]]
+name = "the file export and a card sent to a server are written by one writer"
+file = "src/data/message_cache/contacts.rs"
+before = '''        for c in contacts {
+            output.push_str(&Self::vcard_block_from_contact(&c));
+        }'''
+after = '''        for c in contacts {
+            output.push_str(&Self::vcard_block_from_contact(&c));
+            if let Some(ref nick) = c.nickname {
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "X-NICKNAME:{}",
+                    Self::escape_vcard_text(nick)
+                )));
+            }
+        }'''
+red = [
+    "service::carddav::tests::test_the_whole_file_export_and_the_one_card_writer_give_the_same_card",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 10 },
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
