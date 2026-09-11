@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 236
+open_count: 242
 waived_count: 0
 fixed_count: 17
-total_count: 253
-last_updated: 2026-09-10T23:33:50.847Z
+total_count: 259
+last_updated: 2026-09-11T01:41:59.594Z
 ---
 
 # Broken Windows Ledger
@@ -268,6 +268,12 @@ last_updated: 2026-09-10T23:33:50.847Z
 | 251 | 05.1 | unrun-verify | docs/development/the-notes-seam.md |  | How wide a OneNote lastModifiedDateTime tick really is, and so how likely it is that a write this program makes and an edit somebody makes at the service carry one marker. Requirement 4 of the seam's contract turns on it and nothing here can measure it. | open |  | 2026-09-10T23:33:49.479Z |  |
 | 252 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether replacing the copy here with what the backend could keep is what somebody wants. The alternative is keeping their bytes and telling them the two copies differ; this was decided on the argument that a loss somebody watches happen is better than one that arrives weeks later, and nobody has been asked. | open |  | 2026-09-10T23:33:50.138Z |  |
 | 253 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether making a note again when the backend says it no longer holds it is right where somebody deleted it at the other end on purpose. The seam's contract says a name the backend never gave is a note to create; a deletion made at the backend is not propagated here at all, so the two rules can disagree about one note. | open |  | 2026-09-10T23:33:50.847Z |  |
+| 254 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server's answer about its address books parses. Every fixture was written in this repository, and the reader assumes the d: prefix on the DAV elements and that the change marker is cs:getctag. A server spelling either differently is read as offering none. | open |  | 2026-09-11T01:41:41.360Z |  |
+| 255 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all. | open |  | 2026-09-11T01:41:45.676Z |  |
+| 256 | 05.1 | unrun-verify | src/data/message_cache/contacts.rs |  | Whether a card vcard_block_from_contact writes is accepted by a real CardDAV server. A round trip in this repository proves this writer and this reader agree with each other and says nothing about anybody else's server. | open |  | 2026-09-11T01:41:46.427Z |  |
+| 257 | 05.1 | unrun-verify | src/data/message_cache/contacts.rs |  | Whether a card written by another client reads correctly through contact_from_vcard_block. Only cards this repository wrote have been read back by it here, and Apple, Google and SabreDAV each write cards this program has never seen. | open |  | 2026-09-11T01:41:47.161Z |  |
+| 258 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether the scan for the address book element over a whole response block, rather than over the resource type alone, ever reads a server's answer as offering an address book it does not have. It needs a server sending a raw angle bracket inside a name it should have escaped. | open |  | 2026-09-11T01:41:58.844Z |  |
+| 259 | 05.1 | deviation | docs/ALPHA_TESTING.md |  | A malicious card joining two people who share an address is a named limitation, and CardDAV raises its severity: today it needs somebody to choose a file, and over a server it arrives from the network. This plan does not change ContactEntry::shares_an_address_with or the_same_person_on_an_earlier_card, so the change of severity is recorded rather than answered. | open |  | 2026-09-11T01:41:59.594Z |  |
 
 ````json
 [
@@ -3305,6 +3311,78 @@ last_updated: 2026-09-10T23:33:50.847Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T23:33:50.847Z",
+    "resolved_at": null
+  },
+  {
+    "id": 254,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/carddav.rs",
+    "line": null,
+    "description": "Whether a real CardDAV server's answer about its address books parses. Every fixture was written in this repository, and the reader assumes the d: prefix on the DAV elements and that the change marker is cs:getctag. A server spelling either differently is read as offering none.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:41.360Z",
+    "resolved_at": null
+  },
+  {
+    "id": 255,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/carddav.rs",
+    "line": null,
+    "description": "Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:45.676Z",
+    "resolved_at": null
+  },
+  {
+    "id": 256,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/data/message_cache/contacts.rs",
+    "line": null,
+    "description": "Whether a card vcard_block_from_contact writes is accepted by a real CardDAV server. A round trip in this repository proves this writer and this reader agree with each other and says nothing about anybody else's server.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:46.427Z",
+    "resolved_at": null
+  },
+  {
+    "id": 257,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/data/message_cache/contacts.rs",
+    "line": null,
+    "description": "Whether a card written by another client reads correctly through contact_from_vcard_block. Only cards this repository wrote have been read back by it here, and Apple, Google and SabreDAV each write cards this program has never seen.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:47.161Z",
+    "resolved_at": null
+  },
+  {
+    "id": 258,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/carddav.rs",
+    "line": null,
+    "description": "Whether the scan for the address book element over a whole response block, rather than over the resource type alone, ever reads a server's answer as offering an address book it does not have. It needs a server sending a raw angle bracket inside a name it should have escaped.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:58.844Z",
+    "resolved_at": null
+  },
+  {
+    "id": 259,
+    "kind": "deviation",
+    "phase": "05.1",
+    "file": "docs/ALPHA_TESTING.md",
+    "line": null,
+    "description": "A malicious card joining two people who share an address is a named limitation, and CardDAV raises its severity: today it needs somebody to choose a file, and over a server it arrives from the network. This plan does not change ContactEntry::shares_an_address_with or the_same_person_on_an_earlier_card, so the change of severity is recorded rather than answered.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T01:41:59.594Z",
     "resolved_at": null
   }
 ]

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 510 records have arrived since and have not been through it.
+# 513 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -8865,8 +8865,8 @@ tests_last_seen = [
 [[guard]]
 name = "a department survives export even with no company recorded"
 file = "src/data/message_cache/contacts.rs"
-before = """            if c.company.is_some() || c.department.is_some() {"""
-after = """            if c.company.is_some() && c.department.is_some() {"""
+before = """        if contact.company.is_some() || contact.department.is_some() {"""
+after = """        if contact.company.is_some() && contact.department.is_some() {"""
 red = ["data::message_cache::contacts::tests::test_a_department_survives_export_even_with_no_company_recorded"]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
@@ -18743,4 +18743,116 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav_journal.rs", tests = 6 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,812 passed and exactly one failed.
+#
+# The break is the whole file export writing a property of its own beside the
+# card the shared writer gave it, which is what a second writer looks like while
+# it is being born. Somebody wants one more property in the exported file, the
+# loop is where they are standing, and they add it there. From that moment a
+# card written to a file and a card sent to a server are two different cards.
+#
+# **6,812 library tests passed under it, and that is the finding.** Every export
+# test in `contacts.rs` asks whether the file contains a line, so an extra
+# property is invisible to all of them. Only a test comparing the whole file
+# against the per card writer's own answer can see the two coming apart, and
+# before this plan there was no per card writer to compare against.
+#
+# The break deliberately does not change what `vcard_block_from_contact` writes.
+# Changing that changes both callers at once, which is the thing this record is
+# about not happening, so it reddens tests about `NICKNAME` and says nothing
+# about whether the two agree.
+[[guard]]
+name = "the file export and a card sent to a server are written by one writer"
+file = "src/data/message_cache/contacts.rs"
+before = '''        for c in contacts {
+            output.push_str(&Self::vcard_block_from_contact(&c));
+        }'''
+after = '''        for c in contacts {
+            output.push_str(&Self::vcard_block_from_contact(&c));
+            if let Some(ref nick) = c.nickname {
+                output.push_str(&Self::fold_vcard_line(&format!(
+                    "X-NICKNAME:{}",
+                    Self::escape_vcard_text(nick)
+                )));
+            }
+        }'''
+red = [
+    "service::carddav::tests::test_the_whole_file_export_and_the_one_card_writer_give_the_same_card",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
+    { file = "src/service/carddav.rs", tests = 30 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,821 passed and exactly one failed.
+#
+# The break is the resource type test replaced by asking only whether the block
+# is a collection at all, which is what a reader written in a hurry does. Every
+# folder on the server is then offered as an address book, and the first sync
+# writes somebody's contacts into whichever one they picked.
+#
+# A test that only counts what came back is green against that break and also
+# green against a reader that returns nothing, which is why the test this record
+# names holds one address book and one calendar in the same answer and asserts
+# both the count and which one came back.
+[[guard]]
+name = "a folder that is not an address book is not offered as one"
+file = "src/service/carddav.rs"
+before = '''        if !names_an_address_book(block) {
+            continue;
+        }'''
+after = '''        if !block.contains("collection") {
+            continue;
+        }'''
+red = [
+    "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 30 },
+]
+
+# Measured 2026-09-10 on a clean tree with nothing else building, at the default
+# eight threads: 6,832 passed and exactly one failed.
+#
+# The break is a line joining step added here, dropping the lines the card
+# format broke in two instead of leaving them to the reader that knows what a
+# fold is. That is the second card reader being born: nobody sits down to write
+# one, somebody adds a little card handling at the place they are standing, and
+# from then on a card read from a file and a card read from a server mean
+# different things.
+#
+# **The break the plan asked for was replaced, and the reason is worth keeping.**
+# It asked for a property read inline here. Reading one property inline does not
+# change anything a test can see, because the shared reader has already filled
+# that field with the same text; to make it visible the inline read has to also
+# be wrong, which means writing a whole second reader rather than making the one
+# edit somebody really makes. This break is one edit and it is wrong in the way
+# the real thing is wrong.
+#
+# The first candidate was joining the folded lines here rather than dropping
+# them. It reddened nothing, because joining them correctly is what the reader
+# does anyway, so the result was the same card by a longer road.
+[[guard]]
+name = "a card from a server is read by the reader a file import uses, not here"
+file = "src/service/carddav.rs"
+before = '''        let Some(card) = the_card_in(block) else {
+            continue;
+        };'''
+after = '''        let Some(card) = the_card_in(block) else {
+            continue;
+        };
+        let card = card
+            .lines()
+            .filter(|line| !line.starts_with(' '))
+            .collect::<Vec<_>>()
+            .join("\n");'''
+red = [
+    "service::carddav::tests::test_a_cards_text_goes_through_the_reader_a_file_import_uses",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 30 },
 ]
