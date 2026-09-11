@@ -22,7 +22,7 @@ pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
-pub use notes::NoteBody;
+pub use notes::{MovedWhatTheBackendHolds, NoteBody};
 pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
 pub use tasks::MovedWhatTheProviderHolds;
@@ -1277,6 +1277,18 @@ pub struct DeletedNote {
     pub deleted_at: String,
     /// Whether the backend has taken it yet.
     pub so_far: TheDeletionSoFar,
+    /// The copy that has to reach the backend before this deletion may go.
+    ///
+    /// Set only by [`MessageCache::move_a_note_the_backend_holds`], and the
+    /// exact twin of [`DeletedTask::waiting_for_task_id`]. A move between two
+    /// backed folders is a create in the new container and a removal from the
+    /// old one, and this is what stops the removal being sent first: asked in
+    /// that order, a failed create leaves the backend holding no copy at all,
+    /// which nobody can see.
+    ///
+    /// `None` on every ordinary deletion, which owes nothing and waits for
+    /// nothing.
+    pub waiting_for_note_id: Option<String>,
 }
 
 /// Sync state tracker for incremental sync (Google sync tokens, MS delta links)

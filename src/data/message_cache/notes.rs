@@ -77,6 +77,26 @@ const NOTE_COLUMNS: &str = "id, account_id, folder_id, title, body, format, pinn
                             created_at, updated_at, pending, provider_note_id, \
                             provider_version";
 
+/// How a move of a note a backend holds ended.
+///
+/// Three answers rather than a bool, for the reason
+/// [`crate::data::message_cache::MovedWhatTheProviderHolds`] gives about a
+/// task: two of the three are not failures, and a move into the folder the note
+/// is already in is a request that changes nothing rather than one that went
+/// wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovedWhatTheBackendHolds {
+    /// The copy is in the new folder, the old row has gone, and the backend is
+    /// owed a removal once the copy has reached it.
+    Moved,
+    /// The row went between the caller reading it and this writing. Nothing was
+    /// written: the transaction rolled the copy and the record back.
+    ItIsNotHereToMove,
+    /// Asked for the folder it is already in, so nothing was done and the row
+    /// it is in is the answer.
+    IntoTheFolderItIsAlreadyIn,
+}
+
 /// The wanted name, or the first numbering of it nothing has taken.
 ///
 /// `Work`, then `Work (2)`, then `Work (3)`. The Windows convention, which
@@ -430,6 +450,51 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Start a move of a note a backend holds, by writing both halves at once.
+    ///
+    /// # This is the task move, copied rather than decided again
+    ///
+    /// [`MessageCache::move_a_task_the_provider_holds`] settled the order and
+    /// its doc comment carries the whole argument. Read that one: it is the
+    /// home of the decision and this is a second application of it, not a
+    /// second answer. Two orderings of the same two steps, decided twice,
+    /// disagree the day either changes.
+    ///
+    /// The short of it. A move at the backend is a create in the new container
+    /// and a removal from the old one. The copy is written here first, under an
+    /// identifier this computer minted and marked as waiting, and the old
+    /// backend name is left a deletion record naming that copy as the thing
+    /// that has to arrive before the removal may go. A failure between the two
+    /// therefore leaves the note in **both** containers, which somebody can see
+    /// and tidy. The other order risks neither, which they could not see at all.
+    ///
+    /// On this computer there is no gap. One transaction writes the copy, the
+    /// record, and the removal of the old row, so at every instant exactly one
+    /// row is that note.
+    ///
+    /// # Why the copy carries no backend name
+    ///
+    /// A note in a new container is a note the backend has never seen. Keeping
+    /// the old name would make the next push ask the backend to change its copy
+    /// of the original rather than make a second one, and the original is the
+    /// one being moved away from: that is somebody's note lost at their server.
+    /// The version marker goes with the name because it describes that same
+    /// copy. [`crate::presentation::managers::file_under`] answers the same
+    /// question the same way when it makes a copy.
+    ///
+    /// **Nothing here has run against a real backend.** Nobody has, with this
+    /// program, for a note or for a task.
+    pub fn move_a_note_the_backend_holds(
+        &self,
+        _note: &NoteEntry,
+        _into_folder: &str,
+        _new_id: &str,
+    ) -> Result<MovedWhatTheBackendHolds> {
+        Err(Error::Other(
+            "a move of a note a backend holds is not built yet".to_string(),
+        ))
+    }
+
     /// Write down that this note was deleted here.
     fn record_a_deleted_note(&self, note: &NoteEntry) -> Result<()> {
         self.conn
@@ -475,6 +540,7 @@ impl MessageCache {
                     known_as: row.get(3)?,
                     deleted_at: row.get(4)?,
                     so_far: TheDeletionSoFar::from_stored(row.get(5)?),
+                    waiting_for_note_id: None,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query the deletions: {}", e)))?;
@@ -1709,6 +1775,201 @@ line two
         assert_eq!(
             from_the_backend.name, "General (2)",
             "the backend's folder took the name of the one somebody made here"
+        );
+    }
+
+    /// A note the backend holds, in the folder one container is.
+    fn a_note_the_backend_holds(cache: &MessageCache, folder: &str, id: &str) -> NoteEntry {
+        let note = NoteEntry {
+            id: id.to_string(),
+            account_id: "acct-1".to_string(),
+            folder_id: Some(folder.to_string()),
+            title: "Shopping".to_string(),
+            body: "Bread and milk".to_string(),
+            format: NoteBody::AsTyped,
+            pinned: true,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+            pending: false,
+            known_as: Some("https://example.test/dav/journals/work/1.ics".to_string()),
+            known_version: Some("etag-1".to_string()),
+        };
+        cache.save_note(&note).expect("a note the backend holds");
+        note
+    }
+
+    #[test]
+    fn test_a_note_a_backend_holds_is_copied_into_the_new_folder_before_the_old_row_goes() {
+        // The order is the whole design and it is the task move's, copied. A
+        // failure between the two steps has to leave the note in both places
+        // rather than in neither, because only one of those can be seen.
+        let cache = test_cache();
+        let from = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let into = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Home")
+            .expect("the folder the other container is");
+        let note = a_note_the_backend_holds(&cache, &from.id, "note-1");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &into.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::Moved
+        );
+
+        let copy = cache
+            .get_note("note-2")
+            .expect("the copy is read")
+            .expect("the copy was written");
+        assert_eq!(
+            copy.folder_id.as_deref(),
+            Some(into.id.as_str()),
+            "the copy is not in the folder it was moved into"
+        );
+        assert!(
+            copy.pending,
+            "the copy is not waiting to be sent, so nothing will ever send it"
+        );
+        assert_eq!(
+            (copy.known_as, copy.known_version),
+            (None, None),
+            "the copy kept the name the backend gave the original, so the push \
+             would change the original rather than make a second note"
+        );
+        assert_eq!(copy.title, note.title);
+        assert_eq!(copy.body, note.body);
+        assert!(copy.pinned, "the copy lost something the backend never set");
+        assert!(
+            cache
+                .get_note("note-1")
+                .expect("the old row is read")
+                .is_none(),
+            "the note is in two folders on this computer"
+        );
+
+        let owed = cache.deleted_notes("acct-1").expect("the records are read");
+        assert_eq!(owed.len(), 1, "the backend was not left a removal to send");
+        assert_eq!(
+            owed[0].known_as, note.known_as,
+            "the record does not name the copy at the backend, so nothing can be removed"
+        );
+        assert_eq!(
+            owed[0].folder_id.as_deref(),
+            Some(from.id.as_str()),
+            "the record does not say which container to send the removal to"
+        );
+        assert_eq!(
+            owed[0].waiting_for_note_id.as_deref(),
+            Some("note-2"),
+            "the removal does not wait for the copy, so it can be sent first and \
+             leave the backend holding nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_move_of_a_note_that_has_gone_leaves_nothing_behind() {
+        // Somebody else's sync took the row away between the caller reading it
+        // and this writing. The copy and the record are already written by
+        // then, so both have to be undone, and the transaction is the only
+        // thing that undoes them.
+        let cache = test_cache();
+        let from = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let into = cache
+            .a_note_folder_for("acct-1", ANOTHER_CONTAINER, "Home")
+            .expect("the folder the other container is");
+        let note = a_note_the_backend_holds(&cache, &from.id, "note-1");
+        cache.delete_note("note-1").expect("somebody else's sync");
+        let records_before = cache.deleted_notes("acct-1").expect("the records are read");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &into.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::ItIsNotHereToMove
+        );
+
+        assert!(
+            cache
+                .get_note("note-2")
+                .expect("the copy is read")
+                .is_none(),
+            "a note nobody moved left a second copy behind"
+        );
+        assert_eq!(
+            cache.deleted_notes("acct-1").expect("the records are read"),
+            records_before,
+            "a move that did not happen changed what the backend is owed"
+        );
+    }
+
+    #[test]
+    fn test_a_note_moved_into_the_folder_it_is_in_is_left_alone() {
+        // Carrying it out would write a second copy and ask the backend to
+        // remove the first, for a move that changes nothing.
+        let cache = test_cache();
+        let here = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        let note = a_note_the_backend_holds(&cache, &here.id, "note-1");
+
+        assert_eq!(
+            cache
+                .move_a_note_the_backend_holds(&note, &here.id, "note-2")
+                .expect("the move runs"),
+            MovedWhatTheBackendHolds::IntoTheFolderItIsAlreadyIn
+        );
+
+        assert!(
+            cache
+                .get_note("note-1")
+                .expect("the note is read")
+                .is_some(),
+            "a move that changes nothing took the note away"
+        );
+        assert!(
+            cache
+                .get_note("note-2")
+                .expect("the copy is read")
+                .is_none(),
+            "a move that changes nothing made a second copy"
+        );
+        assert!(
+            cache
+                .deleted_notes("acct-1")
+                .expect("the records are read")
+                .is_empty(),
+            "a move that changes nothing asked the backend to remove the note"
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_deletion_waits_for_nothing() {
+        // The other half of the column, and the one every deletion but a move
+        // takes. A record that waits for a copy nobody is making is a removal
+        // that never goes.
+        //
+        // **Never red, like its neighbour about a folder made here**, and for
+        // the same reason: absence is what a column reads as before it exists.
+        // It is a guard. It goes red the day an ordinary deletion starts naming
+        // something to wait for, which would hold that removal back for ever.
+        let cache = test_cache();
+        let folder = cache
+            .a_note_folder_for("acct-1", A_CONTAINER, "Work")
+            .expect("the folder one container is");
+        a_note_the_backend_holds(&cache, &folder.id, "note-1");
+
+        cache.delete_note("note-1").expect("the note is deleted");
+
+        let owed = cache.deleted_notes("acct-1").expect("the records are read");
+        assert_eq!(owed.len(), 1);
+        assert_eq!(
+            owed[0].waiting_for_note_id, None,
+            "an ordinary deletion is waiting for a copy nobody is making, so it \
+             will never be sent"
         );
     }
 }
