@@ -329,4 +329,8 @@ because a commit adding tests to `long_text.rs` cannot have a clean tree around
 it until the green code exists.
 
 `scripts/check.sh all` passed on the branch before the merge, all four checks,
-redirected to a file rather than piped.
+redirected to a file rather than piped. It was run twice: once after the second
+green commit, and again after the documents changed, because the second run is
+the one the merge was actually made from.
+
+Merged to `main` as `4105b56`, off `a343d7f`.
