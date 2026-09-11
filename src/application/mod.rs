@@ -4,6 +4,7 @@
 
 pub mod account_order;
 pub mod accounts;
+pub mod address_book_source;
 pub mod allowed;
 pub mod answered_meetings;
 pub mod answering;
