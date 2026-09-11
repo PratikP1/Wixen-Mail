@@ -641,7 +641,7 @@ const CLIENTS: [&str; 5] = [
 /// What it can see is the thing that was missing: a write added to one of these
 /// files and never measured fails here instead of being remembered.
 #[cfg(test)]
-const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 25] = [
+const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 26] = [
     (
         "src/service/carddav.rs",
         "write_card",
@@ -725,6 +725,12 @@ const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 25] = [
         "delete_event",
         "src/application/calendar.rs",
         "DELETE /me/events/evt1",
+    ),
+    (
+        "src/service/microsoft_graph.rs",
+        "create_page",
+        "src/service/microsoft_graph.rs",
+        "POST /me/onenote/sections/1-section/pages",
     ),
     (
         "src/service/tasks_api.rs",

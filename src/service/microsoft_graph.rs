@@ -477,6 +477,47 @@ pub struct MsOneNotePage {
     pub title: String,
 }
 
+/// What a OneNote request the service refused comes back as.
+///
+/// Unauthorised and forbidden are what a token missing `Notes.ReadWrite` gets,
+/// and that is every token this program has issued, so this arm is the ordinary
+/// case rather than the edge one until somebody signs in again. Named as
+/// itself, because the person is the only one who can fix it and a status code
+/// does not tell them how. The same shape `tasks_api` uses, a few hundred lines
+/// away, for the same reason.
+///
+/// Everything else keeps its status and loses its body: a body from a refused
+/// request can carry the token back, and this goes to a log file.
+fn onenote_refusal(status: reqwest::StatusCode, body: &str) -> Error {
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Error::Authentication(NEEDS_SIGN_IN_FOR_NOTES.to_string());
+    }
+    Error::Api {
+        status: status.as_u16(),
+        provider: "microsoft".to_string(),
+        message: crate::common::error::redact_provider_message(body),
+    }
+}
+
+/// A page later requests can address, or a refusal saying why not.
+///
+/// A page with no identifier is not a page this program can do anything with:
+/// every read, change and removal names it by that identifier. Taking one
+/// anyway would leave a note in the database pointing at nothing and a person
+/// wondering why their edits stopped arriving, which is worse than a refusal
+/// naming the problem. `caldav::discover_calendars` refuses a collection with
+/// no address for the same reason.
+fn a_page_that_can_be_addressed(page: MsOneNotePage) -> Result<MsOneNotePage> {
+    if page.id.is_empty() {
+        return Err(Error::Protocol(
+            "OneNote answered with a page carrying no identifier, so nothing later could read, \
+             change or remove it"
+                .to_string(),
+        ));
+    }
+    Ok(page)
+}
+
 pub struct MsGraphClient {
     http: crate::service::outward::Outward,
     /// Where contacts, the calendar and everything else are asked for.
@@ -763,9 +804,49 @@ impl MsGraphClient {
         section_id: &str,
         page_html: &str,
     ) -> Result<MsOneNotePage> {
-        // RED: not built yet. The tests below say what this has to do.
-        let _ = (token, section_id, page_html);
-        Ok(MsOneNotePage::default())
+        let url = format!(
+            "{}/me/onenote/sections/{}/pages",
+            self.base,
+            in_a_path(section_id)
+        );
+        // No retry, for the reason `create_event` gives two hundred lines up: a
+        // create is not idempotent, every network failure counts as retryable
+        // including this client's own timeout, and a create sent twice is a
+        // second copy of somebody's note in their notebook.
+        let resp = self
+            .http
+            .changing(reqwest::Method::POST, &url, "add a note to this account")?
+            .bearer_auth(token)
+            .header(reqwest::header::CONTENT_TYPE, "text/html")
+            .body(page_html.to_string())
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API POST failed: {e}")))?;
+        a_page_that_can_be_addressed(Self::read_onenote(resp).await?)
+    }
+
+    /// One OneNote answer, read as the JSON resource it carries.
+    ///
+    /// Not [`Self::parse_response`], and the difference is the whole point: a
+    /// refusal here is classified through [`onenote_refusal`] so that a token
+    /// without the notes permission arrives as a sentence the person can act
+    /// on rather than as a status code. Every account this program has ever
+    /// signed in holds such a token.
+    async fn read_onenote<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("Failed to read OneNote response: {e}")))?;
+        if status.is_client_error() || status.is_server_error() {
+            return Err(onenote_refusal(status, &body));
+        }
+        serde_json::from_str(&body).map_err(|e| {
+            Error::Other(format!(
+                "Failed to parse OneNote response: {e} (body length: {})",
+                body.len()
+            ))
+        })
     }
 
     // ── HTTP Helpers ────────────────────────────────────────────────────
@@ -1710,17 +1791,18 @@ mod tests {
             "POST /me/onenote/sections/1-section/pages",
             "{request}"
         );
+        // Header names are matched without case, because the client writes
+        // them lower case and HTTP says that is the same header. Written
+        // capitalised, the first of these two passed against nothing.
+        let headers = request.to_lowercase();
         assert!(
-            request.contains("Authorization: Bearer a-token"),
+            headers.contains("authorization: bearer a-token"),
             "the token has to travel, and it travels in the header: {request}"
         );
         // `text/html`, not JSON. A page with no binary content is created by
         // posting the document, and Graph reads the content type to decide
         // what it was handed.
-        assert!(
-            request.to_lowercase().contains("content-type: text/html"),
-            "{request}"
-        );
+        assert!(headers.contains("content-type: text/html"), "{request}");
         // The body is the other module's output, whole. Both halves are
         // asserted because a client that sent only the title would satisfy
         // either one alone.
