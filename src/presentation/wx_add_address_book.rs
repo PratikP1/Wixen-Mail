@@ -21,9 +21,18 @@
 //!
 //! # The mnemonics in this window
 //!
-//! Checked by hand, because nothing can check them: d for the address, u for
-//! the user name, p for the password, a for Add and c for Cancel. No two are
-//! the same, so every control here can be reached with Alt and one letter.
+//! d for the address, u for the user name, p for the password, a for Add and c
+//! for Cancel. Checked by hand, and then found to be checked:
+//! `test_no_two_controls_in_one_dialog_claim_the_same_alt_key` in
+//! `tests/wired.rs` reads every builder in this folder and would refuse two of
+//! these claiming one letter. `wx_add_calendar`'s header says nothing can check
+//! them, and that has not been true since that check was written.
+//!
+//! What it cannot see is everything else about them. Whether Alt and the letter
+//! really move focus to the box beside the label rather than to something else,
+//! whether Windows or a screen reader takes the letter first, and whether the
+//! letter is one somebody can find at all are three questions no reading of
+//! this source answers. Those are the screen reader pass's.
 //!
 //! There is no kind to choose, unlike the calendar's window: an address book is
 //! always signed in to and always written back to, so the two radio buttons and
