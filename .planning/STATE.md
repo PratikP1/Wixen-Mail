@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-current_phase: 05.1
-current_phase_name: Notes and contacts reach a server
-current_plan: 6
+current_phase: 05.2
+current_phase_name: Notes in OneNote
+current_plan: 1
 status: verifying
-stopped_at: Completed 05.1-06-PLAN.md, waiting on its screen reader checkpoint
-last_updated: "2026-09-11T05:18:53.979Z"
+stopped_at: Completed 05.2-01-PLAN.md, waiting on its checkpoint about PIM-04's byte-identical criterion
+last_updated: "2026-09-11T07:13:56.000Z"
 last_activity: 2026-09-11
-state_head: ff70115925082d889cf6ff78269cd110afba4d27
+state_head: cbd07669c92b5d3add7f85930e6f8571bbfa8a23
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 77
+  completed_plans: 78
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -25,14 +25,73 @@ last_activity_desc: "02-06 done: the writer and the condition dialog a rule edit
 See: .planning/PROJECT.md (updated 2026-08-29)
 
 **Core value:** Making correspondence and personal information legible to people who cannot see it.
-**Current focus:** Phase 05.1 (Notes and contacts reach a server)
+**Current focus:** Phase 05.2 (Notes in OneNote)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **All 6 plans built and merged, and the phase is not finished.** 05.1-06's checkpoint is open: a screen reader pass over the new address book screen, which is the one thing in this phase no test in this repository can settle. `main` is at `ff70115`, version `0.107.0`, `guards/guards.toml` holds 709 records with the census reading 192 and 517, `.planning/WINDOWS.md` reaches 265, and nothing is pushed.
+Phase: 05.2 (Notes in OneNote). **05.2-01 is built and merged, and it stops at a
+question for Pratik.** A note can be turned into the HTML a OneNote page is made
+from and back again, and what that costs is measured construct by construct.
+Seven of twenty-two constructs survive the round trip, so PIM-04's promise that
+a note round-trips through *any* backend byte-identically is false for the second
+backend as well as the first. What the criterion should say instead is a
+decision about the product and it is not the executor's. Nothing in `05.2-02`
+waits on the answer; if the answer is "refuse backends that cannot round-trip",
+`05.2-02` and `05.2-03` are cancelled and the phase stops.
 
-Current Plan: 6
-Total Plans in Phase: 6
+**Phase 05.1's own checkpoint is still open** and this does not close it: a
+screen reader pass over the new address book screen, which is the one thing in
+that phase no test in this repository can settle.
+
+`main` is at `cbd0766`, version `0.107.0` and unmoved, `guards/guards.toml` holds
+711 records with the census reading 192 and 519, `.planning/WINDOWS.md` reaches
+269, and nothing is pushed.
+
+Current Plan: 1
+Total Plans in Phase: 3
+
+**What 05.2-01 built.** `src/service/onenote_page.rs`: a note's title and
+Markdown body into the HTML a page is created from, and a page's returned HTML
+back into a title and a body. Pure, no network, no database, 48 tests. Both
+directions are thin over `long_text`'s existing `as_markup` and `from_markup`,
+so nothing renders Markdown twice.
+
+Two decisions it had to take rather than inherit. The body is flattened out of
+its `div` wrappers before `from_markup` sees it, because that function reads a
+`div` as one paragraph and concatenates everything inside it, and OneNote wraps
+all page content in at least one. Measured through the unflattened path, the
+whole page comes back as one run of text and a fidelity table would have
+reported every construct as lost and blamed Microsoft for this program's reader.
+And a table's header cells are written as ordinary cells, because the reference
+names `td` and not `th`, and cutting `th` left the two header words as one text
+node inside a `tr`, which every parser moves out of the table and runs together.
+
+**What the measurement says.** Seven of twenty-two constructs survive. Of the
+fifteen that do not, seven are OneNote's doing, six are this program's own
+reader, one is both, and one is HTML's. The sharpest is a code block: neither
+`pre` nor `code` is in any list the reference names, so two commands on two
+lines come back as one line that runs neither. The most costly for meaning is
+struck-out text, which comes back as ordinary words, so a job crossed off and a
+job still to do read alike. The table is in
+`docs/development/the-notes-seam.md`, it covers both backends, and it is read
+out of the document and run by a test so it cannot say something the tests do
+not.
+
+**The middle step is a model of the service and not the service.** Every
+transformation in it names the section of Microsoft's reference it came from,
+read 2026-09-11 from a page dated 2024-11-07 there. What the table measures is
+what this program does with what the reference says comes back. Entries 266 to
+269 say what that leaves unanswered.
+
+**Three findings against the plan.** Its proposed guard break for task 2 reddens
+nothing, measured: comparing a round trip on parsed structures rather than on
+bytes cannot fail while the table records what really happens. `05.1-03`'s
+summary reports `grep -rn "reqwest\|Outward\|http" src/service/note_document.rs`
+as returning nothing and it returns one line, the module header quoting the
+command; the same is now true here and is reported rather than repeated. And the
+plan's element list omitted `sup`, `sub` and `del`, the last of which is what
+`pulldown-cmark` emits for strikethrough, so following it would have cut a style
+OneNote supports.
 
 **What 05.1-06 built.** Somebody can add a CardDAV address book from Tools,
 "Add an Address Book by Address". The screen asks for the address and the
