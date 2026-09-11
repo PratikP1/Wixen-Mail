@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 516 records have arrived since and have not been through it.
+# 517 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -18982,4 +18982,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
+]
+
+# ── An address book added by a screen that never asked a server ─────────────
+#
+# The stub shape this project has met before, and the one its first guardrail
+# is about: the handler writes the row, says "added", and nothing ever asks the
+# server what is there. Everything reads as working until the first sync goes
+# to an address nobody checked, or finds nothing at an address that was never
+# an address book. Five modules once rendered empty in every build for want of
+# exactly this.
+#
+# The break is the asking replaced by an answer made out of what was typed,
+# which is what somebody writes while making the screen easier to try by hand.
+# It keeps the waiting window, the timeout and the thread, so every other
+# assertion about this path stays green: only the question of whether anything
+# was asked goes red.
+#
+# Measured by hand on 2026-09-11 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,881 passed
+# and exactly one failed.
+[[guard]]
+name = "an address book added by a screen that never asked a server what was there"
+file = "src/presentation/managers.rs"
+before = '''        let asking = address_book_source::what_a_server_has(&address, &user_name, &password);'''
+after = '''        let asking = std::future::ready(Ok::<_, String>(vec![address_book_source::Offer {
+            name: address.clone(),
+            address: address.clone(),
+        }]));
+        let _ = (&user_name, &password);'''
+red = [
+    "application::address_book_source::tests::test_adding_an_address_book_really_goes_and_looks",
+]
+tests_last_seen = [
+    { file = "src/application/address_book_source.rs", tests = 16 },
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]

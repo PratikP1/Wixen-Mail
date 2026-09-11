@@ -528,6 +528,7 @@ Five submenus hold the rest:
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Open Contact Manager | (Tools menu) | Open contact / address book manager |
+| Add an Address Book by Address | (Tools menu, `Alt+R` on the menu) | Asks for the address of an address book on a server, and for the sign-in, then asks the server which address books it has so you can choose one. No shortcut key: this is done once per address book. **Experimental.** Nothing here has been tried against a real address book server, and changes you make to a contact in an address book added this way are sent back to that server |
 
 ### Contact Groups
 

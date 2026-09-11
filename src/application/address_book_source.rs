@@ -35,10 +35,10 @@
 //! this computer: a row in the address books table, and the sign-in in the
 //! credential store.
 
-use crate::application::calendar_source::Unusable;
+use crate::application::calendar_source::{Source, Unusable};
 use crate::common::Error;
 use crate::data::message_cache::{AddressBookContainer, MessageCache};
-use crate::service::carddav::{CardDavAddressBook, CardDavClient};
+use crate::service::carddav::{CardDavAddressBook, CardDavClient, sign_in};
 
 /// What the window says about itself, where somebody adding an address book
 /// reads it.
@@ -53,10 +53,10 @@ use crate::service::carddav::{CardDavAddressBook, CardDavClient};
 /// which says "real calendar server". A shared constant would say the wrong
 /// noun to everybody who reads this screen, and a sentence read aloud that
 /// names the wrong kind of thing is worse than a longer file.
-pub const NOT_TRIED_FOR_REAL: &str =
-    // RED: the calendar's own sentence, shared. It says "real calendar
-    // server" to somebody adding an address book.
-    crate::application::calendar_source::NOT_TRIED_FOR_REAL;
+pub const NOT_TRIED_FOR_REAL: &str = "This is experimental. Nothing here has been tried against a real address book server \
+     yet, so expect problems. Changes you make to a contact in an address book added this \
+     way are sent back to that server, and turning on Allow Changes for this account is \
+     what lets them go.";
 
 /// What somebody is told about an address they cannot use.
 ///
@@ -67,11 +67,29 @@ pub const NOT_TRIED_FOR_REAL: &str =
 /// words, reached through `Unusable::said`, so a later correction to either of
 /// them is a correction to both screens.
 pub fn said_about_an_address_book(why: Unusable) -> &'static str {
-    // RED: the check is reused and so are its words, which is the reading
-    // of "reuse the address checks" that puts the word calendar in front of
-    // somebody adding an address book four times, one of those offering a
-    // feed that does not exist.
-    why.said()
+    match why {
+        Unusable::Nothing => {
+            "Type the address of the address book. It usually starts with www or with a \
+             name like dav followed by a dot."
+        }
+        Unusable::NotAnAddress => {
+            "That is not an address an address book can be read from. Check it for a \
+             typing mistake and try again."
+        }
+        Unusable::NotTheWeb => {
+            "An address book can only be added from the web. Paste the address from your \
+             address book provider's own page."
+        }
+        Unusable::NotEncrypted => {
+            "That address is not a secure one, so the password would travel where anyone \
+             on the network could read it. Ask whoever looks after the server for a \
+             secure address."
+        }
+        // These two name no kind of thing at all, so they are the calendar's
+        // own words rather than a copy of them. A later correction to either
+        // is a correction to both screens.
+        Unusable::CarriesASignIn | Unusable::HasStrayCharacters => why.said(),
+    }
 }
 
 /// What somebody typed, turned into an address that can be asked, or a reason
@@ -81,13 +99,7 @@ pub fn said_about_an_address_book(why: Unusable) -> &'static str {
 /// book is always signed in to, so an unencrypted one is always a password on
 /// the wire.
 pub fn address_for(typed: &str) -> std::result::Result<String, Unusable> {
-    // RED: the check is written again here rather than reused, and it is the
-    // shorter version somebody writes from memory.
-    let typed = typed.trim();
-    if typed.is_empty() {
-        return Err(Unusable::Nothing);
-    }
-    Ok(format!("https://{typed}"))
+    crate::application::calendar_source::address_for(typed, Source::Server)
 }
 
 /// One line somebody can choose from.
@@ -108,15 +120,51 @@ pub struct Offer {
 /// So a name shared with another line has the address book's own address added
 /// to it.
 pub fn offered(found: &[CardDavAddressBook]) -> Vec<Offer> {
-    // RED: whatever the server said, with nothing done about two of them
-    // saying the same thing.
-    found
+    let named: Vec<Offer> = found
         .iter()
+        .filter(|book| !book.url.trim().is_empty())
         .map(|book| Offer {
-            name: book.display_name.clone(),
+            name: name_for(book),
             address: book.url.clone(),
         })
+        .collect();
+
+    named
+        .iter()
+        .map(|offer| Offer {
+            name: match named
+                .iter()
+                .filter(|other| other.name == offer.name)
+                .count()
+                > 1
+            {
+                true => format!("{} at {}", offer.name, offer.address),
+                false => offer.name.clone(),
+            },
+            address: offer.address.clone(),
+        })
         .collect()
+}
+
+/// What one address book is called before its neighbours are considered.
+///
+/// A server that named it wins. One it did not is given the last part of its
+/// own address, which is what tells two unnamed address books apart, because
+/// the reader gives every one of them the same word.
+fn name_for(book: &CardDavAddressBook) -> String {
+    let given = book.display_name.trim();
+    if !given.is_empty() && given != "Untitled" {
+        return given.to_string();
+    }
+    match book
+        .url
+        .trim_end_matches('/')
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+    {
+        Some(part) => format!("Address book at {part}"),
+        None => "Address book".to_string(),
+    }
 }
 
 /// What somebody is told when an address book server could not be added.
@@ -264,11 +312,10 @@ pub fn add_the_chosen(
 ) -> std::result::Result<AddressBookContainer, String> {
     can_be_filed_under(account_id)?;
     let row = AddressBookContainer::new(account_id, &chosen.name, &chosen.address);
-    // RED: the sign-in is written into the row, which is the shortcut somebody
-    // takes when the credential store is awkward on their machine.
-    let mut row = row;
-    row.url = format!("{user_name}:{password}@{}", row.url);
+    sign_in::store(&row.id, user_name, password)
+        .map_err(|_| "The sign-in could not be saved on this computer. Try again.".to_string())?;
     if let Err(failure) = cache.save_address_book(&row) {
+        let _ = sign_in::forget(&row.id);
         tracing::error!("An address book added by address could not be saved: {failure}");
         return Err("The address book could not be saved on this computer. Try again.".to_string());
     }
@@ -278,10 +325,8 @@ pub fn add_the_chosen(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::calendar_source::Source;
     use crate::common::paths::AppPaths;
     use crate::common::temp_home::TempHome;
-    use crate::service::carddav::sign_in;
 
     fn cache_for(label: &str) -> (TempHome<AppPaths>, MessageCache) {
         let paths = TempHome::named(label, |dir| AppPaths::under(dir.to_path_buf()));
@@ -446,13 +491,20 @@ mod tests {
         // Through the real path, and then every column of the row is read. A
         // test that only asked the credential store would be green against
         // code that wrote the password into the row as well.
+        //
+        // The user name is one no part of the address happens to be. Written
+        // with "sam", which is what the address here has a folder called, the
+        // assertion about the user name fired against correct code: a path
+        // segment and a sign-in are different things that look the same to a
+        // search for a substring.
         let (_paths, cache) = cache_for("adding-keeps-the-sign-in-out");
         let chosen = Offer {
             name: "Work".to_string(),
             address: "https://dav.example.com/sam/work/".to_string(),
         };
 
-        let added = add_the_chosen(&cache, "a1", &chosen, "sam", "hunter2").expect("it is added");
+        let added =
+            add_the_chosen(&cache, "a1", &chosen, "quilla", "hunter2").expect("it is added");
 
         for column in [
             added.id.as_str(),
@@ -466,13 +518,13 @@ mod tests {
                 "the password is in the row: {column}"
             );
             assert!(
-                !column.contains("sam"),
+                !column.contains("quilla"),
                 "the user name is in the row: {column}"
             );
         }
         assert_eq!(
             sign_in::load(&added.id),
-            Some(("sam".to_string(), "hunter2".to_string())),
+            Some(("quilla".to_string(), "hunter2".to_string())),
             "the sign-in did not reach the credential store"
         );
     }

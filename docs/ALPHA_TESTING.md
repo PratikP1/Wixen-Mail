@@ -136,6 +136,32 @@ Written down so you do not spend time reporting things already on the list.
   Nothing else about the text changes, and notes kept on this computer are not
   affected at all.
 
+- **Contacts can now come from an address book on a server, and no build has
+  ever reached a real one.** Tools, "Add an Address Book by Address", asks for
+  the address and the sign-in, asks the server which address books it has, and
+  lets you choose one. Its contacts then sync both ways with the same merge
+  Google and Outlook contacts already use, so a contact that changed in two
+  places is held for you to choose rather than written over. The screen says it
+  is experimental before you type a password, and Settings says the same on the
+  Permissions tab.
+
+  Every part of it has been driven against a stand-in written for the tests, so
+  we know the program asks for the right things in the right order and we do
+  not know what a real server says back. What we do not know, one thing at a
+  time: whether a real server's answer about its address books parses, whether
+  its answer with the cards in one parses, whether a card this writes is
+  accepted, whether the version marker it gives survives a round trip, and
+  whether it reports a clash the way the stand-in does.
+
+  If you try it on contacts you care about, keep a copy. Turning Allow Changes
+  off for that account stops anything leaving this computer while you look.
+
+  **The card-matching limitation below is more serious for an address book on a
+  server than it was for a file.** A card that names an address one of your
+  contacts already uses is read as being about that person, and a card can now
+  arrive from a server rather than from a file you chose. Nothing about the
+  matching rule has changed.
+
 - **Moving a task to another list is the one thing on this page that could lose
   a task.** Press the menu key on a task and choose "Move to another list", or
   press `Ctrl+Shift+V`. Events and notes have the same command.
