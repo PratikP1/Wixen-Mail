@@ -18267,7 +18267,7 @@ red = [
     "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 21 },
+    { file = "src/data/message_cache/notes.rs", tests = 28 },
 ]
 
 # ── The word beside a note saying what its body is written in ───────────────
@@ -18300,7 +18300,7 @@ red = [
     "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 21 },
+    { file = "src/data/message_cache/notes.rs", tests = 28 },
 ]
 
 # The other half. The word is still read correctly and is thrown away on the
@@ -18317,7 +18317,7 @@ red = [
     "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 21 },
+    { file = "src/data/message_cache/notes.rs", tests = 28 },
 ]
 
 # ── A menu offering a sync that cannot happen, or hiding one that can ───────
@@ -18536,7 +18536,7 @@ red = [
     "data::message_cache::notes::tests::test_pinning_a_note_leaves_it_waiting_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 21 },
+    { file = "src/data/message_cache/notes.rs", tests = 28 },
 ]
 
 # A copy of a note makes a second note at the backend rather than writing over

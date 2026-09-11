@@ -77,6 +77,31 @@ const NOTE_COLUMNS: &str = "id, account_id, folder_id, title, body, format, pinn
                             created_at, updated_at, pending, provider_note_id, \
                             provider_version";
 
+/// The wanted name, or the first numbering of it nothing has taken.
+///
+/// `Work`, then `Work (2)`, then `Work (3)`. The Windows convention, which
+/// somebody meeting it in a list of folders has met before, and which a screen
+/// reader at its default punctuation level reads as "Work 2" rather than
+/// spelling the brackets out.
+///
+/// Unbounded on purpose, with no arbitrary ceiling to fall off. `taken` is
+/// asked of a list of folders that already exist, so at most one more than that
+/// many numbers can be taken and the loop ends. A bound would need an answer for
+/// the case past it, and every answer available there is worse than counting on.
+fn a_free_name(wanted: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(wanted) {
+        return wanted.to_string();
+    }
+    (2..)
+        .map(|n| format!("{wanted} ({n})"))
+        .find(|candidate| !taken(candidate))
+        // The iterator is infinite and `taken` is finite, so this is not
+        // reached. Said as the wanted name rather than by unwrapping, because
+        // this file does not unwrap and a name that collides is refused by the
+        // storage, which is a reported failure rather than a panic.
+        .unwrap_or_else(|| wanted.to_string())
+}
+
 impl MessageCache {
     // ── Note Folders ────────────────────────────────────────────────────────
 
@@ -84,14 +109,17 @@ impl MessageCache {
     pub fn save_note_folder(&self, nf: &NoteFolderEntry) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO note_folders (id, account_id, name, display_order, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO note_folders
+                    (id, account_id, container, name, display_order, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(id) DO UPDATE SET
+                    container = excluded.container,
                     name = excluded.name,
                     display_order = excluded.display_order",
                 rusqlite::params![
                     nf.id,
                     nf.account_id,
+                    nf.container,
                     nf.name,
                     nf.display_order,
                     nf.created_at
@@ -106,7 +134,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, name, display_order, created_at
+                "SELECT id, account_id, container, name, display_order, created_at
                  FROM note_folders WHERE account_id = ?1 ORDER BY display_order, name",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare note folders query: {}", e)))?;
@@ -116,10 +144,10 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
-                    container: None,
-                    name: row.get(2)?,
-                    display_order: row.get(3)?,
-                    created_at: row.get(4)?,
+                    container: row.get(2)?,
+                    name: row.get(3)?,
+                    display_order: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query note folders: {}", e)))?;
@@ -234,13 +262,42 @@ impl MessageCache {
     /// would drop a whole calendar's notes on the floor without a word.
     pub fn a_note_folder_for(
         &self,
-        _account_id: &str,
-        _container: &str,
-        _called: &str,
+        account_id: &str,
+        container: &str,
+        called: &str,
     ) -> Result<NoteFolderEntry> {
-        Err(Error::Other(
-            "a note folder for a backend container is not built yet".to_string(),
-        ))
+        let here = self.get_note_folders_for_account(account_id)?;
+        let taken_by_somebody_else = |wanted: &str, mine: Option<&str>| {
+            here.iter()
+                .any(|folder| folder.name == wanted && folder.id.as_str() != mine.unwrap_or(""))
+        };
+
+        if let Some(mut already) = here
+            .iter()
+            .find(|folder| folder.container.as_deref() == Some(container))
+            .cloned()
+        {
+            if already.name != called {
+                already.name = a_free_name(called, |wanted| {
+                    taken_by_somebody_else(wanted, Some(&already.id))
+                });
+                self.save_note_folder(&already)?;
+            }
+            return Ok(already);
+        }
+
+        let folder = NoteFolderEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: account_id.to_string(),
+            container: Some(container.to_string()),
+            name: a_free_name(called, |wanted| taken_by_somebody_else(wanted, None)),
+            // After every folder already here, so a backend arriving on an
+            // account that already had folders does not reorder them.
+            display_order: here.len() as i32,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        self.save_note_folder(&folder)?;
+        Ok(folder)
     }
 
     // ── Notes ───────────────────────────────────────────────────────────────
@@ -535,7 +592,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(
-                "SELECT id, account_id, name, display_order, created_at
+                "SELECT id, account_id, container, name, display_order, created_at
                  FROM note_folders WHERE id = ?1",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare a note folder query: {}", e)))?;
@@ -544,10 +601,10 @@ impl MessageCache {
                 Ok(NoteFolderEntry {
                     id: row.get(0)?,
                     account_id: row.get(1)?,
-                    container: None,
-                    name: row.get(2)?,
-                    display_order: row.get(3)?,
-                    created_at: row.get(4)?,
+                    container: row.get(2)?,
+                    name: row.get(3)?,
+                    display_order: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query a note folder: {}", e)))?;

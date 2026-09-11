@@ -2873,6 +2873,22 @@ impl MessageCache {
         // accepted and another refused in the same run.
         self.ensure_column_exists("notes", "provider_note_id", "TEXT")?;
         self.ensure_column_exists("notes", "provider_version", "TEXT")?;
+        // What backend container this note folder is. One container is one note
+        // folder, decided 2026-09-11 in `docs/development/the-notes-seam.md`.
+        // Opaque, like the two above: stored, compared for equality and handed
+        // back, never parsed.
+        //
+        // NULL on every folder already on somebody's disk, which reads as a
+        // folder made here and is the right answer for all of them: until this
+        // shipped, every folder was one somebody made here or one this program
+        // made for them, and none of them meant anything at a backend. That is
+        // what ledger 246 recorded.
+        //
+        // A note carries no container of its own. Its folder's is the whole
+        // answer, because a note is in one folder and a folder is one
+        // container, so a column on `notes` would be a second copy of that fact
+        // able to disagree with the first.
+        self.ensure_column_exists("note_folders", "container", "TEXT")?;
         // The HTML half of a queued message. `body` stays the plain text
         // half it always was, so a message queued by an older build still
         // sends, as plain text, which is what it was.
