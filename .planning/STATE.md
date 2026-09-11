@@ -4,8 +4,8 @@ current_phase: 05.2
 current_phase_name: Notes in OneNote
 current_plan: 1
 status: verifying
-stopped_at: Completed 05.2-01-PLAN.md, waiting on its checkpoint about PIM-04's byte-identical criterion
-last_updated: "2026-09-11T07:13:56.000Z"
+stopped_at: Ledger 270 closed on branch a-nested-list-keeps-its-depth-and-a-table-keeps-its-columns. 05.2-02 not started
+last_updated: "2026-09-11T14:05:00.000Z"
 last_activity: 2026-09-11
 state_head: cbd07669c92b5d3add7f85930e6f8571bbfa8a23
 progress:
@@ -29,23 +29,50 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.2 (Notes in OneNote). **05.2-01 is built and merged, and it stops at a
-question for Pratik.** A note can be turned into the HTML a OneNote page is made
-from and back again, and what that costs is measured construct by construct.
-Seven of twenty-two constructs survive the round trip, so PIM-04's promise that
-a note round-trips through *any* backend byte-identically is false for the second
-backend as well as the first. What the criterion should say instead is a
-decision about the product and it is not the executor's. Nothing in `05.2-02`
-waits on the answer; if the answer is "refuse backends that cannot round-trip",
-`05.2-02` and `05.2-03` are cancelled and the phase stops.
+Phase: 05.2 (Notes in OneNote). **05.2-01 is built and merged. Ledger 270,
+which came out of its checkpoint, is closed.** PIM-04's structure criterion is
+met for both backends that exist: headings, nested lists, tables, links with
+their addresses and pictures with their descriptions all come back as what they
+were. Twelve of the twenty-two constructs in the fidelity table survive, up from
+seven, and **none of the ten that do not is this program's own reader any
+more**. Every remaining loss is OneNote's or HTML's.
+
+Two things were built. `Piece::Item` carries a depth and `Piece` has a `Table`
+variant, so a nested list and a table survive `structure` and `from_markup` and
+`spoken` says both; that was a shipped accessibility defect reaching a screen
+reader through five call sites in `read_aloud.rs` and through a Google task's
+description, and it is fixed for all of them. And
+`long_text::from_markup_to_edit` is a second reading of the same tree walk whose
+output is stored and edited again, used by `the_note_on`, which keeps a link's
+address, a picture and a line break. `from_markup` is unchanged for its speaking
+callers and three tests hold it to that.
+
+**Nothing here has been heard.** Entry 271 is the screen reader pass that would
+settle whether repeating a column heading on every cell floods a wide table and
+whether "bullet level 2" is heard as a level or as part of the text. Tests prove
+which words are produced, not that they are good to listen to.
 
 **Phase 05.1's own checkpoint is still open** and this does not close it: a
 screen reader pass over the new address book screen, which is the one thing in
 that phase no test in this repository can settle.
 
-`main` is at `cbd0766`, version `0.107.0` and unmoved, `guards/guards.toml` holds
-711 records with the census reading 192 and 519, `.planning/WINDOWS.md` reaches
-269, and nothing is pushed.
+`main` is at `a343d7f` until this branch merges, version `0.109.0`,
+`guards/guards.toml` holds 711 records with the census reading 192 and 519,
+`.planning/WINDOWS.md` reaches 273, and nothing is pushed.
+
+**What the guard sweep found, which is the expensive half of this work.** The
+eighteen records naming `long_text.rs` were re-measured five times across the
+branch. Eleven were not what they said. Two of them, both `inline` records, had
+already stopped working on `main` before this branch touched anything: their
+breaks quote an `img` arm the file stopped holding when that arm learned to say
+"image with no description", and `guards.sh` refuses a break it cannot find
+rather than reporting the guard, so both said nothing and read as covered. Four
+had red lists shorter than the truth, one naming five tests where the break
+reddens forty, because thirty-one of the missing live in `onenote_page.rs` and
+no record named that file, so the count check could not see them arrive. Six
+were written as two lines naming a neighbouring match arm, which is the spelling
+that breaks the moment a neighbour moves; all of those are now one
+self-contained edit each.
 
 Current Plan: 1
 Total Plans in Phase: 3
