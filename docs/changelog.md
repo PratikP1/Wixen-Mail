@@ -6,6 +6,56 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Fixed
+
+- **A screen reader now tells you when a list is nested, and reads a table as a
+  table.** This applies anywhere long text is read aloud: a note's body, a
+  contact's Notes, a task's body, and an event's description, including the
+  descriptions Google Tasks and Microsoft To Do send back.
+
+  A list inside a list used to be read as a flat run of bullets. Typing three
+  levels of a wiring note got you "bullet, Live is brown. bullet, Older cable:
+  red. bullet, Check first", with nothing saying that the last two sat under the
+  first. You now hear "bullet, Live is brown. bullet level 2, Older cable: red.
+  bullet level 3, Check first", and the level is said only when it changes, so a
+  plain shopping list is not one word longer than it was.
+
+  A table was worse. Its cells ran together with no gap, so a two-column table
+  of names and roles came out as the single word "NameRoleGraceAdmiral". You now
+  hear how big it is first, then each cell with the column it was in: "table, 2
+  columns, 2 rows. row 1. Name: Grace. Role: Admiral." The heading goes in front
+  of every cell rather than being said once at the top, because this is speech
+  you cannot move back through, and counting columns in your head to work out
+  what a value means is a memory test rather than a reading.
+
+  Both were losing structure that had reached this program intact. A nested list
+  or a table written in a Google task's description arrived here whole and was
+  flattened on the way to being spoken.
+
+  This is checked by tests and has not yet been heard by a screen reader. What
+  words are said is settled; whether they are pleasant to listen to over a long
+  table is not, and that needs a real NVDA run.
+
+- **A note kept in OneNote now keeps its links, its pictures, its line breaks,
+  its nesting and its tables.** Twelve of the twenty-two things measured in
+  `docs/development/the-notes-seam.md` now survive the round trip, up from
+  seven, and none of what is still lost is this program's doing any more.
+
+  Before this, a note that went to OneNote and came back had lost the address
+  of every link in it, every picture had become just its description, and every
+  line break inside a paragraph had become a space. You would not have seen it
+  happen. You would have opened the note later and found the links gone.
+
+  Two things to know. A picture comes back pointing at OneNote's copy of it
+  rather than at wherever it came from, because that is what OneNote hands
+  back. And a quote, bold, italic, struck-out text, inline code, a code block
+  and a horizontal rule are still lost, because a OneNote page has no way to
+  hold any of them. The struck-out one is the one to watch: a job crossed off
+  and a job still to do come back looking the same.
+
+  Nothing here has been run against a real OneNote account. Every measurement
+  is against a model built from Microsoft's published reference.
+
 ### Added
 
 - **You can add an address book that lives on a server, and your contacts sync

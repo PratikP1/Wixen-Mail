@@ -1102,7 +1102,21 @@ write path added by this milestone passes through that gate.
 
   - [D] Through a backend, the structure survives. Headings, lists including nested ones,
     tables, links with their addresses, and pictures with their descriptions come back as what
-    they were. **This is not met today**, and what fails is named below.
+    they were. **Met on 2026-09-11 for both backends that exist, by ledger 270.** The sentence
+    is untouched; only its status is. All five things it names come back as what they were,
+    measured row by row in `docs/development/the-notes-seam.md` by a test that reads the table
+    out of that document. Twelve of the twenty-two constructs measured there survive, up from
+    seven, and none of the ten that do not is this program's own reader any more.
+
+    One caveat the line does not cover and a reader should know: a picture comes back with its
+    description and with **OneNote's address for it** rather than the one it went out with,
+    because the service stores the picture and hands back a resource address of its own. The
+    picture is not lost and it is not the same address. That is entry 272 in
+    `.planning/WINDOWS.md`.
+
+    What used to fail, and why the obvious fix would have been wrong, is kept below because the
+    reasoning is what stopped a shipped accessibility defect being introduced to fix a storage
+    one.
 
   - [D] Where a backend cannot carry a construct at all, it says what it could not keep, at the
     moment it takes the note, and the copy kept here becomes what came back. `WhatTheBackendKept`
@@ -1138,11 +1152,23 @@ write path added by this milestone passes through that gate.
     read a URL aloud character by character, in shipped code, in a product whose first audience
     cannot see the screen.
 
-    So the structure line needs a **second reader, for the storing job**, and not an edit to the
-    speaking one. That is unowned work and it is not `05.2-02`'s or `05.2-03`'s as they are
-    written. The remaining losses are OneNote's own, cannot be closed here, and are what the
-    third line above exists to report: a quote, bold, italic, struck-out text, inline code, a
-    code block and a horizontal rule.
+    So the structure line needed a **second reader, for the storing job**, and not an edit to
+    the speaking one. **That reader was written on 2026-09-11 by ledger 270 and is
+    `long_text::from_markup_to_edit`**, which `service::onenote_page::the_note_on` uses. It is
+    the same tree walk with a different answer at three arms rather than a second walk, and
+    `from_markup` is unchanged, which three tests hold it to rather than a sentence.
+
+    **The paragraph above was half wrong and the correction is worth keeping.** It names five
+    losses and says all five are correct decisions for a speaking reader. Two of them were not.
+    A nested list read out as a flat run of bullets and a table read out as one unbroken word
+    are losses for a **listener**, not only for storage, and they reached a screen reader
+    through five call sites in `read_aloud.rs` and through a Google task's description. Those
+    two were fixed in `from_markup` itself, which improved speech. Only the other three needed
+    the second reader.
+
+    The remaining losses are OneNote's own, cannot be closed here, and are what the third line
+    above exists to report: a quote, bold, italic, struck-out text, inline code, a code block
+    and a horizontal rule.
 
     `docs/ALPHA_TESTING.md` and `docs/changelog.md` already tell a user plainly what a calendar
     server loses. Nothing yet tells them what OneNote would, because no OneNote backend ships.

@@ -72,8 +72,16 @@ pub fn the_page_for(note: &ANoteOnAPage) -> String {
 
 /// The note a page's returned HTML carries.
 ///
-/// The body is flattened out of its `div` wrappers before
-/// [`long_text::from_markup`] sees it, and that is not a tidying step. That
+/// Read with [`long_text::from_markup_to_edit`] rather than
+/// [`long_text::from_markup`], because a note's body goes straight back into
+/// the box somebody typed it into. The speaking reader drops a link's address,
+/// turns a picture into its description and a line break into a space, all
+/// three correctly for speech and none of them recoverable once the note has
+/// been saved again. It is the reader a task's body and an event's description
+/// still use, since those are read aloud and not edited here.
+///
+/// The body is flattened out of its `div` wrappers before that reader sees it,
+/// and that is not a tidying step. That
 /// function's block pass has one arm for `p` and `div` together, so a `div` is
 /// read as a single paragraph and every heading, list and blank line inside it
 /// is concatenated into one run of text. OneNote wraps all body content in at
@@ -95,7 +103,7 @@ pub fn the_note_on(page: &str) -> ANoteOnAPage {
         title: first_named(root, "title")
             .map(|element| element.text().collect())
             .unwrap_or_default(),
-        body: long_text::from_markup(&without_the_wrapping_divs(&body)),
+        body: long_text::from_markup_to_edit(&without_the_wrapping_divs(&body)),
     }
 }
 
@@ -848,29 +856,31 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_nested_list_comes_back_as_one_item() {
-        // Expected to come back as it went, and it does not. The nesting
-        // reaches the page as a `ul` inside an `li` and comes back from it,
-        // so the service is not where this is lost: `from_markup`'s list pass
-        // reads only an `li`'s direct inline content, so the inner item's
-        // words are swallowed into the outer item's line.
+    fn test_a_nested_list_comes_back_nested() {
+        // It comes back as it went, and until ledger 270 it did not. The
+        // nesting always reached the page as a `ul` inside an `li` and always
+        // came back from it, so the service was never where this was lost:
+        // `from_markup`'s list pass read only an `li`'s direct inline content
+        // and the inner item's words were appended to the outer item's with
+        // nothing between them, which made `Live is brownOlder cable`.
         //
-        // The two spaces are the model's, standing for the whitespace an HTML
-        // document holds between the tags.
+        // The inner list is indented by the width of the marker that opened
+        // the item holding it, which is where somebody typing it puts it, so
+        // the bytes match rather than only the shape.
         assert_eq!(
             what_comes_back("- Live is brown\n  - Older cable: red"),
-            "- Live is brown  Older cable: red"
+            "- Live is brown\n  - Older cable: red"
         );
     }
 
     #[test]
-    fn test_a_list_nested_three_deep_comes_back_as_one_item() {
-        // The same loss as the test above, and worth its own case because a
-        // list three deep is what a screen reader user most relies on the
-        // levels of. All three levels arrive as one bullet.
+    fn test_a_list_nested_three_deep_comes_back_at_all_three_depths() {
+        // Worth its own case because a list three deep is what a screen reader
+        // user most relies on the levels of, and because two levels can be got
+        // right by a walk that only ever goes one deeper.
         assert_eq!(
             what_comes_back("- One\n  - Two\n    - Three"),
-            "- One  Two  Three"
+            "- One\n  - Two\n    - Three"
         );
     }
 
@@ -886,26 +896,34 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_picture_comes_back_as_its_description_and_nothing_else() {
-        // Expected to come back as it went. The `img` reaches the page and
-        // comes back from it with its `alt` intact, so the picture is not lost
-        // at the service. `from_markup` emits the description on its own and
-        // never rebuilds `![...](...)`, so the picture stops being a picture.
-        // Lost here, not there.
+    fn test_a_picture_comes_back_as_a_picture() {
+        // The `img` reaches the page and comes back from it with its `alt` and
+        // its description intact, so the picture was never lost at the service.
+        // It used to stop being a picture here, because a note was read back
+        // with `from_markup`, which emits a description alone because it is
+        // written for speech. A note's body is read with `from_markup_to_edit`.
+        //
+        // The address is the service's and not the one it went out with, and
+        // that is OneNote's doing rather than this program's: the reference
+        // says a page stores the picture and hands back its own resource
+        // address for it. So the picture comes home and points at OneNote's
+        // copy. That is a change somebody would notice if the original address
+        // mattered to them, and it is not a loss of the picture.
         assert_eq!(
             what_comes_back("![The fuse box](https://example.org/fusebox.png)"),
-            "The fuse box"
+            "![The fuse box](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)"
         );
     }
 
     #[test]
-    fn test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so() {
-        // The same loss, and the sentence is deliberate rather than a stand-in:
-        // `long_text`'s own comment says a picture nobody described is the
-        // sender's gap to be shown rather than this program's to hide.
+    fn test_a_picture_with_no_description_comes_back_as_a_picture_with_no_description() {
+        // Guardrail 9: the sender's missing description is the sender's gap to
+        // be shown. Keeping the picture is how it stays shown in a box
+        // somebody can type the description into. Read aloud it is still the
+        // sentence saying so, which `long_text` tests separately.
         assert_eq!(
             what_comes_back("![](https://example.org/fusebox.png)"),
-            "image with no description"
+            "![](https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value)"
         );
     }
 
@@ -976,48 +994,51 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_link_comes_back_as_its_words_without_its_address() {
-        // Expected to come back as it went. The `a` and its `href` reach the
-        // page and come back, so the address is not lost at the service.
+    fn test_a_link_comes_back_with_its_address() {
+        // The `a` and its `href` always reached the page and came back, so the
+        // address was never lost at the service. It used to be lost here:
         // `from_markup`'s inline pass contributes a link's text and not its
-        // address, deliberately, with a comment saying that a paragraph-only
-        // field is read out as written and an address read aloud character by
-        // character helps nobody. That decision is right for reading a message
-        // and it costs a note its links.
+        // address, deliberately, because a paragraph-only field is read out as
+        // written and an address read aloud character by character helps
+        // nobody. That decision is right for reading a message aloud and it
+        // cost a note its links, which is why a note's body is now read with
+        // `from_markup_to_edit`.
         assert_eq!(
             what_comes_back("[The manual](https://example.org/manual)"),
-            "The manual"
+            "[The manual](https://example.org/manual)"
         );
     }
 
     #[test]
-    fn test_a_table_comes_back_as_its_cells_one_to_a_paragraph() {
-        // Expected to come back as it went. The table reaches the page as a
-        // table and comes back as one, with its header row demoted to an
-        // ordinary row because the reference does not name `th`. What loses
-        // the rest is this reader: `from_markup` has no `table`, `tr` or `td`
-        // arm at all, so every cell falls through to its text and becomes a
-        // paragraph of its own. Nothing is dropped and the grid is gone, so
-        // which column a cell was in is no longer recoverable.
+    fn test_a_table_comes_back_as_a_table() {
+        // It comes back as it went, which is the surprise of ledger 270. The
+        // table reaches the page as a table and comes back as one, with its
+        // header row demoted to ordinary cells because the reference does not
+        // name `th`. `from_markup` reads the first row of a table as its
+        // heading row whether or not its cells say so, and a markdown table
+        // has no other shape, so the demotion and the reading cancel and the
+        // bytes match.
+        //
+        // Before ledger 270 every cell fell through to its own paragraph and
+        // which column it was in was gone.
         assert_eq!(
             what_comes_back("| Left | Right |\n| --- | --- |\n| one | two |"),
-            "Left\n\nRight\n\none\n\ntwo"
+            "| Left | Right |\n| --- | --- |\n| one | two |"
         );
     }
 
     #[test]
-    fn test_a_line_break_comes_back_as_a_space() {
-        // Expected to come back as it went. `as_markup` turns a soft break
-        // into a hard one on purpose, with a comment saying a box somebody
-        // typed three lines into is not a document, so the break does reach
-        // the page as a `br` and OneNote keeps it: somebody looking at the
-        // page in OneNote sees their two lines.
+    fn test_a_line_break_comes_back_as_a_line_break() {
+        // `as_markup` turns a soft break into a hard one on purpose, with a
+        // comment saying a box somebody typed three lines into is not a
+        // document, so the break reaches the page as a `br` and OneNote keeps
+        // it: somebody looking at the page in OneNote sees their two lines.
         //
-        // It is `from_markup`'s inline pass that turns a `br` back into a
-        // space. Kept as it is rather than changed here, because that decision
-        // belongs to the module the whole program shares and changing it would
-        // reshape every message body and signature this program renders.
-        assert_eq!(what_comes_back("Line one\nLine two"), "Line one  Line two");
+        // It used to come home as a space, because `from_markup`'s inline pass
+        // reads a `br` as one so that two words do not run together in speech.
+        // That reading is kept for speech and a note's body is read with
+        // `from_markup_to_edit`, which keeps the break.
+        assert_eq!(what_comes_back("Line one\nLine two"), "Line one\nLine two");
     }
 
     #[test]

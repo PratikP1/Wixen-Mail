@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 253
+open_count: 255
 waived_count: 0
-fixed_count: 17
-total_count: 270
-last_updated: 2026-09-11T10:10:44.221Z
+fixed_count: 18
+total_count: 273
+last_updated: 2026-09-11T13:32:43.372Z
 ---
 
 # Broken Windows Ledger
@@ -284,7 +284,10 @@ last_updated: 2026-09-11T10:10:44.221Z
 | 267 | 05.2 | unrun-verify | src/service/onenote_page.rs |  | Whether a data-id on a div really survives a page update. The reference says a div carrying one is preserved where a div carrying no semantic information is flattened, and the hidden source div was measured against that reading rather than against a service. If a data-id does not survive an update, the wrapping div this reader flattens may not be there at all and what comes back is a different shape. | open |  | 2026-09-11T06:50:38.717Z |  |
 | 268 | 05.2 | unrun-verify | src/application/long_text.rs |  | Whether a note whose body came back through this pair is read aloud by a screen reader the way the original was. The whole reason the structure is preserved is that a heading announces as a heading and a list as a list. Seven of twenty-two constructs survive the round trip and six of the losses are this program's own reader, so what somebody hears after a note has been to OneNote is a different passage from what they typed, and nobody has heard either. | open |  | 2026-09-11T06:50:39.435Z |  |
 | 269 | 05.2 | unrun-verify | docs/development/the-notes-seam.md |  | Whether a Markdown code block coming back as a flattened paragraph is acceptable to somebody who keeps code in their notes. Two commands on two lines come back as one line that runs neither. That is a question for a person who uses OneNote and keeps notes that way, and no test can answer it. | open |  | 2026-09-11T06:50:40.214Z |  |
-| 270 | 05.2 | unmet-truth |  |  | PIM-04's structure criterion, reworded 2026-09-11 at 05.2-01's checkpoint, is not met. A nested list, a table, a link's address, a picture and a line break are lost on the way back from a backend, all five in long_text::from_markup. That function is a reader written for speaking, with two callers on that job outside notes, so it must not be changed to suit a note. A second reader whose output is stored and edited again is what the criterion asks for, and it belongs to no plan. | open |  | 2026-09-11T10:10:44.221Z |  |
+| 270 | 05.2 | unmet-truth |  |  | PIM-04's structure criterion, reworded 2026-09-11 at 05.2-01's checkpoint, is not met. A nested list, a table, a link's address, a picture and a line break are lost on the way back from a backend, all five in long_text::from_markup. That function is a reader written for speaking, with two callers on that job outside notes, so it must not be changed to suit a note. A second reader whose output is stored and edited again is what the criterion asks for, and it belongs to no plan. | fixed |  | 2026-09-11T10:10:44.221Z | 2026-09-11T13:32:43.372Z |
+| 271 | 05.2 | unrun-verify |  |  | Whether a nested list and a table are pleasant to listen to, not merely correct. A nested item is announced as 'bullet level 2, ...' and only when the level changes; a table as 'table, 2 columns, 2 rows' then 'row 1. Name: Grace. Role: Admiral', with the column heading repeated on every cell. Tests prove those exact words are produced. No screen reader has said them. The open questions are whether repeating a heading per cell floods a wide table, whether 'bullet level 2' is heard as a level or as part of the text, and whether a listener can follow a table with more than three columns at all. Only an NVDA pass can settle any of them. | open |  | 2026-09-11T13:32:06.681Z |  |
+| 272 | 05.2 | deviation | src/service/onenote_page.rs |  | A picture kept in OneNote comes back pointing at OneNote's copy of it rather than at the address it went out with. The reference says a page stores the picture and hands back a resource address of its own, so the note's Markdown now names graph.microsoft.com. The picture is not lost and the address is not the one somebody typed. Whether that matters to a person whose note linked to an image they host elsewhere is a product question nobody has been asked. Measured through the model, not against a real tenant. | open |  | 2026-09-11T13:32:22.029Z |  |
+| 273 | 05.2 | unrun-verify | src/application/long_text.rs |  | A block-level img in from_markup contributes its alt text with no marker saying it is a picture, and contributes nothing at all when the sender gave no alt. So a picture in a Google task's description or a calendar event's description is read aloud as an ordinary paragraph, or vanishes. Piece::Image's own doc comment and guardrail 9 both say a picture nobody described must still be announced, and the inline arm does that correctly; the block arm does not. Found by measurement during ledger 270 and deliberately left alone as out of scope: it is pre-existing, it is on the speaking path rather than the storing one, and fixing it changes what is stored for calendar and tasks. | open |  | 2026-09-11T13:32:22.877Z |  |
 
 ````json
 [
@@ -3523,9 +3526,45 @@ last_updated: 2026-09-11T10:10:44.221Z
     "file": "",
     "line": null,
     "description": "PIM-04's structure criterion, reworded 2026-09-11 at 05.2-01's checkpoint, is not met. A nested list, a table, a link's address, a picture and a line break are lost on the way back from a backend, all five in long_text::from_markup. That function is a reader written for speaking, with two callers on that job outside notes, so it must not be changed to suit a note. A second reader whose output is stored and edited again is what the criterion asks for, and it belongs to no plan.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-11T10:10:44.221Z",
+    "resolved_at": "2026-09-11T13:32:43.372Z"
+  },
+  {
+    "id": 271,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "",
+    "line": null,
+    "description": "Whether a nested list and a table are pleasant to listen to, not merely correct. A nested item is announced as 'bullet level 2, ...' and only when the level changes; a table as 'table, 2 columns, 2 rows' then 'row 1. Name: Grace. Role: Admiral', with the column heading repeated on every cell. Tests prove those exact words are produced. No screen reader has said them. The open questions are whether repeating a heading per cell floods a wide table, whether 'bullet level 2' is heard as a level or as part of the text, and whether a listener can follow a table with more than three columns at all. Only an NVDA pass can settle any of them.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T13:32:06.681Z",
+    "resolved_at": null
+  },
+  {
+    "id": 272,
+    "kind": "deviation",
+    "phase": "05.2",
+    "file": "src/service/onenote_page.rs",
+    "line": null,
+    "description": "A picture kept in OneNote comes back pointing at OneNote's copy of it rather than at the address it went out with. The reference says a page stores the picture and hands back a resource address of its own, so the note's Markdown now names graph.microsoft.com. The picture is not lost and the address is not the one somebody typed. Whether that matters to a person whose note linked to an image they host elsewhere is a product question nobody has been asked. Measured through the model, not against a real tenant.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T13:32:22.029Z",
+    "resolved_at": null
+  },
+  {
+    "id": 273,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/long_text.rs",
+    "line": null,
+    "description": "A block-level img in from_markup contributes its alt text with no marker saying it is a picture, and contributes nothing at all when the sender gave no alt. So a picture in a Google task's description or a calendar event's description is read aloud as an ordinary paragraph, or vanishes. Piece::Image's own doc comment and guardrail 9 both say a picture nobody described must still be announced, and the inline arm does that correctly; the block arm does not. Found by measurement during ledger 270 and deliberately left alone as out of scope: it is pre-existing, it is on the speaking path rather than the storing one, and fixing it changes what is stored for calendar and tasks.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T13:32:22.877Z",
     "resolved_at": null
   }
 ]
