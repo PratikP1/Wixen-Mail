@@ -36,7 +36,7 @@
 //! that none of them holds it.
 
 use super::{AddressBook, MessageCache};
-use crate::common::Result;
+use crate::common::{Error, Result};
 
 /// One CardDAV address book somebody added by its own address.
 ///
@@ -91,27 +91,88 @@ impl AddressBookContainer {
 }
 
 /// An identifier for an address book this program added.
+///
+/// Time based, the way `calendar_source::an_id_no_server_would_have_given` is,
+/// so address books added in one session sort in the order they were added.
+///
+/// **With a counter after the clock, which that one does not have.** Windows
+/// reads the clock in hundred nanosecond ticks, so two of these asked for in
+/// the same tick come back the same, and here that is not a cosmetic clash: the
+/// id is the credential store owner and the word every one of this address
+/// book's contacts is filed under, so two address books sharing one is the
+/// collapse the module header is about, arriving by accident. The counter
+/// cannot repeat within a run and the clock cannot repeat between runs, so the
+/// pair cannot repeat at all.
+///
+/// The calendar's has the same hazard and is left as it is: it is another
+/// module's defect, found from here, and a calendar id is only a row key, so
+/// what it costs there is smaller. Recorded rather than reached into.
 fn an_id_of_its_own() -> String {
-    // RED: every address book gets the same one, so every address book's
-    // contacts are filed under the same word, which is what `05-RESEARCH.md`
-    // assumed would do. The tests below say what it costs.
-    "the-address-book".to_string()
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static HOW_MANY_THIS_RUN: AtomicU64 = AtomicU64::new(0);
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_nanos())
+        .unwrap_or(0);
+    let nth = HOW_MANY_THIS_RUN.fetch_add(1, Ordering::Relaxed);
+    format!("address-book-{nanos}-{nth}")
 }
 
 impl MessageCache {
     /// Write an address book down, or replace the one already under its id.
+    ///
+    /// The id is never written over, because it is the credential store owner
+    /// and the word every one of this address book's contacts is filed under.
+    /// Everything else is the server's to move: it renames an address book, and
+    /// it moves the change marker every time anything in it changes.
     pub fn save_address_book(&self, book: &AddressBookContainer) -> Result<()> {
-        let _ = book;
+        self.conn
+            .execute(
+                "INSERT INTO address_books (id, account_id, name, url, ctag)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO UPDATE SET
+                    account_id = excluded.account_id,
+                    name = excluded.name,
+                    url = excluded.url,
+                    ctag = excluded.ctag",
+                rusqlite::params![book.id, book.account_id, book.name, book.url, book.ctag,],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save address book: {}", e)))?;
         Ok(())
     }
 
     /// Every address book kept with this account.
+    ///
+    /// In the order they were added, which is the order of the ids, so a list
+    /// somebody reads by ear does not rearrange itself between syncs.
     pub fn get_address_books_for_account(
         &self,
         account_id: &str,
     ) -> Result<Vec<AddressBookContainer>> {
-        let _ = account_id;
-        Ok(Vec::new())
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT id, account_id, name, url, ctag
+                 FROM address_books WHERE account_id = ?1
+                 ORDER BY id",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare address book query: {}", e)))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![account_id], |row| {
+                Ok(AddressBookContainer {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    url: row.get(3)?,
+                    ctag: row.get(4)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to read address books: {}", e)))?;
+
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read an address book: {}", e)))
     }
 }
 
@@ -199,9 +260,22 @@ mod tests {
         // It is written into every one of its contacts' rows and read back by
         // `AddressBook::from_stored`, so a word that does not survive that trip
         // is a contact nobody can match to the address book it came from.
+        //
+        // The word is taken off the row that came back rather than off the one
+        // that went in. Written the other way this test passed against a
+        // database that stored nothing at all, which is what it did in the red
+        // half: its name claimed the database and its body never opened one.
+        let (_paths, cache) = cache_for("filed-under-survives");
         let book = AddressBookContainer::new("a1", "Work", "https://dav.example.com/books/work/");
-        let filed_under = book.the_word_its_contacts_are_filed_under();
+        cache.save_address_book(&book).expect("it saves");
 
+        let stored = cache.get_address_books_for_account("a1").expect("it reads");
+        let filed_under = stored
+            .first()
+            .expect("the row")
+            .the_word_its_contacts_are_filed_under();
+
+        assert_eq!(filed_under, book.the_word_its_contacts_are_filed_under());
         assert_eq!(
             AddressBook::from_stored(filed_under.as_stored()),
             filed_under
@@ -215,6 +289,10 @@ mod tests {
 
     #[test]
     fn test_an_address_book_is_only_listed_for_the_account_it_is_kept_with() {
+        // Both accounts are asked, because asking only the wrong one is green
+        // against a read that finds nothing at all. That is what it was in the
+        // red half, and a test that cannot tell "not this account" from
+        // "nothing anywhere" is not testing the account.
         let (_paths, cache) = cache_for("address-book-per-account");
         cache
             .save_address_book(&AddressBookContainer::new(
@@ -224,6 +302,13 @@ mod tests {
             ))
             .expect("it saves");
 
+        assert_eq!(
+            cache
+                .get_address_books_for_account("a1")
+                .expect("it reads")
+                .len(),
+            1
+        );
         assert!(
             cache
                 .get_address_books_for_account("a2")

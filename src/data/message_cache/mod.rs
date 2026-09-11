@@ -2190,6 +2190,34 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create calendars table: {}", e)))?;
 
+        // ── Address books somebody added by their own address ───────────
+        //
+        // A CalDAV calendar keeps its address, its change marker and the id
+        // its sign-in is filed under on the calendars row above. A CardDAV
+        // address book had nowhere: `contact_identities` is the contact's side
+        // of the relationship and holds nothing about the address book itself.
+        //
+        // Five columns and every one of them is read;
+        // `message_cache::address_books` says which reads each. Nothing was
+        // added for a reader nobody has written.
+        //
+        // No sign-in here. The user name and the password go to the operating
+        // system's credential store under `service::carddav::keyring_service`,
+        // because this file is copied with a profile and restored from a
+        // backup.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS address_books (
+                id TEXT PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                ctag TEXT
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create address books table: {}", e)))?;
+
         // ── Reminders ───────────────────────────────────────────────────
         self.conn
             .execute(

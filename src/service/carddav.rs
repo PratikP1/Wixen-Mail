@@ -54,11 +54,7 @@ use crate::service::caldav::{extract_xml_value, resolved_against, response_block
 /// [`KEYRING_PASSWORD`], and [`crate::application::forget::run`] is what walks
 /// them.
 pub fn keyring_service(address_book_id: &str) -> String {
-    // RED: the address book's own id is dropped, so every address book on the
-    // machine shares one entry and signing in to the second overwrites the
-    // first.
-    let _ = address_book_id;
-    "wixen-mail-carddav".to_string()
+    format!("wixen-mail-carddav-{address_book_id}")
 }
 
 /// Account name under [`keyring_service`] holding the user name.
@@ -97,8 +93,9 @@ pub mod sign_in {
         let service = keyring_service(address_book_id);
         let user_name = backing::read(&service, KEYRING_USERNAME).ok().flatten()?;
         let password = backing::read(&service, KEYRING_PASSWORD).ok().flatten()?;
-        // RED: a stored blank is a stored half, and this hands it back as
-        // though it were a whole sign-in.
+        if user_name.is_empty() || password.is_empty() {
+            return None;
+        }
         Some((user_name, password))
     }
 

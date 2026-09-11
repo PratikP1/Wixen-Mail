@@ -10,7 +10,7 @@
 //! removes any files.
 
 use crate::data::account::Account;
-use crate::service::{caldav, credentials, oauth, pgp, security};
+use crate::service::{caldav, carddav, credentials, oauth, pgp, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,9 +40,6 @@ fn entries_for(
     caldav_calendar_ids: &[String],
     carddav_address_book_ids: &[String],
 ) -> Vec<CredentialEntry> {
-    // RED: the address books are taken and never named, so an address book's
-    // sign-in outlives an uninstall that reported everything removed.
-    let _ = carddav_address_book_ids;
     let mut entries = vec![CredentialEntry {
         service: security::KEYRING_SERVICE.to_string(),
         user: security::KEYRING_MASTER_KEY.to_string(),
@@ -79,6 +76,22 @@ fn entries_for(
         entries.push(CredentialEntry {
             service,
             user: caldav::KEYRING_PASSWORD.to_string(),
+        });
+    }
+
+    // The same shape as the calendars above, and registered in the commit that
+    // first named the service. An owner added here later than the code that
+    // writes it is a password left on the machine after this said everything
+    // was erased.
+    for id in carddav_address_book_ids {
+        let service = carddav::keyring_service(id);
+        entries.push(CredentialEntry {
+            service: service.clone(),
+            user: carddav::KEYRING_USERNAME.to_string(),
+        });
+        entries.push(CredentialEntry {
+            service,
+            user: carddav::KEYRING_PASSWORD.to_string(),
         });
     }
 
@@ -243,9 +256,19 @@ fn stored_identities(
         .map(|calendar| calendar.id)
         .collect();
 
-    // RED: nothing walks the address books, so the list is complete in shape
-    // and empty in practice.
-    (accounts, calendar_ids, Vec::new())
+    // Every address book somebody added by its server address. Each keeps its
+    // sign-in under its own id, the same as a calendar, so this walks them
+    // rather than assuming there is one. There is no word to filter on here,
+    // the way the calendars filter on `source_provider`: an address book is in
+    // this table only because somebody typed its address, so every row is one.
+    let address_book_ids = accounts
+        .iter()
+        .filter_map(|account| cache.get_address_books_for_account(&account.id).ok())
+        .flatten()
+        .map(|book| book.id)
+        .collect();
+
+    (accounts, calendar_ids, address_book_ids)
 }
 
 #[cfg(test)]
