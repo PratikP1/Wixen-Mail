@@ -6,6 +6,7 @@ pub mod attachment_name;
 pub mod cache;
 pub mod caldav;
 pub mod caldav_journal;
+pub mod carddav;
 pub mod credentials;
 pub mod default_apps;
 pub mod default_apps_registration;

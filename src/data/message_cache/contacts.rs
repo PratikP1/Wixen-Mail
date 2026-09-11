@@ -753,6 +753,41 @@ impl MessageCache {
         contact
     }
 
+    /// One contact written out as one card, from `BEGIN:VCARD` to
+    /// `END:VCARD`, ready to be put in a file or sent to an address book
+    /// server.
+    ///
+    /// The one answer in this program to what a card looks like.
+    /// [`export_contacts_to_vcard`] calls it once per contact and a CardDAV
+    /// write calls it once per change, so a correction made here is a
+    /// correction both of them get. Write a second one and the two disagree
+    /// the first time either is corrected: `days_called_off` in the calendar
+    /// records what that cost there, where a reader stripped a property name
+    /// and the writer beside it did not, and a cancellation went back to a
+    /// server with its own property name written in front of it twice.
+    ///
+    /// [`contact_from_vcard_block`] is the other half and the two have to stay
+    /// a pair.
+    ///
+    /// Public, beside [`export_contacts_to_vcard`] and
+    /// [`import_contacts_from_vcard`], which are the two whole file functions
+    /// this sits under. `pub(crate)` would be the narrower answer and it is
+    /// not available: an item visible only inside the crate and called by
+    /// nothing is dead code, which under `-D warnings` is a build failure, and
+    /// the commit that wrote this had no caller yet on purpose.
+    ///
+    /// [`export_contacts_to_vcard`]: MessageCache::export_contacts_to_vcard
+    /// [`import_contacts_from_vcard`]: MessageCache::import_contacts_from_vcard
+    /// [`contact_from_vcard_block`]: MessageCache::contact_from_vcard_block
+    pub fn vcard_block_from_contact(contact: &ContactEntry) -> String {
+        // The red half of red/green. The lift itself is the green half, and
+        // until it happens this says only who the card is about.
+        format!(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:{}\r\nEND:VCARD\r\n",
+            contact.name
+        )
+    }
+
     /// Export contacts to vCard 3.0 format
     pub fn export_contacts_to_vcard(&self, account_id: &str) -> Result<String> {
         let contacts = self.get_contacts_for_account(account_id)?;
@@ -1367,10 +1402,21 @@ impl MessageCache {
     /// for.
     ///
     /// Nothing at all for a card naming no address this program could write
-    /// to, which is the one rule that turns a card away.
+    /// to, which is the one rule that turns a card away. A card with no `FN`
+    /// is read, with an empty name: what names her then is her address, and
+    /// [`a_card_over_what_is_held`] is where that happens.
+    ///
+    /// Visible to the rest of the crate because it is the one answer to what a
+    /// card means. [`import_contacts_from_vcard`] asks it for every card in a
+    /// file and a CardDAV read asks it for every card a server sends, so a
+    /// correction made here is a correction both of them get.
+    /// [`vcard_block_from_contact`] is the other half and the two have to stay
+    /// a pair.
     ///
     /// [`a_card_over_what_is_held`]: MessageCache::a_card_over_what_is_held
-    fn contact_from_vcard_block(account_id: &str, block: &str) -> Option<ContactEntry> {
+    /// [`import_contacts_from_vcard`]: MessageCache::import_contacts_from_vcard
+    /// [`vcard_block_from_contact`]: MessageCache::vcard_block_from_contact
+    pub(crate) fn contact_from_vcard_block(account_id: &str, block: &str) -> Option<ContactEntry> {
         let mut name = String::new();
         let mut primary_email = String::new();
         let mut phone = None;
