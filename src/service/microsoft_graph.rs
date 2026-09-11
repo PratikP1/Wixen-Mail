@@ -565,6 +565,154 @@ const MOST_SECTION_GROUPS_DEEP: usize = 8;
 /// notebooks is more than anybody has.
 const MOST_PAGES_OF_ONE_LISTING: usize = 100;
 
+/// What one command in a page update names.
+///
+/// Two of the three are words the service knows. The third is whatever Graph
+/// generated for one thing on the page, which is why this is an enum and not a
+/// string: `"title"` and `"body"` are not identifiers and treating all three as
+/// one kind of string is how a command ends up naming a thing that does not
+/// exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatAPatchNames {
+    /// The page's name. One of the two targets that is not a generated
+    /// identifier, and the only way to change what a page is called.
+    TheTitle,
+    /// Everything inside the page. Appending is all it supports.
+    TheBody,
+    /// One thing on the page, by the identifier Graph generated for it on the
+    /// read this command was built from.
+    WhatGraphCalls(String),
+}
+
+impl WhatAPatchNames {
+    /// The word this goes out as.
+    ///
+    /// One spelling, used by the wire and by the check that the produced
+    /// commands obey the reference's table, so the two cannot disagree.
+    fn as_written(&self) -> &str {
+        match self {
+            Self::TheTitle => "title",
+            Self::TheBody => "body",
+            Self::WhatGraphCalls(id) => id,
+        }
+    }
+}
+
+impl Serialize for WhatAPatchNames {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> std::result::Result<S::Ok, S::Error> {
+        to.serialize_str(self.as_written())
+    }
+}
+
+/// What one command in a page update does to what it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatAPatchDoes {
+    /// Put this in place of what is there.
+    Replace,
+    /// Put this after what is there, keeping it.
+    Append,
+    /// Take this away.
+    Delete,
+}
+
+impl WhatAPatchDoes {
+    /// The word this goes out as, for the reason [`WhatAPatchNames::as_written`]
+    /// gives.
+    const fn as_written(self) -> &'static str {
+        match self {
+            Self::Replace => "replace",
+            Self::Append => "append",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+impl Serialize for WhatAPatchDoes {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> std::result::Result<S::Ok, S::Error> {
+        to.serialize_str(self.as_written())
+    }
+}
+
+/// One command in a page update.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct APatchCommand {
+    pub target: WhatAPatchNames,
+    pub action: WhatAPatchDoes,
+    /// What to put there, for the commands that put something. A removal
+    /// carries none, and a command carrying an empty one is not the same
+    /// request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+}
+
+/// What the reference's supported-actions table allows for the two targets that
+/// are not a generated identifier.
+///
+/// Read on 2026-09-06 from `learn.microsoft.com/en-us/graph/onenote-update-page`
+/// by the plan that specified this file. **Nobody here has fetched that page
+/// since**, and saying so is cheaper than a later reader assuming it was
+/// checked today.
+///
+/// Held as its own list, apart from the code that builds commands, so that
+/// neither can be checked against the other. `onenote_page.rs` holds the
+/// element set the same way and for the same reason.
+///
+/// Two rows rather than the whole table, because two rows are what that reading
+/// can defend. The table's other rows are about which elements support replace
+/// by generated identifier, and what it says about removing one is not quoted
+/// anywhere in this repository. That gap is in `.planning/WINDOWS.md` rather
+/// than guessed at here.
+/// `#[cfg(test)]` because nothing in the shipped half consults it, and that is
+/// the point rather than an oversight: a builder that read this list could not
+/// be checked against it. `outward.rs` marks its own censuses the same way.
+#[cfg(test)]
+const WHAT_A_NAMED_TARGET_SUPPORTS: [(&str, &[&str]); 2] =
+    [("title", &["replace"]), ("body", &["append"])];
+
+/// The commands that make a page say what a note says.
+///
+/// **Remove and append, not delete the page and make another**, and the choice
+/// is the largest one in this file.
+///
+/// A page's body supports appending and nothing else, so there is no command
+/// that makes its content equal a new document. The two ways round that are
+/// different products. Removing each thing on the page by the identifier Graph
+/// gave it and appending the new content keeps the page: its identifier, its
+/// place in the section, the date it was made, and any link somebody saved to
+/// it. Deleting the page and making another is two requests instead of many and
+/// loses all four.
+///
+/// What decides it is the failure, not the tidiness. A remove-and-append that
+/// stops half way leaves a page holding some of its content, which the person
+/// can see and put right by editing again. A delete-and-recreate that stops
+/// between its two requests leaves no page at all, and the note is gone from
+/// their notebook with nothing to show it was ever there.
+/// `docs/development/the-notes-seam.md` took exactly this decision for moving a
+/// note between folders, create first and remove second, so that a failure
+/// leaves the note in both places rather than in neither. This is the same
+/// question and copying the answer is the point: two orderings of the same two
+/// steps, decided twice, disagree the day either changes.
+///
+/// The second reason is the seam above. It stores the name a backend gave a
+/// note, and delete-and-recreate changes that name on every edit, so every edit
+/// would arrive at the seam as a note that vanished and a different one that
+/// appeared. `application::deletions`' module header is about what a deletion
+/// means when a read may still name the thing, and owing that machinery a
+/// reconciliation for what is really an edit is a cost with nothing bought.
+///
+/// **What this costs, said rather than left out.** It sends one command per
+/// thing on the page instead of two requests, and it rests on removal by
+/// generated identifier working for everything a page can hold. Nobody here has
+/// run either against Microsoft.
+pub fn changing_a_page_to(
+    what_is_on_the_page_now: &[String],
+    note: &crate::service::onenote_page::ANoteOnAPage,
+) -> Vec<APatchCommand> {
+    // RED: not built yet.
+    let _ = (what_is_on_the_page_now, note);
+    Vec::new()
+}
+
 /// What a OneNote request the service refused comes back as.
 ///
 /// Unauthorised and forbidden are what a token missing `Notes.ReadWrite` gets,
@@ -1068,6 +1216,48 @@ impl MsGraphClient {
             .await
             .map_err(|e| Error::Network(format!("Graph API POST failed: {e}")))?;
         a_page_that_can_be_addressed(Self::read_onenote(resp).await?)
+    }
+
+    /// A page's content, with the identifiers Graph generated for it.
+    ///
+    /// `includeIDs=true`, which is the only way to learn the names a change can
+    /// use: the identifiers are Graph's, are not in the page as it was sent,
+    /// and are not the `data-id` anybody here could set.
+    pub async fn page_content_with_identifiers(
+        &self,
+        token: &str,
+        page_id: &str,
+    ) -> Result<String> {
+        // RED: not built yet.
+        let _ = (token, page_id);
+        Ok(String::new())
+    }
+
+    /// Make a page say what a note says.
+    ///
+    /// The read is inside this method rather than beside it, and that is the
+    /// design. The reference says the generated identifiers "might change after
+    /// a page update, so you should get the current values before building a
+    /// PATCH request". A caller handed the identifiers and trusted to re-read
+    /// before the next write is a caller that will one day not, and the request
+    /// that follows names things on a page that have since been renamed. With
+    /// the read in here there is nothing for a caller to hold.
+    pub async fn change_page(
+        &self,
+        token: &str,
+        page_id: &str,
+        note: &crate::service::onenote_page::ANoteOnAPage,
+    ) -> Result<()> {
+        // RED: not built yet.
+        let _ = (token, page_id, note);
+        Ok(())
+    }
+
+    /// Take a page away.
+    pub async fn delete_page(&self, token: &str, page_id: &str) -> Result<()> {
+        // RED: not built yet.
+        let _ = (token, page_id);
+        Ok(())
     }
 
     /// One OneNote answer, read as the JSON resource it carries.
@@ -2407,6 +2597,254 @@ mod tests {
         assert!(
             said.contains("notebook"),
             "the reason has to say which kind of thing had none: {said}"
+        );
+    }
+
+    /// A page as Graph hands it back when asked for identifiers.
+    ///
+    /// Two things inside the body, each carrying the kind of identifier the
+    /// reference shows: a `p:` prefix, a pair of braced identifiers, and an
+    /// index. `which` lets one fixture stand for two reads of the same page
+    /// with different identifiers, which is what the reference says really
+    /// happens after an update.
+    fn a_page_graph_hands_back(which: &str) -> String {
+        format!(
+            "<html><head><title>Fuses</title></head><body data-absolute-enabled=\"true\">\
+             <div id=\"div:{{{which}}}{{1}}\">\
+             <p id=\"p:{{{which}}}{{2}}\">Live is brown</p>\
+             <p id=\"p:{{{which}}}{{3}}\">Neutral is blue</p>\
+             </div></body></html>"
+        )
+    }
+
+    /// The note a change is asking the page to say.
+    fn the_note_being_sent() -> crate::service::onenote_page::ANoteOnAPage {
+        crate::service::onenote_page::ANoteOnAPage {
+            title: "Fuses, corrected".to_string(),
+            body: "Earth is green and yellow".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_change_replaces_the_title_by_name_and_never_the_body() {
+        // The two halves belong together. On its own the second is an absence
+        // assertion, which an empty command list satisfies, so the first says
+        // the list really has commands in it and the second says none of them
+        // asks for something the service refuses.
+        let commands = changing_a_page_to(
+            &["p:{one}{2}".to_string(), "p:{one}{3}".to_string()],
+            &the_note_being_sent(),
+        );
+
+        assert!(
+            commands.contains(&APatchCommand {
+                target: WhatAPatchNames::TheTitle,
+                action: WhatAPatchDoes::Replace,
+                content: Some("Fuses, corrected".to_string()),
+            }),
+            "{commands:?}"
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.target == WhatAPatchNames::TheBody
+                    && command.action == WhatAPatchDoes::Append),
+            "the new content has to reach the page, and appending is the only \
+             way the body takes it: {commands:?}"
+        );
+        for command in &commands {
+            let Some((_, allowed)) = WHAT_A_NAMED_TARGET_SUPPORTS
+                .iter()
+                .find(|(named, _)| *named == command.target.as_written())
+            else {
+                continue;
+            };
+            assert!(
+                allowed.contains(&command.action.as_written()),
+                "{} does not support {}, so this command would be refused: {command:?}",
+                command.target.as_written(),
+                command.action.as_written()
+            );
+        }
+    }
+
+    #[test]
+    fn test_everything_on_the_page_now_is_named_for_removal() {
+        let commands = changing_a_page_to(
+            &["p:{one}{2}".to_string(), "p:{one}{3}".to_string()],
+            &the_note_being_sent(),
+        );
+
+        // A page's body cannot be replaced, so what is there has to go one
+        // thing at a time or the new content lands underneath the old.
+        for there in ["p:{one}{2}", "p:{one}{3}"] {
+            assert!(
+                commands.contains(&APatchCommand {
+                    target: WhatAPatchNames::WhatGraphCalls(there.to_string()),
+                    action: WhatAPatchDoes::Delete,
+                    content: None,
+                }),
+                "{there} is on the page and nothing takes it away: {commands:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_things_on_a_page_are_read_by_the_names_graph_generated() {
+        let there = crate::service::onenote_page::what_graph_calls_the_page_content(
+            &a_page_graph_hands_back("one"),
+        );
+
+        // The top level and not what is nested inside it: a command removing
+        // the div takes the paragraphs with it, so naming those as well would
+        // ask twice for one removal.
+        assert_eq!(there, vec!["div:{one}{1}".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_a_change_reads_the_page_before_it_writes() {
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "text/html",
+            vec![
+                Box::new(|_| a_page_graph_hands_back("one")),
+                Box::new(|_| String::new()),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the change to be sent");
+
+        let asked = heard(listening, "the read and the change")
+            .await
+            .expect("both requests");
+        assert_eq!(
+            asked_for(&asked[0]),
+            "GET /me/onenote/pages/1-page/content?includeIDs=true",
+            "{:?}",
+            asked[0]
+        );
+        assert_eq!(
+            asked_for(&asked[1]),
+            "PATCH /me/onenote/pages/1-page/content",
+            "{:?}",
+            asked[1]
+        );
+        assert!(
+            asked[1]
+                .to_lowercase()
+                .contains("content-type: application/json"),
+            "{:?}",
+            asked[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_second_change_names_what_the_second_read_said_and_not_the_first() {
+        // The whole reason the read is inside the change. The reference says
+        // the generated identifiers might move after an update, so this server
+        // moves them, and a client holding the first read's answer across the
+        // write names things that are no longer called that.
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "text/html",
+            vec![
+                Box::new(|_| a_page_graph_hands_back("before")),
+                Box::new(|_| String::new()),
+                Box::new(|_| a_page_graph_hands_back("after")),
+                Box::new(|_| String::new()),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the first change");
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the second change");
+
+        let asked = heard(listening, "two reads and two changes")
+            .await
+            .expect("four requests");
+        assert!(
+            asked[3].contains("div:{after}{1}"),
+            "the second change has to name what the second read said: {:?}",
+            asked[3]
+        );
+        assert!(
+            !asked[3].contains("div:{before}{1}"),
+            "an identifier from the earlier read is one the page no longer \
+             answers to: {:?}",
+            asked[3]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_is_removed_by_the_identifier_graph_gave_and_no_other() {
+        let (address, listening) = answering("204 No Content", "text/html", String::new()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .delete_page("a-token", "1-abc/2?x")
+            .await
+            .expect("the removal to be sent");
+
+        let request = heard(listening, "the removal").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /me/onenote/pages/1-abc%2F2%3Fx",
+            "a character that ends a path or starts a query asks about some \
+             other page or about none: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_changes_no_page() {
+        let (address, listening) =
+            answering("200 OK", "text/html", a_page_graph_hands_back("one")).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        // The read before the write is allowed out, because reading changes
+        // nothing. What must not go is the change, so what this waits for is a
+        // second request.
+        assert!(
+            heard(listening, "the read before the change").await.is_ok(),
+            "reading a page is not a change and is not gated"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_removes_no_page() {
+        let (address, listening) = answering("204 No Content", "text/html", String::new()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut.delete_page("a-token", "1-page").await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a removal that must never be sent")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
         );
     }
 
