@@ -575,6 +575,49 @@ move has the same gap and the alpha page already carries its four outcomes as a
 table. The notes move earns the same table rather than a sentence, and the
 ledger earns an entry per unknown rather than one covering all of them.
 
+### Built 2026-09-11, and the two places it reads differently than it was written
+
+Ledger 274, which closed 245 and 246 with it. `note_folders` carries an opaque
+`container`, `notes_backend::note_folders_for_the_backends_of` makes one folder
+per calendar server, and the sync runs once per folder.
+
+**The sync did have to change, and "nothing here on this side" was wrong about
+one thing.** The seam did not change: `NotesService` is untouched, `sync_notes`
+still takes one container per call, and nothing learns what is inside a
+container. What had to change is that the three passes inside `sync_notes` all
+worked from the account. Offered every waiting note, a loop over two containers
+writes each one into whichever container runs first, which for OneNote is
+somebody's note created in the wrong section and never made in the right one. So
+`sync_notes` now asks which folder the container it was given is, by comparing
+containers for equality, and its three passes are about that folder. Equality is
+not parsing, so requirement 1 holds.
+
+**A move into a folder made here does write a removal record, and the sentence
+above is about the backend rather than about the database.** The task model is
+copied exactly, which means the destination is not branched on: the copy is
+written with no backend name and the old container is owed a removal that waits
+for that copy. The copy sits in a folder no push reaches, so the removal never
+goes and nothing reaches any backend. Both ways of treating a local destination
+specially were tried on paper and both lose the note. Leaving the row as it was
+keeps the name the backend gave it, so the next sync of the old container writes
+the backend's copy over a note somebody moved onto this computer. Clearing the
+name instead leaves the backend's copy named by nothing, to arrive again as a
+new note. The record is also what stops that second one: the read consults every
+deletion record whether it has been sent or not.
+
+**Two calendars on one account can share a display name, and `note_folders` is
+unique on the account and the name.** The second folder is numbered, `Work` then
+`Work (2)`. Nothing is ever filed by that name, so the numbering changes what
+somebody reads and never where a note goes. Refusing the second folder would
+drop a whole calendar's notes with nothing said.
+
+**The name separator is nobody's choice here yet.** A folder is called whatever
+the backend calls the place, and for a calendar server that is the calendar's
+own display name with no path in it. The ` / ` in `Work / Projects / Q3` arrives
+the day a OneNote backend flattens its own path into its own name, which is
+requirement 2 and the backend's business. Nobody has heard it, and what a screen
+reader makes of that separator at its default punctuation level is unmeasured.
+
 ## Where this document knows it has assumed CalDAV
 
 Written down rather than left to be found, because a contract that claims to

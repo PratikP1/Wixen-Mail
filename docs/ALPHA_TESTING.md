@@ -211,6 +211,52 @@ Written down so you do not spend time reporting things already on the list.
 
   Moving an event to another calendar is still refused, and says so. It is the
   same idea for a different kind of thing, and it has not been built.
+- **Moving a note to another folder can now lose a note, in the same way and
+  for the same reasons.** Your notes go beside your calendars, and each calendar
+  they go to is its own note folder here. So moving a note between two of those
+  folders is moving it between two places at the server, which is the same two
+  steps as moving a task.
+
+  Wixen Mail asks the server to make the note again in the new place, and then,
+  once that has worked, asks it to remove the note from the old one. That order
+  is on purpose. If something goes wrong between the two steps, you are left
+  with the note in **both** folders, which you can see and tidy up. The other
+  order would risk leaving it in neither, which you could not see at all. On
+  this computer the note is in exactly one folder the whole time, whatever
+  happens.
+
+  **We have never done this with a real account.** Nobody has, with this
+  program. Every test so far has used a stand-in that says yes to everything,
+  so we know the program asks for the right things in the right order, and we
+  do not know what a real server says back.
+
+  So if you try it on an account you care about, check your notes afterwards,
+  wherever else you read them:
+
+  | What you see | What it means |
+  |---|---|
+  | One copy, in the new place | It worked |
+  | The note in both places | The second step has not happened yet. The next sync should tidy it |
+  | Still in the old place, and nowhere else | Nothing was sent, and nothing will be. See below |
+  | The note in neither place | Tell us straight away. This is the failure the whole design exists to prevent |
+
+  Moving a note takes two syncs to finish, so seeing it in both places for a
+  short while is normal.
+
+  The third row happens when you move the note into a folder you made on this
+  computer, rather than into one that came from a server. Folders you make here
+  stay here, so your server is never told about them, and it is never asked to
+  create the new copy or to remove the old one. In Wixen Mail the note has
+  moved and shows in the folder you chose. Wherever else you read your notes,
+  nothing has changed at all.
+
+  Nothing is lost, and nothing needs reporting. To move the note at the server
+  as well, move it into one of the folders that came from it.
+
+  Folders you made here sit under "On this computer" in the notes list, which
+  is where the mail folder list puts the folders that are on no server. Nobody
+  has heard that branch with a screen reader, and whether it is clear that the
+  folders under it go nowhere is worth telling us.
 - **Moving a contact or a reminder stays on this computer, by design.** A
   contact moves between groups and a reminder moves to another account, using
   the same two keys. Neither contact groups nor reminders are sent to Google or
