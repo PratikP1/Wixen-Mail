@@ -717,8 +717,103 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     /// rather than an answer. A fidelity table produced against a model says
     /// what this program will do with what the service returns. It does not say
     /// what the service returns.
-    fn what_onenote_would_return(_page: &str) -> String {
-        String::new()
+    fn what_onenote_would_return(page: &str) -> String {
+        let body = page
+            .split_once("<body>")
+            .and_then(|(_, rest)| rest.split_once("</body>"))
+            .map(|(body, _)| body)
+            .unwrap_or("");
+        let title = page
+            .split_once("<title>")
+            .and_then(|(_, rest)| rest.split_once("</title>"))
+            .map(|(title, _)| title)
+            .unwrap_or("");
+        let content = [
+            // "The following inline character styles are also supported", and
+            // the example above it: a character style in the input comes back
+            // as inline CSS on a span element that was not in the input.
+            ("<strong>", "<span style=\"font-weight:bold\">"),
+            ("</strong>", "</span>"),
+            ("<b>", "<span style=\"font-weight:bold\">"),
+            ("</b>", "</span>"),
+            ("<em>", "<span style=\"font-style:italic\">"),
+            ("</em>", "</span>"),
+            ("<i>", "<span style=\"font-style:italic\">"),
+            ("</i>", "</span>"),
+            ("<del>", "<span style=\"text-decoration:line-through\">"),
+            ("</del>", "</span>"),
+            // The "Input and output HTML example": a heading comes back with
+            // the service's own font and spacing on it.
+            (
+                "<h1>",
+                "<h1 style=\"font-size:16pt;color:#1e4e79;margin-top:11pt;margin-bottom:11pt\">",
+            ),
+            (
+                "<h2>",
+                "<h2 style=\"font-size:14pt;color:#2e74b5;margin-top:11pt;margin-bottom:11pt\">",
+            ),
+            // "Tables": the output table and every cell carry border:0px.
+            ("<table>", "<table style=\"border:0px\">"),
+            ("<td>", "<td style=\"border:0px\">"),
+            // "Lists": a style set on the ol or ul comes back on the li
+            // elements, and the default is decimal for an ordered list and disc
+            // for an unordered one.
+            ("<li>", "<li style=\"list-style-type:decimal\">"),
+        ]
+        .into_iter()
+        .fold(body.to_string(), |so_far, (input, output)| {
+            so_far.replace(input, output)
+        });
+        let content = an_images_source_as_a_graph_endpoint(&content);
+        format!(
+            // "The OneNote APIs in Microsoft Graph wrap all body content in at
+            // least one div. The API creates a default div (attributed with
+            // data-id=\"_default\") to contain the body content", and the
+            // output attributes of the body element.
+            "<html htmlns=\"https://www.w3.org/1999/xhtml\" lang=\"en-US\">\
+             <head><title>{title}</title></head>\
+             <body data-absolute-enabled=\"true\" style=\"font-family:Calibri;font-size:11pt\">\
+             <div data-id=\"_default\" style=\"position:absolute;left:48px;top:120px;width:624px\">\
+             {}</div></body></html>",
+            // Not from the OneNote reference. A page is an HTML document, and
+            // HTML collapses a run of whitespace to one space and cannot hold
+            // one at the end of a line. `the-notes-seam.md` already states this
+            // as a property of the format rather than of the service, and it is
+            // the transformation that costs the most below.
+            //
+            // Where the model is wider than HTML: this collapses whitespace
+            // inside attribute values too, which a browser does not. No
+            // measurement below turns on that.
+            whitespace_collapsed(&content)
+        )
+    }
+
+    /// An image's address rewritten to the resource endpoint the reference
+    /// says comes back, with the media type it adds.
+    ///
+    /// "Output img elements contain endpoints for image file resources and the
+    /// image type."
+    fn an_images_source_as_a_graph_endpoint(content: &str) -> String {
+        let mut out = String::new();
+        let mut rest = content;
+        while let Some((before, after)) = rest.split_once("src=\"") {
+            let Some((_, tail)) = after.split_once('"') else {
+                break;
+            };
+            out.push_str(before);
+            out.push_str(
+                "src=\"https://graph.microsoft.com/v1.0/me/onenote/resources/1-abc!1-def/$value\" \
+                 data-src-type=\"image/png\"",
+            );
+            rest = tail;
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// Every run of whitespace as a single space.
+    fn whitespace_collapsed(text: &str) -> String {
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     /// A note's body, out to a page, through the model, and back.
@@ -753,42 +848,64 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_nested_list_comes_back() {
+    fn test_a_nested_list_comes_back_as_one_item() {
+        // Expected to come back as it went, and it does not. The nesting
+        // reaches the page as a `ul` inside an `li` and comes back from it,
+        // so the service is not where this is lost: `from_markup`'s list pass
+        // reads only an `li`'s direct inline content, so the inner item's
+        // words are swallowed into the outer item's line.
+        //
+        // The two spaces are the model's, standing for the whitespace an HTML
+        // document holds between the tags.
         assert_eq!(
             what_comes_back("- Live is brown\n  - Older cable: red"),
-            "- Live is brown\n  - Older cable: red"
+            "- Live is brown  Older cable: red"
         );
     }
 
     #[test]
-    fn test_a_list_nested_three_deep_comes_back() {
+    fn test_a_list_nested_three_deep_comes_back_as_one_item() {
+        // The same loss as the test above, and worth its own case because a
+        // list three deep is what a screen reader user most relies on the
+        // levels of. All three levels arrive as one bullet.
         assert_eq!(
             what_comes_back("- One\n  - Two\n    - Three"),
-            "- One\n  - Two\n    - Three"
+            "- One  Two  Three"
         );
     }
 
     #[test]
-    fn test_a_quote_comes_back() {
+    fn test_a_quote_comes_back_as_an_ordinary_paragraph() {
+        // Expected to come back as it went. `blockquote` is in no list the
+        // reference names, so it is cut before the page is sent and the words
+        // arrive as an ordinary paragraph. Lost at the service, not here.
         assert_eq!(
             what_comes_back("> Bring the blue folder"),
-            "> Bring the blue folder"
+            "Bring the blue folder"
         );
     }
 
     #[test]
-    fn test_a_picture_with_a_description_comes_back() {
+    fn test_a_picture_comes_back_as_its_description_and_nothing_else() {
+        // Expected to come back as it went. The `img` reaches the page and
+        // comes back from it with its `alt` intact, so the picture is not lost
+        // at the service. `from_markup` emits the description on its own and
+        // never rebuilds `![...](...)`, so the picture stops being a picture.
+        // Lost here, not there.
         assert_eq!(
             what_comes_back("![The fuse box](https://example.org/fusebox.png)"),
-            "![The fuse box](https://example.org/fusebox.png)"
+            "The fuse box"
         );
     }
 
     #[test]
-    fn test_a_picture_with_no_description_comes_back() {
+    fn test_a_picture_with_no_description_comes_back_as_a_sentence_saying_so() {
+        // The same loss, and the sentence is deliberate rather than a stand-in:
+        // `long_text`'s own comment says a picture nobody described is the
+        // sender's gap to be shown rather than this program's to hide.
         assert_eq!(
             what_comes_back("![](https://example.org/fusebox.png)"),
-            "![](https://example.org/fusebox.png)"
+            "image with no description"
         );
     }
 
@@ -801,72 +918,115 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_bold_comes_back() {
+    fn test_bold_comes_back_as_plain_words() {
+        // Expected to come back as it went. `strong` is in the reference's
+        // supported set and goes out on the page, but the reference also says
+        // a character style comes back as inline CSS on a span element that
+        // was not in the input. A span carries no Markdown meaning, and this
+        // reader has no arm for one either, so the emphasis is gone both ways.
         assert_eq!(
             what_comes_back("Turn the power **off** first."),
-            "Turn the power **off** first."
+            "Turn the power off first."
         );
     }
 
     #[test]
-    fn test_italic_comes_back() {
+    fn test_italic_comes_back_as_plain_words() {
+        // The same as bold, and its own case because the reference's own
+        // worked example is about `i` rather than `strong`.
         assert_eq!(
             what_comes_back("Turn the power *off* first."),
-            "Turn the power *off* first."
+            "Turn the power off first."
         );
     }
 
     #[test]
-    fn test_struck_out_text_comes_back() {
+    fn test_struck_out_text_comes_back_as_plain_words() {
+        // The same as bold, and the one that costs most to lose: struck-out
+        // text in a note usually means the opposite of what is left standing.
+        // A job crossed off and a job still to do read alike afterwards.
         assert_eq!(
             what_comes_back("Turn the power ~~off~~ first."),
-            "Turn the power ~~off~~ first."
+            "Turn the power off first."
         );
     }
 
     #[test]
-    fn test_inline_code_comes_back() {
+    fn test_inline_code_comes_back_as_plain_words() {
+        // Expected to come back as it went. `code` is in no list the reference
+        // names, so it is cut before the page is sent. Lost at the service.
         assert_eq!(
             what_comes_back("Run `fusebox --check` first."),
-            "Run `fusebox --check` first."
+            "Run fusebox --check first."
         );
     }
 
     #[test]
-    fn test_a_code_block_comes_back() {
+    fn test_a_code_block_comes_back_as_one_line_of_words() {
+        // The sharpest single loss, and it was nameable before any code ran:
+        // neither `pre` nor `code` is in any list the reference names, so a
+        // code block has no representation on a OneNote page at all. The tags
+        // are cut and the text is kept, and then HTML collapses the line
+        // breaks that were the whole of its meaning. Two commands become one
+        // line that runs neither.
         assert_eq!(
             what_comes_back("```\nfusebox --check\nfusebox --repair\n```"),
-            "```\nfusebox --check\nfusebox --repair\n```"
+            "fusebox --check fusebox --repair"
         );
     }
 
     #[test]
-    fn test_a_link_comes_back() {
+    fn test_a_link_comes_back_as_its_words_without_its_address() {
+        // Expected to come back as it went. The `a` and its `href` reach the
+        // page and come back, so the address is not lost at the service.
+        // `from_markup`'s inline pass contributes a link's text and not its
+        // address, deliberately, with a comment saying that a paragraph-only
+        // field is read out as written and an address read aloud character by
+        // character helps nobody. That decision is right for reading a message
+        // and it costs a note its links.
         assert_eq!(
             what_comes_back("[The manual](https://example.org/manual)"),
-            "[The manual](https://example.org/manual)"
+            "The manual"
         );
     }
 
     #[test]
-    fn test_a_table_comes_back() {
+    fn test_a_table_comes_back_as_its_cells_one_to_a_paragraph() {
+        // Expected to come back as it went. The table reaches the page as a
+        // table and comes back as one, with its header row demoted to an
+        // ordinary row because the reference does not name `th`. What loses
+        // the rest is this reader: `from_markup` has no `table`, `tr` or `td`
+        // arm at all, so every cell falls through to its text and becomes a
+        // paragraph of its own. Nothing is dropped and the grid is gone, so
+        // which column a cell was in is no longer recoverable.
         assert_eq!(
             what_comes_back("| Left | Right |\n| --- | --- |\n| one | two |"),
-            "| Left | Right |\n| --- | --- |\n| one | two |"
+            "Left\n\nRight\n\none\n\ntwo"
         );
     }
 
     #[test]
-    fn test_a_line_break_comes_back() {
-        assert_eq!(what_comes_back("Line one\nLine two"), "Line one\nLine two");
+    fn test_a_line_break_comes_back_as_a_space() {
+        // Expected to come back as it went. `as_markup` turns a soft break
+        // into a hard one on purpose, with a comment saying a box somebody
+        // typed three lines into is not a document, so the break does reach
+        // the page as a `br` and OneNote keeps it: somebody looking at the
+        // page in OneNote sees their two lines.
+        //
+        // It is `from_markup`'s inline pass that turns a `br` back into a
+        // space. Kept as it is rather than changed here, because that decision
+        // belongs to the module the whole program shares and changing it would
+        // reshape every message body and signature this program renders.
+        assert_eq!(what_comes_back("Line one\nLine two"), "Line one  Line two");
     }
 
     #[test]
-    fn test_a_horizontal_rule_comes_back() {
-        assert_eq!(
-            what_comes_back("Before\n\n---\n\nAfter"),
-            "Before\n\n---\n\nAfter"
-        );
+    fn test_a_horizontal_rule_does_not_come_back_at_all() {
+        // The only construct that leaves nothing behind. `hr` is in no list the
+        // reference names, and unlike `code` or `blockquote` it has no text
+        // inside it to keep, so cutting the tag cuts the whole thing. A note
+        // divided into two parts comes back as one.
+        assert_eq!(what_comes_back("Before\n\n---\n\nAfter"), "Before\n\nAfter");
     }
 
     #[test]
@@ -893,8 +1053,99 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
     }
 
     #[test]
-    fn test_a_note_that_is_one_space_comes_back() {
-        assert_eq!(what_comes_back(" "), " ");
+    fn test_a_note_that_is_one_space_comes_back_empty() {
+        // The format rather than the service. HTML collapses a run of
+        // whitespace and cannot hold one at the end of a line, so a note whose
+        // whole content is a space has nothing left to carry.
+        assert_eq!(what_comes_back(" "), "");
+        // And words with spaces around them do come back, so the line above is
+        // about the space rather than about nothing arriving at all.
+        assert_eq!(what_comes_back(" Milk "), "Milk");
+    }
+
+    /// The heading the fidelity table sits under.
+    const THE_FIDELITY_TABLE: &str = "### What a note kept in OneNote comes back as";
+
+    /// Where a vertical bar inside a cell is put while the row is split on the
+    /// bars that divide it.
+    const NOT_A_DIVIDER: &str = "\u{0}";
+
+    /// The rows of the fidelity table in `the-notes-seam.md`, as pairs of what
+    /// was typed and what comes back.
+    fn the_fidelity_table_says(document: &str) -> Vec<(String, String)> {
+        let Some((_, after)) = document.split_once(THE_FIDELITY_TABLE) else {
+            return Vec::new();
+        };
+        after
+            .lines()
+            .skip_while(|line| !line.starts_with('|'))
+            .take_while(|line| line.starts_with('|'))
+            // The row of names and the row of dashes under it.
+            .skip(2)
+            .filter_map(|row| {
+                let row = row.replace("\\|", NOT_A_DIVIDER);
+                match row.split('|').collect::<Vec<_>>().as_slice() {
+                    [_, typed, back, ..] => Some((as_written(typed), as_written(back))),
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// One cell of the table as the text it stands for.
+    fn as_written(cell: &str) -> String {
+        let cell = cell.trim().trim_matches('`');
+        if cell == "\\e" {
+            return String::new();
+        }
+        cell.replace("\\n", "\n")
+            .replace("\\g", "`")
+            .replace(NOT_A_DIVIDER, "|")
+    }
+
+    #[test]
+    fn test_every_row_of_the_fidelity_table_is_true() {
+        // The table is read out of the document and run rather than written
+        // beside the tests. A table kept in step by nobody says what somebody
+        // believed on the day they wrote it.
+        let document = std::fs::read_to_string("docs/development/the-notes-seam.md")
+            .unwrap_or_else(|whats_wrong| panic!("the-notes-seam.md: {whats_wrong}"));
+        let rows = the_fidelity_table_says(&document);
+        assert!(
+            rows.len() >= 22,
+            "the fidelity table has {} rows, so this is not reading the table it is about",
+            rows.len()
+        );
+        for (typed, back) in rows {
+            assert_eq!(
+                what_comes_back(&typed),
+                back,
+                "the table's row for {typed:?} is not what happens"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_fidelity_table_reader_reads_the_escapes_it_promises() {
+        // A reader that quietly returned nothing would make the loop above
+        // pass over an empty list, and the length assertion is only half of
+        // that: this says the four escapes the table's own legend promises are
+        // really undone.
+        let made_up = format!(
+            "{THE_FIDELITY_TABLE}\n\n\
+             | What was typed | What comes back | Where it goes |\n\
+             |---|---|---|\n\
+             | `a\\nb` | `\\e` | nowhere |\n\
+             | `\\| \\gx\\g \\|` | `y` | nowhere |\n\n\
+             Something after the table.\n"
+        );
+        assert_eq!(
+            the_fidelity_table_says(&made_up),
+            vec![
+                ("a\nb".to_string(), String::new()),
+                ("| `x` |".to_string(), "y".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -910,8 +1161,20 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
         );
         assert_eq!(
             the_note_on(&what_onenote_would_return(&page)).body,
+            "# Colours - Live is brown - Neutral is blue",
+            "the hidden source came back differently from the measurement"
+        );
+        // What it costs even where it works, which the plan asks for whichever
+        // way this fell. It puts a second copy of the note inside the note, so
+        // every note's size doubles and the two copies can disagree, which is
+        // the drift `as_markup`'s own comment says the matched pair exists to
+        // prevent. Here it does not even work: the div survives, and the source
+        // inside it is still text in an HTML document, so its blank lines and
+        // the line starts that made it Markdown are gone.
+        assert_ne!(
+            the_note_on(&what_onenote_would_return(&page)).body,
             source,
-            "the hidden source did not survive"
+            "the hidden source survived, and this measurement is out of date"
         );
     }
 }

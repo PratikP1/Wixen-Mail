@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 248
+open_count: 252
 waived_count: 0
 fixed_count: 17
-total_count: 265
-last_updated: 2026-09-11T04:44:07.898Z
+total_count: 269
+last_updated: 2026-09-11T06:50:40.214Z
 ---
 
 # Broken Windows Ledger
@@ -280,6 +280,10 @@ last_updated: 2026-09-11T04:44:07.898Z
 | 263 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server gives an ETag on the PUT response at all. Where it does not, the version marker is nothing, the_marker_moved reads that as moved, and every contact is read as having changed at the server on every sync. | open |  | 2026-09-11T04:44:06.370Z |  |
 | 264 | 05.1 | unrun-verify | src/application/address_book_source.rs |  | Whether a real address book server's home set answers the PROPFIND this makes at Depth 1 with the address books in it. Discovery asks the address somebody typed; a server that keeps its address books one level further down answers with nothing and somebody is told the server has no address books for that sign-in. | open |  | 2026-09-11T04:44:07.152Z |  |
 | 265 | 05.1 | unrun-verify | src/presentation/wx_add_address_book.rs |  | Whether the new address book screen is usable by ear. Every control carries an accessible name set the only way that reaches NVDA, and the mnemonics were checked by hand because nothing can check them. Whether the names are the ones intended rather than a nearby label Windows fell back to, whether the refusal is heard, and whether what the server found is announced rather than only drawn, are all things only a screen reader run answers. | open |  | 2026-09-11T04:44:07.898Z |  |
+| 266 | 05.2 | unrun-verify | src/service/onenote_page.rs |  | Whether a real page's output HTML matches the model this plan built from Microsoft's reference, construct by construct. Every row of the fidelity table went through a model of the service written from a page dated 2024-11-07 and read on 2026-09-11. No OneNote tenant has ever been used with this program, so the table says what this program does with what the reference says comes back, and nothing about what comes back. | open |  | 2026-09-11T06:50:37.976Z |  |
+| 267 | 05.2 | unrun-verify | src/service/onenote_page.rs |  | Whether a data-id on a div really survives a page update. The reference says a div carrying one is preserved where a div carrying no semantic information is flattened, and the hidden source div was measured against that reading rather than against a service. If a data-id does not survive an update, the wrapping div this reader flattens may not be there at all and what comes back is a different shape. | open |  | 2026-09-11T06:50:38.717Z |  |
+| 268 | 05.2 | unrun-verify | src/application/long_text.rs |  | Whether a note whose body came back through this pair is read aloud by a screen reader the way the original was. The whole reason the structure is preserved is that a heading announces as a heading and a list as a list. Seven of twenty-two constructs survive the round trip and six of the losses are this program's own reader, so what somebody hears after a note has been to OneNote is a different passage from what they typed, and nobody has heard either. | open |  | 2026-09-11T06:50:39.435Z |  |
+| 269 | 05.2 | unrun-verify | docs/development/the-notes-seam.md |  | Whether a Markdown code block coming back as a flattened paragraph is acceptable to somebody who keeps code in their notes. Two commands on two lines come back as one line that runs neither. That is a question for a person who uses OneNote and keeps notes that way, and no test can answer it. | open |  | 2026-09-11T06:50:40.214Z |  |
 
 ````json
 [
@@ -3461,6 +3465,54 @@ last_updated: 2026-09-11T04:44:07.898Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T04:44:07.898Z",
+    "resolved_at": null
+  },
+  {
+    "id": 266,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_page.rs",
+    "line": null,
+    "description": "Whether a real page's output HTML matches the model this plan built from Microsoft's reference, construct by construct. Every row of the fidelity table went through a model of the service written from a page dated 2024-11-07 and read on 2026-09-11. No OneNote tenant has ever been used with this program, so the table says what this program does with what the reference says comes back, and nothing about what comes back.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T06:50:37.976Z",
+    "resolved_at": null
+  },
+  {
+    "id": 267,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_page.rs",
+    "line": null,
+    "description": "Whether a data-id on a div really survives a page update. The reference says a div carrying one is preserved where a div carrying no semantic information is flattened, and the hidden source div was measured against that reading rather than against a service. If a data-id does not survive an update, the wrapping div this reader flattens may not be there at all and what comes back is a different shape.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T06:50:38.717Z",
+    "resolved_at": null
+  },
+  {
+    "id": 268,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/long_text.rs",
+    "line": null,
+    "description": "Whether a note whose body came back through this pair is read aloud by a screen reader the way the original was. The whole reason the structure is preserved is that a heading announces as a heading and a list as a list. Seven of twenty-two constructs survive the round trip and six of the losses are this program's own reader, so what somebody hears after a note has been to OneNote is a different passage from what they typed, and nobody has heard either.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T06:50:39.435Z",
+    "resolved_at": null
+  },
+  {
+    "id": 269,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "docs/development/the-notes-seam.md",
+    "line": null,
+    "description": "Whether a Markdown code block coming back as a flattened paragraph is acceptable to somebody who keeps code in their notes. Two commands on two lines come back as one line that runs neither. That is a question for a person who uses OneNote and keeps notes that way, and no test can answer it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T06:50:40.214Z",
     "resolved_at": null
   }
 ]
