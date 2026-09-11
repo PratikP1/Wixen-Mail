@@ -31,6 +31,10 @@
 //! measurement, construct by construct, is in
 //! `docs/development/the-notes-seam.md`.
 
+use crate::application::long_text;
+use scraper::ElementRef;
+use std::collections::HashSet;
+
 /// One note, as a page's HTML carries it.
 ///
 /// No identifier on it, unlike [`crate::service::note_document::ANoteInADocument`].
@@ -58,8 +62,12 @@ pub struct ANoteOnAPage {
 /// is read aloud in the wrong voice, which is worse for the person this is for
 /// than no declaration at all. Guardrail 9: the gap is named rather than
 /// papered over.
-pub fn the_page_for(_note: &ANoteOnAPage) -> String {
-    String::new()
+pub fn the_page_for(note: &ANoteOnAPage) -> String {
+    format!(
+        "<html>\n<head>\n<title>{}</title>\n</head>\n<body>\n{}\n</body>\n</html>\n",
+        html_escape::encode_text(&note.title),
+        only_what_a_page_keeps(&long_text::as_markup(&note.body))
+    )
 }
 
 /// The note a page's returned HTML carries.
@@ -77,17 +85,115 @@ pub fn the_page_for(_note: &ANoteOnAPage) -> String {
 /// title, which is a page somebody really can make, and a body that parses to
 /// nothing is an empty note. There is no `Result`, because there is no case
 /// this reader can refuse that a page cannot genuinely be in.
-pub fn the_note_on(_page: &str) -> ANoteOnAPage {
+pub fn the_note_on(page: &str) -> ANoteOnAPage {
+    let document = scraper::Html::parse_document(page);
+    let root = document.root_element();
+    let body = first_named(root, "body")
+        .map(|element| element.inner_html())
+        .unwrap_or_default();
     ANoteOnAPage {
-        title: String::new(),
-        body: String::new(),
+        title: first_named(root, "title")
+            .map(|element| element.text().collect())
+            .unwrap_or_default(),
+        body: long_text::from_markup(&without_the_wrapping_divs(&body)),
     }
+}
+
+/// The elements this program will put on a page.
+///
+/// A subset of what Microsoft's reference names, deliberately, and the test
+/// module below holds the reference's own list separately so that neither can
+/// be checked against the other. Read on 2026-09-11 from
+/// `learn.microsoft.com/en-us/graph/onenote-input-output-html`, which is dated
+/// 2024-11-07 there.
+///
+/// Four of the reference's elements are left out. `iframe` and `object` are an
+/// embedded video and a file attachment, which nothing in this program's note
+/// editor can produce: an `iframe` in a note body is markup somebody pasted
+/// from a web page, and sending it on to a shared notebook is the direction
+/// guardrail 6 is about. `body` and the rest of the envelope are written by
+/// hand above and this list is applied to a fragment.
+///
+/// What is not here because the reference does not name it is the whole of the
+/// loss: no `code`, no `pre`, no `blockquote`, no `hr`, no `th` and no
+/// `thead`. A Markdown code block, inline code, a quote, a horizontal rule and
+/// a table's header row have no representation on a OneNote page at all.
+const ELEMENTS_THIS_PROGRAM_SENDS: [&str; 28] = [
+    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ol", "ul", "li", "table", "tr", "td", "span",
+    "br", "a", "img", "b", "i", "u", "em", "strong", "strike", "sup", "sub", "del", "cite",
+];
+
+/// Cut everything a page will not keep out of rendered markup.
+///
+/// A check rather than a hope. [`long_text::as_markup`] cleans with `ammonia`'s
+/// default allowlist, which is a browser's idea of safe HTML and holds `pre`,
+/// `code`, `blockquote` and `hr`, none of which OneNote names. Left in, those
+/// reach the service as elements it has not published a behaviour for, and what
+/// it does with them is written down nowhere. Cut here, what happens to them is
+/// this file's decision and is measured.
+///
+/// `ammonia` takes a tag outside the list away and keeps what was inside it, so
+/// a code block arrives as its own text with its indentation gone rather than
+/// disappearing. That is the specific outcome the fidelity table records.
+fn only_what_a_page_keeps(markup: &str) -> String {
+    let mut what_a_page_keeps = ammonia::Builder::default();
+    what_a_page_keeps.tags(HashSet::from(ELEMENTS_THIS_PROGRAM_SENDS));
+    what_a_page_keeps
+        .clean(&header_cells_as_ordinary_cells(markup))
+        .to_string()
+}
+
+/// A table's header cells written as ordinary cells.
+///
+/// The reference names `table`, `tr` and `td` and does not name `th`, so a
+/// header cell is cut by the list above. Cutting it keeps the words and loses
+/// the cell: the two header words end up as one text node inside a `tr`, which
+/// every HTML parser moves out of the table and runs together, so `Left` and
+/// `Right` arrive as `LeftRight` above the table. Written as `td` they stay in
+/// the table, in their own cells, and nothing is sent that the reference does
+/// not name. A header row demoted to an ordinary row is a real loss and it is
+/// in the fidelity table; the words running together was a worse one and it was
+/// this file's doing rather than the service's.
+///
+/// A replacement on the text is safe here and would not be on arbitrary input.
+/// What arrives has already been through `ammonia::clean` inside
+/// [`long_text::as_markup`], so every text node in it is escaped and the bytes
+/// `<th>` or `<th ` can only be a tag. `<thead>` and `</thead>` are untouched
+/// by all three patterns, and are cut by the list above.
+fn header_cells_as_ordinary_cells(markup: &str) -> String {
+    markup
+        .replace("<th>", "<td>")
+        .replace("<th ", "<td ")
+        .replace("</th>", "</td>")
+}
+
+/// Markup with every `div` tag taken away and everything inside them kept.
+///
+/// `ammonia` rather than a walk of its own, because taking a tag away and
+/// keeping its children is exactly what it does to anything outside its
+/// allowlist, and a second implementation of that here would be a second thing
+/// to keep in step.
+fn without_the_wrapping_divs(html: &str) -> String {
+    let mut everything_but_divs = ammonia::Builder::default();
+    everything_but_divs.rm_tags(["div"]);
+    everything_but_divs.clean(html).to_string()
+}
+
+/// The first element with this name, anywhere under `root`.
+///
+/// A walk rather than a [`scraper::Selector`], because parsing a selector
+/// returns a `Result` whose error means nothing for a literal written here and
+/// whose only honest handling would be an `expect`, which this project does not
+/// allow outside tests.
+fn first_named<'a>(root: ElementRef<'a>, name: &str) -> Option<ElementRef<'a>> {
+    root.descendants()
+        .filter_map(ElementRef::wrap)
+        .find(|element| element.value().name() == name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scraper::ElementRef;
 
     /// Microsoft's own output HTML for the page its reference shows, verbatim.
     ///
@@ -155,10 +261,10 @@ mod tests {
     /// envelope, the sections on div, img, iframe, object, paragraphs and
     /// headings, lists and tables, and the inline character styles listed under
     /// "Styles".
-    const ELEMENTS_THE_REFERENCE_NAMES: [&str; 32] = [
+    const ELEMENTS_THE_REFERENCE_NAMES: [&str; 35] = [
         "html", "head", "title", "meta", "body", "div", "img", "iframe", "object", "p", "h1", "h2",
         "h3", "h4", "h5", "h6", "ol", "ul", "li", "table", "tr", "td", "span", "br", "a", "b", "i",
-        "u", "em", "strong", "strike", "cite",
+        "u", "em", "strong", "strike", "sup", "sub", "del", "cite",
     ];
 
     /// Every inline CSS property the reference's "Styles" table names, plus the
@@ -182,6 +288,15 @@ mod tests {
         "border",
     ];
 
+    /// What a parser puts into a table whether or not anybody wrote it.
+    ///
+    /// HTML requires a table's rows to sit inside a row group, so `html5ever`
+    /// inserts a `tbody` when it reads `<table><tr>`. It is a fact about
+    /// reading the page rather than about the page, so the check below skips
+    /// it, and the test that uses the check asserts the produced bytes hold
+    /// none. Skipping it without that assertion would be a hole.
+    const ELEMENTS_A_PARSER_INSERTS: [&str; 1] = ["tbody"];
+
     /// Everything in this markup that the reference does not name, as an
     /// element name or as `style:property`.
     fn what_the_reference_does_not_name(html: &str) -> Vec<String> {
@@ -193,7 +308,9 @@ mod tests {
             .filter_map(ElementRef::wrap)
         {
             let name = element.value().name();
-            if !ELEMENTS_THE_REFERENCE_NAMES.contains(&name) {
+            if !ELEMENTS_THE_REFERENCE_NAMES.contains(&name)
+                && !ELEMENTS_A_PARSER_INSERTS.contains(&name)
+            {
                 found.push(name.to_string());
             }
             for declaration in element.value().attr("style").unwrap_or("").split(';') {
@@ -302,6 +419,46 @@ A paragraph with **bold**, *italic*, ~~struck out~~ and `inline code` in it.
         for kept in ["<h1>", "<li>", "<strong>", "<table>", "<td>"] {
             assert!(page.contains(kept), "{kept} never reached the page: {page}");
         }
+        // The check above skips a `tbody` because a parser inserts one. This
+        // says the page itself carries none, so the skip cannot hide one.
+        assert!(
+            !page.contains("tbody"),
+            "the page really carries a tbody, which the check skips: {page}"
+        );
+    }
+
+    #[test]
+    fn test_a_tables_header_cells_stay_in_the_table_as_ordinary_cells() {
+        // Cut rather than renamed, the two header words become one text node
+        // inside a `tr`, which every parser moves out of the table and runs
+        // together as `LeftRight` above it.
+        let page = the_page_for(&ANoteOnAPage {
+            title: "A table".to_string(),
+            body: "| Left | Right |\n|---|---|\n| one | two |\n".to_string(),
+        });
+        assert!(
+            page.contains("<table><tr><td>Left</td><td>Right</td></tr>"),
+            "the header cells did not stay in the table as cells: {page}"
+        );
+        assert!(
+            !page.contains("LeftRight"),
+            "the header words ran together: {page}"
+        );
+    }
+
+    #[test]
+    fn test_a_header_cell_somebody_typed_as_text_is_not_rewritten() {
+        // The rename is a replacement on text, and it is safe only because
+        // what reaches it has already been escaped. This is the case that
+        // would break if it ever stopped being.
+        let page = the_page_for(&ANoteOnAPage {
+            title: "Writing about tables".to_string(),
+            body: "A header cell is written `<th>` in HTML.".to_string(),
+        });
+        assert!(
+            page.contains("&lt;th&gt;"),
+            "the escaped text was rewritten: {page}"
+        );
     }
 
     #[test]
