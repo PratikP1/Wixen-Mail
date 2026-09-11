@@ -4,6 +4,7 @@
 
 pub mod account_order;
 pub mod accounts;
+pub mod address_book_source;
 pub mod allowed;
 pub mod answered_meetings;
 pub mod answering;
@@ -17,6 +18,7 @@ pub mod caldav_sync;
 pub mod calendar;
 pub mod calendar_conflict;
 pub mod calendar_source;
+pub mod carddav_sync;
 pub mod categories;
 pub mod checking_signatures;
 pub mod closing;

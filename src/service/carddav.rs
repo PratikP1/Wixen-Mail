@@ -5,12 +5,18 @@
 //! written in the same vCard format a `.vcf` file uses. This file holds the
 //! request bodies and the readers for the two answers, and nothing else.
 //!
-//! **Nothing here speaks to a network.** The transport lives elsewhere, the
-//! way it does for the calendar, so that everything worth testing can be
-//! tested from text. That is this project's thin transport rule, and it is
-//! also what makes the tests below mean something: they are about parsing and
-//! about the card format, and a machine with no account and no server can
-//! settle every one of them.
+//! **The reading and the writing are apart from the requests, and the tests
+//! are all on the reading side.** The request bodies, the readers of the
+//! answers and the card format are the whole of what a machine with no account
+//! and no server can settle, and every test below is one of those. The client
+//! at the end of this file makes the four requests and does no parsing of its
+//! own; nothing about it has ever run, which `.planning/WINDOWS.md` records
+//! rather than leaves to be found.
+//!
+//! **This file said "nothing here speaks to a network" until `05.1-06` put the
+//! client in it**, which is worth leaving on the record: a sentence asserting
+//! the absence of something becomes false the moment somebody adds it, and
+//! nothing in the workflow goes looking for those sentences.
 //!
 //! **The reading is a hand written scan and that is a security decision, not
 //! a shortcut.** A general purpose reader for this kind of document will
@@ -38,6 +44,76 @@
 use crate::common::{Error, Result};
 use crate::data::message_cache::{ContactEntry, MessageCache};
 use crate::service::caldav::{extract_xml_value, resolved_against, response_blocks};
+
+/// Credential store service name holding one address book's sign-in details.
+///
+/// **This string is permanent from the commit that first writes one.** The code
+/// that erases secrets on uninstall names entries by it, so changing it later
+/// does not move a password: it orphans the old one on every machine that has
+/// it, where nothing this program ever runs again will name it. That is the
+/// rule `credentials::KEYRING_SERVICE` states for the account passwords and
+/// `caldav::keyring_service` states for a calendar's sign-in, and this is its
+/// third statement rather than a new one.
+///
+/// One owner, for the same reason: uninstalling has to delete the same entries
+/// this names. The two accounts stored under it are [`KEYRING_USERNAME`] and
+/// [`KEYRING_PASSWORD`], and [`crate::application::forget::run`] is what walks
+/// them.
+pub fn keyring_service(address_book_id: &str) -> String {
+    format!("wixen-mail-carddav-{address_book_id}")
+}
+
+/// Account name under [`keyring_service`] holding the user name.
+pub const KEYRING_USERNAME: &str = "username";
+/// Account name under [`keyring_service`] holding the password.
+pub const KEYRING_PASSWORD: &str = "password";
+
+/// The sign-in one address book server was given, kept where Windows keeps
+/// passwords.
+///
+/// Never in the database. `message_cache.db` is copied with a profile and
+/// restored from a backup, and an address book password travelling with it is a
+/// password on somebody else's disk.
+///
+/// One owner for the three names above, because the code that erases them on
+/// uninstall has to name the same entries as the code that wrote them.
+pub mod sign_in {
+    use super::{KEYRING_PASSWORD, KEYRING_USERNAME, keyring_service};
+    use crate::common::Result;
+
+    /// Remember the sign-in for one address book.
+    pub fn store(address_book_id: &str, user_name: &str, password: &str) -> Result<()> {
+        let service = keyring_service(address_book_id);
+        backing::write(&service, KEYRING_USERNAME, user_name)?;
+        backing::write(&service, KEYRING_PASSWORD, password)
+    }
+
+    /// The sign-in for one address book, or `None` when there is not a whole
+    /// one.
+    ///
+    /// Half of one is not a sign-in. Sending a blank password to an address
+    /// book server gets a refusal that reads as a broken account, so an address
+    /// book with only one half stored is left alone until somebody types the
+    /// other.
+    pub fn load(address_book_id: &str) -> Option<(String, String)> {
+        let service = keyring_service(address_book_id);
+        let user_name = backing::read(&service, KEYRING_USERNAME).ok().flatten()?;
+        let password = backing::read(&service, KEYRING_PASSWORD).ok().flatten()?;
+        if user_name.is_empty() || password.is_empty() {
+            return None;
+        }
+        Some((user_name, password))
+    }
+
+    /// Forget the sign-in for one address book.
+    pub fn forget(address_book_id: &str) -> Result<()> {
+        let service = keyring_service(address_book_id);
+        backing::remove(&service, KEYRING_USERNAME)?;
+        backing::remove(&service, KEYRING_PASSWORD)
+    }
+
+    use crate::service::secret_store as backing;
+}
 
 /// What this program asks a server when it wants to know which address books
 /// are there.
@@ -325,9 +401,231 @@ fn xml_unescaped(text: &str) -> String {
     plain
 }
 
+// ── The requests, which nothing here has ever made ──────────────────────────
+//
+// Everything above is reading and writing text, and every one of its tests can
+// be settled on a machine with no account. Everything below this line makes
+// four HTTP requests and does no parsing of its own, and none of it has ever
+// run against a CardDAV server. That split is deliberate and it is the same one
+// `service::caldav` draws.
+
+/// What an error names as the other end, where Google and Microsoft name
+/// themselves.
+///
+/// An address book server has no brand to give, and the words somebody reads
+/// should say what kind of thing answered rather than repeat a protocol name.
+pub const ADDRESS_BOOK_SERVER: &str = "address book server";
+
+/// CardDAV HTTP client.
+pub struct CardDavClient {
+    http: crate::service::outward::Outward,
+}
+
+impl Default for CardDavClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CardDavClient {
+    /// A client that reads and changes nothing.
+    pub fn new() -> Self {
+        Self {
+            http: crate::service::outward::Outward::default(),
+        }
+    }
+
+    /// A client for one account, allowed whatever that account is allowed.
+    ///
+    /// An address book is personal information rather than mail, so it follows
+    /// that half of the setting. The gate goes here, where the client is built,
+    /// rather than at each request: a refusal raised before the request is
+    /// built cannot half-happen, and the four services that already do this do
+    /// it this way.
+    pub fn for_account(account_id: &str) -> Self {
+        Self {
+            http: if crate::application::allowed::allowed_for(account_id).personal_information {
+                crate::service::outward::Outward::may_change_things(reqwest::Client::new())
+            } else {
+                crate::service::outward::Outward::default()
+            },
+        }
+    }
+
+    /// A client that may change things, for tests only.
+    ///
+    /// [`Self::for_account`] reads the settings really stored on whichever
+    /// machine is running, so a test built on it would pass or fail depending
+    /// on whose computer ran it.
+    #[cfg(test)]
+    pub fn allowed_to_change_things() -> Self {
+        Self {
+            http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
+        }
+    }
+
+    /// Ask an address book server which address books it has.
+    ///
+    /// The screen for adding an address book by its server address is what
+    /// calls this. A read, so it is ungated: the refusing client can make it,
+    /// and building it that way means a later edit moving discovery onto a
+    /// changing method would be stopped here rather than at somebody's address
+    /// book.
+    pub async fn discover_address_books(
+        &self,
+        base_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<Vec<CardDavAddressBook>> {
+        let answer = self.asking(base_url, username, password).await?;
+        address_books_in(&answer, base_url)
+    }
+
+    /// The change marker one address book is carrying now.
+    ///
+    /// The same request discovery makes, asked of one address book rather than
+    /// of the home set, so there is one request body and one reader for both. A
+    /// second pair would be a second answer to what a server's reply means.
+    pub async fn change_marker(
+        &self,
+        address_book_url: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<Option<String>> {
+        let answer = self.asking(address_book_url, username, password).await?;
+        Ok(address_books_in(&answer, address_book_url)?
+            .into_iter()
+            .next()
+            .and_then(|book| book.ctag))
+    }
+
+    /// A PROPFIND, which is both of the two reads above.
+    async fn asking(&self, url: &str, username: &str, password: &str) -> Result<String> {
+        let response = self
+            .http
+            .reading_with(crate::service::outward::AskWith::Propfind, url)?
+            .header("Depth", "1")
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .basic_auth(username, Some(password))
+            .body(ASKING_WHICH_ADDRESS_BOOKS)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV PROPFIND failed: {e}")))?;
+
+        refused_with(&response, "Asking what is on the server")?;
+        response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV PROPFIND body failed: {e}")))
+    }
+
+    /// Every card in one address book.
+    pub async fn cards(
+        &self,
+        address_book_url: &str,
+        username: &str,
+        password: &str,
+        account_id: &str,
+    ) -> Result<CardsFromAServer> {
+        let response = self
+            .http
+            .reading_with(crate::service::outward::AskWith::Report, address_book_url)?
+            .header("Depth", "1")
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .basic_auth(username, Some(password))
+            .body(ASKING_FOR_THE_CARDS)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV REPORT failed: {e}")))?;
+
+        refused_with(&response, "Reading an address book")?;
+        let answer = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV REPORT body failed: {e}")))?;
+        cards_in(&answer, address_book_url, account_id)
+    }
+
+    /// Write one card, and answer with the version marker the server gave it.
+    ///
+    /// `version` names the copy this change was built on. Where there is one,
+    /// `If-Match` is what makes the server refuse the write rather than carry
+    /// it out over a change made somewhere else since. Where there is none the
+    /// card is new here, and `If-None-Match: *` is what stops a create writing
+    /// over a stranger's card on an identifier collision, which is the rule
+    /// `caldav::create_event` states.
+    pub async fn write_card(
+        &self,
+        card_url: &str,
+        username: &str,
+        password: &str,
+        vcard: &str,
+        version: Option<&str>,
+    ) -> Result<Option<String>> {
+        let request = self
+            .http
+            .changing(reqwest::Method::PUT, card_url, "change a contact")?
+            .header("Content-Type", "text/vcard; charset=utf-8")
+            .basic_auth(username, Some(password));
+        let request = match version {
+            Some(known) => request.header("If-Match", known),
+            None => request.header("If-None-Match", "*"),
+        };
+
+        let response = request
+            .body(vcard.to_string())
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV PUT failed: {e}")))?;
+
+        refused_with(&response, "Changing a contact")?;
+        Ok(response
+            .headers()
+            .get("ETag")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string))
+    }
+
+    /// Take one card away.
+    ///
+    /// No version is sent, deliberately, and `caldav::delete_event`'s comment
+    /// says why: somebody asked for the contact to go, and a version that had
+    /// moved on would make the deletion fail for ever.
+    pub async fn delete_card(&self, card_url: &str, username: &str, password: &str) -> Result<()> {
+        let response = self
+            .http
+            .changing(reqwest::Method::DELETE, card_url, "delete a contact")?
+            .basic_auth(username, Some(password))
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("CardDAV DELETE failed: {e}")))?;
+
+        refused_with(&response, "Deleting a contact")
+    }
+}
+
+/// What the server said, when it refused.
+///
+/// A clash with a change made from another device, a full disk and a wrong
+/// password are three different things to tell somebody, and a transport string
+/// read back at them tells them none of them. The same shape `caldav`'s answers
+/// with, so a screen that turns a status into a sentence works for both.
+fn refused_with(response: &reqwest::Response, doing: &str) -> Result<()> {
+    if response.status().is_success() {
+        return Ok(());
+    }
+    let status = response.status();
+    Err(Error::Api {
+        status: status.as_u16(),
+        provider: ADDRESS_BOOK_SERVER.to_string(),
+        message: format!("{doing} returned {status}"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::answering::{answering, asked_for, heard};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{AddressEntry, ContactEntry, CustomFieldEntry, MessageCache};
 
@@ -1107,6 +1405,110 @@ mod tests {
                 "the request does not ask for {property}, which the reader reads"
             );
         }
+    }
+
+    // ── The four requests, read off a socket ─────────────────
+    //
+    // A loopback server answers one request and hands back what was asked, so
+    // these read the verb, the address and the headers that really went out.
+    // What they do not prove is that any server anywhere answers them the way
+    // this one does, which is what `.planning/WINDOWS.md` records.
+
+    const A_CARD: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ann\r\nEND:VCARD\r\n";
+
+    fn a_card_at(address: std::net::SocketAddr) -> String {
+        format!("http://{address}/books/work/c-1.vcf")
+    }
+
+    #[tokio::test]
+    async fn test_the_check_that_nothing_was_sent_can_see_something_being_sent() {
+        // The gate test below asserts that a listener heard nothing. That claim
+        // is worth nothing until the same listener, the same wait and the same
+        // call have been shown reporting a write when there is one.
+        let (address, listening) = answering("201 Created", "text/vcard", String::new()).await;
+
+        CardDavClient::allowed_to_change_things()
+            .write_card(&a_card_at(address), "sam", "secret", A_CARD, None)
+            .await
+            .expect("a write through a client allowed to make one");
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert_eq!(asked_for(&request), "PUT /books/work/c-1.vcf");
+    }
+
+    #[tokio::test]
+    async fn test_a_client_an_account_does_not_allow_changes_for_sends_no_card_at_all() {
+        // Refused before the request is built, which is what makes a refusal
+        // something that cannot half-happen.
+        let (address, listening) = answering("201 Created", "text/vcard", String::new()).await;
+
+        let refused = CardDavClient::new()
+            .write_card(&a_card_at(address), "sam", "secret", A_CARD, None)
+            .await;
+
+        assert!(crate::service::outward::was_refused_by_the_gate(
+            &refused.expect_err("a refusal")
+        ));
+        assert!(
+            heard(listening, "a write").await.is_err(),
+            "a refused write still reached the server"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_card_new_here_never_replaces_one_already_at_that_address() {
+        // Two identifiers colliding is unlikely, and quietly writing over a
+        // stranger's contact is not a thing to leave to chance.
+        let (address, listening) = answering("201 Created", "text/vcard", String::new()).await;
+
+        let _ = CardDavClient::allowed_to_change_things()
+            .write_card(&a_card_at(address), "sam", "secret", A_CARD, None)
+            .await;
+
+        let request = heard(listening, "a write").await.expect("the request");
+        let asked = request.to_ascii_lowercase();
+        assert!(asked.contains("if-none-match: *"), "{request}");
+        assert!(
+            !asked.contains("if-match:"),
+            "a card new here was written only over a version nobody knows: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_change_is_written_only_over_the_copy_it_was_built_on() {
+        // Without this the write is carried out over whatever the server holds
+        // now, so a change made somewhere else since is destroyed with nothing
+        // said.
+        let (address, listening) = answering("200 OK", "text/vcard", String::new()).await;
+
+        let _ = CardDavClient::allowed_to_change_things()
+            .write_card(&a_card_at(address), "sam", "secret", A_CARD, Some("\"v1\""))
+            .await;
+
+        let request = heard(listening, "a write").await.expect("the request");
+        assert!(
+            request.to_ascii_lowercase().contains("if-match: \"v1\""),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleting_a_card_asks_for_that_card_and_names_no_version() {
+        // Somebody asked for the contact to go, and a version that had moved on
+        // would make the deletion fail for ever.
+        let (address, listening) = answering("204 No Content", "text/plain", String::new()).await;
+
+        CardDavClient::allowed_to_change_things()
+            .delete_card(&a_card_at(address), "sam", "secret")
+            .await
+            .expect("the deletion");
+
+        let request = heard(listening, "a deletion").await.expect("the request");
+        assert_eq!(asked_for(&request), "DELETE /books/work/c-1.vcf");
+        assert!(
+            !request.to_ascii_lowercase().contains("if-match:"),
+            "{request}"
+        );
     }
 
     #[test]

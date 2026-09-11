@@ -1713,6 +1713,20 @@ fn build_permissions_tab(
     set_accessible_name(&contacts_note, CONTACT_CHANGES_WHEN_THIS_IS_OFF);
     contacts_sec.add(&contacts_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
+    // Here as well as on the screen that adds one, because this is where
+    // somebody looking for what this program may change to their contacts
+    // comes, and the screen that adds an address book is one they may have met
+    // weeks ago. The same words in both places rather than a second sentence
+    // that drifts.
+    let address_book_note = StaticText::builder(panel)
+        .with_label(crate::application::address_book_source::NOT_TRIED_FOR_REAL)
+        .build();
+    set_accessible_name(
+        &address_book_note,
+        crate::application::address_book_source::NOT_TRIED_FOR_REAL,
+    );
+    contacts_sec.add(&address_book_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     sizer.add_sizer(&contacts_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);

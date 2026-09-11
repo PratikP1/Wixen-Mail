@@ -517,6 +517,136 @@ fn ask_a_server_and_add_what_was_chosen(
         .map(Some)
 }
 
+/// Add an address book by the address it lives at.
+///
+/// Asks for the address and the sign-in, asks the server what address books it
+/// has, lets somebody choose one, and writes the row. The sign-in goes to the
+/// credential store and never to the database.
+///
+/// Everything decided here is decided in `application::address_book_source`,
+/// which can be tested. This is the wiring: the windows, and where the waiting
+/// happens. The shape is `add_calendar_by_address`'s, deliberately, so there is
+/// one pattern and not two.
+pub fn add_address_book_by_address(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::application::address_book_source;
+
+    let (cache, account) = match manager_account(state, cache) {
+        Ok(pair) => pair,
+        Err(reason) => return send_refusal(tx, rt, reason),
+    };
+    // Before the window opens, so nobody types an address and a password for an
+    // address book that could never have been kept.
+    if let Err(refused) = address_book_source::can_be_filed_under(&account) {
+        return send_refusal(tx, rt, &refused);
+    }
+    let Some(asked) = crate::presentation::wx_add_address_book::ask_for_an_address_book(frame)
+    else {
+        return;
+    };
+
+    match ask_an_address_book_server_and_add_what_was_chosen(
+        &cache, &account, &asked, frame, tx, rt,
+    ) {
+        Ok(None) => {}
+        Ok(Some(book)) => {
+            send_status(
+                tx,
+                rt,
+                &format!(
+                    "Address book \"{}\" added. Its contacts fill in on the next sync.",
+                    book.name
+                ),
+            );
+            refill_the_contacts_panel(&cache, &account, tx);
+        }
+        Err(said) => {
+            let _ = tx.try_send(UIUpdate::ErrorOccurred(said));
+        }
+    }
+}
+
+/// Ask an address book server what it has, let somebody choose one, and add it.
+///
+/// The asking goes to the runtime and the answer comes back down a channel, so
+/// the thread that draws the window is never the thread that waits. While it
+/// waits, a window says so and offers a way to stop; stopping leaves everything
+/// as it was, because nothing is written on this computer until something has
+/// been chosen.
+///
+/// The count is said as well as shown. A list that fills in silence tells a
+/// listener one row and nothing about how many rows there are.
+fn ask_an_address_book_server_and_add_what_was_chosen(
+    cache: &Arc<MessageCache>,
+    account: &str,
+    asked: &crate::presentation::wx_add_address_book::Asked,
+    frame: &Frame,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) -> Result<Option<crate::data::message_cache::AddressBookContainer>, String> {
+    use crate::application::address_book_source;
+
+    // One answer, and the sender goes with the request. Nothing else can put
+    // anything in here, so what the waiting window takes out is this server's
+    // answer or nothing at all.
+    let (answered, coming) = async_channel::bounded(1);
+    let address = asked.address.clone();
+    let user_name = asked.user_name.clone();
+    let password = asked.password.clone();
+    rt.spawn(async move {
+        let asking = address_book_source::what_a_server_has(&address, &user_name, &password);
+        let answer =
+            match tokio::time::timeout(address_book_source::HOW_LONG_A_SERVER_IS_GIVEN, asking)
+                .await
+            {
+                Ok(answer) => answer,
+                Err(_) => Err(address_book_source::NO_ANSWER_IN_TIME.to_string()),
+            };
+        // A closed channel is somebody who stopped waiting, which is not a
+        // failure and has nothing to report.
+        let _ = answered.send(answer).await;
+    });
+
+    let waited = wx_managers::wait_for_an_answer(
+        frame,
+        WAITING_FOR_THE_SERVER,
+        &address_book_source::looking_for_address_books(),
+        STOP_LOOKING,
+        coming,
+        crate::presentation::theme::current_from_stored_config(),
+    );
+    let Some(answer) = waited else {
+        send_status(tx, rt, address_book_source::LOOKING_WAS_STOPPED);
+        return Ok(None);
+    };
+    let offers = answer?;
+
+    // In the status line as well as in the window below, so it is still there
+    // to be read back after the choosing is over.
+    let count = address_book_source::how_many_were_found(offers.len());
+    send_status(tx, rt, &count.replace('&', ""));
+    let lines: Vec<String> = offers.iter().map(|offer| offer.name.clone()).collect();
+    let chosen = wx_managers::choose_from_list(
+        frame,
+        "Choose an address book",
+        &count,
+        "&Add",
+        &lines,
+        crate::presentation::theme::current_from_stored_config(),
+    );
+    let Some(chosen) = chosen.and_then(|which| offers.get(which)) else {
+        return Ok(None);
+    };
+
+    address_book_source::add_the_chosen(cache, account, chosen, &asked.user_name, &asked.password)
+        .map(Some)
+}
+
 /// Where a change to the event on this row can actually go.
 ///
 /// Asked of the calendar the row is filed in, never of the row's own provider

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 513 records have arrived since and have not been through it.
+# 517 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -9810,7 +9810,10 @@ tests_last_seen = [
 [[guard]]
 name = "a contacts sync really lets go of a deletion it has remembered long enough, not a stub that does nothing"
 file = "src/application/contacts_sync.rs"
-before = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut SyncResult) {
+before = '''pub(crate) fn forget_the_deletions_remembered_long_enough(
+    cache: &MessageCache,
+    result: &mut SyncResult,
+) {
     if let Err(unwritten) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
         cache,
         chrono::Utc::now(),
@@ -9819,10 +9822,13 @@ before = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache,
             .errors
             .push(format!("Old deletions could not be let go of: {unwritten}"));
     }
-}"""
-after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut SyncResult) {
+}'''
+after = '''pub(crate) fn forget_the_deletions_remembered_long_enough(
+    cache: &MessageCache,
+    result: &mut SyncResult,
+) {
     let _ = (cache, result);
-}"""
+}'''
 red = ["application::contacts_sync::tests::test_a_contacts_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
@@ -16016,7 +16022,7 @@ red = [
     "application::forget::tests::test_the_private_key_entry_is_one_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 21 },
+    { file = "src/application/forget.rs", tests = 24 },
 ]
 
 # ── An encrypted message opened as a blank message with nothing said ────────
@@ -18784,7 +18790,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/service/carddav.rs", tests = 30 },
+    { file = "src/service/carddav.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -18812,7 +18818,7 @@ red = [
     "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 30 },
+    { file = "src/service/carddav.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -18854,5 +18860,161 @@ red = [
     "service::carddav::tests::test_a_cards_text_goes_through_the_reader_a_file_import_uses",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 30 },
+    { file = "src/service/carddav.rs", tests = 35 },
+]
+
+# ── Two address books that are one address book ─────────────────────────────
+#
+# Every question the contact merge asks is keyed on the word
+# `AddressBook::as_stored` returns: `this_address_book_is_still_owed_the_change`
+# compares it, and so do `ContactEntry::id_in`, `told` and `no_longer_in`. Two
+# CardDAV address books filed under one word are therefore one address book to
+# all of them. A change waiting to go to the first reads as waiting for the
+# second, and a contact in both carries one identity where it needs two.
+#
+# The break is what `05-RESEARCH.md` told whoever read it to write: "no schema
+# change is needed, `AddressBook::Other("carddav")` already round-trips". It is
+# right about naming one address book on a contact and it is what makes two
+# collapse into one. It is one edit, in the one function whose whole job is the
+# decision, and it is the edit somebody makes while simplifying a word that
+# looks needlessly long.
+#
+# Measured by hand on 2026-09-10 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,845 passed
+# and exactly two failed.
+[[guard]]
+name = "two address books on one account that are one address book to the merge"
+file = "src/data/message_cache/address_books.rs"
+before = '''        AddressBook::Other(format!("carddav-{}", self.id))'''
+after = '''        AddressBook::Other("carddav".to_string())'''
+red = [
+    "data::message_cache::address_books::tests::test_two_address_books_on_one_account_are_two_address_books",
+    "data::message_cache::address_books::tests::test_the_word_an_address_books_contacts_are_filed_under_survives_the_database",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/address_books.rs", tests = 11 },
+]
+
+# ── An address book's copy written over a change somebody made here ─────────
+#
+# The losing side is held, not written over. 03-09 is the plan that established
+# that for contacts, and what it replaced is exactly this break: the address
+# book's copy went straight over the edit, and somebody was told afterwards
+# which of their words had gone.
+#
+# The break is deleting the arm that holds both copies, which is the edit
+# somebody makes while simplifying a branch that looks redundant: the line above
+# it already decides that the address book wins, so holding reads as an extra
+# step on the way to the same write.
+#
+# Two go red and both are worth having. The one about holding is the behaviour;
+# the one about deciding nothing is the shape, and it reddens because the call
+# to `hold_both_copies_of` is one of the two calls it reads for. That pairing is
+# deliberate: a break that removed the call and kept the words would still be
+# caught.
+#
+# Measured by hand on 2026-09-10 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,864 passed
+# and exactly two failed.
+[[guard]]
+name = "an address book's copy written over a contact somebody edited here"
+file = "src/application/carddav_sync.rs"
+before = '''    if answer == WhoseCopyWins::TakeTheAddressBooksOverAChangeMadeHere
+        && contacts_sync::the_copy_here_was_written_here(local)
+    {
+        return contacts_sync::hold_both_copies_of(
+            cache,
+            local,
+            &card.contact,
+            filed_under,
+            card.version.as_deref(),
+            result,
+        );
+    }
+'''
+after = ''''''
+red = [
+    "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
+    "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
+]
+
+# ── A second answer to which copy of a contact wins ─────────────────────────
+#
+# The CardDAV sync feeds the merge contacts already have; it does not fork it.
+# Two answers to one question is the defect this project paid for in the
+# calendar, where a reader and the writer beside it disagreed.
+#
+# The break is deciding a winner inline from the two markers, which is what
+# somebody writes who has just read `whose_copy_wins` and thinks the call is a
+# long way round to a comparison they can make here. It looks right: for a
+# contact nobody edited here it gives the same answer. What it drops is every
+# question about work waiting on this computer, which is the whole of what the
+# shared decision is for.
+#
+# Measured by hand on 2026-09-10 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,864 passed
+# and exactly two failed. The same two as the record above, and that is not a
+# duplicate: this break leaves the holding arm in place and the holding arm
+# never runs, because the answer it tests for is never produced.
+[[guard]]
+name = "a second answer to whose copy of a contact wins, written in the CardDAV sync"
+file = "src/application/carddav_sync.rs"
+before = '''    let answer = contacts_sync::keep_a_change_this_sync_could_not_send(
+        contacts_sync::whose_copy_wins(
+            contacts_sync::the_copy_here_holds_work_nobody_has_sent(local),
+            card.version.as_deref(),
+            last_seen.as_deref(),
+        ),
+        local,
+        result,
+        still_built_on_an_old_copy,
+    );'''
+after = '''    let answer = match card.version.as_deref() == last_seen.as_deref() {
+        true => WhoseCopyWins::NeitherCopyMoved,
+        false => WhoseCopyWins::TakeTheAddressBooks,
+    };'''
+red = [
+    "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
+    "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
+]
+
+# ── An address book added by a screen that never asked a server ─────────────
+#
+# The stub shape this project has met before, and the one its first guardrail
+# is about: the handler writes the row, says "added", and nothing ever asks the
+# server what is there. Everything reads as working until the first sync goes
+# to an address nobody checked, or finds nothing at an address that was never
+# an address book. Five modules once rendered empty in every build for want of
+# exactly this.
+#
+# The break is the asking replaced by an answer made out of what was typed,
+# which is what somebody writes while making the screen easier to try by hand.
+# It keeps the waiting window, the timeout and the thread, so every other
+# assertion about this path stays green: only the question of whether anything
+# was asked goes red.
+#
+# Measured by hand on 2026-09-11 against a green tree, with
+# `cargo test --lib --no-fail-fast` at the default eight threads: 6,881 passed
+# and exactly one failed.
+[[guard]]
+name = "an address book added by a screen that never asked a server what was there"
+file = "src/presentation/managers.rs"
+before = '''        let asking = address_book_source::what_a_server_has(&address, &user_name, &password);'''
+after = '''        let asking = std::future::ready(Ok::<_, String>(vec![address_book_source::Offer {
+            name: address.clone(),
+            address: address.clone(),
+        }]));
+        let _ = (&user_name, &password);'''
+red = [
+    "application::address_book_source::tests::test_adding_an_address_book_really_goes_and_looks",
+]
+tests_last_seen = [
+    { file = "src/application/address_book_source.rs", tests = 16 },
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]

@@ -6,6 +6,34 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **You can add an address book that lives on a server, and your contacts sync
+  both ways with it. Nothing here has ever met a real address book server.**
+  Tools, "Add an Address Book by Address", asks for the address and the sign-in,
+  asks the server which address books it has, and lets you choose one. Its
+  contacts then go both ways through the same merge Google and Outlook contacts
+  already use, so a contact that changed in two places is held for you to choose
+  rather than written over, and a contact you deleted here is not written back
+  down by the read that follows.
+
+  Lead with what is not known, because it is most of it. Every part of this has
+  been driven against a stand-in written for the tests. Whether a real server's
+  answer parses, whether a card this writes is accepted, and whether a clash
+  comes back the way the stand-in raises it are five separate unknowns, and
+  `docs/ALPHA_TESTING.md` lists them one at a time. The screen says it is
+  experimental before you type a password into it, and the Permissions tab in
+  Settings says the same.
+
+  The sign-in goes to Windows' own credential store and never into the
+  database, so a copy of your mail folder carries no password. Uninstalling
+  erases it with everything else.
+
+  This raises the seriousness of a limitation already on the alpha list: a card
+  that names an address one of your contacts already uses is read as being about
+  that person, and a card can now arrive from a server rather than from a file
+  you chose. The matching rule is unchanged.
+
 ### Fixed
 
 - **A sync now says when your notes backend could not keep a note exactly as

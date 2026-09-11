@@ -194,7 +194,7 @@ pub struct Contacts(std::collections::BTreeSet<String>);
 impl Contacts {
     /// Note that this happened to this contact. Noting the same contact again
     /// is still one contact.
-    fn note(&mut self, contact_id: &str) {
+    pub(crate) fn note(&mut self, contact_id: &str) {
         self.0.insert(contact_id.to_string());
     }
 
@@ -208,7 +208,7 @@ impl Contacts {
     }
 
     /// Whether this contact is one of them.
-    fn holds(&self, contact_id: &str) -> bool {
+    pub(crate) fn holds(&self, contact_id: &str) -> bool {
         self.0.contains(contact_id)
     }
 
@@ -933,7 +933,7 @@ fn the_push_failed_at_the_network(error: &Error) -> bool {
 /// book that writes to somebody at her work address handed back a second row
 /// for a person already here, and so did one that spells her address in
 /// capitals.
-fn the_stored_contact_this_is<'a>(
+pub(crate) fn the_stored_contact_this_is<'a>(
     locals: &'a [ContactEntry],
     address_book: &AddressBook,
     provider_contact_id: &str,
@@ -1041,7 +1041,7 @@ pub(crate) fn the_marker_moved(version_now: Option<&str>, version_last_seen: Opt
 /// An address book that does not know the contact is owed no change to it. It
 /// may be owed the contact itself, which is a different path and a create rather
 /// than a change.
-fn this_address_book_is_still_owed_the_change(
+pub(crate) fn this_address_book_is_still_owed_the_change(
     contact: &ContactEntry,
     address_book: &AddressBook,
 ) -> bool {
@@ -1066,7 +1066,7 @@ fn this_address_book_is_still_owed_the_change(
 /// does one matched to an address book by its email address alone: nothing in
 /// that contact came from that address book, so there is no earlier copy of it
 /// here to be out of date.
-fn the_copy_here_holds_work_nobody_has_sent(contact: &ContactEntry) -> bool {
+pub(crate) fn the_copy_here_holds_work_nobody_has_sent(contact: &ContactEntry) -> bool {
     contact.pending
         || contact
             .known_to
@@ -1105,7 +1105,7 @@ fn another_address_book_still_has_them(
 ///
 /// Where nobody else holds her, the row goes, and any work in it goes with it,
 /// which is what `say_if_a_change_went_too` is for.
-fn one_address_book_deleted_them(
+pub(crate) fn one_address_book_deleted_them(
     cache: &MessageCache,
     local: &ContactEntry,
     address_book: &AddressBook,
@@ -1156,7 +1156,7 @@ fn say_if_a_change_went_too(local: &ContactEntry, result: &mut SyncResult) {
 /// is still waiting to reach the other address book. Both hold a change nobody
 /// has sent, `the_copy_here_holds_work_nobody_has_sent` says yes to both, and
 /// only the first is anybody's work.
-fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
+pub(crate) fn the_copy_here_was_written_here(contact: &ContactEntry) -> bool {
     contact.last_synced_at.is_none()
 }
 
@@ -1205,7 +1205,7 @@ fn the_fields_worth_choosing_between(contact: &ContactEntry) -> Vec<AField> {
 ///
 /// Nothing is written and nothing is sent. The contact keeps the change it is
 /// still owed, so choosing this computer's copy later has something to send.
-fn hold_both_copies_of(
+pub(crate) fn hold_both_copies_of(
     cache: &MessageCache,
     the_copy_here: &ContactEntry,
     the_arriving_copy: &ContactEntry,
@@ -1250,7 +1250,7 @@ fn hold_both_copies_of(
 /// address book: replacing that again loses nothing, and saying so again is
 /// telling somebody a second time about an edit that went once. Left ungated,
 /// the warning came back on every sync from then on, for ever.
-fn a_change_here_that_lost(
+pub(crate) fn a_change_here_that_lost(
     merged: ContactEntry,
     the_copy_it_replaces: &ContactEntry,
     address_book: &AddressBook,
@@ -1322,7 +1322,7 @@ fn a_change_here_that_lost(
 /// address book to protect a copy that is nobody's work is how a contact stops
 /// syncing at all. `the_copy_here_was_written_here` draws the same line for
 /// `replaced`.
-fn keep_a_change_this_sync_could_not_send(
+pub(crate) fn keep_a_change_this_sync_could_not_send(
     answer: WhoseCopyWins,
     the_copy_here: &ContactEntry,
     result: &SyncResult,
@@ -1829,7 +1829,7 @@ fn write_down(cache: &MessageCache, contact: &ContactEntry, result: &mut SyncRes
 /// one and not to the other. Asked the wide way, an address book that had
 /// already taken the change would be sent its own copy back and told it was
 /// one of yours.
-fn changes_waiting_for(
+pub(crate) fn changes_waiting_for(
     cache: &MessageCache,
     account_id: &str,
     address_book: &AddressBook,
@@ -1909,7 +1909,7 @@ fn changes_waiting_for(
 /// Only the ones still owed. A note an address book has taken is kept so that
 /// no read writes her back down, and sending it again would ask that address
 /// book on every sync from now on to delete somebody it has already deleted.
-fn deletions_waiting_for(
+pub(crate) fn deletions_waiting_for(
     cache: &MessageCache,
     account_id: &str,
     address_book: &AddressBook,
@@ -1951,7 +1951,7 @@ fn deletions_waiting_for(
 /// from this side, and the rule holds whether it does or not: neither address
 /// book may resurrect anybody deleted here, and neither reading of the evidence
 /// makes it safe to write her down.
-fn contacts_deleted_here(
+pub(crate) fn contacts_deleted_here(
     cache: &MessageCache,
     account_id: &str,
     address_book: &AddressBook,
@@ -1981,7 +1981,10 @@ fn contacts_deleted_here(
 /// At the start of a sync, so that the push and the read that follow both work
 /// from the same answer. `application::deletions` says what makes this
 /// terminate.
-fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, result: &mut SyncResult) {
+pub(crate) fn forget_the_deletions_remembered_long_enough(
+    cache: &MessageCache,
+    result: &mut SyncResult,
+) {
     if let Err(unwritten) = crate::application::deletions::let_go_of_what_was_remembered_long_enough(
         cache,
         chrono::Utc::now(),
@@ -2064,7 +2067,7 @@ enum TheDeletionIsDone {
 ///
 /// The two endings that clear the note are counted apart, because one of them
 /// sent something and the other did not.
-fn count_the_deletion(
+pub(crate) fn count_the_deletion(
     cache: &MessageCache,
     sent: &Result<()>,
     note: &DeletedContact,
@@ -2126,7 +2129,7 @@ fn the_address_book_has_never_heard_of_her(error: &Error) -> bool {
 ///
 /// The contact's own identifier and nothing else goes into the sentence. A
 /// name, an address or a note would end up in a log file.
-fn count_the_attempt(
+pub(crate) fn count_the_attempt(
     sent: &Result<()>,
     contact_id: &str,
     address_book_called: &str,
@@ -2144,7 +2147,10 @@ fn count_the_attempt(
 }
 
 /// The version marker one address book last gave for this contact.
-fn version_given_by(contact: &ContactEntry, address_book: &AddressBook) -> Option<String> {
+pub(crate) fn version_given_by(
+    contact: &ContactEntry,
+    address_book: &AddressBook,
+) -> Option<String> {
     contact
         .known_to
         .iter()

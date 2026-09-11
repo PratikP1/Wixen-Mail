@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 242
+open_count: 248
 waived_count: 0
 fixed_count: 17
-total_count: 259
-last_updated: 2026-09-11T01:41:59.594Z
+total_count: 265
+last_updated: 2026-09-11T04:44:07.898Z
 ---
 
 # Broken Windows Ledger
@@ -274,6 +274,12 @@ last_updated: 2026-09-11T01:41:59.594Z
 | 257 | 05.1 | unrun-verify | src/data/message_cache/contacts.rs |  | Whether a card written by another client reads correctly through contact_from_vcard_block. Only cards this repository wrote have been read back by it here, and Apple, Google and SabreDAV each write cards this program has never seen. | open |  | 2026-09-11T01:41:47.161Z |  |
 | 258 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether the scan for the address book element over a whole response block, rather than over the resource type alone, ever reads a server's answer as offering an address book it does not have. It needs a server sending a raw angle bracket inside a name it should have escaped. | open |  | 2026-09-11T01:41:58.844Z |  |
 | 259 | 05.1 | deviation | docs/ALPHA_TESTING.md |  | A malicious card joining two people who share an address is a named limitation, and CardDAV raises its severity: today it needs somebody to choose a file, and over a server it arrives from the network. This plan does not change ContactEntry::shares_an_address_with or the_same_person_on_an_earlier_card, so the change of severity is recorded rather than answered. | open |  | 2026-09-11T01:41:59.594Z |  |
+| 260 | 05.1 | unrun-verify | src/application/carddav_sync.rs |  | Whether a real CardDAV server accepts a card this writes with If-Match, and answers 412 when the version has moved. The sync treats 412 as the copy having moved past the change and keeps the edit for the next sync; a server answering 409 or 403 instead is read as an ordinary failure and the edit is still kept, but it is not counted as built on an old copy, so the read in the same sync can replace it. | open |  | 2026-09-11T04:44:04.081Z |  |
+| 261 | 05.1 | unrun-verify | src/application/carddav_sync.rs |  | Whether a real CardDAV server answers a PUT to an address nothing is at by making the card. Every contact made here is written to an address this program chose, under the contact's own identifier, and a server that refuses to create at an address it did not name would fail every create with nothing here able to tell that apart from a refusal. | open |  | 2026-09-11T04:44:04.822Z |  |
+| 262 | 05.1 | unrun-verify | src/application/carddav_sync.rs |  | Whether a real server's change marker moves on every change to an address book. If it does not, a sync that compares it skips the read and nothing new is ever seen; if it moves when nothing changed, the whole address book is read every time. Both are silent. | open |  | 2026-09-11T04:44:05.652Z |  |
+| 263 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server gives an ETag on the PUT response at all. Where it does not, the version marker is nothing, the_marker_moved reads that as moved, and every contact is read as having changed at the server on every sync. | open |  | 2026-09-11T04:44:06.370Z |  |
+| 264 | 05.1 | unrun-verify | src/application/address_book_source.rs |  | Whether a real address book server's home set answers the PROPFIND this makes at Depth 1 with the address books in it. Discovery asks the address somebody typed; a server that keeps its address books one level further down answers with nothing and somebody is told the server has no address books for that sign-in. | open |  | 2026-09-11T04:44:07.152Z |  |
+| 265 | 05.1 | unrun-verify | src/presentation/wx_add_address_book.rs |  | Whether the new address book screen is usable by ear. Every control carries an accessible name set the only way that reaches NVDA, and the mnemonics were checked by hand because nothing can check them. Whether the names are the ones intended rather than a nearby label Windows fell back to, whether the refusal is heard, and whether what the server found is announced rather than only drawn, are all things only a screen reader run answers. | open |  | 2026-09-11T04:44:07.898Z |  |
 
 ````json
 [
@@ -3383,6 +3389,78 @@ last_updated: 2026-09-11T01:41:59.594Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T01:41:59.594Z",
+    "resolved_at": null
+  },
+  {
+    "id": 260,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/carddav_sync.rs",
+    "line": null,
+    "description": "Whether a real CardDAV server accepts a card this writes with If-Match, and answers 412 when the version has moved. The sync treats 412 as the copy having moved past the change and keeps the edit for the next sync; a server answering 409 or 403 instead is read as an ordinary failure and the edit is still kept, but it is not counted as built on an old copy, so the read in the same sync can replace it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:04.081Z",
+    "resolved_at": null
+  },
+  {
+    "id": 261,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/carddav_sync.rs",
+    "line": null,
+    "description": "Whether a real CardDAV server answers a PUT to an address nothing is at by making the card. Every contact made here is written to an address this program chose, under the contact's own identifier, and a server that refuses to create at an address it did not name would fail every create with nothing here able to tell that apart from a refusal.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:04.822Z",
+    "resolved_at": null
+  },
+  {
+    "id": 262,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/carddav_sync.rs",
+    "line": null,
+    "description": "Whether a real server's change marker moves on every change to an address book. If it does not, a sync that compares it skips the read and nothing new is ever seen; if it moves when nothing changed, the whole address book is read every time. Both are silent.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:05.652Z",
+    "resolved_at": null
+  },
+  {
+    "id": 263,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/service/carddav.rs",
+    "line": null,
+    "description": "Whether a real CardDAV server gives an ETag on the PUT response at all. Where it does not, the version marker is nothing, the_marker_moved reads that as moved, and every contact is read as having changed at the server on every sync.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:06.370Z",
+    "resolved_at": null
+  },
+  {
+    "id": 264,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/application/address_book_source.rs",
+    "line": null,
+    "description": "Whether a real address book server's home set answers the PROPFIND this makes at Depth 1 with the address books in it. Discovery asks the address somebody typed; a server that keeps its address books one level further down answers with nothing and somebody is told the server has no address books for that sign-in.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:07.152Z",
+    "resolved_at": null
+  },
+  {
+    "id": 265,
+    "kind": "unrun-verify",
+    "phase": "05.1",
+    "file": "src/presentation/wx_add_address_book.rs",
+    "line": null,
+    "description": "Whether the new address book screen is usable by ear. Every control carries an accessible name set the only way that reaches NVDA, and the mnemonics were checked by hand because nothing can check them. Whether the names are the ones intended rather than a nearby label Windows fell back to, whether the refusal is heard, and whether what the server found is announced rather than only drawn, are all things only a screen reader run answers.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T04:44:07.898Z",
     "resolved_at": null
   }
 ]

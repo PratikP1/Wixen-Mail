@@ -529,11 +529,12 @@ mod tests {
 /// `reqwest::Client` field again, which is how all four HTTP clients came to
 /// have one apiece with nothing able to tell a read from a delete.
 #[cfg(test)]
-const GATED: [&str; 7] = [
+const GATED: [&str; 8] = [
     "src/service/tasks_api.rs",
     "src/service/google_api.rs",
     "src/service/microsoft_graph.rs",
     "src/service/caldav.rs",
+    "src/service/carddav.rs",
     "src/service/protocols/imap.rs",
     "src/service/protocols/smtp.rs",
     "src/service/protocols/pop3.rs",
@@ -579,11 +580,12 @@ const TALKS_BUT_ONLY_READS: [&str; 4] = [
 /// IMAP, SMTP or POP3 write could arrive with nothing reading its request and
 /// nothing failing.
 #[cfg(test)]
-const CLIENTS: [&str; 4] = [
+const CLIENTS: [&str; 5] = [
     "src/service/google_api.rs",
     "src/service/microsoft_graph.rs",
     "src/service/tasks_api.rs",
     "src/service/caldav.rs",
+    "src/service/carddav.rs",
 ];
 
 /// Every HTTP provider write whose request has been read off a socket by a
@@ -639,7 +641,19 @@ const CLIENTS: [&str; 4] = [
 /// What it can see is the thing that was missing: a write added to one of these
 /// files and never measured fails here instead of being remembered.
 #[cfg(test)]
-const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 23] = [
+const MEASURED_ON_THE_WIRE: [(&str, &str, &str, &str); 25] = [
+    (
+        "src/service/carddav.rs",
+        "write_card",
+        "src/service/carddav.rs",
+        "PUT /books/work/c-1.vcf",
+    ),
+    (
+        "src/service/carddav.rs",
+        "delete_card",
+        "src/service/carddav.rs",
+        "DELETE /books/work/c-1.vcf",
+    ),
     (
         "src/service/google_api.rs",
         "create_contact",
@@ -1933,11 +1947,19 @@ mod completeness {
             // Before believing a short answer, the reading has to be able to
             // find anything at all. A file this read as empty, or one whose
             // methods it no longer recognises, would pass by looking at
-            // nothing. Three is what the smallest of these clients has; the
-            // total below is what stops three files reading as empty while the
-            // fourth carries the check.
+            // nothing. The total below is what stops one file reading as empty
+            // while the others carry the check.
+            //
+            // **Two, lowered from three on 2026-09-10.** Three was what the
+            // smallest of these clients had when this was written, and it was
+            // a measurement of the tree rather than a rule: `carddav.rs`
+            // arrived with a PUT and a DELETE and nothing else, because a card
+            // is created and replaced by the same request. The floor moved
+            // with the tree rather than the client being padded to meet it,
+            // and it will move again if a two-write client ever becomes a
+            // one-write client.
             assert!(
-                writes.len() >= 3,
+                writes.len() >= 2,
                 "{path}: only {} writes were found, so the way a write is recognised has \
                  moved and this is looking at the wrong thing",
                 writes.len()
@@ -1956,7 +1978,7 @@ mod completeness {
         }
 
         assert!(
-            found_altogether >= 21,
+            found_altogether >= 23,
             "only {found_altogether} writes were found across all of these clients, so the \
              way a write is recognised has moved and this is looking at the wrong thing"
         );

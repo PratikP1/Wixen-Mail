@@ -124,6 +124,7 @@ menu_ids!(
     ID_TAG_MGR,
     ID_SIG_MGR,
     ID_ADD_CALENDAR_BY_ADDRESS,
+    ID_ADD_ADDRESS_BOOK_BY_ADDRESS,
     ID_ABOUT,
     ID_THREAD_VIEW,
     ID_APPLY_VIEW_ELSEWHERE,
@@ -5070,6 +5071,15 @@ impl WxMailApp {
                             &ui_tx,
                             &runtime,
                         ),
+                        _ if id == ID_ADD_ADDRESS_BOOK_BY_ADDRESS => {
+                            managers::add_address_book_by_address(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                            )
+                        }
                         _ if id == ID_SYNC_CONTACTS => {
                             send_status(&ui_tx, &runtime, "Contacts sync requested...");
                             spawn_contacts_sync(app);
@@ -6762,6 +6772,17 @@ impl WxMailApp {
                 ID_ADD_CALENDAR_BY_ADDRESS,
                 "Add a Calendar &by Address...",
                 "Add a calendar held on a calendar server, or one published as a feed",
+            )
+            // r, for address book, because a, b, c, d and e are all taken on
+            // this menu and r is in the word. No shortcut key, for the reason
+            // the calendar above gives: this is done once per address book,
+            // and a key nobody presses twice is a key in the way of one
+            // somebody presses daily.
+            .append_item(
+                ID_ADD_ADDRESS_BOOK_BY_ADDRESS,
+                "Add an Add&ress Book by Address...",
+                "Add an address book held on an address book server, which has never been \
+                 tried for real",
             )
             .append_separator()
             // The command the countdown names. Pressing Send says "Sending in
@@ -20704,6 +20725,30 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                     }
                 }
                 Err(e) => total.errors.push(format!("Microsoft auth: {}", e)),
+            }
+        }
+
+        // Every CardDAV address book somebody added by its address. Each keeps
+        // its own sign-in, so each is its own server, and an account with none
+        // costs nothing: the list is empty and the loop does not run.
+        //
+        // Nothing here has ever met a CardDAV server. This is the non-test
+        // path that reaches it, which is what makes the rest of it a feature
+        // rather than a library nobody uses.
+        for book in cache.get_address_books_for_account(aid).unwrap_or_default() {
+            let Some(server) =
+                crate::application::carddav_sync::AnAddressBookServer::for_the(&book)
+            else {
+                // Half a sign-in is not a sign-in, and an address book with
+                // none is one somebody has yet to finish adding rather than a
+                // failure to report on every sync from now on.
+                continue;
+            };
+            match handle.block_on(crate::application::carddav_sync::sync_carddav_address_book(
+                &cache, &server, &book,
+            )) {
+                Ok(result) => total.absorb(result),
+                Err(e) => total.errors.push(format!("{}: {}", book.name, e)),
             }
         }
 

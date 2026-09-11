@@ -10,7 +10,7 @@
 //! removes any files.
 
 use crate::data::account::Account;
-use crate::service::{caldav, credentials, oauth, pgp, security};
+use crate::service::{caldav, carddav, credentials, oauth, pgp, security};
 
 /// One entry in the operating system's credential store.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +35,11 @@ pub struct ForgetOutcome {
 /// Entries that were never stored are listed too. Deleting one that is not
 /// there costs nothing, and the alternative is deciding from a stale flag in a
 /// database whether a token exists, which is how secrets get left behind.
-fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<CredentialEntry> {
+fn entries_for(
+    accounts: &[Account],
+    caldav_calendar_ids: &[String],
+    carddav_address_book_ids: &[String],
+) -> Vec<CredentialEntry> {
     let mut entries = vec![CredentialEntry {
         service: security::KEYRING_SERVICE.to_string(),
         user: security::KEYRING_MASTER_KEY.to_string(),
@@ -72,6 +76,22 @@ fn entries_for(accounts: &[Account], caldav_calendar_ids: &[String]) -> Vec<Cred
         entries.push(CredentialEntry {
             service,
             user: caldav::KEYRING_PASSWORD.to_string(),
+        });
+    }
+
+    // The same shape as the calendars above, and registered in the commit that
+    // first named the service. An owner added here later than the code that
+    // writes it is a password left on the machine after this said everything
+    // was erased.
+    for id in carddav_address_book_ids {
+        let service = carddav::keyring_service(id);
+        entries.push(CredentialEntry {
+            service: service.clone(),
+            user: carddav::KEYRING_USERNAME.to_string(),
+        });
+        entries.push(CredentialEntry {
+            service,
+            user: carddav::KEYRING_PASSWORD.to_string(),
         });
     }
 
@@ -203,22 +223,22 @@ pub fn note(version: &str, left_behind: &[String]) -> String {
 /// all, which still erases the master key: that one is stored on first run,
 /// before any account exists, so nothing has to be readable for it to be there.
 ///
-/// The accounts and calendars come from the cache database, which is where they
-/// are kept. A database that cannot be opened is the same case: an installation
-/// with no database never signed in to anything.
+/// The accounts, calendars and address books come from the cache database,
+/// which is where they are kept. A database that cannot be opened is the same
+/// case: an installation with no database never signed in to anything.
 pub fn run(paths: Option<&crate::common::paths::AppPaths>) -> ForgetOutcome {
-    let (accounts, calendar_ids) = stored_identities(paths);
-    forget(&entries_for(&accounts, &calendar_ids))
+    let (accounts, calendar_ids, address_book_ids) = stored_identities(paths);
+    forget(&entries_for(&accounts, &calendar_ids, &address_book_ids))
 }
 
 fn stored_identities(
     paths: Option<&crate::common::paths::AppPaths>,
-) -> (Vec<Account>, Vec<String>) {
+) -> (Vec<Account>, Vec<String>, Vec<String>) {
     let Some(paths) = paths else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let Ok(cache) = crate::data::MessageCache::new(paths.cache_dir(), None) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let accounts = cache.load_accounts().unwrap_or_default();
 
@@ -236,7 +256,19 @@ fn stored_identities(
         .map(|calendar| calendar.id)
         .collect();
 
-    (accounts, calendar_ids)
+    // Every address book somebody added by its server address. Each keeps its
+    // sign-in under its own id, the same as a calendar, so this walks them
+    // rather than assuming there is one. There is no word to filter on here,
+    // the way the calendars filter on `source_provider`: an address book is in
+    // this table only because somebody typed its address, so every row is one.
+    let address_book_ids = accounts
+        .iter()
+        .filter_map(|account| cache.get_address_books_for_account(&account.id).ok())
+        .flatten()
+        .map(|book| book.id)
+        .collect();
+
+    (accounts, calendar_ids, address_book_ids)
 }
 
 #[cfg(test)]
@@ -245,7 +277,7 @@ mod tests {
     use crate::common::paths::AppPaths;
     use crate::common::temp_home::TempHome;
     use crate::data::MessageCache;
-    use crate::data::message_cache::CalendarContainer;
+    use crate::data::message_cache::{AddressBookContainer, CalendarContainer};
 
     fn account(id: &str, email: &str) -> Account {
         let mut account = Account::new("Test".to_string(), email.to_string());
@@ -295,7 +327,7 @@ mod tests {
             .save_calendar(&calendar("cal-7", "a1", "caldav"))
             .expect("the calendar saves");
 
-        let (accounts, calendar_ids) = stored_identities(Some(&paths));
+        let (accounts, calendar_ids, _) = stored_identities(Some(&paths));
 
         assert_eq!(
             accounts.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
@@ -322,7 +354,7 @@ mod tests {
             .save_calendar(&calendar("sub-1", "a1", "subscription"))
             .expect("the subscription saves");
 
-        let (_, calendar_ids) = stored_identities(Some(&paths));
+        let (_, calendar_ids, _) = stored_identities(Some(&paths));
 
         assert_eq!(calendar_ids, vec!["cal-7".to_string()]);
     }
@@ -372,7 +404,7 @@ mod tests {
         // arrive in silence, which is the failure `CLAUDE.md` records a census
         // causing elsewhere: with a spare above the floor, the guard stops
         // being load-bearing.
-        let entries = entries_for(&[], &[]);
+        let entries = entries_for(&[], &[], &[]);
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].service, "wixen-mail");
@@ -383,7 +415,7 @@ mod tests {
 
     #[test]
     fn test_an_account_contributes_the_entry_that_holds_its_token() {
-        let entries = entries_for(&[account("a1", "me@gmail.com")], &[]);
+        let entries = entries_for(&[account("a1", "me@gmail.com")], &[], &[]);
 
         assert!(entries.contains(&CredentialEntry {
             // Spelled out rather than built from the same function that stores
@@ -401,14 +433,14 @@ mod tests {
         let mut switched = account("a1", "me@gmail.com");
         switched.use_oauth = false;
 
-        let entries = entries_for(&[switched], &[]);
+        let entries = entries_for(&[switched], &[], &[]);
 
         assert!(entries.iter().any(|entry| entry.user == "a1"));
     }
 
     #[test]
     fn test_every_account_gives_up_its_saved_password() {
-        let entries = entries_for(&[account("a1", "me@example.com")], &[]);
+        let entries = entries_for(&[account("a1", "me@example.com")], &[], &[]);
 
         assert!(entries.contains(&CredentialEntry {
             service: "wixen-mail-account".to_string(),
@@ -426,7 +458,7 @@ mod tests {
         // success. So every provider is listed for every account, which is the
         // argument this file already makes about the master key: deleting an
         // entry that is not there costs nothing.
-        let entries = entries_for(&[account("a1", "me@mycompany.example")], &[]);
+        let entries = entries_for(&[account("a1", "me@mycompany.example")], &[], &[]);
 
         assert!(
             entries.contains(&CredentialEntry {
@@ -448,7 +480,7 @@ mod tests {
     fn test_a_caldav_calendar_gives_up_both_halves_of_its_sign_in() {
         // Two entries under one service. Removing the password and leaving the
         // user name behind still leaves a record of who the account belongs to.
-        let entries = entries_for(&[], &["cal-7".to_string()]);
+        let entries = entries_for(&[], &["cal-7".to_string()], &[]);
 
         assert!(entries.contains(&CredentialEntry {
             service: "wixen-mail-caldav-cal-7".to_string(),
@@ -458,6 +490,50 @@ mod tests {
             service: "wixen-mail-caldav-cal-7".to_string(),
             user: "password".to_string(),
         }));
+    }
+
+    #[test]
+    fn test_a_carddav_address_book_gives_up_both_halves_of_its_sign_in() {
+        // The second shape of test the guard below asks the next owner for. A
+        // module merely named in `entries_for` could still name the wrong
+        // entries, and the guard cannot see that: it reads the source for a
+        // mention. This asks for the entries themselves.
+        let entries = entries_for(&[], &[], &["address-book-7".to_string()]);
+
+        assert!(entries.contains(&CredentialEntry {
+            service: "wixen-mail-carddav-address-book-7".to_string(),
+            user: "username".to_string(),
+        }));
+        assert!(entries.contains(&CredentialEntry {
+            service: "wixen-mail-carddav-address-book-7".to_string(),
+            user: "password".to_string(),
+        }));
+    }
+
+    #[test]
+    fn test_the_address_books_on_this_computer_are_found_as_well_as_the_calendars() {
+        // The list can be complete in shape and empty in practice. Each address
+        // book keeps its sign-in under its own id, so uninstalling has to walk
+        // them, and a walk nobody wrote leaves every password on the machine
+        // while the note says everything was removed.
+        let paths = paths_for("address_books");
+        let cache = MessageCache::new(paths.cache_dir(), None).expect("a cache of its own");
+        cache
+            .save_account(&account("a1", "me@example.com"))
+            .expect("the account saves");
+        cache
+            .save_address_book(&AddressBookContainer {
+                id: "address-book-7".to_string(),
+                account_id: "a1".to_string(),
+                name: "Work".to_string(),
+                url: "https://dav.example.com/books/work/".to_string(),
+                ctag: None,
+            })
+            .expect("the address book saves");
+
+        let (_, _, address_book_ids) = stored_identities(Some(&paths));
+
+        assert_eq!(address_book_ids, vec!["address-book-7".to_string()]);
     }
 
     #[test]
@@ -596,6 +672,7 @@ mod tests {
                 account("a2", "two@gmail.com"),
             ],
             &[],
+            &[],
         );
 
         assert!(entries.iter().any(|entry| entry.user == "a1"));
@@ -618,7 +695,7 @@ mod tests {
         // in the credential store after an uninstall said everything was
         // erased, it is unreadable, belongs to nothing, and is invisible to
         // the uninstaller that would have removed it.
-        let entries = entries_for(&[], &[]);
+        let entries = entries_for(&[], &[], &[]);
 
         assert!(
             entries.iter().any(|entry| {
@@ -744,6 +821,26 @@ mod tests {
             .unwrap_or(under_service)
     }
 
+    /// Whether the list uninstalling erases really reaches into this module.
+    ///
+    /// The module's name followed by a path separator, not the bare word.
+    /// **Measured 2026-09-10, by watching the bare word pass when it should not
+    /// have.** `entries_for` grew a parameter called
+    /// `carddav_address_book_ids`, and nothing else: the address books were
+    /// taken and never named, which is the whole failure the guard below exists
+    /// to catch. The guard was quiet, because the parameter's own name contains
+    /// the word `carddav`.
+    ///
+    /// A mention is not a use. Every one of the five owners registered today is
+    /// reached as `owner::something`, so asking for the separator costs nothing
+    /// and refuses the case above. It is still a reading of source text rather
+    /// than a proof, which is why the guard below asks the next owner for a
+    /// second test of the shape
+    /// `test_a_carddav_address_book_gives_up_both_halves_of_its_sign_in` has.
+    fn the_list_uses(list: &str, owner: &str) -> bool {
+        list.contains(&format!("{owner}::"))
+    }
+
     /// The body of `entries_for`, read out of this file.
     fn what_uninstalling_names() -> String {
         let source = std::fs::read_to_string("src/application/forget.rs")
@@ -765,13 +862,37 @@ mod tests {
         // owner disappearing and another arriving from nothing happening.
         let found = owners_of_credential_entries();
 
-        for owner in ["caldav", "credentials", "oauth", "pgp", "security"] {
+        for owner in [
+            "caldav",
+            "carddav",
+            "credentials",
+            "oauth",
+            "pgp",
+            "security",
+        ] {
             assert!(
                 found.iter().any(|name| name == owner),
                 "the reading no longer finds service::{owner}, so it is not \
                  watching what it says it watches: found {found:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_a_module_the_list_merely_mentions_is_not_a_module_the_list_uses() {
+        // The half of the guard below that reads the list, taken red by the
+        // thing it was supposed to catch. `carddav_address_book_ids` is a
+        // parameter name and nothing else, and against the bare word it read
+        // as an owner that had been registered.
+        assert!(the_list_uses("caldav::keyring_service(id)", "caldav"));
+        assert!(the_list_uses(
+            "for (service, user) in pgp::keyring_entries()",
+            "pgp"
+        ));
+        assert!(
+            !the_list_uses("let _ = carddav_address_book_ids;", "carddav"),
+            "a parameter named after a module reads as that module being used"
+        );
     }
 
     #[test]
@@ -804,7 +925,7 @@ mod tests {
         let list = what_uninstalling_names();
         let missing: Vec<String> = owners_of_credential_entries()
             .into_iter()
-            .filter(|owner| !list.contains(owner.as_str()))
+            .filter(|owner| !the_list_uses(&list, owner))
             .collect();
 
         assert!(
