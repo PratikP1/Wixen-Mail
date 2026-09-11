@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.1
 current_phase_name: Notes and contacts reach a server
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 05.1-04-PLAN.md
-last_updated: "2026-09-10T23:57:09.486Z"
+stopped_at: Completed 05.1-05-PLAN.md
+last_updated: "2026-09-11T02:03:21.487Z"
 last_activity: 2026-09-10
-state_head: 2f4d86fcfa7a82d1d09c18d2e135febca9326431
+state_head: 31f13fbcbe91a60bf6f3368c63245a0fc3836b8a
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 75
+  completed_plans: 76
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,10 +29,41 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.1 (Notes and contacts reach a server). **4 of 6 plans done.** 05.1-04 put a second implementation behind the notes seam, shaped from what a OneNote page really does, and found four places the contract was written about CalDAV. Two of them were bugs in code that ships. `main` is at `2f4d86f`, version `0.106.0`, `guards/guards.toml` holds 702 records with the census reading 192 and 510, `.planning/WINDOWS.md` reaches 253, and nothing is pushed.
+Phase: 05.1 (Notes and contacts reach a server). **5 of 6 plans done.** 05.1-05 lifted a per card reader and a per card writer out of two whole file functions, neither of which existed, and built the two CardDAV readers, all pure. `main` is at `31f13fb`, version `0.106.0`, `guards/guards.toml` holds 705 records with the census reading 192 and 513, `.planning/WINDOWS.md` reaches 259, and nothing is pushed.
 
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
+
+**What 05.1-05 built, and the four things it found.** PIM-05 asks contacts to
+sync through the vCard reader and writer that already exist rather than a second
+pair. There was no function that turned one contact into one card:
+`export_contacts_to_vcard` rendered every property inline inside a `for` loop,
+so a CardDAV write would have been the second writer the requirement forbids.
+The loop's body is now `vcard_block_from_contact` and the loop calls it. The 103
+tests in `contacts.rs` pass unchanged and none was added there, because 35 guard
+records fingerprint that file.
+
+`src/service/carddav.rs` holds the two request bodies and the two readers, all
+hand written scans that resolve nothing, sharing the calendar's three scanning
+helpers rather than copying them. Everything it takes out of a document is XML
+unescaped, which the calendar's reader does not do; that gap is recorded rather
+than reached into from here.
+
+Four findings against the plan. `pub(crate)` with no caller is dead code and
+`-D warnings` refuses it, so an item written before its caller has to be `pub`;
+the plan's own correction offered both as though they were interchangeable. A
+new file cannot join `FILES_THAT_READ_OR_WRITE_A_DOCUMENT` in the commit that
+creates it when that commit is the red half, because its shipped half is 36
+lines of 363 against a one part in ten assertion, and that was a correction of
+2026-09-10 which reviewed the criterion without noticing. Both guard breaks the
+plan asked for redden nothing, and the substitutes are written into the records
+with the reason. And a fixture committed red asserted something its own name did
+not claim, found while writing the code that would have passed it.
+
+Six ledger entries, 254 to 259. Nothing here has met a server and nothing here
+can: a card written here and read back here proves the pair agrees with itself
+and says nothing about anybody else's. `address_books_in` and `cards_in` have no
+caller outside their tests until 05.1-06.
 
 **What 05.1-04 found, and what to carry into 05.1-05 and phase 5.2.** The
 largest is that a version marker is not optional. The seam said it was, and the
@@ -635,6 +666,9 @@ ahead:
 - [Phase 05.1]: 05.1-01: the notes.format column records why it stays rather than being given meaning, because a reader that obeyed it would stop reading headings and lists in every note that already exists
 - [Phase 05.1]: 05.1-01: NoteEntry.format is an enum rather than a String with a shared constant, so a second writer has no literal left to spell
 - [Phase 05.1]: 05.1-01: one version bump for a whole plan rather than one per task, because bumping twice for one plan uses the version as a build counter
+- [Phase 05.1]: An empty change marker and an absent one are one answer, decided once for an address book's ctag and a card's version marker together: the one XML extractor this program has collapses both, and a second extractor is a second thing to keep working for a distinction nobody acts on
+- [Phase 05.1]: A non multistatus CardDAV answer is refused with Error::Protocol and a fixed sentence, following parse_report_events. parse_propfind_calendars refuses nothing and the transport's refusal is unreachable from a file that touches no network
+- [Phase 05.1]: A new file joins a whole tree check in the commit where it first has the shipped code the check is about, not in the commit that created it: a test first commit has no production half for a proportion assertion to read
 
 ### Pending Todos
 
@@ -716,8 +750,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T21:33:52.822Z
-Stopped at: Completed 05.1-03-PLAN.md
+Last session: 2026-09-11T02:03:17.828Z
+Stopped at: Completed 05.1-05-PLAN.md
 
 Earlier: Completed 04.2-05-PLAN.md
 
