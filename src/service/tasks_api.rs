@@ -65,6 +65,34 @@ const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
 /// this is built and read in the same crate a few hundred lines apart.
 pub const NEEDS_SIGN_IN: &str = "Sign in to this account again to send task changes";
 
+/// Whether a refusal is one the person answers by signing in again.
+///
+/// One predicate for every feature that has such a sentence, rather than one
+/// per feature. Notes in OneNote needed the same classification and could have
+/// had a second copy of this two files away; two copies of a rule disagree the
+/// day either changes, and the disagreement here would be a sync counting a
+/// permission problem as a failure and reporting it on every pass for ever.
+///
+/// Each sentence is its own constant because each names its own feature.
+/// Telling somebody whose notes were refused to sign in again "to send task
+/// changes" sends them to do the right thing for a reason that names the wrong
+/// thing, and they come back having found their tasks were never the problem.
+///
+/// Here rather than in the sync that first used it, because the sentences are
+/// built here and in `microsoft_graph`, and a predicate over them belongs
+/// beside the words rather than beside one of its readers. `tasks_api` already
+/// names `microsoft_graph` for a shared time type, so this adds no dependency
+/// that was not already here. If a third feature arrives whose refusal has
+/// nothing to do with a task, this and both constants want a home of their own.
+pub fn asks_for_a_new_sign_in(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Authentication(said)
+            if said == NEEDS_SIGN_IN
+                || said == crate::service::microsoft_graph::NEEDS_SIGN_IN_FOR_NOTES
+    )
+}
+
 /// The most lists or tasks to take in one sync.
 ///
 /// A bound on a hostile or broken response rather than a limit anybody meets.

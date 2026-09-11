@@ -438,6 +438,45 @@ fn calendar_view_url(
     url
 }
 
+// ── OneNote types ───────────────────────────────────────────────────────────
+
+/// What somebody is told when OneNote refuses for want of a permission.
+///
+/// The notes sibling of [`crate::service::tasks_api::NEEDS_SIGN_IN`], worded
+/// for notes rather than reused as it stands. Both sentences ask for the same
+/// action and they cannot be one sentence: somebody whose notes were refused,
+/// told to sign in again "to send task changes", signs in, finds their tasks
+/// were never the problem, and has been sent to do the right thing for a reason
+/// that names the wrong feature.
+///
+/// `Notes.ReadWrite` is not among the scopes any account signed in before
+/// `0.111.0` holds, so every account that exists today meets this on its first
+/// OneNote call.
+pub const NEEDS_SIGN_IN_FOR_NOTES: &str = "Sign in to this account again to use notes in OneNote";
+
+/// One OneNote page, as the `onenotePage` resource names it.
+///
+/// Two fields of the eleven that resource carries. The rest are a link, an
+/// order, a level and a pair of timestamps, none of which anything here reads,
+/// and a field parsed and never used is a field somebody later believes is
+/// kept.
+///
+/// No entity tag, and that is the resource rather than this reading: there is
+/// no `eTag` property on an `onenotePage` and no `If-Match` in the update
+/// reference, so this backend's concurrency cannot be the one the calendar
+/// backend uses. What it is instead is `05.2-03`'s question and not this file's.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNotePage {
+    /// What Graph calls this page. Required: a page nothing can address is a
+    /// page no later request can read, change or remove.
+    pub id: String,
+    /// The page's name. Absent for a page somebody never named, which is a
+    /// page they really can make.
+    #[serde(default)]
+    pub title: String,
+}
+
 pub struct MsGraphClient {
     http: crate::service::outward::Outward,
     /// Where contacts, the calendar and everything else are asked for.
@@ -703,6 +742,30 @@ impl MsGraphClient {
             in_a_path(event_id)
         );
         with_retry(3, || self.api_delete(&url, token)).await
+    }
+
+    // ── OneNote ─────────────────────────────────────────────────────────
+
+    /// Make a page in a section, from the HTML a note becomes.
+    ///
+    /// The body is whatever [`crate::service::onenote_page::the_page_for`]
+    /// produced, handed over as it came. Nothing here builds HTML: that module
+    /// has a fidelity table behind it, and a second builder would drift from
+    /// the first the day either changed.
+    ///
+    /// `text/html` rather than JSON, because a page with no binary content is
+    /// created by posting the document itself. A page carrying a picture is a
+    /// multipart request with a `Presentation` part, which nothing here sends
+    /// and which no note in this program can yet produce.
+    pub async fn create_page(
+        &self,
+        token: &str,
+        section_id: &str,
+        page_html: &str,
+    ) -> Result<MsOneNotePage> {
+        // RED: not built yet. The tests below say what this has to do.
+        let _ = (token, section_id, page_html);
+        Ok(MsOneNotePage::default())
     }
 
     // ── HTTP Helpers ────────────────────────────────────────────────────
@@ -1609,5 +1672,156 @@ mod tests {
         assert_eq!(home.city, "Springfield");
         let biz = contact.business_address.unwrap();
         assert_eq!(biz.city, "Chicago");
+    }
+
+    // ── OneNote ─────────────────────────────────────────────────────────
+
+    /// A note, and the page HTML `service::onenote_page` makes of it.
+    ///
+    /// Built through that module rather than written here, so the body this
+    /// client sends is the body that module produces and the two cannot drift.
+    fn a_note_as_a_page() -> String {
+        crate::service::onenote_page::the_page_for(&crate::service::onenote_page::ANoteOnAPage {
+            title: "Fuses".to_string(),
+            body: "Live is brown".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_a_note_reaches_onenote_as_a_page_in_the_section_it_was_given() {
+        let (address, listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"1-page","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await
+            .expect("the page to be made");
+
+        let request = heard(listening, "the page being made")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "POST /me/onenote/sections/1-section/pages",
+            "{request}"
+        );
+        assert!(
+            request.contains("Authorization: Bearer a-token"),
+            "the token has to travel, and it travels in the header: {request}"
+        );
+        // `text/html`, not JSON. A page with no binary content is created by
+        // posting the document, and Graph reads the content type to decide
+        // what it was handed.
+        assert!(
+            request.to_lowercase().contains("content-type: text/html"),
+            "{request}"
+        );
+        // The body is the other module's output, whole. Both halves are
+        // asserted because a client that sent only the title would satisfy
+        // either one alone.
+        assert!(request.contains("<title>Fuses</title>"), "{request}");
+        assert!(request.contains("Live is brown"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_the_page_onenote_answers_with_is_read_back_by_its_name_and_its_title() {
+        let (address, _listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"1-abc!2-def","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let made = graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await
+            .expect("the page to be made");
+
+        assert_eq!(made.id, "1-abc!2-def");
+        assert_eq!(made.title, "Fuses");
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_makes_no_onenote_page() {
+        // The gate is applied where the client is built, so a new constructor
+        // is exactly how it stops applying. Reading `create_page` and seeing
+        // it go through the gated transport is not this assertion: this one
+        // stands up a server and proves nothing arrived.
+        let (address, listening) =
+            answering("201 Created", "application/json", "{}".to_string()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a page that must never be made")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_onenote_refusing_for_want_of_a_permission_asks_for_a_new_sign_in() {
+        // Every account that exists today holds a token without
+        // `Notes.ReadWrite`, so this is the first thing any of them meets.
+        // What it must not read as is a broken account: the person can fix
+        // this, and only if they are told which thing to fix.
+        let (address, _listening) = answering(
+            "401 Unauthorized",
+            "application/json",
+            r#"{"error":{"code":"InvalidAuthenticationToken"}}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let refused = graph
+            .create_page("a-stale-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        let Err(crate::common::Error::Authentication(said)) = refused else {
+            panic!("a refusal for want of a permission, not {refused:?}");
+        };
+        assert_eq!(said, NEEDS_SIGN_IN_FOR_NOTES);
+        assert!(
+            said.to_lowercase().contains("onenote"),
+            "the sentence has to name what needs the new sign-in: {said}"
+        );
+        // One classification, shared with tasks rather than copied beside it.
+        assert!(crate::service::tasks_api::asks_for_a_new_sign_in(
+            &crate::common::Error::Authentication(said)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_a_page_onenote_named_with_nothing_is_refused_rather_than_kept() {
+        // A page with no name is a page no later read, change or removal can
+        // address. Taking it leaves a note in the database pointing at
+        // nothing, which is worse than a refusal saying so.
+        let (address, _listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let refused = graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        assert!(refused.is_err(), "{refused:?}");
     }
 }
