@@ -39,6 +39,79 @@ use crate::common::{Error, Result};
 use crate::data::message_cache::{ContactEntry, MessageCache};
 use crate::service::caldav::{extract_xml_value, resolved_against, response_blocks};
 
+/// Credential store service name holding one address book's sign-in details.
+///
+/// **This string is permanent from the commit that first writes one.** The code
+/// that erases secrets on uninstall names entries by it, so changing it later
+/// does not move a password: it orphans the old one on every machine that has
+/// it, where nothing this program ever runs again will name it. That is the
+/// rule `credentials::KEYRING_SERVICE` states for the account passwords and
+/// `caldav::keyring_service` states for a calendar's sign-in, and this is its
+/// third statement rather than a new one.
+///
+/// One owner, for the same reason: uninstalling has to delete the same entries
+/// this names. The two accounts stored under it are [`KEYRING_USERNAME`] and
+/// [`KEYRING_PASSWORD`], and [`crate::application::forget::run`] is what walks
+/// them.
+pub fn keyring_service(address_book_id: &str) -> String {
+    // RED: the address book's own id is dropped, so every address book on the
+    // machine shares one entry and signing in to the second overwrites the
+    // first.
+    let _ = address_book_id;
+    "wixen-mail-carddav".to_string()
+}
+
+/// Account name under [`keyring_service`] holding the user name.
+pub const KEYRING_USERNAME: &str = "username";
+/// Account name under [`keyring_service`] holding the password.
+pub const KEYRING_PASSWORD: &str = "password";
+
+/// The sign-in one address book server was given, kept where Windows keeps
+/// passwords.
+///
+/// Never in the database. `message_cache.db` is copied with a profile and
+/// restored from a backup, and an address book password travelling with it is a
+/// password on somebody else's disk.
+///
+/// One owner for the three names above, because the code that erases them on
+/// uninstall has to name the same entries as the code that wrote them.
+pub mod sign_in {
+    use super::{KEYRING_PASSWORD, KEYRING_USERNAME, keyring_service};
+    use crate::common::Result;
+
+    /// Remember the sign-in for one address book.
+    pub fn store(address_book_id: &str, user_name: &str, password: &str) -> Result<()> {
+        let service = keyring_service(address_book_id);
+        backing::write(&service, KEYRING_USERNAME, user_name)?;
+        backing::write(&service, KEYRING_PASSWORD, password)
+    }
+
+    /// The sign-in for one address book, or `None` when there is not a whole
+    /// one.
+    ///
+    /// Half of one is not a sign-in. Sending a blank password to an address
+    /// book server gets a refusal that reads as a broken account, so an address
+    /// book with only one half stored is left alone until somebody types the
+    /// other.
+    pub fn load(address_book_id: &str) -> Option<(String, String)> {
+        let service = keyring_service(address_book_id);
+        let user_name = backing::read(&service, KEYRING_USERNAME).ok().flatten()?;
+        let password = backing::read(&service, KEYRING_PASSWORD).ok().flatten()?;
+        // RED: a stored blank is a stored half, and this hands it back as
+        // though it were a whole sign-in.
+        Some((user_name, password))
+    }
+
+    /// Forget the sign-in for one address book.
+    pub fn forget(address_book_id: &str) -> Result<()> {
+        let service = keyring_service(address_book_id);
+        backing::remove(&service, KEYRING_USERNAME)?;
+        backing::remove(&service, KEYRING_PASSWORD)
+    }
+
+    use crate::service::secret_store as backing;
+}
+
 /// What this program asks a server when it wants to know which address books
 /// are there.
 ///

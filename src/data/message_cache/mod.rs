@@ -4,6 +4,7 @@
 //! Split into domain-specific sub-modules for maintainability.
 
 mod accounts;
+pub mod address_books;
 pub mod attachment_content;
 pub mod bodies;
 mod calendar;
@@ -16,6 +17,7 @@ pub mod held_conflicts;
 pub mod how_it_arrived;
 mod messages;
 pub mod moves_in_flight;
+pub use address_books::AddressBookContainer;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
