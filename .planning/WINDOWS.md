@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 256
+open_count: 260
 waived_count: 0
-fixed_count: 18
-total_count: 274
-last_updated: 2026-09-11T14:30:15.791Z
+fixed_count: 21
+total_count: 281
+last_updated: 2026-09-11T18:01:04.034Z
 ---
 
 # Broken Windows Ledger
@@ -259,8 +259,8 @@ last_updated: 2026-09-11T14:30:15.791Z
 | 242 | 05.1 | unrun-verify | src/service/caldav_journal.rs |  | Whether a real server raises a clash the way the stand-in does. The disagreement is found by reading the document's version before writing rather than by a 412, so a server that gives no version marker at all would never report one and a change made in two places would be written over in silence. | open |  | 2026-09-10T20:50:21.497Z |  |
 | 243 | 05.1 | unrun-verify | src/application/notes_backend.rs |  | Whether the notes sync summary is distinguishable by ear from the calendar, task and contact summaries when several run together. Nobody has heard any of them. | open |  | 2026-09-10T20:50:22.241Z |  |
 | 244 | 05.1 | unrun-verify | src/application/conflict_choice.rs |  | Whether a held note conflict read aloud is answerable without seeing both copies. The words say note rather than contact now, and nobody has heard the question. | open |  | 2026-09-10T20:50:22.983Z |  |
-| 245 | 05.1 | stub | src/application/notes_backend.rs |  | An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen. | open |  | 2026-09-10T20:50:23.697Z |  |
-| 246 | 05.1 | stub | src/application/notes_sync.rs |  | Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end. | open |  | 2026-09-10T20:50:24.407Z |  |
+| 245 | 05.1 | stub | src/application/notes_backend.rs |  | An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen. | fixed |  | 2026-09-10T20:50:23.697Z | 2026-09-11T18:01:03.284Z |
+| 246 | 05.1 | stub | src/application/notes_sync.rs |  | Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end. | fixed |  | 2026-09-10T20:50:24.407Z | 2026-09-11T18:01:04.034Z |
 | 247 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether the sentence somebody hears when the read holds a change the setting had refused is understood by ear, and whether it is told apart from the clash the push reports. Both reach conflict_choice and both say a note is waiting to be chosen; nobody has heard either. | open |  | 2026-09-10T23:33:07.431Z |  |
 | 248 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether the sentence 1 note could not be kept exactly by your notes backend is understood by ear, and whether it is distinguishable from the other four sentences a notes sync can say. It is a new sentence in a status line that already carries four. | open |  | 2026-09-10T23:33:08.090Z |  |
 | 249 | 05.1 | unrun-verify | tests/the_notes_seam_takes_a_second_kind_of_backend.rs |  | Whether the four constraints the second implementation is shaped from are what a real Graph OneNote client meets. They are a reading of three Microsoft pages on 2026-09-06, not a measurement of the service, and a documented API can differ from the service behind it. | open |  | 2026-09-10T23:33:48.158Z |  |
@@ -288,7 +288,14 @@ last_updated: 2026-09-11T14:30:15.791Z
 | 271 | 05.2 | unrun-verify |  |  | Whether a nested list and a table are pleasant to listen to, not merely correct. A nested item is announced as 'bullet level 2, ...' and only when the level changes; a table as 'table, 2 columns, 2 rows' then 'row 1. Name: Grace. Role: Admiral', with the column heading repeated on every cell. Tests prove those exact words are produced. No screen reader has said them. The open questions are whether repeating a heading per cell floods a wide table, whether 'bullet level 2' is heard as a level or as part of the text, and whether a listener can follow a table with more than three columns at all. Only an NVDA pass can settle any of them. | open |  | 2026-09-11T13:32:06.681Z |  |
 | 272 | 05.2 | deviation | src/service/onenote_page.rs |  | A picture kept in OneNote comes back pointing at OneNote's copy of it rather than at the address it went out with. The reference says a page stores the picture and hands back a resource address of its own, so the note's Markdown now names graph.microsoft.com. The picture is not lost and the address is not the one somebody typed. Whether that matters to a person whose note linked to an image they host elsewhere is a product question nobody has been asked. Measured through the model, not against a real tenant. | open |  | 2026-09-11T13:32:22.029Z |  |
 | 273 | 05.2 | unrun-verify | src/application/long_text.rs |  | A block-level img in from_markup contributes its alt text with no marker saying it is a picture, and contributes nothing at all when the sender gave no alt. So a picture in a Google task's description or a calendar event's description is read aloud as an ordinary paragraph, or vanishes. Piece::Image's own doc comment and guardrail 9 both say a picture nobody described must still be announced, and the inline arm does that correctly; the block arm does not. Found by measurement during ledger 270 and deliberately left alone as out of scope: it is pre-existing, it is on the speaking path rather than the storing one, and fixing it changes what is stored for calendar and tasks. | open |  | 2026-09-11T13:32:22.877Z |  |
-| 274 | 05.2 | todo |  |  | A container is a note folder, decided 2026-09-11 and written into docs/development/the-notes-seam.md, and not yet built. note_folders needs an opaque container column, the sync has to loop over folders rather than take an account's first calendar, a backend-given folder is named by its flattened path, a folder made here sits under the words mail already uses for folders on this computer, and a note moving between two backed folders follows the task model's create-then-remove order. Closing this closes 245 and 246. | open |  | 2026-09-11T14:30:15.791Z |  |
+| 274 | 05.2 | todo |  |  | A container is a note folder, decided 2026-09-11 and written into docs/development/the-notes-seam.md, and not yet built. note_folders needs an opaque container column, the sync has to loop over folders rather than take an account's first calendar, a backend-given folder is named by its flattened path, a folder made here sits under the words mail already uses for folders on this computer, and a note moving between two backed folders follows the task model's create-then-remove order. Closing this closes 245 and 246. | fixed |  | 2026-09-11T14:30:15.791Z | 2026-09-11T18:01:02.560Z |
+| 275 | 05.2 | unrun-verify | src/data/message_cache/notes.rs |  | A note moved between two folders a calendar server gave is created in the new collection and only then removed from the old one. Nobody has done that with a real server: whether the create really lands before the removal goes, and what the server says back, is untested. | open |  | 2026-09-11T17:59:53.611Z |  |
+| 276 | 05.2 | unrun-verify | src/application/notes_sync.rs |  | A removal held back until its copy reaches the backend goes out on the next sync. The hold is driven against a stand-in that says yes to everything; nobody has watched the two syncs run against a real calendar server. | open |  | 2026-09-11T17:59:54.333Z |  |
+| 277 | 05.2 | unrun-verify | src/application/notes_backend.rs |  | An account with two calendar servers now syncs both. Nobody has run it with two real servers, so whether two sign-ins in one pass both work, and what one refusing does to the other, is unknown. | open |  | 2026-09-11T17:59:55.050Z |  |
+| 278 | 05.2 | unrun-verify | src/presentation/note_folder_tree.rs |  | Nobody has heard the notes tree with a screen reader. Whether the On this computer branch is met as a place and whether it is clear that the folders under it go nowhere is unmeasured, and so is whether a folder named after a calendar reads as its name. | open |  | 2026-09-11T18:00:10.261Z |  |
+| 279 | 05.2 | unrun-verify | src/data/message_cache/notes.rs |  | Two calendars sharing a display name give a folder named Work and one named Work (2). Nobody has heard that read aloud. At a screen reader's default punctuation level the brackets are expected to be silent, so it should read Work 2, and that is an expectation rather than a measurement. | open |  | 2026-09-11T18:00:11.003Z |  |
+| 280 | 05.2 | todo | src/presentation/managers.rs |  | A note a backend holds, moved into a folder somebody made here, leaves the backend holding its copy for ever. The removal waits for a copy that sits in a folder no push reaches, so it never goes. The task move has the same shape and docs/ALPHA_TESTING.md says so, but nothing in the program tells the person their server still has it. | open |  | 2026-09-11T18:00:11.768Z |  |
+| 281 | 05.2 | todo | docs/development/the-notes-seam.md |  | A folder name carrying a flattened path, Work / Projects / Q3, arrives only when a backend with levels above a note ships. Nothing chooses that separator today and what a screen reader makes of it is unmeasured. | open |  | 2026-09-11T18:00:12.574Z |  |
 
 ````json
 [
@@ -3227,10 +3234,10 @@ last_updated: 2026-09-11T14:30:15.791Z
     "file": "src/application/notes_backend.rs",
     "line": null,
     "description": "An account with two calendar servers sends its notes to the first one the store answers with. That is a limit rather than a decision: nothing asks the person which, and nothing says which was chosen.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-10T20:50:23.697Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-11T18:01:03.284Z"
   },
   {
     "id": 246,
@@ -3239,10 +3246,10 @@ last_updated: 2026-09-11T14:30:15.791Z
     "file": "src/application/notes_sync.rs",
     "line": null,
     "description": "Note folders on this computer are not mirrored at the server. Every note arriving from a server is filed in the account's first note folder, so folders somebody made here mean nothing at the other end.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-10T20:50:24.407Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-11T18:01:04.034Z"
   },
   {
     "id": 247,
@@ -3575,9 +3582,93 @@ last_updated: 2026-09-11T14:30:15.791Z
     "file": "",
     "line": null,
     "description": "A container is a note folder, decided 2026-09-11 and written into docs/development/the-notes-seam.md, and not yet built. note_folders needs an opaque container column, the sync has to loop over folders rather than take an account's first calendar, a backend-given folder is named by its flattened path, a folder made here sits under the words mail already uses for folders on this computer, and a note moving between two backed folders follows the task model's create-then-remove order. Closing this closes 245 and 246.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-11T14:30:15.791Z",
+    "resolved_at": "2026-09-11T18:01:02.560Z"
+  },
+  {
+    "id": 275,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/data/message_cache/notes.rs",
+    "line": null,
+    "description": "A note moved between two folders a calendar server gave is created in the new collection and only then removed from the old one. Nobody has done that with a real server: whether the create really lands before the removal goes, and what the server says back, is untested.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T17:59:53.611Z",
+    "resolved_at": null
+  },
+  {
+    "id": 276,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/notes_sync.rs",
+    "line": null,
+    "description": "A removal held back until its copy reaches the backend goes out on the next sync. The hold is driven against a stand-in that says yes to everything; nobody has watched the two syncs run against a real calendar server.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T17:59:54.333Z",
+    "resolved_at": null
+  },
+  {
+    "id": 277,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "An account with two calendar servers now syncs both. Nobody has run it with two real servers, so whether two sign-ins in one pass both work, and what one refusing does to the other, is unknown.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T17:59:55.050Z",
+    "resolved_at": null
+  },
+  {
+    "id": 278,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/presentation/note_folder_tree.rs",
+    "line": null,
+    "description": "Nobody has heard the notes tree with a screen reader. Whether the On this computer branch is met as a place and whether it is clear that the folders under it go nowhere is unmeasured, and so is whether a folder named after a calendar reads as its name.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T18:00:10.261Z",
+    "resolved_at": null
+  },
+  {
+    "id": 279,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/data/message_cache/notes.rs",
+    "line": null,
+    "description": "Two calendars sharing a display name give a folder named Work and one named Work (2). Nobody has heard that read aloud. At a screen reader's default punctuation level the brackets are expected to be silent, so it should read Work 2, and that is an expectation rather than a measurement.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T18:00:11.003Z",
+    "resolved_at": null
+  },
+  {
+    "id": 280,
+    "kind": "todo",
+    "phase": "05.2",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "A note a backend holds, moved into a folder somebody made here, leaves the backend holding its copy for ever. The removal waits for a copy that sits in a folder no push reaches, so it never goes. The task move has the same shape and docs/ALPHA_TESTING.md says so, but nothing in the program tells the person their server still has it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T18:00:11.768Z",
+    "resolved_at": null
+  },
+  {
+    "id": 281,
+    "kind": "todo",
+    "phase": "05.2",
+    "file": "docs/development/the-notes-seam.md",
+    "line": null,
+    "description": "A folder name carrying a flattened path, Work / Projects / Q3, arrives only when a backend with levels above a note ships. Nothing chooses that separator today and what a screen reader makes of it is unmeasured.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T18:00:12.574Z",
     "resolved_at": null
   }
 ]

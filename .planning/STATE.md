@@ -4,8 +4,8 @@ current_phase: 05.2
 current_phase_name: Notes in OneNote
 current_plan: 1
 status: verifying
-stopped_at: Ledger 270 closed on branch a-nested-list-keeps-its-depth-and-a-table-keeps-its-columns. 05.2-02 not started
-last_updated: "2026-09-11T14:05:00.000Z"
+stopped_at: Ledger 274 closed on branch one-backend-container-is-one-note-folder, which closed 245 and 246 with it. 05.2-02 not started
+last_updated: "2026-09-11T18:20:00.000Z"
 last_activity: 2026-09-11
 state_head: cbd07669c92b5d3add7f85930e6f8571bbfa8a23
 progress:
@@ -29,8 +29,33 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.2 (Notes in OneNote). **05.2-01 is built and merged. Ledger 270,
-which came out of its checkpoint, is closed.** PIM-04's structure criterion is
+Phase: 05.2 (Notes in OneNote). **Ledger 274 is closed, and it closed 245 and
+246 with it.** One backend container is one note folder, which Pratik decided on
+2026-09-11 and which the seam contract had written down and nothing had built.
+`note_folders` carries an opaque container, `notes_backend` makes one folder per
+calendar server, the sync runs once per folder and files an arrival into the
+folder its container is, a folder somebody made here has no container and sits
+under mail's own "On this computer" branch, and a note moving between two backed
+folders is created in the new container before it is removed from the old, by
+the write the task move already uses.
+
+**245 is closed by removal rather than by documentation.**
+`the_calendar_server_of`, which took whichever calendar server the store
+answered with first and never said which, is gone. `the_calendar_servers_of`
+answers with all of them and each is a folder, so there is no first to pick.
+
+**The contract said the sync did not have to change and it did**, though the
+seam did not: `NotesService` is untouched, `sync_notes` still takes one
+container, and nothing parses one. What had to change is that its three passes
+worked from the account, so a loop over two containers would offer every waiting
+note to whichever ran first. The seam contract records that under "Built
+2026-09-11" rather than leaving the document and the code to disagree.
+`.planning/phases/05.2-notes-in-onenote/LEDGER-274-REPORT.md` has the rest,
+including the three guard records that turned out not to be what they said and
+the two of those that were already stale on `main`.
+
+**05.2-01 is built and merged. Ledger 270, which came out of its checkpoint, is
+closed.** PIM-04's structure criterion is
 met for both backends that exist: headings, nested lists, tables, links with
 their addresses and pictures with their descriptions all come back as what they
 were. Twelve of the twenty-two constructs in the fidelity table survive, up from
@@ -56,9 +81,8 @@ which words are produced, not that they are good to listen to.
 screen reader pass over the new address book screen, which is the one thing in
 that phase no test in this repository can settle.
 
-`main` is at `a343d7f` until this branch merges, version `0.109.0`,
-`guards/guards.toml` holds 711 records with the census reading 192 and 519,
-`.planning/WINDOWS.md` reaches 273, and nothing is pushed.
+Version `0.110.0`, `guards/guards.toml` holds 713 records with the census
+reading 192 and 521, `.planning/WINDOWS.md` reaches 281, and nothing is pushed.
 
 **What the guard sweep found, which is the expensive half of this work.** The
 eighteen records naming `long_text.rs` were re-measured five times across the
