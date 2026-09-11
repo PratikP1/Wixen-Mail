@@ -15,12 +15,18 @@
 //! 2. Out of a folder made here into one a backend gave, the note is new to
 //!    that backend and is simply created there. Nothing is owed anywhere,
 //!    because no backend ever held it.
-//! 3. **Into a folder made here, nothing is sent at all.** No backend is told,
-//!    no copy is created, nothing is removed. In Wixen Mail the note has moved
-//!    and shows in the folder they chose. At OneNote or at the calendar server
-//!    nothing has changed. That is the task model's third outcome and it is the
-//!    one people find surprising, so it is asserted here and said in
-//!    `docs/ALPHA_TESTING.md` in the words the task move already uses.
+//! 3. **Into a folder made here, nothing reaches any backend at all.** In Wixen
+//!    Mail the note has moved and shows in the folder they chose. At OneNote or
+//!    at the calendar server nothing has changed: no note is created, and the
+//!    removal that is recorded waits for a copy sitting in a folder no push
+//!    ever reaches, so it never goes. That is the task model's third outcome
+//!    and it is the one people find surprising, so it is asserted here and said
+//!    in `docs/ALPHA_TESTING.md` in the words the task move already uses.
+//!
+//! **The write is the same write in all three.** The destination is not
+//! branched on, exactly as the task arm does not branch on it, and the reason
+//! is in `presentation::managers::file_under`: both ways of treating a local
+//! destination specially lose somebody's note.
 //!
 //! On this computer there is no gap in any of the three. The write is one
 //! transaction, so at every instant exactly one row is that note.
@@ -177,15 +183,28 @@ fn test_a_note_a_backend_holds_is_created_in_the_new_folder_before_the_old_one_i
 }
 
 #[test]
-fn test_a_note_moved_into_a_folder_on_this_computer_sends_nothing() {
-    // The third outcome, and the one people find surprising. The account has
-    // backends and the note came from one of them, so every question about the
-    // account answers yes. The destination has no container, so nothing is
-    // asked of anybody: no copy is created, nothing is removed, and the row
-    // simply moves.
+fn test_a_note_moved_into_a_folder_on_this_computer_reaches_no_backend() {
+    // The third outcome, and the one people find surprising. The destination
+    // has no container, so nothing reaches any backend: no note is created
+    // anywhere and the removal that is recorded is one no push will ever send.
+    //
+    // **The write is the same write, and branching on the destination is the
+    // tempting mistake.** The task arm does not branch and neither does this.
+    // Moving the row and leaving it as it was would keep the name the backend
+    // gave it, so the next sync of the old container would write the backend's
+    // copy over a note somebody had moved onto this computer; clearing the name
+    // instead would leave the backend's copy named by nothing, to arrive again
+    // as a new note. Both were considered and both are worse.
     let dir = tempfile::tempdir().expect("a directory");
     let cache = a_store(&dir);
     a_note(&cache, "note-1", FROM, Some(NAMED_THERE));
+
+    // Asked before the write, which is where the chooser asks it: the backend
+    // still holds its copy, so the sentence says the account has not been told.
+    assert!(
+        a_removal_will_have_to_be_sent(&cache, ItemKind::Note, Filing::Moving, "note-1"),
+        "the backend still holds its copy and nothing says so"
+    );
 
     let now = file_under(
         &cache,
@@ -198,26 +217,37 @@ fn test_a_note_moved_into_a_folder_on_this_computer_sends_nothing() {
     .expect("the move");
 
     assert_eq!(
-        now, "note-1",
-        "a move onto this computer minted a second identifier, so the backend \
-         is about to be asked to make a copy of a note that never left"
-    );
-    assert_eq!(
         where_the_notes_are(&cache),
-        [("note-1".to_string(), Some(MADE_HERE.to_string()))],
+        [(now.clone(), Some(MADE_HERE.to_string()))],
         "the note is not in the folder somebody chose, or it is in two"
     );
-    assert!(
-        cache
-            .deleted_notes(ACCOUNT)
-            .expect("what is owed")
-            .is_empty(),
-        "a backend was asked to remove a note that nothing replaced, so the \
-         only copy of it would go"
+    let copy = cache
+        .get_note(&now)
+        .expect("the copy is read")
+        .expect("the copy was written");
+    assert_eq!(
+        copy.known_as, None,
+        "the note kept the name the backend gave it, so the next sync of the \
+         old container writes the backend's copy over it"
+    );
+
+    // The removal is recorded and waits for a copy in a folder no push reaches,
+    // so it never goes. That is what "nothing is removed" means at the backend,
+    // and it is also what stops the note arriving again as a new one: the read
+    // consults every record whether it has been sent or not.
+    let owed = cache.deleted_notes(ACCOUNT).expect("what is owed");
+    assert_eq!(owed.len(), 1, "{owed:?}");
+    assert_eq!(owed[0].known_as.as_deref(), Some(NAMED_THERE));
+    assert_eq!(
+        owed[0].waiting_for_note_id.as_deref(),
+        Some(now.as_str()),
+        "the removal does not wait for the copy, so it would go and the backend \
+         would be left holding nothing"
     );
     assert!(
-        !a_removal_will_have_to_be_sent(&cache, ItemKind::Note, Filing::Moving, "note-1"),
-        "a move that tells nobody anything was announced as owing a removal"
+        !a_removal_will_have_to_be_sent(&cache, ItemKind::Note, Filing::Moving, &now),
+        "the copy on this computer claims a backend is owed a removal of it, \
+         and no backend has ever held it"
     );
 }
 
