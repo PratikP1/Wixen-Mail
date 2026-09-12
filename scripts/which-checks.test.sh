@@ -270,6 +270,36 @@ expect affected "this decision" gsd/x scripts/which-checks.sh
 # record change is not a document change however much it reads like one.
 expect affected "a guard record" gsd/x guards/guards.toml
 
+# ── What changed: the installer script ──────────────────────────────────────
+# The manifest rule one layer down. Three tests read
+# `installer/Wixen-Mail-Setup.iss` as data, and until this rule existed an
+# installer change ran none of them: the scoped run maps a changed `src/*.rs` to
+# a module and a changed `tests/*.rs` to a target, and an `.iss` path matches
+# neither, so no scoped target was chosen and all three sit in `src/`.
+expect all "an installer script on a branch" gsd/x installer/Wixen-Mail-Setup.iss
+expect all "an installer script beside a source file" \
+    gsd/x src/lib.rs installer/Wixen-Mail-Setup.iss
+
+# The combination this project makes most often, and the one that answers wrongly
+# if the rule is written in the wrong place. The version-bump exception sits
+# between the manifest collection and everything after it, so a rule written
+# inside the manifest branch, or anywhere that exception can skip past, lets an
+# installer change that also bumps the version answer `affected`. The convention
+# here puts the bump in the same commit as the change it describes, so that is
+# nearly every installer commit there will ever be.
+expect all "an installer script beside a version bump" \
+    --manifest-diff-file="$version_bump" gsd/x installer/Wixen-Mail-Setup.iss Cargo.toml Cargo.lock
+
+# Already the answer, because on main the branch decides first. Here so that a
+# later reader can see the new rule is not what makes it right.
+expect all "an installer script on main" main installer/Wixen-Mail-Setup.iss
+
+# The rule keys on the extension and not on the folder, and this is the case
+# that says so. `installer/*` would be the obvious way to write "the installer
+# earns the gate" and would take a document in that folder with it, which no
+# other case in this file would notice.
+expect docs_only "a document inside the installer folder" gsd/x installer/README.md
+
 # ── No file list means we cannot tell, so defer only what the branch allows ──
 expect all_but_slow "a branch with nothing said about the change" gsd/x
 
