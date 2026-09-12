@@ -8463,17 +8463,46 @@ mod where_a_container_came_from {
     }
 
     #[test]
-    fn test_a_note_folder_and_a_group_are_read_as_kept_here() {
-        // Neither is sent anywhere, so where it was made changes nothing.
+    fn test_a_note_folder_is_read_from_its_row_and_a_group_is_always_kept_here() {
+        // A note folder changed sides in 5.2 and this is where it is read.
+        // One backend container is one note folder, so a folder carrying a
+        // container stands for a calendar server's journal collection or a
+        // OneNote section, and there really is a copy at the provider. A
+        // folder somebody made here carries none and is sent nowhere.
+        //
+        // This used to drive an empty cache with an unknown identifier and
+        // assert that both kinds were kept here, which is what a row that is
+        // not there answers whatever the rule is. It could not have seen the
+        // change.
         let cache = a_cache("folders_and_groups");
+        let backed = cache
+            .a_note_folder_for("acct-1", "1-section", "Work / Notes")
+            .expect("a folder a backend gave");
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
 
-        for kind in [ContainerKind::NoteFolder, ContainerKind::ContactGroup] {
-            assert_eq!(
-                where_it_came_from(&cache, kind, "whatever"),
-                WhereItCameFrom::ThisComputer,
-                "{kind:?}"
-            );
-        }
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, &backed.id),
+            WhereItCameFrom::AProvider,
+            "a folder standing for a section at a provider was read as made here"
+        );
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, &made_here.id),
+            WhereItCameFrom::ThisComputer,
+            "a folder somebody made here was read as one a provider holds"
+        );
+        // A row that is not there is one nothing points at, so nothing
+        // promises it back.
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, "gone"),
+            WhereItCameFrom::ThisComputer
+        );
+        // A contact group is still sent nowhere, whoever made it.
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::ContactGroup, "whatever"),
+            WhereItCameFrom::ThisComputer
+        );
     }
 }
 

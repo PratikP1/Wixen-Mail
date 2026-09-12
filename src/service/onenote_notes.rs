@@ -108,6 +108,31 @@ impl ANotebookOnAMicrosoftAccount {
         self.client.every_section(&self.token).await
     }
 
+    /// What the note folder one section stands for is called.
+    ///
+    /// The flattening requirement 2 of the seam's container section asks for,
+    /// done here because it is the backend's business and nowhere else knows
+    /// the names. The container stays the section's own identifier and is never
+    /// built from this: a name is what somebody reads and an identifier is what
+    /// a request carries, and one field doing both jobs is a name nobody can
+    /// change.
+    ///
+    /// **The separator is ` / ` and this is where it was chosen.** The seam's
+    /// document recorded on 2026-09-11 that nobody had chosen one and that what
+    /// a screen reader makes of it at its default punctuation level is
+    /// unmeasured. It still is, and it is a ledger entry rather than a
+    /// guess dressed up: what settles it is somebody hearing a folder list.
+    /// Spaces on both sides because a slash with none reads as one word to a
+    /// sighted person scanning a list and gives a screen reader nothing to
+    /// break on.
+    ///
+    /// A section with nothing above it is its own name, with no separator
+    /// anywhere. Nothing here can produce a leading or trailing one.
+    pub fn the_folder_name_of(section: &AOneNoteSection) -> String {
+        let _ = section;
+        String::new()
+    }
+
     /// What a failed request means, in the words the seam allows.
     ///
     /// A refusal by the setting and a refusal by Microsoft are different things
@@ -670,6 +695,37 @@ mod tests {
             known_as.version.as_deref(),
             Some("2026-09-11T10:00:00Z"),
             "the marker handed back is the one from before the change"
+        );
+    }
+
+    #[test]
+    fn test_a_section_becomes_a_note_folder_named_by_the_whole_path_above_it() {
+        // Two sections called Notes in two notebooks are two folders somebody
+        // has to tell apart, and the only thing that tells them apart is where
+        // they sit. The identifier cannot do it: nobody reads one.
+        assert_eq!(
+            ANotebookOnAMicrosoftAccount::the_folder_name_of(&AOneNoteSection {
+                id: "1-section".to_string(),
+                path: vec!["Work".to_string(), "Projects".to_string(), "Q3".to_string()],
+            }),
+            "Work / Projects / Q3"
+        );
+        // A section straight inside a notebook is two names, and one with
+        // nothing above it at all is just itself. Neither grows a separator it
+        // has no use for.
+        assert_eq!(
+            ANotebookOnAMicrosoftAccount::the_folder_name_of(&AOneNoteSection {
+                id: "1-section".to_string(),
+                path: vec!["Work".to_string(), "Notes".to_string()],
+            }),
+            "Work / Notes"
+        );
+        assert_eq!(
+            ANotebookOnAMicrosoftAccount::the_folder_name_of(&AOneNoteSection {
+                id: "1-section".to_string(),
+                path: vec!["Notes".to_string()],
+            }),
+            "Notes"
         );
     }
 

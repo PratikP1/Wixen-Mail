@@ -71,6 +71,13 @@ pub enum NotesBackend {
     /// which backends this program will speak and naming one is not shipping
     /// a client for it. Nothing answers this yet.
     CalDavJournal,
+    /// Pages in the sections of a Microsoft account's notebooks.
+    ///
+    /// One section is one container and so one note folder, which is the
+    /// arrangement decided 2026-09-11 and written into
+    /// `docs/development/the-notes-seam.md`.
+    /// [`crate::service::onenote_notes`] is the implementation.
+    OneNote,
     /// A word this build does not recognise.
     Other(String),
 }
@@ -93,6 +100,7 @@ impl NotesBackend {
         match self {
             NotesBackend::ThisComputer => false,
             NotesBackend::CalDavJournal => true,
+            NotesBackend::OneNote => false,
             NotesBackend::Other(_) => false,
         }
     }
@@ -347,6 +355,7 @@ pub async fn sync_the_notes_of(
         NotesBackend::ThisComputer | NotesBackend::Other(_) => {
             Ok(WhatTheNotesSyncDid::TheyStayHere)
         }
+        NotesBackend::OneNote => Ok(WhatTheNotesSyncDid::TheyStayHere),
         NotesBackend::CalDavJournal => {
             let journals = the_calendar_servers_of(cache, &account.id);
             if journals.is_empty() {
@@ -457,6 +466,7 @@ pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String 
              sent a note to a real server, so expect problems, and turning on \
              Allow Changes is what lets a note go at all."
         ),
+        NotesBackend::OneNote => format!("Notes in {account_named} are kept on this computer."),
         // Named rather than described, because somebody working out why their
         // notes are not moving needs the word to say when they ask. It is
         // shown in quotation marks so it reads as a name this program is
@@ -926,13 +936,50 @@ mod tests {
     }
 
     #[test]
-    fn test_an_outlook_accounts_notes_stay_on_this_computer() {
-        // OneNote is phase 5.2. Until then this account has no notes backend,
-        // which is a different sentence from "not yet" and is the true one
-        // today.
+    fn test_an_outlook_accounts_notes_go_to_onenote() {
+        // The arm that changed in 5.2, and the whole of what makes a note made
+        // in a Microsoft account reach anybody. Its neighbour above stays
+        // false, and the two together are the answer per provider rather than
+        // one answer for both.
         assert_eq!(
             for_account(Some(&account("a1", "me@outlook.com")), false),
-            NotesBackend::ThisComputer
+            NotesBackend::OneNote
+        );
+    }
+
+    #[test]
+    fn test_an_account_whose_notes_reach_onenote_is_told_that_has_never_been_tried() {
+        // The same promise the calendar server's sentence makes, for the same
+        // reason: a warning that only exists in a changelog is a warning
+        // nobody gets. It names OneNote, because somebody looking for their
+        // notes needs to know where to look.
+        let said = where_they_go_for(&NotesBackend::OneNote, "Work");
+
+        assert!(said.contains("OneNote"), "{said}");
+        assert!(said.contains("experimental"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        // Not "yet". A sentence that says a backend is coming has to be
+        // rewritten when it arrives, and this one arrived.
+        assert!(!said.contains("yet"), "{said}");
+    }
+
+    #[test]
+    fn test_an_outlook_account_nobody_has_signed_in_to_is_told_so_rather_than_told_notes_stay_here()
+    {
+        // Nothing is stored in this machine's credential store for this
+        // account, which is the state every account is in during a test and
+        // the state a real one is in before anybody signs in. It is the one
+        // thing on the list only the person can fix, so it is said in its own
+        // words rather than reported as an account whose notes stay here,
+        // which would be a lie about where they go.
+        let cache = a_store();
+
+        let said =
+            run(sync_the_notes_of(&cache, &account("a1", "me@outlook.com"))).expect("an answer");
+
+        assert!(
+            matches!(said, WhatTheNotesSyncDid::NobodyIsSignedIn),
+            "{said:?}"
         );
     }
 
@@ -964,6 +1011,7 @@ mod tests {
         assert!(!NotesBackend::Other("something-later".to_string()).goes_somewhere_else());
         assert!(!NotesBackend::ThisComputer.goes_somewhere_else());
         assert!(NotesBackend::CalDavJournal.goes_somewhere_else());
+        assert!(NotesBackend::OneNote.goes_somewhere_else());
     }
 
     #[test]

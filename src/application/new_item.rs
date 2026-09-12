@@ -452,23 +452,35 @@ mod tests {
     }
 
     #[test]
-    fn test_notes_and_reminders_still_stay_on_this_computer() {
-        // Notes for a reason per provider: Google Keep's API is Workspace-only
-        // so a consumer account cannot use it, and OneNote could work but the
-        // mapping from a page in a section in a notebook to a title and a body
-        // is a decision nobody has made.
+    fn test_a_note_is_filed_where_that_providers_answer_says_and_a_reminder_never_leaves() {
+        // Two answers rather than one, and each has its own reason.
         //
-        // Reminders because there is nothing on either side to sync one to. In
-        // Outlook and Exchange a reminder is a property of an event or a task,
-        // and Google folded Reminders into Tasks in 2023.
+        // Google Keep's API is Workspace only, so a consumer Gmail account
+        // cannot use it at all. That is not a gap waiting to be filled: it is
+        // still the answer after all three backends ship.
+        //
+        // OneNote can carry them and now does. The mapping from a page in a
+        // section in a notebook to a title and a body was the decision nobody
+        // had made, and 05.2 made it: a section is a note folder, and what a
+        // page cannot keep is reported at the moment it takes the note.
+        assert!(
+            !supports(&account("a1", "me@gmail.com"), ItemKind::Note, false),
+            "a consumer Gmail account claimed to sync notes"
+        );
+        assert!(
+            supports(&account("a1", "me@outlook.com"), ItemKind::Note, false),
+            "a Microsoft account's notes no longer reach OneNote"
+        );
+
+        // Reminders stay here for both, because there is nothing on either
+        // side to sync one to. In Outlook and Exchange a reminder is a
+        // property of an event or a task, and Google folded Reminders into
+        // Tasks in 2023.
         for address in ["me@gmail.com", "me@outlook.com"] {
-            let account = account("a1", address);
-            for kind in [ItemKind::Note, ItemKind::Reminder] {
-                assert!(
-                    !supports(&account, kind, false),
-                    "{address}: {kind:?} claimed to sync"
-                );
-            }
+            assert!(
+                !supports(&account("a1", address), ItemKind::Reminder, false),
+                "{address}: a reminder claimed to sync"
+            );
         }
     }
 
@@ -1028,21 +1040,32 @@ mod deletion_tests {
     }
 
     #[test]
-    fn test_a_group_is_not_promised_back_from_a_provider() {
+    fn test_a_group_is_not_promised_back_from_a_provider_and_a_backed_note_folder_is() {
         // Nothing sends a contact group to Google or Microsoft, so the
         // sentence promising it would come back at the next sync was telling
         // somebody to wait for something that is never going to happen.
-        // Notes go nowhere either, for the same reason, whoever made them.
         for came_from in [WhereItCameFrom::AProvider, WhereItCameFrom::ThisComputer] {
             assert!(!the_provider_has_a_copy(
                 ContainerKind::ContactGroup,
                 came_from
             ));
-            assert!(!the_provider_has_a_copy(
-                ContainerKind::NoteFolder,
-                came_from
-            ));
         }
+        // A note folder changed sides in 5.2 and nothing in the compiler says
+        // so. A folder that stands for a OneNote section or a calendar
+        // server's journal collection really does have a copy at the provider,
+        // and deleting it here does not delete that copy: the next sync makes
+        // the folder again. Somebody told their section was gone, who then
+        // watches it come back, has been told something false.
+        assert!(the_provider_has_a_copy(
+            ContainerKind::NoteFolder,
+            WhereItCameFrom::AProvider
+        ));
+        // And a folder somebody made here is still sent nowhere, so it is not
+        // promised back either. That is the half the kind alone cannot answer.
+        assert!(!the_provider_has_a_copy(
+            ContainerKind::NoteFolder,
+            WhereItCameFrom::ThisComputer
+        ));
         assert!(the_provider_has_a_copy(
             ContainerKind::Calendar,
             WhereItCameFrom::AProvider
