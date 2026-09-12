@@ -54,6 +54,12 @@ use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
 use wxdragon::ffi;
 use wxdragon::prelude::WxWidget;
 
+/// Whether a name set here reaches the accessibility tree on this build.
+///
+/// The red half of 07-03: a hardcoded `false`, which is wrong on Windows. The
+/// commit that follows this one splits it by platform.
+pub const A_NAME_REACHES_THE_ACCESSIBILITY_TREE: bool = false;
+
 /// Supplies one fixed name, and optionally a description, for a control,
 /// leaving every other accessibility property to the platform's default
 /// handling.

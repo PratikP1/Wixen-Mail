@@ -31,6 +31,13 @@ pub enum Urgency {
     Routine,
 }
 
+/// Whether an announcement made here reaches a screen reader on this build.
+///
+/// The red half of 07-03: a hardcoded `false`, which is wrong on Windows. The
+/// commit that follows this one takes it from whichever `native` module
+/// compiled.
+pub const ANNOUNCEMENTS_REACH_A_SCREEN_READER: bool = false;
+
 // ── Windows native helpers ──────────────────────────────────────────────────
 
 #[cfg(target_os = "windows")]
