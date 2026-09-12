@@ -341,10 +341,13 @@ impl Refused {
                  The file has been deleted. Nothing on this computer has changed. You can \
                  download a version yourself from {page}."
             ),
+            // The one refusal that does not mention a deleted file, because on
+            // this path there is no file: a computer with no way to look at a
+            // signature is told so before anything is fetched.
             Self::NoWayToCheckHere => format!(
                 "Wixen Mail has no way to check who signed an update on this system, so it \
-                 will not run one. The file has been deleted. Nothing on this computer has \
-                 changed. You can download a version yourself from {page}."
+                 will not download or run one. Nothing has been downloaded and nothing on \
+                 this computer has changed. You can download a version yourself from {page}."
             ),
             Self::TheFileCouldNotBeRead(why) => format!(
                 "Wixen Mail could not read the update it downloaded to find out who signed \
@@ -577,7 +580,7 @@ pub fn whether_that_signer_is_ours(who: &WhoSignedIt) -> std::result::Result<(),
 /// arrangement makes visible.
 #[cfg(target_os = "windows")]
 pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refused> {
-    Err(Refused::NoWayToCheckHere)
+    Ok(())
 }
 
 /// Whether this computer can check a signature at all, where it cannot.
@@ -934,6 +937,13 @@ fn who_is_asking() -> String {
 /// and the check happen on their own, and the only question a person ever sees
 /// is whether to run a file that has already passed both checks.
 pub async fn fetch(version: &str, files: &[ReleaseFile], paths: &AppPaths) -> Fetched {
+    // Asked first, before a single byte is fetched. Downloading an executable
+    // and then finding out there is no way to look at it leaves it on somebody's
+    // disk for as long as it takes to refuse, and spends their connection to
+    // learn something this program already knew.
+    if let Err(no_way) = whether_a_signature_can_be_checked_here() {
+        return Fetched::Refused(no_way);
+    }
     let Some(installer) = the_installer_among(files) else {
         return Fetched::NotArrived(NotArrived::NoInstallerAmongTheFiles);
     };

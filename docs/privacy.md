@@ -430,6 +430,10 @@ things before it will offer to run an installer: that the signature on it is val
 the name on that signature is this project's own. A file failing either is deleted and you are
 told why. You are never asked whether to run it anyway.
 
+On a computer with no way to check a signature at all, nothing is downloaded either. The
+question is asked before any bytes are fetched, so your connection is not spent on a file
+Wixen Mail could never look at.
+
 Today that check refuses everything, because nothing this project publishes is signed yet.
 Until it is, an update will download, be refused, and point you at the releases page.
 

@@ -41,6 +41,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   signing so that it could never be added as an afterthought to something that
   was already running installers.
 
+  **On a system with no way to check a signature, nothing is downloaded
+  either.** Not downloaded and then refused: the question is asked before a
+  single byte is fetched, so nobody's connection is spent learning something
+  Wixen Mail already knew and no executable lands on a disk it can never look
+  at. Today that means Windows can update and the Linux and macOS builds say
+  why they cannot.
+
+  The setting's own description was rewritten at the same time. It used to say
+  "nothing is downloaded yet", which was true while downloading was later work
+  and became a promise the moment this landed. It now says what choosing an
+  answer actually does.
+
   Where the bytes come from: `github.com`, which passes the request on to
   `objects.githubusercontent.com`. Neither carries an account or anything about
   you. The installer waits in `%LOCALAPPDATA%\wixen-mail\updates`, holds one

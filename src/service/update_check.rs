@@ -40,19 +40,24 @@ pub const SETTINGS_SECTION: &str = "New versions";
 /// What the one update control is labelled, without its keyboard mark.
 pub const WHICH_UPDATES_LABEL: &str = "Tell me about new versions";
 
-/// What the control says about what choosing a version kind will mean.
+/// What the control says choosing a kind of version means.
 ///
 /// The consent is given here or it is not given. Somebody choosing either kind
-/// is agreeing that this program will later fetch an installer, several
-/// megabytes of it, without asking again, and a warning that lives only in a
-/// document is a warning nobody gets.
+/// is agreeing that this program fetches an installer, several megabytes of it,
+/// without asking again, and a warning that lives only in a document is a
+/// warning nobody gets.
 ///
-/// It says "will" rather than "does" because nothing is downloaded yet, and a
-/// control claiming a capability this build does not have is the same defect
-/// one step along.
+/// It said "will mean" and "nothing is downloaded yet" while downloading was a
+/// later plan's work, which was right then and became a promise that the thing
+/// it warns about does not happen the moment that plan landed. The present
+/// tense is load-bearing, and
+/// `test_the_control_says_what_choosing_a_kind_of_version_does_now_rather_than_later`
+/// holds it there: a warning nobody believes is worse than none, because the
+/// next true one gets read the same way.
 pub const WHICH_UPDATES_DESCRIPTION: &str = "Wixen Mail asks GitHub which versions have been published. Nothing about you is sent. \
-     When updating is finished, choosing either kind of version will mean the installer for \
-     it is downloaded without asking you again; nothing is downloaded yet.";
+     Choosing either kind of version also means the installer for a newer one is downloaded \
+     without asking you, about 12 MB of it. You are then asked once before it is run, and \
+     Wixen Mail will not run an installer it cannot confirm this project signed.";
 
 /// The one host this module ever asks.
 ///

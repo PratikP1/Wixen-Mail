@@ -19956,7 +19956,7 @@ red = [
     "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 22 },
+    { file = "src/service/update_check.rs", tests = 23 },
 ]
 
 # ── 07-07 ─────────────────────────────────────────────────────────────────
@@ -20124,7 +20124,7 @@ red = [
     "service::update_download::tests::test_a_signature_from_anybody_else_is_refused_however_valid_it_is",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 37 },
+    { file = "src/service/update_download.rs", tests = 40 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -20165,5 +20165,5 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 37 },
+    { file = "src/service/update_download.rs", tests = 40 },
 ]
