@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 289
+open_count: 293
 waived_count: 0
 fixed_count: 21
-total_count: 310
-last_updated: 2026-09-12T09:52:24.787Z
+total_count: 314
+last_updated: 2026-09-12T11:39:11.254Z
 ---
 
 # Broken Windows Ledger
@@ -325,6 +325,10 @@ last_updated: 2026-09-12T09:52:24.787Z
 | 308 | 07 | unrun-verify | src/presentation/wx_app.rs |  | Whether the About dialog draws the disclosure without the layout breaking is unverified. The dialog is fixed at 380 by 260 when there is nothing to disclose and grows to its contents when there is, and nobody has opened the grown version, because no build without the accessibility bridge exists | open |  | 2026-09-12T09:52:22.929Z |  |
 | 309 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | Nobody who depends on a screen reader has heard the disclosure. Whether the four paragraphs land as useful information or as a wall of apology in front of somebody who has just started a mail client is what guardrail 5 asks and no test here can answer it | open |  | 2026-09-12T09:52:23.841Z |  |
 | 310 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | That adding a third platform module changes the answer with no edit to the code that says it is held structurally rather than by a test. No third platform module exists to add, and this tree has no compile-fail harness in which the absence of one could be expressed: grep -n trybuild Cargo.toml returns nothing | open |  | 2026-09-12T09:52:24.787Z |  |
+| 311 | 07 | unrun-verify | src/common/version.rs |  | No release has ever been published from this repository and git tag returns nothing, so this comparison has never been handed a version string that came from anywhere but a test. No prerelease has been cut either, so the prerelease ordering and the channel rule resting on it are the parts with no real example behind them at all | open |  | 2026-09-12T11:38:55.805Z |  |
+| 312 | 07 | unrun-verify | src/common/version.rs |  | That a published tag starts with a v is read off .github/workflows/release.yml, which names the portable download after the tag and publishes it under the glob wixen-mail-v-star.exe. No tag exists anywhere to confirm it. If that inference is wrong, or if cargo-release is later configured with a different tag name, the comparison answers that it could not read the tag for every release this project cuts and nothing fails | open |  | 2026-09-12T11:39:09.741Z |  |
+| 313 | 07 | unrun-verify | src/common/version.rs |  | Nothing outside the tests calls the ordering, the channel type, the setting type or the offer decision. Whether any of it is reachable from a path a person can take is 07-05's to establish, and until it is, this is code that compiles and passes and has never run | open |  | 2026-09-12T11:39:10.499Z |  |
+| 314 | 07 | unrun-verify | src/common/version.rs |  | The forgiving read of a stored setting covers a value that is a string. A stored value of any other type still fails the read, which in the loader 07-05 inherits takes every setting on that machine back to its default. Nothing here tests that, because the loader is not in this plan, and 07-05 is told to read it and report which of the two it does | open |  | 2026-09-12T11:39:11.254Z |  |
 
 ````json
 [
@@ -4046,6 +4050,54 @@ last_updated: 2026-09-12T09:52:24.787Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T09:52:24.787Z",
+    "resolved_at": null
+  },
+  {
+    "id": 311,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/common/version.rs",
+    "line": null,
+    "description": "No release has ever been published from this repository and git tag returns nothing, so this comparison has never been handed a version string that came from anywhere but a test. No prerelease has been cut either, so the prerelease ordering and the channel rule resting on it are the parts with no real example behind them at all",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T11:38:55.805Z",
+    "resolved_at": null
+  },
+  {
+    "id": 312,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/common/version.rs",
+    "line": null,
+    "description": "That a published tag starts with a v is read off .github/workflows/release.yml, which names the portable download after the tag and publishes it under the glob wixen-mail-v-star.exe. No tag exists anywhere to confirm it. If that inference is wrong, or if cargo-release is later configured with a different tag name, the comparison answers that it could not read the tag for every release this project cuts and nothing fails",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T11:39:09.741Z",
+    "resolved_at": null
+  },
+  {
+    "id": 313,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/common/version.rs",
+    "line": null,
+    "description": "Nothing outside the tests calls the ordering, the channel type, the setting type or the offer decision. Whether any of it is reachable from a path a person can take is 07-05's to establish, and until it is, this is code that compiles and passes and has never run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T11:39:10.499Z",
+    "resolved_at": null
+  },
+  {
+    "id": 314,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/common/version.rs",
+    "line": null,
+    "description": "The forgiving read of a stored setting covers a value that is a string. A stored value of any other type still fails the read, which in the loader 07-05 inherits takes every setting on that machine back to its default. Nothing here tests that, because the loader is not in this plan, and 07-05 is told to read it and report which of the two it does",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T11:39:11.254Z",
     "resolved_at": null
   }
 ]
