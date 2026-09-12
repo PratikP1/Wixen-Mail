@@ -9676,18 +9676,76 @@ fn ask_whether_there_is_a_newer_version(
     let say_everything = asked == WhoAsked::ByHand;
     let tx = tx.clone();
     rt.spawn(async move {
+        use crate::service::update_download::{self, Fetched, NextStep};
+
         let answer = update_check::ask(channel).await;
-        match answer {
-            Answer::ANewerVersion { ref page, .. } => {
-                let _ = tx.try_send(UIUpdate::ANewerVersionIsPublished {
-                    said: answer.said(),
-                    page: page.clone(),
+        let NextStep::FetchIt(files) = update_download::what_to_do_about(&answer) else {
+            if say_everything {
+                let _ = tx.try_send(UIUpdate::CommandAnswered(answer.said()));
+            } else {
+                tracing::info!("Update check at start: {}", answer.said());
+            }
+            return;
+        };
+        let (version, page) = match &answer {
+            Answer::ANewerVersion { version, page, .. } => (version.clone(), page.clone()),
+            // Unreachable: `what_to_do_about` only answers `FetchIt` for an
+            // offer. Written as a return rather than a panic because this
+            // handles a reply from a server and nothing on that path may
+            // decide to end the program.
+            other => {
+                tracing::error!("An offer led to a fetch and was not an offer: {other:?}");
+                return;
+            }
+        };
+
+        // One sentence before the fetch, and only where somebody pressed
+        // something and is waiting for an answer. An unattended fetch says
+        // nothing here at all: it can start while somebody is reading a
+        // message, weeks after they chose a kind of version, and announcing
+        // the start of work nobody asked for at this moment is an
+        // interruption rather than news. What it has to say, it says when it
+        // is finished. That is guardrail 5 both ways round: not flooding, and
+        // not coalescing away the one sentence that matters.
+        if say_everything {
+            let _ = tx.try_send(UIUpdate::CommandAnswered(format!(
+                "{} Downloading it now.",
+                answer.said()
+            )));
+        } else {
+            tracing::info!("Update check at start: {}", answer.said());
+        }
+
+        let Ok(paths) = crate::common::paths::AppPaths::resolve() else {
+            let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
+                said: "Wixen Mail could not work out where to keep a downloaded update, so \
+                       nothing was downloaded."
+                    .to_string(),
+                page,
+            });
+            return;
+        };
+        // Nobody is asked here. The consent for the fetch was given at the
+        // setting, whose description says installers are downloaded without
+        // asking again, or by pressing Check for Updates. The only question in
+        // this feature is whether to run what arrived, and it belongs to a file
+        // that has passed both checks.
+        match update_download::fetch(&version, &files, &paths).await {
+            Fetched::Ready(installer) => {
+                let _ = tx.try_send(UIUpdate::AnUpdateIsReady { installer });
+            }
+            Fetched::Refused(why) => {
+                let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
+                    said: why.said(),
+                    page,
                 });
             }
-            _ if say_everything => {
-                let _ = tx.try_send(UIUpdate::CommandAnswered(answer.said()));
+            Fetched::NotArrived(why) => {
+                let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
+                    said: why.said(),
+                    page,
+                });
             }
-            _ => tracing::info!("Update check at start: {}", answer.said()),
         }
     });
 }
@@ -16546,24 +16604,28 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // coalesced away by the status a sync is producing underneath it.
             let _ = a11y.announce_topic(said, Priority::High, "command");
         }
-        UIUpdate::ANewerVersionIsPublished { said, page } => {
+        UIUpdate::AnUpdateDidNotHappen { said, page } => {
             {
                 let mut s = lock_state(state);
                 s.status_message = said.clone();
             }
             frame.set_status_text(said, 0);
             // Said the way an answer to a pressed key is said, on the same
-            // topic, because that is what this is when somebody chose the menu
-            // item and it is news worth one sentence when they did not.
+            // topic. A download that was refused is the loudest thing this
+            // feature has to say, and it must not be coalesced away by the
+            // status a sync is producing underneath it.
             let _ = a11y.announce_topic(said, Priority::High, "command");
 
             // And then a control, because the answer has an act attached to it
-            // and an announcement carries none. Enter answers no, so nothing
-            // opens for somebody who pressed Enter to dismiss the sentence.
+            // and an announcement carries none. It is about opening a page in a
+            // browser, never about running the file: a question offering to run
+            // an installer that failed its check is the one thing this feature
+            // may not do. Enter answers no, so nothing opens for somebody who
+            // pressed Enter to dismiss the sentence.
             let asked = MessageDialog::builder(
                 frame,
-                &format!("{said}\n\nOpen the page about it in your browser?"),
-                "A Newer Version",
+                &format!("{said}\n\nOpen the releases page in your browser?"),
+                "Update",
             )
             .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
             .build()
@@ -16571,13 +16633,75 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             if asked != ID_YES {
                 return;
             }
-            // A browser, and nothing else. Nothing is downloaded and nothing
-            // is run: fetching an installer and starting it is plan 07-09's,
-            // after there is a signature to check.
             if open::that(page).is_err() {
                 let could_not = format!("Could not open a browser. The page is {page}");
                 frame.set_status_text(&could_not, 0);
                 let _ = a11y.announce_topic(&could_not, Priority::High, "command");
+            }
+        }
+        UIUpdate::AnUpdateIsReady { installer } => {
+            use crate::service::update_download;
+
+            // The one question this feature asks, and the only one. Nobody was
+            // asked about downloading: that was agreed to at the setting, whose
+            // description says so, or by pressing Check for Updates. Asking
+            // twice about one thing teaches somebody to answer without reading.
+            //
+            // The question can only be built from a checked file, because that
+            // is the only type it takes, so there is no arrangement of this
+            // code that puts "run it anyway?" in front of somebody about a file
+            // that failed its check.
+            //
+            // Enter answers no, so somebody who pressed Enter to dismiss a
+            // sentence does not find their program replacing itself.
+            let asked = MessageDialog::builder(
+                frame,
+                &update_download::the_question_about(installer),
+                "Install Update",
+            )
+            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+            .build()
+            .show_modal();
+
+            if asked != ID_YES {
+                let declined = format!(
+                    "Wixen Mail {} was not installed. You are still running {}, and the \
+                     downloaded file has been removed.",
+                    installer.version(),
+                    crate::common::version::current()
+                );
+                if let Err(why) = update_download::say_no(installer.clone()) {
+                    tracing::warn!("A declined update could not be removed: {why}");
+                }
+                frame.set_status_text(&declined, 0);
+                let _ = a11y.announce_topic(&declined, Priority::High, "command");
+                return;
+            }
+
+            // Said before it happens rather than after, and said twice on
+            // purpose. The durable half is in the question above, where the
+            // person can still decline after reading that the window will
+            // close; this is the marker of the moment, because an announcement
+            // alone can be coalesced away by whatever a sync is saying
+            // underneath it and a second dialog would be the second question
+            // this feature may not ask.
+            let warning = update_download::what_is_said_before_the_window_closes(installer);
+            frame.set_status_text(&warning, 0);
+            let _ = a11y.announce_topic(&warning, Priority::High, "command");
+
+            // The installer starts first and this program closes after. The
+            // other order leaves nothing running to report a start that failed.
+            match update_download::hand_over_to(installer) {
+                Ok(()) => {
+                    frame.close(true);
+                }
+                Err(why) => {
+                    // Still running, which is the point of this order, so there
+                    // is somewhere to say this.
+                    let said = why.said();
+                    frame.set_status_text(&said, 0);
+                    let _ = a11y.announce_topic(&said, Priority::High, "refusal");
+                }
             }
         }
         UIUpdate::CommandRefused(why) => {

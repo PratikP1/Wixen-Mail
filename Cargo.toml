@@ -1,6 +1,6 @@
 [package]
 name = "wixen-mail"
-version = "0.116.0"
+version = "0.119.0"
 edition = "2024"
 # Stated rather than left implicit, so an older toolchain says which version it
 # wants instead of failing partway through with a parse error. The edition needs
@@ -334,6 +334,18 @@ windows = { version = "0.62.2", features = [
     # though the attributes passed are None.
     "Win32_System_Threading",
     "Win32_Security",
+    # Checking that a downloaded installer is validly signed, through
+    # WinVerifyTrust. Windows-only because this is the only platform with an
+    # Authenticode signature to check; service::update_download refuses to
+    # download anything at all where there is none.
+    "Win32_Security_WinTrust",
+    # And reading whose signature it is, through CryptQueryObject,
+    # CryptMsgGetParam, CertFindCertificateInStore and CertGetNameStringW. Two
+    # features rather than one because that is the whole point: the first
+    # answers whether a file is signed, which millions are, and only this one
+    # answers whether this project signed it. WINTRUST_DATA is gated behind this
+    # feature as well, so neither works without the other.
+    "Win32_Security_Cryptography",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]

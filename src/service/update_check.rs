@@ -40,19 +40,24 @@ pub const SETTINGS_SECTION: &str = "New versions";
 /// What the one update control is labelled, without its keyboard mark.
 pub const WHICH_UPDATES_LABEL: &str = "Tell me about new versions";
 
-/// What the control says about what choosing a version kind will mean.
+/// What the control says choosing a kind of version means.
 ///
 /// The consent is given here or it is not given. Somebody choosing either kind
-/// is agreeing that this program will later fetch an installer, several
-/// megabytes of it, without asking again, and a warning that lives only in a
-/// document is a warning nobody gets.
+/// is agreeing that this program fetches an installer, several megabytes of it,
+/// without asking again, and a warning that lives only in a document is a
+/// warning nobody gets.
 ///
-/// It says "will" rather than "does" because nothing is downloaded yet, and a
-/// control claiming a capability this build does not have is the same defect
-/// one step along.
+/// It said "will mean" and "nothing is downloaded yet" while downloading was a
+/// later plan's work, which was right then and became a promise that the thing
+/// it warns about does not happen the moment that plan landed. The present
+/// tense is load-bearing, and
+/// `test_the_control_says_what_choosing_a_kind_of_version_does_now_rather_than_later`
+/// holds it there: a warning nobody believes is worse than none, because the
+/// next true one gets read the same way.
 pub const WHICH_UPDATES_DESCRIPTION: &str = "Wixen Mail asks GitHub which versions have been published. Nothing about you is sent. \
-     When updating is finished, choosing either kind of version will mean the installer for \
-     it is downloaded without asking you again; nothing is downloaded yet.";
+     Choosing either kind of version also means the installer for a newer one is downloaded \
+     without asking you, about 12 MB of it. You are then asked once before it is run, and \
+     Wixen Mail will not run an installer it cannot confirm this project signed.";
 
 /// The one host this module ever asks.
 ///
@@ -128,6 +133,16 @@ pub enum Answer {
         page: String,
         /// Which channel was asked.
         channel: ReleaseChannel,
+        /// The files published beside that release.
+        ///
+        /// Carried with the answer rather than fetched again, because the
+        /// release this names is the one the ordering rule below picked and
+        /// asking GitHub a second time could get a different one. Which of
+        /// them is the installer is
+        /// [`crate::service::update_download::the_installer_among`]'s rule and
+        /// not this module's: asking which versions exist and choosing what to
+        /// fetch are two jobs.
+        files: Vec<crate::service::update_download::ReleaseFile>,
     },
     /// Something is published, and none of it is newer than this build.
     ThisIsTheNewest {
@@ -341,7 +356,7 @@ fn who_is_asking() -> String {
     format!("wixen-mail/{}", env!("CARGO_PKG_VERSION"))
 }
 
-/// One published release, reduced to the two things this reads.
+/// One published release, reduced to the three things this reads.
 ///
 /// serde passes over the twenty other fields GitHub sends, which was checked
 /// against a response caught off the wire rather than against the reference
@@ -352,6 +367,42 @@ struct Published {
     tag_name: String,
     /// The page a person reads about the release on.
     html_url: String,
+    /// The files published beside it.
+    ///
+    /// Defaulted rather than required, because a release with no files is a
+    /// real thing GitHub will send and it is not a reply this cannot
+    /// understand. It is a release with nothing to download, which the plans
+    /// downstream of this already have an answer for.
+    #[serde(default)]
+    assets: Vec<PublishedFile>,
+}
+
+/// One file published beside a release, as GitHub names its fields.
+///
+/// Turned into [`crate::service::update_download::ReleaseFile`] at the boundary
+/// through [`From`], so GitHub's own field names stop here and nothing
+/// downstream has to know that "browser download url" is what an address is
+/// called in this one API.
+#[derive(Debug, Clone, Deserialize)]
+struct PublishedFile {
+    name: String,
+    browser_download_url: String,
+}
+
+impl From<&PublishedFile> for crate::service::update_download::ReleaseFile {
+    fn from(published: &PublishedFile) -> Self {
+        Self {
+            name: published.name.clone(),
+            from: published.browser_download_url.clone(),
+        }
+    }
+}
+
+impl Published {
+    /// The files beside this release, in the words the rest of the program uses.
+    fn files(&self) -> Vec<crate::service::update_download::ReleaseFile> {
+        self.assets.iter().map(Into::into).collect()
+    }
 }
 
 /// What a reply means for the person in front of us.
@@ -425,6 +476,7 @@ fn whether_that_one_is_an_offer(
             version: published.tag_name.clone(),
             page: published.html_url.clone(),
             channel,
+            files: published.files(),
         },
         // A tag this program cannot read is not a newer version, and saying so
         // is the honest answer for one release: something is published and none
@@ -478,6 +530,7 @@ fn the_newest_offer_among(
             version: offer.tag_name.clone(),
             page: offer.html_url.clone(),
             channel,
+            files: offer.files(),
         },
         None if unreadable > 0 => Answer::CouldNotBeUnderstood {
             entries: unreadable,
@@ -565,6 +618,20 @@ mod tests {
             .replace("releases/tag/2026-09-07", &format!("releases/tag/{tag}"))
     }
 
+    /// The one file `A_REAL_RELEASE` really publishes beside itself.
+    ///
+    /// Real, like the rest of that fixture: the eighteen assets GitHub sent
+    /// were trimmed to one and this is that one, name and address as they
+    /// arrived. What an offer carries has to be what a release really lists,
+    /// because it is where the installer to fetch is chosen from.
+    fn the_files_that_release_publishes() -> Vec<crate::service::update_download::ReleaseFile> {
+        vec![crate::service::update_download::ReleaseFile {
+            name: "rust-analyzer-aarch64-apple-darwin.gz".to_string(),
+            from: "https://github.com/rust-lang/rust-analyzer/releases/download/2026-09-07/rust-analyzer-aarch64-apple-darwin.gz"
+                .to_string(),
+        }]
+    }
+
     fn answered(body: &str) -> Reply {
         Reply {
             status: 200,
@@ -587,6 +654,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.116.0"
                     .to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: the_files_that_release_publishes(),
             },
             "a published version newer than this build is the whole point of asking"
         );
@@ -618,6 +686,7 @@ mod tests {
                 version: "v0.116.0".to_string(),
                 page: "https://example.invalid/r".to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: Vec::new(),
             },
             Answer::ThisIsTheNewest {
                 channel: ReleaseChannel::PublicReleases,
@@ -840,6 +909,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
                     .to_string(),
                 channel: ReleaseChannel::DevelopmentReleases,
+                files: the_files_that_release_publishes(),
             },
             "the newest is chosen by the ordering, not by where the list happened to put it"
         );
@@ -874,6 +944,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
                     .to_string(),
                 channel: ReleaseChannel::DevelopmentReleases,
+                files: the_files_that_release_publishes(),
             }
         );
         // And a list every entry of which reads, with nothing newer in it, is
@@ -1071,6 +1142,7 @@ mod tests {
                 version: "v9.9.9".to_string(),
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v9.9.9".to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: the_files_that_release_publishes(),
             }
         );
     }
@@ -1081,6 +1153,7 @@ mod tests {
             version: "v0.116.0".to_string(),
             page: "https://example.invalid/r".to_string(),
             channel: ReleaseChannel::PublicReleases,
+            files: Vec::new(),
         }
         .said();
         let newest = Answer::ThisIsTheNewest {
@@ -1208,6 +1281,34 @@ mod tests {
         assert_eq!(
             channel_for(WhichUpdates::DevelopmentReleases, WhoAsked::ByHand),
             Some(ReleaseChannel::DevelopmentReleases)
+        );
+    }
+
+    #[test]
+    fn test_the_control_says_what_choosing_a_kind_of_version_does_now_rather_than_later() {
+        // This sentence is where the consent for an unattended download is
+        // given or is not given, so it has to describe the build the person is
+        // reading it in. It was written while downloading was somebody else's
+        // plan and it said so, in as many words, and the moment that plan
+        // landed the sentence became a promise that the thing it warns about
+        // does not happen. A warning nobody believes is worse than none,
+        // because the next true one is read the same way.
+        let said = WHICH_UPDATES_DESCRIPTION.to_lowercase();
+        assert!(
+            !said.contains("nothing is downloaded"),
+            "the control tells somebody nothing is downloaded, and choosing an answer \
+             on it is what starts downloading: {WHICH_UPDATES_DESCRIPTION}"
+        );
+        assert!(
+            !said.contains("when updating is finished") && !said.contains("will mean"),
+            "the control describes the download as something a later version will do: \
+             {WHICH_UPDATES_DESCRIPTION}"
+        );
+        assert!(
+            said.contains("downloaded") && said.contains("without asking"),
+            "the control has to say that choosing an answer means installers arrive \
+             without being asked for, because that is the whole of what is being \
+             agreed to here: {WHICH_UPDATES_DESCRIPTION}"
         );
     }
 
