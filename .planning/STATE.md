@@ -7,7 +7,7 @@ status: executing
 stopped_at: 07-05 merged. A Help menu item asks GitHub whether there is a newer version and the answer is said in words, on the channel one setting picks. That setting has three values, sits under a new New versions heading on the General tab and starts on not looking, so nothing is fetched until somebody chooses. Five answers, and a rate limit is 403 or 429 told apart from the other 403 by x-ratelimit-remaining. Nothing downloads and nothing runs, which is 07-09's. 07-04's code is now reached by a path a person can take. docs/privacy.md stops promising there is no update check and gains the TEMP log fallback and the OneNote permission nothing uses
 last_updated: "2026-09-12T14:55:00.000Z"
 last_activity: 2026-09-12
-state_head: 441fca5
+state_head: d83bed3
 progress:
   total_phases: 13
   completed_phases: 0
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-05 is merged, version
-0.116.0. Five plans of nine are done and four remain. Phase 05.2's checkpoint
+Phase: 07 (Installing, updating and what is stored). **07-05 is merged at
+`d83bed3`, version 0.116.0. Five plans of nine are done and four remain. Phase 05.2's checkpoint
 is still open and nothing in it has been answered.**
 
 **Somebody can ask whether there is a newer version and be told in words.**

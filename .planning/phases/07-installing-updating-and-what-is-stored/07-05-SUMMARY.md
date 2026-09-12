@@ -224,6 +224,9 @@ share is doc comments carrying fetched quotations and their dates.
 
 Branch: `somebody-can-ask-whether-there-is-a-newer-version-and-is-told-what-was-found`, from `aa21b4f2`.
 
+**Merge:** `d83bed3c` on `main`. The hash is written here by the follow-up
+commit, since a summary committed before its own merge cannot name it.
+
 ## The paragraph phase 6's planner should read: what changed in `every_setting_is_acted_on`
 
 **Almost nothing, and that is the point.** The module is in the state a later
