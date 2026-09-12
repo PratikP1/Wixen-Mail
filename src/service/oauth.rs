@@ -922,6 +922,36 @@ impl AuthManager {
     }
 }
 
+/// A Graph token for this account, or nothing at all.
+///
+/// The whole of "is this account signed in to Microsoft, and is its token still
+/// good", in one place. `None` covers the three states that want the same
+/// answer and are not worth telling apart here: this build holds no client
+/// credentials for outlook, nothing is stored for the account, and a refresh
+/// that had to happen did not work. Each of those is somebody signing in again.
+///
+/// One function rather than a copy per feature, because a second copy of "how
+/// a Graph token is got" disagrees with the first the day either changes. The
+/// contacts and calendar managers had the only copy before this; it now
+/// delegates here, and the OneNote notes backend asks the same question of the
+/// same place.
+///
+/// It is the last thing asked before a client is built and the first thing a
+/// caller branches on, so the caller can say "nobody is signed in" in its own
+/// words rather than reporting a failure somebody cannot act on.
+pub async fn a_graph_token_for(account_id: &str) -> Option<String> {
+    let held = crate::service::oauth_credentials::credentials_for("outlook")?;
+    AuthManager::new(
+        account_id,
+        "outlook",
+        &held.client_id,
+        held.client_secret.as_deref(),
+    )
+    .get_valid_graph_token()
+    .await
+    .ok()
+}
+
 /// What to say when signing in worked and could not be kept.
 ///
 /// One sentence for one condition, next to the write that raises it, because

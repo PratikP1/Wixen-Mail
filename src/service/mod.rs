@@ -23,6 +23,7 @@ pub mod network;
 pub mod note_document;
 pub mod oauth;
 pub mod oauth_credentials;
+pub mod onenote_notes;
 pub mod onenote_page;
 pub mod outlook_data_file;
 pub mod outward;

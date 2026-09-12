@@ -1034,17 +1034,12 @@ fn asking_when_people_are_free(
 /// sign-in stored fails here without a request leaving the machine, and one
 /// whose token has run out has it refreshed, which is what a stored provider
 /// name could never tell anybody.
+///
+/// One line, because the answer moved to [`crate::service::oauth`] when the
+/// OneNote notes backend needed the same one. Two copies of how a Graph token
+/// is got disagree the day either changes, and this one was the only copy.
 async fn a_microsoft_token(account: &str) -> Option<String> {
-    let held = crate::service::oauth_credentials::credentials_for("outlook")?;
-    crate::service::oauth::AuthManager::new(
-        account,
-        "outlook",
-        &held.client_id,
-        held.client_secret.as_deref(),
-    )
-    .get_valid_graph_token()
-    .await
-    .ok()
+    crate::service::oauth::a_graph_token_for(account).await
 }
 
 /// How this person reads a date and a time, and what hours they work.

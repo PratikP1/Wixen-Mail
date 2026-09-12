@@ -538,6 +538,31 @@ pub struct MsOneNotePage {
     /// page they really can make.
     #[serde(default)]
     pub title: String,
+    /// When the service last wrote to this page, as the service spells it.
+    ///
+    /// The nearest thing an `onenotePage` has to a version marker, and it is a
+    /// clock reading rather than a token. Kept as the string it arrived as and
+    /// never parsed as a date: the seam's contract says a marker is compared
+    /// for equality and for nothing else, and ordering two of these or reading
+    /// one as a moment would be this program deciding something the service
+    /// never promised.
+    ///
+    /// Absent rather than required, unlike [`Self::id`]. A page carrying no
+    /// time is a page whose marker is [`None`], which the sync already handles
+    /// by treating every copy as having moved; refusing the page instead would
+    /// drop somebody's note out of a listing over a missing field.
+    #[serde(default)]
+    pub last_modified_date_time: String,
+}
+
+/// The marker a page carries, where it carries one.
+///
+/// The empty string is not a marker. Serde fills the field with it for a page
+/// whose answer named no time at all, and a marker that is the same empty
+/// string on every page would report every page as unchanged for ever, which
+/// is the direction the seam's requirement 4 says costs somebody their note.
+pub fn the_time_a_page_was_last_changed(page: &MsOneNotePage) -> Option<String> {
+    Some(page.last_modified_date_time.clone()).filter(|when| !when.is_empty())
 }
 
 /// How many section groups deep a walk of a notebook will follow.
@@ -1271,6 +1296,44 @@ impl MsGraphClient {
             .await
             .map_err(|e| Error::Network(format!("Graph API POST failed: {e}")))?;
         a_page_that_can_be_addressed(Self::read_onenote(resp).await?)
+    }
+
+    /// Every page in one section, each with the time it was last changed.
+    ///
+    /// The listing a notes backend reads to find out what a section holds. It
+    /// is the cheap half of the seam's pair: this answers identities and
+    /// markers for a whole section in one request, and the content of a page is
+    /// asked for only where a marker says something moved.
+    ///
+    /// Paged through [`Self::every_page_of`], so a section holding more pages
+    /// than Graph will answer in one go is read whole rather than truncated.
+    pub async fn pages_in_section(
+        &self,
+        _token: &str,
+        _section_id: &str,
+    ) -> Result<Vec<MsOneNotePage>> {
+        Ok(Vec::new())
+    }
+
+    /// One page, as the resource rather than as its content.
+    ///
+    /// Its title and the time it was last changed, which are the two things a
+    /// page's HTML cannot be trusted to carry: the title is a property of the
+    /// resource, and the time is written by the service and appears nowhere in
+    /// the document.
+    pub async fn one_page(&self, _token: &str, _page_id: &str) -> Result<MsOneNotePage> {
+        Ok(MsOneNotePage::default())
+    }
+
+    /// A page's content as somebody would read it.
+    ///
+    /// [`Self::page_content_with_identifiers`] without the identifiers, and
+    /// that is the whole difference. Graph's generated identifiers are written
+    /// into the document as attributes when they are asked for, and a note read
+    /// back for somebody to edit should not carry the service's bookkeeping
+    /// through a Markdown reader.
+    pub async fn page_content(&self, _token: &str, _page_id: &str) -> Result<String> {
+        Ok(String::new())
     }
 
     /// A page's content, with the identifiers Graph generated for it.
@@ -2889,6 +2952,142 @@ mod tests {
              answers to: {:?}",
             asked[3]
         );
+    }
+
+    #[tokio::test]
+    async fn test_every_page_of_a_section_arrives_with_the_time_it_was_last_changed() {
+        // The cheap half of the seam's pair. A notes sync asks a container what
+        // it holds on every run, and it asks what one note says only for the
+        // ones whose marker moved, so this listing has to carry the marker or
+        // the second question is asked about every page every time.
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[
+                 {"id":"1-page1","title":"Fuses","lastModifiedDateTime":"2026-09-11T09:00:00Z"},
+                 {"id":"1-page2","title":"Meters","lastModifiedDateTime":"2026-09-11T09:05:00Z"}
+               ]}"#
+            .to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let pages = graph
+            .pages_in_section("a-token", "1-section")
+            .await
+            .expect("the pages of a section");
+
+        let request = heard(listening, "the section's pages")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "GET /me/onenote/sections/1-section/pages",
+            "{request}"
+        );
+        assert_eq!(
+            pages
+                .iter()
+                .map(|page| (
+                    page.id.as_str(),
+                    page.title.as_str(),
+                    the_time_a_page_was_last_changed(page)
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("1-page1", "Fuses", Some("2026-09-11T09:00:00Z".to_string())),
+                (
+                    "1-page2",
+                    "Meters",
+                    Some("2026-09-11T09:05:00Z".to_string())
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_that_names_no_time_at_all_carries_no_marker_rather_than_an_empty_one() {
+        // The empty string is what serde fills a missing field with, and every
+        // page missing the field would carry the same one. Compared for
+        // equality, which is the only comparison the seam allows, that reports
+        // every page as unchanged for ever: the direction requirement 4 says
+        // costs somebody their note rather than a fetch nobody needed.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":"1-page1","title":"Fuses"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let pages = graph
+            .pages_in_section("a-token", "1-section")
+            .await
+            .expect("the pages of a section");
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(the_time_a_page_was_last_changed(&pages[0]), None);
+    }
+
+    #[tokio::test]
+    async fn test_one_page_is_read_as_its_title_and_the_time_it_was_last_changed() {
+        // Asked of the resource rather than of the document. A page's title is
+        // a property of the `onenotePage` and the time is written by the
+        // service, so neither can be read out of the content this program sends
+        // and gets back.
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"id":"1-page","title":"Fuses","lastModifiedDateTime":"2026-09-11T09:00:00Z"}"#
+                .to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let page = graph.one_page("a-token", "1-page").await.expect("the page");
+
+        let request = heard(listening, "the page").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "GET /me/onenote/pages/1-page",
+            "{request}"
+        );
+        assert_eq!(page.title, "Fuses");
+        assert_eq!(
+            the_time_a_page_was_last_changed(&page),
+            Some("2026-09-11T09:00:00Z".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_read_for_somebody_to_edit_does_not_ask_for_the_generated_identifiers() {
+        // The identifiers are written into the document as attributes when they
+        // are asked for. A note read back goes into the box somebody typed it
+        // into, and the service's bookkeeping has no business being carried
+        // through a Markdown reader into their words.
+        let (address, listening) = answering(
+            "200 OK",
+            "text/html",
+            "<html><head><title>Fuses</title></head><body><div><p>Live is brown</p></div></body></html>"
+                .to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let html = graph
+            .page_content("a-token", "1-page")
+            .await
+            .expect("the page's content");
+
+        let request = heard(listening, "the page's content")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "GET /me/onenote/pages/1-page/content",
+            "{request}"
+        );
+        assert!(html.contains("Live is brown"), "{html}");
     }
 
     #[tokio::test]
