@@ -559,7 +559,17 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
   5. The crate builds and the suite passes on Linux and on macOS in CI.
   6. On a platform where the accessibility bridge is absent, the application says so at startup and in Help, derived from what is actually compiled in rather than from a hardcoded platform list. This closes on the disclosure, not on a working bridge.
 
-**Plans**: TBD
+**Plans**: nine, listed in `phases/07-installing-updating-and-what-is-stored/PLANS-README.md`.
+
+- [x] 07-01-PLAN.md, merged at `228e6a3`. Criterion 4 closes structurally and is unheard, which is `WINDOWS.md` 302 and 303. The last clause of criterion 1, that SmartScreen is stated and not promised, is now held by a failing build. SHIP-04 closes; SHIP-01 does not, because the signature itself is 07-07 and 07-08.
+- [ ] 07-02-PLAN.md
+- [ ] 07-03-PLAN.md
+- [ ] 07-04-PLAN.md
+- [ ] 07-05-PLAN.md
+- [ ] 07-06-PLAN.md
+- [ ] 07-07-PLAN.md
+- [ ] 07-08-PLAN.md
+- [ ] 07-09-PLAN.md
 
 ### Phase 8: Every number the project quotes
 
@@ -596,7 +606,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 5.1 Notes and contacts reach a server | 6/6 | In Progress|  |
 | 5.2 Notes in OneNote | 3/3 | In Progress| Every plan built and merged; the phase's human checkpoint is open |
 | 6. How the application speaks | 0/TBD | Researched, not planned | - |
-| 7. Installing, updating and what is stored | 0/9 | Planned, not started | - |
+| 7. Installing, updating and what is stored | 1/9 | In Progress| 07-01 merged; SHIP-04 closed, criterion 4 unheard |
 | 8. Every number the project quotes | 0/TBD | Researched, not planned | - |
 
 ## Notes on this roadmap

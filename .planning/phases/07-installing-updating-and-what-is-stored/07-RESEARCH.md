@@ -49,7 +49,7 @@ not it ever is.
 | SHIP-01 | A signed installer | Signing landscape below; the evidence line is accurate about the tree and wrong about SmartScreen. Blocked on a decision, and the decision is now a different decision from the one the requirement describes. |
 | SHIP-02 | Check for and apply updates | Confirmed absent. `reqwest` is already an unconditional dependency, so no new dependency is needed. No SemVer comparison exists. |
 | SHIP-03 | Shortcuts carry the icon | Evidence line verified line by line and correct. Two attributes on two lines. |
-| SHIP-04 | Cache encryption, or say so | Decided already. Said in two documents, said nowhere in the product. The first-run screen is the gap. |
+| SHIP-04 | Cache encryption, or say so | Decided already. Said in two documents, said nowhere in the product. The first-run screen is the gap. **Closed 2026-09-12 by 07-01 at `9658282`: the first-run screen and the end of `--help` both say it now, so this row's last two sentences are what it was, not what it is.** |
 | SHIP-05 | Builds on Linux and macOS | Evidence line correct in substance, wrong on the line number. The cost is in `wxdragon`, not in the CI YAML. |
 | SHIP-06 | Off Windows, say what the accessibility layer does not do | The derivation exists and is reached; the accessor exists and is reached by nothing. |
 
@@ -140,7 +140,7 @@ Where the statement already ships (**bucket 1**):
 Where it does not ship (**bucket 3**):
 
 - **The first-run screen.** `grep -i encrypt src/presentation/first_run.rs` returns nothing. `INTRODUCTION` (`first_run.rs:116-125`) is about what writes being experimental and says nothing about storage. That is the one place the requirement names that does not have it.
-- The end of `--help` (`src/presentation/command_line.rs:133-137`) says everything that writes is experimental and says nothing about the cache.
+- The end of `--help` (`src/presentation/command_line.rs:133-137`) says everything that writes is experimental and says nothing about the cache. **No longer true from 2026-09-12: 07-01 added a paragraph after that one saying the downloaded mail is not encrypted on this computer. Find it by its phrase rather than by a line, since the line numbers here have moved once already.**
 
 **A caution on the first-run screen, from its own doc comment.** `first_run.rs:118-120` says
 `INTRODUCTION` "is read out in full by a screen reader before the person reaches the buttons, so

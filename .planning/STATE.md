@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-current_phase: 05.2
-current_phase_name: Notes in OneNote
-current_plan: 3
+current_phase: 7
+current_phase_name: Installing, updating and what is stored
+current_plan: 2
 status: executing
-stopped_at: 05.2-03 merged at 3bc2651. Every plan of the phase is built and merged; the phase's human checkpoint is open and nobody has answered it
-last_updated: "2026-09-12T03:20:00.000Z"
+stopped_at: 07-01 merged at 228e6a3. The program says what it leaves on the disk, no shipped page can promise the Windows warning goes away, and every path paths.rs hands out is on both pages that list them. Nobody has heard any of it
+last_updated: "2026-09-12T07:10:00.000Z"
 last_activity: 2026-09-12
-state_head: 3bc2651
+state_head: 228e6a3
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 80
+  completed_plans: 81
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,9 +29,61 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.2 (Notes in OneNote). **05.2-03 is merged at `3bc2651`, version
-0.112.0, and it is the last plan of the phase. The phase's checkpoint is open
-and nothing in it has been answered.**
+Phase: 07 (Installing, updating and what is stored). **07-01 is merged at
+`228e6a3`, version 0.113.2. It is the first plan of the phase and eight remain.
+Phase 05.2's checkpoint is still open and nothing in it has been answered.**
+
+**The program now says what it leaves on somebody's disk.** The first-run screen
+and the end of `--help` both say the downloaded mail is not encrypted on this
+computer, that Windows keeps other people who use the computer out of the
+folder, that anyone who takes the drive out can read it unless the disk itself
+is encrypted, and that BitLocker is the answer to that. Two documents said it
+and the product said nothing, so the only people who knew were the ones who
+opened a page. Nothing about the storage changed. SHIP-04 closes on this;
+**nobody has heard either sentence**, which is `WINDOWS.md` 302 and 303.
+
+It went in `INTRODUCTION` rather than behind a second button, against what that
+constant's doc comment appears to say, because "every time" is once per install:
+`wx_app` returns early when `told_about_the_alpha` is set. A 900-character bound
+now holds the text at 694 so the same argument cannot be made twice more.
+
+**Two guards landed and both were measured by hand rather than watched.** No
+shipped page can promise that signing makes the Windows warning go away; the
+predicate tells code signing from a signed message and from signing in, reads 31
+sentences across `docs/` and `README.md`, and refuses none today. Under its
+recorded break only the companion reddens: the corpus walk stays green, because
+no page violates it, so the walk alone cannot tell a working predicate from a
+narrowed one. That is the failure `CLAUDE.md` names for a document guard,
+measured rather than argued. And every path `src/common/paths.rs` hands out must
+be named on both pages that list what is stored, enumerated by calling the
+accessors because `oauth_toml` joins onto `config_dir` and a grep for
+`self.root.join(` would have missed exactly the path that was missing.
+
+**That check found three gaps where the plan predicted one.** `security.key` was
+on neither page and `oauth.toml` was on `docs/privacy.md` only. Both pages now
+name every path, and `docs/privacy.md` says for the first time that uninstalling
+cannot clear the Windows Search index, which the installer and uninstaller both
+said and the page did not.
+
+**Three writes go to the temporary folder through no accessor and the check
+cannot reach any of them.** `logging.rs:79`, `main.rs:307` and
+`help_page.rs:97`; only the second is on a page. All three predate the plan. The
+check's comment names them so a green build is not read as "every path is listed",
+and `WINDOWS.md` 304 carries it for 07-05, which owns the privacy page.
+
+Version `0.113.2`, `guards/guards.toml` holds 722 records with the census reading
+192 and 530, `.planning/WINDOWS.md` reaches 305 with 284 open, and nothing is
+pushed.
+
+Current Plan: 2
+Total Plans in Phase: 9
+
+---
+
+### Phase 05.2, the phase before this one
+
+**05.2-03 is merged at `3bc2651`, version 0.112.0, and it is the last plan of
+that phase. Its checkpoint is open and nothing in it has been answered.**
 
 **A note on a Microsoft account now reaches OneNote.** `service::onenote_notes`
 is the third implementation of `NotesService` and the first hosted one. Each
@@ -164,9 +216,6 @@ no record named that file, so the count check could not see them arrive. Six
 were written as two lines naming a neighbouring match arm, which is the spelling
 that breaks the moment a neighbour moves; all of those are now one
 self-contained edit each.
-
-Current Plan: 3
-Total Plans in Phase: 3
 
 **What 05.2-01 built.** `src/service/onenote_page.rs`: a note's title and
 Markdown body into the HTML a page is created from, and a page's returned HTML

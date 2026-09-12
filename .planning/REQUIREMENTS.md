@@ -1516,7 +1516,26 @@ write path added by this milestone passes through that gate.
   - [D] Both `[Icons]` entries set `IconFilename` to the bundled icon, so the shortcut a user
     sees in the Start menu and on the desktop is the application's own.
 
-- [ ] **SHIP-04**: Encrypt the local cache, or decide not to and say so once and clearly.
+- [x] **SHIP-04**: Encrypt the local cache, or decide not to and say so once and clearly.
+  - **Closed 2026-09-12 by plan 07-01, merged at `228e6a3`. Two sentences in the evidence
+    below are now false and they are left where they are, with this correction above them,
+    because they are what the requirement was closed against.** "It does not ship in the
+    running program" and the `grep -i encrypt src/presentation/first_run.rs` returning nothing
+    both stopped being true at `9658282`. `INTRODUCTION` carries a third paragraph and the end
+    of `--help` carries a fifth, both saying the mail is not encrypted on this computer, both
+    naming Windows keeping another user out and somebody taking the drive out, and both naming
+    full-disk encryption as the answer to the second. That is the second `[D]` line word for
+    word. The "one accuracy gap" below is closed too, and the check that closed it found two
+    gaps rather than one: `security.key` was on neither page and `oauth.toml` was on one.
+    **What is not closed is whether either sentence is heard as an important fact**, which is
+    `.planning/WINDOWS.md` 302 and 303 and needs a screen reader.
+    **The caution below about where it goes was answered rather than followed.** It asks the
+    plan to raise the choice between `INTRODUCTION` and a second `READ_MORE` button rather than
+    settle it by appending, and 07-01 raised it with the measurement the caution lacked: the
+    screen is shown once per install, not on every start, because `wx_app` returns early when
+    `told_about_the_alpha` is set. So "every first run longer for every user" is one hearing on
+    a machine's first start. It went in `INTRODUCTION`, with a length bound of 900 characters
+    holding it to 694, and `first_run.rs`'s own doc comment now carries the reasoning.
   - Evidence: re-checked 2026-09-04 and accurate. `src/data/message_cache/mod.rs` stores mail
     in plain SQLite; `rusqlite` carries no SQLCipher (`Cargo.toml:81`), so encrypting the cache
     means SQLCipher or an application-level scheme, which is the build cost `CLAUDE.md` names.
@@ -1884,7 +1903,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SHIP-01 | Phase 7 | Pending |
 | SHIP-02 | Phase 7 | Pending |
 | SHIP-03 | Phase 7 | Pending |
-| SHIP-04 | Phase 7 | Pending |
+| SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
 | SHIP-06 | Phase 7 | Pending |
 | PERF-01 | Phase 8 | Pending |
