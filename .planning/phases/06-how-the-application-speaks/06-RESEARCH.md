@@ -1,86 +1,183 @@
 # Phase 6: How the application speaks - Research
 
-**Researched:** 2026-09-06
-**Read against:** the working tree at commit `2face17`. The only uncommitted change in
-the tree at the time of reading was `.planning/phases/04-.../04-06-PLAN.md`, a planning
-document, so every source claim below is a claim about `2face17` itself.
-**Confidence:** HIGH on everything read from source this session. Every in-repo claim
-carries the command that produced it. External claims carry their URL and are marked.
+**Researched:** 2026-09-12
+**Read against:** `main` at `febe8e4`, working tree clean at the start of the read.
+**Replaces:** the version of this file written 2026-09-06 against commit `2face17`.
+355 commits separate the two. Section "What the 2026-09-06 version got wrong" lists
+every claim of that document this read overturned.
+**Confidence:** HIGH on everything re-derived this session. Every in-repo claim carries
+the command that produced it and the date it was run. Every external claim carries the
+command that fetched it and the figure a script produced, not a figure a model read.
 
-No `06-CONTEXT.md` exists and there is no `.planning/phases/06-*` directory, so nothing
-constrains scope yet.
+No `06-CONTEXT.md` exists in `.planning/phases/06-how-the-application-speaks/`, so no
+locked decisions constrain scope yet. `/gsd-discuss-phase` has not run for this phase.
 
 ---
 
-## How to read the evidence in this document
+## How to read the evidence here
 
-The audit of 2026-09-04 found roughly two thirds of the requirements describing the code
-wrongly, always by citing a conclusion rather than a re-runnable command. So every claim
-here is written as `command -> result`, and every claim of absence names the two or three
-spellings that were searched, not one.
+Three rules, each because this project has been bitten by the absence of it.
 
-Where I could not settle something by reading, it is in **Assumptions** or in **What only
-a person can answer**, and it is not stated as fact anywhere else.
+**Every number carries its command and its date.** `CLAUDE.md` says a measurement
+without a date perishes, and phases 5.1, 5.2 and 7 each paid about an hour for a
+correction pass caused by a dated figure being quoted undated. Nothing below is quoted
+from another document. Where a figure disagrees with one in the tree, both are shown.
+
+**Every claim of absence names what was searched.** Not one spelling, two or three.
+
+**A count is only reported when its parts sum to its whole.** Three separate readings
+of one upstream table produced three different wrong answers in this session, including
+one of mine. The sum check is what caught it. Details in "Criterion 3".
+
+Where something could not be settled by reading, it is in "Assumptions" or in "What no
+plan in this phase can close", and it is stated as fact nowhere else.
 
 ---
 
 ## Summary
 
-Phase 6 is smaller than it reads in two places, larger in two others, and one of its four
-criteria rests on a number that is wrong by about an order of magnitude.
+The phase is four nearly independent pieces sharing almost no code. Its model layer is
+in better shape than the roadmap implies, its document layer is in worse shape, and one
+of its four criteria still rests on a number that is wrong, though not by the amount the
+last read of this file claimed.
 
-**Criterion 1, per-event feedback channels, is a real defect and the requirement describes
-it exactly.** Nothing needs designing at the model layer: the grid, the storage format and
-the read path all ship and work. Two `pub` keywords and one settings panel stand between
-the current state and the criterion. The work is the panel, and the panel has a genuine
-accessibility design question inside it, because sixteen events by four channels is 64
-checkboxes and 64 checkboxes on one page is a bad experience for the person this product
-exists for.
+**Criterion 1 is a real defect and the requirement describes it exactly.** Sixteen
+events, four channels, storage, serialisation and the read path all ship and work,
+verified today. What is missing is not just a settings panel. There is also no public
+way to *read* an event's chosen channels: the only public accessor, `channels_for`,
+returns the effective set after defaults and after the never-sound-alone fallback, so it
+cannot tell "no override" from "all four ticked". A panel needs a new read method as well
+as a new write method. The 2026-09-06 reading called this "two `pub` keywords"; it is
+three methods, one of which does not exist in any form.
 
-**Criterion 2, dates in the machine's locale, is half done and the remaining half is wider
-than `date_display.rs`.** The date order and the clock already follow Windows. The month
-names do not, and there are three more English date sites outside `date_display.rs` that
-FEEDBACK-02's evidence does not mention. The right mechanism is `GetDateFormatEx` with an
-explicit format picture, not a month-name lookup table and not a crate, and Microsoft's own
-documentation gives the reason: a month-name table returns the nominative form, which is
-grammatically wrong in Slavic and Baltic languages in exactly the position a date puts it.
+**Nothing defends the number sixteen.** `Event::ALL` is a hand written `[Event; 16]`.
+Adding a variant to `enum Event` breaks compilation at three exhaustive matches, so the
+compiler forces the variant to be described, but nothing forces it into `ALL`. Every
+"every event has..." test iterates `ALL`, so a seventeenth event omitted from `ALL` would
+be silently uncovered by all of them, and silently absent from the panel this phase
+builds. That is FEEDBACK-01's own defect arriving again one variant at a time.
 
-**Criterion 3 rests on "roughly half of WCAG", and that figure is wrong.** Axe.Windows'
-144 rules derive from exactly three WCAG success criteria: 1.3.1, 2.1.1 and 4.1.2. WCAG 2.2
-Level AA conformance is 56 success criteria. So the scan touches three of fifty-six, not
-half, and it does not fully judge even those three. Turning the estimate into a list is
-therefore not a documentation tidy-up: it replaces a claim that reads as reassuring with
-one that reads as a work queue, in six places in the tree.
+**Criterion 2 is half done and its remaining half has moved since the last read.** Order
+and clock already follow Windows. Month and day names do not. The set of English date
+sites is not the set the 2026-09-06 research listed: one site it named no longer exists,
+and a new one arrived five days ago. `GetDateFormatEx` remains the right mechanism and
+every claim about it was re-verified verbatim against Microsoft's page today.
 
-**Criterion 4's five WebView2 findings cannot be re-read from documents.** They were
-recorded once, on 2026-07-26, in one changelog line that names two of the five and calls
-the other three "three container views". That was two days before the scan was pointed at
-any dialog and five days before the MSAA channel was walked at all, so the figure comes
-from one window on one of two channels. The five findings have to be regenerated by running
-the scan, not looked up.
+**Criterion 3's "roughly half" is still wrong, and the correction is smaller than last
+time.** Counted with a script today, Axe.Windows has 155 rules drawn from five standards,
+of which three are WCAG success criteria: 1.3.1, 2.1.1 and 4.1.2. WCAG 2.2 Level AA
+conformance is 55 success criteria, not the 56 commonly published, because 4.1.1 Parsing
+is obsolete and removed in 2.2 and carries no level. So the scan can produce a finding
+against three of fifty-five. The previous version of this file said three of fifty-six
+and gave a per-rule breakdown that was wrong in every figure and did not sum to its own
+stated total.
 
-**Primary recommendation:** treat this phase as four independent pieces that share almost
-no code, in this order: (1) the per-event settings panel, which is the only user-facing
-capability and the only live defect; (2) the two inherited items, which are small and both
-touch guards that need retiring carefully; (3) `GetDateFormatEx`, which is self-contained
-in `date_display.rs` plus three call sites; (4) the coverage list, which is a document
-change plus a workflow change and needs the scan re-run before it can be written honestly.
+**Criterion 4's five findings still cannot be read from any document, and the reason is
+sharper than staleness.** One changelog line names two of the five and calls the other
+three "three container views". It was written when the scan covered one window on one
+channel. It now covers eleven windows on two. The number will change and should be
+expected to grow.
+
+**The largest risk to this phase is not in its own subject.** Phase 7 is executing now
+with nine written plans, and those plans edit `src/data/config.rs` and
+`src/presentation/wx_settings.rs` heavily, including the exact test module and the exact
+three exception lists that both of this phase's settings-reachability tasks must edit.
+Section "Where this phase collides with phase 7" has the measurement.
+
+**Primary recommendation:** four pieces, in this order. (1) The per-event panel, the only
+user-facing capability and the only live defect, but sequenced *after* phase 7's plan
+07-05 has landed or on an explicitly agreed split of `config.rs`. (2) The two inherited
+items, small, one of which is a decision rather than a task. (3) `GetDateFormatEx`,
+self-contained and collision-free. (4) The coverage list, a document and workflow change
+that needs the scan re-run before it can be written honestly.
 
 ---
 
 ## Phase requirements
 
-| ID | What it asks | What this research found |
-|----|--------------|--------------------------|
-| FEEDBACK-01 | Set feedback channels per event, not only globally | Accurate in every clause. Model ships, write path is private, no screen. Verified below. |
-| FEEDBACK-02 | Dates and relative wording in the user's own language and format | Accurate as far as it goes. It names one file; there are four English date sites in shipping code. |
-| FEEDBACK-03 | Know how much of WCAG the automated scans actually cover | Accurate that nothing names the criteria. Its underlying figure, "roughly half", is wrong and lives in six places. |
+| ID | What it asks | What this read found |
+|----|--------------|----------------------|
+| FEEDBACK-01 | Set feedback channels per event, not only globally | Accurate in every clause, and understated in one: it says the write path is private, which is true, and does not say there is no public read path either. Its own evidence calls `per_event` a `fn`; it is a struct field. |
+| FEEDBACK-02 | Dates and relative wording in the user's own language and format | Accurate as far as it goes. It names one file. There are four shipping sites today, and the set has changed in the last five days. |
+| FEEDBACK-03 | Know how much of WCAG the automated scans actually cover | Accurate that nothing names the criteria. Its underlying figure, "roughly half", is wrong and lives in seven product-facing places, four of which state it as criteria coverage. |
+
+Success criteria are in `.planning/ROADMAP.md` under "Phase 6: How the application
+speaks". Criterion 1 was rewritten on 2026-09-06; the check on that rewrite is the next
+section.
 
 ---
 
-## Criterion 1: per-event feedback channels
+## Criterion 1's rewrite is still correct, re-checked at source
 
-### The sixteen events, counted rather than quoted
+The roadmap says Speech and Braille cannot be set independently because they ride a
+single `UiaRaiseNotificationEvent` whose declared signature takes no medium parameter.
+That was checked again today rather than believed, because the brief was right that a
+rewritten criterion is exactly the kind of thing that goes stale quietly. Four readings,
+all current at `febe8e4`.
+
+**The declared signature, verbatim** from `src/presentation/accessibility/screen_reader.rs:75-81`
+[VERIFIED: src/presentation/accessibility/screen_reader.rs:73-81]:
+
+```rust
+    #[link(name = "uiautomationcore")]
+    unsafe extern "system" {
+        fn UiaClientsAreListening() -> i32;
+        fn UiaHostProviderFromHwnd(hwnd: isize, provider: *mut *mut c_void) -> i32;
+        fn UiaRaiseNotificationEvent(
+            provider: *mut c_void,
+            kind: i32,
+            processing: i32,
+            display_string: *mut u16,
+            activity_id: *mut u16,
+        ) -> i32;
+    }
+```
+
+Five parameters. A provider, a notification kind, a processing hint, the text, and an
+activity id. No medium, no channel, nothing a caller could set to ask for braille and not
+speech.
+
+**The module comment above it**, `screen_reader.rs:3-6`
+[VERIFIED: src/presentation/accessibility/screen_reader.rs:1-6]:
+
+> On Windows, announcements go to NVDA, JAWS, and Narrator through
+> `UiaRaiseNotificationEvent`, the UI Automation call meant for saying something that is
+> not tied to a focus change. NVDA routes it to speech and to a connected braille
+> display, so braille needs no separate handling here.
+
+**The routing in `accessibility.rs`**, unchanged since the last read
+[VERIFIED: src/presentation/accessibility.rs:247-255]:
+
+```rust
+        // Speech and braille both ride the one screen reader notification, so
+        // announcing once serves either. Announcing twice would double the
+        // speech for anyone who has both.
+        if channels.contains(&feedback::Channel::Speech)
+            || channels.contains(&feedback::Channel::Braille)
+        {
+            self.announce_topic(&text, event.priority(), event.key())?;
+        }
+```
+
+**`docs/accessibility.md`** still says the honest version. Verified by reading the file
+this session.
+
+`src/presentation/accessibility/accessibility.rs` does not exist; the module is
+`src/presentation/accessibility.rs` with a directory of submodules beside it. The
+2026-09-06 file cited it correctly.
+
+**Verdict: the rewrite holds. Do not re-litigate and do not re-check again this phase.**
+The single remaining obligation the criterion creates is a user-facing one: the screen
+must say that choosing between speech and braille is done in the screen reader and not
+here.
+
+---
+
+## Criterion 1: the sixteen events
+
+### Counted, not quoted
+
+Run 2026-09-12 at `febe8e4`:
 
 ```
 awk '/^pub enum Event \{/,/^\}/' src/presentation/accessibility/feedback.rs \
@@ -92,12 +189,14 @@ awk '/pub const ALL: \[Event; /,/\];/' src/presentation/accessibility/feedback.r
 -> 16
 ```
 
-Both halves counted separately on purpose: the declared array length, the enum body and
-the array contents could disagree. They do not. `Event::ALL` is `[Event; 16]` at
-`feedback.rs:114`. The roadmap's "sixteen" is right.
+Both halves counted separately because the declared array length, the enum body and the
+array contents could disagree. They do not. The declared length is `[Event; 16]` at
+`feedback.rs:114` [VERIFIED: src/presentation/accessibility/feedback.rs:114].
 
-The sixteen, with the label each already carries at `feedback.rs:164` (`Event::text`),
-which is what a settings control should show, since no new strings are needed:
+The sixteen, with the label each already carries through `Event::text()`. These are quoted
+verbatim from the match arms at `feedback.rs:166-181`, inside `pub fn text` which opens at
+`:164` and closes at `:183`
+[VERIFIED: src/presentation/accessibility/feedback.rs:164-183]:
 
 | Event | Label |
 |---|---|
@@ -118,246 +217,292 @@ which is what a settings control should show, since no new strings are needed:
 | `Confirmed` | Confirmed |
 | `NothingFound` | Nothing found |
 
-### The four channels
+No new strings are needed for a settings control. `Event::text()` is already the wording.
 
-`Channel` at `feedback.rs:319` is `Speech`, `Braille`, `Earcon`, `Visual`, with
-`Channel::ALL: [Channel; 4]` at `:327`. Verified by reading the enum body.
+### The census that counts them, and the hole in it
 
-### Where a channel setting is stored, and what reads it
+The brief asked what the census is, because `CLAUDE.md` warns that a census asserting a
+floor is itself a guard. The answer is that **there is no census, and the compiler does
+three quarters of the job.**
 
-One string, one field, one round trip.
+What does defend the sixteen:
+
+| Mechanism | What it forces | Verified by |
+|---|---|---|
+| `Event::text()` | Every variant has a written form | 16 `Event::` arms, no wildcard |
+| `Event::key()` | Every variant has a stored name | 16 `Event::` arms, no wildcard |
+| `Event::tone()` | Every variant has a sound | 16 `Event::` arms, no wildcard |
+
+```
+grep -n '_ =>' src/presentation/accessibility/feedback.rs
+-> no match
+```
+
+No wildcard arm anywhere in the file, so all three matches are exhaustive and a new
+variant fails to compile until all three are answered. That is a strong guarantee and it
+is the compiler's, not a test's.
+
+**What nothing defends: membership of `Event::ALL`.** `ALL` is a hand written array. A
+seventeenth variant compiles as soon as the three matches are answered, whether or not
+anybody adds it to `ALL`. And every test of the "every event has..." family iterates
+`ALL`, not the enum:
+
+```
+grep -n "Event::ALL" src/presentation/accessibility/feedback.rs
+-> 156, 991, 1094, 1112, 1145, 1180, 1310, 1329, 1429
+```
+
+`test_no_two_events_say_the_same_words` (`:1089`), `test_every_event_has_its_own_stored_name`
+(`:1107`), `test_every_event_has_its_own_tone` (`:1325`) and
+`test_every_event_has_a_written_equivalent` (`:1428`) all begin `for event in Event::ALL`
+[VERIFIED: src/presentation/accessibility/feedback.rs:1089-1130]. So each of them would
+pass while covering sixteen of seventeen, and say nothing.
+
+No derive macro closes this either:
+
+```
+grep -rn "strum\|EnumIter\|VariantArray" Cargo.toml src/presentation/accessibility/feedback.rs
+-> no match
+```
+
+**The consequence for this phase, stated plainly.** The panel criterion 1 asks for will
+be built by iterating `Event::ALL`. So will the census at `wx_settings.rs:2213`, which
+announces "covers N of 16 events" after a sound scheme import using `Event::ALL.len()`
+[VERIFIED: src/presentation/wx_settings.rs:2209-2214]. An event that exists and is not in
+`ALL` is an event with no control, no sound scheme slot and no test coverage, which is
+FEEDBACK-01's exact shape. **A plan for this phase should add the missing guard: a test
+that `Event::ALL` holds every variant.** It is cheap. It can be written as an exhaustive
+match from each variant to a unit, or by asserting `ALL.len()` against a count derived
+from the source rather than written down, which is the shape `SoundScheme::covers` already
+uses at `sound_scheme.rs:81-86` and which observation-worthy precedent exists for in
+`guards/guards.toml`.
+
+**And it is a census, so it will weaken something.** `sound_scheme.rs:479` already asserts
+`scheme.covers() == Event::ALL.len()`
+[VERIFIED: src/presentation/accessibility/sound_scheme.rs:474-481]. That assertion is
+derived from the thing counted, which is the right shape, and it is worth leaving alone.
+Do not add a second assertion of the form "at least sixteen exist": with a spare above the
+floor, removing an event stops tripping it, which is the failure `CLAUDE.md` describes at
+length.
+
+### The model: what ships, what is private, and what does not exist
+
+One string, one field, one round trip. All re-verified 2026-09-12.
 
 | Step | Where | Verified by |
 |---|---|---|
-| Stored as | `AppConfig.feedback_channels: String` | `grep -n "pub feedback_channels" src/data/config.rs` -> `410:    pub feedback_channels: String,` |
-| Serialised by | `FeedbackSettings::to_stored` | `feedback.rs:458`. Writes `off=a+b` then one `event=chan+chan` group per override |
+| Stored as | `AppConfig.feedback_channels: String` | `grep -n "pub feedback_channels" src/data/config.rs` gives `441:    pub feedback_channels: String,` |
+| Serialised by | `FeedbackSettings::to_stored` | `feedback.rs:458` |
 | Parsed by | `FeedbackSettings::from_stored` | `feedback.rs:478` |
-| Loaded into the running app | `wx_app.rs:1108` and `wx_app.rs:14973` | `grep -rn "FeedbackSettings::from_stored" src/` returns exactly these two plus `wx_settings.rs:1859` and `:2125` |
-| Held at runtime | `Accessibility.feedback`, replaced by `set_feedback_settings` | `accessibility.rs:278`, `pub` |
-| Read on the shipping path | `channels_for`, called at `accessibility.rs:213` (`earcon`) and `:235` (`signal`) | read both call sites |
+| Read on the shipping path | `channels_for` at `feedback.rs:433`, called from `accessibility.rs:213` (`earcon`) and `:235` (`signal`) | both call sites read |
+| Written by | `set_event_channels` at `feedback.rs:424`, **private** | the line reads `    fn set_event_channels(...)`, no `pub` |
+| Held | `per_event` at `feedback.rs:392`, **a private struct field** | the line reads `    per_event: Vec<(Event, BTreeSet<Channel>)>,` |
 
-So the reading half is complete and live. Nothing in the model needs building.
+**Correction, and it matters to a plan.** `REQUIREMENTS.md` FEEDBACK-01, `CLAUDE.md`, and
+the 2026-09-06 version of this file all describe `per_event` as a function. It is a field.
+[VERIFIED: src/presentation/accessibility/feedback.rs:392] The practical difference is
+that "make `per_event` public" is not a coherent instruction for a settings panel: a
+public field would expose the representation. What is needed is a new public *reader*.
 
-### Nothing writes a per-event override, and here is the command that proves it
+**Nothing writes an override today.** Searched three spellings, 2026-09-12:
 
 ```
 grep -rn "set_event_channels" src/ tests/
-```
+-> 11 hits, all in src/presentation/accessibility/feedback.rs.
+   :424 definition, :496 the only shipping caller (inside from_stored),
+   nine inside that file's own #[cfg(test)] module. Nothing under tests/.
 
-Eleven hits, all inside `src/presentation/accessibility/feedback.rs`. One is the
-definition at `:424`. One is the only shipping caller, `from_stored` at `:496`. The other
-nine are in that file's own `#[cfg(test)]` module (lines 992, 1010, 1027, 1039, 1040,
-1056, 1057, 1448, 1481). Nothing under `tests/` mentions it at all.
-
-```
 grep -rn "per_event" src/ tests/
+-> 8 hits, all in feedback.rs: 392, 404, 425, 426, 434, 466, 481, 499.
 ```
 
-Eight hits, every one inside `feedback.rs`.
+So the only route in remains a hand edited `feedback_channels` string in the stored
+settings file. The requirement is right.
 
-Both `per_event` (`:392`) and `set_event_channels` (`:424`) are `fn`, not `pub fn`, so no
-screen *could* write one without a visibility change. The only route in is a hand-edited
-`feedback_channels` string in the stored settings file, which `from_stored` then parses.
+### Three things about the model a plan will trip over
 
-I searched three spellings before concluding absence: `set_event_channels`, `per_event`,
-and `FeedbackSettings::from_stored` callers. The requirement's claim is correct.
+**1. There is no way to read an event's chosen channels.** This is the finding the last
+read missed. The only public accessor is `channels_for`
+[VERIFIED: src/presentation/accessibility/feedback.rs:433-434], and it does three things
+before returning: falls back to all four when there is no entry, intersects with the
+globally enabled channels, and applies the never-sound-alone rule. A panel that renders
+from `channels_for` will show four ticks for an event with no override, four ticks for an
+event whose override is all four, and a tick on Braille that the user never set. **A new
+public reader returning the raw `Option<BTreeSet<Channel>>` is required work, not a
+convenience.**
 
-### The settings screen already has a Feedback tab, and it says why it has no grid
-
-Seven tabs, read from `wx_settings.rs:190-263`:
-
-| # | Tab | Builder |
-|---|---|---|
-| 1 | General | `build_general_tab` |
-| 2 | Compose | `build_compose_tab` |
-| 3 | Reading | `build_reading_tab` |
-| 4 | Permissions | `build_permissions_tab` |
-| 5 | Calendar & PIM | `build_calendar_pim_tab` |
-| 6 | **Feedback** | `build_feedback_tab` (`:1853`) |
-| 7 | Advanced | `build_advanced_tab` |
-
-So the roadmap's "Settings Feedback tab" exists. It holds four global checkboxes, one per
-channel, built by iterating `Channel::ALL` (`:1875-1884`), plus a sound scheme picker and
-import/delete buttons.
-
-**The tab's own doc comment at `wx_settings.rs:1843-1851` argues against the grid this
-criterion asks for:**
-
-> One checkbox per channel rather than a grid of events, because the choice people
-> actually make is "words, not sounds" or "sounds, not words". The per-event overrides
-> exist in the model for anyone who wants them and are not worth forty checkboxes here.
-
-That is not an obstacle, but it is a position somebody took deliberately, and the plan
-should either answer it or record that it is being reversed. It is also the reason a bare
-64-checkbox grid is the wrong answer: the objection is sound even though the conclusion
-(offer nothing) breaks the reachability rule.
-
-The save path preserves what it cannot create, at `wx_settings.rs:2123-2129`:
+**2. "No override" means all four channels, not silence.**
+[VERIFIED: src/presentation/accessibility/feedback.rs:433-437]:
 
 ```rust
-// Feedback channels. The per-event overrides in the stored value are
-// preserved: this tab only decides which channels are on at all.
-let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);
-for (channel, cb) in &w.feedback {
-    feedback.set_channel_enabled(*channel, cb.get_value());
-}
-cfg.feedback_channels = feedback.to_stored();
+        let chosen: BTreeSet<Channel> = match self.per_event.iter().find(|(e, _)| *e == event) {
+            Some((_, channels)) => channels.clone(),
+            None => Channel::ALL.into_iter().collect(),
+        };
 ```
 
-### Three things about the model a plan will trip over if it does not know them
-
-**1. "No override" means all four channels, not silence.** `channels_for` at `:433`:
-
-```rust
-let chosen: BTreeSet<Channel> = match self.per_event.iter().find(|(e, _)| *e == event) {
-    Some((_, channels)) => channels.clone(),
-    None => Channel::ALL.into_iter().collect(),
-};
-```
-
-So an event with all four ticked and an event with no entry behave identically. A UI that
-writes an override whenever anything is ticked will write redundant entries. Harmless, but
-"reset to default" must *remove* the entry, and there is no method that removes one:
-`set_event_channels` only replaces. FEEDBACK-01's fourth `[D]` line asks for exactly this
-reset behaviour, so a `clear_event_channels` (or equivalent) is a real, small addition and
-not something the model already has.
-
-**2. An empty override is representable and means silence.** `set_event_channels(e,
-BTreeSet::new())` is used by the test at `:1481`. It round-trips: `to_stored` writes
-`edge_of_list=` and `from_stored` parses `"".split('+')` to an empty set. So "off for
-everything" is expressible and distinct from "default".
+So "reset to default" must *remove* the entry, and no method removes one:
+`set_event_channels` only replaces (`:425-426` retain then push). FEEDBACK-01's third `[D]`
+line asks for exactly this reset behaviour, so a `clear_event_channels` is a real, small
+addition. An empty override is separately representable and means silence; it round trips,
+and `test_an_event_with_no_channels_at_all_signals_nothing` (`:1477`) holds it to that.
 
 **3. The never-sound-alone rule will contradict what the user just ticked.** Still in
-`channels_for`:
+`channels_for`. Tick Earcon only for New mail, leave Braille globally on, and the event
+goes out on Earcon and Braille. This is not a bug and must not be "fixed": the module
+header says the rule lives here so no call site can forget it, and
+`test_nothing_is_signalled_by_sound_alone` (`:982`) and
+`test_an_event_set_to_sound_only_still_gets_a_written_channel` (`:1005`) both hold it.
 
-```rust
-let sound_only = !active.is_empty() && !active.iter().any(Channel::carries_text);
-if sound_only
-    && let Some(fallback) = [Channel::Braille, Channel::Visual, Channel::Speech]
-        .into_iter().find(|c| self.is_channel_enabled(*c))
-{
-    active.insert(fallback);
-}
+It is a design instruction for the panel rather than a detail. **Announce the effective
+channels, not the chosen set**, or the settings screen lies to the person it exists for.
+
+### The settings screen today
+
+Seven tabs, read from `wx_settings.rs:227-285` [VERIFIED: src/presentation/wx_settings.rs:227-285]:
+General, Compose, Reading, Permissions, "Calendar && PIM", **Feedback**, Advanced. So the
+roadmap's "Settings Feedback tab" exists and is the sixth page.
+
+`build_feedback_tab` is at `wx_settings.rs:2040`. It holds four global checkboxes built by
+iterating `Channel::ALL`, a sound scheme picker, and import and delete buttons.
+
+**Its doc comment argues against the grid this criterion asks for.** Verbatim from
+`wx_settings.rs:2030-2035` [VERIFIED: src/presentation/wx_settings.rs:2030-2035]:
+
+```
+/// One checkbox per channel rather than a grid of events, because the choice
+/// people actually make is "words, not sounds" or "sounds, not words". The
+/// per-event overrides exist in the model for anyone who wants them and are
+/// not worth forty checkboxes here.
 ```
 
-Tick Earcon only for New mail, leave Braille globally on, and the event goes out on Earcon
-**and Braille**. The panel will show one thing and the application will do another.
+That is a position somebody took deliberately. The plan should answer it or record that it
+is being reversed. It is also the reason a bare grid is the wrong answer: the objection is
+sound even though the conclusion, offer nothing, breaks the reachability rule.
 
-This is not a bug and must not be "fixed": the module's header comment (lines 12-17) says
-the rule is enforced here rather than at call sites precisely so no caller can forget it.
-But it does mean the panel has an obligation, and it is a design instruction rather than a
-detail: **announce the effective channels from `channels_for`, not the chosen set.**
-Something like "New mail: sound and braille (braille added because a sound needs words
-beside it)". Anything less makes the settings screen lie to the person it exists for.
+The save path preserves what it cannot create
+[VERIFIED: src/presentation/wx_settings.rs:2310-2316]:
+
+```rust
+    // Feedback channels. The per-event overrides in the stored value are
+    // preserved: this tab only decides which channels are on at all.
+    let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);
+    for (channel, cb) in &w.feedback {
+        feedback.set_channel_enabled(*channel, cb.get_value());
+    }
+    cfg.feedback_channels = feedback.to_stored();
+```
 
 ### Recommended shape for the panel
 
-The criterion says "sets Speech, Earcon, Braille and Visual independently for each of the
-sixteen events ... by keyboard". It does not say sixty-four checkboxes on one page, and
-sixty-four checkboxes on one page is a poor experience for somebody moving by keyboard
-through a screen reader, who meets controls in order and cannot skim.
+Sixteen events by four channels is sixty-four checkboxes, and sixty-four checkboxes on one
+page is a poor experience for somebody moving by keyboard through a screen reader, who
+meets controls in order and cannot skim. The criterion does not ask for a grid.
 
 Recommended: a Choice listing the sixteen events by `Event::text()`, four checkboxes below
 it, and a "Use the default for this event" button. Five controls, always, whatever the
 event count becomes. Changing the Choice reloads the four boxes; changing a box writes an
-override for the selected event; the button removes the override. This is the same
-Choice-plus-controls shape the Reading tab already uses four times, so it inherits a
-pattern rather than inventing one, and it answers the existing comment's objection
-("not worth forty checkboxes here") instead of overruling it.
+override for the selected event; the button removes it. This is the Choice-plus-controls
+shape the Reading tab already uses, so it inherits a pattern rather than inventing one, and
+it answers the existing comment's objection rather than overruling it.
 
-Whether that goes on the Feedback tab or behind a button on it is a judgement call. It
-should not go anywhere else: CLAUDE.md's reachability rule asks for a section somebody
-would look in, and Feedback is that section.
+**One trap in the labels.** `Channel::setting_label()` at `feedback.rs:366` returns the
+*global* wording, which is wrong beside a single event. The per-event boxes need their own
+wording, and `test_each_channel_carries_its_own_wording` (`:1386`) guards the existing one.
 
-**One trap in the labels.** `Channel::setting_label()` at `:366` returns the *global*
-wording ("Speak events through the screen reader"), which is wrong beside a single event.
-The per-event boxes need their own wording. The doc comment on `setting_label` (`:354-365`)
-explains why this must be a second method on `Channel` and not a parallel array: the label
-and the channel it switches used to be two arrays paired by position, and the cost of them
-drifting was that ticking "play a sound" switched speech off instead.
+**One trap in how the boxes are built, which is an accessibility trap and is the subject of
+the next section.** Build each checkbox with a real label through `with_label`, not with an
+empty label plus `set_accessible_name`. `build_feedback_tab` already does the right thing
+at `wx_settings.rs:2063-2070`, and that is the pattern to copy.
 
-### The check that would have caught this, and why it did not
+---
 
-`src/data/config.rs` holds a module `every_setting_is_acted_on` (line 1663) with five
-tests. Two matter here.
+## What actually reaches a screen reader
 
-`test_every_setting_somebody_can_change_is_read_by_something` (`:1709`) reads the field
-names out of `pub struct AppConfig` itself and asserts each is read by some shipping file
-other than `config.rs` and `wx_settings.rs`.
+The brief asked which channel each thing in this phase lands on. Windows has two, and this
+project needs both right.
 
-`test_every_setting_somebody_can_change_is_offered_by_a_screen` (`:1883`) is its mirror
-and asserts each field name appears in the shipping half of `wx_settings.rs`, minus three
-named exception lists.
+| Call | Channel it reaches | Who reads that channel | Source |
+|---|---|---|---|
+| `set_accessible_name(w, name)` | MSAA only, through `wxAccessible` | NVDA and JAWS for native controls | `names.rs:10-21` |
+| A control's own window text, set by `with_label` | UI Automation, via the system's own provider | Narrator | `checkbox_labels.rs:4-11` |
+| `set_name(name)` | **Neither.** An internal wxWidgets identifier | Nobody | `the_conflict_choice_can_be_heard.rs:15-18` |
+| `UiaRaiseNotificationEvent` | UI Automation notification | NVDA, JAWS, Narrator; NVDA routes to speech and braille both | `screen_reader.rs:3-6` |
+| An earcon | Neither. It is audio out of `rodio` | Nobody, it is heard | `feedback.rs` earcon path |
+| Visual feedback | Neither. It is the status line text | Read only if focus or a notification takes somebody there | `accessibility.rs:257-262` |
 
-**CLAUDE.md's account of why the two exceptions got past this check is wrong about one of
-them, and correcting it changes what phase 6 costs.** CLAUDE.md says:
+**The scan channels judge different things**, and one of them judges one thing. From
+`scripts/msaa-names.ps1`, its own header, verbatim
+[VERIFIED: scripts/msaa-names.ps1:6-19]:
 
-> Both per-event feedback channels and the per-account answer are nested, which is how they
-> got past it. Widening it to follow nesting is real work and is ledger 114.
+> The UI Automation scan next to this one has never measured a name this codebase sets,
+> and could not have.
+> [...] For a native control such as an edit box or a button, Windows supplies its own UI
+> Automation provider, and that provider shadows the MSAA object underneath it. So UI
+> Automation reports the system's name for those controls, which is usually empty, and
+> never the one the code set.
+> That makes the UI Automation scan wrong in both directions on native controls: it
+> reports a missing name where the name is in fact present and spoken, and it would report
+> nothing amiss if every `set_accessible_name` call in the tree were deleted.
 
-The per-account answer is **not** nested. It is a top-level field:
+That paragraph is the strongest in-repo statement of criterion 3's substance and the
+coverage list should quote it rather than paraphrase it.
+
+The MSAA walk asks **exactly one question**: does every element whose MSAA role is in the
+`$OPERATED` map have a non-empty `accName`? It builds a record with `name`, `role` and
+`operated` and exits 1 if any operated element has no name
+[VERIFIED: scripts/msaa-names.ps1:92, 131, 165-177, 235]. It never looks at role
+correctness, state, or anything else. So it contributes to 4.1.2 Name, Role, Value and to
+the *Name* third of it only.
+
+### Two live findings in this area
+
+**1. One surviving `set_name` call.** Searched the whole of `src/`:
 
 ```
-grep -n "pub allowed_per_account" src/data/config.rs
--> 276:    pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
+grep -rn '\.set_name(' src/
+-> src/presentation/wx_compose.rs:3600:    body_preview.set_name("Message preview");
 ```
 
-The check sees it. It passes because the field is on a named exception list at
-`config.rs:1799`:
+It is harmless where it sits, because `set_accessible_name` is called on the line above it
+[VERIFIED: src/presentation/wx_compose.rs:3596-3601]. It is worth knowing anyway, because
+it is the exact call `CLAUDE.md`'s guardrail 2 exists about, sitting in the tree today.
+
+**2. The refusal of `set_name` is enforced in exactly one file.**
+`tests/the_conflict_choice_can_be_heard.rs` refuses it, and refuses it for
+`THE_WINDOW`, a constant holding one path
+[VERIFIED: tests/the_conflict_choice_can_be_heard.rs:31-32, 82-86]:
 
 ```rust
-/// Stored, read, honoured, and offered by nothing. The defect itself.
-const STORED_AND_OFFERED_BY_NOTHING: [&str; 1] = ["allowed_per_account"];
+/// The file that builds the window.
+const THE_WINDOW: &str = "src/presentation/wx_conflict_choice.rs";
 ```
 
-The per-event case is a third shape again, and neither "nested struct field" nor
-"top-level field" describes it. `feedback_channels` **is** a top-level field, it **is**
-offered by the settings screen, and it passes honestly. The overrides are nested inside the
-*serialised string value* of that field, which no field-name check of any kind could see.
+Its companion name census counts three builders only, `Button::builder`,
+`StaticText::builder` and `ListCtrl::builder`
+[VERIFIED: tests/the_conflict_choice_can_be_heard.rs:41-52], so a `CheckBox` or a `Choice`
+added to that window would not be counted either. A count that knows three shapes is a
+count that cannot see a fourth.
 
-So there are three shapes, not two:
+**3. The both-channels rule is tested in exactly one dialog, and it is not the settings
+dialog.** `tests/checkbox_labels.rs` builds real dialogs and asserts every checkbox carries
+its own label rather than borrowing one from the static text beside it. Its own header says
+why, verbatim [VERIFIED: tests/checkbox_labels.rs:4-19]:
 
-| Shape | Example | Does the check see it? |
-|---|---|---|
-| Top-level field, offered | `date_order` | Yes, and it passes correctly |
-| Top-level field, offered by nothing | `allowed_per_account` | Yes, held by a named exception |
-| Field inside a nested struct | `allowed_changes.reading` | No. Covered by a hand-written companion at `config.rs:1829` |
-| A value inside a field's serialised string | per-event overrides | No, and no name-based check ever could |
+> So a check box built with an empty label and named only through `set_accessible_name` has
+> a name on one channel and none on the other. It reads correctly under NVDA and is an
+> unnamed check box under Narrator, which is the shape of bug that passes every test
+> written from the source and every listening pass done with one reader.
 
-### Should phase 6 widen the check, and what does that cost
+It imports and builds `build_item_form_dialog` and nothing else
+[VERIFIED: tests/checkbox_labels.rs:30, 65, 114]. **The settings screen is not covered by
+it.** The panel this phase adds is four checkboxes on the settings screen. Nothing in the
+tree would catch them being built label-less.
 
-**No, and here is the reasoning.**
-
-Widening it to follow nested struct fields (ledger 114) would catch the `Allowed.reading`
-shape. It would **not** catch the per-event shape, because there is no name to find: the
-overrides live inside a `String`. So widening does not close FEEDBACK-01's `[D]` line, and
-doing it here would be work that looks like the remedy and is not.
-
-What FEEDBACK-01 actually asks for is:
-
-> A test counts the screens that reach `set_event_channels`, so a per-event override the
-> model can hold and no screen can set fails at once rather than being found five months
-> later.
-
-There is already a worked precedent for exactly that, twenty lines above the mirror guard.
-`test_whether_message_text_may_be_fetched_is_offered_by_a_screen` (`config.rs:1829`) is a
-hand-named companion for the nested `Allowed.reading` field, and its own comment says why
-it has to be hand-named:
-
-> Named rather than derived, because there is nothing to derive it from: a field on a
-> nested type has no name in the list that test walks.
-
-It asserts four things, and they are the right four to copy: the screen names the section
-constant, the screen names the label constant, the control shows the stored answer
-(`set_value(config.allowed_changes.reading)`), and the value is read back
-(`reading: w.`). A control built from the right label, showing a fixed value and read into
-nothing, would satisfy the first two alone.
-
-**Recommendation: write the per-event guard as a third companion in the same module, on the
-same four-assertion pattern, and leave ledger 114 alone.** It costs one test function in
-`config.rs`, which flags 2 guard records (see cost table below). Widening the derivation
-would be a change to `stored_setting_names` affecting all five tests in that module, and it
-would not discharge this requirement.
+That is a concrete, cheap addition a plan can make: either widen `checkbox_labels.rs` to
+build the settings dialog too, or accept the gap and say so. It is also the kind of thing
+that has to be decided at plan time, because widening it touches a `tests/` file and
+therefore wants a `guards/guards.toml` record.
 
 ---
 
@@ -365,164 +510,287 @@ would not discharge this requirement.
 
 ### Inherited item A: the per-account Allow Changes answer
 
-The roadmap says this "is FEEDBACK-01's exact shape already live in the tree". Verified,
-with one correction and one scoping fact the deferred-items file does not carry.
+The roadmap says this is FEEDBACK-01's exact shape already live in the tree. Verified, with
+three corrections to the `CLAUDE.md` passage the brief warned about, and one finding that
+changes what a plan must do.
 
-**It is read and honoured.** `AppConfig::allowed_for` at `config.rs:609`:
+**The `CLAUDE.md` passage is substantively right this time and every line number in it has
+moved.** Re-taken 2026-09-12 at `febe8e4`:
+
+| What `CLAUDE.md` says | Where it says the line is | Where it actually is |
+|---|---|---|
+| `allowed_per_account` is a top-level field | `config.rs:276` | **`config.rs:307`** |
+| `STORED_AND_OFFERED_BY_NOTHING`, one entry | `config.rs:1799` | **`config.rs:2190`** |
+| the guard that empties | `config.rs:1947` | **`config.rs:2435`** |
+| the hand-named companion | `config.rs:1829` | **`config.rs:2220`** |
+
+The substance checks out at all four new locations.
+
+**It is a top-level field**, verbatim [VERIFIED: src/data/config.rs:306-307]:
 
 ```rust
-pub fn allowed_for(&self, account_id: &str) -> crate::application::allowed::Allowed {
-    self.allowed_per_account
-        .get(account_id)
-        .copied()
-        .unwrap_or(self.allowed_changes)
-        .and(self.allowed_changes)
-}
+    #[serde(default)]
+    pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
 ```
 
-`grep -rn "allowed_for" src/` gives nine shipping call sites outside tests:
-`mail_controller.rs:437`, `:446`, `:579`, `:785`, and `wx_app.rs:11825`, `:17426`,
-`:17580`, `:19009`, `:19602`, `:25454`. So the answer reaches the provider clients, as the
-roadmap says.
+**The exception list holds exactly one entry**, verbatim
+[VERIFIED: src/data/config.rs:2190]:
 
-**Nothing writes it.** The comment at `config.rs:266` says so in the code itself:
-"Nothing writes it. It is read by `allowed_for` below and honoured all [the way out]".
+```rust
+    const STORED_AND_OFFERED_BY_NOTHING: [&str; 1] = ["allowed_per_account"];
+```
 
-**Scoping fact the deferred-items file does not carry: `Allowed` has three fields, not
-one.** From `wx_settings.rs:2143-2147`, the read-back is
-`Allowed { mail, personal_information, reading }`. So a per-account control is three
-checkboxes per account, not one, and `allowed_for`'s `.and(self.allowed_changes)` means the
-per-account answer can only ever *narrow* the application-wide one. A control that looks
-like it can widen would be a control that lies.
+**It is read and honoured** [VERIFIED: src/data/config.rs:709-715]:
 
-**Where it goes.** `OFFERED_BY_ANOTHER_SCREEN` (`config.rs:1760`) already places the two
-other per-account settings, `directories` and `default_account_id`, on
-`src/presentation/wx_account_manager.rs`, with the stated reason "Both are per account, so
-they belong on the screen that lists accounts." Following that precedent puts Allow Changes
-there too, and CLAUDE.md's rule about a section somebody would look in points the same way.
+```rust
+    pub fn allowed_for(&self, account_id: &str) -> crate::application::allowed::Allowed {
+        self.allowed_per_account
+            .get(account_id)
+            .copied()
+            .unwrap_or(self.allowed_changes)
+            .and(self.allowed_changes)
+    }
+```
 
-**Two guards retire when this lands, and one of them retires badly.**
+The `.and(self.allowed_changes)` means a per-account answer can only ever narrow the
+application-wide one. A control that looks like it can widen would be a control that lies.
+`Allowed` has three fields, `mail`, `personal_information` and `reading`, so a per-account
+control is three answers per account, not one.
 
-1. `test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing`
-   (`config.rs:1947`) will go red the moment any screen names
-   `allowed_per_account`. That is the red half for free, and it is the intended behaviour:
-   the comment says "Somebody wiring a control for one of these should be told to delete
-   the entry".
+**Emptying the list disarms the guard watching it. Confirmed.** Verbatim
+[VERIFIED: src/data/config.rs:2434-2447]:
 
-   **But deleting the entry empties `STORED_AND_OFFERED_BY_NOTHING`, and the test then
-   iterates over nothing and passes unconditionally.** That is the same shape as
-   `test_no_status_page_names_a_version_the_code_does_not_ship`, which phase 2.1 criterion 7
-   was written for, and which CLAUDE.md describes at length. The plan must decide, in the
-   task that removes the entry, whether the test is deleted with the list or kept with a
-   companion proving the reading can still see a planted violation. Not as a follow-up.
+```rust
+    fn test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing() {
+        // The other direction. Somebody wiring a control for one of these
+        // should be told to delete the entry, rather than leaving a list that
+        // reads as a live defect after it has been fixed.
+        let screens = what_every_screen_ships();
 
-2. `test_nothing_offers_a_setting_per_account_that_no_screen_writes`
-   (`tests/house_style.rs:152`) reads documents for the phrases in
-   `A_CONTROL_NO_SCREEN_WRITES` (`:122`):
+        let now_offered: Vec<&str> = STORED_AND_OFFERED_BY_NOTHING
+            .into_iter()
+            .filter(|name| screens.contains(name))
+            .collect();
+```
 
-   ```rust
-   const A_CONTROL_NO_SCREEN_WRITES: &[&str] = &[
-       concat!("set it ", "per account"),
-       concat!("for each account ", "separately"),
-   ];
-   ```
+With the list empty, `into_iter().filter(...)` iterates nothing, `now_offered` is empty and
+the assertion passes unconditionally. The brief is right and so is `CLAUDE.md`.
 
-   So the moment a document says the new control exists in either of those wordings, this
-   guard fires. Its own comment argues the shape "is not one the code can take either: a
-   per-account entry can only ever narrow what the application allows, never widen it",
-   which is right about `allowed_for` and is an argument about *widening*, not about the
-   control existing. The plan needs a task that retires or narrows this list in the same
-   commit as the documentation, and the same emptying question applies.
+**The finding that changes what a plan must do, and which no document in the tree
+carries.** The two tests read *different* sets of files.
+
+| Test | What it reads | Constant |
+|---|---|---|
+| `test_every_setting_somebody_can_change_is_offered_by_a_screen` (`:2371`) | the settings screen only | `THE_SETTINGS_SCREEN = "src/presentation/wx_settings.rs"` (`:2140`) |
+| `test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing` (`:2435`) | every file under the presentation directory | `EVERY_SCREEN = "src/presentation"` (`:2144`) |
+
+[VERIFIED: src/data/config.rs:2140, 2144, 2371-2394, 2435-2447]
+
+So if the control goes on the account manager, which is where the precedent points:
+
+- the `EVERY_SCREEN` guard fires the moment any file under `src/presentation` names
+  `allowed_per_account`. That is the red half for free, as intended.
+- deleting the entry from `STORED_AND_OFFERED_BY_NOTHING` then makes the *other* test fail,
+  because it reads only `wx_settings.rs` and the name will not be there.
+
+**The correct remedy is therefore a move, not a deletion.** Move `allowed_per_account` from
+`STORED_AND_OFFERED_BY_NOTHING` into `OFFERED_BY_ANOTHER_SCREEN` as
+`("allowed_per_account", "src/presentation/wx_account_manager.rs")`. That satisfies the
+settings-screen test, empties the defect list honestly, and arms
+`test_a_setting_said_to_be_offered_elsewhere_really_is` (`:2415`), which checks each
+`OFFERED_BY_ANOTHER_SCREEN` entry is still true and would catch the control later being
+taken away [VERIFIED: src/data/config.rs:2415-2427]. The emptying question then applies to
+`STORED_AND_OFFERED_BY_NOTHING` exactly as `CLAUDE.md` says, and must be decided in the
+same commit: delete the now-blind test with the list, or keep it with a companion proving
+the reading can see a planted violation.
+
+**The precedent for where it goes** is in the tree, verbatim
+[VERIFIED: src/data/config.rs:2151-2163]:
+
+```rust
+    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 3] = [
+        // The account manager names the directory an account looks people up
+        // in, and which account is the default one to send from. Both are per
+        // account, so they belong on the screen that lists accounts.
+        ("directories", "src/presentation/wx_account_manager.rs"),
+        (
+            "default_account_id",
+            "src/presentation/wx_account_manager.rs",
+        ),
+        // Muting what is read aloud is a menu item with a check on it,
+        // `ID_MUTE_CONTENT`, because it is reached in a hurry when somebody
+        // walks into the room. A settings page is the wrong place for it.
+        ("mute_message_reading", "src/presentation/wx_app.rs"),
+    ];
+```
+
+That list held two entries at the last read of this file and holds three now.
+
+**The second guard that retires.** `test_nothing_offers_a_setting_per_account_that_no_screen_writes`
+in `tests/house_style.rs` reads product documents for two phrases held in
+`A_CONTROL_NO_SCREEN_WRITES` at `house_style.rs:180-183`
+[VERIFIED: tests/house_style.rs:180-183]:
+
+```rust
+const A_CONTROL_NO_SCREEN_WRITES: &[&str] = &[
+    concat!("set it ", "per account"),
+    concat!("for each account ", "separately"),
+];
+```
+
+It reads `the_pages_that_speak_for_the_product()`, which explicitly excludes `.planning`
+[VERIFIED: tests/house_style.rs:112, and the test's own comment at its opening], so this
+research document may quote the phrases and a plan may too. A *product* document may not,
+until the control exists and the list is retired in the same commit.
+
+**One decision already recorded that a planner could misread.**
+`.planning/decisions-2026-09-06.md` decision 5 begins "Allow Changes stays as it is, and
+the move says so sooner." That decision is about *when a task move tells somebody* what
+happened, not about whether a per-account control exists
+[VERIFIED: .planning/decisions-2026-09-06.md:29-34]. It does not settle inherited item A in
+either direction. Do not read it as an instruction to leave the control unbuilt.
 
 ### Inherited item B: the reminder that opens over somebody typing
 
-The deferred-items file (`.planning/phases/01-.../deferred-items.md:212-237`) is accurate
-on the mechanism. Two additions.
+The deferred-items entry is accurate on the mechanism, re-verified today, with three
+corrections to the last read of this file.
 
-**Verified: `raise_what_is_due` does not ask about typing.** Read `wx_app.rs:9900-9990` in
-full. It takes a turn from `one_at_a_time` (`:9915`) and then loops over what is due. There
-is no call to `somebody_is_typing` anywhere in it.
-
-**Verified: it really does share the gate.** `wx_app.rs:5195` builds one
-`crate::application::due::OneAtATime` called `one_question_on_screen`, and passes it both to
-`raise_what_is_due` (`:5327`, parameter `one_at_a_time` at `:9906`) and to the
-gone-folders question (parameter `one_question_on_screen` at `:9806`). So the claim holds.
-
-**Correction: "the gate is one function call away" understates it.** The gone-folders
-question asks two things, not one (`wx_app.rs:9824-9826`):
+**Verified: `raise_what_is_due` does not ask about typing.** It is at `wx_app.rs:10321`
+and its signature is [VERIFIED: src/presentation/wx_app.rs:10321-10329]:
 
 ```rust
-let an_editor_has_focus = one_question_at_a_time::somebody_is_typing()
-    || somewhere_to_type
-        .iter()
-        .any(|box_| box_.has_focus() && box_.is_editable());
+fn raise_what_is_due(
+    frame: &Frame,
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    already: &RefCell<std::collections::HashSet<String>>,
+    one_at_a_time: &crate::application::due::OneAtATime,
+    dates: date_display::DateSettings,
+) {
 ```
 
-`somebody_is_typing()` covers the modal windows that mark themselves: the composer
-(`wx_app.rs:13559`) and the item form (`wx_item_form.rs:297`). Those are the only two
-`while_somebody_types()` call sites in the tree
-(`grep -rn "while_somebody_types" src/`). The second half covers the note editor and the
-search box, which live in the main window and have no nesting to read, and it needs the
-`somewhere_to_type: &[TextCtrl]` slice that `raise_what_is_due` is not currently given.
+No `somewhere_to_type` parameter, and no `somebody_is_typing()` call anywhere in the body.
 
-So matching what the folders question does means threading that slice to the reminder call
-site as well, which is still small but is two changes, not one.
+**Verified: the folders question asks two things, not one.** At `wx_app.rs:10245-10249`
+[VERIFIED: src/presentation/wx_app.rs:10227-10249] it combines
+`one_question_at_a_time::somebody_is_typing()` with a scan of a `somewhere_to_type:
+&[TextCtrl]` slice that `raise_what_is_due` is not given. So matching what the folders
+question does means threading that slice to the reminder call site too: two changes, not
+one.
 
-**One more thing a plan needs.** `raise_what_is_due` inserts each item into `already`
-*before* opening the window (`:9946`), with the comment "Marked before the window opens,
-not after", and a dismissed reminder "is not raised again this session because it is in
-`already`". So "hold it and raise it when typing stops" is not a matter of returning early:
-returning early is already correct, because nothing is inserted into `already` until the
-loop body runs, and the next timer tick re-derives `due`. Verified by reading
-`due::what_is_due`'s call at `:9932`, which is passed `&seen` fresh each tick. Good news:
-the "make it wait" option is genuinely small. The "raise it without focus" option is not,
-and is a different piece of work.
+**`somebody_is_typing()` covers the two windows that mark themselves.** Both shipping
+call sites of `while_somebody_types()`, re-taken today:
+
+```
+grep -rn 'while_somebody_types' src/
+-> src/presentation/one_question_at_a_time.rs:296  (the definition)
+   src/presentation/wx_app.rs:14217               (the composer)
+   src/presentation/wx_item_form.rs:297           (the item form)
+   plus four uses inside one_question_at_a_time.rs's own test module
+```
+
+**Correction: the module is `src/presentation/one_question_at_a_time.rs`, not
+`src/application/`.** The 2026-09-06 version of this file placed it under `src/application/`
+in its validation table, and said it carried zero guard records. Both wrong: the path is
+`src/presentation/one_question_at_a_time.rs` and it carries **1** record.
+
+**Returning early is safe, and that is the good news for the small option.**
+`raise_what_is_due` inserts each item into `already` *before* opening the window, and a
+snooze removes it again [VERIFIED: src/presentation/wx_app.rs:10369, 10396]. Nothing is
+inserted until the loop body runs, and `due::what_is_due` is passed a fresh `&seen` each
+tick, so a reminder held back this tick is simply re-derived next tick. "Make it wait" is
+genuinely small. "Raise it without focus" is not, and is different work.
+
+**This is a decision, not a task, and it should be flagged as one.** The deferred-items
+entry says so in its own words [VERIFIED: .planning/phases/01-folders-and-conversations/deferred-items.md,
+the section "A reminder alert still opens over somebody who is typing (found in 01-10)"]:
+
+> It arguably should not: a reminder that waits until somebody stops typing is a reminder
+> that can be an hour late, and being told at the time is the whole point of asking to be
+> told. That is a decision about what a reminder is for, not a line of code, and it is
+> Pratik's rather than an executor's.
+
+A plan must not choose between waiting, raising without focus, and holding briefly then
+raising anyway. It should carry a `checkpoint:human-verify` before the task that implements
+whichever is chosen.
 
 ---
 
 ## Criterion 2: dates and month names in the machine's locale
 
-### What already follows the machine
+### What already follows the machine, re-verified
 
 | Thing | Follows the machine? | Where |
 |---|---|---|
-| Day/month order | Yes | `DateOrder::from_system` (`date_display.rs:226`) reads `LOCALE_IDATE` via `read_locale` (`:136`) and `order_from_locale` (`:169`); it is the default at `:71` |
-| 12 vs 24 hour clock | Yes | `Clock::from_system`, via `clock_from_locale` (`:183`), `LOCALE_ITIME` |
+| Day and month order | Yes | `DateOrder::from_system` (`date_display.rs:226`) reads `LOCALE_IDATE` through `read_locale` (`:136`) and `order_from_locale` (`:169`) |
+| 12 against 24 hour clock | Yes | `Clock::from_system` (`:271`), through `clock_from_locale` (`:183`), `LOCALE_ITIME` |
 | Month names | **No** | `MONTHS: [&str; 12]` hardcoded English at `:100` |
-| Day names | **No, and none exist in this module at all** | see below |
-| Relative wording | **No** | `plural` at `:526`, `relative_to` at `:496` |
-| AM/PM, "at", ordinals | **No** | `clock` at `:474`, `absolute` at `:443`, `ordinal` at `:415` |
+| Day names | **No, and none exist in this module** | see the census below |
+| Relative wording | **No** | `relative_to` (`:521`) through `plural` (`:547`) |
+| AM/PM, ordinals | **No** | `clock` (`:497`), `ordinal` (`:438`) |
 
-The project already calls `GetLocaleInfoW` directly through a hand-written `extern
-"system"` block at `date_display.rs:136-152`, so reaching Windows for locale data is an
-established pattern here, not a new dependency of any kind.
+[VERIFIED: src/presentation/date_display.rs:100, 136, 169, 183, 226, 271, 438, 497, 521, 547]
 
-### The English date sites are wider than FEEDBACK-02 says
+The project already calls `GetLocaleInfoW` through a hand written `extern "system"` block
+at `date_display.rs:141`, with a `#[cfg(target_os = "windows")]` reader and a non-Windows
+fallback at `:232`. Reaching Windows for locale data is an established pattern here, not a
+new dependency.
 
-FEEDBACK-02's evidence names `date_display.rs` and `wx_item_form.rs:844`. Searching three
-ways (`grep -rn '"Monday"' src/`, `grep -rEn '\.format\("' src/`, `grep -rn 'MONTHS' src/`)
-found four shipping sites and two that must **not** be localised:
+### The English date sites, re-taken today, and they are not the same set as five days ago
+
+Searched four ways on 2026-09-12: `grep -rn 'MONTHS' src/`, `grep -rn '"Monday"' src/`,
+`grep -rEn '\.format\("' src/`, and `grep -rn '%A\|%B' src/`.
 
 | Site | What it produces | Verdict |
 |---|---|---|
-| `date_display.rs:384`, `:456` | `MONTHS[...]`, English month in every date | **In scope** |
-| `wx_item_form.rs:844` | the month Choice for entering a date, from `MONTHS` | **In scope** |
-| `application/occurrences.rs:699` `weekday_called` | English "Monday".."Sunday", read out in a repeat-series sentence, called from `:673`. Shipping: the `#[cfg(test)]` module in that file starts at line 842 | **In scope, and not named by the requirement.** This is the only day-name site in shipping code |
-| `wx_app.rs:1846` | `chrono::Local::now().format("%A, %B %e, %Y")`, announced through the screen reader on the calendar Today button. `chrono` without `unstable-locales` emits English | **In scope, and not named by the requirement** |
-| `service/signed_mail.rs:1323` | `moment.format("%-d %B %Y")`, English month in a signature-outcome sentence | **In scope, and not named by the requirement** |
-| `application/message_files.rs:410` | `%a %b %e %T %Y` for an mbox `From_` separator line | **Must stay English.** It is an on-disk interchange format; `NO_DATE_AT_ALL` at `:402` is the same shape |
-| `application/repeating.rs:274` | `"MO".."SU"` | **Must stay English.** RRULE protocol codes |
-| `when_people_are_free.rs:1441` | English weekday names | Not shipping. Inside the `#[cfg(test)]` module that starts at `:1282` |
+| `date_display.rs:384` | `MONTHS[...]` in `a_month_and_a_day` | **In scope** |
+| `date_display.rs:409` | `MONTHS.get(...)` in `a_month_in_words` | **In scope. New since 2026-09-06.** |
+| `date_display.rs:477` | `MONTHS[...]` in `absolute` | **In scope** |
+| `wx_item_form.rs:849` | the month Choice for entering a date, from `MONTHS` | **In scope** |
+| `application/occurrences.rs:701` | English "Monday".."Sunday" in `weekday_called`, read out in a repeat-series sentence | **In scope, and not named by the requirement.** The only day-name site in shipping code |
+| `service/signed_mail.rs:1373` | `moment.format("%-d %B %Y")`, English month in a signature-outcome sentence | **In scope, and not named by the requirement** |
+| `application/message_files.rs:410` | `%a %b %e %T %Y` for an mbox `From_` separator | **Must stay English.** On-disk interchange format |
+| `application/repeating.rs` | `"MO".."SU"` | **Must stay English.** RRULE protocol codes |
+| `application/when_people_are_free.rs:1442` | English weekday names | Not shipping. Inside that file's `#[cfg(test)]` module |
 
-Three shipping sites the requirement does not mention. Any plan scoped to `date_display.rs`
-will ship criterion 2 with English day names still being spoken.
+**Two changes from the 2026-09-06 list, and both would have misled a plan.**
+
+*Gone.* That document named `wx_app.rs:1846`, `chrono::Local::now().format("%A, %B %e, %Y")`
+announced on the calendar Today button. **That site no longer exists.**
+
+```
+grep -rn '%A\|%B' src/
+-> only src/service/signed_mail.rs:1373, plus two unrelated matches
+   (a percent-encoded mailto test fixture and a %APPDATA% path in a doc comment)
+
+git log --oneline -S '%A, %B %e, %Y' -- src/presentation/wx_app.rs
+-> e94b4ae feat(05-02): a week of the calendar, and two buttons that move it
+   c0be7ab feat(ui): add calendar, contacts, tasks, notes, and reminders panels
+```
+
+Phase 5.2 removed it. A plan written from the previous research would have sent an executor
+to a line that is not there.
+
+*Arrived.* `a_month_in_words` was added to `date_display.rs` in the same window, and its
+only caller is `src/presentation/ui_types.rs:1205`
+[VERIFIED: src/presentation/date_display.rs:396-415 for the function, and
+`grep -rn 'a_month_in_words' src/` for the caller]. Its own doc comment says it exists so
+that "how a month is written is this module's rule and a second answer to it somewhere else
+is a second thing to keep in step", which is the right instinct and which also means
+localising `MONTHS` localises this site for free.
+
+Net: **four shipping sites in scope, three of which the requirement does not name.** Any
+plan scoped to `date_display.rs` alone ships criterion 2 with English day names still being
+spoken from `occurrences.rs`.
 
 ### Recommended mechanism: `GetDateFormatEx` with an explicit format picture
 
-Not a month-name lookup table, and not a crate.
+Not a month-name lookup table, and not a crate. Every quotation below was re-fetched from
+Microsoft's own page on 2026-09-12 and is verbatim.
 
-**Why not a month-name table.** Microsoft's own page on the `LOCALE_SMONTHNAME*` constants
-says [CITED: https://learn.microsoft.com/en-us/windows/win32/intl/locale-smonthname-constants]:
+**Why not a month-name table.** From the `LOCALE_SMONTHNAME` constants page
+[CITED: https://learn.microsoft.com/en-us/windows/win32/intl/locale-smonthname-constants]:
 
 > Calling the GetLocaleInfo or GetLocaleInfoEx function with a LOCALE_SMONTHNAME* constant
 > returns the standalone, or nominative, form of the month name. To get the genitive form
@@ -531,11 +799,11 @@ says [CITED: https://learn.microsoft.com/en-us/windows/win32/intl/locale-smonthn
 
 A date puts the month in the genitive position in Russian, Polish, Czech, Lithuanian and
 others. A table of standalone forms produces grammatically wrong dates in exactly those
-languages, and it produces them for a screen reader to read aloud, which is the one place
-this project cannot afford to sound wrong. The workaround Microsoft documents (format with
-`ddMMMM`, strip two digits) is a hack around a table you did not need in the first place.
+languages, for a screen reader to read aloud, which is the one place this project cannot
+afford to sound wrong.
 
-**Why `GetDateFormatEx` is the right call.** From its reference page
+**Why `GetDateFormatEx` is the right call.** From its reference page, re-fetched and
+quoted verbatim today
 [CITED: https://learn.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-getdateformatex]:
 
 > The function uses the specified locale only for information not specified in the format
@@ -547,212 +815,261 @@ and
 > full month name (MMMM), the genitive form of the month name is retrieved in the date
 > string.
 
-That is precisely the shape this codebase needs. The four existing stored preferences
-(`date_style`, `date_order`, `date_wording`, `clock_hours`, all live controls on the Reading
-tab at `wx_settings.rs:1264-1344`) become the *picture*, and the machine supplies the
-*names*. `DateWording::Verbal` + `DateOrder::DayFirst` is `d MMMM yyyy`;
-`Verbal` + `MonthFirst` is `MMMM d, yyyy`; the two `Numeric` arms become `dd/MM/yyyy` and
-`MM/dd/yyyy`. Nothing the user chose is discarded, which the alternative of passing
-`DATE_LONGDATE` and letting the locale decide would do.
+That is exactly the shape this codebase needs. The four existing stored preferences become
+the *picture* and the machine supplies the *names*. `DateWording::Verbal` with
+`DateOrder::DayFirst` is `d MMMM yyyy`; `Verbal` with `MonthFirst` is `MMMM d, yyyy`; the
+two `Numeric` arms become `dd/MM/yyyy` and `MM/dd/yyyy`. Nothing the user chose is
+discarded, which passing `DATE_LONGDATE` and letting the locale decide would do.
 
-Signature and availability: `GetDateFormatEx` is in `Kernel32.dll`, declared in
-`datetimeapi.h`, minimum Windows Vista, and takes `lpLocaleName` (a locale name string or
-`LOCALE_NAME_USER_DEFAULT`) as its first parameter. The whole signature is on the page cited
-above.
+**Signature and availability**, verbatim from the same page, re-verified today:
+
+> [in, optional] lpLocaleName. Pointer to a locale name, or one of the following predefined
+> values. LOCALE_NAME_INVARIANT / LOCALE_NAME_SYSTEM_DEFAULT / LOCALE_NAME_USER_DEFAULT
+
+> Minimum supported client Windows Vista [...] Header datetimeapi.h Library Kernel32.lib
+> DLL Kernel32.dll
 
 **The testability argument, which is the strongest one.** FEEDBACK-02's third `[D]` line
 asks that the existing `date_display` tests keep passing under a forced English locale.
-Because `GetDateFormatEx` takes a locale name rather than reading only the user default, a
-test can pass `"en-US"` and assert `"July 26, 2026"` deterministically, and pass `"fr-FR"`
-and assert French, on an English CI runner. That is strictly better than what the criterion
-asks for. A table-based approach cannot do this without a second injection point.
+Because `GetDateFormatEx` takes a locale *name* rather than reading only the user default,
+a test can pass `"en-US"` and assert an English string deterministically, and pass
+`"fr-FR"` and assert French, on an English CI runner. That is strictly better than the
+criterion asks for. A table-based approach cannot do this without a second injection point.
 
-**Why not `chrono`'s `unstable-locales`.** Three reasons, in order of weight. Its own
-documentation says the feature is unstable and "the implementation and API may change or
-even be removed in a patch release"
-[CITED: https://docs.rs/chrono/latest/chrono/ and the chronotope/chrono README]. Its locale
-data comes from `pure-rust-locales`, which is imported from the GNU C Library
-[CITED: https://github.com/chronotope/pure-rust-locales], so it would give glibc's idea of
-French dates rather than *this machine's*, which is what the criterion asks for and what
-the rest of the application already follows. And it would need a separate mechanism to
-discover which locale to use anyway.
+**Why not `chrono`'s `unstable-locales`.** Its own documentation calls the feature unstable
+and says the API may change or be removed in a patch release; its data comes from
+`pure-rust-locales`, imported from the GNU C Library, so it would give glibc's idea of
+French dates rather than *this machine's*, which is what the criterion asks for; and it
+would still need a separate mechanism to discover which locale to use.
+[ASSUMED: carried forward from the 2026-09-06 read and not re-fetched this session. Cheap
+to re-check if a plan leans on it, and nothing below depends on it.]
 
-**Why not ICU4X.** `icu_datetime` is not in the tree.
-`grep -c 'icu_datetime' Cargo.lock -> 0` and `grep -c 'icu_plurals' Cargo.lock -> 0`. The
-`icu_*` crates that *are* in `Cargo.lock` (`icu_normalizer`, `icu_properties`,
-`icu_collections`, `icu_locid`, `icu_locale_core`, `icu_provider`) are the `idna` chain
-pulled in under `url`, and none of them formats a date. Adding `icu_datetime` would be a
-`dependency-audit` conversation, would bundle CLDR data into the binary, and would again
-give CLDR's answer rather than the machine's.
+**Why not ICU4X.** `icu_datetime` is not in the tree, re-checked 2026-09-12:
+
+```
+grep -c 'icu_datetime' Cargo.lock -> 0
+```
+
+Adding it would be a `dependency-audit` conversation, would bundle CLDR data into the
+binary, and would again give CLDR's answer rather than the machine's. It would also make
+`which-checks.sh` answer `all` on the commit that adds it, because `Cargo.toml` changed.
 
 ### What `GetDateFormatEx` does not give you: relative wording
 
-There is no Windows API for "2 days ago". `relative_to` (`date_display.rs:496-524`)
-produces "just now", "N minutes ago", "N hours ago", "N days ago" through `plural`
-(`:526`), which is English pluralisation: one form for 1, one for everything else. Russian
-needs three forms, Arabic six. This is what ICU MessageFormat plural rules exist for, and
-nothing short of that gets it right.
+There is no Windows API for "2 days ago". `relative_to` (`date_display.rs:521`) produces
+"just now", "N minutes ago", "N hours ago", "N days ago" through `plural` (`:547`), which
+is English pluralisation: one form for 1 and one for everything else. Russian needs three
+forms and Arabic six. That is what ICU MessageFormat plural rules exist for and nothing
+short of them gets it right.
 
-Three honest options, and this is the decision I would put to Pratik:
+`ENGLISH_ONLY` (`date_display.rs:93`) is the product's existing disclosure, verbatim
+[VERIFIED: src/presentation/date_display.rs:93-96]:
 
-| Option | What it costs | What it gives |
-|---|---|---|
-| Keep relative wording English, narrow `ENGLISH_ONLY` to say only that | Small. One constant reworded, one settings label | Month and day names correct, relative wording still an English word inside a French sentence. Better than today, still not the criterion as written |
-| Fall back to the absolute date when the locale is not English | Small. `relative_to` returns `None`, which `date_part` already handles | Nothing ungrammatical is ever spoken. Loses the "is this recent" affordance that the module's header (`:9`) says is the whole point of relative wording |
-| Add plural rules | Large. A new dependency or a hand-written rules table | The criterion as written |
+```rust
+pub const ENGLISH_ONLY: &str = "Dates are written in English. The order of the day and month \
+     and the clock follow this computer, but the month names and wording such as \"2 days ago\" \
+     stay in English whatever language this computer is set to.";
+```
 
-My reading: option 2 is the one that discharges the criterion's spirit without pretending,
-and option 1 is the one that admits the gap. Option 3 is disproportionate to the rest of
-this phase. It is Pratik's call.
+It is shown on the Reading tab at `wx_settings.rs:1353` as a label and at `:1357` as an
+accessible name, and referenced from `ui_types.rs:1017`
+[VERIFIED: `grep -rn 'ENGLISH_ONLY' src/ docs/`]. Whichever option is chosen, this sentence
+has to be reworded rather than deleted, unless plural rules are taken on.
 
-Whichever is chosen, `ENGLISH_ONLY` (`date_display.rs:93`, shown on the Reading tab at
-`wx_settings.rs:1251` and in `docs/accessibility.md`) has to be reworded rather than
-deleted, unless option 3 is taken. Its text currently says both halves are English:
-"the month names and wording such as \"2 days ago\" stay in English".
+The three options are in "Decisions for Pratik" below. They are not a planner's to pick.
 
 ### One thing to be careful of: `config.language` is not the UI language
 
-`AppConfig.language` (`config.rs:242`) is the **spellcheck dictionary** language. Its
-readers are `wx_compose.rs` (four sites, all spelling) and
-`service/spellcheck/for_language` (`wx_settings.rs:655`). Nothing else reads it. Reusing it
-for dates would conflate "what language I write in" with "what language my dates are read
-in", and the criterion asks for the machine's locale, not a stored preference. Leave it
-alone.
+`AppConfig.language` is at `config.rs:273` and is the **spellcheck dictionary** language
+[VERIFIED: src/data/config.rs:273]. Reusing it for dates would conflate "what language I
+write in" with "what language my dates are read in", and the criterion asks for the
+machine's locale, not a stored preference. Leave it alone.
 
 ---
 
 ## Criterion 3: what the scan can and cannot judge
 
-### What the scan is, verified
+### What the scan is, re-verified
 
-`.github/workflows/accessibility.yml`, 255 lines. Per run it:
+`.github/workflows/accessibility.yml`. Per run it builds `--release`, downloads the
+**latest** `AxeWindowsCLI` zip from the GitHub releases API, starts the application once
+per window against a throwaway profile, runs `AxeWindowsCLI.exe` over UI Automation, runs
+`scripts/msaa-names.ps1` over MSAA, distinguishes "not scanned" from "scanned clean", and
+is non-blocking.
 
-1. builds `--release`,
-2. downloads the **latest** `AxeWindowsCLI*.zip` from
-   `api.github.com/repos/microsoft/axe-windows/releases/latest` (`:74-83`),
-3. starts the application once per window against a throwaway profile
-   (`WIXEN_MAIL_DATA`, `:105-108`) for ten targets:
-   `main, settings, accounts, compose, reader, search, filters, calendar, first-run,
-   add-calendar` (`:98`),
-4. runs `AxeWindowsCLI.exe --processid ... --verbosity verbose` over **UI Automation**,
-5. runs `scripts/msaa-names.ps1 -ProcessId ...` over **MSAA**,
-6. distinguishes "not scanned" from "scanned clean" and throws if any window was not
-   scanned (`:190-194`),
-7. is `continue-on-error: true` (`:39`) and explicitly non-blocking (`:20-21`).
+**The target list has grown since the last read.** Verbatim from
+`.github/workflows/accessibility.yml:100`
+[VERIFIED: .github/workflows/accessibility.yml:100]:
 
-`src/presentation/scan_target.rs` holds the nine dialog targets in
-`ScanTarget::ALL: [ScanTarget; 9]` (`:65`), refuses an unrecognised name rather than
-starting normally, and two of its own tests read the workflow file to keep the two lists in
-step (`:163`, `:185`).
+```powershell
+        $targets = @('main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders')
+```
 
-### The two channels judge different things, and one of them judges one thing
+Eleven targets: the main window plus ten dialogs. `ScanTarget::ALL` is
+`[ScanTarget; 10]` at `scan_target.rs:72` [VERIFIED: src/presentation/scan_target.rs:72-83].
+`blocked-senders` arrived in the five days since the previous read, which said ten and nine.
+Two of `scan_target.rs`'s own tests read the workflow file to keep the two lists in step.
 
-| Channel | Tool | What it can produce a finding about |
-|---|---|---|
-| UI Automation | Axe.Windows, 144 rules | see the WCAG table below |
-| MSAA | `scripts/msaa-names.ps1` | **Exactly one question**: does every element whose MSAA role is in the `$OPERATED` map have a non-empty `accName`? Read the script: it builds `$found` with `name`, `role`, `operated`, and exits 1 if any operated element has no name |
+### The real WCAG coverage of Axe.Windows, counted rather than read
 
-The MSAA walk therefore contributes to **4.1.2 Name, Role, Value**, and only to the *Name*
-third of it. It never looks at role correctness, state, or anything else. Its own header
-(`:28-32`) already records the caveat that a control with a visible label beside it inherits
-that label from Windows, so a clean run does not mean the names came from this code.
+This is the figure the previous version of this file got wrong, and it is worth saying how,
+because the same trap is available to the next person.
 
-### The real WCAG coverage of Axe.Windows: three criteria, not half
+The previous version reported "144 rules" with a breakdown of 81 / 28 / 19 / 14 / 13.
+Those five numbers sum to 155, not 144, and nobody added them up for five days. A language
+model asked to read the same table today answered "173 rules" with a different breakdown
+again. My own first parse answered 141, because a filter written to skip the header row
+(`$1 !~ /^Name/`) also skipped fourteen data rows whose first column was the *name of a
+rule beginning with "Name"*.
 
-Fetched `https://raw.githubusercontent.com/microsoft/axe-windows/main/docs/RulesDescription.md`
-and asked for the literal distinct values in the "Standard referenced" column, twice, once
-with a verbatim-quote prompt to avoid a summarised answer.
+**The figure below comes from a parse whose parts sum to its whole**, run 2026-09-12:
 
-**144 rules. Five distinct standard strings. Three of them are WCAG.**
+```bash
+curl -sL https://raw.githubusercontent.com/microsoft/axe-windows/main/docs/RulesDescription.md \
+  -o axe-rules.md
+awk -F'|' '$0 ~ /\|/ && $0 !~ /^Name \|/ && $0 !~ /^-+ \|/ && $0 !~ /^#/ \
+  {s=$NF; gsub(/^[ \t]+|[ \t]+$/,"",s); c[s]++; n++} \
+  END {for(k in c) printf "%4d  %s\n", c[k], k; printf "TOTAL %d\n", n}' axe-rules.md
+```
 
 | Standard referenced | Rules |
 |---|---|
-| WCAG 1.3.1 InfoAndRelationships | 81 |
-| Section 508 502.3.1 ObjectInformation | 28 |
-| Section 508 502.3.10 AvailableActions | 19 |
-| WCAG 2.1.1 Keyboard | 14 |
-| WCAG 4.1.2 NameRoleValue | 13 |
+| WCAG 1.3.1 InfoAndRelationships | 61 |
+| Section 508 502.3.1 ObjectInformation | 53 |
+| Section 508 502.3.10 AvailableActions | 23 |
+| WCAG 4.1.2 NameRoleValue | 9 |
+| WCAG 2.1.1 Keyboard | 9 |
+| **TOTAL** | **155** |
 
-[CITED: https://github.com/microsoft/axe-windows/blob/main/docs/RulesDescription.md]
+61 + 53 + 23 + 9 + 9 = 155. A separate line census of the file confirmed 155 data rows out
+of 174 lines, all with exactly four columns.
+[VERIFIED: the command above, run 2026-09-12 against the file's `main` branch state]
 
-WCAG 2.2 has 87 success criteria: 32 at Level A, 24 at Level AA, 31 at Level AAA
-[CITED: https://www.w3.org/TR/WCAG22/ for the criteria themselves; the A/AA/AAA split is
-the commonly published breakdown and I did not find it stated as a total on a W3C page, so
-treat the three numbers as MEDIUM and the sum A+AA = 56 as the figure to re-derive by
-counting the quick reference before it is written into a document]. Level AA conformance
-requires all of A and AA.
+**Three distinct WCAG success criteria: 1.3.1, 2.1.1, 4.1.2.** Nothing else.
 
-So the automated scan can produce evidence against **three** of those, and produces it
-against **none of them completely**: a rule derived from 1.3.1 tests one narrow structural
-property, and 81 such rules do not add up to judging 1.3.1.
+**The denominator, also counted rather than quoted.** Run 2026-09-12 against
+`https://www.w3.org/TR/WCAG22/`, parsing each `<section class="guideline">` that carries a
+`Success Criterion N.N.N` heading and reading the `(Level X)` marker from its text:
 
-The claim in the tree is that automated scanning "covers roughly half of WCAG". That
-sentence conflates two different figures. The industry figure of roughly half is about the
-proportion of accessibility *defects* an automated tool finds, not the proportion of
-*success criteria* it can judge. Written as criteria coverage, which is how every one of
-the six copies in this tree reads, it is wrong by about an order of magnitude.
+```
+SC sections found: 87
+levels: A=31, AA=24, AAA=31   (sum 86)
+no level found for: 4.1.1
+```
 
-### Every place the estimate lives, so the correction does not leave five survivors
+The one with no level is **4.1.1 Parsing**, and the page says why, verbatim
+[CITED: https://www.w3.org/TR/WCAG22/]:
+
+> Success Criterion 4.1.1 Parsing (Obsolete and removed) [...] This criterion no longer has
+> utility and is removed.
+
+**So WCAG 2.2 Level AA conformance is 55 success criteria, not 56.** The commonly published
+56 counts 4.1.1, which was Level A in WCAG 2.0 and 2.1. The previous version of this file
+carried 56 as assumption A3 and asked for it to be re-derived before it went into a
+document. It has now been re-derived, and the answer is 55.
+
+**The claim in the tree is that automated scanning "covers roughly half of WCAG". The scan
+can produce evidence against three of fifty-five, and against none of them completely:** a
+rule derived from 1.3.1 tests one narrow structural property, and 61 such rules do not add
+up to judging 1.3.1.
+
+The industry figure of roughly half is about the proportion of accessibility *defects* an
+automated tool finds, not the proportion of *success criteria* it can judge. Written as
+criteria coverage, which is how four of the copies in this tree read it, it is wrong by
+about an order of magnitude.
+
+### Every place the estimate lives, re-taken 2026-09-12
 
 ```
 grep -rn "roughly half\|about half" docs/ .github/ src/ CLAUDE.md .planning/intel/
 ```
 
-| File and line | Text |
-|---|---|
-| `docs/accessibility.md:12` | "Automated scanning catches roughly half of what WCAG asks for" |
-| `docs/IMPLEMENTATION_STATUS.md:142` | "Automated scanning covers roughly half of WCAG" |
-| `docs/principles.md:67` | "Automated scanning covers roughly half of WCAG" |
-| `docs/changelog.md:9106` | "It covers roughly half of WCAG and does not replace NVDA testing" |
-| `.github/workflows/accessibility.yml:14` | "Together they catch roughly half of accessibility defects" (this one is about defects and is defensible as written) |
-| `.github/workflows/accessibility.yml:247` | the step summary: "This scan covers about half of WCAG" |
-| `CLAUDE.md:590` | "Automated checks catch roughly half of accessibility defects" (about defects; defensible) |
-| `.planning/intel/built-and-left.md:133`, `.planning/intel/context.md:18,30,52` | four planning copies |
+| File and line | Text | Form |
+|---|---|---|
+| `docs/accessibility.md:12` | "Automated scanning catches roughly half of what WCAG asks for" | **of WCAG, wrong** |
+| `docs/IMPLEMENTATION_STATUS.md:177` | "Automated scanning covers roughly half of WCAG" | **of WCAG, wrong** |
+| `docs/principles.md:67` | "Automated scanning covers roughly half of WCAG" | **of WCAG, wrong** |
+| `.github/workflows/accessibility.yml:247` | the step summary: "This scan covers about half of WCAG" | **of WCAG, wrong** |
+| `docs/changelog.md:10512` | "It covers roughly half of WCAG and does not replace NVDA testing" | of WCAG, but history |
+| `.github/workflows/accessibility.yml:14` | "Together they catch roughly half of accessibility defects" | of defects, defensible |
+| `CLAUDE.md:705` | "Automated checks catch roughly half of accessibility defects" | of defects, defensible |
+| `.planning/intel/built-and-left.md:133`, `.planning/intel/context.md:18, 30, 52` | four planning copies | planning, not product |
 
-Six product-facing copies. Two of them (`accessibility.yml:14` and `CLAUDE.md:590`) say
-"defects" and are the defensible form; the other four say "of WCAG" and are the wrong one.
-The changelog copy is inside a `[0.1.0-alpha.9]`-era release note and is history, so it may
-be right to leave it and add a correction rather than edit it.
+**Four product-facing copies to correct, two to leave, one to decide about.** The changelog
+copy sits in a released-version note and is history, so adding a correction may be better
+than editing it. Five of the eight line numbers moved since the last read of this file.
 
-### The frame the coverage list should use
+### The frame the coverage list should use, and a correction to how it was described
 
 WCAG is written for web content. Applying it to a desktop application is what **WCAG2ICT**
-is for: *Guidance on Applying WCAG to Non-Web Information and Communications Technologies*,
-a W3C Group Note covering WCAG 2.0, 2.1 and 2.2, published 2025-12-11
-[CITED: https://www.w3.org/TR/wcag2ict-22/]. It is informative, not normative, and it is the
-right authority for the "cannot judge because it does not apply" column.
+is for: *Guidance on Applying WCAG 2 to Non-Web Information and Communications
+Technologies*, a W3C Group Note published 11 December 2025
+[CITED: https://www.w3.org/TR/wcag2ict-22/, publication date read from the page's own
+`<time class="dt-published" datetime="2025-12-11">` element on 2026-09-12].
 
-It records that regulations including EN 301 549 and Section 508 have determined that
-several criteria do not apply to non-web software: 2.4.1, 2.4.2, 2.4.5, 3.1.2, 3.2.3 and
-3.2.4 [CITED: https://www.w3.org/TR/wcag2ict-22/, via the summary of that page; **the exact
-scoping of each needs reading in the Note itself before it goes into a document**, because
-some of those are "does not apply" and some are "applies with substituted wording", and the
-difference matters to a list that claims to be honest].
+**The previous version of this file described its authority slightly wrongly, and the
+difference matters to a list that claims to be honest.** WCAG2ICT does not itself decide
+what applies. Verbatim from the page:
 
-So a defensible coverage table has four columns and roughly this shape:
+> This document does not seek to determine which WCAG 2 provisions (principles, guidelines,
+> or success criteria) should or should not apply to non-web documents and software, but
+> rather, if applied, how they would apply.
+
+What it does is *record what regulations have decided*, and it attributes them separately.
+Verbatim:
+
+> For example, some local standards such as Section 508 in the U.S., and EN 301 549 in
+> Europe, state that WCAG 2.0 Success Criteria 2.4.1 Bypass Blocks, 2.4.5 Multiple Ways,
+> 3.2.3 Consistent Navigation, and 3.2.4 Consistent Identification do not apply to non-web
+> documents and non-web software. In addition, EN 301 549 states that 2.4.2 Page Titled and
+> 3.1.2 Language of Parts do not apply to non-web software.
+
+And it names a regulation that goes the other way:
+
+> In contrast, the U.S. Department of Justice regulation, Nondiscrimination on the Basis of
+> Disability; Accessibility of Web Information and Services of State and Local Government
+> Entities (89 FR 31320, 24 April 2024), directs implementers to utilize the guidance in
+> this document to determine the applicability of success criteria [...] Since this document
+> does not specifically say which criteria can or should apply, those implementing this
+> document (WCAG2ICT) should consider the applicability of individual success criteria to
+> non-web documents
+
+So the six criteria split two ways, not one:
+
+| Criteria | Excluded by |
+|---|---|
+| 2.4.1 Bypass Blocks, 2.4.5 Multiple Ways, 3.2.3 Consistent Navigation, 3.2.4 Consistent Identification | Section 508 **and** EN 301 549 |
+| 2.4.2 Page Titled, 3.1.2 Language of Parts | EN 301 549 only |
+
+A coverage document must attribute these to the regulations, not to WCAG2ICT, and should
+say that this project makes no Section 508 conformance claim, which
+`docs/accessibility.md:18-19` already says.
+
+A defensible coverage table then has roughly this shape:
 
 | Column | Source |
 |---|---|
-| Success criterion (A and AA only) | WCAG 2.2 |
-| Applies to a Windows desktop application? | WCAG2ICT 2.2 |
-| Can the Axe.Windows scan produce a finding against it? | `RulesDescription.md`: yes for 1.3.1, 2.1.1, 4.1.2; no for the rest |
-| Can the MSAA walk? | Name only, so partially for 4.1.2 |
-| Can the NVDA suite? | See below |
-| Otherwise: a person, or nothing | the manual list criterion 4 asks for |
+| Success criterion, A and AA only, 55 of them | WCAG 2.2, counted |
+| Applies to a Windows desktop application? | WCAG2ICT, with the regulation named where it is a regulation's call |
+| Can Axe.Windows produce a finding against it? | yes for 1.3.1, 2.1.1, 4.1.2; no for the other 52 |
+| Can the MSAA walk? | the Name third of 4.1.2 and nothing else |
+| Can the NVDA suite? | see below |
+| Otherwise | a person, or nothing |
 
 ### A reproducibility problem the list will inherit
 
-`accessibility.yml:76` fetches the **latest** Axe.Windows release at run time. The rule set
-is therefore whatever Microsoft shipped most recently, and it can change without a commit in
-this repository. A document that says "the scan judges these three criteria" is a claim
-about a version nothing pins.
+`accessibility.yml` fetches the **latest** Axe.Windows release at run time. The rule set is
+therefore whatever Microsoft shipped most recently and can change without a commit in this
+repository. It changed under this document: the rule table read on 2026-09-06 and the one
+read on 2026-09-12 do not agree, and at least part of that is measurement error rather than
+upstream drift, which is precisely the ambiguity an unpinned dependency creates. A document
+saying "the scan judges these three criteria" is a claim about a version nothing pins.
 
 Two options: pin the CLI version in the workflow and record which version the list was
-written against, or state the version and date beside the list the way PERF-06 already
-requires of every count. Pinning is better, and it is a two-line change. Either way the list
-needs the same treatment as a test count: the command, the version and the date.
+written against, or state the version and date beside the list. Pinning is better, removes
+an unpinned third-party binary from CI, and is a two-line change.
 
-### The NVDA suite is three tests
+### The NVDA suite is three tests that run and one that is skipped
 
 ```
 ls nvda-tests/tests/
@@ -762,101 +1079,353 @@ ls nvda-tests/tests/
    which-days-focus-and-tick.test.js
 ```
 
-Four files, and `grep -rhn "test(" nvda-tests/tests/*.js` finds three named tests. The
-fourth file, `which-days-focus-and-tick.test.js`, did not match that grep, so either it uses
-a different spelling or holds no test; that is worth confirming when the list is written
-rather than assuming. `nvda.yml:132` states the scope honestly already: "It is still not a
-full manual walkthrough, and it says nothing about any control, dialog, or sentence these
-tests do not touch."
+Three `test(` declarations across the first three files
+[VERIFIED: `grep -rhoE "^\s*(test|it)\(" nvda-tests/tests/*.js`, run 2026-09-12]:
+
+- "NVDA announces Signing in failed when Sign In Again cannot reach a provider"
+- "NVDA hears Edit Event"
+- "NVDA announces the same sentence Delete would show when nothing is selected"
+
+**The fourth file holds one `test.skip`**, at
+`nvda-tests/tests/which-days-focus-and-tick.test.js:98`, and its own header says why,
+verbatim [VERIFIED: nvda-tests/tests/which-days-focus-and-tick.test.js:1-21]:
+
+> It is skipped because opening this dialog needs an event that repeats, selected, with an
+> edit or delete already under way [...] None of them is reachable from a fresh profile the
+> way `--scan-target accounts` reaches the Account Manager: `src/presentation/scan_target.rs`
+> has no target for this dialog.
+
+This settles the previous version's assumption A7, and it hands criterion 4 a named gap: the
+"which days do you mean" dialog is reachable by neither scan channel nor the NVDA suite,
+and a `ScanTarget` for it would unblock both.
 
 ---
 
 ## Criterion 4: the five WebView2 findings, and the manual list
 
-### The five findings are not enumerated anywhere in the tree
+### The five findings are enumerated nowhere in the tree. Re-confirmed.
 
-Searched three ways: `grep -rn "WebView2" docs/*.md`, `grep -rn "five finding" docs/
-.planning/ CLAUDE.md`, and `grep -rn "2026-07-26" docs/ .planning/`.
+Searched four ways on 2026-09-12: `grep -rn "WebView2" docs/*.md`, `grep -rn "five
+finding\|Five accessibility" docs/ .planning/ CLAUDE.md`, `grep -rn "Chrome_WidgetWin\|
+BrowserRootView"` across every markdown, Rust, PowerShell and YAML file, and a look for any
+`.a11ytest` artifact in the tree.
 
-There is exactly one line that describes them, `docs/changelog.md:9153`:
+There is exactly one line that describes them, `docs/changelog.md:10559`, verbatim
+[VERIFIED: docs/changelog.md:10559]:
 
 > Five accessibility scan findings remain, all inside WebView2's own accessibility tree
 > (`Chrome_WidgetWin_1`, `BrowserRootView`, and three container views). They are not this
 > application's controls and cannot be named or positioned from here.
 
-That names two and calls the other three "three container views". So **the criterion's
-"each of the five findings" cannot be discharged from documents.** The scan has to be run
-and the `.a11ytest` artifacts read.
+That names two and calls the other three "three container views". A second summary sits at
+`docs/IMPLEMENTATION_STATUS.md:171-173`, which repeats the count and the date and names
+none of them.
 
-### The five-finding figure is staler than "five and a half weeks old"
+**So the criterion's "each of the five findings" cannot be discharged from documents.** The
+scan has to be run and the artifacts read.
+
+### Why the number is not merely stale
 
 ```
-git log -S "Five accessibility scan findings remain" --format='%h %ad %s' --date=short -- docs/changelog.md
+git log -S "Five accessibility scan findings remain" --format='%h %ad %s' --date=short \
+  -- docs/changelog.md
 -> 44ed93f 2026-07-26 fix(a11y): make check menu items tell the truth about their state
-
-git log --format='%h %ad %s' --date=short -- .github/workflows/accessibility.yml
--> 35d6ae2 2026-08-20 Give the Filter Manager scan its real message store back
-   d29dc77 2026-08-04 Add a calendar by its server or feed address
-   168c320 2026-07-31 Measure the accessible names this application actually sets
-   898b4c8 2026-07-30 Read out what each first-run choice costs, ...
-   75245a7 2026-07-28 Point the accessibility scan at the dialogs
-   ...
 ```
 
-The line was written on 2026-07-26. The scan was pointed at dialogs on 2026-07-28
-(`75245a7`) and the MSAA channel was added on 2026-07-31 (`168c320`).
-
-**So "five findings" is a count from a scan that covered one of the ten windows it now
-covers, on one of the two channels it now walks.** That is a much sharper statement than
-"the last read is five and a half weeks old", and it means the number is not stale so much
-as measuring something else entirely. The line also sits in the `[Unreleased]` Known
-limitations block, whose own preamble says "A note with nothing added to it has not been
-looked at again", so the document is already telling the reader this.
-
-The number that replaces it will very likely be larger, and larger for a good reason. That
+The line was written 2026-07-26. The scan was pointed at dialogs on 2026-07-28 and the MSAA
+channel was added on 2026-07-31. **So "five findings" is a count from a scan that covered
+one of the eleven windows it now covers, on one of the two channels it now walks.** The
+number is not stale so much as measuring something else. It will very likely grow, and that
 should be said in the commit that replaces it, or it will read as a regression.
+
+### What can be said about the two named ones, and the upstream
+
+The brief asked that each finding be marked fixable-here or upstream with the upstream
+named. Three of the five cannot be identified at all until the scan is re-run. The two that
+are named can be reasoned about now, and the upstream can be named now, which is the part
+that unblocks planning.
+
+**`Chrome_WidgetWin_1` is the Win32 window class Chromium uses for its host window, and
+`BrowserRootView` is a Chromium Views class.** Both are produced by the Edge WebView2
+runtime's own accessibility tree, not by any wxWidgets control this application creates.
+Nothing in `src/` can set a name or a bounding rectangle on either. [ASSUMED: this is an
+inference from the names and from the changelog line's own claim that they "are not this
+application's controls and cannot be named or positioned from here". It is not verified by
+running anything, and it should be confirmed against the artifact when the scan is re-run.]
+
+**The upstream to name is `MicrosoftEdge/WebView2Feedback` on GitHub**, which is Microsoft's
+official feedback and issue repository for WebView2, described on its own README as the
+place for developers to report bugs, make feature requests, and ask questions about
+WebView2. It carries accessibility issues already, including one titled "A11Y: WebView2
+control is completely inaccessible with screen readers (NVDA, JAWS and parcially with
+Narrator too)" as issue 2330, and it labels issues it is tracking with a `tracked` label.
+[CITED: https://github.com/MicrosoftEdge/WebView2Feedback and
+https://github.com/MicrosoftEdge/WebView2Feedback/issues/2330]
+
+So guardrail 9's "with the upstream named" has a concrete answer for this phase: a finding
+judged upstream is recorded against `MicrosoftEdge/WebView2Feedback`, with an issue number
+where one already covers it and a newly filed issue where none does. The deeper upstream is
+Chromium itself, but a WebView2 consumer files against WebView2Feedback, and filing against
+`crbug.com` is the wrong door.
+
+**What a plan should therefore contain, and what it cannot.** It can contain: re-run the
+scan, read the artifacts, produce the list, and for each entry record either a fix or an
+upstream reference against the named repository. It cannot contain: the five findings, their
+identities, or a promise that there will be five.
 
 ### The windows the scan still does not reach
 
-Ten targets against 24 `src/presentation/wx_*.rs` modules
-(`ls src/presentation/wx_*.rs | wc -l -> 24`). Not all 24 are windows: `wx_tray.rs`,
-`wx_context_menu.rs` and the five `*_module.rs` panels are not dialogs. But these build
-dialogs and are not scan targets: `wx_columns`, `wx_conflict_choice`, `wx_destination`,
-`wx_folder_choice`, `wx_item_form`, `wx_managers` (the contact, task and note managers),
+Eleven targets against 24 modules matching `src/presentation/wx_*.rs`
+[VERIFIED: `ls src/presentation/wx_*.rs | wc -l` gives 24, run 2026-09-12]. Not all 24 are
+windows. These build dialogs and are not scan targets: `wx_columns`,
+`wx_conflict_choice`, `wx_destination`, `wx_folder_choice`, `wx_item_form`, `wx_managers`,
 `wx_reminder_alert`, `wx_thread_view`, `wx_which_days`.
 
-`wx_item_form` and `wx_reminder_alert` are the two worth naming: the item form is where
-somebody enters an event, a contact, a task or a note, and the reminder alert is a modal
-that opens on a timer. Both are unscanned on both channels today. Whether widening the
-target list is part of this phase or a note in the coverage document is a scoping choice,
-but the coverage document is dishonest if it does not say which windows are outside it.
+Three worth naming. `wx_item_form` is where somebody enters an event, contact, task or note,
+and is the one dialog `tests/checkbox_labels.rs` covers, so its checkboxes are tested and
+its scan coverage is absent. `wx_reminder_alert` is a modal that opens on a timer, and is
+inherited item B's subject. `wx_which_days` is the dialog the skipped NVDA test names.
 
-### A commit-gate gap that sits directly on this phase's path
+Whether widening the target list is part of this phase is a scoping choice. The coverage
+document is dishonest if it does not say which windows are outside it either way.
+
+### A commit-gate gap on this phase's path, still open
 
 `scripts/which-checks.sh` answers `affected` for a commit touching
-`.github/workflows/accessibility.yml`, because the file is not `*.md` or `*.txt`
-(`which-checks.sh:167-175`). `check.sh`'s `run_the_tests_that_reach_what_changed`
-(`check.sh:363-385`) maps only two path shapes to tests: `src/*.rs` to `--lib module::`
-and `tests/*.rs` to `--test target`. A `.yml` path matches neither, so nothing is selected
-for it.
+`.github/workflows/accessibility.yml`, because the file is neither `*.md` nor `*.txt`.
+`check.sh`'s `run_the_tests_that_reach_what_changed` maps exactly two path shapes to tests,
+`src/*.rs` to `cargo test --lib module::` and `tests/*.rs` to `cargo test --test target`,
+plus the integration suites `guards/guards.toml` couples to a changed source module
+[VERIFIED: scripts/check.sh:387-432, read 2026-09-12]. A `.yml` path matches none of them.
 
-But `src/presentation/scan_target.rs:163` and `:185` read
-`.github/workflows/accessibility.yml` as data, and
-`test_the_command_line_and_the_workflow_use_the_same_flag` and
-`test_the_workflow_asks_for_every_target` are the only tests in the tree that can catch the
-workflow and the code disagreeing about the flag or the target list.
+`src/presentation/scan_target.rs` carries **0** guard records, so the coupling path does not
+rescue it either (measured below).
 
-**So a commit that changes only that workflow runs neither of the two tests that could
-catch it breaking.** The whole-tree guards (`house_style`, `wired`) still run, and neither
-reads that file.
+**So a commit that changes only that workflow runs neither of the two tests that could catch
+it disagreeing with `scan_target.rs`.** Criterion 3 changes that workflow, so this phase will
+meet the gap. This was reported by the 2026-09-06 research and is still open five days and
+355 commits later, re-verified today. Cheapest fix matching the existing `Cargo.toml`
+precedent: make any `.github/workflows/*` change answer `all`.
 
-This is the same shape as the defect `which-checks.sh:130-149` already documents for
-`Cargo.toml`, fixed there with a special case and never generalised. Criterion 3 changes
-that workflow, so phase 6 will meet it. Cheapest fix, matching the existing precedent: add
-a case in `run_the_tests_that_reach_what_changed` mapping
-`.github/workflows/accessibility.yml` to `cargo test --lib presentation::scan_target::`, or
-make any `.github/workflows/*` change answer `all`. The second is simpler and workflows
-change rarely, which is the argument the manifest comment already makes for itself.
+---
+
+## Where this phase collides with phase 7
+
+Phase 7 is executing in parallel with nine written plans in
+`.planning/phases/07-installing-updating-and-what-is-stored/`. The brief named the expected
+collision surface as the About dialog, `src/common/version.rs`, the accessibility bridge's
+accessors, and pages listing what is on a user's disk. **Those are real and they are not the
+main one.**
+
+Measured 2026-09-12 by extracting every source path phase 7's own plans name and ranking by
+frequency:
+
+```bash
+grep -ho 'src/[a-z_/]*\.rs\|docs/[a-z_]*\.md' \
+  .planning/phases/07-installing-updating-and-what-is-stored/*.md \
+  | sort | uniq -c | sort -rn
+```
+
+| Phase 7 mentions | File | Does phase 6 need it? |
+|---|---|---|
+| 51 | `docs/changelog.md` | **Yes.** Every user-visible change in both phases |
+| 40 | `scripts/check.sh` | Yes, criterion 3's gate gap |
+| 30 | `src/common/version.rs` | No |
+| 20 | `src/presentation/wx_app.rs` | Yes, inherited item B |
+| 20 | `src/data/config.rs` | **Yes, and this is the collision** |
+| 15 | `scripts/which-checks.sh` | Yes, criterion 3's gate gap |
+| 9 | `src/presentation/wx_settings.rs` | **Yes, criterion 1's panel** |
+| 9 | `src/presentation/accessibility/screen_reader.rs` | Read only for this phase |
+| 8 | `src/presentation/accessibility.rs` | Read only for this phase |
+| 8 | `src/presentation/accessibility/names.rs` | Read only for this phase |
+| 6 | `src/presentation/accessibility/platform_bridge.rs` | **Does not exist yet** |
+
+**The collision is `mod every_setting_is_acted_on` in `src/data/config.rs`.** Phase 7's plan
+07-05 adds a new top-level `AppConfig` field for the release channel and a control for it,
+and says so in its own words [VERIFIED: .planning/phases/07-installing-updating-and-what-is-stored/07-05-PLAN.md:48]:
+
+> AppConfig -> every_setting_is_acted_on: a new top-level field fails
+> test_every_setting_somebody_can_change_is_read_by_something and
+> test_every_setting_somebody_can_change_is_offered_by_a_screen on arrival, one for being
+> read by nothing and one for being offered by no screen. That is the RED half for free
+
+That is the identical mechanism inherited item A relies on, in the identical module, and
+07-05's own reading list names every constant and every test in it
+[VERIFIED: .planning/phases/07-installing-updating-and-what-is-stored/07-05-PLAN.md:508].
+Both phases will edit the three exception lists. Neither side's documents mention the other.
+
+**`platform_bridge.rs` does not exist today.** `ls src/presentation/accessibility/` gives
+`announcements.rs automation.rs feedback.rs focus.rs keyboard.rs names.rs screen_reader.rs
+sound_scheme.rs sound_scheme_import.rs`, run 2026-09-12. Phase 7's criterion 6 asks that the
+application derive the bridge's presence from what is compiled in, and its plans name a
+module that will be created for it. **So `screen_reader.rs` is likely to be restructured
+under this phase's feet.** Nothing in phase 6 as scoped needs to change that file, and the
+recommendation is to keep it that way.
+
+### What to re-take rather than re-read, if phase 7 lands first
+
+A short, explicit list, so a planner does not re-verify this whole document.
+
+| Re-take | Because |
+|---|---|
+| Every line number in `src/data/config.rs` cited above | 07-05 adds a field and edits the test module |
+| Every line number in `src/presentation/wx_settings.rs` cited above | 07-05 adds a control; 07-09 touches the Help path |
+| `OFFERED_BY_ANOTHER_SCREEN`'s length, today 3 | 07-05 may add an entry |
+| The guard record counts for `config.rs` and `wx_settings.rs`, today 4 and 3 | new tests mean new records |
+| Anything about `screen_reader.rs`'s shape | `platform_bridge.rs` may take part of it |
+| `Cargo.toml`'s version, today `0.112.0` | phase 7 bumps it; every commit touching it answers `all` |
+| The About dialog at `wx_app.rs:21261` and `src/common/version.rs:32` | phase 7 owns both. Phase 6 needs neither |
+| `docs/IMPLEMENTATION_STATUS.md` line numbers | both phases edit it |
+
+Nothing about criterion 1's model (`feedback.rs`), criterion 2's dates (`date_display.rs`,
+`occurrences.rs`, `ui_types.rs`, `wx_item_form.rs`) or criterion 3's scan
+(`accessibility.yml`, `scan_target.rs`, `msaa-names.ps1`) appears in phase 7's plans at all.
+**Those three are collision-free and can be planned without waiting.**
+
+---
+
+## Where the work concentrates, and what that implies for waves
+
+Every phase here serialises on `guards/guards.toml`, `docs/changelog.md` and `Cargo.toml`.
+This phase adds no dependency, so `Cargo.toml` should never be touched, and that matters:
+a commit touching it answers `all` and pays the full gate.
+
+| Piece | Files it concentrates in | Collides with |
+|---|---|---|
+| Criterion 1, the model additions | `src/presentation/accessibility/feedback.rs` | nothing |
+| Criterion 1, the panel | `src/presentation/wx_settings.rs` | **phase 7 plan 07-05** |
+| Criterion 1, the guard | `src/data/config.rs` | **phase 7 plan 07-05**, and inherited item A |
+| Inherited item A | `src/data/config.rs`, `src/presentation/wx_account_manager.rs`, `tests/house_style.rs`, product docs | **phase 7, and criterion 1's guard** |
+| Inherited item B | `src/presentation/wx_app.rs`, `src/presentation/one_question_at_a_time.rs` | phase 7 touches `wx_app.rs` |
+| Criterion 2 | `src/presentation/date_display.rs`, plus three call sites | nothing |
+| Criterion 3 and 4 | `.github/workflows/accessibility.yml`, `scripts/which-checks.sh`, `scripts/check.sh`, four product docs | `check.sh` and `which-checks.sh` with phase 7 |
+
+**Wave implications.**
+
+1. **`src/data/config.rs` is the single serialisation point of this phase.** Criterion 1's
+   guard and inherited item A both edit `mod every_setting_is_acted_on`, and so does phase 7.
+   Put both phase 6 tasks that touch it in the same plan and the same wave, and sequence that
+   plan against 07-05 explicitly rather than hoping.
+2. **Criterion 2 is a clean parallel wave.** `date_display.rs` plus `occurrences.rs`,
+   `ui_types.rs`, `wx_item_form.rs` and `signed_mail.rs`. Nothing else in either phase wants
+   these files.
+3. **Criteria 3 and 4 are a clean parallel wave for the document half**, and the workflow half
+   touches `check.sh` and `which-checks.sh`, which phase 7 also names. Small edits, but worth
+   knowing.
+4. **Keep each commit to one kind of file.** The phase 2.1 lesson: a commit mixing a document
+   correction with three source modules makes every commit in that plan pay for all of them.
+   The document corrections in criterion 3 are a documents-only commit if nothing else rides
+   with them.
+
+### Which checks each commit earns, re-verified 2026-09-12
+
+| A commit touching | `which-checks.sh` answers |
+|---|---|
+| only `*.md` or `*.txt`, on a branch or on `main` | `docs_only` |
+| any `.rs` on a branch | `affected` |
+| `.github/workflows/*.yml` on a branch | `affected`, and selects no tests for it: see the gap above |
+| `scripts/*.ps1` on a branch | `affected`, which selects no tests for it |
+| `Cargo.toml` or `Cargo.lock`, anywhere | `all` |
+| anything non-markdown on `main` | `all` |
+
+**This document is itself inside the em-dash guard's reading.** `tests/house_style.rs:50`
+walks `.planning` for markdown [VERIFIED: tests/house_style.rs:34-50], which it did not do
+before 2026-09-07. There are zero em dashes anywhere under `.planning` today, and there are
+none in this file. A plan written for this phase must stay that way.
+
+`test_nothing_offers_a_setting_per_account_that_no_screen_writes` reads
+`the_pages_that_speak_for_the_product()`, which filters out `.planning`
+[VERIFIED: tests/house_style.rs:112 and the test's own comment], so planning documents may
+quote the two forbidden phrases. Product documents may not, until the control exists.
+
+---
+
+## Cost facts a plan will need
+
+### Guard records, counted as records rather than as mentions
+
+Counted 2026-09-12 at `febe8e4` by parsing `tests_last_seen` blocks, which is what
+`test_every_guard_record_says_how_many_tests_the_files_it_names_held` actually reads. Never
+by grepping a file name: `CLAUDE.md` warns a grep overcounts by up to five to one and it is
+right.
+
+```
+awk '/^\[\[guard\]\]/ {c++} END {print c}' guards/guards.toml
+-> 720
+```
+
+720 records. The census comment at `guards/guards.toml:79-80` reads "192 records were swept
+that day" and "528 records have arrived since and have not been through it", and 192 + 528 =
+720, so the file's own two numbers agree with its record count today.
+
+| File a task might add a test to | Records flagged | Was, 2026-09-06 |
+|---|---|---|
+| `src/presentation/accessibility/feedback.rs` | **1** | 1 |
+| `src/presentation/one_question_at_a_time.rs` | **1** | reported as 0, and under the wrong path |
+| `src/presentation/wx_settings.rs` | **3** | 1 |
+| `src/presentation/date_display.rs` | **3** | 3 |
+| `src/application/occurrences.rs` | **3** | 3 |
+| `src/application/due.rs` | 3 | not reported |
+| `src/data/config.rs` | **4** | 2 |
+| `src/presentation/accessibility/names.rs` | 4 | 4 |
+| `src/presentation/accessibility.rs` | 7 | 7 |
+| `tests/house_style.rs` | **18** | 18 |
+| `src/presentation/wx_app.rs` | **48** | 40 |
+| `src/presentation/scan_target.rs` | **0** | not reported |
+| `src/presentation/accessibility/sound_scheme.rs` | **0** | not reported |
+
+Three of these moved in five days. `config.rs` doubled and `wx_app.rs` gained eight.
+
+**The planning consequence.** Most of what this phase wants is cheap: 1, 1, 3, 3, 4. The two
+expensive ones are `wx_app.rs` at 48 and `tests/house_style.rs` at 18.
+
+- Put the per-event guard in `src/data/config.rs` beside its siblings, at 4 records, not in
+  `tests/house_style.rs` at 18.
+- Keep inherited item B's test in `src/presentation/one_question_at_a_time.rs` at 1 record,
+  not in `wx_app.rs`'s test module at 48. `what_to_raise` already takes its conditions as
+  arguments precisely so they can be tested without a window.
+- If criterion 2 wants a guard asserting no shipping site formats an English month outside
+  `date_display`, weigh `tests/house_style.rs` at 18 against a unit test beside a source
+  module.
+- `scan_target.rs` carrying 0 records is itself worth a plan's attention: a test there is
+  reached only when its own file changes, which is the coupling gap described above.
+
+### The records for this phase's files are all in step today
+
+This is a measurement worth having, because a record that has fallen behind turns a cheap
+task into an expensive one without warning. Run 2026-09-12, comparing what each record wrote
+down against a count taken by the check's own rule, which counts lines that are exactly
+`#[test]` or `#[tokio::test]` after trimming:
+
+| File | Records claim | Tree holds |
+|---|---|---|
+| `src/presentation/accessibility/feedback.rs` | 41 | 41 |
+| `src/data/config.rs` | 60 | 60 |
+| `src/presentation/date_display.rs` | 37 | 37 |
+| `src/application/occurrences.rs` | 62 | 62 |
+| `src/presentation/one_question_at_a_time.rs` | 19 | 19 |
+| `tests/house_style.rs` | 67 | 67 |
+
+**All in step.** So this phase starts from a clean baseline, and the first commit that adds a
+test to any of these files will flag its records and print the `scripts/guards.sh --remeasure`
+command. Running that remedy when a commit prints it is not optional: `CLAUDE.md` says it is
+the reason the sweep can be deferred at all.
+
+A caution on how to count. A naive `grep -c '#\[test\]'` gives 76 for `tests/house_style.rs`
+against the check's 67, because that file quotes the attribute inside string literals. Use
+the check's own rule or the number will look nine out of step when it is not.
+
+### Guard sweeps
+
+`scripts/guards.sh` unfiltered is 720 records as of 2026-09-12. **This document does not
+quote a duration**, and a plan should not either without measuring. `CLAUDE.md` gives the
+reason at length: the per-record rate roughly halved on 2026-09-09 when test caches stopped
+rebuilding the database schema, the whole-tree total has been quoted at 15, 16 and 20 hours
+at different record counts, and both the count and the rate go on moving. Multiply the count
+you take today by a rate you measure today.
+
+Per the decision of 2026-09-03, the sweep is one sweep once every phase is complete, not per
+merge, and the executor does not run guards.
 
 ---
 
@@ -865,126 +1434,37 @@ change rarely, which is the argument the manifest comment already makes for itse
 Each of these changes what a plan may contain.
 
 - **Red/green TDD on every eligible task.** `.planning/config.json` has
-  `workflow.tdd_mode: true` (read this session). Red commits are refused on `main` and must
-  name every failing test in `Fails-until-green:` trailers, checked by
-  `scripts/red-commit.sh` in all three directions.
+  `"tdd_mode": true`, read this session. Red commits are refused on `main`, must name every
+  failing test in `Fails-until-green:` trailers, and are checked in three directions by
+  `scripts/red-commit.sh`.
 - **`scripts/check.sh` is the gate.** Four checks, clippy at `-D warnings`. Never pipe it.
   Mode chosen by `scripts/which-checks.sh`.
-- **A commit touching `Cargo.toml` or `Cargo.lock` answers `all`** (`which-checks.sh:152`),
-  a full run. Every recommendation in this document avoids a new dependency, so this should
-  never fire, and if a plan proposes one, that is the cost to price in.
-- **The accessibility layer is Windows-only in two specific ways.** `set_accessible_name`
-  (`accessibility/names.rs:378`) writes to MSAA through `wxAccessible`, and announcements go
-  through `UiaRaiseNotificationEvent` (`accessibility/screen_reader.rs:75`, `:202`). Both
-  compile and do nothing elsewhere. `date_display.rs` already has the same shape: a
-  `#[cfg(target_os = "windows")]` reader with a non-Windows fallback at `:231`. Any
-  `GetDateFormatEx` work follows that existing pattern exactly.
+- **`cargo test` takes one `--lib`.** Several module paths need several runs joined with
+  `&&`. `CLAUDE.md` records that 55 plans told executors to pass several and none could ever
+  have run. Every `<verify><automated>` block in this phase's plans must obey this.
+- **The accessibility layer is Windows-only in two specific ways**, and `date_display.rs`
+  already has the same shape: a `#[cfg(target_os = "windows")]` reader with a non-Windows
+  fallback at `:232`. Any `GetDateFormatEx` work follows that existing pattern exactly.
+  Phase 7's criterion 5 asks that the crate build on Linux and macOS, so this is not
+  optional politeness.
 - **Every setting is reachable from a section somebody would look in.** This binds the plan
-  that introduces the setting, and phase 1's criterion 8 already said a phase must not add a
-  third unreachable setting. Phase 6 removes both existing ones.
+  that introduces the setting. Phase 1's criterion 8 said a phase must not add a third
+  unreachable setting; phase 6 removes both existing ones.
 - **Schema changes are additive.** Nothing in this phase touches `message_cache.db`.
-- **Feedback must be distinct and bounded** (guardrail 5). A per-event panel that lets
-  somebody switch Speech on for all sixteen events is a panel that can produce flooding. The
-  panel does not need to prevent that, but the announcement pacing already in
-  `announcements.rs` is what stops it, and a plan should not assume the panel is the place.
+- **Feedback must be distinct and bounded** (guardrail 5). A per-event panel lets somebody
+  switch Speech on for all sixteen events, which is a panel that can produce flooding. The
+  pacing already in `announcements.rs` is what stops it. A plan should not assume the panel
+  is the place to solve it, and should not remove the pacing.
 - **Do not silently absorb upstream failures** (guardrail 9). The five WebView2 findings are
-  the worked example: the criterion asks that each be recorded as upstream **with the
-  upstream named**, which means a WebView2 or Chromium issue reference, not the phrase
-  "WebView2's own tree".
+  the worked example, and the upstream now has a name: `MicrosoftEdge/WebView2Feedback`.
 - **A user-visible change gets a `docs/changelog.md` entry under `[Unreleased]` in the same
   commit**, honest "Known limitations" included.
+- **No AI attribution anywhere.** No `Co-Authored-By` naming an AI, in any commit, branch
+  name, comment or document.
+- **No em dashes in any markdown under `.planning` or `docs`.** Enforced, and it now reads
+  `.planning`.
 - **`docs/KEYBOARD_SHORTCUTS.md` is updated in the same commit as a shortcut.** The
   recommended panel adds no shortcut, so this should not fire.
-- **No AI attribution anywhere.**
-
----
-
-## Cost facts a plan will need
-
-### Guard records, counted as records rather than as mentions
-
-The mentions trap is real. `grep -c "date_display.rs" guards/guards.toml` returns 5; the
-number of *records* naming it is 3. Counted by splitting the file on `[[guard]]` and reading
-the `tests_last_seen` entries, which is what
-`test_every_guard_record_says_how_many_tests_the_files_it_names_held` actually reads:
-
-```
-records: 617          (was 565 in CLAUDE.md, 564 in one place; re-measured 2026-09-06)
-records carrying tests_last_seen: 617
-distinct files named: 142
-```
-
-| File a task might add a test to | Records flagged |
-|---|---|
-| `src/presentation/accessibility/feedback.rs` | **1** |
-| `src/presentation/wx_settings.rs` | **1** |
-| `src/data/config.rs` | **2** |
-| `src/presentation/date_display.rs` | **3** |
-| `src/application/occurrences.rs` | **3** |
-| `src/presentation/accessibility/screen_reader.rs` | 3 |
-| `src/presentation/accessibility/names.rs` | 4 |
-| `src/presentation/accessibility.rs` | 7 |
-| `tests/house_style.rs` | **18** |
-| `src/presentation/wx_app.rs` | **40** |
-
-For contrast, the file CLAUDE.md warns about: `src/application/contacts_sync.rs` flags
-**77** records, not the 74 the figure has been quoted as. Phase 6 touches none of it.
-
-**The planning consequence.** Every file this phase naturally wants is cheap: 1, 1, 2, 3.
-The two expensive ones are `wx_app.rs` at 40 and `tests/house_style.rs` at 18. So:
-
-- put the per-event guard in `src/data/config.rs` beside its two siblings, at 2 records, not
-  in `tests/house_style.rs` at 18;
-- keep the reminder-typing fix out of `wx_app.rs`'s test module if a test can live in
-  `one_question_at_a_time.rs` instead, which it can, since `what_to_raise` already takes its
-  two conditions as arguments precisely so they can be tested without a window;
-- if the coverage document needs a guard, weigh 18 records against writing it as a unit test
-  beside a source module that reads the document.
-
-Note that `test_every_guard_record_says_how_many_tests_the_files_it_names_held` runs inside
-the commit gate, so `scripts/guards.sh --remeasure "..."` is on the critical path and cannot
-be deferred. At roughly a build and a full library run per record, 18 records is hours and 2
-is minutes.
-
-### Guard sweeps
-
-`scripts/guards.sh` unfiltered is 617 records now. CLAUDE.md prices 565 at about 15 hours
-with `WIXEN_TEST_THREADS` at 4, so 617 is about 16 hours by the same rate. Per the decision
-of 2026-09-03 this is one sweep once every phase is complete, not per merge, and the
-executor does not run guards.
-
-### Which checks each commit earns
-
-| A commit touching | `which-checks.sh` answers |
-|---|---|
-| only `*.md` / `*.txt`, on a branch or on `main` | `docs_only` |
-| any `.rs` on a branch | `affected` |
-| `.github/workflows/*.yml` on a branch | `affected`, and see the gap noted above |
-| `scripts/*.ps1` on a branch | `affected`, which selects no tests for it |
-| `Cargo.toml` or `Cargo.lock`, anywhere | `all` |
-| anything non-markdown on `main` | `all` |
-
-The phase 2.1 lesson applies: keep each plan's file list small and of one kind, because a
-commit mixing a document correction with three source modules makes every commit in that
-plan pay for all of them.
-
----
-
-## Environment availability
-
-No new external dependency is needed by any recommendation in this document.
-
-| Dependency | Required by | Present | Notes |
-|---|---|---|---|
-| `GetDateFormatEx` in `Kernel32.dll` | criterion 2 | Yes, Windows Vista and later | Same shape as the existing `GetLocaleInfoW` block at `date_display.rs:136` |
-| `chrono 0.4.45` | already a direct dependency | Yes | Used without `unstable-locales`, and this document recommends keeping it that way |
-| Axe.Windows CLI | criterion 3 | Downloaded per run from the latest GitHub release | Not pinned; see the reproducibility note |
-| NVDA | criterion 4 | Only on the GitHub-hosted runner | `nvda-tests/README.md` says why it must never run on a developer's machine |
-| A non-English Windows machine or locale | criterion 2 verification | **Not available to an executor** | `GetDateFormatEx` takes a locale name, so tests can force one; a real end-to-end check with a French Windows and a screen reader cannot be done here |
-
-**Package legitimacy audit: not applicable.** This phase as scoped adds no package to
-`Cargo.toml`. If option 3 for relative wording is chosen, the audit runs then, on whatever
-crate is proposed, and the choice is Pratik's.
 
 ---
 
@@ -994,35 +1474,33 @@ crate is proposed, and the choice is Pratik's.
 
 | Property | Value |
 |---|---|
-| Framework | `cargo test --all-targets`; `tokio-test` for async, `tempfile` for filesystem |
+| Framework | `cargo test --all-targets`; `tokio-test` for async, `tempfile` for the filesystem |
 | Config | none; unit tests in `#[cfg(test)] mod tests` beside the code, cross-layer in `tests/` |
 | Scoped run | `bash scripts/check.sh` |
 | Full suite | `bash scripts/check.sh all`, run by whoever merges |
-| Guard sweep | `scripts/guards.sh`, once per completed phase |
-| Env | `WIXEN_TEST_THREADS` defaults to 4 and applies to guard runs only; `WIXEN_NO_AUDIO` where a sound device opens and does not work, and it is not a way to skip the sound tests |
-
-Requirement to test map, with where each belongs and what it costs in guard records:
+| Guard sweep | `scripts/guards.sh`, once per completed phase, not per merge |
+| Env | `WIXEN_TEST_THREADS` defaults to 8 since 2026-09-09; `WIXEN_NO_AUDIO` where a sound device opens and does not work, and it is not a way to skip the sound tests |
 
 | Criterion | Behaviour | Type | Where | Records flagged |
 |---|---|---|---|---|
-| 1 | A per-event override round-trips through `to_stored`/`from_stored` | unit | `feedback.rs` | 1 |
-| 1 | Clearing an override returns the event to the default, not to silence | unit | `feedback.rs` | 1 |
-| 1 | The panel writes an override and reads it back, on the `config.rs:1829` four-assertion pattern | guard | `src/data/config.rs` | 2 |
-| 1 | The announced state is the effective state, not the chosen set | unit | `feedback.rs`, over `channels_for` | 1 |
-| A | A per-account Allow Changes answer written by the account manager is read by `allowed_for` | unit | `config.rs` | 2 |
-| A | The now-empty `STORED_AND_OFFERED_BY_NOTHING` guard still sees a planted violation, or is deleted | guard | `config.rs` | 2 |
-| B | A reminder due while somebody is typing is not raised, and is raised on the next tick after typing stops | unit | `one_question_at_a_time.rs`, no window needed | 0 |
-| 2 | `date_part` under a forced `en-US` produces today's English string; under `fr-FR` produces French | unit | `date_display.rs` | 3 |
+| 1 | `Event::ALL` holds every variant of `Event` | unit | `feedback.rs` | 1 |
+| 1 | A per-event override round trips through `to_stored` and `from_stored` | unit, **exists** (`:1078`) | `feedback.rs` | 1 |
+| 1 | Clearing an override returns the event to the default, not to silence | unit, **new method needed** | `feedback.rs` | 1 |
+| 1 | The chosen channels can be read back distinctly from the effective ones | unit, **new method needed** | `feedback.rs` | 1 |
+| 1 | The panel writes an override and reads it back, on the `config.rs:2220` four-assertion pattern | guard | `src/data/config.rs` | 4 |
+| 1 | Every checkbox on the settings screen carries its own label | integration | widen `tests/checkbox_labels.rs`, or record the gap | needs a new record |
+| A | A per-account Allow Changes answer written by the account manager is read by `allowed_for` | unit | `config.rs` | 4 |
+| A | `STORED_AND_OFFERED_BY_NOTHING` is emptied and its guard retired or given a companion | guard | `config.rs` | 4 |
+| B | A reminder due while somebody is typing is not raised, and is raised on the next tick after typing stops | unit, no window needed | `one_question_at_a_time.rs` | 1 |
+| 2 | `date_part` under a forced `en-US` produces the English string; under `fr-FR`, French | unit | `date_display.rs` | 3 |
 | 2 | A day-first verbal picture gets the genitive month in a language that has one | unit | `date_display.rs` | 3 |
-| 2 | No shipping site outside `date_display` formats a date with an English month or day name | guard | reads `src/`; weigh `tests/house_style.rs` at 18 against a unit test | 18 or fewer |
-| 3 | The coverage document names a criterion, and a planted wrong criterion is caught | guard | wherever, with a companion proving the reading works | varies |
-| 3 | The workflow's target list and `ScanTarget::ALL` still agree | unit, **exists already** | `scan_target.rs:180` | 0 |
+| 2 | No shipping site outside `date_display` formats a date with an English month or day name | guard | weigh `tests/house_style.rs` at 18 against a unit test | 18 or fewer |
+| 3 | The coverage document names a criterion, and a planted wrong criterion is caught | guard, needs a companion proving the reading works | to be decided | varies |
+| 3 | The workflow's target list and `ScanTarget::ALL` still agree | unit, **exists already** | `scan_target.rs` | 0 |
 
-**Wave 0 gaps:** none for framework. The gaps are two guard records, for
-`src/presentation/date_display.rs` beyond the three it has if a new guard is written for it,
-and for `src/presentation/accessibility/feedback.rs` if an integration guard is written in
-`tests/`. Anything written under `tests/` needs a `guards/guards.toml` record or the gate
-will not run it on the commits that could break it.
+**Wave 0 gaps:** no framework gap. The gaps are record-shaped. Anything written under
+`tests/` needs a `guards/guards.toml` record or the gate will not run it on the commits that
+could break it, and `scan_target.rs` has none today.
 
 ---
 
@@ -1032,16 +1510,172 @@ Small surface. This phase adds no network path, no parser and no new untrusted i
 
 | ASVS | Applies | Control here |
 |---|---|---|
-| V5 Input validation | Partly | `FeedbackSettings::from_stored` already ignores anything unrecognised, deliberately, so a settings file written by a newer version does not throw away the rest of somebody's settings (`feedback.rs:475-477`). A per-event UI must not tighten this into a refusal |
-| V5 Input validation | Yes | `GetDateFormatEx` writes into a caller-supplied buffer and returns a length. Call it once with `cchDate = 0` to size, then again, or use a fixed buffer and check the return. The existing `read_locale` uses a fixed `[u16; 8]` and returns the written count, so the pattern is established |
+| V5 Input validation | Partly | `FeedbackSettings::from_stored` deliberately ignores anything unrecognised, so a settings file written by a newer version does not throw away the rest of somebody's settings. `test_stored_settings_ignore_names_they_do_not_recognise` (`feedback.rs:1464`) holds it. **A per-event UI must not tighten this into a refusal.** |
+| V5 Input validation | Yes | `GetDateFormatEx` writes into a caller-supplied buffer and returns a length. Size with `cchDate = 0` first, or use a fixed buffer and check the return. `read_locale` already establishes the pattern |
 | V6 Cryptography | No | nothing here |
-| V1 Architecture | Yes | The scan workflow downloads and executes an unpinned third-party binary from a GitHub release on every push. That is a supply-chain surface as well as a reproducibility problem, and pinning fixes both at once |
+| V1 Architecture | Yes | The scan workflow downloads and executes an unpinned third-party binary from a GitHub release on every run. A supply-chain surface as well as a reproducibility problem, and pinning fixes both |
 
 | Pattern | STRIDE | Mitigation |
 |---|---|---|
 | Unpinned CLI fetched and run in CI | Tampering | Pin the release tag and record the version beside the coverage list |
-| A hand-edited `feedback_channels` string reaching `from_stored` | Tampering | Already handled: unknown events and channels are skipped, not fatal |
-| A locale name reaching `GetDateFormatEx` | Tampering | Never take one from a message or a file. Use `LOCALE_NAME_USER_DEFAULT` in shipping code and a literal in tests |
+| A hand edited `feedback_channels` string reaching `from_stored` | Tampering | Already handled: unknown events and channels are skipped, not fatal |
+| A locale name reaching `GetDateFormatEx` | Tampering | Never take one from a message or a file. `LOCALE_NAME_USER_DEFAULT` in shipping code, a literal in tests |
+
+**Package legitimacy audit: not applicable.** This phase as scoped adds no package to
+`Cargo.toml`. If plural rules are taken on for relative wording, the audit runs then, on
+whatever crate is proposed, and that choice is Pratik's.
+
+---
+
+## Environment availability
+
+No new external dependency is needed by any recommendation here.
+
+| Dependency | Required by | Present | Notes |
+|---|---|---|---|
+| `GetDateFormatEx` in `Kernel32.dll` | criterion 2 | Yes, Windows Vista and later | Same shape as the existing `GetLocaleInfoW` block |
+| `chrono` | already a direct dependency | Yes | Used without `unstable-locales`, and this document recommends keeping it that way |
+| Axe.Windows CLI | criterion 3 | Downloaded per run from the latest GitHub release | Not pinned; see the reproducibility note |
+| NVDA | criterion 4 | Only on the GitHub-hosted runner | `nvda-tests/README.md` says why it must never run on a developer's machine |
+| A non-English Windows machine or locale | criterion 2's real verification | **Not available to an executor** | `GetDateFormatEx` takes a locale name, so tests can force one; a real end-to-end check needs a French Windows and a French voice |
+
+---
+
+## What no plan in this phase can close
+
+Named precisely rather than glossed, per guardrail 9 and the pattern phases 3 and 4 set.
+Each of these belongs in the phase README's own such section and each should become a
+`unrun-verify` entry in `.planning/WINDOWS.md`, which held 301 entries, 280 of them open,
+208 of those `unrun-verify`, when read on 2026-09-12.
+
+1. **Whether the per-event panel is usable.** Whether a Choice of sixteen followed by four
+   checkboxes reads well; whether the reloaded checkbox states are announced or silently
+   change under the cursor; whether the effective-channels sentence is heard as helpful or as
+   noise. Reloading four checkbox states without moving focus is a live-region-shaped problem
+   and only a listening pass settles it.
+2. **Whether the effective-versus-chosen distinction is understood.** The sound-only fallback
+   means the panel must explain something subtle. No test can tell whether the explanation
+   lands.
+3. **Whether the new checkboxes are named on both channels in practice.** A test can prove a
+   label was set. Only Narrator proves UI Automation reads it and only NVDA proves MSAA does.
+4. **Whether localised dates sound right.** A French month name read by a French voice, in a
+   date whose order came from the same machine, is what FEEDBACK-02 exists for. It needs a
+   French Windows, a French NVDA voice and somebody who speaks French. Nothing here has one.
+5. **Whether the genitive really arrives.** Microsoft documents that it does. Nothing in this
+   project has ever called `GetDateFormatEx` on a Russian or Polish locale.
+6. **Whether the sixteen earcons are distinguishable.** Already disclosed in the product,
+   which asks for reports, still unmeasured, and a per-event panel makes it more likely
+   somebody switches sounds on for all sixteen.
+7. **The five WebView2 findings themselves.** Each has to be looked at and judged: ours, or
+   upstream with a named issue. The scan produces the artifact; the judgement is a person's.
+8. **The scoped manual list.** Criterion 4 asks for the list of interactions only a human
+   pass can walk. That is a judgement about what matters, not a derivation, and FEEDBACK-03
+   already says "No criterion here claims the manual pass has happened. Pratik decides when
+   screen reader testing runs."
+9. **Whether a reminder should wait.** Decision, not a task. See below.
+
+---
+
+## Decisions for Pratik
+
+These change what gets built and are not a planner's to settle. Each should sit at a
+`checkpoint:human-verify` rather than be guessed.
+
+1. **What relative wording does in a non-English locale.**
+
+   | Option | Cost | What it gives |
+   |---|---|---|
+   | Keep it English, reword `ENGLISH_ONLY` to say only that | Small. One constant, one settings label | Month and day names correct, an English phrase still inside a French sentence. Better than today, not the criterion as written |
+   | Fall back to the absolute date when the locale is not English | Small. `relative_to` returns `None`, which the caller already handles | Nothing ungrammatical is ever spoken. Loses the "is this recent" affordance the module's header says is the whole point of relative wording |
+   | Take on plural rules | Large. A new dependency or a hand-written rules table, and a `dependency-audit` conversation | The criterion as written |
+
+   This is a decision about what a date is for, not a technical one.
+
+2. **Whether the per-event panel reverses `build_feedback_tab`'s stated position or answers
+   it.** That comment argues a grid of forty checkboxes is not worth it, and it is right about
+   the grid. The Choice-plus-four-boxes shape answers the objection rather than overruling it.
+   A full sixty-four-checkbox grid is a different control and a different accessibility
+   problem, and if that is wanted it should be said now.
+
+3. **Whether a per-account Allow Changes control is three answers per account or one.**
+   `Allowed` has three fields and `allowed_for` can only narrow. Three is honest and is more
+   surface on the account manager. One toggle meaning "this account may change less than the
+   application default" is smaller and cannot express what the model can hold. The deferred
+   item was written when `Allowed` had fewer fields.
+
+4. **Whether a reminder waits for typing to stop.** The question has not moved: a reminder
+   that waits can be an hour late, and being told at the time is the point. Options are wait,
+   raise without focus, or hold briefly and raise anyway. The first is small and the code is
+   ready for it, because nothing is recorded until the window opens. The second is medium.
+
+5. **Whether to widen the scan's target list in this phase.** Eleven windows are scanned and
+   at least nine more dialogs exist, including the item form, the reminder alert and the one
+   the skipped NVDA test names. Widening makes the coverage list stronger, adds scan time and
+   probably adds findings. Leaving it means the coverage document must say which windows are
+   outside it, which is the honest minimum either way.
+
+6. **Whether to pin the Axe.Windows CLI version.** Pinning makes the coverage list a claim
+   about something reproducible and removes an unpinned binary from CI. Not pinning means the
+   list needs a version and a date beside it and will drift. Two lines either way. The rule
+   table demonstrably differs between two reads five days apart, which is the argument for
+   pinning.
+
+7. **Whether `REQUIREMENTS.md` is corrected in place.** FEEDBACK-02's evidence names one file
+   where there are four, FEEDBACK-03's "roughly half" is the figure this phase disproves, and
+   FEEDBACK-01's evidence calls a struct field a function. Phases 3 and 4 recorded such
+   corrections in each plan's `<premise_corrections>` and left the requirements as written.
+   Same again, or amend the document this time?
+
+8. **Whether the coverage list is a document or a check.** A document goes stale the way the
+   five findings did. A check that reads the list costs guard records and needs a companion
+   proving it can see a violation, because a list-reading guard with an empty list passes
+   unconditionally, which this repository has already fallen into twice.
+
+9. **How phase 6 and phase 7 share `src/data/config.rs`.** Both want `mod
+   every_setting_is_acted_on` and both want a new top-level field's arrival as their red half.
+   Options: sequence phase 6's settings work after 07-05 merges; agree a split now; or accept
+   a merge conflict in a 500-line test module. This is a scheduling decision and it is the
+   single largest risk to this phase.
+
+---
+
+## What the 2026-09-06 version of this file got wrong
+
+Listed so the correction does not have to be rediscovered, and because several of these
+would have become false premises in a plan.
+
+1. **The Axe.Windows rule breakdown.** It reported 144 rules and a breakdown of 81 / 28 / 19
+   / 14 / 13 which sums to 155, not 144. The correct figure today is 155 rules split
+   61 / 53 / 23 / 9 / 9. Its qualitative conclusion, three WCAG criteria and not half,
+   survives unchanged.
+2. **`wx_app.rs:1846`, an English date site that no longer exists.** Removed by `e94b4ae`
+   during phase 5.2. A plan scoped from that list would have sent an executor to a missing
+   line.
+3. **A new English date site it could not have known about.** `a_month_in_words` at
+   `date_display.rs:396`, called from `ui_types.rs:1205`.
+4. **`per_event` described as a function.** It is a struct field. So are `REQUIREMENTS.md`
+   and `CLAUDE.md` wrong about this. The practical consequence is that "make it public" is
+   not a coherent instruction.
+5. **"Two `pub` keywords and one settings panel."** There is no public reader of the chosen
+   channels at all, and no method that clears an override. Three methods, one of which does
+   not exist in any form.
+6. **`one_question_at_a_time` placed under `src/application/` and priced at 0 guard
+   records.** It is `src/presentation/one_question_at_a_time.rs` and carries 1.
+7. **Guard record counts for three files.** `config.rs` 2 to 4, `wx_settings.rs` 1 to 3,
+   `wx_app.rs` 40 to 48.
+8. **Ten scan targets and nine dialogs.** Eleven and ten now, `blocked-senders` added.
+9. **WCAG Level A and AA totalling 56.** It flagged this as needing re-derivation and it was
+   right to: the answer is 55, because 4.1.1 Parsing is obsolete and removed in WCAG 2.2.
+10. **WCAG2ICT described as determining what does not apply.** It explicitly says it does not.
+    It records what Section 508 and EN 301 549 decided, and those two lists differ from each
+    other.
+11. **Assumption A7, the NVDA suite's size.** Settled: three tests that run and one
+    `test.skip` with a documented reason.
+12. Every line number it gave for `config.rs`, `wx_settings.rs`, `wx_app.rs` and
+    `house_style.rs`. All moved, several by hundreds of lines.
+
+Nothing in that document was carelessly written. Most of these are the tree moving under a
+document that dated itself honestly, which is exactly what it warned would happen.
 
 ---
 
@@ -1051,110 +1685,85 @@ Small surface. This phase adds no network path, no parser and no new untrusted i
 |---|---|---|
 | A1 | GitHub's `windows-latest` runner has NLS data for arbitrary locale names such as `fr-FR`, so a test can force one without a language pack | The cross-locale tests in criterion 2 cannot run in CI and become manual. Settle with a throwaway run before planning tasks around it |
 | A2 | `GetDateFormatEx` with a picture of `d MMMM yyyy` really returns the genitive month on a Russian locale | The genitive argument, which is the main reason for choosing the API over a table. Microsoft documents it explicitly; nothing here has run it |
-| A3 | The A/AA success criterion split is 32 and 24, giving 56 | The headline figure in the coverage document. Re-derive by counting the WCAG 2.2 quick reference before writing it down; this is exactly the kind of number PERF-06 exists about |
-| A4 | Axe.Windows' `RulesDescription.md` is generated from the shipping rule set, so the three-criteria figure describes what actually runs | The whole of criterion 3's headline. The file is auto-generated by the `RulesMD` project in the same repository, which is corroboration rather than proof |
-| A5 | Re-running the scan today produces a comparable set of WebView2 findings rather than a different set | Criterion 4's "the five findings". The scan now covers ten windows on two channels, so the count will almost certainly change; the plan should expect to *replace* the number rather than confirm it |
-| A6 | The four `[Channel; 4]` boxes plus a Choice is announced coherently by NVDA when the Choice changes and the four boxes reload underneath it | Criterion 1's usability, not its correctness. Reloading four checkbox states without moving focus is a live-region-shaped problem and only a listening pass settles it |
-| A7 | `which-days-focus-and-tick.test.js` contains a test | Only the NVDA suite's stated size. Confirm by reading the file before the coverage document quotes a number |
+| A3 | `Chrome_WidgetWin_1` and `BrowserRootView` are Chromium-owned and unreachable from this code | Two of the five findings' dispositions. Corroborated by the changelog line's own claim; confirm against the artifact |
+| A4 | Axe.Windows' `RulesDescription.md` is generated from the shipping rule set, so the three-criteria figure describes what actually runs | The whole of criterion 3's headline. The file is auto-generated in the same repository, which is corroboration rather than proof |
+| A5 | Re-running the scan today produces a comparable set of WebView2 findings rather than a different set | Criterion 4's "the five findings". The scan now covers eleven windows on two channels, so expect to *replace* the number rather than confirm it |
+| A6 | The four checkboxes plus a Choice are announced coherently by NVDA when the Choice changes and the boxes reload underneath it | Criterion 1's usability, not its correctness. Only a listening pass settles it |
+| A7 | `chrono`'s `unstable-locales` is still unstable and still sources from `pure-rust-locales` | The argument against it. Carried forward from 2026-09-06 and not re-fetched. Nothing in the recommendation depends on it, since the recommendation is a Win32 call |
+| A8 | `workflow.windows_enforce` is off, since it is absent from `.planning/config.json` | Whether `/gsd-ship` blocks on 280 open ledger entries. The key is genuinely absent; the default was not checked |
 
 ---
 
-## What only a person can answer
+## Sources
 
-Naming these precisely rather than glossing them, per guardrail 9 and per the pattern
-phases 3 and 4 set.
+### Primary, HIGH confidence, read from the tree this session at `febe8e4`
 
-1. **Whether the per-event panel is usable.** Whether a Choice of sixteen followed by four
-   checkboxes reads well; whether the reloaded checkbox states are announced or silently
-   change under the cursor; whether the effective-channels sentence is heard as helpful or as
-   noise. Expect this to close as an `unrun-verify` ledger entry.
-2. **Whether the effective-versus-chosen distinction is understood.** The sound-only fallback
-   means the panel must explain something subtle. No test can tell whether the explanation
-   lands.
-3. **Whether localised dates sound right.** A French month name read by a French voice, in a
-   date whose order came from the same machine, is the thing FEEDBACK-02 exists for, and it
-   needs a French Windows, a French NVDA voice and somebody who speaks French.
-4. **Whether the sixteen earcons are distinguishable.** Already disclosed in the product
-   (`wx_settings.rs:1887-1893` says so and asks for reports), still unmeasured, and a
-   per-event panel makes it more likely somebody switches sounds on for all sixteen.
-5. **The five WebView2 findings.** Each has to be looked at in Accessibility Insights and
-   decided: ours, or upstream with a named issue. The scan produces the artifact; the
-   judgement is a person's.
-6. **The scoped manual list itself.** Criterion 4 asks for the list of interactions only a
-   human pass can walk. That list is a judgement about what matters, not a derivation, and
-   the requirement already says "No criterion here claims the manual pass has happened.
-   Pratik decides when screen reader testing runs."
+`src/presentation/accessibility/feedback.rs`, `src/presentation/accessibility.rs`,
+`src/presentation/accessibility/screen_reader.rs`, `src/presentation/accessibility/names.rs`,
+`src/presentation/accessibility/sound_scheme.rs`, `src/data/config.rs`,
+`src/presentation/wx_settings.rs`, `src/presentation/wx_app.rs`,
+`src/presentation/wx_compose.rs`, `src/presentation/date_display.rs`,
+`src/presentation/one_question_at_a_time.rs`, `src/presentation/scan_target.rs`,
+`src/application/occurrences.rs`, `tests/checkbox_labels.rs`,
+`tests/the_conflict_choice_can_be_heard.rs`, `tests/house_style.rs`,
+`scripts/msaa-names.ps1`, `scripts/check.sh`, `scripts/which-checks.sh`,
+`.github/workflows/accessibility.yml`, `nvda-tests/tests/`, `guards/guards.toml`,
+`.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md`, `.planning/WINDOWS.md`,
+`.planning/config.json`, `.planning/decisions-2026-09-06.md`,
+`.planning/phases/01-folders-and-conversations/deferred-items.md`,
+`.planning/phases/07-installing-updating-and-what-is-stored/*.md`, `CLAUDE.md`.
 
----
+### Primary, HIGH confidence, fetched and parsed with a script this session
 
-## Two corrections to documents this phase should carry
+- `https://raw.githubusercontent.com/microsoft/axe-windows/main/docs/RulesDescription.md`,
+  fetched 2026-09-12, counted with the awk above: 155 rules, five standards, three WCAG.
+- `https://www.w3.org/TR/WCAG22/`, fetched 2026-09-12, parsed: 87 success criterion
+  sections, A=31, AA=24, AAA=31, 4.1.1 obsolete and carrying no level.
+- `https://www.w3.org/TR/wcag2ict-22/`, fetched 2026-09-12, quotations extracted verbatim.
+  W3C Group Note, 11 December 2025.
+- `https://learn.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-getdateformatex`,
+  fetched 2026-09-12, quotations extracted verbatim.
 
-Both were found by checking claims rather than by looking for them.
+### Secondary, MEDIUM confidence
 
-1. **`CLAUDE.md`'s account of why the two unreachable settings got past the check is wrong
-   about one of them.** It says both are nested. `allowed_per_account` is a top-level field
-   held by a named exception list at `config.rs:1799`, and the per-event overrides are inside
-   a serialised string, which is a third shape. The consequence is practical: widening the
-   check to follow nesting (ledger 114) would not catch the per-event case, so a plan that
-   reads CLAUDE.md and reaches for ledger 114 as the remedy would do the wrong work.
-2. **`guards/guards.toml` holds 617 records, not 565.** CLAUDE.md quotes 565 in one place and
-   564 in another. Phase 8 is the phase for replacing estimates with measurements, but a
-   record count quoted to a planner is a cost estimate, so it is worth correcting when it is
-   noticed.
+- `https://learn.microsoft.com/en-us/windows/win32/intl/locale-smonthname-constants`, the
+  genitive note. Quoted from the 2026-09-06 read and consistent with the `GetDateFormatEx`
+  page fetched today.
+- `https://github.com/MicrosoftEdge/WebView2Feedback` and issue 2330, found by search and
+  confirmed as Microsoft's own feedback repository from its README description.
 
----
+### Tertiary, LOW confidence
 
-## Decisions for Pratik
-
-These change what gets built and are not mine to settle.
-
-1. **What relative wording does in a non-English locale.** Three options above: keep it
-   English and narrow the `ENGLISH_ONLY` notice; fall back to the absolute date so nothing
-   ungrammatical is ever spoken; or take on plural rules. The first is smallest and admits
-   the gap. The second is nearly as small and means the application never says something
-   grammatically wrong, at the cost of the recency affordance the module was built for. The
-   third is a dependency conversation disproportionate to this phase. My reading is the
-   second, but it is a decision about what a date is for.
-
-2. **Whether the per-event panel reverses `build_feedback_tab`'s stated position or answers
-   it.** That comment argues a grid of forty checkboxes is not worth it, and it is right
-   about the grid. The Choice-plus-four-boxes shape answers the objection. If you would
-   rather have the full grid, say so, because it is a different control and a different
-   accessibility problem.
-
-3. **Whether a per-account Allow Changes control is three checkboxes per account or one.**
-   `Allowed` has three fields and `allowed_for` can only narrow. Three checkboxes is honest
-   and is more surface on the account manager; one "this account may change less than the
-   application default" toggle is smaller and cannot express what the model can hold. The
-   deferred item was written when `Allowed` had fewer fields.
-
-4. **Whether a reminder waits for typing to stop.** The deferred item states the question
-   well and it has not moved: a reminder that waits can be an hour late, and being told at
-   the time is the point. Options are wait, raise without focus, or hold briefly and then
-   raise anyway. The first is small and the code is ready for it; the second is medium.
-
-5. **Whether to widen the scan's target list in this phase.** Nine dialogs are scanned and at
-   least nine more exist, including the item form and the reminder alert. Widening makes the
-   coverage list stronger and adds scan time and probably findings. Leaving it means the
-   coverage document has to say which windows are outside it, which is the honest minimum.
-
-6. **Whether to pin the Axe.Windows CLI version.** Pinning makes the coverage list a claim
-   about something reproducible and removes an unpinned binary from CI. Not pinning means the
-   list needs a version and a date beside it and will drift. Two lines either way.
-
-7. **Whether `REQUIREMENTS.md` is corrected in place.** FEEDBACK-02's evidence names one file
-   where there are four, and FEEDBACK-03's "roughly half" is the figure this phase disproves.
-   Phases 3 and 4 recorded corrections in each plan's `<premise_corrections>` and left the
-   requirements as written. Same again, or amend the document this time?
-
-8. **Whether the coverage list is a document or a check.** A document goes stale the way the
-   five findings did. A check that reads the list and asserts something about it costs guard
-   records and needs a companion proving it can see a violation, because a list-reading guard
-   with an empty list passes unconditionally, which is a trap this repository has already
-   fallen into twice.
+- The `chrono` `unstable-locales` argument, carried forward and not re-fetched.
 
 ---
 
-*Research written 2026-09-06, from a read of the working tree at commit `2face17`. Nothing
-in the repository was written, edited or built during it. Every in-repo claim above carries
-the command that produced it; every external claim carries its URL.*
+## Metadata
+
+**Confidence breakdown:**
+
+- Criterion 1, the model and the events: HIGH. Every claim re-derived from source this
+  session with the command recorded.
+- Criterion 1, the panel's shape: MEDIUM. The recommendation is sound and the usability is a
+  listening pass, which is why it is in "What no plan can close".
+- The two inherited items: HIGH on mechanism, and item B's answer is a decision rather than a
+  finding.
+- Criterion 2: HIGH on the site census and on the API, MEDIUM on the genitive behaviour,
+  which is documented and unrun.
+- Criterion 3: HIGH on the counts, because each was produced by a script whose parts sum to
+  its whole. MEDIUM on whether the rule table describes the shipping rule set.
+- Criterion 4: LOW on the findings themselves, which cannot be read from anything. HIGH on
+  the upstream to name.
+- The phase 7 collision: HIGH. Derived from phase 7's own plan files.
+- Cost facts: HIGH, all re-taken at `febe8e4` on 2026-09-12, except the sweep duration, which
+  is deliberately not quoted.
+
+**Research date:** 2026-09-12
+**Read against:** `febe8e4`, version `0.112.0`, 720 guard records, `.planning/WINDOWS.md` at
+entry 301.
+**Valid until:** the earlier of phase 7's plans 07-04, 07-05 and 07-09 merging, which will
+move every `config.rs` and `wx_settings.rs` line number here, or 14 days. The parts that do
+not depend on those files, which are criterion 2 and criteria 3 and 4, hold longer.
+
+*Nothing in the repository was written, edited or built during this research except this
+file. Every in-repo claim above carries the command that produced it and the date it ran.*
