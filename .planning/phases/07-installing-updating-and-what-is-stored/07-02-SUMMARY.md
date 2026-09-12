@@ -151,8 +151,14 @@ found by getting it wrong first.
 5. **Ledger** `ff47498` (docs)
 6. **This summary, STATE.md and ROADMAP.md** (docs)
 
-**Merge:** added by the follow-up commit on `main`, from branch
-`an-installer-change-earns-the-gate-and-the-shortcuts-name-a-shipped-icon`.
+**Merge:** `2d6ffeb` on `main`, from branch
+`an-installer-change-earns-the-gate-and-the-shortcuts-name-a-shipped-icon`. The
+hash is written here by the follow-up commit, since a summary committed before
+its own merge cannot name it.
+
+`scripts/check.sh all` on the branch tip, not piped and redirected to a file,
+took **419 seconds** and passed all four. The merge itself then earned the full
+gate again through the hook, because `main` cannot defer it, and passed.
 
 ## What was red, and what was not
 

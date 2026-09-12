@@ -4,10 +4,10 @@ current_phase: 7
 current_phase_name: Installing, updating and what is stored
 current_plan: 3
 status: executing
-stopped_at: 07-02 merged at PENDING. An installer script now earns the full gate, and both shortcuts and the Apps and Features entry name an icon the installer really put there. Nobody has installed anything or looked at a shortcut
+stopped_at: 07-02 merged at 2d6ffeb. An installer script now earns the full gate, and both shortcuts and the Apps and Features entry name an icon the installer really put there. Nobody has installed anything or looked at a shortcut
 last_updated: "2026-09-12T08:00:00.000Z"
 last_activity: 2026-09-12
-state_head: PENDING
+state_head: 2d6ffeb
 progress:
   total_phases: 13
   completed_phases: 0
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 ## Current Position
 
 Phase: 07 (Installing, updating and what is stored). **07-02 is merged at
-`PENDING`, version 0.113.3. Two plans of nine are done and seven remain. Phase
+`2d6ffeb`, version 0.113.3. Two plans of nine are done and seven remain. Phase
 05.2's checkpoint is still open and nothing in it has been answered.**
 
 **A commit that changes the installer script now runs the tests that read it.**
