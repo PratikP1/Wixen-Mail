@@ -4,10 +4,10 @@ current_phase: 7
 current_phase_name: Installing, updating and what is stored
 current_plan: 5
 status: executing
-stopped_at: 07-04 merged at MERGE_HASH_07_04. Two version strings can be put in order, including the prerelease cases, and a channel decides whether the newer one is an offer. ReleaseChannel is derived and never stored. A published tag carries a v, which nothing in the plan said and which no tag exists to confirm. Nothing outside the tests calls any of it
+stopped_at: 07-04 merged at 441fca5. Two version strings can be put in order, including the prerelease cases, and a channel decides whether the newer one is an offer. ReleaseChannel is derived and never stored. A published tag carries a v, which nothing in the plan said and which no tag exists to confirm. Nothing outside the tests calls any of it
 last_updated: "2026-09-12T11:55:00.000Z"
 last_activity: 2026-09-12
-state_head: MERGE_HASH_07_04
+state_head: 441fca5
 progress:
   total_phases: 13
   completed_phases: 0
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 ## Current Position
 
 Phase: 07 (Installing, updating and what is stored). **07-04 is merged at
-`MERGE_HASH_07_04`, version 0.115.0. Four plans of nine are done and five
+`441fca5`, version 0.115.0. Four plans of nine are done and five
 remain. Phase 05.2's checkpoint is still open and nothing in it has been
 answered.**
 
@@ -909,7 +909,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05.1 P04 | 1h 35m | 3 tasks | 9 files |
 | Phase 05.1 P06 | 155min | 3 tasks | 21 files |
 | Phase 05.2 P02 | 155min | 4 tasks | 11 files |
-| Phase 07 P04 | 97min | 2 tasks | 4 files |
+| Phase 07 P04 | 80min | 2 tasks | 4 files |
 
 ## Accumulated Context
 

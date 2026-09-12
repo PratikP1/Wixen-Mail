@@ -134,7 +134,7 @@ coverage:
     human_judgment: true
     rationale: "Nothing outside the tests calls the ordering, the channel, the setting type or the offer decision. That is the whole shape of this plan and 07-05 is what closes it. WINDOWS.md 313."
 
-duration: 97min
+duration: 80min
 completed: 2026-09-12
 status: complete
 ---
@@ -145,9 +145,9 @@ status: complete
 
 ## Performance
 
-- **Duration:** 97 min
+- **Duration:** 80 min
 - **Started:** 2026-09-12T06:41:06-04:00 (first commit)
-- **Completed:** 2026-09-12T08:18:00-04:00 (merge)
+- **Completed:** 2026-09-12T08:01:17-04:00 (merge)
 - **Tasks:** 2
 - **Files modified:** 4, of which none is new
 
@@ -182,7 +182,7 @@ estimate.
 5. **Ledger** `265a2944` (docs)
 6. **This summary, STATE.md and ROADMAP.md** (docs)
 
-**Merge:** `MERGE_HASH_07_04` on `main`, from branch
+**Merge:** `441fca5` on `main`, from branch
 `two-versions-can-be-put-in-order-and-a-channel-decides-what-is-an-offer`. The
 hash is written here by the follow-up commit, since a summary committed before
 its own merge cannot name it.
