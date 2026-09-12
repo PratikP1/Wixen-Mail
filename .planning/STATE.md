@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: 07-04 merged at 441fca5. Two version strings can be put in order, including the prerelease cases, and a channel decides whether the newer one is an offer. ReleaseChannel is derived and never stored. A published tag carries a v, which nothing in the plan said and which no tag exists to confirm. Nothing outside the tests calls any of it
-last_updated: "2026-09-12T11:55:00.000Z"
+stopped_at: 07-05 merged. A Help menu item asks GitHub whether there is a newer version and the answer is said in words, on the channel one setting picks. That setting has three values, sits under a new New versions heading on the General tab and starts on not looking, so nothing is fetched until somebody chooses. Five answers, and a rate limit is 403 or 429 told apart from the other 403 by x-ratelimit-remaining. Nothing downloads and nothing runs, which is 07-09's. 07-04's code is now reached by a path a person can take. docs/privacy.md stops promising there is no update check and gains the TEMP log fallback and the OneNote permission nothing uses
+last_updated: "2026-09-12T14:55:00.000Z"
 last_activity: 2026-09-12
 state_head: 441fca5
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 84
+  completed_plans: 85
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,23 +29,47 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-04 is merged at
-`441fca5`, version 0.115.0. Four plans of nine are done and five
-remain. Phase 05.2's checkpoint is still open and nothing in it has been
-answered.**
+Phase: 07 (Installing, updating and what is stored). **07-05 is merged, version
+0.116.0. Five plans of nine are done and four remain. Phase 05.2's checkpoint
+is still open and nothing in it has been answered.**
 
-**Two version strings can be put in order, and a channel decides whether the
-newer one is an offer.** Three numbers, then the prerelease staging them, then
-its counter compared as a number. A build identifier after a plus plays no
-part, so two builds of one version stay one version. The answer names four
-outcomes rather than returning a bool, and one of the four is that the string
-could not be read, because reading that as "older" would tell everybody there
-is a new version whenever a server returned something unexpected.
+**Somebody can ask whether there is a newer version and be told in words.**
+Help, then Check for Updates, asks GitHub on the channel the setting picks,
+compares the tag with this build by 07-04's ordering, writes the answer to the
+status bar and says it at high priority on the command topic. When there is a
+newer version a dialog offers to open the page about it. **Nothing is
+downloaded and nothing is run**: that is 07-09's, after signing lands in 07-08.
 
-**Nothing offers anybody anything yet, and criterion 2 does not close.**
-Nothing here asks anything, stores anything or draws anything, and nothing
-outside the tests calls any of it. That is `WINDOWS.md` 313 and it is 07-05's
-to close.
+**One setting, three answers, starting on not looking.**
+`AppConfig::which_updates`, a top-level field holding 07-04's `WhichUpdates`,
+offered as a combo box under a new "New versions" heading on the General tab.
+It is not called `check_updates`, and the loader question is answered: this
+file is read with one `serde_json::from_str` and the error is propagated, so a
+stale value of the wrong type fails the whole file and takes **every** setting
+on that machine back to its default, not just this one.
+
+**Five answers, and none of them claims something the check did not learn.**
+There is a newer one, this is the newest, nothing is published yet, the answer
+could not be fetched, and the answer could not be read. A rate limit is 403
+**or** 429 and is told from the other 403 by `x-ratelimit-remaining` rather
+than by the status, which was measured on a real socket as well as read.
+
+**Nothing published arrives in two shapes and the plan knew only one.**
+`releases/latest` answers 404; `releases` answers 200 with an empty array. A
+reading that knew only the 404 would have told everybody on the development
+channel that they were up to date, for a repository with nothing in it, which
+is the only state this repository is in.
+
+**07-04's code is now reached by a path a person can take**, which closes
+`WINDOWS.md` 313. Criterion 2 still does not close: applying is 07-09's and the
+verification 07-07 adds is not here.
+
+**`docs/privacy.md` no longer promises there is no update check.** It says what
+the check sends, what GitHub keeps, quoting GitHub's own sentence about the
+originating address, and that sixty unauthenticated requests an hour come from
+one address. Two gaps that were already there closed with it: the log can land
+in `%TEMP%` when the data folder cannot be resolved, and a Microsoft sign-in
+asks for `Notes.ReadWrite` that nothing uses.
 
 **`ReleaseChannel` is derived and never stored, and the plan said both.** Its
 own premise said the setting holds the three-valued answer and the channel is
@@ -141,11 +165,12 @@ script as text, which is all anything here can do, and its own doc comment says
 so: nothing compiles it with ISCC, installs anything or looks at a shortcut.
 That is `WINDOWS.md` 306.
 
-Version `0.115.0`, `guards/guards.toml` holds 727 records with the census
-reading 192 and 535, `.planning/WINDOWS.md` reaches 314 with 293 open, and
-nothing is pushed.
+Version `0.116.0`, `guards/guards.toml` holds 729 records with the census
+reading 192 and 537, `.planning/WINDOWS.md` reaches 322 with 300 open, and
+nothing is pushed. `scripts/check.sh all` passed all four on 07-05's branch tip
+in 471 seconds over 7,077 tests.
 
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 9
 
 ---
@@ -1131,8 +1156,10 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-12T00:37:11.856Z
-Stopped at: 05.2-02 merged at 93a3f56. The OneNote client exists and nothing calls it; 05.2-03 is next
+Last session: 2026-09-12T14:55:00Z
+Stopped at: 07-05 merged. A Help menu item asks GitHub whether there is a newer version and the answer is said; one setting on the General tab decides whether it ever asks on its own, starting on not looking. Nothing downloads and nothing runs, which is 07-09's. Ledger 315 to 322, and 313 closed. Owed after the merge: nothing. The ten records reading the outward census were re-measured during the branch and none moved
+
+Earlier: 05.2-02 merged at 93a3f56. The OneNote client exists and nothing calls it; 05.2-03 is next
 
 Earlier: Completed 04.2-05-PLAN.md
 
