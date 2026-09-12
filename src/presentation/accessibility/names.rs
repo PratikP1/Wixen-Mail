@@ -56,8 +56,27 @@ use wxdragon::prelude::WxWidget;
 
 /// Whether a name set here reaches the accessibility tree on this build.
 ///
-/// The red half of 07-03: a hardcoded `false`, which is wrong on Windows. The
-/// commit that follows this one splits it by platform.
+/// **A statement about wxWidgets, not about this code.** The module header
+/// above records the measurement: `wxAccessible` is implemented against
+/// Microsoft Active Accessibility and has no GTK or macOS counterpart, so
+/// `set_accessible` is accepted everywhere and does something in one place.
+/// That is why this is two arms here rather than two modules the way
+/// [`super::screen_reader`] has them: there is no per-platform code in this file
+/// to put in a module, only a fact about what the toolkit underneath does.
+///
+/// A port is a third arm, written beside the bridge that earns it:
+/// `setAccessibilityLabel:` on the NSView for macOS, an ATK name for GTK, as
+/// the header says. Read by [`super::platform_bridge`], which turns it into the
+/// sentence somebody meets.
+#[cfg(target_os = "windows")]
+pub const A_NAME_REACHES_THE_ACCESSIBILITY_TREE: bool = true;
+
+/// Whether a name set here reaches the accessibility tree on this build.
+///
+/// See the Windows arm above for why this is a fact about wxWidgets. Here the
+/// calls in this module are accepted and have no effect, so every control with
+/// no visible label beside it reaches the accessibility tree with no name.
+#[cfg(not(target_os = "windows"))]
 pub const A_NAME_REACHES_THE_ACCESSIBILITY_TREE: bool = false;
 
 /// Supplies one fixed name, and optionally a description, for a control,

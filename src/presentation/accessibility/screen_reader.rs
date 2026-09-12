@@ -33,10 +33,15 @@ pub enum Urgency {
 
 /// Whether an announcement made here reaches a screen reader on this build.
 ///
-/// The red half of 07-03: a hardcoded `false`, which is wrong on Windows. The
-/// commit that follows this one takes it from whichever `native` module
-/// compiled.
-pub const ANNOUNCEMENTS_REACH_A_SCREEN_READER: bool = false;
+/// Supplied by whichever `native` module compiled, so it is an answer about
+/// what is in this build rather than a comparison against a platform name.
+/// Writing a real bridge for a third platform is a third `native` module
+/// carrying `true` and the calls that earn it, and this answer follows without
+/// anybody remembering to change it.
+///
+/// Read by [`super::platform_bridge`], which turns it into the sentence
+/// somebody meets.
+pub const ANNOUNCEMENTS_REACH_A_SCREEN_READER: bool = native::ANNOUNCEMENTS_REACH_A_SCREEN_READER;
 
 // ── Windows native helpers ──────────────────────────────────────────────────
 
@@ -45,6 +50,10 @@ mod native {
     use std::ffi::OsStr;
     use std::os::raw::c_void;
     use std::os::windows::ffi::OsStrExt;
+
+    /// An announcement made here really is spoken and brailled, because the
+    /// calls below exist on this platform and do what they say.
+    pub const ANNOUNCEMENTS_REACH_A_SCREEN_READER: bool = true;
 
     // Win32 constants.
     const EVENT_OBJECT_NAMECHANGE: u32 = 0x800C;
@@ -324,6 +333,56 @@ mod native {
     }
 }
 
+// ── Everywhere else, where there is no bridge ───────────────────────────────
+
+/// The same names the Windows module has, answering that nothing happens.
+///
+/// This exists so [`ScreenReaderBridge::deliver`] has one shape rather than
+/// two. It used to carry a `#[cfg(not(target_os = "windows"))]` arm whose whole
+/// body was discarding its arguments, which is a second version of the same
+/// function that nothing on this machine ever compiles and nothing here can
+/// test.
+///
+/// A port is a third module like this one, carrying the platform's own calls
+/// and `true`, not a change anywhere else in this file:
+/// [`ANNOUNCEMENTS_REACH_A_SCREEN_READER`] and everything that reads it follow
+/// from whichever module compiled.
+#[cfg(not(target_os = "windows"))]
+mod native {
+    /// Nothing announced here is spoken or sent to a braille display.
+    ///
+    /// `UiaRaiseNotificationEvent` is a Windows UI Automation call with no
+    /// counterpart on GTK or macOS, so there is nothing for the calls below to
+    /// do.
+    pub const ANNOUNCEMENTS_REACH_A_SCREEN_READER: bool = false;
+
+    /// How hard a screen reader should hold on to an announcement.
+    ///
+    /// Carried so the decision in `notification_processing` stays one piece of
+    /// code on every platform. Nothing reads the answer here.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Processing {
+        ImportantAll,
+        ImportantMostRecent,
+        All,
+        MostRecent,
+    }
+
+    /// No live region, so nothing is carried and the caller should try the next
+    /// thing.
+    pub fn announce_via_live_region(_handle: isize, _text: &str) -> bool {
+        false
+    }
+
+    /// No notification API, so nothing goes out.
+    pub fn raise_notification(_text: &str, _processing: Processing, _activity: &str) -> bool {
+        false
+    }
+
+    /// No window event to raise.
+    pub fn notify_name_change() {}
+}
+
 // ── Working out how to say it ────────────────────────────────────────────────
 
 /// Where an announcement can go at the moment it is made.
@@ -377,7 +436,6 @@ const MAX_HELD: usize = 8;
 /// of one another, so only a line that has one may replace its own earlier
 /// value. Without a topic there is nothing to group by, and asking for the most
 /// recent only would let any two unrelated lines silence each other.
-#[cfg(target_os = "windows")]
 fn notification_processing(urgency: Urgency, topic: &str) -> native::Processing {
     match (urgency, topic.is_empty()) {
         (Urgency::Urgent, _) => native::Processing::ImportantAll,
@@ -427,20 +485,10 @@ fn handed_over_together(waiting: &[Held]) -> Option<Held> {
 
 // ── Public bridge ───────────────────────────────────────────────────────────
 
-/// Native bridge status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeBridgeStatus {
-    /// Windows bridge active.
-    Active,
-    /// Non-Windows fallback mode.
-    Fallback,
-}
-
 /// Bridge to Windows UI Automation for screen readers
 pub struct ScreenReaderBridge {
     last_announcement: Mutex<Option<String>>,
     event_log: Mutex<Vec<AutomationEvent>>,
-    status: NativeBridgeStatus,
     /// Native handle of the control used to carry announcements, or zero.
     live_region: AtomicIsize,
     /// Whether a window has been offered at all, which zero cannot say.
@@ -542,33 +590,29 @@ impl ScreenReaderBridge {
             return self.hold(text, urgency, topic);
         }
 
-        #[cfg(target_os = "windows")]
+        // One shape on every platform. Where there is no bridge, each of these
+        // three calls is the fallback module's own no-op, so this reads the
+        // same whichever module compiled.
+        //
+        // The live region is the path that works on Windows. The notification
+        // call reports success and is never delivered, so it is only tried when
+        // there is no live region to use.
+        if let Carrier::LiveRegion(hwnd) = carrier
+            && native::announce_via_live_region(hwnd, text)
         {
-            // The live region is the path that works here. The notification
-            // call reports success and is never delivered, so it is only tried
-            // when there is no live region to use.
-            if let Carrier::LiveRegion(hwnd) = carrier
-                && native::announce_via_live_region(hwnd, text)
-            {
-                tracing::debug!(
-                    "Announced through the live region: {} characters",
-                    text.len()
-                );
-                return Ok(());
-            }
-
-            let processing = notification_processing(urgency, topic);
-            if !native::raise_notification(text, processing, topic) {
-                // No assistive technology listening, or a Windows build without
-                // the notification API. The fallback cannot carry our text, so
-                // it is only worth firing at all for the latter.
-                native::notify_name_change();
-            }
+            tracing::debug!(
+                "Announced through the live region: {} characters",
+                text.len()
+            );
+            return Ok(());
         }
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (urgency, topic);
+        let processing = notification_processing(urgency, topic);
+        if !native::raise_notification(text, processing, topic) {
+            // No assistive technology listening, or a Windows build without
+            // the notification API. The fallback cannot carry our text, so
+            // it is only worth firing at all for the latter.
+            native::notify_name_change();
         }
 
         Ok(())
@@ -639,11 +683,6 @@ impl ScreenReaderBridge {
         Ok(log.clone())
     }
 
-    /// Return bridge status.
-    pub fn status(&self) -> NativeBridgeStatus {
-        self.status
-    }
-
     /// Return last announced text (for diagnostics/testing)
     pub fn last_announcement(&self) -> Result<Option<String>> {
         let last = self
@@ -659,11 +698,6 @@ impl Default for ScreenReaderBridge {
         Self {
             last_announcement: Mutex::new(None),
             event_log: Mutex::new(Vec::new()),
-            status: if cfg!(target_os = "windows") {
-                NativeBridgeStatus::Active
-            } else {
-                NativeBridgeStatus::Fallback
-            },
             live_region: AtomicIsize::new(0),
             registered: AtomicBool::new(false),
             held: Mutex::new(Vec::new()),

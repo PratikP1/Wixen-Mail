@@ -39,39 +39,33 @@
 
 use super::{names, screen_reader};
 
-// The four sentences below are `pub` for the red half only, and the commit that
-// fills in `what_is_missing` narrows them back. A private constant with no
-// caller is dead code under `-D warnings`, so the visibility the unused item
-// lint does not police is the one a test-first commit can carry. Nothing
-// outside this module ever reads them.
-
 /// The opening line, which says whose problem this is and how large.
 ///
 /// It says what does not work. It does not say the program is inaccessible,
 /// which overstates it, and it does not promise a port, which nothing here
 /// delivers.
-pub const SOME_OF_IT_DOES_NOT_WORK: &str =
+const SOME_OF_IT_DOES_NOT_WORK: &str =
     "Some of what Wixen Mail tells a screen reader does not\nwork in this build.";
 
 /// The announcement half of the bridge.
 ///
 /// Wording taken from what [`super::screen_reader`]'s header already records
 /// about the call and about braille, rather than written fresh.
-pub const NOTHING_IT_ANNOUNCES_IS_SPOKEN: &str = "Wixen Mail announces what it is doing through a Windows\ncall that has no counterpart here, so nothing it announces\nis spoken or sent to a braille display.";
+const NOTHING_IT_ANNOUNCES_IS_SPOKEN: &str = "Wixen Mail announces what it is doing through a Windows\ncall that has no counterpart here, so nothing it announces\nis spoken or sent to a braille display.";
 
 /// The accessible name half of the bridge, which is the larger failure of the
 /// two and the one nothing in the code marked before this.
 ///
 /// Wording taken from [`super::names`]'s header, which states the same fact
 /// about a list, a tree or a text field with no label beside it.
-pub const CONTROLS_WITH_NO_VISIBLE_LABEL_HAVE_NO_NAME: &str = "Wixen Mail names the lists, trees and fields that carry no\nvisible label through a Windows accessibility object that\nhas no counterpart here. A screen reader reads those\ncontrols as \"list\" or \"tree\" with nothing to say which one.";
+const CONTROLS_WITH_NO_VISIBLE_LABEL_HAVE_NO_NAME: &str = "Wixen Mail names the lists, trees and fields that carry no\nvisible label through a Windows accessibility object that\nhas no counterpart here. A screen reader reads those\ncontrols as \"list\" or \"tree\" with nothing to say which one.";
 
 /// The closing line.
 ///
 /// Worded so it is true of one missing half as well as of two, because the
 /// sentence building is a function of two independent facts and a half written
 /// bridge is a state it has to be able to describe.
-pub const IT_WORKS_ON_WINDOWS: &str =
+const IT_WORKS_ON_WINDOWS: &str =
     "What is named above works on Windows. Nothing in this\nbuild makes it work here.";
 
 /// What this build's accessibility layer does not do, or nothing to say.
@@ -95,12 +89,19 @@ fn what_is_missing(
     announcements_reach_a_screen_reader: bool,
     a_name_reaches_the_accessibility_tree: bool,
 ) -> Option<String> {
-    // The red half of 07-03. Replaced in the commit that follows this one.
-    let _ = (
-        announcements_reach_a_screen_reader,
-        a_name_reaches_the_accessibility_tree,
-    );
-    None
+    if announcements_reach_a_screen_reader && a_name_reaches_the_accessibility_tree {
+        return None;
+    }
+
+    let mut said = vec![SOME_OF_IT_DOES_NOT_WORK];
+    if !announcements_reach_a_screen_reader {
+        said.push(NOTHING_IT_ANNOUNCES_IS_SPOKEN);
+    }
+    if !a_name_reaches_the_accessibility_tree {
+        said.push(CONTROLS_WITH_NO_VISIBLE_LABEL_HAVE_NO_NAME);
+    }
+    said.push(IT_WORKS_ON_WINDOWS);
+    Some(said.join("\n\n"))
 }
 
 #[cfg(test)]

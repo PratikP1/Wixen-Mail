@@ -425,11 +425,6 @@ impl Accessibility {
     pub fn automation_snapshot(&self) -> Result<Vec<automation::AutomationNode>> {
         self.automation.snapshot()
     }
-
-    /// Return screen reader bridge status.
-    pub fn native_bridge_status(&self) -> screen_reader::NativeBridgeStatus {
-        self.screen_reader.status()
-    }
 }
 
 impl Default for Accessibility {

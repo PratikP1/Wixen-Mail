@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 531 records have arrived since and have not been through it.
+# 532 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19727,4 +19727,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/installer.rs", tests = 4 },
+]
+
+# ── 07-03 ─────────────────────────────────────────────────────────────────
+#
+# The half-fix rather than the absent one. The disclosure still appears and
+# still names the announcements half; where the accessible-names sentence
+# belongs it repeats the opening line instead. That is the failure premise 3 of
+# 07-03 names: a disclosure derived only from the old `NativeBridgeStatus`
+# would have said that announcements do not reach a screen reader and said
+# nothing about every control in the window reaching the accessibility tree
+# with no name, which is the larger of the two failures.
+#
+# Measured 2026-09-12 by hand on the final tree, after the version bump and the
+# changelog were in place, with `cargo test --all-targets --no-fail-fast` at the
+# default eight threads: 7,029 passed in the library and exactly these two
+# failed, with nothing else red across 7,444 passing tests. Both are new with
+# this change, so this break measures this guard rather than an older test
+# catching it by accident.
+#
+# Two tests in the same file stay green under it and that is correct rather
+# than a short list. `test_a_build_with_both_halves_of_the_bridge_has_nothing_to_disclose`
+# asks about the pair (true, true), which this break does not reach, and
+# `test_the_about_dialog_asks_this_build_what_it_does_not_do` reads wx_app.rs
+# rather than the sentences.
+[[guard]]
+name = "the disclosure names both halves of the accessibility bridge"
+file = "src/presentation/accessibility/platform_bridge.rs"
+before = '        said.push(CONTROLS_WITH_NO_VISIBLE_LABEL_HAVE_NO_NAME);'
+after = '        said.push(SOME_OF_IT_DOES_NOT_WORK);'
+red = [
+    "presentation::accessibility::platform_bridge::tests::test_a_build_with_no_bridge_names_both_halves",
+    "presentation::accessibility::platform_bridge::tests::test_a_build_that_only_cannot_name_a_control_says_only_that",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/platform_bridge.rs", tests = 8 },
 ]
