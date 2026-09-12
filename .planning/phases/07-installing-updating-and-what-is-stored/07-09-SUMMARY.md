@@ -483,6 +483,24 @@ it.
   `docs/ALPHA_TESTING.md` gains a bullet about updating being refused, which is a
   different sentence about a different thing.
 
+## The branch and the merge
+
+Branch `an-installer-this-project-did-not-sign-never-runs`, merged into `main` at
+`f0f20815`. Seven commits, four of them red halves:
+
+| Commit | What |
+|---|---|
+| `b6908837` | red: refusing an installer this project did not sign |
+| `bdefda95` | red: fetching an offer without asking anybody |
+| `a563d607` | green: fetched unasked, refused unless we signed it |
+| `f82e3cb0` | red: the one question and the handover |
+| `5feda7ef` | green: one question, then the window closes |
+| `f470e3d6` | red: two things criterion 2 asks that this did not do |
+| `92504df0` | green: ask whether a signature can be checked before fetching |
+
+`scripts/check.sh all` was run twice on the branch, 473 seconds after task 1 and
+465 before the merge, both four green, neither piped into anything.
+
 ## Status
 
 `partial`. Tasks 1 and 2 of three. Task 3 is a `checkpoint:human-verify` with
