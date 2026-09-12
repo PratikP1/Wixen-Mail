@@ -48,6 +48,52 @@ UninstallDisplayName={#AppName}
 ; the program gone, and an entry with the generic icon beside a Start Menu
 ; shortcut that has the right one reads as two different programs.
 UninstallDisplayIcon={app}\icon.ico
+
+; Where SignedUninstaller will go, and what the help says about it.
+;
+; Nothing is signed yet and nothing here signs anything. There is no
+; certificate: plan 07-08 task 2 is the account only Pratik can create, and
+; writing signing machinery before there is a key is the "stub presented as
+; complete" this project's guardrail 3 is about. What this comment carries is
+; the one external fact task 1 existed to settle, so that task 3 is not
+; guessing at it.
+;
+; Read on 2026-09-12 from the local Inno Setup 6 help, ISetup.chm, in the
+; per-user install at %LOCALAPPDATA%\Programs\Inno Setup 6. Topics "[Setup]:
+; SignedUninstaller" and "[Setup]: SignTool". Not from a search summary, which
+; is how 07-RESEARCH.md read it and why it recorded the answer at medium
+; confidence.
+;
+; SignedUninstaller defaults to yes when a SignTool is set and no otherwise, so
+; setting SignTool is enough on its own and this directive need never be
+; written. With SignTool set the help says the uninstaller "will be signed
+; automatically on the fly": one pass, no prompt, nothing to answer.
+;
+; The two-pass prompting behaviour is real and it is the other branch. It is
+; what happens with SignedUninstaller=yes and no SignTool: Inno writes a
+; uniquely named non-temporary copy of the uninstaller into
+; SignedUninstallerDir, which defaults to OutputDir, and prompts for it to be
+; signed by hand. Later compiles reuse that signature without asking, and
+; changing SetupIconFile, WizardStyle or the VersionInfo directives, all three
+; of which this file sets, makes a new file under a new name and asks again.
+;
+; So 07-RESEARCH.md's assumption A3 is settled and its premise is half wrong.
+; The prompt is not a property of SignedUninstaller that has to be worked
+; around in a job with no console. It is what a build with no SignTool gets,
+; and a build with a SignTool never reaches it. A CI job that signs at all
+; cannot hang here.
+;
+; One consequence nobody predicted, and it changes the installed folder. When
+; the uninstaller is signed, Setup writes the language messages to a separate
+; unins???.msg file, because embedding them in the EXE would invalidate the
+; signature. Whatever reads the installed folder should expect that file to
+; appear alongside unins???.exe and unins???.dat.
+;
+; Two further notes off the SignTool topic, both for task 3. The tool has to be
+; registered with ISCC through its /S parameter or the compile fails, and
+; [Files] entries take sign and signonce flags, so Inno can sign the source
+; files it is about to package instead of the build script doing it first.
+
 ; The wizard's own icon, so setup is recognisable in the taskbar before the
 ; application it installs exists.
 SetupIconFile=..\assets\icon.ico

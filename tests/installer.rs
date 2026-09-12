@@ -34,6 +34,16 @@
 //! file to a target by its path and an `.iss` matched nothing.
 //! `scripts/which-checks.sh` now answers `all` for an `.iss`, which is what
 //! makes this target run on the commits that could break it.
+//!
+//! # The census says what needs signing, not that anything is signed
+//!
+//! The last section of this file counts the things a signature has to name. It
+//! is a reading of two lists, so it knows what the installer carries and what
+//! the release publishes, and it knows nothing whatever about a certificate.
+//! **Nothing in this project is signed.** There is no key: the account that
+//! would issue one is plan 07-08's task 2 and only a person can create it. A
+//! green census is the question stated correctly, which is worth having
+//! before task 3 answers it and worthless if mistaken for the answer.
 
 // ---------------------------------------------------------------------------
 // The reading
@@ -964,11 +974,102 @@ enum Origin {
 /// wording is the reason it is needed: it says "the installer and the
 /// executable inside it", which is two of the seven.
 fn the_artefacts_that_need_signing(script: &str, yaml: &str) -> Vec<Artefact> {
-    // The RED half. The parse is the green commit's work; answering with
-    // nothing here keeps the census red for the reason it is about rather than
-    // red for failing to compile.
-    let _ = (script, yaml);
-    Vec::new()
+    let mut census: Vec<Artefact> = section(script, "Files")
+        .iter()
+        .filter_map(|entry| parameter(entry, "Source"))
+        .filter(|source| authenticode_signs_it(source))
+        .map(|name| Artefact {
+            name,
+            origin: Origin::InsideTheInstaller,
+        })
+        .collect();
+
+    census.extend(
+        the_promised_files(yaml)
+            .into_iter()
+            .filter(|glob| a_download_that_carries_code(glob))
+            .map(|name| Artefact {
+                name,
+                origin: Origin::PublishedBesideIt,
+            }),
+    );
+
+    // Inno writes an uninstaller whether or not the script mentions one, so
+    // this asks whether the script turned it off rather than whether it asked
+    // for it. `Uninstallable` is absent here and there is an uninstaller all
+    // the same, which is exactly how the seventh artefact came to be missing
+    // from a requirement that listed the other two it could see.
+    //
+    // Gated on `[Setup]` really having been read. Without that gate a script
+    // this function cannot parse still reports an uninstaller, and a census
+    // that answers "one thing" for a file it could not read is the
+    // reading-found-nothing failure the rest of this file guards against
+    // everywhere else.
+    let setup = section(script, "Setup");
+    if !setup.is_empty() && setup_directive(script, "Uninstallable").as_deref() != Some("no") {
+        census.push(Artefact {
+            // Inno's own spelling, from the help topic for SignedUninstaller.
+            // The digits are the install's serial number, so no single name
+            // exists to write down.
+            name: "unins???.exe".to_string(),
+            origin: Origin::WrittenByInno,
+        });
+    }
+
+    census
+}
+
+/// The file extensions Authenticode embeds a signature into.
+///
+/// Two, and the shortness is the point rather than an oversight. Authenticode
+/// writes its signature into a PE file's certificate table, and on Windows a
+/// PE file is an `.exe` or a `.dll`. Every file this project ships that Windows
+/// loads and runs is one of the two.
+///
+/// **What it deliberately does not cover, and what that costs.** A `.ps1`, a
+/// `.cat` or an `.msi` can also carry a signature, by a different mechanism in
+/// each case, and none of the three is signed the way a PE file is. This
+/// project ships none of them today. If one ever arrives it will not be
+/// counted here, and that is a hole rather than a decision: it is recorded in
+/// `.planning/WINDOWS.md` so somebody meets it rather than discovering it in a
+/// download. Widening this list without also settling how each of those is
+/// signed would be worse, because it would make the census look complete while
+/// pairing a file with a signing step that cannot sign it.
+const WHAT_AUTHENTICODE_SIGNS: [&str; 2] = [".exe", ".dll"];
+
+/// Whether a file inside the installer is one Authenticode signs.
+///
+/// Read off the end of the name, because that is all a `Source:` line gives.
+/// The entries this drops are `..\LICENSE`, `..\README.md`, `..\assets\icon.ico`
+/// and `..\docs\*.md`: prose and a picture, none of it code, and nothing
+/// Windows will ever execute.
+///
+/// **One thing this cannot see.** A `Source:` entry may be a wildcard, and
+/// `..\docs\*.md` already is. A wildcard naming executables would be one census
+/// entry standing for however many files it matched, so the count would be
+/// right about the line and wrong about the artefacts. None exists today and
+/// this says so rather than pretending the reading is finer than it is.
+fn authenticode_signs_it(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    WHAT_AUTHENTICODE_SIGNS
+        .iter()
+        .any(|extension| lowered.ends_with(extension))
+}
+
+/// Whether a published download is code, or an archive whose contents are.
+///
+/// The archive is the awkward one and it is counted on purpose. A `.zip` cannot
+/// carry an Authenticode signature at all, so the entry stands for the
+/// executable inside it rather than for the container: what has to be true is
+/// that the file somebody extracts is signed. Leaving it out of the census
+/// because the container cannot be signed is how a download comes to be the one
+/// unsigned thing on the release page.
+///
+/// `docs/changelog.md` is what this drops. It is published as it stands, it is
+/// prose, and nothing runs it.
+fn a_download_that_carries_code(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    authenticode_signs_it(&lowered) || lowered.ends_with(".zip")
 }
 
 /// Seven things have to be signed, and SHIP-01's own wording says two.
