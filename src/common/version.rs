@@ -17,6 +17,7 @@
 //! `WIXEN_BUILD` and `build.rs` passes it through, so only the builds that are
 //! handed to somebody pay for it.
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 
 /// The version from `Cargo.toml`.
@@ -221,6 +222,105 @@ pub fn compare(version: &str, with: &str) -> Compared {
     }
 }
 
+/// Which releases somebody hears about.
+///
+/// Exactly two values, and every one of them is a real channel. "Is this
+/// prerelease an offer for somebody who is not looking for updates" is not a
+/// question with a true answer, so a third variant for that would force every
+/// arm of [`whether_to_offer`] to invent one. What somebody chose is
+/// [`WhichUpdates`], which has three answers and maps to this.
+///
+/// Never written to a settings file. Nothing stores a channel; the setting
+/// stores [`WhichUpdates`] and this is derived from it, so there is no stored
+/// spelling here for anybody to fix or to have to keep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReleaseChannel {
+    /// Released versions only.
+    PublicReleases,
+    /// Released versions and the prereleases that stage them.
+    #[default]
+    DevelopmentReleases,
+}
+
+/// What somebody chose about hearing of new versions.
+///
+/// Three answers, because D-16 makes it one control with three values rather
+/// than a switch and a channel choice beside it. A control that greys out when
+/// its parent is off is skipped in the tab order, so somebody moving by
+/// keyboard does not meet it as unavailable, they do not meet it at all.
+///
+/// This is the value a settings file holds. [`ReleaseChannel`] is worked out
+/// from it by [`WhichUpdates::channel`] and is never stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WhichUpdates {
+    /// Nothing is asked for and nothing is fetched.
+    NotLooking,
+    /// Released versions.
+    PublicReleases,
+    /// Released versions and the prereleases that stage them.
+    #[default]
+    DevelopmentReleases,
+}
+
+impl WhichUpdates {
+    /// Which channel this answer asks, if it asks at all.
+    ///
+    /// One function, so the two plans that act on this setting cannot each
+    /// match on three values and have one of them read "not looking" as the
+    /// public channel by accident.
+    pub const fn channel(self) -> Option<ReleaseChannel> {
+        match self {
+            Self::NotLooking | Self::PublicReleases | Self::DevelopmentReleases => None,
+        }
+    }
+
+    /// The spelling that goes in the settings file.
+    fn as_stored(self) -> &'static str {
+        ""
+    }
+
+    /// What a stored spelling means, including one this build does not know.
+    fn from_stored(_stored: &str) -> Self {
+        Self::NotLooking
+    }
+}
+
+impl Serialize for WhichUpdates {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_stored())
+    }
+}
+
+impl<'de> Deserialize<'de> for WhichUpdates {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::from_stored(&String::deserialize(deserializer)?))
+    }
+}
+
+/// Whether a published release is an offer for the person in front of us.
+///
+/// Three answers rather than a bool, for the reason [`Compared`] has four. A
+/// caller that can see only "yes" and "no" maps a tag it could not read onto
+/// one of them, and plan 07-09 acts on this answer by downloading an
+/// executable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offer {
+    /// Newer than what is running, and of a kind this channel offers.
+    Yes,
+    /// Nothing here is worth telling anybody about.
+    NothingNewer,
+    /// The published version is not one this program can read.
+    CouldNotRead,
+}
+
+/// Whether `candidate` is an offer for somebody running `running`.
+///
+/// Two questions, and the answer is the conjunction: is it newer, and is it
+/// the kind of release this channel is for.
+pub fn whether_to_offer(_candidate: &str, _running: &str, _channel: ReleaseChannel) -> Offer {
+    Offer::CouldNotRead
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +432,166 @@ mod tests {
         // assertion above is satisfied by a comparison that refuses
         // everything, and that comparison is the one this pairing catches.
         assert_eq!(compare("0.5.1", "0.5.0"), Compared::Newer);
+    }
+
+    #[test]
+    fn test_the_channel_somebody_has_not_chosen_is_the_released_only_one() {
+        // The safe end, and the type says it rather than every caller
+        // remembering to. Getting this one wrong opts somebody into
+        // prereleases who never asked, and once 07-09 lands that means
+        // fetching an installer built from one.
+        assert_eq!(ReleaseChannel::default(), ReleaseChannel::PublicReleases);
+    }
+
+    #[test]
+    fn test_the_setting_nobody_has_touched_is_not_looking() {
+        assert_eq!(WhichUpdates::default(), WhichUpdates::NotLooking);
+    }
+
+    #[test]
+    fn test_not_looking_asks_no_channel() {
+        assert_eq!(WhichUpdates::NotLooking.channel(), None);
+        // Paired with the other two, so a mapping answering None for
+        // everything could not pass this.
+        assert!(WhichUpdates::PublicReleases.channel().is_some());
+        assert!(WhichUpdates::DevelopmentReleases.channel().is_some());
+    }
+
+    #[test]
+    fn test_public_releases_asks_the_channel_that_leaves_prereleases_out() {
+        assert_eq!(
+            WhichUpdates::PublicReleases.channel(),
+            Some(ReleaseChannel::PublicReleases)
+        );
+    }
+
+    #[test]
+    fn test_development_releases_asks_the_channel_that_takes_prereleases_in() {
+        assert_eq!(
+            WhichUpdates::DevelopmentReleases.channel(),
+            Some(ReleaseChannel::DevelopmentReleases)
+        );
+    }
+
+    #[test]
+    fn test_each_answer_has_its_own_stored_spelling() {
+        // These three strings are fixed from here on. Once one settings file
+        // on one machine holds one of them, renaming it makes that machine's
+        // answer unreadable, which is CLAUDE.md's rule about never renaming
+        // what shipped applied to a stored value rather than to a column.
+        assert_eq!(WhichUpdates::NotLooking.as_stored(), "not_looking");
+        assert_eq!(WhichUpdates::PublicReleases.as_stored(), "public_releases");
+        assert_eq!(
+            WhichUpdates::DevelopmentReleases.as_stored(),
+            "development_releases"
+        );
+    }
+
+    #[test]
+    fn test_every_answer_survives_being_written_and_read_back() {
+        for chosen in [
+            WhichUpdates::NotLooking,
+            WhichUpdates::PublicReleases,
+            WhichUpdates::DevelopmentReleases,
+        ] {
+            let written = serde_json::to_string(&chosen).expect("a string always serialises");
+            let read_back: WhichUpdates =
+                serde_json::from_str(&written).expect("what was just written reads back");
+            assert_eq!(read_back, chosen, "{written}");
+        }
+    }
+
+    #[test]
+    fn test_a_stored_answer_this_build_does_not_know_is_not_looking() {
+        // The case a downgrade produces. Reading it as either channel would
+        // quietly switch the check on for somebody who never chose it, and
+        // reading it as an error fails the whole settings file.
+        let unknown: WhichUpdates =
+            serde_json::from_str("\"nightly_releases\"").expect("an unknown answer still loads");
+        assert_eq!(unknown, WhichUpdates::NotLooking);
+        // Paired, so a read that answered NotLooking for everything could not
+        // pass this.
+        let known: WhichUpdates =
+            serde_json::from_str("\"development_releases\"").expect("a known answer loads");
+        assert_eq!(known, WhichUpdates::DevelopmentReleases);
+    }
+
+    #[test]
+    fn test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose() {
+        // Every row is asked twice, so a rule that ignored its channel
+        // argument could not pass. The two rows marked below are the ones
+        // where the two channels give different answers; without them this
+        // table would be green against exactly that rule.
+        let rows = [
+            // candidate, running, on the public channel, on the development channel
+            (
+                "0.6.0-alpha.1",
+                "0.5.0",
+                Offer::NothingNewer,
+                Offer::Yes, // the two channels differ here
+            ),
+            (
+                "0.6.0-alpha.3",
+                "0.6.0-alpha.2",
+                Offer::NothingNewer,
+                Offer::Yes, // and here
+            ),
+            ("0.6.0", "0.6.0-alpha.1", Offer::Yes, Offer::Yes),
+            ("0.5.1", "0.5.0", Offer::Yes, Offer::Yes),
+            (
+                "0.6.0-alpha.1",
+                "0.6.0-alpha.2",
+                Offer::NothingNewer,
+                Offer::NothingNewer,
+            ),
+            (
+                "0.6.0",
+                "0.7.0-alpha.1",
+                Offer::NothingNewer,
+                Offer::NothingNewer,
+            ),
+            ("0.5.0", "0.5.0", Offer::NothingNewer, Offer::NothingNewer),
+            (
+                "0.5.0+g64c73dd",
+                "0.5.0",
+                Offer::NothingNewer,
+                Offer::NothingNewer,
+            ),
+            ("banana", "0.5.0", Offer::CouldNotRead, Offer::CouldNotRead),
+        ];
+
+        for (candidate, running, on_public, on_development) in rows {
+            assert_eq!(
+                whether_to_offer(candidate, running, ReleaseChannel::PublicReleases),
+                on_public,
+                "{candidate} against {running} on the public channel"
+            );
+            assert_eq!(
+                whether_to_offer(candidate, running, ReleaseChannel::DevelopmentReleases),
+                on_development,
+                "{candidate} against {running} on the development channel"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_tag_it_cannot_read_is_a_different_answer_from_nothing_newer() {
+        // A caller that mapped these two onto one answer would either say
+        // nothing when the check has broken, or say there is an update when
+        // there is not.
+        for channel in [
+            ReleaseChannel::PublicReleases,
+            ReleaseChannel::DevelopmentReleases,
+        ] {
+            assert_eq!(
+                whether_to_offer("release-candidate", "0.5.0", channel),
+                Offer::CouldNotRead
+            );
+            assert_eq!(
+                whether_to_offer("0.4.0", "0.5.0", channel),
+                Offer::NothingNewer
+            );
+        }
     }
 
     #[test]
