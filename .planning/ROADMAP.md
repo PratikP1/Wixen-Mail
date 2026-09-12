@@ -515,7 +515,7 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
 **Plans**: TBD
 
 - [x] 05.2-01-PLAN.md
-- [ ] 05.2-02-PLAN.md
+- [x] 05.2-02-PLAN.md
 - [ ] 05.2-03-PLAN.md
 
 **UI hint**: yes
@@ -594,7 +594,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 4.2 What was built and never reached | 9/9 | Executed, all merged, verification human_needed | 2026-09-07 |
 | 5. The other five modules keep up | 8/8 | In Progress|  |
 | 5.1 Notes and contacts reach a server | 6/6 | In Progress|  |
-| 5.2 Notes in OneNote | 1/3 | In Progress|  |
+| 5.2 Notes in OneNote | 2/3 | In Progress|  |
 | 6. How the application speaks | 0/TBD | Researched, not planned | - |
 | 7. Installing, updating and what is stored | 0/9 | Planned, not started | - |
 | 8. Every number the project quotes | 0/TBD | Researched, not planned | - |

@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.2
 current_phase_name: Notes in OneNote
-current_plan: 1
-status: verifying
-stopped_at: Ledger 274 closed and merged at eb80066, which closed 245 and 246 with it. 05.2-02 not started
-last_updated: "2026-09-11T18:20:00.000Z"
+current_plan: 2
+status: executing
+stopped_at: 05.2-02 merged at 93a3f56. The OneNote client exists and nothing calls it; 05.2-03 is next
+last_updated: "2026-09-12T00:37:12.163Z"
 last_activity: 2026-09-11
-state_head: cbd07669c92b5d3add7f85930e6f8571bbfa8a23
+state_head: 93a3f56fafbcc111d1d8782ab4492b9e4820346b
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 78
+  completed_plans: 79
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,7 +29,41 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.2 (Notes in OneNote). **Ledger 274 is closed, and it closed 245 and
+Phase: 05.2 (Notes in OneNote). **05.2-02 is merged at `93a3f56`, version
+0.111.0.** The Graph client for OneNote exists: a page made, a notebook's four
+levels walked and bounded at eight section groups, a page changed by removing
+what is on it and appending what is not, and a page removed. Every request is
+read off a loopback server the tests start, and none has met Microsoft. A
+Microsoft account is now asked for `Notes.ReadWrite`, on the consent list and on
+the array a Graph token is really refreshed against, because either alone gives
+no running account the permission.
+
+**Nothing calls any of it.** Six public entry points and no caller in the running
+program; `05.2-03` is the backend behind the seam and the last plan of the phase.
+`docs/changelog.md` and `docs/PROVIDER_SETUP.md` both say plainly that nothing
+syncs notes to OneNote.
+
+**The plan's central artifact could not exist and that is the one substantial
+false premise found.** It specified `tests/what_the_onenote_client_really_sends.rs`
+and told the executor to copy the existing loopback harness. That harness and the
+test-only client constructor are both `#[cfg(test)]`, so a file under `tests/`
+links a library where neither exists; measured with a throwaway file, not
+reasoned. `outward.rs`'s write census also reads the test half of a named file by
+splitting on `mod tests {`, which such a file has none of. The tests are in
+`src/service/microsoft_graph.rs`, which carries no guard records and cost nothing.
+
+**One live defect was found and deliberately not fixed**, ledger 282:
+`Tasks.ReadWrite` is on the consent list and absent from the refresh array, so by
+the same argument this plan made about notes, no running Microsoft account holds
+it and every Graph task write is refused. `docs/PROVIDER_SETUP.md` tells somebody
+that signing in again will send their waiting task changes, which that gap would
+make false. Recorded rather than rewritten: the inference is sound and no real
+account has been tried.
+
+**Nine ledger entries, 282 to 290, all open.** Three guard records added, all
+measured by hand; five re-measured by the scoped remedy and none stale.
+
+**Ledger 274 is closed, and it closed 245 and
 246 with it.** One backend container is one note folder, which Pratik decided on
 2026-09-11 and which the seam contract had written down and nothing had built.
 `note_folders` carries an opaque container, `notes_backend` makes one folder per
@@ -98,7 +132,7 @@ were written as two lines naming a neighbouring match arm, which is the spelling
 that breaks the moment a neighbour moves; all of those are now one
 self-contained edit each.
 
-Current Plan: 1
+Current Plan: 2
 Total Plans in Phase: 3
 
 **What 05.2-01 built.** `src/service/onenote_page.rs`: a note's title and
@@ -503,7 +537,7 @@ Plans: 14, one per wave, `01-01-PLAN.md` to `01-14-PLAN.md`. 40 tasks, of which
 37 are RED-first, 1 is configuration-only (`guards/guards.toml` records) and 2
 are blocking human gates, in 01-02 and 01-07, both over one-way writes to the
 only copy of the user's mail. Those two plans are `autonomous: false`.
-Status: Phase complete, ready for verification.
+Status: Ready to execute
 verification recorded criterion 3 as the one partial of eight, and it closes it.
 The phase wants re-verifying against that report, which is annotated as
 superseded rather than left to be read as current.
@@ -676,6 +710,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05.1 P02 | 2h 20m | 3 tasks | 12 files |
 | Phase 05.1 P04 | 1h 35m | 3 tasks | 9 files |
 | Phase 05.1 P06 | 155min | 3 tasks | 21 files |
+| Phase 05.2 P02 | 155min | 4 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -890,8 +925,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-11T05:18:52.559Z
-Stopped at: Completed 05.1-06-PLAN.md, waiting on its screen reader checkpoint
+Last session: 2026-09-12T00:37:11.856Z
+Stopped at: 05.2-02 merged at 93a3f56. The OneNote client exists and nothing calls it; 05.2-03 is next
 
 Earlier: Completed 04.2-05-PLAN.md
 
