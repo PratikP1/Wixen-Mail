@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 530 records have arrived since and have not been through it.
+# 531 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19698,4 +19698,33 @@ red = [
 tests_last_seen = [
     { file = "src/application/new_item.rs", tests = 42 },
     { file = "src/application/notes_backend.rs", tests = 25 },
+]
+
+# The half-fix rather than the absent one, which is the break this rule is
+# really about. An icon shipped to one folder and named in another satisfies
+# every presence check anybody would write: the [Files] section installs an icon
+# and both [Icons] entries name one. Windows then falls back in silence, and
+# nobody finds out until somebody looks at a real Start Menu.
+#
+# `file` is not a Rust file, so the count check skips the count for it and takes
+# the counts off the red list instead, which with `suite` set resolves to
+# tests/installer.rs. Checked in tests/house_style.rs at the line that pushes
+# the guarded file only when it ends `.rs`, rather than assumed.
+#
+# Measured 2026-09-12 by hand on the final tree, `cargo test --all-targets
+# --no-fail-fast` at the default eight threads: 7,436 passed and exactly these
+# two failed. Both are new with this change, so this break is measuring this
+# guard rather than an older test catching it by accident.
+[[guard]]
+name = "the icon a shortcut names is the one the installer really put there"
+file = "installer/Wixen-Mail-Setup.iss"
+suite = "installer"
+before = '''Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion'''
+after = '''Source: "..\assets\icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion'''
+red = [
+    "test_apps_and_features_shows_the_icon_the_installer_ships",
+    "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 4 },
 ]

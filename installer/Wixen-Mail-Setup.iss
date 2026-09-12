@@ -43,7 +43,11 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayName={#AppName}
-UninstallDisplayIcon={app}\wixen-mail.exe
+; The installed image rather than the executable, for the reason the [Icons]
+; entries below give. Apps and Features is where somebody goes when they want
+; the program gone, and an entry with the generic icon beside a Start Menu
+; shortcut that has the right one reads as two different programs.
+UninstallDisplayIcon={app}\icon.ico
 ; The wizard's own icon, so setup is recognisable in the taskbar before the
 ; application it installs exists.
 SetupIconFile=..\assets\icon.ico
@@ -100,6 +104,16 @@ Name: "searchindex"; Description: "Let Windows Search find my mail (experimental
 Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+; The icon the shortcuts and Apps and Features name.
+;
+; Shipped rather than pointing them all at the executable, which would name the
+; same picture while it is there. build.rs embeds this same file into
+; wixen-mail.exe and the comment above that line records the executable having
+; had no icon at all, so Windows drew the generic one everywhere. A shortcut
+; naming an installed file survives that happening again.
+;
+; One source image and two consumers, so the two copies cannot disagree.
+Source: "..\assets\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; The guides somebody needs while the application is not working: setting up a
 ; provider, the keyboard shortcuts, and what to try when mail will not arrive.
 ; Not recursive, because the folders below docs are notes to ourselves.
@@ -121,8 +135,20 @@ Source: "..\search-handler\target\release\wixen-mail-search-setup.exe"; DestDir:
 Source: "..\search-handler\README.md"; DestDir: "{app}\docs"; DestName: "windows-search.md"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\wixen-mail.exe"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\wixen-mail.exe"; Tasks: desktopicon
+; IconFilename on both, naming the image the [Files] section installs.
+;
+; This changes nobody's picture. Inno's help for this section says that without
+; the parameter "Windows will use the file's default icon", and the executable
+; carries this same icon in its resources, so both shortcuts already showed it.
+; What changes is that the picture no longer depends on the resource table
+; being right.
+;
+; The path has to be the one the [Files] line installs to. Named somewhere
+; nothing was put, Windows falls back in silence and nobody finds out until a
+; real install. tests/installer.rs compares the two whole paths for that reason
+; rather than asking whether each section mentions an icon.
+Name: "{group}\{#AppName}"; Filename: "{app}\wixen-mail.exe"; IconFilename: "{app}\icon.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\wixen-mail.exe"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Run]
 ; Two commands rather than one, because the two halves want different accounts.

@@ -20,6 +20,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   first-run screen is shown once per install, so this is one hearing rather than
   one on every start.
 
+### Changed
+
+- **The Start menu shortcut, the desktop shortcut and the Apps and Features
+  entry now take their icon from a file the installer puts in the program
+  folder.** The picture does not change, and they were not without one before:
+  the icon is built into `wixen-mail.exe` and Windows was already using it,
+  which is what Windows does for a shortcut that names no icon of its own. What
+  changes is that the picture no longer depends on the program's own resources
+  being right. That has gone wrong here once, when the executable was built
+  with no icon at all and Windows drew the generic one everywhere.
+
 ### Fixed
 
 - **A page inside the installer promised that signing the setup file would make
