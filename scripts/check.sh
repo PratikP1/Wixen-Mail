@@ -95,12 +95,25 @@ the_suites_that_guard_what_changed() {
     fi
 
     for path in "$@"; do
-        # Only a source module. A record whose break lands anywhere else is a
-        # true record that says nothing here: `--lib` was never going to reach
-        # it, and a changed `tests/*.rs` already runs its own target.
+        # Everything except a changed test file, which already runs its own
+        # target a few lines up and would be asked for twice.
+        #
+        # This used to be the other way round, taking only a changed `src/*.rs`
+        # and saying that a record whose break lands anywhere else was a true
+        # record that says nothing here, because `--lib` was never going to
+        # reach it. The first half is true and it is about the wrong thing: what
+        # this mapping answers with is a `--test` target, so a break landing on
+        # a file no `--lib` filter could reach is exactly the case it is for.
+        #
+        # What the narrow version cost, found on 2026-09-12 by two records
+        # arriving that it could not read: a commit changing only
+        # `.github/workflows/release.yml` ran the four tree-reading guards and
+        # nothing that reads the workflow, while two records naming that file
+        # and the suite that reads it sat in the registry looking like coverage.
+        # That is guardrail 4 exactly, and it is the same shape as the `.iss`
+        # hole `which-checks.sh` closed one layer up in 07-02.
         case "$path" in
-            src/*.rs) ;;
-            *) continue ;;
+            tests/*.rs) continue ;;
         esac
 
         for coupling in "${couplings[@]+"${couplings[@]}"}"; do

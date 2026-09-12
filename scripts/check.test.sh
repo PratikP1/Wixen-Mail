@@ -291,13 +291,27 @@ suite = "gamma"
 before = """e"""
 after = """f"""
 TOML
-# `--lib` was never going to reach any of these, and a changed `tests/*.rs`
-# already runs its own target, so such a record contributes nothing here.
+# A changed test file already runs its own target a few lines up in `check.sh`,
+# so a record coupling something to it would ask for the same target twice.
 expect "" "a record whose break lands on a test file contributes nothing" \
     "$not_a_source_file" tests/house_style.rs
-expect "" "nor one whose break lands on a script" \
+
+# **These two said the opposite until 2026-09-12, and they were wrong on the
+# reason they gave.** The comment above them read "`--lib` was never going to
+# reach any of these, and a changed `tests/*.rs` already runs its own target, so
+# such a record contributes nothing here." The first clause is true about
+# `--lib` and this mapping does not answer with a `--lib` filter. It answers
+# with a `--test` target, so a break landing where no `--lib` filter could reach
+# is the case the mapping exists for rather than a case it can discard.
+#
+# Left as a correction in place rather than a quiet edit, because two cases
+# changed to make a change pass is the shape that should always be argued for
+# out loud. What forced it was two real records naming
+# `.github/workflows/release.yml`, which the mapping could not read, so the
+# commit that changed that workflow ran nothing that reads it.
+expect beta "a record whose break lands on a script answers its suite" \
     "$not_a_source_file" scripts/mutants.sh
-expect "" "nor one whose break lands on a workflow" \
+expect gamma "and so does one whose break lands on a workflow" \
     "$not_a_source_file" .github/workflows/mutants.yml
 
 no_suite="$work/no-suite.toml"
