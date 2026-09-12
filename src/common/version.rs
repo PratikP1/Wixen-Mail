@@ -17,11 +17,37 @@
 //! `WIXEN_BUILD` and `build.rs` passes it through, so only the builds that are
 //! handed to somebody pay for it.
 
+use std::cmp::Ordering;
+
 /// The version from `Cargo.toml`.
 const NUMBER: &str = env!("CARGO_PKG_VERSION");
 
 /// The commit this was built from, empty unless the installer script built it.
 const BUILD: &str = env!("WIXEN_BUILD");
+
+/// What separates a version from its build identifier.
+///
+/// One constant rather than the character written in two places. [`describe`]
+/// joins on it and [`without_build`] splits on it, and the two are inverses,
+/// so neither can be written in terms of the other and a literal in both is
+/// one rule kept in two places.
+const BUILD_SEPARATOR: char = '+';
+
+/// What separates a version from the prerelease staging it.
+///
+/// Deliberately not [`BUILD_SEPARATOR`]: a build identifier put after this
+/// would make every build a prerelease of the version it was built from and
+/// sort them all below it.
+const PRERELEASE_SEPARATOR: char = '-';
+
+/// What a published tag carries in front of the version.
+///
+/// `cargo release` writes the tag, `.github/workflows/release.yml:115` names
+/// the portable download after it, and `:133` publishes that download under
+/// the glob `wixen-mail-v*.exe`. So the strings a release feed hands back
+/// start with this and the number this crate is built from does not, and both
+/// have to read as the same version.
+const TAG_PREFIX: &str = "v";
 
 /// What to call this build, wherever a person or a log will see it.
 ///
@@ -43,8 +69,120 @@ fn describe(number: &str, build: &str) -> String {
     if build.is_empty() {
         number.to_string()
     } else {
-        format!("{number}+{build}")
+        format!("{number}{BUILD_SEPARATOR}{build}")
     }
+}
+
+/// A version with its build identifier taken off.
+///
+/// Everything after the separator is build metadata, which version ordering
+/// ignores, so two builds of one version stay equal. A separator with nothing
+/// after it is neither a build identifier nor a version, so it is refused
+/// rather than quietly read as the number in front of it.
+fn without_build(version: &str) -> Option<&str> {
+    match version.split_once(BUILD_SEPARATOR) {
+        None => Some(version),
+        Some((number, build)) if !build.is_empty() => Some(number),
+        Some(_) => None,
+    }
+}
+
+/// Where a version sits between its own prereleases and itself.
+///
+/// The order is the declaration order. `scripts/build-installer.sh` reached
+/// the same one independently when it had to squeeze a prerelease into the
+/// four numbers Windows shows, and this is where the two have to agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Stage {
+    Alpha,
+    Beta,
+    Rc,
+    /// Not a prerelease at all, which is why it is last: a release is newer
+    /// than every prerelease that staged it.
+    Release,
+}
+
+/// The three words `.github/workflows/release.yml` can put in a tag.
+///
+/// Anything else is refused rather than being given a position. A prerelease
+/// spelling this project does not produce is a string somebody else chose,
+/// and the thing downstream of this answer downloads an executable.
+fn stage_named(word: &str) -> Option<Stage> {
+    match word {
+        "alpha" => Some(Stage::Alpha),
+        "beta" => Some(Stage::Beta),
+        "rc" => Some(Stage::Rc),
+        _ => None,
+    }
+}
+
+/// One field of a version, which is a run of digits and nothing else.
+///
+/// Not `str::parse` on its own, which accepts a leading plus and would read
+/// `+5` as five in a string where a plus already means something else.
+/// Refuses a number too large to hold rather than saturating it.
+fn whole_number(field: &str) -> Option<u64> {
+    if field.is_empty() || !field.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    field.parse().ok()
+}
+
+/// A version string this program can put in order.
+///
+/// Field order is comparison order, which is what the derived `Ord` reads, so
+/// the three numbers decide first and the prerelease decides the ties.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Version {
+    major: u64,
+    minor: u64,
+    patch: u64,
+    stage: Stage,
+    /// The counter after the prerelease word, held as a number so that
+    /// `alpha.10` is newer than `alpha.9` rather than sorting before it the
+    /// way the text does. Zero for a release, which carries no counter and
+    /// needs none, because `stage` has already put it above every prerelease
+    /// of the same three numbers.
+    step: u64,
+}
+
+/// Read a version string, or answer nothing if it is not one.
+///
+/// Total: no input makes this panic, overflow or hang, so [`compare`] has no
+/// error to flow anywhere and every caller gets an answer. What it accepts is
+/// what this project publishes and nothing more, because a string guessed at
+/// is a string that can be guessed wrong.
+fn parse(version: &str) -> Option<Version> {
+    let named = version.strip_prefix(TAG_PREFIX).unwrap_or(version);
+    let ordered = without_build(named)?;
+    let (numbers, prerelease) = match ordered.split_once(PRERELEASE_SEPARATOR) {
+        Some((numbers, prerelease)) => (numbers, Some(prerelease)),
+        None => (ordered, None),
+    };
+
+    let mut fields = numbers.split('.');
+    let major = whole_number(fields.next()?)?;
+    let minor = whole_number(fields.next()?)?;
+    let patch = whole_number(fields.next()?)?;
+    if fields.next().is_some() {
+        return None;
+    }
+
+    let (stage, step) = match prerelease {
+        None => (Stage::Release, 0),
+        Some(prerelease) => {
+            let (word, counter) = prerelease.split_once('.')?;
+            (stage_named(word)?, whole_number(counter)?)
+        }
+    };
+
+    Some(Version {
+        major,
+        minor,
+        patch,
+        stage,
+        step,
+    })
 }
 
 /// How one version compares with another.
@@ -72,8 +210,15 @@ pub enum Compared {
 /// Both arguments are version strings as this project writes them: three
 /// numbers, an optional prerelease that stages them, and an optional build
 /// identifier that plays no part in the order.
-pub fn compare(_version: &str, _with: &str) -> Compared {
-    Compared::CouldNotRead
+pub fn compare(version: &str, with: &str) -> Compared {
+    let (Some(left), Some(right)) = (parse(version), parse(with)) else {
+        return Compared::CouldNotRead;
+    };
+    match left.cmp(&right) {
+        Ordering::Greater => Compared::Newer,
+        Ordering::Equal => Compared::Same,
+        Ordering::Less => Compared::Older,
+    }
 }
 
 #[cfg(test)]
