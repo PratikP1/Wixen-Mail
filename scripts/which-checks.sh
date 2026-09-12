@@ -279,6 +279,48 @@ if [ "${#manifests[@]}" -gt 0 ] && ! only_the_packages_own_version_moved "${mani
     exit 0
 fi
 
+# The installer script earns every check, which is the manifest rule one layer
+# down: something reads it as data, and the softer answer reached none of it.
+#
+# Three tests read `installer/Wixen-Mail-Setup.iss`:
+#
+#     application::forget::tests::test_an_uninstall_that_cannot_run_the_erase_step_says_so
+#     application::running::tests::test_the_installer_looks_for_the_same_name
+#     presentation::first_run::tests::test_the_installer_ships_the_page_beside_the_program
+#
+# `affected` maps a changed file to a target by its path, and
+# `run_the_tests_that_reach_what_changed` in `check.sh` knows two shapes:
+# `src/*.rs` becomes `--lib module::`, `tests/*.rs` becomes `--test target`. An
+# `.iss` is neither, so it chose no scoped target at all. What an installer
+# commit really ran was formatting, clippy, the shell suites and the four guards
+# that read the whole tree. `house_style` is one of those and `ours()` collects
+# `installer/*.iss`, so a prose rule over this file was checked; what was never
+# checked is anything the script has to say. All three tests above are unit
+# tests in `src/`, so all three ran on every commit except the ones that could
+# break them, which is what `CLAUDE.md` says about a guard under `tests/`,
+# happening here to a build input instead.
+#
+# `*.iss` rather than `installer/*.iss`. An `.iss` anywhere in this tree is a
+# setup script, there is exactly one today, and the wider pattern cannot miss a
+# second one added somewhere else later. The extension decides, which is what
+# the suite's case for a document inside the installer folder holds this to.
+#
+# Below the manifest block on purpose, and this is the part that is easy to get
+# wrong. The version-bump exception above hands the softer answer to a commit
+# whose whole manifest diff is this package's own version line, and the
+# convention here puts that bump in the same commit as the change it describes.
+# A rule written inside that branch would let an installer change that also
+# bumps the version answer `affected`, which is nearly every installer commit
+# there will ever be, and the hole would stay open for exactly them.
+for path in "$@"; do
+    case "$path" in
+        *.iss)
+            echo all
+            exit 0
+            ;;
+    esac
+done
+
 # A document is a file whose content only a document-reading test can judge.
 # Everything else is a build input, however much it reads like prose:
 # `guards/guards.toml` names breaks the runner applies to source, `Cargo.toml`
