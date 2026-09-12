@@ -339,7 +339,11 @@ Written down so you do not spend time reporting things already on the list.
 - **The cached mail on this computer is not encrypted.** Anybody who can read
   your user folder can read your mail. Passwords and tokens are not in there,
   they are in the Windows credential store.
-- **The installer is not signed**, so Windows will warn about it.
+- **The installer is not signed**, so Windows will warn about it. Signing it
+  would not stop that warning either, and nothing this project can buy will.
+  [Installing and uninstalling](installing.md) has the keyboard steps for
+  getting past the box, which are worth reading first: the button you land on
+  is the one that cancels.
 
 ## How to report something
 

@@ -20,6 +20,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   first-run screen is shown once per install, so this is one hearing rather than
   one on every start.
 
+### Fixed
+
+- **A page inside the installer promised that signing the setup file would make
+  the Windows warning stop appearing.** It will not, and no certificate this
+  project can buy changes that. The sentence was corrected by hand on
+  2026-09-04, but it had already shipped, so it is sitting on the disk of
+  anybody who installed a build before then and stays there until they install
+  another one. A failing build now says so if the promise comes back. The alpha
+  testing page also points at the walkthrough for getting past the box with a
+  screen reader, rather than leaving a tester to find it.
+
 - **Notes on an Outlook or Office 365 account now go to OneNote.** Each section
   of your notebooks is a note folder here, named by where it sits, so a section
   called Q3 inside a section group called Projects inside a notebook called Work
