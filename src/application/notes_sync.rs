@@ -627,6 +627,30 @@ async fn hold_both_copies_of<S: NotesService>(
 /// marker written down, the next sync finds the same disagreement and asks the
 /// same question again, and a choice that has to be made every sync is not a
 /// choice.
+///
+/// # Two copies that agree are not a question, and this is where that is said
+///
+/// A backend reports a clash by comparing markers, because a marker is all it
+/// has to compare. A clash is two copies that disagree. Those are not the same
+/// thing, and the gap between them is where somebody is handed a question with
+/// one answer given twice: a title and a body read aloud, identical on both
+/// sides, and two buttons that do the same thing.
+///
+/// It is reached whenever the marker moved and the words did not. Somebody
+/// fixing the same typo in both places reaches it. A backend whose marker the
+/// service writes for its own reasons reaches it whenever anything touches a
+/// page while a change waits here, and `docs/development/the-notes-seam.md`
+/// says in requirement 4 that a backend is allowed to do exactly that.
+///
+/// `05.1-04` closed the same gap on the read half, where what arrived is what
+/// is here already. Nothing asked it of the push, because the backend the sync
+/// was written against has an entity tag and an entity tag does not move on its
+/// own. Both backends failed it once it was asked.
+///
+/// The end state both sides were asked for has been reached, so the marker is
+/// written down, the note stops waiting, and it is counted as unchanged. Not as
+/// sent: nothing was sent, and a count saying otherwise would make a sync that
+/// asked for nothing look like one that did something.
 fn hold_these_two_copies(
     cache: &MessageCache,
     note: &NoteEntry,
@@ -635,6 +659,17 @@ fn hold_these_two_copies(
     version_now: Option<String>,
     result: &mut NoteSyncResult,
 ) {
+    if said.title == note.title && said.body == note.body {
+        match cache.a_backend_took_the_note(
+            &note.id,
+            &said.known_as.named,
+            said.known_as.version.as_deref().or(version_now.as_deref()),
+        ) {
+            Ok(()) => result.unchanged += 1,
+            Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+        }
+        return;
+    }
     let held = crate::data::message_cache::held_conflicts::AHeldConflict {
         id: note.id.clone(),
         account_id: note.account_id.clone(),

@@ -1173,6 +1173,66 @@ fn test_a_page_changed_to_what_onenote_already_says_is_not_a_question() {
     a_note_changed_to_what_the_backend_already_says_is_not_a_question(&ASectionOfPages::new());
 }
 
+/// A note is its title as well as its body, and only one of them need move.
+///
+/// Written because a candidate break for the body above reddened nothing.
+/// Comparing the bodies alone and calling that agreement passed every test in
+/// this repository, so the rule was stronger than anything asserting it, and
+/// somebody renaming a note in two places would have had one of the names
+/// thrown away with nothing said. Both halves of a note are compared and both
+/// halves are now asked about.
+fn a_note_whose_title_alone_moved_in_both_places_is_still_a_question<
+    S: NotesService + ABackendToDrive,
+>(
+    backend: &S,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
+    a_sync(&cache, backend);
+    let sent = the_note_here(&cache, "note-1");
+    let named = sent.known_as.clone().expect("a name from the backend");
+
+    // The same body at both ends and two different names for it.
+    backend.somebody_else_changed(&named, "Wiring colours in the loft", "Live is brown.");
+    let renamed_here = NoteEntry {
+        title: "Wiring colours upstairs".to_string(),
+        pending: true,
+        ..sent
+    };
+    cache.save_note(&renamed_here).expect("the change to store");
+
+    let did = a_sync(&cache, backend);
+
+    assert_eq!(
+        did.held, 1,
+        "a note named differently at each end was not held for anybody to choose: {did:?}"
+    );
+    let after = the_note_here(&cache, "note-1");
+    assert_eq!(
+        after.title, "Wiring colours upstairs",
+        "the name typed here was written over before anybody chose"
+    );
+}
+
+#[test]
+fn test_a_document_renamed_at_both_ends_is_still_a_question() {
+    a_note_whose_title_alone_moved_in_both_places_is_still_a_question(
+        &ACollectionOfDocuments::new(),
+    );
+}
+
+#[test]
+fn test_a_page_renamed_at_both_ends_is_still_a_question() {
+    a_note_whose_title_alone_moved_in_both_places_is_still_a_question(&ASectionOfPages::new());
+}
+
 fn a_change_the_setting_held_is_not_written_over_by_the_read<S: NotesService + ABackendToDrive>(
     backend: &S,
 ) {

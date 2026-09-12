@@ -545,6 +545,135 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_page_that_moved_since_this_program_looked_is_reported_rather_than_written_over()
+    {
+        // The backend hands the question over and writes nothing, which is the
+        // seam's one requirement about a clash. What it reports is the marker
+        // the page carries now, so the hold that is written next records it and
+        // the next sync does not ask the same question again.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            a_page_graph_answers_with("1-page", "Fuses", "2026-09-11T10:00:00Z"),
+        )
+        .await;
+
+        let said = a_backend(&address)
+            .leave_a_note_saying(
+                "1-section",
+                Some(&ANoteThere {
+                    named: "1-page".to_string(),
+                    version: Some("2026-09-11T09:00:00Z".to_string()),
+                }),
+                "Fuses",
+                "Neutral is blue",
+            )
+            .await
+            .expect("an answer");
+
+        assert_eq!(
+            said,
+            WhatTheBackendSaid::ItMovedFirst {
+                version_now: Some("2026-09-11T10:00:00Z".to_string()),
+            },
+            "{said:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_that_names_no_time_it_was_changed_is_refused_rather_than_written_over() {
+        // A marker is required of any backend this program writes to, and the
+        // seam's requirement 3 says why: with nothing to compare, the push has
+        // no evidence anything moved at the other end, so this computer's copy
+        // goes over whatever is there and a change somebody made in OneNote is
+        // destroyed with nothing said. 05.1-04 measured that rather than
+        // arguing it. A refusal costs a sync; the other answer costs a note.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"id":"1-page","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+
+        let said = a_backend(&address)
+            .leave_a_note_saying(
+                "1-section",
+                Some(&ANoteThere {
+                    named: "1-page".to_string(),
+                    version: Some("2026-09-11T09:00:00Z".to_string()),
+                }),
+                "Fuses",
+                "Neutral is blue",
+            )
+            .await
+            .expect("an answer");
+
+        let WhatTheBackendSaid::CouldNotBeReached(why) = said else {
+            panic!("a page nobody could compare was written over: {said:?}");
+        };
+        assert!(
+            why.contains("no time it was last changed"),
+            "the reason has to say what could not be told: {why}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_the_marker_handed_back_after_a_change_is_the_one_the_page_carries_afterwards() {
+        // Handed back the marker from before the change, the very next push
+        // compares an old reading against a new one and reports a clash nobody
+        // caused. That is the failure a clock-shaped marker makes cheap, and it
+        // costs one more request to avoid.
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "application/json",
+            vec![
+                // The page as it stands, agreeing with what this program holds.
+                Box::new(|_| a_page_graph_answers_with("1-page", "Fuses", "2026-09-11T09:00:00Z")),
+                // The content the change names things in.
+                Box::new(|_| the_content_of_a_page("Live is brown")),
+                // The change itself, which answers with nothing.
+                Box::new(|_| String::new()),
+                // The page again, now carrying a later reading.
+                Box::new(|_| a_page_graph_answers_with("1-page", "Fuses", "2026-09-11T10:00:00Z")),
+                // And what it kept.
+                Box::new(|_| the_content_of_a_page("Neutral is blue")),
+            ],
+        )
+        .await;
+
+        let said = a_backend(&address)
+            .leave_a_note_saying(
+                "1-section",
+                Some(&ANoteThere {
+                    named: "1-page".to_string(),
+                    version: Some("2026-09-11T09:00:00Z".to_string()),
+                }),
+                "Fuses",
+                "Neutral is blue",
+            )
+            .await
+            .expect("an answer");
+
+        let asked = heard(listening, "the read, the change and the read back")
+            .await
+            .expect("five requests");
+        assert_eq!(
+            asked_for(&asked[2]),
+            "PATCH /me/onenote/pages/1-page/content",
+            "{:?}",
+            asked[2]
+        );
+        let WhatTheBackendSaid::Done { known_as, .. } = said else {
+            panic!("a change that went through was not reported as done: {said:?}");
+        };
+        assert_eq!(
+            known_as.version.as_deref(),
+            Some("2026-09-11T10:00:00Z"),
+            "the marker handed back is the one from before the change"
+        );
+    }
+
+    #[tokio::test]
     async fn test_the_pages_in_a_section_arrive_as_notes_the_seam_can_name() {
         let (address, listening) = answering(
             "200 OK",

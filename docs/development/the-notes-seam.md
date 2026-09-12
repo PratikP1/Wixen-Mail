@@ -149,6 +149,59 @@ and two library tests passed with that guard removed. It is
 `tests/the_notes_seam_takes_a_second_kind_of_backend.rs` that catches it, and it
 catches it for both backends, so this was never a second backend's problem.
 
+### What a backend with no entity tag compares, decided 2026-09-12
+
+**The time the service says it last wrote to the page, compared for equality and
+for nothing else.** Not a digest of the content, and the reason the other
+candidate falls away is worth writing down, because the fourth backend will be
+offered the same two.
+
+A digest of the content this program last saw is kept here. So it answers
+whether **our** copy has changed since we last sent it, which is what the
+waiting flag already answers. It cannot answer whether **their** copy has
+changed, because working that out means holding their copy, and the only way to
+hold their copy is to fetch it. Fetching every page on every sync is exactly
+what `notes_it_holds` and `what_a_note_says` exist to avoid being two names for.
+So the digest is not a weaker marker than the timestamp. It is an answer to a
+different question, and putting it where the marker goes would make every sync
+read every page.
+
+That leaves the timestamp, which requirement 4 above already allows and already
+says what is wrong with. Both directions bite, and one of them turned out to bite
+somewhere nobody had looked.
+
+**The harmless direction is not harmless on the push.** A marker that moves for
+a reason the content did not cause costs a fetch nobody needed, which is what
+requirement 4 says, and that is true of the read. On the push it costs a
+question. The backend compares markers, because a marker is all it has to
+compare, and reports that its copy moved first. The sync then holds both copies
+and asks somebody which to keep. Where the words are the same on both sides,
+that is a question with one answer given twice: a title and a body read aloud,
+identical, and two buttons that do the same thing.
+
+`05.1-04` closed this on the read half and nothing asked it of the push, because
+an entity tag does not move on its own and the sync was written against one.
+Both backends failed the question once it was asked, so it was never a second
+backend's problem. `application::notes_sync::hold_these_two_copies` is where it
+is answered now: two copies that say the same thing are not a clash, so the
+marker is written down, the note stops waiting, and the sync counts it as
+unchanged.
+
+**What is still open is the other direction**, which is a clock's resolution.
+Two changes inside one tick carry one reading, the read reports the note
+unchanged, and the change never arrives. Nothing in this repository can say how
+wide a `lastModifiedDateTime` tick is. That is entry 251 in
+`.planning/WINDOWS.md` and it is a property of the service rather than of this
+code.
+
+**And a marker that is missing is refused rather than written over.** A page
+that arrives carrying no time at all leaves nothing to compare, so the push
+refuses and says so, and the note stays here still marked as waiting. The other
+answer is the one `05.1-04` measured: with no evidence that anything moved, this
+computer's copy goes over whatever is there and a change somebody made at the
+other end is destroyed with nothing said. A refusal costs somebody a sync. The
+other answer costs them their note.
+
 **What a notes backend adds to the conflict model, and it is one line.**
 `TheOtherCopy` has two variants today, `AnAddressBook` and `ACalendar`, each
 carrying the words used in a sentence. Its doc comment explains that it is a
@@ -156,6 +209,17 @@ parameter rather than a second set of sentences, so that one set of words with a
 hole in it cannot drift from itself. A notes backend adds a third variant and
 nothing else. It does not add a second `BothCopies`, a second
 `what_is_being_asked`, or a second set of buttons.
+
+**A second notes backend adds nothing at all, and that is a decision rather than
+an omission.** `ANotesBackend` is the variant, and it says "your notes backend"
+rather than naming one. Naming OneNote would want a fourth variant, which costs
+four places: the words, what the thing is called, and the two halves of writing
+the answer down in `held_conflicts`. It would also put a backend's name in
+`notes_sync`, which is the one thing that file is written not to do, since
+something there would have to choose between two variants by asking which
+backend it was talking to. The sentence somebody hears is the weaker half of
+that trade and it is the half worth checking by ear, so it is a question for the
+checkpoint rather than a thing to decide from the types.
 
 ## Removal: what happens when a backend is taken off an account
 
