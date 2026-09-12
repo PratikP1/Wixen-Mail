@@ -8,6 +8,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The first-run screen and `--help` now say that the downloaded mail is not
+  encrypted.** Nothing about how the mail is stored has changed, and this is not
+  a new protection. What changed is that the program says so. Until now the fact
+  lived only in `docs/installing.md` and `docs/privacy.md`, so the only people
+  who knew were the ones who opened a page, and somebody deciding whether to
+  turn on BitLocker had no reason to think the question applied to them. Both
+  places now say what the pages say: Windows keeps other people who use the
+  computer out of the folder, anyone who takes the drive out can read it unless
+  the disk itself is encrypted, and BitLocker is the answer to that. The
+  first-run screen is shown once per install, so this is one hearing rather than
+  one on every start.
+
 - **Notes on an Outlook or Office 365 account now go to OneNote.** Each section
   of your notebooks is a note folder here, named by where it sits, so a section
   called Q3 inside a section group called Projects inside a notebook called Work

@@ -2692,7 +2692,7 @@ red = [
     "presentation::first_run::tests::test_the_screen_puts_focus_on_the_answer_it_ticks",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 14 },
+    { file = "src/presentation/first_run.rs", tests = 16 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -2819,7 +2819,7 @@ red = [
     "presentation::first_run::tests::test_what_each_answer_costs_rides_on_the_button_and_on_the_screen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 14 },
+    { file = "src/presentation/first_run.rs", tests = 16 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -12949,8 +12949,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/presentation/command_line.rs", tests = 23 },
-    { file = "src/presentation/first_run.rs", tests = 14 },
+    { file = "src/presentation/command_line.rs", tests = 24 },
+    { file = "src/presentation/first_run.rs", tests = 16 },
 ]
 
 # ── The settings file every machine already has ────────────────────────────

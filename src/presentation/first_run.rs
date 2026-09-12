@@ -113,6 +113,20 @@ pub const TITLE: &str = "Before you start";
 /// Short on purpose. It is read out in full by a screen reader before the
 /// person reaches the buttons, so anything not worth hearing every time does
 /// not belong here; the longer version is the testing page.
+///
+/// # Why the storage paragraph is here and not behind the button
+///
+/// The rule above reads as though it forbids the third paragraph. It does not,
+/// because "every time" is once per install: `wx_app` returns early when
+/// `told_about_the_alpha` is set and sets it as the screen closes, so the cost
+/// of a sentence here is one hearing on the machine's first start. Against
+/// that, a second button is one more thing to tab past on the screen somebody
+/// meets first, and what is behind a button is read by the people who were
+/// already going to look. The person who needs this fact is the one who would
+/// not have pressed it.
+///
+/// `test_the_first_run_text_stays_short_enough_to_be_heard` is what stops that
+/// reasoning being used a second and a third time.
 pub const INTRODUCTION: &str = "\
 Wixen Mail is an alpha. Reading your mail is the part that has been used.
 
@@ -120,6 +134,11 @@ Everything that writes is experimental: sending, moving, deleting, filing a \
 copy in Sent, and sending your changes to tasks, contacts and the calendar \
 back to your provider. None of that has been run against a real account yet, \
 so expect it to have bugs.
+
+The mail it downloads is not encrypted on this computer. Windows keeps other \
+people who use this computer out of the folder, but anyone who takes the drive \
+out can read it, unless the disk itself is encrypted. Turn on BitLocker if \
+that matters to you.
 
 Choose what Wixen Mail may change. You can change this later in Settings, and \
 the answer covers every account.";
