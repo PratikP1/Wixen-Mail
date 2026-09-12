@@ -922,3 +922,249 @@ fn test_the_reading_can_see_a_release_trigger_that_was_widened() {
         .expect_err("a reading that found no trigger has to be refused");
     assert!(blind.contains("looked at nothing"), "{blind}");
 }
+
+// ---------------------------------------------------------------------------
+// What has to be signed
+// ---------------------------------------------------------------------------
+
+/// One thing this project hands to somebody, which a signature has to name.
+#[derive(Debug, PartialEq, Eq)]
+struct Artefact {
+    /// Spelled the way the list it came off spells it: a `Source:` path for
+    /// something inside the installer, a glob for something published beside
+    /// it, and Inno's own wildcard for the uninstaller.
+    ///
+    /// Not reduced to a bare file name. A signing step has to name a path it
+    /// can find the file at, and the same executable sits in `target` under one
+    /// name and in `dist` under two others.
+    name: String,
+    origin: Origin,
+}
+
+/// Where an artefact comes from, which is what decides who can sign it.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Origin {
+    /// A `[Files]` entry. Built here, carried inside the setup executable, and
+    /// run from the machine it lands on.
+    InsideTheInstaller,
+    /// A glob in the list the release publishes. Downloaded on its own, so
+    /// nothing else vouches for it.
+    PublishedBesideIt,
+    /// Written by Inno rather than shipped by anything, so it is in neither
+    /// list. It is the one a census taken off the two lists misses.
+    WrittenByInno,
+}
+
+/// Everything this project hands to somebody that a signature has to name.
+///
+/// **Derived from the two lists that decide it, never typed out.** A test
+/// holding seven strings passes when an eighth executable is added to the
+/// installer, and says nothing about it; this one grows and names it. That is
+/// the whole reason this is a parse rather than a constant, and SHIP-01's own
+/// wording is the reason it is needed: it says "the installer and the
+/// executable inside it", which is two of the seven.
+fn the_artefacts_that_need_signing(script: &str, yaml: &str) -> Vec<Artefact> {
+    // The RED half. The parse is the green commit's work; answering with
+    // nothing here keeps the census red for the reason it is about rather than
+    // red for failing to compile.
+    let _ = (script, yaml);
+    Vec::new()
+}
+
+/// Seven things have to be signed, and SHIP-01's own wording says two.
+///
+/// Three are carried inside the setup executable and run from the machine it
+/// installs them on. Three are published beside it and downloaded on their own.
+/// The seventh is written by Inno and named in neither list, which is why a
+/// census taken only off the two lists would count six and read as complete.
+///
+/// The per-origin assertions are also this test's guard against a reading that
+/// found nothing: an empty census fails three of them by name rather than
+/// passing as a tree with nothing in it.
+#[test]
+fn test_the_census_of_what_has_to_be_signed_counts_seven_things() {
+    let script = the_installer_script();
+    let workflow = the_release_workflow();
+    let census = the_artefacts_that_need_signing(&script, &workflow);
+
+    let from = |origin: Origin| -> Vec<&str> {
+        census
+            .iter()
+            .filter(|artefact| artefact.origin == origin)
+            .map(|artefact| artefact.name.as_str())
+            .collect()
+    };
+
+    assert_eq!(
+        from(Origin::InsideTheInstaller),
+        [
+            r"..\target\release\wixen-mail.exe",
+            r"..\search-handler\target\release\wixen_mail_search.dll",
+            r"..\search-handler\target\release\wixen-mail-search-setup.exe",
+        ],
+        "the [Files] entries that are code have changed, and each one is \
+         something a person runs from an installed folder"
+    );
+
+    assert_eq!(
+        from(Origin::PublishedBesideIt),
+        [
+            "dist/Wixen-Mail-Setup-*.exe",
+            "dist/wixen-mail-v*.exe",
+            "dist/Wixen-Mail-*-windows.zip",
+        ],
+        "the published files that are code have changed, and each one is \
+         something a person downloads on its own"
+    );
+
+    assert_eq!(
+        from(Origin::WrittenByInno),
+        ["unins???.exe"],
+        "the uninstaller is the seventh and is in neither list, so a census \
+         that stops reading the two lists loses it silently"
+    );
+
+    assert_eq!(
+        census.len(),
+        7,
+        "seven things need signing, and this census reads {census:?}"
+    );
+}
+
+/// The reading can tell a census that sees everything from one that has been
+/// narrowed until it cannot.
+///
+/// The companion the census cannot do without. The census reads one script and
+/// one workflow, and while those two hold seven things it passes whether the
+/// parse works or has been narrowed to see six, which is how a document guard
+/// in this tree came to prove nothing at all. These fixtures make the
+/// difference visible, and the second is the break `guards/guards.toml`
+/// applies.
+#[test]
+fn test_the_census_can_see_an_artefact_that_arrived_without_being_signed() {
+    const A_SCRIPT: &str = r#"
+[Setup]
+OutputDir=..\dist
+
+[Files]
+Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"
+"#;
+
+    const AN_EIGHTH_SOURCE: &str = r#"
+[Setup]
+OutputDir=..\dist
+
+[Files]
+Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\tools\target\release\wixen-mail-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"
+"#;
+
+    const NOTHING_TO_UNINSTALL: &str = r#"
+[Setup]
+OutputDir=..\dist
+Uninstallable=no
+
+[Files]
+Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversion
+"#;
+
+    const A_WORKFLOW: &str = r#"
+    env:
+      RELEASE_ASSETS: |
+        dist/Wixen-Mail-Setup-*.exe
+        docs/changelog.md
+
+    steps:
+      - name: Publish GitHub release assets
+        with:
+          files: ${{ env.RELEASE_ASSETS }}
+"#;
+
+    const A_WIDER_WORKFLOW: &str = r#"
+    env:
+      RELEASE_ASSETS: |
+        dist/Wixen-Mail-Setup-*.exe
+        dist/wixen-mail-debugger-*.exe
+        docs/changelog.md
+
+    steps:
+      - name: Publish GitHub release assets
+        with:
+          files: ${{ env.RELEASE_ASSETS }}
+"#;
+
+    let names = |script: &str, yaml: &str| -> Vec<String> {
+        the_artefacts_that_need_signing(script, yaml)
+            .into_iter()
+            .map(|artefact| artefact.name)
+            .collect()
+    };
+
+    assert_eq!(
+        the_artefacts_that_need_signing(A_SCRIPT, A_WORKFLOW),
+        vec![
+            Artefact {
+                name: r"..\target\release\wixen-mail.exe".to_string(),
+                origin: Origin::InsideTheInstaller,
+            },
+            Artefact {
+                name: "dist/Wixen-Mail-Setup-*.exe".to_string(),
+                origin: Origin::PublishedBesideIt,
+            },
+            Artefact {
+                name: "unins???.exe".to_string(),
+                origin: Origin::WrittenByInno,
+            },
+        ],
+        "the README is prose and the changelog is prose, and neither is \
+         something Authenticode can sign or Windows can run"
+    );
+
+    // An executable added to the installer without anybody thinking about
+    // signing it. This is the real shape: somebody ships a new helper, the
+    // installer carries it, and nothing anywhere says it is unsigned.
+    let eighth = names(AN_EIGHTH_SOURCE, A_WORKFLOW);
+    assert!(
+        eighth.contains(&r"..\tools\target\release\wixen-mail-helper.exe".to_string()),
+        "an executable added to [Files] has to appear in the census: {eighth:?}"
+    );
+
+    // The same on the other side: a new published download.
+    let wider = names(A_SCRIPT, A_WIDER_WORKFLOW);
+    assert!(
+        wider.contains(&"dist/wixen-mail-debugger-*.exe".to_string()),
+        "an executable added to the published list has to appear in the \
+         census: {wider:?}"
+    );
+
+    // The uninstaller is read off the script rather than assumed, so a script
+    // that generates none does not carry a phantom seventh.
+    assert!(
+        !names(NOTHING_TO_UNINSTALL, A_WORKFLOW).contains(&"unins???.exe".to_string()),
+        "Uninstallable=no means Inno writes no uninstaller, so there is \
+         nothing there to sign"
+    );
+
+    // Two readings that found nothing, which without these read exactly like a
+    // project that hands nobody anything.
+    assert!(
+        names(A_SCRIPT, "").is_empty()
+            || !names(A_SCRIPT, "").iter().any(|n| n.starts_with("dist/")),
+        "a workflow that could not be read must not contribute published names"
+    );
+    assert!(
+        names("", A_WORKFLOW)
+            .iter()
+            .all(|name| !name.ends_with(".dll") && name != "unins???.exe"),
+        "a script that could not be read must not contribute an installed \
+         file or an uninstaller"
+    );
+}
