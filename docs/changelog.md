@@ -8,9 +8,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **On a build where the Windows accessibility calls are missing, the About
-  dialog now says which parts of the accessibility layer do nothing there.**
-  This is a disclosure and not a port. Nothing here makes anything work on
+- **On a build where the Windows accessibility calls are missing, the program
+  now says which parts of its accessibility layer do nothing there, at startup
+  and in the About dialog.** This is a disclosure and not a port. Nothing here makes anything work on
   Linux or macOS, and no wording in it promises that anything will. Wixen Mail
   reaches a screen reader two ways, and both of them are Windows calls that are
   accepted everywhere and do something in one place: announcements go through
@@ -20,8 +20,10 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   presented itself as an accessible mail client and was not one. The dialog now
   names both halves: that nothing it announces is spoken or sent to a braille
   display, and that a list, a tree or a field with no label beside it reaches
-  the accessibility tree with no name. On Windows the dialog is unchanged,
-  because there is nothing to disclose.
+  the accessibility tree with no name. Starting the program says the same thing
+  in the same words, once, on the stream a terminal is reading, so nobody has to
+  open a menu to find out. On Windows nothing is printed and the dialog is
+  unchanged, because there is nothing to disclose.
 
 - **The first-run screen and `--help` now say that the downloaded mail is not
   encrypted.** Nothing about how the mail is stored has changed, and this is not

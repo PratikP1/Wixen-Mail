@@ -6,6 +6,7 @@ use wixen_mail::common::logging::{LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::common::version;
 use wixen_mail::presentation::WxMailApp;
+use wixen_mail::presentation::accessibility::platform_bridge;
 use wixen_mail::presentation::command_line::{self, Command};
 use wixen_mail::presentation::scan_target;
 
@@ -37,6 +38,25 @@ fn main() {
         }
         Command::Run(run) => run,
     };
+
+    // What this build's accessibility layer does not do, before anything else
+    // happens. Here rather than further down because nothing it needs is set up
+    // yet and nothing below it is: a start that then stalls on a migration or
+    // on the copy already running has still said this.
+    //
+    // Once per start, from the same source as the About dialog, so the two
+    // cannot come to say different things. `None` on Windows, where both halves
+    // of the bridge are here, so a normal start prints nothing extra.
+    //
+    // The stream rather than a dialog. `say` reaches a terminal and a redirect
+    // through `put`'s first step, which is ungated, and `put`'s third step is a
+    // dialog only when the first two found nowhere to write. That step cannot
+    // be reached by this line: it is silent on Windows, and everywhere else
+    // `show_dialog` is an `eprintln!`. A modal box on every start of a program
+    // somebody is trying to use is what guardrail 5's bounded half rules out.
+    if let Some(missing) = platform_bridge::what_this_build_does_not_do() {
+        say(&format!("{missing}\n"));
+    }
 
     // Held for as long as this program is up, so the uninstaller and
     // --erase-all-data can both see that deleting the data folder right now
