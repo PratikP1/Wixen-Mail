@@ -109,6 +109,42 @@ expect_among checkbox_labels "the item form's check-box guard is coupled to the 
 expect "" "a source file no record names answers nothing" \
     "$registry" src/application/threading.rs
 
+# ── A guarded file that is not a source module ──────────────────────────────
+# Until 2026-09-12 this mapping read only a changed `src/*.rs`, and the reason
+# written beside the filter was about `--lib` never reaching anything else. That
+# is true and it is about the wrong half: the answer here is a `--test` target,
+# not a `--lib` filter, so what the filter really did was throw away every
+# record whose break lands on something that is not Rust.
+#
+# The consequence is guardrail 4's shape again. A record naming
+# `.github/workflows/release.yml` and the suite that reads it looks like
+# coverage and was never once consulted, so a commit changing only the release
+# workflow ran the four tree-reading guards and nothing that reads the workflow.
+# `house_style` is one of those and it collects `.github` with extension `yml`,
+# so a prose rule over the file was checked all along; what was never checked is
+# anything the workflow has to say.
+#
+# The installer script had the same hole and it was closed one layer up, by
+# `which-checks.sh` answering `all` for any `.iss`. That is the heavier answer
+# and it is right for a build input that reaches every target. A workflow file
+# reaches one suite, so it earns one suite.
+expect_among installer "a workflow a record couples to a suite answers it" \
+    "$registry" .github/workflows/release.yml
+expect_among installer "the installer script a record couples to that suite answers it too" \
+    "$registry" installer/Wixen-Mail-Setup.iss
+
+# The companion. Without it the two cases above pass against a mapping that
+# answers `installer` for anything at all, which is the widening this change is
+# one edit away from.
+expect "" "a workflow no record names answers nothing" \
+    "$registry" .github/workflows/ci.yml
+
+# A changed test file is left out, because the run already ends with its own
+# target and a record coupling something to it would ask for the same target a
+# second time.
+expect "" "a changed test file is not coupled to itself a second time" \
+    "$registry" tests/installer.rs
+
 # `house_style` and `wired` are already run on every scoped run, because they
 # read across the whole tree. A record coupling a source file to one of them is
 # a true statement that buys this mapping nothing, and answering it would run
