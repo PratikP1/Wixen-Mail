@@ -6096,7 +6096,18 @@ fn test_one_failing_target_does_not_hide_the_rest() {
     // the output says everything that is wrong instead of the first thing.
     let mut stopping = Vec::new();
 
-    for path in ["scripts/check.sh", ".github/workflows/ci.yml"] {
+    // other-platforms.yml joined this list in the commit that created it,
+    // rather than as a follow-up. It runs the suite on Linux and on macOS, so
+    // it can build this same hole in a new place, and a list naming two of the
+    // three files that run the suite is the kind of covered-looking gap this
+    // check exists to close. Taken red by hand against that file on
+    // 2026-09-12, by putting a step in it that runs the suite without
+    // --no-fail-fast and watching this test name the line.
+    for path in [
+        "scripts/check.sh",
+        ".github/workflows/ci.yml",
+        ".github/workflows/other-platforms.yml",
+    ] {
         let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         for (number, line) in text.lines().enumerate() {
             if stops_at_the_first_failure(line) {
