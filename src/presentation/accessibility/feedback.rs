@@ -26,13 +26,54 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::time::Duration;
 
-/// Something worth telling the user about.
+/// Declares `Event` and [`Event::ALL`] from one list, so the two cannot
+/// disagree.
 ///
-/// Deliberately a closed set. An open "signal this string" call is how a
-/// codebase ends up with forty near-identical sounds that nobody can tell
-/// apart, which is the failure this enum exists to prevent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Event {
+/// Four exhaustive matches in this file already force a new variant to be
+/// described: `key`, `text`, `priority` and `tone` all refuse to compile
+/// without an arm for it. Nothing forced it into `ALL`, which was a
+/// hand-written array beside them, and `ALL` is the only enumeration of the
+/// variants that exists. So an event left out of it is an event with no
+/// control on the Feedback tab, no slot in a sound scheme and no test
+/// coverage at all, because every test of the "every event has" family
+/// iterates `ALL`. Measured by hand on 2026-09-12: a seventeenth variant
+/// answered in all four matches and absent from `ALL` left the whole library
+/// green, 7,118 tests, nothing red.
+///
+/// Generating both from the list makes that disagreement unrepresentable
+/// rather than detectable. It is the argument [`menu_ids!`] already makes in
+/// `wx_app.rs`: nothing here depends on the list being written twice, only on
+/// the two copies agreeing, so keeping them in step is not a thing a person
+/// should be doing.
+///
+/// [`menu_ids!`]: crate::presentation::wx_app
+macro_rules! events {
+    ($($(#[$about:meta])* $name:ident),* $(,)?) => {
+        /// Something worth telling the user about.
+        ///
+        /// Deliberately a closed set. An open "signal this string" call is how a
+        /// codebase ends up with forty near-identical sounds that nobody can tell
+        /// apart, which is the failure this enum exists to prevent.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Event {
+            $($(#[$about])* $name,)*
+        }
+
+        impl Event {
+            /// Every event, so settings and tests can cover the whole set.
+            ///
+            /// Still a `[Event; N]` in the order the list is written, because
+            /// `SoundScheme::covers` and the sound scheme import census count
+            /// against its length and the settings screen reads its order. The
+            /// length is counted from the list rather than written down.
+            pub const ALL: [Event; events!(@count $($name)*)] = [$(Event::$name,)*];
+        }
+    };
+    (@count $($name:ident)*) => { 0usize $(+ events!(@one $name))* };
+    (@one $name:ident) => { 1usize };
+}
+
+events!(
     /// The cursor landed on a message that is part of a conversation.
     ThreadLanded,
     /// The cursor tried to move past the first or last row.
@@ -107,29 +148,9 @@ pub enum Event {
     /// rather than alarming, and its own tone means somebody does not have
     /// to listen to a whole sentence to know a search came back empty.
     NothingFound,
-}
+);
 
 impl Event {
-    /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 16] = [
-        Event::ThreadLanded,
-        Event::EdgeOfList,
-        Event::NewMail,
-        Event::MessageSent,
-        Event::SendFailed,
-        Event::ConnectionLost,
-        Event::ConnectionRestored,
-        Event::SyncComplete,
-        Event::ActionRefused,
-        Event::UnsafeMessage,
-        Event::MisspelledWord,
-        Event::Reminder,
-        Event::HasAttachment,
-        Event::AccountNeedsAttention,
-        Event::Confirmed,
-        Event::NothingFound,
-    ];
-
     /// The identifier used when preferences are stored.
     pub fn key(&self) -> &'static str {
         match self {
