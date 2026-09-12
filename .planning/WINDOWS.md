@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 284
+open_count: 285
 waived_count: 0
 fixed_count: 21
-total_count: 305
-last_updated: 2026-09-12T06:27:51.385Z
+total_count: 306
+last_updated: 2026-09-12T07:45:55.655Z
 ---
 
 # Broken Windows Ledger
@@ -320,6 +320,7 @@ last_updated: 2026-09-12T06:27:51.385Z
 | 303 | 07 | unrun-verify | src/presentation/command_line.rs |  | The storage paragraph added to the end of what --help prints has never been read in a real terminal or by a screen reader. Its wrapping and its place at the end of a long page are both unmeasured | open |  | 2026-09-12T06:27:38.279Z |  |
 | 304 | 07 | unmet-truth | src/common/logging.rs | 79 | Two of the three writes this program makes to the temporary folder are on no page a user can read. The log fallback at logging.rs:79 can hold whatever the running log holds, on a machine where the data folder could not be resolved, and the converted help pages at help_page.rs:97 hold nothing of anybody's. Neither goes through a paths.rs accessor, so the new check cannot reach either. 07-05 rewrites the privacy page and owns whether the log fallback earns a sentence | open |  | 2026-09-12T06:27:39.183Z |  |
 | 305 | 07 | todo | tests/house_style.rs |  | test_no_document_says_the_cache_is_encrypted and its companion have no guards/guards.toml record, so nothing measures that they still redden when the check they hold is narrowed. The signing guard written beside them in 07-01 does have one, and it breaks house_style.rs itself, so the same shape is available to them | open |  | 2026-09-12T06:27:51.385Z |  |
+| 306 | 07 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | Nothing here compiles the installer with ISCC, installs anything or looks at a shortcut, so whether the Start menu entry, the desktop shortcut and the Apps and Features entry really show the icon after a real install is unverified | open |  | 2026-09-12T07:45:55.655Z |  |
 
 ````json
 [
@@ -3981,6 +3982,18 @@ last_updated: 2026-09-12T06:27:51.385Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T06:27:51.385Z",
+    "resolved_at": null
+  },
+  {
+    "id": 306,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "installer/Wixen-Mail-Setup.iss",
+    "line": null,
+    "description": "Nothing here compiles the installer with ISCC, installs anything or looks at a shortcut, so whether the Start menu entry, the desktop shortcut and the Apps and Features entry really show the icon after a real install is unverified",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T07:45:55.655Z",
     "resolved_at": null
   }
 ]
