@@ -7,7 +7,7 @@ status: executing
 stopped_at: 07-06 merged with one task of three done, and it is the first plan of this phase that does not close what it was written for. There is now a workflow anybody can dispatch to find out whether this crate builds and its suite passes on Linux and on macOS. Nobody has dispatched it, so the answer is unknown, SHIP-05 does not close and criterion 5 stays open. Task 3 was not attempted because everything in it acts on an answer that does not exist. The workflow is workflow_dispatch only and read only, so a job nobody knows will pass is not on any push trigger. The guard that holds CI steps to --no-fail-fast read a hardcoded pair of files and now names three, taken red by hand against the new one
 last_updated: "2026-09-12T15:45:00.000Z"
 last_activity: 2026-09-12
-state_head: b8857bc8
+state_head: c6546e66
 progress:
   total_phases: 13
   completed_phases: 0
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-06 is merged, version
-0.116.0. Six plans of nine have run and three remain, but 07-06 is the first
+Phase: 07 (Installing, updating and what is stored). **07-06 is merged at
+`c6546e66`, version 0.116.0. Six plans of nine have run and three remain, but 07-06 is the first
 plan of this phase that did not close what it was written for: one task of
 three, with its checkpoint open. Phase 05.2's checkpoint is still open too and
 nothing in it has been answered.**
@@ -221,6 +221,10 @@ Version `0.116.0`, unchanged by 07-06 because nothing user-visible changed and
 `CLAUDE.md` ties a bump to a change that needs one. `guards/guards.toml` holds
 729 records with the census reading 192 and 537, untouched by this plan.
 `.planning/WINDOWS.md` reaches 325 with 303 open, and nothing is pushed.
+`scripts/check.sh all` passed all four on 07-06's branch tip in 654 seconds over
+7,492 tests. That is slower than the 419 to 471 the last four branches report,
+and the reason is the run following several test rebuilds rather than anything
+about this branch, so it is a warm-versus-cold difference rather than a trend.
 
 **Two agents shared this working tree and the gate noticed.** Phase 6's planning
 was running while 07-06 executed, and its untracked plan files made the

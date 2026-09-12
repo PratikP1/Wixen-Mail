@@ -177,7 +177,15 @@ ledger entry carrying a measurement that does not exist.
 | 3 | Act on the answer | not attempted | there is no answer to act on |
 
 Branch `one-dispatch-says-whether-this-crate-builds-off-windows`, off `main` at
-`b8857bc8`.
+`b8857bc8`, merged at **`c6546e66`**.
+
+**The full gate before the merge: all four passed in 654 seconds over 7,492
+tests.** Not piped anywhere, redirected to a file, and the exit status read from
+the script rather than from a pipeline. That is slower than the 419 to 471
+seconds the last four branches report, and the reason is not this branch: the
+run followed several test rebuilds, so it paid for compilation the warm figures
+did not. Quoting it without that condition would put a number into the next
+plan's estimate that nothing here earned.
 
 ## Every acceptance criterion of task 1, with what proves it
 
@@ -516,6 +524,7 @@ the new file's only trigger is `workflow_dispatch`.
 | The guard target | `cargo test --test house_style` | 69 passed, 0 failed |
 | The guard sees a violation in the new file | the step above, put in by hand | red, naming `other-platforms.yml:135` |
 | The commit gate | the `commit-msg` hook, `affected` | rustfmt, clippy, the three script suites, `--test house_style`, the tree guards, all green |
+| The full gate before the merge | `bash scripts/check.sh all > file 2>&1` on the branch tip | all four passed, 654 seconds, 7,492 tests |
 | Triggers | `grep -rn "workflow_dispatch\|on:" .github/workflows/other-platforms.yml` | 4 hits, 2 of them `runs-on` |
 | `release.yml` untouched | `git diff b8857bc8..HEAD -- .github/workflows/release.yml` | empty |
 | What the gate decides | `bash scripts/which-checks.sh <branch> <files>` | `affected` on a branch, `all` on `main` |
