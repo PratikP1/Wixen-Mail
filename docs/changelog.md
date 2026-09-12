@@ -35,7 +35,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
   When it cannot get an answer it says so, rather than telling you that you are
   up to date. Those are different things and only one of them means your version
-  is current.
+  is current. There are five things it can tell you, and they are five different
+  sentences: there is a newer version, this is the newest, nothing has been
+  published yet, the answer could not be fetched, and the answer could not be
+  read.
+
+  Nothing has been published from this project yet, so today the answer is
+  always the third one. On "Released versions" it says so without claiming that
+  no test versions exist, because the question it asked could not have seen
+  them, and it tells you which setting would show them.
+
+  "Could not be fetched" says which. GitHub allows sixty requests an hour from
+  one address without signing in, so a shared office or campus connection can
+  reach that; when it does, you are told to wait rather than told anything about
+  your version. A refusal for any other reason says that instead, and a reply
+  that arrived but could not be read is a third thing again, because waiting
+  does not help with that one.
 
 - **On a build where the Windows accessibility calls are missing, the program
   now says which parts of its accessibility layer do nothing there, at startup

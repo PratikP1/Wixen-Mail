@@ -215,10 +215,60 @@ impl Answer {
                 version::current(),
                 which_was_asked(*channel)
             ),
-            Self::NothingPublishedYet { .. }
-            | Self::CouldNotBeUnderstood { .. }
-            | Self::CouldNotBeFetched { .. } => "Wixen Mail could not ask GitHub which versions \
-                 have been published, so it does not know whether there is a newer one. Your \
+            // Two sentences, because the two channels learned two different
+            // facts. The public endpoint excludes prereleases, so a 404 there
+            // means no released version and says nothing at all about test
+            // versions: a repository holding only alphas answers exactly this.
+            // Denying their existence would tell a tester who was sent one that
+            // nothing exists.
+            Self::NothingPublishedYet {
+                channel: ReleaseChannel::PublicReleases,
+            } => format!(
+                "No released version of Wixen Mail has been published yet, so there is \
+                 nothing newer than the {} you are running. There may be test versions: \
+                 to be told about those, set \"{WHICH_UPDATES_LABEL}\" to \"{}\" under \
+                 \"{SETTINGS_SECTION}\" in Settings.",
+                version::current(),
+                WhichUpdates::DevelopmentReleases.words()
+            ),
+            Self::NothingPublishedYet {
+                channel: ReleaseChannel::DevelopmentReleases,
+            } => format!(
+                "No version of Wixen Mail has been published yet, released or test, so \
+                 there is nothing newer than the {} you are running.",
+                version::current()
+            ),
+            Self::CouldNotBeUnderstood { entries: 0 } => "GitHub answered and Wixen Mail \
+                 could not read the answer, so it does not know whether there is a newer \
+                 version. Your version has not changed."
+                .to_string(),
+            Self::CouldNotBeUnderstood { entries } => format!(
+                "GitHub listed {entries} published version(s) and Wixen Mail could not \
+                 read any of their version numbers, so it does not know whether there is \
+                 a newer one. Your version has not changed."
+            ),
+            Self::CouldNotBeFetched {
+                why: NotFetched::TooManyAsks,
+            } => "GitHub is not answering any more requests from this address for the \
+                 moment, because it allows sixty an hour without signing in. Wixen Mail \
+                 does not know whether there is a newer version. Your version has not \
+                 changed."
+                .to_string(),
+            Self::CouldNotBeFetched {
+                why: NotFetched::Refused,
+            } => "GitHub refused the request, so Wixen Mail does not know whether there \
+                 is a newer version. Your version has not changed."
+                .to_string(),
+            Self::CouldNotBeFetched {
+                why: NotFetched::SomethingElse(status),
+            } => format!(
+                "GitHub answered with {status}, so Wixen Mail does not know whether there \
+                 is a newer version. Your version has not changed."
+            ),
+            Self::CouldNotBeFetched {
+                why: NotFetched::NoAnswer,
+            } => "Wixen Mail could not reach GitHub to ask which versions have been \
+                 published, so it does not know whether there is a newer one. Your \
                  version has not changed."
                 .to_string(),
         }
@@ -245,7 +295,7 @@ fn which_was_asked(channel: ReleaseChannel) -> &'static str {
 /// problems. Somebody in that position is told this is the newest, which is
 /// wrong, and the bound is written down here so the next person can see the
 /// case rather than discover it.
-const MOST_RELEASES_CONSIDERED: u32 = 30;
+const MOST_RELEASES_CONSIDERED: u32 = 100;
 
 /// Where a channel's question goes.
 ///
@@ -310,24 +360,50 @@ struct Published {
 /// body, so none of this needs a socket to be tested and none of it can be
 /// right only against a server that happens to be up.
 pub fn what_the_answer_means(channel: ReleaseChannel, running: &str, reply: &Reply) -> Answer {
-    if reply.status != 200 {
-        return Answer::CouldNotBeFetched {
-            why: NotFetched::NoAnswer,
-        };
+    match reply.status {
+        200 => {}
+        // Nothing published, which is not an error. On the public channel this
+        // means no *released* version, because that endpoint excludes
+        // prereleases and drafts, so the sentence for it is careful about what
+        // it may claim. Both were asked of this repository on 2026-09-12 and
+        // this is the answer it really gives.
+        404 => return Answer::NothingPublishedYet { channel },
+        // A rate limit answers 403 or 429 and is told from the other 403 by the
+        // header rather than by the status. Reading the status alone would call
+        // one of them the other, and telling somebody to wait an hour for a
+        // request that was refused for a different reason is as wrong as
+        // telling them nothing is wrong.
+        403 | 429 if reply.requests_left == Some(0) => {
+            return Answer::CouldNotBeFetched {
+                why: NotFetched::TooManyAsks,
+            };
+        }
+        403 | 429 => {
+            return Answer::CouldNotBeFetched {
+                why: NotFetched::Refused,
+            };
+        }
+        status => {
+            return Answer::CouldNotBeFetched {
+                why: NotFetched::SomethingElse(status),
+            };
+        }
     }
+
     match channel {
         ReleaseChannel::PublicReleases => match serde_json::from_str::<Published>(&reply.body) {
             Ok(published) => whether_that_one_is_an_offer(&published, running, channel),
-            Err(_) => Answer::CouldNotBeFetched {
-                why: NotFetched::NoAnswer,
-            },
+            Err(_) => Answer::CouldNotBeUnderstood { entries: 0 },
         },
         ReleaseChannel::DevelopmentReleases => {
             match serde_json::from_str::<Vec<Published>>(&reply.body) {
+                // An empty list is the other shape "nothing is published"
+                // arrives in, and the one the plan did not have: this endpoint
+                // answers 200 with `[]` rather than 404. Measured 2026-09-12
+                // against this repository.
+                Ok(published) if published.is_empty() => Answer::NothingPublishedYet { channel },
                 Ok(published) => the_newest_offer_among(&published, running, channel),
-                Err(_) => Answer::CouldNotBeFetched {
-                    why: NotFetched::NoAnswer,
-                },
+                Err(_) => Answer::CouldNotBeUnderstood { entries: 0 },
             }
         }
     }
@@ -372,8 +448,40 @@ fn the_newest_offer_among(
     running: &str,
     channel: ReleaseChannel,
 ) -> Answer {
-    match published.first() {
-        Some(first) => whether_that_one_is_an_offer(first, running, channel),
+    let mut best: Option<&Published> = None;
+    let mut unreadable = 0_usize;
+    for candidate in published {
+        match version::whether_to_offer(&candidate.tag_name, running, channel) {
+            // Counted rather than passed over. A list this cannot put in order
+            // is not a list with nothing newer in it, and answering "you are
+            // the newest" there claims a comparison that never happened. This
+            // is the same refusal `common::version` makes, carried up one
+            // level instead of being flattened into its neighbour.
+            Offer::CouldNotRead => unreadable += 1,
+            Offer::NothingNewer => {}
+            Offer::Yes => {
+                let newer_than_best = best.is_none_or(|held| {
+                    version::compare(&candidate.tag_name, &held.tag_name)
+                        == version::Compared::Newer
+                });
+                if newer_than_best {
+                    best = Some(candidate);
+                }
+            }
+        }
+    }
+    match best {
+        // An offer is a fact whatever else the list held. Refusing to say so
+        // because two other entries were unreadable would hide the one thing
+        // somebody asked for.
+        Some(offer) => Answer::ANewerVersion {
+            version: offer.tag_name.clone(),
+            page: offer.html_url.clone(),
+            channel,
+        },
+        None if unreadable > 0 => Answer::CouldNotBeUnderstood {
+            entries: unreadable,
+        },
         None => Answer::ThisIsTheNewest { channel },
     }
 }

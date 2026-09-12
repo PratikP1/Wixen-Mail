@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 536 records have arrived since and have not been through it.
+# 537 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19914,4 +19914,47 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 63 },
+]
+
+# Nothing published reading as up to date, which is T-07-19 in one line. The
+# break makes the 404 arm answer that this is the newest version rather than
+# deleting the arm: the check still runs, still asks, still says something, and
+# what it says is that everybody is current. That is the half-fix somebody
+# writes when they read a 404 as "no news", and it is the one answer this
+# repository can actually give today, because no release has ever been published
+# from it. So the break is not hypothetical: it is what the feature would have
+# done on every machine, for every person, until the first tag.
+#
+# Deleting the arm was the other candidate and it is worse as a measurement. A
+# missing arm falls through to the catch-all and answers "could not be fetched",
+# which is wrong but is not dangerous, and what needs guarding here is
+# specifically the answer that claims a state nobody learned.
+#
+# One test rather than several, and that is the whole of it rather than a short
+# list. Only `test_nothing_published_is_neither_an_error_nor_being_up_to_date`
+# drives a 404 at all. The pairwise sentence test stays green under the break,
+# and correctly so: it compares five sentences built by hand and never asks the
+# mapping which one a status produces, which is the split between the two tests
+# and the reason both exist.
+#
+# The development channel's half of the same fact goes through a different line,
+# `Ok(published) if published.is_empty()`, because that endpoint answers 200
+# with an empty array rather than 404. This record does not cover it. That was
+# measured on 2026-09-12 rather than assumed, and it is the sort of thing a
+# second record would be for if the two ever stop agreeing.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads: 7,073
+# passed in the library and exactly this one failed, with every other target
+# green.
+[[guard]]
+name = "nothing published does not read as being up to date"
+file = "src/service/update_check.rs"
+before = '        404 => return Answer::NothingPublishedYet { channel },'
+after = '        404 => return Answer::ThisIsTheNewest { channel },'
+red = [
+    "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 19 },
 ]
