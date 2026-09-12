@@ -71,6 +71,13 @@ pub enum NotesBackend {
     /// which backends this program will speak and naming one is not shipping
     /// a client for it. Nothing answers this yet.
     CalDavJournal,
+    /// Pages in the sections of a Microsoft account's notebooks.
+    ///
+    /// One section is one container and so one note folder, which is the
+    /// arrangement decided 2026-09-11 and written into
+    /// `docs/development/the-notes-seam.md`.
+    /// [`crate::service::onenote_notes`] is the implementation.
+    OneNote,
     /// A word this build does not recognise.
     Other(String),
 }
@@ -93,6 +100,7 @@ impl NotesBackend {
         match self {
             NotesBackend::ThisComputer => false,
             NotesBackend::CalDavJournal => true,
+            NotesBackend::OneNote => true,
             NotesBackend::Other(_) => false,
         }
     }
@@ -159,11 +167,12 @@ pub fn for_account(account: Option<&Account>, a_calendar_server: bool) -> NotesB
         // cannot use it at all. This arm is not waiting for anybody: it is
         // the answer after all three backends ship.
         Some("gmail") => NotesBackend::ThisComputer,
-        // OneNote could carry them and does not yet. A page is an HTML
-        // document inside a section inside a notebook rather than a title and
-        // a body, so the mapping is a decision somebody has to make. Phase 5.2
-        // is where it is made, and this is the arm that changes.
-        Some("outlook") => NotesBackend::ThisComputer,
+        // OneNote carries them, as of 5.2. A page is an HTML document inside a
+        // section inside a notebook rather than a title and a body, and the
+        // mapping that used to be called a decision nobody had made is
+        // `service::onenote_page`, with a fidelity table behind it saying what
+        // a note loses on the way. One section is one note folder.
+        Some("outlook") => NotesBackend::OneNote,
         // Every plain IMAP or POP account, every account whose provider this
         // build does not recognise, and no account at all. A mail server is a
         // mail server, and a note "in" one would live in a database on this
@@ -307,9 +316,19 @@ pub fn note_folders_for_the_backends_of(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<crate::data::message_cache::NoteFolderEntry>> {
-    // One kind of backend answers today. A second one adds its containers to
-    // this list and changes nothing else, which is what the module header
-    // promises about a second arm.
+    // **A OneNote account's folders are not in this list, and that is a limit
+    // rather than an oversight.** A calendar server's containers are rows this
+    // computer already holds, so they can be answered without asking anybody. A
+    // notebook's sections are Microsoft's answer and asking for them is a
+    // request, which this cannot make: it is called while a screen is being
+    // filled and it is not async. So a Microsoft account's note folders appear
+    // at its first sync rather than before it, made by `sync_the_notes_of`
+    // through the same `a_note_folder_for` this uses. What somebody sees is a
+    // Notes list with nothing in it until they sync once.
+    //
+    // One kind of backend answers here today. A second one whose containers are
+    // stored rather than fetched adds them to this list and changes nothing
+    // else, which is what the module header promises about a second arm.
     the_calendar_servers_of(cache, account_id)
         .iter()
         .map(|journal| the_note_folder_for(cache, account_id, journal))
@@ -346,6 +365,58 @@ pub async fn sync_the_notes_of(
         // reaching it by another route still costs nobody a request.
         NotesBackend::ThisComputer | NotesBackend::Other(_) => {
             Ok(WhatTheNotesSyncDid::TheyStayHere)
+        }
+        NotesBackend::OneNote => {
+            let Some(notebooks) =
+                crate::service::onenote_notes::ANotebookOnAMicrosoftAccount::for_account(
+                    &account.id,
+                )
+                .await
+            else {
+                return Ok(WhatTheNotesSyncDid::NobodyIsSignedIn);
+            };
+            // The sections are asked for here rather than kept anywhere,
+            // because the containers of a hosted backend are the service's
+            // answer and not a row on this computer. A section somebody made in
+            // OneNote this morning is a folder here this afternoon without
+            // anybody adding one.
+            //
+            // A read cut short is said rather than swallowed. A notebook nested
+            // deeper than the walk follows comes back incomplete, and reporting
+            // a clean sync over it is how somebody comes to trust a list that
+            // is missing half of itself.
+            let found = notebooks.the_sections().await?;
+            let mut all = crate::application::notes_sync::NoteSyncResult::default();
+            if !found.complete {
+                all.errors.push(
+                    "Some of this account's notebooks go deeper than Wixen Mail will \
+                     follow, so not every section is a note folder here."
+                        .to_string(),
+                );
+            }
+            for section in &found.items {
+                // Made before the sync is asked for, the same way and for the
+                // same reason the calendar arm does it: a sync is about one
+                // folder, and the folder a note is filed into and the folder a
+                // screen shows have to be one row by construction.
+                let folder = cache.a_note_folder_for(
+                    &account.id,
+                    &section.id,
+                    &crate::service::onenote_notes::ANotebookOnAMicrosoftAccount::the_folder_name_of(
+                        section,
+                    ),
+                )?;
+                all.absorb(
+                    crate::application::notes_sync::sync_notes(
+                        cache,
+                        &notebooks,
+                        &account.id,
+                        &folder.container.clone().unwrap_or_default(),
+                    )
+                    .await?,
+                );
+            }
+            Ok(WhatTheNotesSyncDid::ItRan(all))
         }
         NotesBackend::CalDavJournal => {
             let journals = the_calendar_servers_of(cache, &account.id);
@@ -456,6 +527,22 @@ pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String 
              account's calendar server. This is experimental. No build has ever \
              sent a note to a real server, so expect problems, and turning on \
              Allow Changes is what lets a note go at all."
+        ),
+        // Its own sentence rather than the calendar server's with a word
+        // swapped, because two things about it are different and both matter to
+        // whoever reads it. It names OneNote, since somebody looking for their
+        // notes has to know which application to open. And it says what a page
+        // cannot hold, because unlike a calendar server OneNote really does
+        // change a note on the way: `service::onenote_page`'s fidelity table
+        // measures it construct by construct, and a person who finds out by
+        // losing a code block has been told too late.
+        NotesBackend::OneNote => format!(
+            "Notes in {account_named} are kept on this computer and sent to OneNote, \
+             one section for each note folder. This is experimental. No build has ever \
+             sent a note to a real Microsoft account, so expect problems, and turning \
+             on Allow Changes is what lets a note go at all. A page cannot hold bold, \
+             italic, struck-out text, a quotation, code or a line across the page, so \
+             a note carrying any of those comes back without it and the sync says so."
         ),
         // Named rather than described, because somebody working out why their
         // notes are not moving needs the word to say when they ask. It is
@@ -926,13 +1013,50 @@ mod tests {
     }
 
     #[test]
-    fn test_an_outlook_accounts_notes_stay_on_this_computer() {
-        // OneNote is phase 5.2. Until then this account has no notes backend,
-        // which is a different sentence from "not yet" and is the true one
-        // today.
+    fn test_an_outlook_accounts_notes_go_to_onenote() {
+        // The arm that changed in 5.2, and the whole of what makes a note made
+        // in a Microsoft account reach anybody. Its neighbour above stays
+        // false, and the two together are the answer per provider rather than
+        // one answer for both.
         assert_eq!(
             for_account(Some(&account("a1", "me@outlook.com")), false),
-            NotesBackend::ThisComputer
+            NotesBackend::OneNote
+        );
+    }
+
+    #[test]
+    fn test_an_account_whose_notes_reach_onenote_is_told_that_has_never_been_tried() {
+        // The same promise the calendar server's sentence makes, for the same
+        // reason: a warning that only exists in a changelog is a warning
+        // nobody gets. It names OneNote, because somebody looking for their
+        // notes needs to know where to look.
+        let said = where_they_go_for(&NotesBackend::OneNote, "Work");
+
+        assert!(said.contains("OneNote"), "{said}");
+        assert!(said.contains("experimental"), "{said}");
+        assert!(said.contains("Allow Changes"), "{said}");
+        // Not "yet". A sentence that says a backend is coming has to be
+        // rewritten when it arrives, and this one arrived.
+        assert!(!said.contains("yet"), "{said}");
+    }
+
+    #[test]
+    fn test_an_outlook_account_nobody_has_signed_in_to_is_told_so_rather_than_told_notes_stay_here()
+    {
+        // Nothing is stored in this machine's credential store for this
+        // account, which is the state every account is in during a test and
+        // the state a real one is in before anybody signs in. It is the one
+        // thing on the list only the person can fix, so it is said in its own
+        // words rather than reported as an account whose notes stay here,
+        // which would be a lie about where they go.
+        let cache = a_store();
+
+        let said =
+            run(sync_the_notes_of(&cache, &account("a1", "me@outlook.com"))).expect("an answer");
+
+        assert!(
+            matches!(said, WhatTheNotesSyncDid::NobodyIsSignedIn),
+            "{said:?}"
         );
     }
 
@@ -964,6 +1088,7 @@ mod tests {
         assert!(!NotesBackend::Other("something-later".to_string()).goes_somewhere_else());
         assert!(!NotesBackend::ThisComputer.goes_somewhere_else());
         assert!(NotesBackend::CalDavJournal.goes_somewhere_else());
+        assert!(NotesBackend::OneNote.goes_somewhere_else());
     }
 
     #[test]

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 269
+open_count: 280
 waived_count: 0
 fixed_count: 21
-total_count: 290
-last_updated: 2026-09-12T00:07:34.643Z
+total_count: 301
+last_updated: 2026-09-12T02:48:14.390Z
 ---
 
 # Broken Windows Ledger
@@ -305,6 +305,17 @@ last_updated: 2026-09-12T00:07:34.643Z
 | 288 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a section group nested deeper than MOST_SECTION_GROUPS_DEEP, which is eight, is a real notebook anybody has. The bound is a guess at a hostile answer rather than a measurement of anyone's notebook. | open |  | 2026-09-12T00:07:33.175Z |  |
 | 289 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a paged OneNote listing really uses the @odata.nextLink field name and the value shape the walk follows. Paging is modelled on what list_contacts does for a different Graph endpoint and on a fixture this repository wrote. | open |  | 2026-09-12T00:07:33.914Z |  |
 | 290 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a page created by posting text/html to /me/onenote/sections/{id}/pages answers with the onenotePage JSON this client reads, and with which status. The fixture answers 201 with id and title because the reference describes that resource, not because anything saw it. | open |  | 2026-09-12T00:07:34.643Z |  |
+| 291 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a real notebook's shape is what the four-level walk expects. Notebook, section group, section, page is a reading of Microsoft's reference; nobody here has seen a notebook, so whether every section is reached, and whether the sections of a shared or a class notebook answer at all, is unknown. | open |  | 2026-09-12T02:47:39.602Z |  |
+| 292 | 05.2 | unrun-verify | src/service/onenote_page.rs |  | Whether a page this program creates looks like a note to somebody who then opens it in OneNote itself. The HTML is built to what the reference names, and nothing has rendered it in OneNote's own window or read it back out of one. | open |  | 2026-09-12T02:48:01.509Z |  |
+| 293 | 05.2 | unrun-verify | docs/development/the-notes-seam.md |  | Whether a page edited in OneNote and read back here keeps the structure the fidelity table predicts, construct by construct. The middle step of that table is a model of the service, measured against what three documentation pages describe rather than against anything Microsoft returned. | open |  | 2026-09-12T02:48:02.940Z |  |
+| 294 | 05.2 | unrun-verify | src/service/onenote_notes.rs |  | Whether the conflict answer raises clashes nobody caused. A lastModifiedDateTime moves when the service touches a page for its own reasons, and only a real service touching a real page can show how often that happens and what it then feels like. | open |  | 2026-09-12T02:48:04.386Z |  |
+| 295 | 05.2 | unrun-verify | src/presentation/wx_settings.rs |  | Whether the Notes section of the settings screen is navigable by keyboard through a screen reader when an account can give three different answers on one line. Nobody has heard the OneNote sentence, which is the longest of the three and names a loss. | open |  | 2026-09-12T02:48:05.813Z |  |
+| 296 | 05.2 | unrun-verify | src/service/onenote_notes.rs |  | Whether somebody who has used OneNote for years finds a note made by this program acceptable in their notebook. A page with a title and one block of content is not what OneNote's own editor produces, and this is a question for a person rather than a test. | open |  | 2026-09-12T02:48:07.221Z |  |
+| 297 | 05.2 | unrun-verify | src/service/onenote_notes.rs |  | Whether the folder-name separator, a slash with a space on each side, is heard well. A section called Work / Projects / Q3 is read at a screen reader's default punctuation level and nobody has listened to a list of them. | open |  | 2026-09-12T02:48:08.639Z |  |
+| 298 | 05.2 | unrun-verify | src/application/notes_backend.rs |  | Whether a Microsoft account that also has a calendar on a CalDAV server should get both backends. for_account answers one backend per account and asks the calendar server first, so such an account's OneNote sections are invisible here. Nobody has been asked which they would want. | open |  | 2026-09-12T02:48:10.068Z |  |
+| 299 | 05.2 | unrun-verify | src/service/onenote_notes.rs |  | Whether five requests per changed note is acceptable against Graph's rate limits. A page with no whole-document write and no entity tag costs a read for the marker, a read for the identifiers, the change, a read for the new marker and a read for what was kept, and no real account has ever been asked once. | open |  | 2026-09-12T02:48:11.499Z |  |
+| 300 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether GET /me/onenote/pages/{id} and GET /me/onenote/pages/{id}/content answer with the resource and the document this client reads. The fixtures answer what the reference describes for onenotePage and for page content, not what anything saw. | open |  | 2026-09-12T02:48:12.950Z |  |
+| 301 | 05.2 | unrun-verify | src/application/notes_backend.rs |  | Whether a Notes list that is empty until the first sync is acceptable for a Microsoft account. A notebook's sections are Microsoft's answer and cannot be asked for while a screen is being filled, so the folders arrive at the first sync rather than before it. | open |  | 2026-09-12T02:48:14.390Z |  |
 
 ````json
 [
@@ -3786,6 +3797,138 @@ last_updated: 2026-09-12T00:07:34.643Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T00:07:34.643Z",
+    "resolved_at": null
+  },
+  {
+    "id": 291,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether a real notebook's shape is what the four-level walk expects. Notebook, section group, section, page is a reading of Microsoft's reference; nobody here has seen a notebook, so whether every section is reached, and whether the sections of a shared or a class notebook answer at all, is unknown.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:47:39.602Z",
+    "resolved_at": null
+  },
+  {
+    "id": 292,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_page.rs",
+    "line": null,
+    "description": "Whether a page this program creates looks like a note to somebody who then opens it in OneNote itself. The HTML is built to what the reference names, and nothing has rendered it in OneNote's own window or read it back out of one.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:01.509Z",
+    "resolved_at": null
+  },
+  {
+    "id": 293,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "docs/development/the-notes-seam.md",
+    "line": null,
+    "description": "Whether a page edited in OneNote and read back here keeps the structure the fidelity table predicts, construct by construct. The middle step of that table is a model of the service, measured against what three documentation pages describe rather than against anything Microsoft returned.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:02.940Z",
+    "resolved_at": null
+  },
+  {
+    "id": 294,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_notes.rs",
+    "line": null,
+    "description": "Whether the conflict answer raises clashes nobody caused. A lastModifiedDateTime moves when the service touches a page for its own reasons, and only a real service touching a real page can show how often that happens and what it then feels like.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:04.386Z",
+    "resolved_at": null
+  },
+  {
+    "id": 295,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Whether the Notes section of the settings screen is navigable by keyboard through a screen reader when an account can give three different answers on one line. Nobody has heard the OneNote sentence, which is the longest of the three and names a loss.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:05.813Z",
+    "resolved_at": null
+  },
+  {
+    "id": 296,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_notes.rs",
+    "line": null,
+    "description": "Whether somebody who has used OneNote for years finds a note made by this program acceptable in their notebook. A page with a title and one block of content is not what OneNote's own editor produces, and this is a question for a person rather than a test.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:07.221Z",
+    "resolved_at": null
+  },
+  {
+    "id": 297,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_notes.rs",
+    "line": null,
+    "description": "Whether the folder-name separator, a slash with a space on each side, is heard well. A section called Work / Projects / Q3 is read at a screen reader's default punctuation level and nobody has listened to a list of them.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:08.639Z",
+    "resolved_at": null
+  },
+  {
+    "id": 298,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "Whether a Microsoft account that also has a calendar on a CalDAV server should get both backends. for_account answers one backend per account and asks the calendar server first, so such an account's OneNote sections are invisible here. Nobody has been asked which they would want.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:10.068Z",
+    "resolved_at": null
+  },
+  {
+    "id": 299,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/onenote_notes.rs",
+    "line": null,
+    "description": "Whether five requests per changed note is acceptable against Graph's rate limits. A page with no whole-document write and no entity tag costs a read for the marker, a read for the identifiers, the change, a read for the new marker and a read for what was kept, and no real account has ever been asked once.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:11.499Z",
+    "resolved_at": null
+  },
+  {
+    "id": 300,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether GET /me/onenote/pages/{id} and GET /me/onenote/pages/{id}/content answer with the resource and the document this client reads. The fixtures answer what the reference describes for onenotePage and for page content, not what anything saw.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:12.950Z",
+    "resolved_at": null
+  },
+  {
+    "id": 301,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/application/notes_backend.rs",
+    "line": null,
+    "description": "Whether a Notes list that is empty until the first sync is acceptable for a Microsoft account. A notebook's sections are Microsoft's answer and cannot be asked for while a screen is being filled, so the folders arrive at the first sync rather than before it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T02:48:14.390Z",
     "resolved_at": null
   }
 ]

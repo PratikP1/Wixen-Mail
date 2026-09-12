@@ -783,6 +783,7 @@ mod tests {
         let expected = [
             (NotesBackend::ThisComputer, false),
             (NotesBackend::CalDavJournal, true),
+            (NotesBackend::OneNote, true),
             (NotesBackend::Other("something-later".to_string()), false),
         ];
 

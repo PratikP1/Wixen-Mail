@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 524 records have arrived since and have not been through it.
+# 528 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -1734,15 +1734,16 @@ tests_last_seen = [
 name = "the deletion question asks about the container, not its kind"
 file = "src/application/new_item.rs"
 before = """        (
-            ContainerKind::Calendar | ContainerKind::TaskList,
+            ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder,
             WhereItCameFrom::AProvider
         )"""
 after = """        (
-            ContainerKind::Calendar | ContainerKind::TaskList,
+            ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder,
             WhereItCameFrom::AProvider | WhereItCameFrom::ThisComputer
         )"""
 red = [
     "application::new_item::deletion_tests::test_a_calendar_made_on_this_computer_is_not_promised_back_from_a_provider",
+    "application::new_item::deletion_tests::test_a_group_is_not_promised_back_from_a_provider_and_a_backed_note_folder_is",
     "application::new_item::deletion_tests::test_a_task_list_made_on_this_computer_is_not_promised_back_either",
 ]
 tests_last_seen = [
@@ -18411,7 +18412,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18460,7 +18461,7 @@ red = [
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18779,7 +18780,7 @@ red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18820,7 +18821,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10: 6,802 passed in the library, exactly two failed in the
@@ -18844,7 +18845,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10: 6,802 passed in the library, exactly nine failed in the
@@ -18879,7 +18880,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10: 6,803 passed in the library, exactly four failed in the
@@ -18920,7 +18921,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 31 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
 # Measured 2026-09-10: exactly one failed in the library and the suite was
@@ -19389,8 +19390,15 @@ tests_last_seen = [
 # therefore the whole of the evidence that this gate applies.
 #
 # Measured 2026-09-11 by hand on a clean tree with nothing else building, at the
-# default eight threads: 6,980 passed, 1 failed, 69.99 seconds. The red test is
-# new with this change and is the only place the assertion is made.
+# default eight threads: 6,980 passed, 1 failed, 69.99 seconds. The red test was
+# new with that change and was the only place the assertion was made.
+#
+# Re-measured 2026-09-12, when `05.2-03` put a notes backend on top of this
+# client and gave it a test of its own asking the same question one layer up.
+# The break now reddens two, and the second one is the finding: adding a caller
+# to a gated method widens what this guard covers, and no count of tests per
+# file can see that. It was found by the remeasure refusing the record rather
+# than by anybody thinking to look.
 [[guard]]
 name = "a onenote page is made through the gated transport rather than a client of its own"
 file = "src/service/microsoft_graph.rs"
@@ -19403,9 +19411,11 @@ after = '''        let resp = reqwest::Client::new()
             .bearer_auth(token)'''
 red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
+    "service::onenote_notes::tests::test_an_account_that_may_only_be_read_makes_no_page_and_says_why",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
+    { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
 # A walk of a notebook stops going deeper into section groups, and says it
@@ -19440,7 +19450,7 @@ red = [
     "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
 ]
 
 # A change to a page is built from a read of that page taken immediately before
@@ -19476,5 +19486,153 @@ red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_changes_no_page",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
+]
+
+# What a backend could not keep is read off its own copy, not worked out from
+# what this program believes that backend does.
+#
+# Requirement 2 of the seam's section on bytes, and the break is the saving
+# anybody would reach for: the pure mapping in `onenote_page` already says what
+# a page does to a note, so putting the note through it costs nothing and saves
+# a request. What it costs instead is the only thing in this backend that could
+# ever notice Microsoft behaving differently from a model read off three
+# documentation pages. A backend answering from a rule about itself goes on
+# claiming a byte survived after the day it stops surviving.
+#
+# Three tests red and only one of them is about the rule. The other two starve:
+# the break takes a request away, and their fixtures wait for one that never
+# comes, so they fail on a socket rather than on an assertion. Written down as
+# measured rather than trimmed to the one that was predicted.
+#
+# A second candidate was measured, because the first plausible break is often
+# the weak one. Answering "kept it all" whenever the title survived is the other
+# shape of the same mistake, and it reddens exactly one test, the one about the
+# rule: 7,010 passed, 1 failed, 68.01 seconds. The break kept here is the wider
+# one, because what it defends is the read happening at all.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: 7,008 passed, 3 failed, 64.59 seconds. All three tests
+# were new with that change.
+#
+# Re-measured the same day, after the conflict work added a fourth test to this
+# file. It starves the same way the other two do, which is the second time in
+# one plan that a record widened because a test was added near what it guards
+# rather than because anything about the rule changed. Four now.
+[[guard]]
+name = "what a onenote page could not keep is read off the page rather than off a model of it"
+file = "src/service/onenote_notes.rs"
+before = '''        let there = the_note_on(&self.client.page_content(&self.token, page_id).await?);'''
+after = '''        let there = the_note_on(&the_page_for(asked));'''
+red = [
+    "service::onenote_notes::tests::test_a_note_made_here_reaches_onenote_as_a_page_in_the_section_it_was_given",
+    "service::onenote_notes::tests::test_a_note_reaches_onenote_through_the_sync_that_names_no_backend",
+    "service::onenote_notes::tests::test_the_marker_handed_back_after_a_change_is_the_one_the_page_carries_afterwards",
+    "service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out",
+]
+tests_last_seen = [
+    { file = "src/service/onenote_notes.rs", tests = 13 },
+]
+
+# A clash is two copies that disagree, and a marker that moved is not that.
+#
+# The break compares the markers instead of the words, which is what the backend
+# below already did to decide there was a clash at all: the whole point of this
+# rule is that the marker's answer is not the question. It is what somebody
+# writes who reads "the backend says its copy moved first" as "the copies
+# differ", and for an entity tag the two really are the same sentence. For a
+# clock the service owns they are not, and OneNote has only a clock.
+#
+# What it costs when it is wrong is a question with one answer given twice: a
+# title and a body read aloud, identical on both sides, and two buttons that do
+# the same thing. Somebody who fixed the same typo in both places meets it.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: the library untouched at 7,014 passed, and exactly 2
+# failed in the suite, 65.84 seconds. Both tests are new with this change and
+# both backends fail it, so this was never a second backend's problem.
+[[guard]]
+name = "two copies of a note that say the same thing are not held for anybody to choose"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''    if said.title == note.title && said.body == note.body {'''
+after = '''    if said.known_as.version == note.known_version {'''
+red = [
+    "test_a_document_changed_to_what_the_server_already_says_is_not_a_question",
+    "test_a_page_changed_to_what_onenote_already_says_is_not_a_question",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
+]
+
+# A note is its title as well as its body, and comparing one of them is not
+# comparing the note.
+#
+# The other half of the record above, and it earns a record of its own because
+# it reddens different tests. The break compares the bodies alone, which is what
+# somebody writes who is thinking about the body because the body is where the
+# words are. A note renamed in two places then has one of its names thrown away
+# with nothing said.
+#
+# **This break reddened nothing when it was first measured, and that was the
+# finding rather than a reason to drop it.** Every test in this repository
+# passed with the comparison weakened to the body, so the rule was stronger than
+# anything asserting it. The two tests below were written for that gap and the
+# break was measured again against them.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: nothing at all failed before the two tests existed, and
+# afterwards the library was untouched at 7,014 passed with exactly 2 failed in
+# the suite, 67.74 seconds.
+[[guard]]
+name = "a note renamed at both ends is still two copies that disagree"
+file = "src/application/notes_sync.rs"
+suite = "the_notes_seam_takes_a_second_kind_of_backend"
+before = '''    if said.title == note.title && said.body == note.body {'''
+after = '''    if said.body == note.body {'''
+red = [
+    "test_a_document_renamed_at_both_ends_is_still_a_question",
+    "test_a_page_renamed_at_both_ends_is_still_a_question",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
+]
+
+# A consumer Gmail account's notes stay on this computer, and nothing widens
+# that by looking at the wrong side of the question.
+#
+# The break sends them to OneNote, which is the over-widening anybody makes
+# once one provider arm changes and the two arms sit next to each other. It
+# promises a sync that cannot happen: Google Keep's API is Workspace only, so a
+# consumer account cannot use it at all, and OneNote has no idea who this
+# person is. What somebody would see is a Sync now they can press, a settings
+# screen saying their notes go to OneNote, and nothing ever arriving.
+#
+# Five tests red, and the spread is the point: the seam's own answer, the
+# sentence the settings screen says, where a new note is filed, whether a sync
+# is asked for at all, and the "no notes backend" sentence that has to go on
+# being true after all three backends ship. That last one is why this arm is
+# not a placeholder waiting to be filled in.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: 7,012 passed, 5 failed, 69.27 seconds. Two of the five
+# are new with this change and three were already there, which is what a guard
+# on an existing promise should look like.
+[[guard]]
+name = "a consumer gmail account's notes stay on this computer after all three backends ship"
+file = "src/application/notes_backend.rs"
+before = '''        Some("gmail") => NotesBackend::ThisComputer,'''
+after = '''        Some("gmail") => NotesBackend::OneNote,'''
+red = [
+    "application::new_item::tests::test_a_note_is_filed_where_that_providers_answer_says_and_a_reminder_never_leaves",
+    "application::new_item::tests::test_a_note_or_reminder_is_local_even_on_a_gmail_default",
+    "application::notes_backend::tests::test_a_gmail_accounts_notes_stay_on_this_computer",
+    "application::notes_backend::tests::test_an_account_whose_notes_stay_here_is_never_asked_for_a_backend",
+    "application::notes_backend::tests::test_an_account_with_no_notes_backend_is_told_so_rather_than_told_not_yet",
+]
+tests_last_seen = [
+    { file = "src/application/new_item.rs", tests = 42 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]

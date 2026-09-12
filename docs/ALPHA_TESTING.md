@@ -136,6 +136,47 @@ Written down so you do not spend time reporting things already on the list.
   Nothing else about the text changes, and notes kept on this computer are not
   affected at all.
 
+- **Notes on an Outlook or Office 365 account now go to OneNote, and no build
+  has ever opened a real notebook.** Each section of your notebooks becomes a
+  note folder here, named by where it sits, so a section called Q3 inside a
+  section group called Projects inside a notebook called Work shows as
+  "Work / Projects / Q3". Settings says so on the Calendar and PIM tab and says
+  it is experimental.
+
+  Your sections arrive at the first sync rather than before it, so the Notes
+  list looks empty until you press Sync now once. That is because the list of
+  sections is Microsoft's answer and has to be asked for.
+
+  Everything has been driven against a server written for the tests, so we know
+  what this program sends and we do not know what Microsoft says back. What we
+  do not know, one thing at a time: whether Microsoft accepts the page this
+  builds, whether a page you make here looks like a note when you open it in
+  OneNote, whether changing a page works the way the reference describes,
+  whether the permission can be granted on a personal account without an
+  administrator, and whether the sections of a shared or a class notebook can
+  be read at all.
+
+  **A note loses things on the way, and this is not a bug we can fix.** A
+  OneNote page has no way to hold bold, italic, struck-out text, a quotation,
+  code, or a line across the page. A note carrying any of those comes back
+  without it, the sync tells you how many notes that happened to, and the copy
+  kept here becomes the copy OneNote kept. Headings, lists including nested
+  ones, tables, links and pictures all survive. A picture comes back with its
+  description and with Microsoft's address for it rather than the one it went
+  out with, because OneNote stores the picture itself.
+
+  Struck-out text is the one to watch. A job crossed off and a job still to do
+  read the same afterwards.
+
+  If you try it on notes you care about, keep a copy. Turning Allow Changes off
+  for that account stops anything leaving this computer while you look.
+
+  **Signing in again is needed for an account set up before version 0.111.0.**
+  Permission is granted once at sign-in, and the permission this needs is new.
+  Open the account, switch the browser sign-in off and back on, and approve the
+  list the browser shows. Until you do, every notes sync on that account says
+  you need to sign in again.
+
 - **Contacts can now come from an address book on a server, and no build has
   ever reached a real one.** Tools, "Add an Address Book by Address", asks for
   the address and the sign-in, asks the server which address books it has, and
@@ -212,10 +253,11 @@ Written down so you do not spend time reporting things already on the list.
   Moving an event to another calendar is still refused, and says so. It is the
   same idea for a different kind of thing, and it has not been built.
 - **Moving a note to another folder can now lose a note, in the same way and
-  for the same reasons.** Your notes go beside your calendars, and each calendar
-  they go to is its own note folder here. So moving a note between two of those
-  folders is moving it between two places at the server, which is the same two
-  steps as moving a task.
+  for the same reasons.** Each place your notes go is its own note folder here:
+  one for each calendar you added by its address, and one for each section of
+  your OneNote notebooks. So moving a note between two of those folders is
+  moving it between two places at the server, which is the same two steps as
+  moving a task.
 
   Wixen Mail asks the server to make the note again in the new place, and then,
   once that has worked, asks it to remove the note from the old one. That order
@@ -287,9 +329,13 @@ Written down so you do not spend time reporting things already on the list.
   about it is new in this version: the client, the local folders, the sync, and
   the policy that removes mail from the server. Mail is left on the server
   unless you turn that off, which is the setting to be careful with.
-- **Notes only sync if you added a calendar by its address.** Everything else
-  keeps its notes on this computer, including Gmail and Outlook accounts. The
-  entry higher up this page says what happens when they do sync.
+- **Notes sync for two kinds of account and no others.** An account whose
+  calendar you added by its address sends its notes to that same server, and an
+  Outlook or Office 365 account sends them to OneNote. Everything else keeps
+  its notes on this computer, Gmail included: Google Keep's interface is for
+  Workspace accounts only, so a personal Gmail account cannot use it at all and
+  that will not change. The entries higher up this page say what happens for
+  the two that do sync.
 - **The cached mail on this computer is not encrypted.** Anybody who can read
   your user folder can read your mail. Passwords and tokens are not in there,
   they are in the Windows credential store.

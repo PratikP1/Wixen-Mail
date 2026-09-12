@@ -1095,6 +1095,144 @@ fn test_both_copies_of_a_page_are_held_for_a_choice() {
     a_note_changed_in_both_places_is_held_for_somebody_to_choose(&ASectionOfPages::new());
 }
 
+/// Two copies that moved to the same words are not a question.
+///
+/// The other half of the body above, and the one a backend whose marker is a
+/// clock meets far more often. A marker that moved is the whole of what the
+/// push has to go on, so it reports a clash; but a clash is two copies that
+/// disagree, and `conflict_choice` exists to ask which to keep. Asked about two
+/// identical copies it is a question with one answer given twice, read aloud as
+/// a title and a body that are the same on both sides.
+///
+/// It happens for a reason nobody would call an edge case: somebody fixes the
+/// same typo in both places. It happens far more often on a backend whose
+/// marker the service writes for its own reasons, because then any touch at all
+/// puts a waiting change into this state.
+fn a_note_changed_to_what_the_backend_already_says_is_not_a_question<
+    S: NotesService + ABackendToDrive,
+>(
+    backend: &S,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
+    a_sync(&cache, backend);
+    let sent = the_note_here(&cache, "note-1");
+    let named = sent.known_as.clone().expect("a name from the backend");
+
+    // The same words arrive at both ends. The marker moves, so the push has
+    // every reason to think the copies disagree, and they do not.
+    backend.somebody_else_changed(&named, "Wiring colours", "Live is brown. Earth is green.");
+    let changed_here = NoteEntry {
+        body: "Live is brown. Earth is green.".to_string(),
+        pending: true,
+        ..sent
+    };
+    cache.save_note(&changed_here).expect("the change to store");
+
+    let did = a_sync(&cache, backend);
+
+    assert_eq!(
+        did.held, 0,
+        "two copies saying the same thing were held for somebody to choose between: {did:?}"
+    );
+    assert!(
+        !cache
+            .is_held_for_a_choice("note-1")
+            .expect("whether it is held"),
+        "somebody is being asked to choose between two copies that agree"
+    );
+    let after = the_note_here(&cache, "note-1");
+    assert!(
+        !after.pending,
+        "a note the backend already agrees with is still waiting to be sent"
+    );
+    // And the marker is written down, or the next sync asks the same
+    // unanswerable question again.
+    assert!(
+        after.known_version.is_some(),
+        "the marker the backend reported was not written down"
+    );
+}
+
+#[test]
+fn test_a_document_changed_to_what_the_server_already_says_is_not_a_question() {
+    a_note_changed_to_what_the_backend_already_says_is_not_a_question(
+        &ACollectionOfDocuments::new(),
+    );
+}
+
+#[test]
+fn test_a_page_changed_to_what_onenote_already_says_is_not_a_question() {
+    a_note_changed_to_what_the_backend_already_says_is_not_a_question(&ASectionOfPages::new());
+}
+
+/// A note is its title as well as its body, and only one of them need move.
+///
+/// Written because a candidate break for the body above reddened nothing.
+/// Comparing the bodies alone and calling that agreement passed every test in
+/// this repository, so the rule was stronger than anything asserting it, and
+/// somebody renaming a note in two places would have had one of the names
+/// thrown away with nothing said. Both halves of a note are compared and both
+/// halves are now asked about.
+fn a_note_whose_title_alone_moved_in_both_places_is_still_a_question<
+    S: NotesService + ABackendToDrive,
+>(
+    backend: &S,
+) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let cache = a_store(&dir);
+    a_note_made_here(
+        &cache,
+        &backend.container(),
+        "note-1",
+        "Wiring colours",
+        "Live is brown.",
+    );
+    a_sync(&cache, backend);
+    let sent = the_note_here(&cache, "note-1");
+    let named = sent.known_as.clone().expect("a name from the backend");
+
+    // The same body at both ends and two different names for it.
+    backend.somebody_else_changed(&named, "Wiring colours in the loft", "Live is brown.");
+    let renamed_here = NoteEntry {
+        title: "Wiring colours upstairs".to_string(),
+        pending: true,
+        ..sent
+    };
+    cache.save_note(&renamed_here).expect("the change to store");
+
+    let did = a_sync(&cache, backend);
+
+    assert_eq!(
+        did.held, 1,
+        "a note named differently at each end was not held for anybody to choose: {did:?}"
+    );
+    let after = the_note_here(&cache, "note-1");
+    assert_eq!(
+        after.title, "Wiring colours upstairs",
+        "the name typed here was written over before anybody chose"
+    );
+}
+
+#[test]
+fn test_a_document_renamed_at_both_ends_is_still_a_question() {
+    a_note_whose_title_alone_moved_in_both_places_is_still_a_question(
+        &ACollectionOfDocuments::new(),
+    );
+}
+
+#[test]
+fn test_a_page_renamed_at_both_ends_is_still_a_question() {
+    a_note_whose_title_alone_moved_in_both_places_is_still_a_question(&ASectionOfPages::new());
+}
+
 fn a_change_the_setting_held_is_not_written_over_by_the_read<S: NotesService + ABackendToDrive>(
     backend: &S,
 ) {

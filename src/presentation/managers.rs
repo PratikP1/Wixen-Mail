@@ -1034,17 +1034,12 @@ fn asking_when_people_are_free(
 /// sign-in stored fails here without a request leaving the machine, and one
 /// whose token has run out has it refreshed, which is what a stored provider
 /// name could never tell anybody.
+///
+/// One line, because the answer moved to [`crate::service::oauth`] when the
+/// OneNote notes backend needed the same one. Two copies of how a Graph token
+/// is got disagree the day either changes, and this one was the only copy.
 async fn a_microsoft_token(account: &str) -> Option<String> {
-    let held = crate::service::oauth_credentials::credentials_for("outlook")?;
-    crate::service::oauth::AuthManager::new(
-        account,
-        "outlook",
-        &held.client_id,
-        held.client_secret.as_deref(),
-    )
-    .get_valid_graph_token()
-    .await
-    .ok()
+    crate::service::oauth::a_graph_token_for(account).await
 }
 
 /// How this person reads a date and a time, and what hours they work.
@@ -8250,9 +8245,22 @@ fn where_it_came_from(
             .and_then(|calendar| calendar.source_provider)
             .is_some_and(|came_from| came_from != A_CALENDAR_MADE_HERE),
         ContainerKind::TaskList => crate::application::tasks_sync::a_provider_holds(id),
-        // Neither is sent anywhere, so where it was made changes nothing. The
-        // kind is the whole answer and `the_provider_has_a_copy` gives it.
-        ContainerKind::NoteFolder | ContainerKind::ContactGroup => false,
+        // One backend container is one note folder, decided 2026-09-11, so the
+        // container column is the record of which this is: a folder standing
+        // for a calendar server's journal collection or a OneNote section
+        // carries one, and a folder somebody made here carries none. Read from
+        // the row for the same reason a calendar is, and it used to be a
+        // hardcoded false written when a note folder really was sent nowhere.
+        ContainerKind::NoteFolder => cache
+            .get_note_folder(id)
+            .ok()
+            .flatten()
+            .and_then(|folder| folder.container)
+            .is_some(),
+        // A contact group is sent nowhere at all, so where it was made changes
+        // nothing. The kind is the whole answer and `the_provider_has_a_copy`
+        // gives it.
+        ContainerKind::ContactGroup => false,
     };
     if from_a_provider {
         WhereItCameFrom::AProvider
@@ -8468,17 +8476,50 @@ mod where_a_container_came_from {
     }
 
     #[test]
-    fn test_a_note_folder_and_a_group_are_read_as_kept_here() {
-        // Neither is sent anywhere, so where it was made changes nothing.
+    fn test_a_note_folder_is_read_from_its_row_and_a_group_is_always_kept_here() {
+        // A note folder changed sides in 5.2 and this is where it is read.
+        // One backend container is one note folder, so a folder carrying a
+        // container stands for a calendar server's journal collection or a
+        // OneNote section, and there really is a copy at the provider. A
+        // folder somebody made here carries none and is sent nowhere.
+        //
+        // This used to drive an empty cache with an unknown identifier and
+        // assert that both kinds were kept here, which is what a row that is
+        // not there answers whatever the rule is. It could not have seen the
+        // change.
         let cache = a_cache("folders_and_groups");
+        // The folder made here goes first, because `ensure_default_note_folder`
+        // hands back whatever folder the account already has rather than making
+        // a second one. Written the other way round, both halves of this test
+        // were about the same row and the second one failed.
+        let made_here = cache
+            .ensure_default_note_folder("acct-1")
+            .expect("a folder made here");
+        let backed = cache
+            .a_note_folder_for("acct-1", "1-section", "Work / Notes")
+            .expect("a folder a backend gave");
 
-        for kind in [ContainerKind::NoteFolder, ContainerKind::ContactGroup] {
-            assert_eq!(
-                where_it_came_from(&cache, kind, "whatever"),
-                WhereItCameFrom::ThisComputer,
-                "{kind:?}"
-            );
-        }
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, &backed.id),
+            WhereItCameFrom::AProvider,
+            "a folder standing for a section at a provider was read as made here"
+        );
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, &made_here.id),
+            WhereItCameFrom::ThisComputer,
+            "a folder somebody made here was read as one a provider holds"
+        );
+        // A row that is not there is one nothing points at, so nothing
+        // promises it back.
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::NoteFolder, "gone"),
+            WhereItCameFrom::ThisComputer
+        );
+        // A contact group is still sent nowhere, whoever made it.
+        assert_eq!(
+            where_it_came_from(&cache, ContainerKind::ContactGroup, "whatever"),
+            WhereItCameFrom::ThisComputer
+        );
     }
 }
 
