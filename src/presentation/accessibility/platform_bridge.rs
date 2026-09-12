@@ -297,6 +297,48 @@ mod tests {
     }
 
     #[test]
+    fn test_starting_the_program_says_it_before_anybody_has_opened_a_menu() {
+        // The About dialog needs somebody to go and look. This is the copy that
+        // reaches a person who only started the program, and it is the same
+        // wording from the same source, so the two cannot come apart.
+        //
+        // What this cannot see: whether the words really land on a terminal on
+        // a build with no bridge. Nothing here runs a process, and no such
+        // build has been made.
+        let program = read("src/main.rs");
+
+        assert!(
+            asks_and_takes_the_answer_as_it_comes(&program),
+            "starting the program no longer asks this build what its \
+             accessibility layer does not do, or supplies an answer when there \
+             is none, which would put a warning in front of every Windows user"
+        );
+        assert!(
+            program.contains("say(&format!(\"{missing}\\n\"));"),
+            "the answer is taken at startup and never reaches the stream"
+        );
+        assert_eq!(
+            program.matches(THE_QUESTION).count(),
+            1,
+            "asked more than once per start, so the disclosure can be said \
+             twice and guardrail 5's bounded half stops holding"
+        );
+        // Paired with the assertion above that it does reach the stream, so
+        // this cannot pass against a startup that says nothing at all.
+        for a_thing_to_dismiss in [
+            "show_dialog(&missing",
+            "show_error_dialog(&missing",
+            "complain(&missing",
+        ] {
+            assert!(
+                !program.contains(a_thing_to_dismiss),
+                "the disclosure is put in front of somebody as something to \
+                 dismiss before the program will run: {a_thing_to_dismiss}"
+            );
+        }
+    }
+
+    #[test]
     fn test_the_reading_can_tell_a_caller_that_asks_from_one_that_does_not() {
         // A walk over two files that obey passes whether the reading works or
         // has been narrowed until it can see nothing. These fixtures are what
