@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 541 records have arrived since and have not been through it.
+# 542 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -20124,5 +20124,46 @@ red = [
     "service::update_download::tests::test_a_signature_from_anybody_else_is_refused_however_valid_it_is",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 29 },
+    { file = "src/service/update_download.rs", tests = 37 },
+]
+
+# The break is a second way to make a checked installer, and it is the shape a
+# real mistake takes rather than a deletion. Somebody wanting to run an
+# installer from a path they already have adds a constructor, and it compiles,
+# and no call site anywhere changes, and every behaviour test stays green,
+# because nothing about the *behaviour* of this module changes. What changes is
+# that the question and the handover can both now be handed a file nothing
+# looked at, which is the entire design of the file undone in five lines.
+#
+# **One test reddens, and that is the finding rather than a thin record.** No
+# behaviour test can see this break, by construction: the rule is carried in the
+# type and a type cannot be observed by running the program. The guard reading
+# the source is the only thing in the tree that can, which is exactly why it
+# exists and why it has two companions proving the reading can see both a second
+# constructor and a public function handing one out.
+#
+# Measured by hand on 2026-09-12 at 0.118.0, `cargo test --lib --no-fail-fast`
+# at eight threads: 7,113 passed, one failed, and it is the one below.
+[[guard]]
+name = "nothing but the check can make a checked installer"
+file = "src/service/update_download.rs"
+before = """impl Verified {
+    /// Where the checked file is.
+    pub fn at(&self) -> &Path {"""
+after = """impl Verified {
+    /// Take a file's word for it.
+    pub fn from_a_path(at: PathBuf) -> Self {
+        Verified {
+            at,
+            version: String::new(),
+        }
+    }
+
+    /// Where the checked file is.
+    pub fn at(&self) -> &Path {"""
+red = [
+    "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 37 },
 ]

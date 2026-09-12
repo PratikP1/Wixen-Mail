@@ -177,8 +177,19 @@ pub enum HandoverFailed {
 impl HandoverFailed {
     /// The sentence somebody hears and reads.
     pub fn said(&self) -> String {
-        let _ = (self, the_releases_page());
-        String::new()
+        let page = the_releases_page();
+        match self {
+            Self::ItIsNoLongerThere => format!(
+                "The update Wixen Mail downloaded is no longer where it put it, so it was \
+                 not started. Wixen Mail is still running and nothing on this computer has \
+                 changed. You can download the new version yourself from {page}."
+            ),
+            Self::ItWouldNotStart(why) => format!(
+                "Wixen Mail could not start the update it downloaded. The reason given was: \
+                 {why}. Wixen Mail is still running and nothing on this computer has \
+                 changed. You can download the new version yourself from {page}."
+            ),
+        }
     }
 }
 
@@ -198,8 +209,14 @@ impl HandoverFailed {
 /// not only in an announcement afterwards, because this is the last moment the
 /// person can still say no.
 pub fn the_question_about(installer: &Verified) -> String {
-    let _ = installer;
-    String::new()
+    format!(
+        "Wixen Mail {} is ready to install. It was checked and it is signed by \
+         {WHO_SIGNS_THIS}.\n\n\
+         If you install it now, Wixen Mail will close and the installer will open in its \
+         place. Your mail, accounts and settings are not touched.\n\n\
+         Install it now?",
+        installer.version()
+    )
 }
 
 /// What is said in the moment before the window goes.
@@ -210,8 +227,10 @@ pub fn the_question_about(installer: &Verified) -> String {
 /// yes. It is not a second question: they have already agreed, and asking twice
 /// about one thing teaches somebody to answer without reading.
 pub fn what_is_said_before_the_window_closes(installer: &Verified) -> String {
-    let _ = installer;
-    String::new()
+    format!(
+        "Installing Wixen Mail {}. Wixen Mail is closing now and the installer is opening.",
+        installer.version()
+    )
 }
 
 /// Somebody said no. Throw the installer away.
@@ -221,8 +240,15 @@ pub fn what_is_said_before_the_window_closes(installer: &Verified) -> String {
 /// having decided not to, and the next check will fetch it again in seconds if
 /// they change their mind.
 pub fn say_no(installer: Verified) -> Result<()> {
-    let _ = installer;
-    Ok(())
+    if !installer.at.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(&installer.at).map_err(|why| {
+        Error::Config(format!(
+            "Could not remove {}: {why}",
+            installer.at.display()
+        ))
+    })
 }
 
 /// Start the installer and leave it to replace this program.
@@ -246,8 +272,19 @@ pub fn say_no(installer: Verified) -> Result<()> {
 /// person's answer is to press retry. Nothing here waits on a bound, because
 /// the wait would have to happen inside a process that is trying to exit.
 pub fn hand_over_to(installer: &Verified) -> std::result::Result<(), HandoverFailed> {
-    let _ = installer;
-    Ok(())
+    if !installer.at.exists() {
+        return Err(HandoverFailed::ItIsNoLongerThere);
+    }
+    std::process::Command::new(&installer.at)
+        .spawn()
+        .map(|child| {
+            tracing::info!(
+                "The installer for {} was started as process {}",
+                installer.version(),
+                child.id()
+            );
+        })
+        .map_err(|why| HandoverFailed::ItWouldNotStart(why.to_string()))
 }
 
 /// Why an installer will not be run.

@@ -8,15 +8,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
-- **Wixen Mail now downloads the installer for a newer version on its own, and
-  refuses to have anything to do with one this project did not sign.** If you
+- **Wixen Mail now downloads the installer for a newer version on its own,
+  asks you once whether to install it, and refuses to have anything to do with
+  one this project did not sign.** If you
   have chosen a kind of version under "Tell me about new versions", then when a
   newer one is published the installer for it is fetched without asking you at
   that moment, which is what you agreed to when you chose. Pressing Check for
   Updates does the same thing on demand, whatever that setting says.
 
-  **Nothing is run yet.** The file is downloaded, checked, and left alone.
-  Starting the installer and handing over to it is the next piece of work.
+  **You are asked once, and only about installing it.** You are never asked
+  about downloading, because that already happened with your agreement, and you
+  are never asked twice about one installer. Answering no leaves the version you
+  are running exactly as it was and deletes the file. Answering yes closes Wixen
+  Mail and opens the installer in its place, and you are told that is about to
+  happen before it happens, in the question itself and again in the moment
+  before the window goes. If the installer will not start, Wixen Mail is still
+  there to say so and nothing on your computer has changed.
 
   Two things are checked before a downloaded installer is ever offered to you,
   and both must pass: that its signature is valid, and that the name on that

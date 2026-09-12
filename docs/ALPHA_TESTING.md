@@ -344,6 +344,15 @@ Written down so you do not spend time reporting things already on the list.
   [Installing and uninstalling](installing.md) has the keyboard steps for
   getting past the box, which are worth reading first: the button you land on
   is the one that cancels.
+- **Updating itself will not work yet, and it is meant not to.** Wixen Mail can
+  now fetch the installer for a newer version on its own, and it refuses to run
+  anything this project did not sign. There is no signing key yet, so an update
+  it fetches gets thrown away, and you are sent to the releases page to fetch
+  the new version by hand. Do report it if that message is unclear or
+  unhelpful, or if Wixen Mail ever offers to run the file anyway; that last one
+  is a defect rather than a wording problem. Do not report the refusal itself.
+  Choosing a kind of version under Settings, then General, then "New versions"
+  is what turns the fetching on, and it begins switched off.
 
 ## How to report something
 

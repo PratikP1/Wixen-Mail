@@ -128,6 +128,38 @@ existing folder to the new place first if you want to keep what is in it.
 Run the new setup file. It installs over the old one and keeps your accounts, settings and
 downloaded mail. There is no need to uninstall first.
 
+### Letting Wixen Mail do it
+
+Wixen Mail can fetch the new setup file for you. Under Settings, then General, then "New
+versions", the setting "Tell me about new versions" has three answers, and it starts on "Do
+not look for new versions". Choose "Released versions" or "Released versions and test
+versions" and two things follow.
+
+**The fetch is automatic. The install is not.** When a newer version is published, Wixen Mail
+downloads the installer for it without asking you at that moment, which is what you agreed to
+by choosing. Then it asks you once, and only about running it. Answering no leaves the version
+you are running exactly as it was and deletes the file. Answering yes closes Wixen Mail and
+opens the installer; you are told that is about to happen before it does.
+
+Help, then Check for Updates, does the same thing on demand whatever that setting says, so you
+never have to change a setting to look deliberately.
+
+**Anything this project did not sign is refused, not warned about.** Before Wixen Mail will
+offer to run a downloaded installer it checks two things: that the signature on the file is
+valid, and that the name on that signature is this project's own. The second is the one that
+matters, because a file can be perfectly validly signed and still be somebody else's program.
+A file failing either check is deleted and you are told which check it failed. You are never
+asked whether to run it anyway.
+
+**Today that refuses everything.** Nothing this project publishes is signed yet, so an update
+will download, be refused, and send you to the
+[releases page](https://github.com/PratikP1/Wixen-Mail/releases) to fetch it by hand. That is
+the intended behaviour rather than a fault: the refusal was built before the signing, so that
+it could never be added afterwards to something already running installers.
+
+Signing, when it arrives, changes the name in the SmartScreen box. It does not remove the box.
+The section at the top of this page still applies.
+
 ## Uninstalling
 
 Uninstall from Settings, then Apps, then Installed apps. Find Wixen Mail and choose

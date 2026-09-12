@@ -393,10 +393,11 @@ is current when it did not find out.
 folder names, not your mail, and no identifier that would let two requests be recognised as
 coming from the same installation.
 
-**Something is downloaded now. Nothing is run.** When the check finds a newer version, Wixen
-Mail fetches the installer for it and checks who signed it, without asking you first. It does
-not install anything. [Downloading an update](#downloading-an-update) below says what that
-fetch sends, which computers it reaches, and what arrives on your disk.
+**Something is downloaded, and nothing is run until you say so.** When the check finds a newer
+version, Wixen Mail fetches the installer for it and checks who signed it, without asking you
+first. Then it asks you once, and only about installing it.
+[Downloading an update](#downloading-an-update) below says what that fetch sends, which
+computers it reaches, and what arrives on your disk.
 
 ## Downloading an update
 
@@ -418,8 +419,11 @@ removed when the update is installed, removed straight away if it turns out not 
 by this project, and removed again the next time Wixen Mail starts. If the setting is left on
 "Do not look for new versions", none of this ever happens.
 
-**Nothing is run.** This version downloads an installer and checks it. Starting it is not
-wired up yet, so the file is fetched, checked and then left alone.
+**Nothing is run without you saying so.** Once the installer has been downloaded and checked,
+Wixen Mail asks you once whether to install it, and that is the only question this feature
+asks. Answering no leaves the version you are running exactly as it was and deletes the file.
+Answering yes closes Wixen Mail and opens the installer, and you are told that is about to
+happen before it happens.
 
 **Anything this project did not sign is refused, not warned about.** Wixen Mail checks two
 things before it will offer to run an installer: that the signature on it is valid, and that

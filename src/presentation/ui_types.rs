@@ -463,9 +463,7 @@ pub enum UIUpdate {
     /// the handover both take it, so there is no order of steps anybody can
     /// rearrange into a version that asks about a file already known to be bad.
     AnUpdateIsReady {
-        /// The version it will install, as it was published.
-        version: String,
-        /// The checked installer.
+        /// The checked installer, which knows which version it is.
         installer: crate::service::update_download::Verified,
     },
     /// A folder was renumbered by its server, so what was held for it here was

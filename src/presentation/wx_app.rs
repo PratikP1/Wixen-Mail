@@ -9732,7 +9732,7 @@ fn ask_whether_there_is_a_newer_version(
         // that has passed both checks.
         match update_download::fetch(&version, &files, &paths).await {
             Fetched::Ready(installer) => {
-                let _ = tx.try_send(UIUpdate::AnUpdateIsReady { version, installer });
+                let _ = tx.try_send(UIUpdate::AnUpdateIsReady { installer });
             }
             Fetched::Refused(why) => {
                 let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
@@ -16639,24 +16639,70 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.announce_topic(&could_not, Priority::High, "command");
             }
         }
-        UIUpdate::AnUpdateIsReady { version, installer } => {
-            // Task 2 of plan 07-09 turns this into the one question this
-            // feature asks and then hands over to the installer. Until it does,
-            // the file is downloaded and checked and nothing runs it, which is
-            // the deliberate half this task stops at rather than an unwired
-            // module.
-            let said = format!(
-                "Wixen Mail {version} has been downloaded and checked. It is signed by \
-                 {}. It has not been installed.",
-                crate::service::update_download::WHO_SIGNS_THIS
-            );
-            {
-                let mut s = lock_state(state);
-                s.status_message = said.clone();
+        UIUpdate::AnUpdateIsReady { installer } => {
+            use crate::service::update_download;
+
+            // The one question this feature asks, and the only one. Nobody was
+            // asked about downloading: that was agreed to at the setting, whose
+            // description says so, or by pressing Check for Updates. Asking
+            // twice about one thing teaches somebody to answer without reading.
+            //
+            // The question can only be built from a checked file, because that
+            // is the only type it takes, so there is no arrangement of this
+            // code that puts "run it anyway?" in front of somebody about a file
+            // that failed its check.
+            //
+            // Enter answers no, so somebody who pressed Enter to dismiss a
+            // sentence does not find their program replacing itself.
+            let asked = MessageDialog::builder(
+                frame,
+                &update_download::the_question_about(installer),
+                "Install Update",
+            )
+            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+            .build()
+            .show_modal();
+
+            if asked != ID_YES {
+                let declined = format!(
+                    "Wixen Mail {} was not installed. You are still running {}, and the \
+                     downloaded file has been removed.",
+                    installer.version(),
+                    crate::common::version::current()
+                );
+                if let Err(why) = update_download::say_no(installer.clone()) {
+                    tracing::warn!("A declined update could not be removed: {why}");
+                }
+                frame.set_status_text(&declined, 0);
+                let _ = a11y.announce_topic(&declined, Priority::High, "command");
+                return;
             }
-            frame.set_status_text(&said, 0);
-            let _ = a11y.announce_topic(&said, Priority::High, "command");
-            tracing::info!("A checked installer is waiting at {:?}", installer.at());
+
+            // Said before it happens rather than after, and said twice on
+            // purpose. The durable half is in the question above, where the
+            // person can still decline after reading that the window will
+            // close; this is the marker of the moment, because an announcement
+            // alone can be coalesced away by whatever a sync is saying
+            // underneath it and a second dialog would be the second question
+            // this feature may not ask.
+            let warning = update_download::what_is_said_before_the_window_closes(installer);
+            frame.set_status_text(&warning, 0);
+            let _ = a11y.announce_topic(&warning, Priority::High, "command");
+
+            // The installer starts first and this program closes after. The
+            // other order leaves nothing running to report a start that failed.
+            match update_download::hand_over_to(installer) {
+                Ok(()) => {
+                    frame.close(true);
+                }
+                Err(why) => {
+                    // Still running, which is the point of this order, so there
+                    // is somewhere to say this.
+                    let said = why.said();
+                    frame.set_status_text(&said, 0);
+                    let _ = a11y.announce_topic(&said, Priority::High, "refusal");
+                }
+            }
         }
         UIUpdate::CommandRefused(why) => {
             {
