@@ -236,10 +236,25 @@ pub fn compare(version: &str, with: &str) -> Compared {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReleaseChannel {
     /// Released versions only.
+    ///
+    /// The default, so a channel nobody chose is the one that offers least.
+    #[default]
     PublicReleases,
     /// Released versions and the prereleases that stage them.
-    #[default]
     DevelopmentReleases,
+}
+
+impl ReleaseChannel {
+    /// Whether a prerelease is ever an offer on this channel.
+    ///
+    /// No catch-all arm, so a third channel would have to answer this rather
+    /// than inheriting whichever answer happened to be the fallback.
+    const fn offers_prereleases(self) -> bool {
+        match self {
+            Self::PublicReleases => false,
+            Self::DevelopmentReleases => true,
+        }
+    }
 }
 
 /// What somebody chose about hearing of new versions.
@@ -254,34 +269,65 @@ pub enum ReleaseChannel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WhichUpdates {
     /// Nothing is asked for and nothing is fetched.
+    ///
+    /// The default, and the answer an unknown stored value reads as, so the
+    /// only way anything is fetched is somebody choosing that it should be.
+    #[default]
     NotLooking,
     /// Released versions.
     PublicReleases,
     /// Released versions and the prereleases that stage them.
-    #[default]
     DevelopmentReleases,
 }
 
 impl WhichUpdates {
     /// Which channel this answer asks, if it asks at all.
     ///
-    /// One function, so the two plans that act on this setting cannot each
-    /// match on three values and have one of them read "not looking" as the
-    /// public channel by accident.
+    /// One function with no catch-all arm, so a fourth answer added here has
+    /// to say which channel it means rather than compiling into whichever
+    /// arm came last. Two callers matching on three values independently is
+    /// how one of them ends up treating "not looking" as the public channel.
     pub const fn channel(self) -> Option<ReleaseChannel> {
         match self {
-            Self::NotLooking | Self::PublicReleases | Self::DevelopmentReleases => None,
+            Self::NotLooking => None,
+            Self::PublicReleases => Some(ReleaseChannel::PublicReleases),
+            Self::DevelopmentReleases => Some(ReleaseChannel::DevelopmentReleases),
         }
     }
 
     /// The spelling that goes in the settings file.
-    fn as_stored(self) -> &'static str {
-        ""
+    ///
+    /// Fixed from the moment one settings file on one machine holds it, which
+    /// is this project's rule about never renaming what shipped applied to a
+    /// stored value rather than to a column. Lower case with underscores
+    /// because every other key in that file is written that way and somebody
+    /// may open it in a text editor.
+    const fn as_stored(self) -> &'static str {
+        match self {
+            Self::NotLooking => "not_looking",
+            Self::PublicReleases => "public_releases",
+            Self::DevelopmentReleases => "development_releases",
+        }
     }
 
     /// What a stored spelling means, including one this build does not know.
-    fn from_stored(_stored: &str) -> Self {
-        Self::NotLooking
+    ///
+    /// Total, and it answers "not looking" for anything it does not
+    /// recognise. That is the case a downgrade produces, and the two other
+    /// answers are both worse: a channel would switch a fetch on for somebody
+    /// who never chose it, and an error would fail the whole settings file and
+    /// take every other setting on that machine back to its default.
+    ///
+    /// A named function rather than a serde attribute, for the reason
+    /// `application::allowed` gives about its own default: the attribute that
+    /// looks right answers for a missing key, and this is about a key that is
+    /// present and holds something else.
+    fn from_stored(stored: &str) -> Self {
+        match stored {
+            "public_releases" => Self::PublicReleases,
+            "development_releases" => Self::DevelopmentReleases,
+            _ => Self::NotLooking,
+        }
     }
 }
 
@@ -292,6 +338,13 @@ impl Serialize for WhichUpdates {
 }
 
 impl<'de> Deserialize<'de> for WhichUpdates {
+    /// Written by hand so an answer this build does not know can load.
+    ///
+    /// A derived reader refuses one, and there is no serde attribute that
+    /// covers it for an enum written as a plain string. What this does not
+    /// cover is a stored value that is not a string at all, which still fails
+    /// the read; the safe direction survives, because a failed read leaves
+    /// every setting at its default and this one's default asks for nothing.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Ok(Self::from_stored(&String::deserialize(deserializer)?))
     }
@@ -317,8 +370,25 @@ pub enum Offer {
 ///
 /// Two questions, and the answer is the conjunction: is it newer, and is it
 /// the kind of release this channel is for.
-pub fn whether_to_offer(_candidate: &str, _running: &str, _channel: ReleaseChannel) -> Offer {
-    Offer::CouldNotRead
+pub fn whether_to_offer(candidate: &str, running: &str, channel: ReleaseChannel) -> Offer {
+    match compare(candidate, running) {
+        Compared::CouldNotRead => Offer::CouldNotRead,
+        Compared::Same | Compared::Older => Offer::NothingNewer,
+        Compared::Newer if is_prerelease(candidate) && !channel.offers_prereleases() => {
+            Offer::NothingNewer
+        }
+        Compared::Newer => Offer::Yes,
+    }
+}
+
+/// Whether a version stages a release rather than being one.
+///
+/// The one place that knows what a prerelease is, so the channel rule asks it
+/// rather than looking for a hyphen itself. A string this cannot read is not a
+/// prerelease, and it never reaches the channel rule anyway: [`compare`] has
+/// already answered [`Compared::CouldNotRead`] for it.
+fn is_prerelease(version: &str) -> bool {
+    parse(version).is_some_and(|version| !matches!(version.stage, Stage::Release))
 }
 
 #[cfg(test)]
