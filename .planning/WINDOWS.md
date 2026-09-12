@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 300
+open_count: 303
 waived_count: 0
 fixed_count: 22
-total_count: 322
-last_updated: 2026-09-12T14:39:53.474Z
+total_count: 325
+last_updated: 2026-09-12T15:49:32.838Z
 ---
 
 # Broken Windows Ledger
@@ -337,6 +337,9 @@ last_updated: 2026-09-12T14:39:53.474Z
 | 320 | 07 | unmet-truth | src/data/config.rs |  | NOT_ANYTHING_ANYBODY_CHOOSES has no check of its own while its two siblings each have one. Verified rather than inherited: it has exactly two mentions in the file, its definition and the exception chain, so nothing re-asks whether either of its two entries is still a value nobody chooses. OFFERED_BY_ANOTHER_SCREEN and STORED_AND_OFFERED_BY_NOTHING each have a test that re-asks. Not fixed here because it is a finding about config.rs rather than about this plan | open |  | 2026-09-12T14:39:51.064Z |  |
 | 321 | 07 | unmet-truth | docs/installing.md |  | docs/privacy.md and docs/installing.md carry the same four-line block listing what is stored under LOCALAPPDATA, word for word, with nothing checking they agree. 07-05 added the temporary-folder log fallback to privacy.md and deliberately did not duplicate it into installing.md, so the two now disagree. Either installing.md gains the same sentence or the block comes from one place | open |  | 2026-09-12T14:39:51.872Z |  |
 | 322 | 07 | todo | src/service/outward.rs |  | update_check.rs is on TALKS_BUT_ONLY_READS and is the first member whose answer will, once 07-09 lands, decide that an executable is fetched. That is not a write at somebody's account and it is not the harmless read the list's name implies, so the census's two categories do not quite describe it. Whether a third list is wanted was raised rather than settled, because the file is fingerprinted by ten guard records | open |  | 2026-09-12T14:39:52.687Z |  |
+| 323 | 07 | unrun-verify | .github/workflows/other-platforms.yml |  | 07-06's checkpoint is open and unrun: nobody has dispatched the Other platforms workflow, so it is still unknown whether this crate builds or its suite passes on Linux or macOS. 07-06 task 3 is unexecuted, SHIP-05 does not close and phase 7 criterion 5 stays open. Dispatch the workflow from the Actions tab on branch one-dispatch-says-whether-this-crate-builds-off-windows or on main, let both jobs finish either way, and report per platform: whether cargo build --all-targets succeeded and the first error in full if not, whether cargo test --all-targets --no-fail-fast succeeded and how many ran and failed if not, the wall clock duration from the run summary, and the runner image label the first step printed | open |  | 2026-09-12T15:35:08.642Z |  |
+| 324 | 07 | unrun-verify | .github/workflows/other-platforms.yml |  | The new workflow has never been run by GitHub, so nothing about it is proven beyond the parts a local test reads. Its YAML has been checked by nothing that parses GitHub Actions, the thirteen apt packages quoted from upstream have never been installed on an ubuntu-latest image, and the macOS step that installs CMake only if it is absent has never taken either branch. A defect in any of those fails the first dispatch for a reason that says nothing about whether the crate builds, which is the question the dispatch is for | open |  | 2026-09-12T15:35:20.673Z |  |
+| 325 | 07 | deviation | .planning/ROADMAP.md |  | A whole-tree guard that reads the disk cannot tell one agent's uncommitted work from another's. test_the_roadmap_counts_the_files_that_are_on_disk runs on every commit and compares the roadmap's progress table with the phase directories as they sit on disk, so while a second agent was planning phase 6 in the same working tree its untracked plan files made that phase's 0/TBD cell false and refused 07-06's document commit. The count also raced: the refused run saw 1 plan and a re-run three minutes later saw 2. The row was set to 0/2 by 07-06 to get past the gate, which is bookkeeping 07-06 does not own and which phase 6's planning will move again. Whether a tree guard should read the index rather than the disk, or whether two agents should share a working tree at all, is raised rather than settled | open |  | 2026-09-12T15:49:32.838Z |  |
 
 ````json
 [
@@ -4202,6 +4205,42 @@ last_updated: 2026-09-12T14:39:53.474Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T14:39:52.687Z",
+    "resolved_at": null
+  },
+  {
+    "id": 323,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".github/workflows/other-platforms.yml",
+    "line": null,
+    "description": "07-06's checkpoint is open and unrun: nobody has dispatched the Other platforms workflow, so it is still unknown whether this crate builds or its suite passes on Linux or macOS. 07-06 task 3 is unexecuted, SHIP-05 does not close and phase 7 criterion 5 stays open. Dispatch the workflow from the Actions tab on branch one-dispatch-says-whether-this-crate-builds-off-windows or on main, let both jobs finish either way, and report per platform: whether cargo build --all-targets succeeded and the first error in full if not, whether cargo test --all-targets --no-fail-fast succeeded and how many ran and failed if not, the wall clock duration from the run summary, and the runner image label the first step printed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T15:35:08.642Z",
+    "resolved_at": null
+  },
+  {
+    "id": 324,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".github/workflows/other-platforms.yml",
+    "line": null,
+    "description": "The new workflow has never been run by GitHub, so nothing about it is proven beyond the parts a local test reads. Its YAML has been checked by nothing that parses GitHub Actions, the thirteen apt packages quoted from upstream have never been installed on an ubuntu-latest image, and the macOS step that installs CMake only if it is absent has never taken either branch. A defect in any of those fails the first dispatch for a reason that says nothing about whether the crate builds, which is the question the dispatch is for",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T15:35:20.673Z",
+    "resolved_at": null
+  },
+  {
+    "id": 325,
+    "kind": "deviation",
+    "phase": "07",
+    "file": ".planning/ROADMAP.md",
+    "line": null,
+    "description": "A whole-tree guard that reads the disk cannot tell one agent's uncommitted work from another's. test_the_roadmap_counts_the_files_that_are_on_disk runs on every commit and compares the roadmap's progress table with the phase directories as they sit on disk, so while a second agent was planning phase 6 in the same working tree its untracked plan files made that phase's 0/TBD cell false and refused 07-06's document commit. The count also raced: the refused run saw 1 plan and a re-run three minutes later saw 2. The row was set to 0/2 by 07-06 to get past the gate, which is bookkeeping 07-06 does not own and which phase 6's planning will move again. Whether a tree guard should read the index rather than the disk, or whether two agents should share a working tree at all, is raised rather than settled",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T15:49:32.838Z",
     "resolved_at": null
   }
 ]
