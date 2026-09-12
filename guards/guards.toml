@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 529 records have arrived since and have not been through it.
+# 530 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3373,6 +3373,33 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 69 },
+]
+
+# ── A path added to the data folder and left off the pages listing it ────────
+#
+# `security.key` was on neither of the two pages that list what Wixen Mail
+# leaves on somebody's disk, and `oauth.toml` was on one of the two, for the
+# whole of this project's life. Somebody backing a machine up, or wiping one,
+# reads those pages to find out what is there.
+#
+# The break is the half-fix rather than the absent one: it makes the
+# enumeration skip an accessor rather than deleting the check. Measured by hand
+# on 2026-09-12 with `--no-fail-fast` across every target, and exactly one test
+# goes red. `test_every_path_this_module_hands_out_is_named_on_both_pages`
+# cannot see this break at all, because skipping a path means checking fewer
+# rather than checking wrongly, which is why the enumeration has a second test
+# of its own.
+
+[[guard]]
+name = "every accessor handing out a path is one the pages have to name"
+file = "src/common/paths.rs"
+before = '''            ("security_key", paths.security_key()),'''
+after = '''            ("logs_dir", paths.logs_dir()),'''
+red = [
+    "common::paths::tests::test_the_enumeration_reaches_every_accessor_this_module_has",
+]
+tests_last_seen = [
+    { file = "src/common/paths.rs", tests = 19 },
 ]
 
 # ── A shipped page promising the Windows warning will go away ────────────────

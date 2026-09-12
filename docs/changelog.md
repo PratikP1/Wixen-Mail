@@ -31,6 +31,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   testing page also points at the walkthrough for getting past the box with a
   screen reader, rather than leaving a tester to find it.
 
+- **The two pages listing what is left on your disk were missing two of the
+  files.** `security.key` was on neither of them and `oauth.toml` was on one,
+  which mattered to anybody reading those pages to decide what to back up or
+  what to wipe. Both pages now name every file Wixen Mail writes to its own
+  folder, and a build fails if a new one is added and left off either page.
+
+- **The privacy page now says that uninstalling cannot clear the Windows Search
+  index.** If you let Windows Search index your mail, the index keeps its own
+  copy of your subjects and message text in a database under ProgramData that
+  is not encrypted. Uninstalling Wixen Mail does not remove it and nothing
+  Wixen Mail can do will: only rebuilding the Windows Search index does that.
+  The installer and the uninstaller both said so already, and both go past
+  once; the page is somewhere you can come back to.
+
 - **Notes on an Outlook or Office 365 account now go to OneNote.** Each section
   of your notebooks is a note folder here, named by where it sits, so a section
   called Q3 inside a section group called Projects inside a notebook called Work

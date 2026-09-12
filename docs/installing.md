@@ -72,13 +72,22 @@ Everything Wixen Mail stores about you is in one folder:
 
 ```text
 %LOCALAPPDATA%\wixen-mail\
-    config\           your settings and one file per account
+    config\           your settings, one file per account, and oauth.toml
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    security.key      only on a machine upgraded from an older version
 ```
 
 Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.
+
+`oauth.toml` holds the sign-in keys this build was made with. It says nothing about you, and a
+build made without one cannot offer the browser sign-in at all.
+
+`security.key` is there only if this computer ran an older version of Wixen Mail. Nothing
+creates it now. Older versions locked saved passwords in a file with it, and it is read once
+so those passwords can be moved into the Windows credential store. A fresh install never has
+one.
 
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential
 store, which is the same place Windows keeps its own saved sign-ins, protected per user by
