@@ -114,6 +114,7 @@ pub struct ReleaseFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Downloaded {
     at: PathBuf,
+    version: String,
 }
 
 impl Downloaded {
@@ -138,6 +139,7 @@ impl Downloaded {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verified {
     at: PathBuf,
+    version: String,
 }
 
 impl Verified {
@@ -145,6 +147,107 @@ impl Verified {
     pub fn at(&self) -> &Path {
         &self.at
     }
+
+    /// Which version it installs, as it was published.
+    ///
+    /// Carried on this value rather than passed beside it, so that everything
+    /// a person is shown about an update takes one argument and that argument
+    /// is the checked file. A version handed over separately is a second thing
+    /// that can come from somewhere else.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+}
+
+/// Why an update did not get as far as installing itself.
+///
+/// Told apart from everything above because the file was fine: it arrived, it
+/// was checked, it is this project's, and the handover is what did not work.
+/// Each of these leaves the running version exactly as it was, which is what
+/// every sentence below says, because somebody who has just watched an update
+/// fail has every reason to wonder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandoverFailed {
+    /// The file was not where it had been checked.
+    ItIsNoLongerThere,
+    /// Windows would not start it.
+    ItWouldNotStart(String),
+}
+
+impl HandoverFailed {
+    /// The sentence somebody hears and reads.
+    pub fn said(&self) -> String {
+        let _ = (self, the_releases_page());
+        String::new()
+    }
+}
+
+/// The one question this feature asks, in the words a person reads.
+///
+/// **It takes the checked file and nothing else, and that is the rule rather
+/// than an ordering.** Nobody is ever asked to approve a file already known to
+/// be bad, and a question implies the answer could reasonably be yes. Offering
+/// somebody "this could not be verified, run it anyway?" moves a decision the
+/// program is equipped to make on to a person who is not, at the exact moment
+/// they are most likely to agree, because they asked for an update and this is
+/// the thing standing between them and having one. Carried in the type, there
+/// is no sequence to reorder, no later edit that can move the question earlier,
+/// and nothing a review has to notice.
+///
+/// It also says the program is about to close. That belongs in the question and
+/// not only in an announcement afterwards, because this is the last moment the
+/// person can still say no.
+pub fn the_question_about(installer: &Verified) -> String {
+    let _ = installer;
+    String::new()
+}
+
+/// What is said in the moment before the window goes.
+///
+/// A screen reader user loses their bearings when a window disappears, and
+/// being told a second beforehand is the difference between a handover and a
+/// crash. This is said once, at high priority, straight after somebody answers
+/// yes. It is not a second question: they have already agreed, and asking twice
+/// about one thing teaches somebody to answer without reading.
+pub fn what_is_said_before_the_window_closes(installer: &Verified) -> String {
+    let _ = installer;
+    String::new()
+}
+
+/// Somebody said no. Throw the installer away.
+///
+/// The file goes rather than waiting in case they change their mind. A declined
+/// installer sitting on the disk is a file somebody can find and run by hand
+/// having decided not to, and the next check will fetch it again in seconds if
+/// they change their mind.
+pub fn say_no(installer: Verified) -> Result<()> {
+    let _ = installer;
+    Ok(())
+}
+
+/// Start the installer and leave it to replace this program.
+///
+/// Takes the checked file, exactly as the question does.
+///
+/// **The installer is started first and this program closes afterwards.** The
+/// other order, closing and then starting, was rejected: the process doing the
+/// starting is the one closing, so the start has to outlive its parent, and if
+/// it fails there is nothing left running to say so. Somebody who answered yes
+/// would be left with no Wixen Mail and no installer and no sentence. This way
+/// round, a failure to start is a message, and the program they were using is
+/// still there.
+///
+/// What that trades away is a race this cannot remove. The installer refuses to
+/// run while a copy of Wixen Mail holds the named mutex, which is what stops
+/// the uninstaller deleting the data folder underneath a running program. So an
+/// installer that reaches its own check before this process has finished
+/// closing will say Wixen Mail is still open. That is the installer's own
+/// dialog rather than a silence, which is the property that matters, and the
+/// person's answer is to press retry. Nothing here waits on a bound, because
+/// the wait would have to happen inside a process that is trying to exit.
+pub fn hand_over_to(installer: &Verified) -> std::result::Result<(), HandoverFailed> {
+    let _ = installer;
+    Ok(())
 }
 
 /// Why an installer will not be run.
@@ -695,7 +798,10 @@ pub fn verify(downloaded: Downloaded) -> std::result::Result<Verified, Refused> 
         Ok(())
     });
     match checked {
-        Ok(()) => Ok(Verified { at: downloaded.at }),
+        Ok(()) => Ok(Verified {
+            at: downloaded.at,
+            version: downloaded.version,
+        }),
         Err(refused) => {
             throw_it_away(downloaded.at());
             Err(refused)
@@ -767,11 +873,11 @@ fn who_is_asking() -> String {
 /// the whole shape decision 16 settles: with a kind of version chosen, the fetch
 /// and the check happen on their own, and the only question a person ever sees
 /// is whether to run a file that has already passed both checks.
-pub async fn fetch(files: &[ReleaseFile], paths: &AppPaths) -> Fetched {
+pub async fn fetch(version: &str, files: &[ReleaseFile], paths: &AppPaths) -> Fetched {
     let Some(installer) = the_installer_among(files) else {
         return Fetched::NotArrived(NotArrived::NoInstallerAmongTheFiles);
     };
-    match bring_it_down(installer, paths).await {
+    match bring_it_down(version, installer, paths).await {
         Ok(downloaded) => match verify(downloaded) {
             Ok(verified) => Fetched::Ready(verified),
             Err(refused) => Fetched::Refused(refused),
@@ -796,6 +902,7 @@ const THERE_WERE_TOO_MANY: u8 = 2;
 /// enabled, which was read out of the vendored crate rather than assumed; only
 /// `bytes_stream` sits behind `stream`.
 async fn bring_it_down(
+    version: &str,
     installer: &ReleaseFile,
     paths: &AppPaths,
 ) -> std::result::Result<Downloaded, NotArrived> {
@@ -876,7 +983,10 @@ async fn bring_it_down(
     file.flush()
         .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
 
-    Ok(Downloaded { at })
+    Ok(Downloaded {
+        at,
+        version: version.to_string(),
+    })
 }
 
 /// Where the releases are, for a refusal to point at.
@@ -937,6 +1047,185 @@ mod tests {
                 .to_string(),
         }];
         assert_eq!(the_installer_among(&only_notes), None);
+    }
+
+    /// A checked installer, made the only way anything outside this module
+    /// could not.
+    ///
+    /// Inside the test module the private fields are reachable, which is the
+    /// whole reason these tests can exist at all and the whole reason no other
+    /// module can do this.
+    fn a_checked_installer(at: PathBuf) -> Verified {
+        Verified {
+            at,
+            version: "v0.117.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_the_question_is_about_running_and_says_the_program_will_close() {
+        let installer = a_checked_installer(PathBuf::from("Wixen-Mail-Setup-0.117.0.exe"));
+        let asked = the_question_about(&installer);
+
+        assert!(
+            asked.contains("v0.117.0"),
+            "a person asked whether to install something should be told what: {asked}"
+        );
+        assert!(
+            asked.to_lowercase().contains("close"),
+            "the last moment somebody can decline is the moment they have to be told \
+             the window is going: {asked}"
+        );
+        // Not about downloading. That already happened, with consent given at
+        // the setting, and a second question about it teaches somebody to
+        // answer without reading.
+        assert!(
+            !asked.to_lowercase().contains("download"),
+            "the only question this feature asks is whether to run it: {asked}"
+        );
+    }
+
+    #[test]
+    fn test_what_is_said_before_the_window_closes_names_the_closing() {
+        let installer = a_checked_installer(PathBuf::from("Wixen-Mail-Setup-0.117.0.exe"));
+        let said = what_is_said_before_the_window_closes(&installer);
+        assert!(!said.is_empty(), "the window goes with nothing said");
+        assert!(
+            said.to_lowercase().contains("clos"),
+            "a screen reader user loses their bearings when a window disappears, so \
+             the sentence before it has to say that is what is happening: {said}"
+        );
+    }
+
+    #[test]
+    fn test_saying_no_deletes_the_installer_and_leaves_this_version_running() {
+        let dir = TempDir::new().unwrap();
+        let at = dir.path().join("Wixen-Mail-Setup-0.117.0.exe");
+        std::fs::write(&at, b"MZ").unwrap();
+
+        say_no(a_checked_installer(at.clone())).expect("declining to work");
+
+        assert!(
+            !at.exists(),
+            "a declined installer was left where somebody can find it and run it by hand, \
+             having just decided not to"
+        );
+    }
+
+    #[test]
+    fn test_a_handover_that_could_not_start_says_so_and_leaves_this_version_running() {
+        // The half of the handover a test can reach. That an installer really
+        // starts, and really replaces the files, is nothing here has ever seen.
+        let dir = TempDir::new().unwrap();
+        let never_there = dir.path().join("Wixen-Mail-Setup-0.117.0.exe");
+
+        let outcome = hand_over_to(&a_checked_installer(never_there));
+
+        assert!(
+            outcome.is_err(),
+            "a handover to a file that is not there reported success, so somebody would \
+             be told their update had started and watch the window close on nothing"
+        );
+    }
+
+    #[test]
+    fn test_a_failed_handover_says_the_running_version_is_untouched() {
+        for why in [
+            HandoverFailed::ItIsNoLongerThere,
+            HandoverFailed::ItWouldNotStart("access is denied".to_string()),
+        ] {
+            let said = why.said();
+            assert!(!said.is_empty(), "{why:?} says nothing at all");
+            assert!(
+                said.contains(&the_releases_page()),
+                "{why:?} leaves somebody with nowhere to go: {said}"
+            );
+        }
+        assert_ne!(
+            HandoverFailed::ItIsNoLongerThere.said(),
+            HandoverFailed::ItWouldNotStart("access is denied".to_string()).said(),
+            "the two ways a handover fails say the same thing"
+        );
+    }
+
+    /// Whether the module's shipped half lets anything but the check make a
+    /// checked installer.
+    ///
+    /// Split out so the reading can be shown a violation as well as the tree.
+    /// The rule is that `Verified` is built in exactly one place, which is
+    /// `verify`, and that no public function hands one out. A constructor taking
+    /// a path would compile, would break nothing at any call site, and would
+    /// quietly undo the whole design.
+    fn anything_but_the_check_can_make_one(source: &str) -> bool {
+        // `struct Verified {` and `impl Verified {` say the same ten characters
+        // and neither builds one. Counting those as constructions was the first
+        // version of this and it put the real tree exactly on the threshold,
+        // which is the way a reading over text goes wrong: right about the
+        // answer, wrong about what it counted.
+        let built = source
+            .match_indices("Verified {")
+            .filter(|(at, _)| {
+                let before = source[..*at].trim_end();
+                !before.ends_with("struct") && !before.ends_with("impl")
+            })
+            .count();
+        let handed_out = source
+            .lines()
+            .filter(|line| {
+                let line = line.trim();
+                line.starts_with("pub fn")
+                    && !line.starts_with("pub fn verify(")
+                    && line
+                        .split_once("->")
+                        .is_some_and(|(_, returns)| returns.contains("Verified"))
+            })
+            .count();
+        // Exactly one construction, which is `verify`'s, and nothing public
+        // handing one out. Not "at most one": nought means this reading has
+        // stopped finding the construction it is about, which is a broken check
+        // rather than a clean tree.
+        built != 1 || handed_out > 0
+    }
+
+    #[test]
+    fn test_only_the_check_can_make_a_checked_installer() {
+        assert!(
+            !anything_but_the_check_can_make_one(&what_this_module_ships()),
+            "something other than the check can produce a checked installer, so the \
+             question and the handover can both be handed a file nothing looked at"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_second_way_to_make_one() {
+        // The whole module in miniature, with one extra constructor in it. That
+        // constructor compiles, breaks nothing at any call site, and undoes the
+        // entire design of this file, which is exactly why it is the violation
+        // worth proving the reading can see.
+        let doctored = "pub struct Verified { at: PathBuf }\n\
+             impl Verified {\n\
+             \x20   pub fn from_a_path(at: PathBuf) -> Self { Verified { at } }\n\
+             }\n\
+             pub fn verify(d: Downloaded) -> Result<Verified, Refused> {\n\
+             \x20   Ok(Verified { at: d.at })\n\
+             }\n";
+        assert!(
+            anything_but_the_check_can_make_one(doctored),
+            "the reading above cannot see the thing it exists to refuse"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_checked_installer_handed_out() {
+        let doctored = "pub struct Verified { at: PathBuf }\n\
+             pub fn verify(d: Downloaded) -> Result<Verified, Refused> {\n\
+             \x20   Ok(Verified { at: d.at })\n\
+             }\n\
+             pub fn trust_me(at: PathBuf) -> Verified { from_somewhere(at) }\n";
+        assert!(
+            anything_but_the_check_can_make_one(doctored),
+            "a public function handing out a checked installer walks past this reading"
+        );
     }
 
     #[test]
@@ -1339,7 +1628,10 @@ mod tests {
         let at = dir.path().join("Wixen-Mail-Setup-0.1.0.exe");
         std::fs::write(&at, b"not an installer").unwrap();
 
-        let refused = verify(Downloaded { at: at.clone() });
+        let refused = verify(Downloaded {
+            at: at.clone(),
+            version: "v0.117.0".to_string(),
+        });
 
         assert!(refused.is_err(), "an unsigned file was accepted");
         assert!(

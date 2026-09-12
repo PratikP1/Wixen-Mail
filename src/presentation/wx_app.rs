@@ -9730,7 +9730,7 @@ fn ask_whether_there_is_a_newer_version(
         // asking again, or by pressing Check for Updates. The only question in
         // this feature is whether to run what arrived, and it belongs to a file
         // that has passed both checks.
-        match update_download::fetch(&files, &paths).await {
+        match update_download::fetch(&version, &files, &paths).await {
             Fetched::Ready(installer) => {
                 let _ = tx.try_send(UIUpdate::AnUpdateIsReady { version, installer });
             }
