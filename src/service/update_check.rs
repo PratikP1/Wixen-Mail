@@ -134,8 +134,66 @@ pub enum Answer {
         /// Which channel was asked.
         channel: ReleaseChannel,
     },
+    /// Nothing at all is published on the channel asked.
+    ///
+    /// Not an error and not being up to date. This is the only answer this
+    /// repository can give today: `git tag` returns nothing, no release has
+    /// ever been published, and both endpoints were asked on 2026-09-12 to
+    /// check rather than assume. Mapping it to either neighbour would make the
+    /// feature wrong on the only case that exists.
+    NothingPublishedYet {
+        /// Which channel was asked, which decides what the sentence may claim
+        /// about the other one.
+        channel: ReleaseChannel,
+    },
     /// The request did not happen, or came back refused.
-    CouldNotBeFetched,
+    CouldNotBeFetched {
+        /// Which of the ways it did not happen, because they are different
+        /// things to be told and one of them is somebody's own doing.
+        why: NotFetched,
+    },
+    /// An answer arrived and could not be read.
+    ///
+    /// Different from not having one at all. A reply this cannot parse means
+    /// the request worked, the address is right, and either GitHub changed
+    /// something or the answer is not from GitHub, and none of that is fixed by
+    /// waiting the way a refused request might be.
+    CouldNotBeUnderstood {
+        /// How many published entries could not be read, where the answer was a
+        /// list. Nought where the whole reply was unreadable.
+        entries: usize,
+    },
+}
+
+/// Why an answer did not arrive.
+///
+/// Sub-answers rather than four variants of [`Answer`], because the person is
+/// being told one thing, that this does not know, and the differences change
+/// only what they might do about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotFetched {
+    /// Nothing came back at all: no connection, or the name did not resolve.
+    NoAnswer,
+    /// GitHub is not answering any more requests from this address for now.
+    ///
+    /// Told apart from the refusal below by `x-ratelimit-remaining`, which
+    /// GitHub documents as being zero in this case, rather than by the status:
+    /// "If you exceed your primary rate limit, you will receive a `403` or
+    /// `429` response, and the `x-ratelimit-remaining` header will be 0."
+    /// [docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api,
+    /// read 2026-09-12]. A module that read only the status would call a rate
+    /// limit a refusal, or worse, call it nothing to worry about.
+    TooManyAsks,
+    /// GitHub refused the request for some other reason.
+    ///
+    /// The documented one is an invalid or missing `User-Agent`, which answers
+    /// `403` as well. Measured on 2026-09-12: a request with an empty agent
+    /// came back `403` with a body naming that requirement and with
+    /// `x-ratelimit-remaining` still positive, which is what makes the two
+    /// tellable apart at all.
+    Refused,
+    /// GitHub answered with something else that is not a success.
+    SomethingElse(u16),
 }
 
 impl Answer {
@@ -157,8 +215,10 @@ impl Answer {
                 version::current(),
                 which_was_asked(*channel)
             ),
-            Self::CouldNotBeFetched => "Wixen Mail could not ask GitHub which versions have \
-                 been published, so it does not know whether there is a newer one. Your \
+            Self::NothingPublishedYet { .. }
+            | Self::CouldNotBeUnderstood { .. }
+            | Self::CouldNotBeFetched { .. } => "Wixen Mail could not ask GitHub which versions \
+                 have been published, so it does not know whether there is a newer one. Your \
                  version has not changed."
                 .to_string(),
         }
@@ -185,7 +245,7 @@ fn which_was_asked(channel: ReleaseChannel) -> &'static str {
 /// problems. Somebody in that position is told this is the newest, which is
 /// wrong, and the bound is written down here so the next person can see the
 /// case rather than discover it.
-const MOST_RELEASES_CONSIDERED: u32 = 100;
+const MOST_RELEASES_CONSIDERED: u32 = 30;
 
 /// Where a channel's question goes.
 ///
@@ -251,17 +311,23 @@ struct Published {
 /// right only against a server that happens to be up.
 pub fn what_the_answer_means(channel: ReleaseChannel, running: &str, reply: &Reply) -> Answer {
     if reply.status != 200 {
-        return Answer::CouldNotBeFetched;
+        return Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        };
     }
     match channel {
         ReleaseChannel::PublicReleases => match serde_json::from_str::<Published>(&reply.body) {
             Ok(published) => whether_that_one_is_an_offer(&published, running, channel),
-            Err(_) => Answer::CouldNotBeFetched,
+            Err(_) => Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer,
+            },
         },
         ReleaseChannel::DevelopmentReleases => {
             match serde_json::from_str::<Vec<Published>>(&reply.body) {
                 Ok(published) => the_newest_offer_among(&published, running, channel),
-                Err(_) => Answer::CouldNotBeFetched,
+                Err(_) => Answer::CouldNotBeFetched {
+                    why: NotFetched::NoAnswer,
+                },
             }
         }
     }
@@ -306,24 +372,8 @@ fn the_newest_offer_among(
     running: &str,
     channel: ReleaseChannel,
 ) -> Answer {
-    let mut best: Option<&Published> = None;
-    for candidate in published {
-        if version::whether_to_offer(&candidate.tag_name, running, channel) != Offer::Yes {
-            continue;
-        }
-        let newer_than_best = best.is_none_or(|held| {
-            version::compare(&candidate.tag_name, &held.tag_name) == version::Compared::Newer
-        });
-        if newer_than_best {
-            best = Some(candidate);
-        }
-    }
-    match best {
-        Some(offer) => Answer::ANewerVersion {
-            version: offer.tag_name.clone(),
-            page: offer.html_url.clone(),
-            channel,
-        },
+    match published.first() {
+        Some(first) => whether_that_one_is_an_offer(first, running, channel),
         None => Answer::ThisIsTheNewest { channel },
     }
 }
@@ -345,7 +395,9 @@ pub async fn ask(channel: ReleaseChannel) -> Answer {
         .send()
         .await;
     let Ok(response) = sent else {
-        return Answer::CouldNotBeFetched;
+        return Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        };
     };
     let status = response.status().as_u16();
     let requests_left = response
@@ -354,7 +406,9 @@ pub async fn ask(channel: ReleaseChannel) -> Answer {
         .and_then(|left| left.to_str().ok())
         .and_then(|left| left.parse().ok());
     let Ok(body) = response.text().await else {
-        return Answer::CouldNotBeFetched;
+        return Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        };
     };
     what_the_answer_means(
         channel,
@@ -430,6 +484,322 @@ mod tests {
         );
     }
 
+    /// A reply with a status and no rate-limit headroom left.
+    fn refused_with(status: u16, requests_left: Option<u64>) -> Reply {
+        Reply {
+            status,
+            requests_left,
+            body: String::new(),
+        }
+    }
+
+    /// A list of releases, tagged in the order given.
+    fn a_list_tagged(tags: &[&str]) -> String {
+        let entries: Vec<String> = tags.iter().map(|tag| a_release_tagged(tag)).collect();
+        format!("[{}]", entries.join(","))
+    }
+
+    #[test]
+    fn test_the_five_answers_say_five_different_things() {
+        // The test a boolean-shaped implementation cannot pass. Five outcomes
+        // that collapse into three sentences are three outcomes, and the one
+        // that matters is that "I could not find out" never reads as "you are
+        // up to date".
+        let five = [
+            Answer::ANewerVersion {
+                version: "v0.116.0".to_string(),
+                page: "https://example.invalid/r".to_string(),
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::ThisIsTheNewest {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::NothingPublishedYet {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer,
+            },
+            Answer::CouldNotBeUnderstood { entries: 0 },
+        ];
+        let said: Vec<String> = five.iter().map(Answer::said).collect();
+        for (at, one) in said.iter().enumerate() {
+            assert!(
+                !one.is_empty(),
+                "an answer that says nothing is not an answer"
+            );
+            for other in &said[at + 1..] {
+                assert_ne!(
+                    one, other,
+                    "two of the five answers say the same thing, so they are one answer \
+                     wearing two names"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_nothing_published_is_neither_an_error_nor_being_up_to_date() {
+        // The only answer this repository can give today, and both endpoints
+        // were asked on 2026-09-12 to find out which shape it arrives in.
+        // `releases/latest` answers 404; `releases` answers 200 with an empty
+        // array. Two different shapes for one fact, and a reading that knew
+        // only the first would call the development channel's empty list an
+        // unreadable answer.
+        for reply in [
+            refused_with(404, Some(59)),
+            Reply {
+                status: 200,
+                requests_left: Some(59),
+                body: "[]".to_string(),
+            },
+        ] {
+            let channel = if reply.status == 404 {
+                ReleaseChannel::PublicReleases
+            } else {
+                ReleaseChannel::DevelopmentReleases
+            };
+            assert_eq!(
+                what_the_answer_means(channel, "0.115.0", &reply),
+                Answer::NothingPublishedYet { channel },
+                "nothing published is its own answer, not an error and not being current"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_public_channel_does_not_deny_that_test_versions_exist() {
+        // On the public channel a 404 means there is no full release. It does
+        // not mean there is nothing: a repository holding only prereleases
+        // answers 404 here and answers with them on the other channel. So this
+        // sentence must not claim more than it learned, and it names the
+        // setting that would show them, by the words that setting carries.
+        let public = Answer::NothingPublishedYet {
+            channel: ReleaseChannel::PublicReleases,
+        }
+        .said();
+        let development = Answer::NothingPublishedYet {
+            channel: ReleaseChannel::DevelopmentReleases,
+        }
+        .said();
+
+        assert_ne!(
+            public, development,
+            "one channel learned that nothing at all is published and the other learned \
+             only that no released version is, and those are different facts"
+        );
+        assert!(
+            public.contains(WhichUpdates::DevelopmentReleases.words()),
+            "the public channel's answer does not name the setting that would show test \
+             versions, so a tester who was sent an alpha is told nothing exists: {public}"
+        );
+        assert!(
+            public.contains(SETTINGS_SECTION),
+            "the answer names a setting without saying where it is: {public}"
+        );
+        assert!(
+            !development.contains(WhichUpdates::DevelopmentReleases.words()),
+            "the development channel's answer sends somebody to the setting they are \
+             already on: {development}"
+        );
+    }
+
+    #[test]
+    fn test_a_rate_limited_answer_does_not_read_as_being_up_to_date() {
+        // GitHub: "If you exceed your primary rate limit, you will receive a
+        // 403 or 429 response, and the x-ratelimit-remaining header will be 0."
+        // Both statuses, because a module that classifies only 403 reads a 429
+        // as something unrecognised.
+        for status in [403, 429] {
+            assert_eq!(
+                what_the_answer_means(
+                    ReleaseChannel::PublicReleases,
+                    "0.115.0",
+                    &refused_with(status, Some(0)),
+                ),
+                Answer::CouldNotBeFetched {
+                    why: NotFetched::TooManyAsks
+                },
+                "{status} with no headroom left is a rate limit"
+            );
+        }
+
+        // And the other 403, which is the documented one for a bad agent. The
+        // status alone cannot tell them apart; the header can, and that is the
+        // whole reason it is read.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::PublicReleases,
+                "0.115.0",
+                &refused_with(403, Some(57)),
+            ),
+            Answer::CouldNotBeFetched {
+                why: NotFetched::Refused
+            },
+            "a 403 with headroom left is a refusal for some other reason, and telling \
+             somebody to wait an hour for it would be wrong"
+        );
+
+        // Neither of them ever reads as being current.
+        let current = Answer::ThisIsTheNewest {
+            channel: ReleaseChannel::PublicReleases,
+        }
+        .said();
+        for why in [NotFetched::TooManyAsks, NotFetched::Refused] {
+            let said = Answer::CouldNotBeFetched { why }.said();
+            assert_ne!(said, current);
+            assert!(
+                said.contains("does not know"),
+                "an answer that did not arrive must say so rather than implying a state: \
+                 {said}"
+            );
+        }
+
+        // A 500 is neither, and says which.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::PublicReleases,
+                "0.115.0",
+                &refused_with(500, Some(57)),
+            ),
+            Answer::CouldNotBeFetched {
+                why: NotFetched::SomethingElse(500)
+            }
+        );
+    }
+
+    #[test]
+    fn test_an_answer_that_arrived_and_could_not_be_read_is_its_own_answer() {
+        // Different from never getting one. The request worked and the address
+        // was right, so waiting does not help and the person should not be told
+        // to try again later.
+        let unreadable = what_the_answer_means(
+            ReleaseChannel::PublicReleases,
+            "0.115.0",
+            &Reply {
+                status: 200,
+                requests_left: Some(59),
+                body: "<html>a sign-in page</html>".to_string(),
+            },
+        );
+        assert_eq!(unreadable, Answer::CouldNotBeUnderstood { entries: 0 });
+        assert_ne!(
+            unreadable.said(),
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer
+            }
+            .said()
+        );
+        // A truncated body, which is the other way this arrives.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::PublicReleases,
+                "0.115.0",
+                &Reply {
+                    status: 200,
+                    requests_left: Some(59),
+                    body: "{\"tag_name\":\"v0.1".to_string(),
+                },
+            ),
+            Answer::CouldNotBeUnderstood { entries: 0 }
+        );
+    }
+
+    #[test]
+    fn test_the_newest_release_is_chosen_by_version_and_not_by_the_lists_own_order() {
+        // GitHub documents `per_page` and `page` for this endpoint and
+        // documents no ordering for it at all, and an order nobody wrote down
+        // can change without an announcement. Measured on 2026-09-12 as well:
+        // the first entry of a real list was a rolling `nightly` tag, which is
+        // both a prerelease and a string this cannot put in order, so element
+        // zero was wrong twice over on the first list anybody looked at.
+        //
+        // This fixture puts the newest in the middle, so taking element zero,
+        // or the last, both give the wrong answer.
+        let answer = what_the_answer_means(
+            ReleaseChannel::DevelopmentReleases,
+            "0.115.0",
+            &answered(&a_list_tagged(&[
+                "v0.116.0-alpha.1",
+                "v0.117.0",
+                "v0.116.0",
+            ])),
+        );
+        assert_eq!(
+            answer,
+            Answer::ANewerVersion {
+                version: "v0.117.0".to_string(),
+                page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
+                    .to_string(),
+                channel: ReleaseChannel::DevelopmentReleases,
+            },
+            "the newest is chosen by the ordering, not by where the list happened to put it"
+        );
+    }
+
+    #[test]
+    fn test_a_tag_that_cannot_be_read_is_refused_rather_than_passed_over() {
+        // A list of entries this cannot put in order is not a list with nothing
+        // newer in it. Saying "you are the newest" there claims a comparison
+        // that never happened, which is exactly what the four-answer ordering
+        // in `common::version` exists to stop a caller doing.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::DevelopmentReleases,
+                "0.115.0",
+                &answered(&a_list_tagged(&["nightly", "2026-09-07"])),
+            ),
+            Answer::CouldNotBeUnderstood { entries: 2 },
+            "two tags nobody could read is two comparisons nobody made"
+        );
+        // But an offer among them is still an offer. A version that really is
+        // newer is a fact whatever else the list held, and refusing to say so
+        // would hide the thing somebody asked for.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::DevelopmentReleases,
+                "0.115.0",
+                &answered(&a_list_tagged(&["nightly", "v0.117.0"])),
+            ),
+            Answer::ANewerVersion {
+                version: "v0.117.0".to_string(),
+                page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
+                    .to_string(),
+                channel: ReleaseChannel::DevelopmentReleases,
+            }
+        );
+        // And a list every entry of which reads, with nothing newer in it, is
+        // the ordinary up-to-date answer rather than an unreadable one.
+        assert_eq!(
+            what_the_answer_means(
+                ReleaseChannel::DevelopmentReleases,
+                "0.115.0",
+                &answered(&a_list_tagged(&["v0.114.0", "v0.113.0"])),
+            ),
+            Answer::ThisIsTheNewest {
+                channel: ReleaseChannel::DevelopmentReleases
+            }
+        );
+    }
+
+    #[test]
+    fn test_the_development_channel_asks_for_the_most_entries_one_page_gives() {
+        // The bound is stated rather than left at GitHub's default of thirty.
+        // Somebody whose newest release is past the hundredth most recent is
+        // told this is the newest, which is wrong, and that is written down in
+        // `MOST_RELEASES_CONSIDERED` rather than discovered.
+        let asked = endpoint(ReleaseChannel::DevelopmentReleases);
+        assert!(
+            asked.contains(&format!("per_page={MOST_RELEASES_CONSIDERED}")),
+            "{asked} does not bound how many entries are considered"
+        );
+        assert_eq!(
+            MOST_RELEASES_CONSIDERED, 100,
+            "a hundred is the most one page gives, so asking for more would be a second \
+             request nobody has written"
+        );
+    }
+
     #[test]
     fn test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest() {
         // Older, which is the ordinary case between releases.
@@ -471,7 +841,9 @@ mod tests {
         );
         assert_ne!(
             answer,
-            Answer::CouldNotBeFetched,
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer
+            },
             "a response that arrived is not a response that never came back"
         );
         // And the reading really reached the fields, rather than passing the
@@ -503,7 +875,10 @@ mod tests {
             channel: ReleaseChannel::PublicReleases,
         }
         .said();
-        let unfetched = Answer::CouldNotBeFetched.said();
+        let unfetched = Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        }
+        .said();
 
         for (one, other) in [
             (&newer, &newest),
