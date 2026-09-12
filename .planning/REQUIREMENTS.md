@@ -1486,8 +1486,39 @@ write path added by this milestone passes through that gate.
   - [D] The check compares the plain `0.x.y` version and ignores `+build` metadata, matching
     `src/common/version.rs` and SemVer ordering.
 
-- [ ] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
+- [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
+
+  - **Closed 2026-09-12 by plan 07-02. Two sentences in the evidence below are now
+    false and one was false when it was written. They are left where they are,
+    because they are what this requirement was judged against, and corrected here.**
+
+    The `[D]` line is met and then some. Both `[Icons]` entries set `IconFilename`,
+    and so does `UninstallDisplayIcon`, all three naming `{app}\icon.ico`, which a
+    new `[Files]` line installs from `..\assets\icon.ico`. The `[D]` line's "the
+    bundled icon" could be read as pointing at `assets/icon.ico` where it sits in
+    the repository, and that is not a path on anybody's machine: a shortcut naming
+    a path nothing installs makes Windows fall back to the default in silence, so
+    the `[Files]` line is part of the change rather than an extra.
+    `tests/installer.rs` compares the installed destination and the named icon path
+    as one value for that reason.
+
+    The gate hole is closed rather than accepted. `scripts/which-checks.sh` answers
+    `all` for a change to any `.iss`, placed below the version-bump exception so an
+    installer change that also bumps the version still earns it.
+
+    **"Neither `house_style` nor `wired` reads it" was wrong when written.**
+    `ours()` in `tests/house_style.rs` collects `installer/*.iss`, at line 54 today,
+    so a prose rule over the installer script has been checked on every commit all
+    along. The hole was real for a different reason one layer down, which is that
+    `check.sh` maps a changed file to a test target by its path and an `.iss`
+    matched no arm, so no scoped target was chosen. "`guards/guards.toml` names the
+    installer nowhere" was true until this plan and is not now.
+
+    The pictures on the shortcuts do not change and nobody will see a difference.
+    What changed is that they no longer depend on the executable's resource table
+    being right, which has failed here once. Nothing has installed anything or
+    looked at a shortcut: `WINDOWS.md` 306.
 
   - Evidence: re-verified line by line on 2026-09-04 and correct.
     `installer/Wixen-Mail-Setup.iss` line 84 declares a `desktopicon` task, and the `[Icons]`
@@ -1902,7 +1933,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FEEDBACK-03 | Phase 6 | Pending |
 | SHIP-01 | Phase 7 | Pending |
 | SHIP-02 | Phase 7 | Pending |
-| SHIP-03 | Phase 7 | Pending |
+| SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
 | SHIP-06 | Phase 7 | Pending |
