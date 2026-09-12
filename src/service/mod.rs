@@ -39,6 +39,7 @@ pub mod security;
 pub mod signed_mail;
 pub mod spellcheck;
 pub mod tasks_api;
+pub mod update_check;
 pub mod vtimezone;
 
 pub use cache::CacheService;

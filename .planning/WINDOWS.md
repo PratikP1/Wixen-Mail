@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 293
+open_count: 300
 waived_count: 0
-fixed_count: 21
-total_count: 314
-last_updated: 2026-09-12T11:39:11.254Z
+fixed_count: 22
+total_count: 322
+last_updated: 2026-09-12T14:39:53.474Z
 ---
 
 # Broken Windows Ledger
@@ -327,8 +327,16 @@ last_updated: 2026-09-12T11:39:11.254Z
 | 310 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | That adding a third platform module changes the answer with no edit to the code that says it is held structurally rather than by a test. No third platform module exists to add, and this tree has no compile-fail harness in which the absence of one could be expressed: grep -n trybuild Cargo.toml returns nothing | open |  | 2026-09-12T09:52:24.787Z |  |
 | 311 | 07 | unrun-verify | src/common/version.rs |  | No release has ever been published from this repository and git tag returns nothing, so this comparison has never been handed a version string that came from anywhere but a test. No prerelease has been cut either, so the prerelease ordering and the channel rule resting on it are the parts with no real example behind them at all | open |  | 2026-09-12T11:38:55.805Z |  |
 | 312 | 07 | unrun-verify | src/common/version.rs |  | That a published tag starts with a v is read off .github/workflows/release.yml, which names the portable download after the tag and publishes it under the glob wixen-mail-v-star.exe. No tag exists anywhere to confirm it. If that inference is wrong, or if cargo-release is later configured with a different tag name, the comparison answers that it could not read the tag for every release this project cuts and nothing fails | open |  | 2026-09-12T11:39:09.741Z |  |
-| 313 | 07 | unrun-verify | src/common/version.rs |  | Nothing outside the tests calls the ordering, the channel type, the setting type or the offer decision. Whether any of it is reachable from a path a person can take is 07-05's to establish, and until it is, this is code that compiles and passes and has never run | open |  | 2026-09-12T11:39:10.499Z |  |
+| 313 | 07 | unrun-verify | src/common/version.rs |  | Nothing outside the tests calls the ordering, the channel type, the setting type or the offer decision. Whether any of it is reachable from a path a person can take is 07-05's to establish, and until it is, this is code that compiles and passes and has never run | fixed |  | 2026-09-12T11:39:10.499Z | 2026-09-12T14:39:53.474Z |
 | 314 | 07 | unrun-verify | src/common/version.rs |  | The forgiving read of a stored setting covers a value that is a string. A stored value of any other type still fails the read, which in the loader 07-05 inherits takes every setting on that machine back to its default. Nothing here tests that, because the loader is not in this plan, and 07-05 is told to read it and report which of the two it does | open |  | 2026-09-12T11:39:11.254Z |  |
+| 315 | 07 | unrun-verify | src/service/update_check.rs |  | No release has ever been published from this repository, so the only answer this check has ever produced against a real endpoint is the one saying nothing is published. That was measured on 2026-09-12 against both endpoints and both really answer it, 404 on releases/latest and 200 with an empty array on releases. The two answers that matter most, a newer version and this being the newest, have only ever been produced from fixtures written here. If GitHub's real response for a published release does not parse, the feature is wrong rather than absent, which is worse | open |  | 2026-09-12T14:39:21.269Z |  |
+| 316 | 07 | unrun-verify | src/presentation/wx_app.rs |  | Whether the answer is actually heard. It is sent as UIUpdate::ANewerVersionIsPublished or CommandAnswered, written to the status bar and announced at high priority on the command topic, and when there is a newer version a dialog follows it. Nothing in this tree can ask whether NVDA speaks it, whether the announcement and the dialog that follows read as one answer or as two, or whether the dialog interrupts the announcement before it finishes | open |  | 2026-09-12T14:39:47.935Z |  |
+| 317 | 07 | unrun-verify | src/presentation/wx_settings.rs |  | Whether the one three-valued combo box reads well under NVDA. D-16 chose one control with three values for an accessibility reason rather than a tidiness one, and the choice of a combo box over a radio group was argued from consistency with the other twenty-four controls on that dialog and from wxdragon having no RadioBox binding in this tree. The cost named is that somebody never opening the box does not hear that a test-version option exists. Only a real screen reader run settles whether that cost is the right one | open |  | 2026-09-12T14:39:48.694Z |  |
+| 318 | 07 | unrun-verify | src/service/update_check.rs |  | Whether the development channel's list endpoint returns what this code expects. No list with anything in it has ever been returned for this repository: asked on 2026-09-12 it answers 200 with an empty array. The ordering, the refusal of unreadable tags and the hundred-entry bound have only been driven by fixtures built from another project's response with the tags substituted | open |  | 2026-09-12T14:39:49.465Z |  |
+| 319 | 07 | todo | src/presentation/wx_settings.rs |  | Windows knows whether a connection is metered and nothing here asks. Somebody on a phone tether who chooses a kind of version will, once 07-09 lands, have installers downloaded over it. The answer taken for this phase is that the control's description says the download will be automatic, so leaving the setting off is the available answer. Detecting a metered connection is a real feature nobody has asked for | open |  | 2026-09-12T14:39:50.262Z |  |
+| 320 | 07 | unmet-truth | src/data/config.rs |  | NOT_ANYTHING_ANYBODY_CHOOSES has no check of its own while its two siblings each have one. Verified rather than inherited: it has exactly two mentions in the file, its definition and the exception chain, so nothing re-asks whether either of its two entries is still a value nobody chooses. OFFERED_BY_ANOTHER_SCREEN and STORED_AND_OFFERED_BY_NOTHING each have a test that re-asks. Not fixed here because it is a finding about config.rs rather than about this plan | open |  | 2026-09-12T14:39:51.064Z |  |
+| 321 | 07 | unmet-truth | docs/installing.md |  | docs/privacy.md and docs/installing.md carry the same four-line block listing what is stored under LOCALAPPDATA, word for word, with nothing checking they agree. 07-05 added the temporary-folder log fallback to privacy.md and deliberately did not duplicate it into installing.md, so the two now disagree. Either installing.md gains the same sentence or the block comes from one place | open |  | 2026-09-12T14:39:51.872Z |  |
+| 322 | 07 | todo | src/service/outward.rs |  | update_check.rs is on TALKS_BUT_ONLY_READS and is the first member whose answer will, once 07-09 lands, decide that an executable is fetched. That is not a write at somebody's account and it is not the harmless read the list's name implies, so the census's two categories do not quite describe it. Whether a third list is wanted was raised rather than settled, because the file is fingerprinted by ten guard records | open |  | 2026-09-12T14:39:52.687Z |  |
 
 ````json
 [
@@ -4083,10 +4091,10 @@ last_updated: 2026-09-12T11:39:11.254Z
     "file": "src/common/version.rs",
     "line": null,
     "description": "Nothing outside the tests calls the ordering, the channel type, the setting type or the offer decision. Whether any of it is reachable from a path a person can take is 07-05's to establish, and until it is, this is code that compiles and passes and has never run",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-12T11:39:10.499Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-12T14:39:53.474Z"
   },
   {
     "id": 314,
@@ -4098,6 +4106,102 @@ last_updated: 2026-09-12T11:39:11.254Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T11:39:11.254Z",
+    "resolved_at": null
+  },
+  {
+    "id": 315,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_check.rs",
+    "line": null,
+    "description": "No release has ever been published from this repository, so the only answer this check has ever produced against a real endpoint is the one saying nothing is published. That was measured on 2026-09-12 against both endpoints and both really answer it, 404 on releases/latest and 200 with an empty array on releases. The two answers that matter most, a newer version and this being the newest, have only ever been produced from fixtures written here. If GitHub's real response for a published release does not parse, the feature is wrong rather than absent, which is worse",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:21.269Z",
+    "resolved_at": null
+  },
+  {
+    "id": 316,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the answer is actually heard. It is sent as UIUpdate::ANewerVersionIsPublished or CommandAnswered, written to the status bar and announced at high priority on the command topic, and when there is a newer version a dialog follows it. Nothing in this tree can ask whether NVDA speaks it, whether the announcement and the dialog that follows read as one answer or as two, or whether the dialog interrupts the announcement before it finishes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:47.935Z",
+    "resolved_at": null
+  },
+  {
+    "id": 317,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Whether the one three-valued combo box reads well under NVDA. D-16 chose one control with three values for an accessibility reason rather than a tidiness one, and the choice of a combo box over a radio group was argued from consistency with the other twenty-four controls on that dialog and from wxdragon having no RadioBox binding in this tree. The cost named is that somebody never opening the box does not hear that a test-version option exists. Only a real screen reader run settles whether that cost is the right one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:48.694Z",
+    "resolved_at": null
+  },
+  {
+    "id": 318,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_check.rs",
+    "line": null,
+    "description": "Whether the development channel's list endpoint returns what this code expects. No list with anything in it has ever been returned for this repository: asked on 2026-09-12 it answers 200 with an empty array. The ordering, the refusal of unreadable tags and the hundred-entry bound have only been driven by fixtures built from another project's response with the tags substituted",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:49.465Z",
+    "resolved_at": null
+  },
+  {
+    "id": 319,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Windows knows whether a connection is metered and nothing here asks. Somebody on a phone tether who chooses a kind of version will, once 07-09 lands, have installers downloaded over it. The answer taken for this phase is that the control's description says the download will be automatic, so leaving the setting off is the available answer. Detecting a metered connection is a real feature nobody has asked for",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:50.262Z",
+    "resolved_at": null
+  },
+  {
+    "id": 320,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "src/data/config.rs",
+    "line": null,
+    "description": "NOT_ANYTHING_ANYBODY_CHOOSES has no check of its own while its two siblings each have one. Verified rather than inherited: it has exactly two mentions in the file, its definition and the exception chain, so nothing re-asks whether either of its two entries is still a value nobody chooses. OFFERED_BY_ANOTHER_SCREEN and STORED_AND_OFFERED_BY_NOTHING each have a test that re-asks. Not fixed here because it is a finding about config.rs rather than about this plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:51.064Z",
+    "resolved_at": null
+  },
+  {
+    "id": 321,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "docs/installing.md",
+    "line": null,
+    "description": "docs/privacy.md and docs/installing.md carry the same four-line block listing what is stored under LOCALAPPDATA, word for word, with nothing checking they agree. 07-05 added the temporary-folder log fallback to privacy.md and deliberately did not duplicate it into installing.md, so the two now disagree. Either installing.md gains the same sentence or the block comes from one place",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:51.872Z",
+    "resolved_at": null
+  },
+  {
+    "id": 322,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/service/outward.rs",
+    "line": null,
+    "description": "update_check.rs is on TALKS_BUT_ONLY_READS and is the first member whose answer will, once 07-09 lands, decide that an executable is fetched. That is not a write at somebody's account and it is not the harmless read the list's name implies, so the census's two categories do not quite describe it. Whether a third list is wanted was raised rather than settled, because the file is fingerprinted by ten guard records",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T14:39:52.687Z",
     "resolved_at": null
   }
 ]

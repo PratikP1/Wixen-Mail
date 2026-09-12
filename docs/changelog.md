@@ -8,6 +8,50 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail can now tell you whether a newer version has been published, and
+  you decide whether it ever asks on its own.** Help, then Check for Updates,
+  asks GitHub which versions exist and says what it found. That item works
+  whatever your setting says, so asking is always something you can do
+  deliberately. A new setting under General, "New versions", decides whether
+  anything is asked without you pressing something, and it starts on "Do not
+  look for new versions", so a fresh installation and every existing one ask
+  nobody anything until you choose otherwise. The other two answers are
+  "Released versions" and "Released versions and test versions"; the first never
+  offers you a test version, which is what a version with `alpha`, `beta` or
+  `rc` in its number is.
+
+  What the check sends is one request to `api.github.com` asking which versions
+  have been published. It carries no account, no sign-in and nothing about your
+  mail. GitHub associates an unauthenticated request with the address it came
+  from, which is their own wording, and allows sixty of them an hour from one
+  address. [What Wixen Mail sends, and where](privacy.md) says all of this in
+  full.
+
+  **Nothing is downloaded and nothing is run.** When there is a newer version
+  you are told, and asked whether to open the page about it in your browser.
+  Fetching an installer and starting it is a later piece of work, and choosing
+  a kind of version now is the point at which you would be agreeing to that, so
+  the setting says so where you choose it.
+
+  When it cannot get an answer it says so, rather than telling you that you are
+  up to date. Those are different things and only one of them means your version
+  is current. There are five things it can tell you, and they are five different
+  sentences: there is a newer version, this is the newest, nothing has been
+  published yet, the answer could not be fetched, and the answer could not be
+  read.
+
+  Nothing has been published from this project yet, so today the answer is
+  always the third one. On "Released versions" it says so without claiming that
+  no test versions exist, because the question it asked could not have seen
+  them, and it tells you which setting would show them.
+
+  "Could not be fetched" says which. GitHub allows sixty requests an hour from
+  one address without signing in, so a shared office or campus connection can
+  reach that; when it does, you are told to wait rather than told anything about
+  your version. A refusal for any other reason says that instead, and a reply
+  that arrived but could not be read is a third thing again, because waiting
+  does not help with that one.
+
 - **On a build where the Windows accessibility calls are missing, the program
   now says which parts of its accessibility layer do nothing there, at startup
   and in the About dialog.** This is a disclosure and not a port. Nothing here makes anything work on

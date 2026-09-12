@@ -95,6 +95,7 @@ pub struct SettingsWidgets {
     keep_selected_message_in_view: CheckBox,
     keep_running_in_the_tray: CheckBox,
     check_default_programs_at_startup: CheckBox,
+    which_updates: Choice,
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
@@ -223,6 +224,7 @@ pub fn build_settings_dialog(
         keep_running_in_the_tray,
         choose_default_programs,
         check_default_programs_at_startup,
+        which_updates,
     } = build_general_tab(&general_panel, config);
     notebook.add_page(&general_panel, "General", true, None);
 
@@ -405,6 +407,7 @@ pub fn build_settings_dialog(
         keep_selected_message_in_view,
         keep_running_in_the_tray,
         check_default_programs_at_startup,
+        which_updates,
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
@@ -588,6 +591,7 @@ struct GeneralTabControls {
     keep_running_in_the_tray: CheckBox,
     choose_default_programs: Button,
     check_default_programs_at_startup: CheckBox,
+    which_updates: Choice,
 }
 
 /// Which language spelling is checked in, and how the checking behaves.
@@ -798,9 +802,17 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
     sizer.add_sizer(&app_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // New-mail notifications and checking for updates were both offered here
-    // and read by nothing: there is no notification path and no update check
+    // and read by nothing: there was no notification path and no update check
     // in this program. A control that takes an answer and ignores it is worse
-    // than no control, so they are gone rather than sitting switched off.
+    // than no control, so they went rather than sitting switched off.
+    //
+    // Half of that is no longer true. There is an update check now, so the
+    // control below is not the old one put back: the old one was a switch for
+    // machinery that did not exist, and this one decides which endpoint a check
+    // that really happens asks. The setting is not called `check_updates`
+    // either, because serde reads by name and a settings file written before
+    // 2026-08-24 still holds that key.
+    let which_updates = add_new_versions(panel, config, &sizer);
 
     let (language, check_before_send, check_as_you_type) =
         add_language_and_spelling(panel, config, &sizer);
@@ -822,7 +834,92 @@ fn build_general_tab(panel: &Panel, config: &AppConfig) -> GeneralTabControls {
         keep_running_in_the_tray,
         choose_default_programs,
         check_default_programs_at_startup,
+        which_updates,
     }
+}
+
+/// Which published versions somebody wants to be told about.
+///
+/// On General rather than on Advanced, and the reason is who meets it. Nothing
+/// about hearing that a new version exists is advanced, and a person moving by
+/// keyboard through a screen reader meets these sections in order and cannot
+/// skim past the wrong ones. Advanced holds logging, storage and whether a
+/// message is what it says it is, and a reader arriving at the last of those
+/// looking for updates has already gone too far.
+///
+/// A combo box rather than a group of radio buttons. Both are honest shapes for
+/// one answer out of three, and they cost differently. A radio group puts all
+/// three in the tab order under one group label, so somebody hears every option
+/// and its state without opening anything, at three stops instead of one. A
+/// combo box is one stop and announces the current value, so the other two are
+/// found by opening it.
+///
+/// The box wins here for two reasons that are about this screen rather than
+/// about the widgets. Every other multi-valued setting in this dialog is a
+/// combo box, twenty-four of them, so a radio group here would be the one
+/// control on the page that behaves differently and somebody arrowing down the
+/// tab would meet three stops where every neighbour is one. And `wxdragon` has
+/// no `RadioBox` binding used anywhere in this tree, so the alternative is not a
+/// choice between two supported shapes.
+///
+/// What the rejected shape would have cost: somebody who has never opened this
+/// setting does not hear that a test-version option exists until they open the
+/// box. That is a real cost and it is paid down by the description, which says
+/// what choosing either kind means, and by the check's own answer, which names
+/// the setting when it was asked on the public channel.
+fn add_new_versions(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> Choice {
+    use crate::common::version::WhichUpdates;
+    use crate::service::update_check;
+
+    let updates_sec = section(panel, update_check::SETTINGS_SECTION);
+
+    let row = BoxSizer::builder(Orientation::Horizontal).build();
+    let label = StaticText::builder(panel)
+        .with_label(&format!("&{}:", update_check::WHICH_UPDATES_LABEL))
+        .build();
+    let choice = Choice::builder(panel)
+        .with_choices(
+            WhichUpdates::ALL
+                .iter()
+                .map(|kind| kind.words().to_string())
+                .collect(),
+        )
+        .with_selection(Some(
+            WhichUpdates::ALL
+                .iter()
+                .position(|kind| *kind == config.which_updates)
+                .unwrap_or(0) as u32,
+        ))
+        .build();
+    // Name and description in one call, not two. A box named only through
+    // `set_accessible_name` has a name under NVDA and none under Narrator, and
+    // the description is where the sentence about downloading has to reach.
+    set_accessible_name_and_description(
+        &choice,
+        update_check::WHICH_UPDATES_LABEL,
+        update_check::WHICH_UPDATES_DESCRIPTION,
+    );
+    row.add(
+        &label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    row.add(&choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    updates_sec.add_sizer(&row, 0, SizerFlag::Expand, 0);
+
+    // And on screen as well as in the accessibility tree. Somebody with low
+    // vision reading the page rather than hearing it gets the same warning, and
+    // a description that only exists on one channel is the shape this project
+    // has already shipped twice.
+    let note = StaticText::builder(panel)
+        .with_label(update_check::WHICH_UPDATES_DESCRIPTION)
+        .build();
+    set_accessible_name(&note, update_check::WHICH_UPDATES_DESCRIPTION);
+    updates_sec.add(&note, 0, SizerFlag::Left | SizerFlag::All, 4);
+
+    sizer.add_sizer(&updates_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+    choice
 }
 
 /// Compose settings: preview before sending, what Sent keeps, drafts, signature.
@@ -2408,6 +2505,15 @@ fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     cfg.empty_reaches_subfolders = w.empty_reaches_subfolders.get_value();
     cfg.mark_read_reaches_subfolders = w.mark_read_reaches_subfolders.get_value();
     cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
+    // By position in the one array the control was built from, rather than by
+    // matching the words back. The words are what somebody reads and the
+    // position is what the box holds, and a box that answers nothing keeps
+    // whatever was already stored rather than falling back to a variant chosen
+    // here, which would be a second place deciding what this setting means.
+    cfg.which_updates = crate::common::version::WhichUpdates::ALL
+        .get(sel(&w.which_updates) as usize)
+        .copied()
+        .unwrap_or(cfg.which_updates);
     cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {
         1 => "date_oldest",
