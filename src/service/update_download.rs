@@ -563,6 +563,29 @@ pub fn whether_that_signer_is_ours(who: &WhoSignedIt) -> std::result::Result<(),
     })
 }
 
+/// Whether this computer can check a signature at all.
+///
+/// Asked before anything is downloaded rather than after, and the difference is
+/// the whole of criterion 2's clause about it: where a signature cannot be
+/// checked, **nothing is downloaded** and nothing is run, and the reason is
+/// said. Fetching an executable and then discovering there is no way to look at
+/// it leaves it on somebody's disk for the time it takes to refuse it, and
+/// spends their connection to learn something this program already knew.
+///
+/// Its two arms sit beside [`who_signed`]'s two arms on purpose. They answer the
+/// same question and a platform gaining one without the other is the drift this
+/// arrangement makes visible.
+#[cfg(target_os = "windows")]
+pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refused> {
+    Err(Refused::NoWayToCheckHere)
+}
+
+/// Whether this computer can check a signature at all, where it cannot.
+#[cfg(not(target_os = "windows"))]
+pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refused> {
+    Err(Refused::NoWayToCheckHere)
+}
+
 /// Read the signature off a file.
 ///
 /// The half of this module no fixture can drive, so it is as thin as it can be:
@@ -1097,6 +1120,84 @@ mod tests {
             at,
             version: "v0.117.0".to_string(),
         }
+    }
+
+    #[test]
+    fn test_saying_whether_a_signature_can_be_checked_agrees_with_the_check_itself() {
+        // Two answers that have to be the same answer. One decides whether to
+        // download at all and the other decides what a downloaded file is; a
+        // platform where they disagree either downloads an executable it can
+        // never look at, or refuses to download one it could have checked.
+        let dir = TempDir::new().unwrap();
+        let at = dir.path().join("nothing-signed-this.exe");
+        std::fs::write(&at, b"MZ and then nothing that means anything").unwrap();
+
+        match whether_a_signature_can_be_checked_here() {
+            Ok(()) => assert!(
+                !matches!(who_signed(&at), Err(Refused::NoWayToCheckHere)),
+                "this says a signature can be checked here and the check says it cannot"
+            ),
+            Err(why) => {
+                assert_eq!(why, Refused::NoWayToCheckHere);
+                assert_eq!(
+                    who_signed(&at),
+                    Err(Refused::NoWayToCheckHere),
+                    "this says a signature cannot be checked here and the check disagrees"
+                );
+            }
+        }
+    }
+
+    /// Whether the shipped `fetch` asks whether a signature can be checked
+    /// before it downloads anything.
+    ///
+    /// Split out so the reading can be shown a violation as well as the tree.
+    /// Read rather than driven, because on a machine that can check a signature
+    /// the order is invisible to any test: both orders succeed, and the one
+    /// that is wrong is only wrong somewhere this suite does not run.
+    fn it_asks_before_it_downloads(source: &str) -> bool {
+        let Some((_, after)) = source.split_once("pub async fn fetch(") else {
+            return false;
+        };
+        let body = &after[..after.find("\n}\n").unwrap_or(after.len())];
+        match (
+            body.find("whether_a_signature_can_be_checked_here"),
+            body.find("bring_it_down"),
+        ) {
+            (Some(asked), Some(fetched)) => asked < fetched,
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn test_where_a_signature_cannot_be_checked_nothing_is_even_downloaded() {
+        assert!(
+            it_asks_before_it_downloads(&what_this_module_ships()),
+            "an executable is fetched onto somebody's disk before this program asks \
+             whether it has any way of looking at it"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_fetch_that_downloads_first() {
+        let downloads_first = "pub async fn fetch(files: &[ReleaseFile]) -> Fetched {\n\
+             \x20   let got = bring_it_down(files).await;\n\
+             \x20   whether_a_signature_can_be_checked_here()?;\n\
+             \x20   got\n\
+             }\n";
+        assert!(
+            !it_asks_before_it_downloads(downloads_first),
+            "the reading above cannot see a fetch that downloads before it asks"
+        );
+        let asks_first = "pub async fn fetch(files: &[ReleaseFile]) -> Fetched {\n\
+             \x20   whether_a_signature_can_be_checked_here()?;\n\
+             \x20   bring_it_down(files).await\n\
+             }\n";
+        assert!(
+            it_asks_before_it_downloads(asks_first),
+            "the reading above cannot see a fetch that does the right thing either, so \
+             it answers no to everything"
+        );
     }
 
     #[test]

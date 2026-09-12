@@ -1280,6 +1280,34 @@ mod tests {
     }
 
     #[test]
+    fn test_the_control_says_what_choosing_a_kind_of_version_does_now_rather_than_later() {
+        // This sentence is where the consent for an unattended download is
+        // given or is not given, so it has to describe the build the person is
+        // reading it in. It was written while downloading was somebody else's
+        // plan and it said so, in as many words, and the moment that plan
+        // landed the sentence became a promise that the thing it warns about
+        // does not happen. A warning nobody believes is worse than none,
+        // because the next true one is read the same way.
+        let said = WHICH_UPDATES_DESCRIPTION.to_lowercase();
+        assert!(
+            !said.contains("nothing is downloaded"),
+            "the control tells somebody nothing is downloaded, and choosing an answer \
+             on it is what starts downloading: {WHICH_UPDATES_DESCRIPTION}"
+        );
+        assert!(
+            !said.contains("when updating is finished") && !said.contains("will mean"),
+            "the control describes the download as something a later version will do: \
+             {WHICH_UPDATES_DESCRIPTION}"
+        );
+        assert!(
+            said.contains("downloaded") && said.contains("without asking"),
+            "the control has to say that choosing an answer means installers arrive \
+             without being asked for, because that is the whole of what is being \
+             agreed to here: {WHICH_UPDATES_DESCRIPTION}"
+        );
+    }
+
+    #[test]
     fn test_the_settings_screen_offers_the_one_update_setting_by_its_constants() {
         // The companion `every_setting_is_acted_on`'s mirror guard cannot be.
         // That one is satisfied by the field's name appearing anywhere in the
