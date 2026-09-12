@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 8
+current_plan: 9
 status: executing
-stopped_at: 07-08 task 1 of three merged, and the plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
-last_updated: "2026-09-12T19:05:00.000Z"
+stopped_at: 07-09 tasks 1 and 2 of three merged, and the plan is partial on purpose. An update is now fetched without anybody being asked once a kind of version has been chosen, checked twice, and offered once before it runs. The second check is the whole point: WinVerifyTrust says a file is validly signed, which millions are, and only reading the signer's certificate and comparing the name says it is ours, exactly rather than by containment. The refusal is proven against a real Microsoft-signed system file and the acceptance is proven by nothing, because this project signs nothing, so as this ships every real installer is refused and four pages say so. The checked file is a type only the check constructs and both the question and the run take it, so there is no ordering to rearrange into "run it anyway?". Two features on the windows crate already pinned at 0.62.2, no new dependency, and streaming turned out to need no reqwest feature at all. Reading criterion 2 from ROADMAP.md clause by clause found two clauses open that no test could have: a computer with no way to check a signature was downloading first and refusing after, and the setting's own description still said "nothing is downloaded yet" four commits after that stopped being true. Both fixed with their own red halves. Task 3 is the screen reader checkpoint, recorded and not attempted; it needs a published signed release, which is 07-08's. Criterion 2 does not close and SHIP-02 does not close: twelve of thirteen clauses are structurally complete and nothing has ever applied anything. The earlier entry, still true. 07-08 task 1 of three merged, and that plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
+last_updated: "2026-09-12T23:10:00.000Z"
 last_activity: 2026-09-12
-state_head: a818cf5f
+state_head: MERGE_HASH
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 97
-  completed_plans: 88
+  completed_plans: 89
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,14 +29,76 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-08's first task is
-merged, version 0.116.0. Eight plans of nine have a summary on disk and two of
-those eight say `partial`, 07-06 and 07-08. 07-08 stops at its own checkpoint:
-the Azure signing account only Pratik can create, which he is obtaining. Task 3
-must not start before it exists. 07-06's checkpoint is still open, and so is
-phase 05.2's.**
+Phase: 07 (Installing, updating and what is stored). **07-09's first two tasks
+are merged, version 0.119.0. All nine plans have a summary on disk and three of
+them say `partial`: 07-06, 07-08 and 07-09. Three checkpoints are open and none
+of them can be closed by anything in this repository: 07-06's needs a workflow
+run, 07-08's needs an Azure signing account only Pratik can create, and 07-09's
+needs a published, signed release, so it waits on 07-08's. Phase 05.2's is open
+too.**
 
-**Seven things have to be signed and SHIP-01's wording says two.** The census in
+**Wixen Mail can now fetch an update and refuses to run anything this project
+did not sign, and it has never updated anything.** With a kind of version
+chosen, a published newer version is downloaded with no question asked at that
+moment, which is the agreement given at the setting. Pressing Check for Updates
+does the same on demand whatever the setting says: one route, not two. The file
+is then checked twice and both must pass. `WinVerifyTrust` answers whether the
+signature is valid, which millions of files are, and reading the signer's own
+certificate answers whose it is. Only the second is the check. The comparison is
+exact rather than "contains", because a certificate issued to "Pratik Patel
+Holdings Ltd" is a name anybody can buy.
+
+**The refusal is proven and the acceptance is not, and that distinction is the
+whole honest state of this feature.** A real Microsoft-signed system file was
+refused by name, so the mechanism runs end to end against a genuine Authenticode
+signature on this machine. Nothing has ever seen a file this project signed,
+because this project signs nothing, so every test of the accepting path runs
+against a name in a fixture. As this ships, every real installer is refused,
+deleted, and the person is sent to the releases page. That is the designed
+behaviour rather than a shortfall, and `docs/changelog.md`, `docs/installing.md`,
+`docs/privacy.md` and `docs/ALPHA_TESTING.md` all say so.
+
+**The rule that nobody is asked about a file already known to be bad is carried
+in a type.** `Verified` has a private field and only `verify` builds one, and
+both the function that asks and the function that runs take it. An ordering can
+be rearranged by a later edit nobody notices; an argument type cannot, so there
+is no arrangement of this code that puts "this could not be verified, run it
+anyway?" in front of somebody.
+
+**Reading criterion 2 clause by clause from `.planning/ROADMAP.md` found two
+clauses open that nothing else could have.** The criterion says nothing is
+downloaded where a signature cannot be checked; it was downloading first and
+refusing after, which on Linux or macOS fetches an executable onto a disk that
+can never look at it. And the update setting's own description still said
+"nothing is downloaded yet", four commits after that stopped being true, in the
+one sentence where the consent for an unattended download is given. Both were
+fixed with their own red halves. Neither was caught by a test, a guard or a
+review, because nothing in the tree reads a criterion. **Checking criteria
+against premises is worth the time it costs.**
+
+**`src/main.rs` maps to no test target, and that is a new hole in the gate.**
+The mapper turns a changed `src/a/b.rs` into `--lib a::b::`, and `main.rs`
+becomes `--lib main::`, which matches nothing, because `main.rs` is the binary
+and the suite runs the library. The third of the three rules that clear a
+downloaded installer lives in `prepare_data_folder` there, so the commit adding
+it ran no test reaching it and nothing in the tree can. It is the same shape as
+the `.iss` hole 07-02 closed and the workflow hole 07-07 found, and it is the
+fourth instance in this phase. The clearing itself is tested through the library
+function; only the call site is uncovered.
+
+**Two measurements that correct the plan.** `reqwest::Response::chunk` needs no
+feature at 0.13.4, so the byte bound is enforced as bytes arrive at no cost to
+the dependency, where the plan assumed `stream` was needed. And the fixture for
+the refusal that matters cannot be `notepad.exe`: almost every Windows system
+binary is signed through a catalogue rather than inside the file, and
+`WinVerifyTrust` asked about a file does not look in catalogues, so it answers
+`TRUST_E_NOSIGNATURE`. Written a little more loosely, as "refused for any
+reason", that test would have passed for entirely the wrong reason.
+
+---
+
+**From 07-08, still true. Seven things have to be signed and SHIP-01's wording
+says two.** The census in
 `tests/installer.rs` derives both halves rather than holding a list: the
 `[Files]` block gives `wixen-mail.exe`, `wixen_mail_search.dll` and
 `wixen-mail-search-setup.exe`; the workflow's published list gives the setup
@@ -439,7 +501,7 @@ phase 7 was editing it. `progress.total_plans` went from 92 to **97** by
 counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
-Current Plan: 8
+Current Plan: 9
 Total Plans in Phase: 9
 
 ---

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 311
+open_count: 320
 waived_count: 0
 fixed_count: 22
-total_count: 333
-last_updated: 2026-09-12T18:58:04.273Z
+total_count: 342
+last_updated: 2026-09-12T22:38:02.066Z
 ---
 
 # Broken Windows Ledger
@@ -348,6 +348,15 @@ last_updated: 2026-09-12T18:58:04.273Z
 | 331 | 07 | unmet-truth | tests/installer.rs |  | The census of what has to be signed counts PE files only, which is .exe and .dll, because those are what Authenticode embeds a signature into. A .ps1, an .msi or a .cat can also carry a signature, each by a different mechanism, and none would be counted. This project ships none of the three today, so the filter is correct about what it claims and incomplete about the question. Widening it without settling how each of those is signed would be worse, because it would pair a file with a signing step that cannot sign it | open |  | 2026-09-12T18:48:43.047Z |  |
 | 332 | 07 | unmet-truth | tests/installer.rs |  | The census reads one Source line as one artefact, so a wildcard naming executables would be a single entry standing for however many files it matched. The installer already carries one wildcard, the line that installs the markdown guides, which the filter drops as prose. If an executable wildcard ever arrives the count is right about the line and wrong about the artefacts, and nothing would say so | open |  | 2026-09-12T18:48:43.841Z |  |
 | 333 | 07 | deviation | .planning/WINDOWS.md |  | gsd-tools windows append writes a description containing a backslash into both halves of the ledger without reconciling the escaping. The JSON half escapes the character and the markdown table half does not, so the two halves disagree and the commit gate refuses the commit. Found on entry 332, whose description quoted a Windows path from the installer script. Worked around by rewording that entry to avoid the character and correcting both halves by hand. Anything appended through the tool that quotes a Windows path or a regular expression meets this, and the failure reads as a ledger the author corrupted rather than as a tool defect | open |  | 2026-09-12T18:58:04.273Z |  |
+| 334 | 07 | unrun-verify | src/service/update_download.rs |  | no installer has ever been fetched over a real connection; the transport has never run outside a fixture | open |  | 2026-09-12T22:37:37.668Z |  |
+| 335 | 07 | unrun-verify | src/service/update_download.rs |  | the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files | open |  | 2026-09-12T22:37:56.351Z |  |
+| 336 | 07 | unrun-verify | src/service/update_download.rs |  | the publisher check has never seen a genuine Wixen Mail signature, because no release is signed; it was proved against a Microsoft-signed file instead | open |  | 2026-09-12T22:37:57.117Z |  |
+| 337 | 07 | unrun-verify | docs/installing.md |  | plan 07-09 task 3 was not attempted: no screen reader has heard an update happen, a refusal, or the moment the window closes | open |  | 2026-09-12T22:37:57.894Z |  |
+| 338 | 07 | unmet-truth | src/service/outward.rs |  | the outward census has no category for a module whose bytes are executed; plans 07-05 and 07-09 both raised it and neither acted, because the change costs re-measuring ten records | open |  | 2026-09-12T22:37:58.771Z |  |
+| 339 | 07 | unmet-truth | src/service/update_download.rs |  | nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether | open |  | 2026-09-12T22:37:59.641Z |  |
+| 340 | 07 | unmet-truth | src/service/update_download.rs |  | the handover cannot remove the mutex race: an installer reaching its own AppMutex check before this process has finished closing will say Wixen Mail is still open | open |  | 2026-09-12T22:38:00.451Z |  |
+| 341 | 07 | deviation | guards/guards.toml |  | plan 07-09 required the ten guard records reading the outward census to be re-measured by hand; CLAUDE.md took guard sweeps off the critical path on 2026-09-03, so they were not run and are owed to the phase sweep | open |  | 2026-09-12T22:38:01.262Z |  |
+| 342 | 07 | unrun-verify | src/service/update_download.rs |  | the revocation policy is not checked against a revoked certificate, because none exists to check against | open |  | 2026-09-12T22:38:02.066Z |  |
 
 ````json
 [
@@ -4345,6 +4354,114 @@ last_updated: 2026-09-12T18:58:04.273Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T18:58:04.273Z",
+    "resolved_at": null
+  },
+  {
+    "id": 334,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "no installer has ever been fetched over a real connection; the transport has never run outside a fixture",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:37.668Z",
+    "resolved_at": null
+  },
+  {
+    "id": 335,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:56.351Z",
+    "resolved_at": null
+  },
+  {
+    "id": 336,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "the publisher check has never seen a genuine Wixen Mail signature, because no release is signed; it was proved against a Microsoft-signed file instead",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:57.117Z",
+    "resolved_at": null
+  },
+  {
+    "id": 337,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "docs/installing.md",
+    "line": null,
+    "description": "plan 07-09 task 3 was not attempted: no screen reader has heard an update happen, a refusal, or the moment the window closes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:57.894Z",
+    "resolved_at": null
+  },
+  {
+    "id": 338,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "src/service/outward.rs",
+    "line": null,
+    "description": "the outward census has no category for a module whose bytes are executed; plans 07-05 and 07-09 both raised it and neither acted, because the change costs re-measuring ten records",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:58.771Z",
+    "resolved_at": null
+  },
+  {
+    "id": 339,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:37:59.641Z",
+    "resolved_at": null
+  },
+  {
+    "id": 340,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "the handover cannot remove the mutex race: an installer reaching its own AppMutex check before this process has finished closing will say Wixen Mail is still open",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:38:00.451Z",
+    "resolved_at": null
+  },
+  {
+    "id": 341,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "guards/guards.toml",
+    "line": null,
+    "description": "plan 07-09 required the ten guard records reading the outward census to be re-measured by hand; CLAUDE.md took guard sweeps off the critical path on 2026-09-03, so they were not run and are owed to the phase sweep",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:38:01.262Z",
+    "resolved_at": null
+  },
+  {
+    "id": 342,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/service/update_download.rs",
+    "line": null,
+    "description": "the revocation policy is not checked against a revoked certificate, because none exists to check against",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T22:38:02.066Z",
     "resolved_at": null
   }
 ]
