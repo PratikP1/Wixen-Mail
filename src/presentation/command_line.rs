@@ -508,6 +508,27 @@ mod tests {
     }
 
     #[test]
+    fn test_the_help_says_the_downloaded_mail_is_not_encrypted() {
+        // The same fact the first-run screen carries, in the other place a
+        // person meets this program before pointing it at their mail. It sits
+        // beside the paragraph about writing being unproven because both
+        // answer the same question: what am I taking on by running this.
+        //
+        // Four parts, asserted apart, so a reflow or a half-written sentence
+        // says which part went missing rather than only that something did.
+        assert!(HELP.contains("is not encrypted on this computer"), "{HELP}");
+        assert!(
+            HELP.contains("Windows keeps other people who use this computer out"),
+            "{HELP}"
+        );
+        assert!(HELP.contains("takes the drive out"), "{HELP}");
+        assert!(
+            HELP.contains("unless the disk itself is encrypted"),
+            "{HELP}"
+        );
+    }
+
+    #[test]
     fn test_the_help_says_what_can_be_opened_because_nothing_else_documents_it() {
         // These arrive from Windows without anybody typing them, so the only
         // place a person can find out what this program is registered to open

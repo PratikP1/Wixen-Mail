@@ -336,6 +336,73 @@ mod tests {
     }
 
     #[test]
+    fn test_the_introduction_says_the_downloaded_mail_is_not_encrypted() {
+        // Two documents said this and the program said nothing, so the only
+        // people who knew were the ones who opened a page. Somebody deciding
+        // against turning on BitLocker because they assumed their mail was
+        // protected is the outcome this sentence exists to stop.
+        //
+        // Four parts, asserted apart, because one assertion over one long
+        // literal breaks on a reflow and then says nothing about which part
+        // went missing.
+        //
+        // The negative form of this test is worthless and it is worth saying
+        // why: "the text does not contain the word encrypted" is green today,
+        // and stays green when the sentence is written wrongly, because the
+        // honest sentence contains that word too. Only the positive form can
+        // go red.
+        assert!(
+            INTRODUCTION.contains("is not encrypted on this computer"),
+            "the screen does not say the downloaded mail sits in the clear:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("Windows keeps other people who use this computer out"),
+            "the screen does not say what the folder is protected from, or what \
+             does the protecting:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("takes the drive out"),
+            "the screen does not say what the protection does not cover:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("unless the disk itself is encrypted"),
+            "the screen names no answer to somebody taking the drive out:\n{INTRODUCTION}"
+        );
+    }
+
+    #[test]
+    fn test_the_first_run_text_stays_short_enough_to_be_heard() {
+        // This is read out in full before the buttons are reachable, so its
+        // length is paid by exactly the people the program is for. Somebody
+        // who stops listening and presses Enter gets an answer they never
+        // heard, which is the cost of letting this grow.
+        //
+        // 900 characters is the text as it stands plus about one more
+        // paragraph. A fifth thing worth saying has to displace something
+        // rather than be added to the end. At that bound the text is roughly
+        // 150 words, about a minute of speech at a common default rate; that
+        // estimate is why the number is 900 and not 2,000, and nothing here
+        // measures speech.
+        //
+        // The first assertion is not a duplicate of the test above. A ceiling
+        // on its own is satisfied by a screen that says nothing at all, so
+        // without it this test would pass against an empty constant.
+        const LONGEST_WORTH_HEARING: usize = 900;
+
+        assert!(
+            INTRODUCTION.contains("is not encrypted on this computer"),
+            "a bound on a screen that says nothing about storage measures \
+             nothing:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.len() <= LONGEST_WORTH_HEARING,
+            "the first-run text is {} characters, past the {LONGEST_WORTH_HEARING} \
+             somebody has to hear before they can reach the buttons",
+            INTRODUCTION.len()
+        );
+    }
+
+    #[test]
     fn test_every_choice_has_a_label_and_an_explanation() {
         for choice in Choice::ALL {
             assert!(!choice.label().is_empty(), "{choice:?}");
