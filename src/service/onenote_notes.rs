@@ -40,10 +40,13 @@
 //! its own entry in `.planning/WINDOWS.md`.
 
 use crate::application::notes_backend::{
-    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendSaid,
+    ANoteAsItStands, ANoteThere, NotesService, WhatTheBackendKept, WhatTheBackendSaid,
 };
-use crate::common::Result;
-use crate::service::microsoft_graph::{AOneNoteSection, MsGraphClient};
+use crate::common::{Error, Result};
+use crate::service::microsoft_graph::{
+    AOneNoteSection, MsGraphClient, MsOneNotePage, the_time_a_page_was_last_changed,
+};
+use crate::service::onenote_page::{ANoteOnAPage, the_note_on, the_page_for};
 use crate::service::tasks_api::PagedRead;
 
 /// One Microsoft account's OneNote, as the notes seam asks about it.
@@ -104,41 +107,252 @@ impl ANotebookOnAMicrosoftAccount {
     pub async fn the_sections(&self) -> Result<PagedRead<AOneNoteSection>> {
         self.client.every_section(&self.token).await
     }
+
+    /// What a failed request means, in the words the seam allows.
+    ///
+    /// A refusal by the setting and a refusal by Microsoft are different things
+    /// to somebody: one is fixed on the settings screen and one is fixed by
+    /// signing in again, and a single "it did not work" tells them neither. The
+    /// same three-way split `caldav_journal` makes, reaching the same words.
+    fn what_that_means(error: Error) -> WhatTheBackendSaid {
+        if crate::service::outward::was_refused_by_the_gate(&error) {
+            return WhatTheBackendSaid::NotAllowedToChangeAnything;
+        }
+        match error {
+            // `microsoft_graph::onenote_refusal` has already turned 401 and 403
+            // into this, carrying a sentence that names notes rather than the
+            // one that names tasks.
+            Error::Authentication(_)
+            | Error::Api { status: 401, .. }
+            | Error::Api { status: 403, .. } => WhatTheBackendSaid::NotSignedIn,
+            Error::Api { status: 404, .. } | Error::Api { status: 410, .. } => {
+                WhatTheBackendSaid::ItIsNotThere
+            }
+            // The string is for the log. Nothing reads it out: text a crate
+            // wrote for a developer is not text to speak to somebody whose
+            // notes did not sync.
+            other => WhatTheBackendSaid::CouldNotBeReached(other.to_string()),
+        }
+    }
+
+    /// Whether this error means the page is not there any more.
+    ///
+    /// Ordinary rather than wrong: somebody deleted it at the other end between
+    /// a listing and the read that follows it.
+    fn the_page_has_gone(error: &Error) -> bool {
+        matches!(
+            error,
+            Error::Api { status: 404, .. } | Error::Api { status: 410, .. }
+        )
+    }
+
+    /// What the page really kept, where that is not what it was handed.
+    ///
+    /// Read back off the page rather than worked out from what this program
+    /// believes OneNote does, which is requirement 2 of the seam's section on
+    /// bytes: a backend that answers from a rule about itself goes on claiming
+    /// a byte survived after the day it stops surviving. It costs one request
+    /// per write, and it is the only thing in this file that could notice
+    /// Microsoft behaving differently from the model `05.2-01` measured.
+    ///
+    /// The title comes from the resource and the body from the document,
+    /// because that is where each really lives. A page's title is a property of
+    /// the `onenotePage`; whether the content endpoint also carries a `title`
+    /// element is not something this repository has ever seen, and reading the
+    /// title out of the document would report every title as lost if it does
+    /// not.
+    ///
+    /// `None` where the page gives back exactly what it was handed, which is
+    /// the ordinary answer and the one the sync says nothing to anybody about.
+    async fn what_the_page_kept(
+        &self,
+        page_id: &str,
+        title_there: &str,
+        asked: &ANoteOnAPage,
+    ) -> Result<Option<WhatTheBackendKept>> {
+        let there = the_note_on(&self.client.page_content(&self.token, page_id).await?);
+        if title_there == asked.title && there.body == asked.body {
+            return Ok(None);
+        }
+        Ok(Some(WhatTheBackendKept {
+            title: title_there.to_string(),
+            body: there.body,
+        }))
+    }
+
+    /// Whether the page moved since this program last looked.
+    ///
+    /// Equality and nothing else, which is the only comparison the seam allows:
+    /// a marker is not promised to be opaque, orderable or tied to the content,
+    /// so ordering two of these or reading one as a date would be this program
+    /// deciding something Microsoft never promised.
+    ///
+    /// # Why a missing marker refuses the write rather than taking it
+    ///
+    /// The seam's requirement 3 says a marker is required of any backend this
+    /// program writes to, and says why: with no marker the push has no evidence
+    /// that anything moved at the backend, so this computer's copy goes over
+    /// whatever is there and a change somebody made at the other end is
+    /// destroyed with nothing said. `05.1-04` measured that rather than arguing
+    /// it. So where either marker is missing, this refuses, and the note stays
+    /// here still marked as waiting. A refusal somebody can read costs them a
+    /// sync; the other answer costs them their note.
+    ///
+    /// Nothing here has seen an `onenotePage` arrive without a
+    /// `lastModifiedDateTime`, and nothing here can say Graph never sends one.
+    fn whether_the_page_moved(
+        ours: Option<&str>,
+        theirs: &MsOneNotePage,
+    ) -> std::result::Result<(), WhatTheBackendSaid> {
+        let now = the_time_a_page_was_last_changed(theirs);
+        match (ours, now.as_deref()) {
+            (Some(ours), Some(now)) if ours == now => Ok(()),
+            (Some(_), Some(_)) => Err(WhatTheBackendSaid::ItMovedFirst { version_now: now }),
+            _ => Err(WhatTheBackendSaid::CouldNotBeReached(
+                "OneNote answered with a page carrying no time it was last changed, so \
+                 whether your copy or the one in OneNote moved first could not be told"
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Make a page in this section say what this note says.
+    ///
+    /// Apart from the trait method because the trait method's job is to turn
+    /// every failure into one of the seam's words, and a body that did both
+    /// would answer some of them twice.
+    async fn write_the_page(
+        &self,
+        container: &str,
+        known_as: Option<&ANoteThere>,
+        note: &ANoteOnAPage,
+    ) -> Result<WhatTheBackendSaid> {
+        let Some(there) = known_as else {
+            let made = self
+                .client
+                .create_page(&self.token, container, &the_page_for(note))
+                .await?;
+            let kept = self.what_the_page_kept(&made.id, &made.title, note).await?;
+            return Ok(WhatTheBackendSaid::Done {
+                known_as: ANoteThere {
+                    version: the_time_a_page_was_last_changed(&made),
+                    named: made.id,
+                },
+                what_it_could_keep: kept,
+            });
+        };
+
+        let before = match self.client.one_page(&self.token, &there.named).await {
+            Ok(before) => before,
+            // A name the backend no longer knows is not a name. The seam says
+            // such a note is one to create, and the sync offers it again.
+            Err(e) if Self::the_page_has_gone(&e) => return Ok(WhatTheBackendSaid::ItIsNotThere),
+            Err(e) => return Err(e),
+        };
+        if let Err(refused) = Self::whether_the_page_moved(there.version.as_deref(), &before) {
+            return Ok(refused);
+        }
+
+        self.client
+            .change_page(&self.token, &there.named, note)
+            .await?;
+
+        // Asked again rather than guessed at. The marker the caller writes down
+        // has to be the one the page carries after the change: handed back the
+        // one from before it, the next push compares an old marker against a new
+        // one and reports a clash nobody caused.
+        let after = self.client.one_page(&self.token, &there.named).await?;
+        let kept = self
+            .what_the_page_kept(&there.named, &after.title, note)
+            .await?;
+        Ok(WhatTheBackendSaid::Done {
+            known_as: ANoteThere {
+                named: there.named.clone(),
+                version: the_time_a_page_was_last_changed(&after),
+            },
+            what_it_could_keep: kept,
+        })
+    }
 }
 
 impl NotesService for ANotebookOnAMicrosoftAccount {
-    async fn notes_it_holds(&self, _container: &str) -> Result<Vec<ANoteThere>> {
-        Ok(Vec::new())
+    async fn notes_it_holds(&self, container: &str) -> Result<Vec<ANoteThere>> {
+        Ok(self
+            .client
+            .pages_in_section(&self.token, container)
+            .await?
+            .iter()
+            .map(|page| ANoteThere {
+                named: page.id.clone(),
+                version: the_time_a_page_was_last_changed(page),
+            })
+            .collect())
     }
 
     async fn what_a_note_says(
         &self,
         _container: &str,
-        _known_as: &ANoteThere,
+        known_as: &ANoteThere,
     ) -> Result<Option<ANoteAsItStands>> {
-        Ok(None)
+        // The container is not named in either request, and that is Graph's
+        // addressing rather than a shortcut: a page is addressed by its own
+        // identifier wherever it sits. The container is still what the caller
+        // hands over and what the note is filed by, and nothing here reads it.
+        let page = match self.client.one_page(&self.token, &known_as.named).await {
+            Ok(page) => page,
+            Err(e) if Self::the_page_has_gone(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let document = match self.client.page_content(&self.token, &known_as.named).await {
+            Ok(document) => document,
+            Err(e) if Self::the_page_has_gone(&e) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        Ok(Some(ANoteAsItStands {
+            known_as: ANoteThere {
+                // The name the caller already holds. Graph's answer carries one
+                // too, and taking it would let a page that came back naming
+                // something else quietly become a different note.
+                named: known_as.named.clone(),
+                version: the_time_a_page_was_last_changed(&page),
+            },
+            title: page.title,
+            body: the_note_on(&document).body,
+        }))
     }
 
     async fn leave_a_note_saying(
         &self,
-        _container: &str,
-        _known_as: Option<&ANoteThere>,
-        _title: &str,
-        _body: &str,
+        container: &str,
+        known_as: Option<&ANoteThere>,
+        title: &str,
+        body: &str,
     ) -> Result<WhatTheBackendSaid> {
-        Ok(WhatTheBackendSaid::CouldNotBeReached(
-            "no page was written".to_string(),
-        ))
+        let note = ANoteOnAPage {
+            title: title.to_string(),
+            body: body.to_string(),
+        };
+        Ok(self
+            .write_the_page(container, known_as, &note)
+            .await
+            .unwrap_or_else(Self::what_that_means))
     }
 
     async fn take_a_note_away(
         &self,
         _container: &str,
-        _known_as: &ANoteThere,
+        known_as: &ANoteThere,
     ) -> Result<WhatTheBackendSaid> {
-        Ok(WhatTheBackendSaid::CouldNotBeReached(
-            "no page was removed".to_string(),
-        ))
+        // The marker is deliberately not sent, and there is nowhere to send it:
+        // an `onenotePage` has no entity tag and the delete reference names no
+        // `If-Match`. Somebody asked for the note to go, and a removal held back
+        // because the page moved is a removal that fails for ever.
+        Ok(
+            match self.client.delete_page(&self.token, &known_as.named).await {
+                Ok(()) => WhatTheBackendSaid::done(known_as.clone()),
+                Err(e) => Self::what_that_means(e),
+            },
+        )
     }
 }
 
@@ -284,16 +498,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out() {
-        // Requirement 2 of the seam's section on bytes. The answer comes from
-        // the page's own copy, so a service that stopped reshaping a note, or
-        // started reshaping a different part of one, would be reported as it
-        // really is rather than as this program believes it to be.
+        // Requirement 2 of the seam's section on bytes: a backend answers from
+        // its own copy rather than from a rule about itself.
+        //
+        // **The page answers with something the model would not predict, and
+        // that is the whole of what makes this a test.** Put through
+        // `onenote_page`'s pure pair, this note comes back as "Live is brown",
+        // because a quotation has no representation on a page. So a backend
+        // that worked the answer out from the model instead of reading the page
+        // would produce exactly that, and a fixture echoing the model could not
+        // tell the two readings apart. The page here says something else, which
+        // only a read can find.
         let (address, _listening) = answering_as_asked(
             "200 OK",
             "application/json",
             vec![
                 Box::new(|_| a_page_graph_answers_with("1-page", "Fuses", "2026-09-11T09:00:00Z")),
-                Box::new(|_| the_content_of_a_page("Live is brown")),
+                Box::new(|_| the_content_of_a_page("Live is brown and the folder is in the van")),
             ],
         )
         .await;
@@ -317,8 +538,9 @@ mod tests {
         };
         assert_eq!(kept.title, "Fuses");
         assert_eq!(
-            kept.body, "Live is brown",
-            "what the page kept has to be what the page says, not what was sent"
+            kept.body, "Live is brown and the folder is in the van",
+            "what the page kept has to be what the page says, not what the model \
+             says the page would have done"
         );
     }
 

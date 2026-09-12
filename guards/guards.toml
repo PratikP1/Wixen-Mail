@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 524 records have arrived since and have not been through it.
+# 525 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19389,8 +19389,15 @@ tests_last_seen = [
 # therefore the whole of the evidence that this gate applies.
 #
 # Measured 2026-09-11 by hand on a clean tree with nothing else building, at the
-# default eight threads: 6,980 passed, 1 failed, 69.99 seconds. The red test is
-# new with this change and is the only place the assertion is made.
+# default eight threads: 6,980 passed, 1 failed, 69.99 seconds. The red test was
+# new with that change and was the only place the assertion was made.
+#
+# Re-measured 2026-09-12, when `05.2-03` put a notes backend on top of this
+# client and gave it a test of its own asking the same question one layer up.
+# The break now reddens two, and the second one is the finding: adding a caller
+# to a gated method widens what this guard covers, and no count of tests per
+# file can see that. It was found by the remeasure refusing the record rather
+# than by anybody thinking to look.
 [[guard]]
 name = "a onenote page is made through the gated transport rather than a client of its own"
 file = "src/service/microsoft_graph.rs"
@@ -19403,9 +19410,11 @@ after = '''        let resp = reqwest::Client::new()
             .bearer_auth(token)'''
 red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_makes_no_onenote_page",
+    "service::onenote_notes::tests::test_an_account_that_may_only_be_read_makes_no_page_and_says_why",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
+    { file = "src/service/onenote_notes.rs", tests = 9 },
 ]
 
 # A walk of a notebook stops going deeper into section groups, and says it
@@ -19440,7 +19449,7 @@ red = [
     "service::microsoft_graph::tests::test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
 ]
 
 # A change to a page is built from a read of that page taken immediately before
@@ -19476,5 +19485,44 @@ red = [
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_changes_no_page",
 ]
 tests_last_seen = [
-    { file = "src/service/microsoft_graph.rs", tests = 53 },
+    { file = "src/service/microsoft_graph.rs", tests = 57 },
+]
+
+# What a backend could not keep is read off its own copy, not worked out from
+# what this program believes that backend does.
+#
+# Requirement 2 of the seam's section on bytes, and the break is the saving
+# anybody would reach for: the pure mapping in `onenote_page` already says what
+# a page does to a note, so putting the note through it costs nothing and saves
+# a request. What it costs instead is the only thing in this backend that could
+# ever notice Microsoft behaving differently from a model read off three
+# documentation pages. A backend answering from a rule about itself goes on
+# claiming a byte survived after the day it stops surviving.
+#
+# Three tests red and only one of them is about the rule. The other two starve:
+# the break takes a request away, and their fixtures wait for one that never
+# comes, so they fail on a socket rather than on an assertion. Written down as
+# measured rather than trimmed to the one that was predicted.
+#
+# A second candidate was measured, because the first plausible break is often
+# the weak one. Answering "kept it all" whenever the title survived is the other
+# shape of the same mistake, and it reddens exactly one test, the one about the
+# rule: 7,010 passed, 1 failed, 68.01 seconds. The break kept here is the wider
+# one, because what it defends is the read happening at all.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: 7,008 passed, 3 failed, 64.59 seconds. All three tests
+# are new with this change.
+[[guard]]
+name = "what a onenote page could not keep is read off the page rather than off a model of it"
+file = "src/service/onenote_notes.rs"
+before = '''        let there = the_note_on(&self.client.page_content(&self.token, page_id).await?);'''
+after = '''        let there = the_note_on(&the_page_for(asked));'''
+red = [
+    "service::onenote_notes::tests::test_a_note_made_here_reaches_onenote_as_a_page_in_the_section_it_was_given",
+    "service::onenote_notes::tests::test_a_note_reaches_onenote_through_the_sync_that_names_no_backend",
+    "service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out",
+]
+tests_last_seen = [
+    { file = "src/service/onenote_notes.rs", tests = 9 },
 ]

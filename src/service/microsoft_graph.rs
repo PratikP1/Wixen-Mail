@@ -1309,10 +1309,14 @@ impl MsGraphClient {
     /// than Graph will answer in one go is read whole rather than truncated.
     pub async fn pages_in_section(
         &self,
-        _token: &str,
-        _section_id: &str,
+        token: &str,
+        section_id: &str,
     ) -> Result<Vec<MsOneNotePage>> {
-        Ok(Vec::new())
+        self.every_page_of::<MsOneNotePage>(
+            &self.onenote_url(&format!("sections/{}/pages", in_a_path(section_id))),
+            token,
+        )
+        .await
     }
 
     /// One page, as the resource rather than as its content.
@@ -1321,8 +1325,12 @@ impl MsGraphClient {
     /// page's HTML cannot be trusted to carry: the title is a property of the
     /// resource, and the time is written by the service and appears nowhere in
     /// the document.
-    pub async fn one_page(&self, _token: &str, _page_id: &str) -> Result<MsOneNotePage> {
-        Ok(MsOneNotePage::default())
+    pub async fn one_page(&self, token: &str, page_id: &str) -> Result<MsOneNotePage> {
+        self.onenote_get(
+            &self.onenote_url(&format!("pages/{}", in_a_path(page_id))),
+            token,
+        )
+        .await
     }
 
     /// A page's content as somebody would read it.
@@ -1332,8 +1340,12 @@ impl MsGraphClient {
     /// into the document as attributes when they are asked for, and a note read
     /// back for somebody to edit should not carry the service's bookkeeping
     /// through a Markdown reader.
-    pub async fn page_content(&self, _token: &str, _page_id: &str) -> Result<String> {
-        Ok(String::new())
+    pub async fn page_content(&self, token: &str, page_id: &str) -> Result<String> {
+        self.the_document_at(
+            &self.onenote_url(&format!("pages/{}/content", in_a_path(page_id))),
+            token,
+        )
+        .await
     }
 
     /// A page's content, with the identifiers Graph generated for it.
@@ -1346,13 +1358,26 @@ impl MsGraphClient {
         token: &str,
         page_id: &str,
     ) -> Result<String> {
-        let url = self.onenote_url(&format!(
-            "pages/{}/content?includeIDs=true",
-            in_a_path(page_id)
-        ));
+        self.the_document_at(
+            &self.onenote_url(&format!(
+                "pages/{}/content?includeIDs=true",
+                in_a_path(page_id)
+            )),
+            token,
+        )
+        .await
+    }
+
+    /// One OneNote read whose answer is a document rather than a resource.
+    ///
+    /// Beside [`Self::onenote_get`] and not folded into it: the two differ only
+    /// in how the answer is read, and both refusals go through the same
+    /// classification, so a page's content and a page's JSON cannot come to
+    /// disagree about what a 401 means.
+    async fn the_document_at(&self, url: &str, token: &str) -> Result<String> {
         let resp = self
             .http
-            .reading(&url)
+            .reading(url)
             .bearer_auth(token)
             .send()
             .await
