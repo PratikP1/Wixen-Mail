@@ -281,6 +281,31 @@ pub enum WhichUpdates {
 }
 
 impl WhichUpdates {
+    /// Every answer, in the order a control should offer them.
+    ///
+    /// Least first, so the answer that asks for nothing is the one somebody
+    /// meets first and each one after it fetches more. Written out rather than
+    /// derived, for the reason [`Self::channel`] gives about catch-all arms: a
+    /// fourth answer has to be put here by somebody, and a control built from
+    /// this array is the one place that would say so.
+    pub const ALL: [Self; 3] = [
+        Self::NotLooking,
+        Self::PublicReleases,
+        Self::DevelopmentReleases,
+    ];
+
+    /// What this answer is called where somebody chooses it.
+    ///
+    /// Words a person would use rather than the variant's own name. "Test
+    /// versions" rather than "prereleases", because the word this project
+    /// publishes under is `alpha`, `beta` or `rc` and none of those is a word
+    /// somebody scanning a settings screen by ear is looking for.
+    pub const fn words(self) -> &'static str {
+        match self {
+            Self::NotLooking | Self::PublicReleases | Self::DevelopmentReleases => "",
+        }
+    }
+
     /// Which channel this answer asks, if it asks at all.
     ///
     /// One function with no catch-all arm, so a fourth answer added here has

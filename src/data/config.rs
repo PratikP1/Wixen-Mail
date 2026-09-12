@@ -490,6 +490,38 @@ pub struct AppConfig {
     /// the program sending mail.
     #[serde(default = "default_undo_send_hold_seconds")]
     pub undo_send_hold_seconds: i64,
+    /// Which published versions somebody wants to be told about.
+    ///
+    /// Not looking unless somebody chooses otherwise, so nothing is asked of
+    /// anybody until they say so. What it puts on the wire when they do is one
+    /// `GET` to `api.github.com` asking which versions have been published: no
+    /// account, no identifier, and nothing about the mail on this computer.
+    /// What GitHub keeps is the address the request came from, which is what
+    /// their own documentation says an unauthenticated request is associated
+    /// with, and `docs/privacy.md` says so in the words somebody using this
+    /// would read.
+    ///
+    /// One setting rather than a switch and a channel beside it, per D-16, and
+    /// the reason is accessibility rather than tidiness: a control that greys
+    /// out when its parent is off is skipped in the tab order, so somebody
+    /// moving by keyboard does not meet it as unavailable, they do not meet it
+    /// at all.
+    ///
+    /// **Two of its three answers mean an installer gets fetched without being
+    /// asked for**, once the updater lands in plan 07-09. Nothing is downloaded
+    /// today. The control on the settings screen says both halves of that,
+    /// because consent to an unattended download is given where somebody
+    /// chooses, not in a document they may never open.
+    ///
+    /// Deliberately not called `check_updates`. A `pub check_updates: bool`
+    /// defaulting to `true` was removed on 2026-08-24 by `cb7caa2`, and serde
+    /// reads by field name: a settings file written before that date still
+    /// holds the key, and this file is read with one `serde_json::from_str`
+    /// that propagates its error, so a stale `true` against a field of this
+    /// type would fail the whole file and take every other setting on the
+    /// machine back to its default.
+    #[serde(rename = "check_updates")]
+    pub which_updates: crate::common::version::WhichUpdates,
 }
 
 /// What a new or upgraded installation may change.
@@ -631,6 +663,7 @@ impl Default for AppConfig {
             default_account_id: String::new(),
             draft_autosave_minutes: default_autosave_minutes(),
             undo_send_hold_seconds: default_undo_send_hold_seconds(),
+            which_updates: crate::common::version::WhichUpdates::DevelopmentReleases,
             message_columns: String::new(),
             feedback_channels: String::new(),
             sound_scheme_id: String::new(),
@@ -1885,6 +1918,102 @@ mod permission_tests {
         // message here and sends nothing, the other can put four bytes of a
         // link on the wire. They cannot share a switch.
         assert!(!AppConfig::default().check_links_with_google);
+    }
+
+    #[test]
+    fn test_a_fresh_installation_is_not_looking_for_new_versions() {
+        // The single thing here most worth getting wrong. A default that asks
+        // for anything puts a request on the wire for somebody who never chose
+        // to make one, and once the updater lands it fetches an installer over
+        // whatever connection they are on.
+        assert_eq!(
+            AppConfig::default().which_updates,
+            crate::common::version::WhichUpdates::NotLooking
+        );
+    }
+
+    #[test]
+    fn test_a_settings_file_written_before_this_setting_existed_is_not_looking() {
+        // Which is every settings file on disk. Built by taking the key back
+        // out of a current one rather than hand-writing the older shape, so it
+        // does not break the next time an unrelated field is added.
+        let mut older = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = older.as_object_mut().expect("an object");
+        assert!(
+            fields.remove("which_updates").is_some(),
+            "the setting is not written to the settings file under that key, so this \
+             test covers nothing"
+        );
+
+        let parsed: AppConfig =
+            serde_json::from_value(older).expect("an older settings file still opens");
+        assert_eq!(
+            parsed.which_updates,
+            crate::common::version::WhichUpdates::NotLooking,
+            "an absent key must not switch a fetch on for somebody who never asked"
+        );
+    }
+
+    /// A settings file holding one particular stored answer for the update
+    /// setting, read back the way the loader really reads one.
+    ///
+    /// Through `serde_json::from_value` over a whole serialised config, because
+    /// the thing worth asserting is not what the field's own reader does, which
+    /// `common::version` already covers, but what happens to the other fifty
+    /// settings beside it.
+    fn settings_holding_an_update_answer(stored: &str) -> Result<AppConfig> {
+        let mut file =
+            serde_json::to_value(AppConfig::default()).map_err(|e| Error::Config(e.to_string()))?;
+        let answer: serde_json::Value =
+            serde_json::from_str(stored).map_err(|e| Error::Config(e.to_string()))?;
+        file.as_object_mut()
+            .ok_or_else(|| Error::Config("a config serialises as an object".to_string()))?
+            .insert("which_updates".to_string(), answer);
+        serde_json::from_value(file).map_err(|e| Error::Config(e.to_string()))
+    }
+
+    #[test]
+    fn test_an_update_answer_is_stored_under_its_own_key_and_an_unknown_one_asks_for_nothing() {
+        use crate::common::version::WhichUpdates;
+
+        // The key a settings file holds, fixed from the moment one machine has
+        // written it, and deliberately not `check_updates`. That name held a
+        // `bool` defaulting to `true` until `cb7caa2` removed it, and serde
+        // reads by name, so reusing it would meet a stale `true` on every
+        // machine that has not saved settings since August.
+        let written = serde_json::to_value(AppConfig::default()).expect("a config to serialise");
+        let fields = written.as_object().expect("an object");
+        assert!(
+            fields.contains_key("which_updates"),
+            "the setting is stored under some other key: {:?}",
+            fields.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !fields.contains_key("check_updates"),
+            "the setting reuses the name of a removed one, so a settings file written \
+             before 2026-08-24 holds a boolean under it and this whole file stops parsing"
+        );
+
+        // A stored answer that really is one reaches the program, which is the
+        // half that would pass for a reader that answers not-looking for
+        // everything.
+        let chosen = settings_holding_an_update_answer("\"development_releases\"")
+            .expect("a settings file naming an answer this build knows");
+        assert_eq!(chosen.which_updates, WhichUpdates::DevelopmentReleases);
+
+        // And one this build does not know loads as not looking, with every
+        // other setting on that machine untouched. That is the case a
+        // downgrade produces, and the whole file is read with one `from_str`,
+        // so the alternative is not a wrong update setting, it is every
+        // setting on the machine back to its default.
+        let unknown = settings_holding_an_update_answer("\"nightly_releases\"")
+            .expect("a settings file naming an answer this build does not know");
+        assert_eq!(unknown.which_updates, WhichUpdates::NotLooking);
+        assert_eq!(
+            unknown.theme,
+            AppConfig::default().theme,
+            "the rest of the settings did not survive an answer this build cannot read"
+        );
     }
 }
 
