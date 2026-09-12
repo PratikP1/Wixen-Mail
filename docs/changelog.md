@@ -6,6 +6,55 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ## [Unreleased]
 
+### Added
+
+- **Notes on an Outlook or Office 365 account now go to OneNote.** Each section
+  of your notebooks is a note folder here, named by where it sits, so a section
+  called Q3 inside a section group called Projects inside a notebook called Work
+  shows as "Work / Projects / Q3". A note you write in one of those folders
+  becomes a page in that section, and a page changed in OneNote arrives here at
+  the next sync. Press the menu key on a note folder and choose "Sync now", or
+  turn on the sync that runs with the others.
+
+  **No Microsoft account has ever been used with this program.** Not one
+  request has reached Microsoft. Everything is tested against a server the
+  tests start on this machine, which shows what Wixen Mail sends and shows
+  nothing about what Microsoft sends back. Expect problems and keep a copy of
+  any note you care about.
+
+  **A note loses some things on the way, and that cannot be fixed here.** A
+  OneNote page has no way to hold bold, italic, struck-out text, a quotation,
+  code, or a line across the page. A note carrying any of those comes back
+  without it, the sync says how many notes that happened to, and the copy kept
+  here becomes the copy OneNote kept. Struck-out text is the one to watch: a job
+  crossed off and a job still to do read the same afterwards. Headings, lists
+  including nested ones, tables, links and pictures all survive. A picture
+  arrives with its description and with Microsoft's address for it, because
+  OneNote stores the picture itself.
+
+  **Which accounts this is for.** An Outlook or Office 365 account sends its
+  notes to OneNote. An account whose calendar you added by its address still
+  sends them to that server. Everything else keeps its notes on this computer,
+  a personal Gmail account included: Google Keep's interface is for Workspace
+  accounts only, so a personal account cannot use it at all and that is not
+  going to change.
+
+  **An account you set up before this version needs signing in again**, because
+  permission is granted once at sign-in and the permission this needs is new.
+  Open the account, switch the browser sign-in off and back on, and approve the
+  list the browser shows.
+
+  Your sections appear at the first sync rather than before it, so the Notes
+  list looks empty until you sync once.
+
+### Fixed
+
+- **Two copies of a note that say the same thing are no longer held for you to
+  choose between.** If a note changed here and in the place it syncs to, and
+  both changes said the same thing, Wixen Mail used to ask which copy to keep
+  and show you two identical ones. It now writes the note down and moves on.
+  This affects notes on a calendar server as well as notes in OneNote.
+
 ### Changed
 
 - **Signing in to an Outlook or Office 365 account now asks for one more

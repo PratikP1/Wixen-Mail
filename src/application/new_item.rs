@@ -902,17 +902,24 @@ pub enum WhereItCameFrom {
 /// thing back at the next sync. Telling them that about something no provider
 /// has ever heard of leaves them waiting for a sync that will never mention it.
 ///
-/// Two parts, and both are needed. Notes and contact groups are sent nowhere
-/// at all, so no copy of one exists anywhere whoever made it. A calendar or a
-/// task list ordinarily comes from Google or Microsoft and is put back by the
-/// next read, but one made here is not: nothing sends it anywhere either.
-/// Asked of the kind alone, the question promised a calendar somebody made
-/// here back at the next sync.
+/// Two parts, and both are needed. A contact group is sent nowhere at all, so
+/// no copy of one exists anywhere whoever made it. A calendar, a task list or a
+/// note folder ordinarily comes from a provider and is put back by the next
+/// read, but one made here is not: nothing sends it anywhere either. Asked of
+/// the kind alone, the question promised a calendar somebody made here back at
+/// the next sync.
+///
+/// **A note folder moved from the first group to the second in 5.2, and nothing
+/// in the compiler said so.** One backend container is one note folder, decided
+/// 2026-09-11, so a folder here stands for a calendar server's journal
+/// collection or a OneNote section and there really is a copy at the provider.
+/// Left in the first group, somebody deleting one was told their section was
+/// gone, and then watched the next sync bring it back.
 pub const fn the_provider_has_a_copy(kind: ContainerKind, came_from: WhereItCameFrom) -> bool {
     matches!(
         (kind, came_from),
         (
-            ContainerKind::Calendar | ContainerKind::TaskList,
+            ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder,
             WhereItCameFrom::AProvider
         )
     )

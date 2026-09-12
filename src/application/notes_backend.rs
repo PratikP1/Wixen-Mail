@@ -100,7 +100,7 @@ impl NotesBackend {
         match self {
             NotesBackend::ThisComputer => false,
             NotesBackend::CalDavJournal => true,
-            NotesBackend::OneNote => false,
+            NotesBackend::OneNote => true,
             NotesBackend::Other(_) => false,
         }
     }
@@ -167,11 +167,12 @@ pub fn for_account(account: Option<&Account>, a_calendar_server: bool) -> NotesB
         // cannot use it at all. This arm is not waiting for anybody: it is
         // the answer after all three backends ship.
         Some("gmail") => NotesBackend::ThisComputer,
-        // OneNote could carry them and does not yet. A page is an HTML
-        // document inside a section inside a notebook rather than a title and
-        // a body, so the mapping is a decision somebody has to make. Phase 5.2
-        // is where it is made, and this is the arm that changes.
-        Some("outlook") => NotesBackend::ThisComputer,
+        // OneNote carries them, as of 5.2. A page is an HTML document inside a
+        // section inside a notebook rather than a title and a body, and the
+        // mapping that used to be called a decision nobody had made is
+        // `service::onenote_page`, with a fidelity table behind it saying what
+        // a note loses on the way. One section is one note folder.
+        Some("outlook") => NotesBackend::OneNote,
         // Every plain IMAP or POP account, every account whose provider this
         // build does not recognise, and no account at all. A mail server is a
         // mail server, and a note "in" one would live in a database on this
@@ -315,9 +316,19 @@ pub fn note_folders_for_the_backends_of(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<crate::data::message_cache::NoteFolderEntry>> {
-    // One kind of backend answers today. A second one adds its containers to
-    // this list and changes nothing else, which is what the module header
-    // promises about a second arm.
+    // **A OneNote account's folders are not in this list, and that is a limit
+    // rather than an oversight.** A calendar server's containers are rows this
+    // computer already holds, so they can be answered without asking anybody. A
+    // notebook's sections are Microsoft's answer and asking for them is a
+    // request, which this cannot make: it is called while a screen is being
+    // filled and it is not async. So a Microsoft account's note folders appear
+    // at its first sync rather than before it, made by `sync_the_notes_of`
+    // through the same `a_note_folder_for` this uses. What somebody sees is a
+    // Notes list with nothing in it until they sync once.
+    //
+    // One kind of backend answers here today. A second one whose containers are
+    // stored rather than fetched adds them to this list and changes nothing
+    // else, which is what the module header promises about a second arm.
     the_calendar_servers_of(cache, account_id)
         .iter()
         .map(|journal| the_note_folder_for(cache, account_id, journal))
@@ -355,7 +366,58 @@ pub async fn sync_the_notes_of(
         NotesBackend::ThisComputer | NotesBackend::Other(_) => {
             Ok(WhatTheNotesSyncDid::TheyStayHere)
         }
-        NotesBackend::OneNote => Ok(WhatTheNotesSyncDid::TheyStayHere),
+        NotesBackend::OneNote => {
+            let Some(notebooks) =
+                crate::service::onenote_notes::ANotebookOnAMicrosoftAccount::for_account(
+                    &account.id,
+                )
+                .await
+            else {
+                return Ok(WhatTheNotesSyncDid::NobodyIsSignedIn);
+            };
+            // The sections are asked for here rather than kept anywhere,
+            // because the containers of a hosted backend are the service's
+            // answer and not a row on this computer. A section somebody made in
+            // OneNote this morning is a folder here this afternoon without
+            // anybody adding one.
+            //
+            // A read cut short is said rather than swallowed. A notebook nested
+            // deeper than the walk follows comes back incomplete, and reporting
+            // a clean sync over it is how somebody comes to trust a list that
+            // is missing half of itself.
+            let found = notebooks.the_sections().await?;
+            let mut all = crate::application::notes_sync::NoteSyncResult::default();
+            if !found.complete {
+                all.errors.push(
+                    "Some of this account's notebooks go deeper than Wixen Mail will \
+                     follow, so not every section is a note folder here."
+                        .to_string(),
+                );
+            }
+            for section in &found.items {
+                // Made before the sync is asked for, the same way and for the
+                // same reason the calendar arm does it: a sync is about one
+                // folder, and the folder a note is filed into and the folder a
+                // screen shows have to be one row by construction.
+                let folder = cache.a_note_folder_for(
+                    &account.id,
+                    &section.id,
+                    &crate::service::onenote_notes::ANotebookOnAMicrosoftAccount::the_folder_name_of(
+                        section,
+                    ),
+                )?;
+                all.absorb(
+                    crate::application::notes_sync::sync_notes(
+                        cache,
+                        &notebooks,
+                        &account.id,
+                        &folder.container.clone().unwrap_or_default(),
+                    )
+                    .await?,
+                );
+            }
+            Ok(WhatTheNotesSyncDid::ItRan(all))
+        }
         NotesBackend::CalDavJournal => {
             let journals = the_calendar_servers_of(cache, &account.id);
             if journals.is_empty() {
@@ -466,7 +528,22 @@ pub fn where_they_go_for(backend: &NotesBackend, account_named: &str) -> String 
              sent a note to a real server, so expect problems, and turning on \
              Allow Changes is what lets a note go at all."
         ),
-        NotesBackend::OneNote => format!("Notes in {account_named} are kept on this computer."),
+        // Its own sentence rather than the calendar server's with a word
+        // swapped, because two things about it are different and both matter to
+        // whoever reads it. It names OneNote, since somebody looking for their
+        // notes has to know which application to open. And it says what a page
+        // cannot hold, because unlike a calendar server OneNote really does
+        // change a note on the way: `service::onenote_page`'s fidelity table
+        // measures it construct by construct, and a person who finds out by
+        // losing a code block has been told too late.
+        NotesBackend::OneNote => format!(
+            "Notes in {account_named} are kept on this computer and sent to OneNote, \
+             one section for each note folder. This is experimental. No build has ever \
+             sent a note to a real Microsoft account, so expect problems, and turning \
+             on Allow Changes is what lets a note go at all. A page cannot hold bold, \
+             italic, struck-out text, a quotation, code or a line across the page, so \
+             a note carrying any of those comes back without it and the sync says so."
+        ),
         // Named rather than described, because somebody working out why their
         // notes are not moving needs the word to say when they ask. It is
         // shown in quotation marks so it reads as a name this program is

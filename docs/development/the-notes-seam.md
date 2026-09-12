@@ -4,14 +4,18 @@ This is the contract behind `application::notes_backend`. It is written as
 requirements on **any** backend, not as a description of the one that happens to
 be built first, and it is meant to be found wrong.
 
-Two implementations exist and they disagree with each other on purpose.
+Three implementations exist and they disagree with each other on purpose.
 `service::caldav_journal` is real, ships, and speaks to a calendar server's
-journal entries. The second lives in
+journal entries. `service::onenote_notes` is real, ships, and speaks to
+Microsoft Graph. The third lives in
 `tests/the_notes_seam_takes_a_second_kind_of_backend.rs`, is shaped from what
 Microsoft's reference says a OneNote page does, and exists to find out which
 sentences below were about backends and which were about CalDAV. It found four.
-They are listed near the end of this document, hardest first, and phase 5.2 is
-expected to add to that list when it replaces the second one with a real client.
+They are listed near the end of this document, hardest first.
+
+The real OneNote client replaced that fake behind the seam on 2026-09-12 and
+found four more, none of which the fake had predicted. Those are listed after
+them, with what the fake got right and what it got wrong.
 
 `NotesService` names four operations. `NotesBackend` answers which backend an
 account uses, and an account with a calendar on a calendar server answers
@@ -791,6 +795,170 @@ contract nobody checked.
 - **A backend does not resolve a clash.** Both hand the question over, and both
   reach the same sentence through `conflict_choice`.
 
+## Where the real OneNote client found this was still about CalDAV
+
+Four more, found on 2026-09-12 by `05.2-03` replacing the fake with
+`service::onenote_notes`. **None of the four was predicted by the fake**, and
+the reason is the same each time: a fake holds its own copy in memory, answers
+instantly, and is written by whoever has just read this document.
+
+**The three numbers, which are the honest answer to whether this seam takes a
+hosted backend.** Four assumptions the fake found. Four the real client found.
+Nought of the second four predicted by the first. A count rather than a
+sentence, and a low third number is the finding rather than the failure: a
+backend shaped from a documentation page did not predict a client built against
+a socket, which is worth knowing before anybody writes a fourth backend against
+a fourth fake.
+
+### 1. A clash reported by a marker is not a clash
+
+**What the seam said.** That a backend reports `ItMovedFirst` when its copy has
+moved since this computer last looked, and that `conflict_choice` then holds
+both copies and asks. Requirement 4 already said a marker may move for reasons
+the content did not cause, and called that the harmless direction.
+
+**What is wrong with it.** It is harmless on the read and it is not harmless on
+the push. A backend has only a marker to compare, so it reports a clash; a clash
+is two copies that disagree; those are different things. Where the words are the
+same on both sides, somebody is handed a question with one answer given twice: a
+title and a body read aloud, identical, and two buttons that do the same thing.
+
+**Why an ETag hid it.** An entity tag does not move on its own, so for the
+backend this sync was written against the two sentences really are the same
+sentence. A clock the service owns moves whenever anything touches a page, and
+then any waiting change becomes an unanswerable question.
+
+**What it says now.** `notes_sync::hold_these_two_copies` writes the marker
+down, stops the note waiting and counts it as unchanged, where the words agree.
+The conflict section above carries the argument. **Both backends failed it**, so
+it was reachable with what ships today, and somebody fixing the same typo in two
+places reaches it on a calendar server too.
+
+**Not predicted.** The fake could raise a clash and did, and no test asked what
+happens when the copies then turn out to agree.
+
+### 2. Saying what a backend kept costs a request, and the contract priced it at nothing
+
+**What the seam said.** That a backend answers what it could keep from its own
+copy rather than from a rule about itself, because a backend that reasons from a
+rule goes on claiming a byte survived after the day it stops surviving. That is
+still right and is not what changed.
+
+**What is wrong with it.** For a backend that builds the document it sends, its
+own copy is in hand and the answer is free: `caldav_journal` reads back the
+document it just built. For a hosted backend the copy is at the service, so
+answering honestly is another request. The contract asks for the honest answer
+and never says it might cost anything, so a reader pricing a sync from this
+document gets the wrong number.
+
+**What it costs here**, said rather than left to be found: making a note is two
+requests and changing one is five. The page's resource for the marker, the
+page's content for the identifiers a change names, the change, the resource
+again for the new marker, and the content again for what was kept.
+
+**Not predicted, and the fake could not have predicted it.** A fake's own copy
+is a field on a struct. There is no shape of fake that makes this visible.
+
+### 3. A marker missing on one call is not the same as a backend with no markers
+
+**What the seam said.** Requirement 3, that a marker is required of any backend
+this program writes to. It is written as a property of a backend.
+
+**What is wrong with it.** A real service answers one request at a time. The
+question a client actually faces is what to do when *this* answer carries no
+marker, which is not a statement about the backend at all. The contract gives no
+answer, and the two available are not equal: writing anyway is what `05.1-04`
+measured as destroying a change made at the other end with nothing said.
+
+**What it says now.** The conflict section says a missing marker refuses the
+write, and the note stays here still marked as waiting. A refusal costs somebody
+a sync; the other answer costs them their note.
+
+**Not predicted.** The fake's `never_gives_a_marker` is a whole-backend switch
+set at construction. It measured the right cost and modelled the wrong shape.
+
+### 4. A container can be the service's answer rather than a row on this computer
+
+**What the seam said.** That a container is opaque, that a backend with more
+than one level above a note flattens it, and, since 2026-09-11, that one
+container is one note folder and the sync loops over folders. All of that held.
+
+**What is wrong with it.** It says nothing about where the list of containers
+comes from, and `notes_backend::note_folders_for_the_backends_of` is not async
+because a calendar server's containers are rows this computer already holds.
+A notebook's sections are Microsoft's answer, so they cannot be asked for while
+a screen is being filled.
+
+**What it says now.** A Microsoft account's note folders are made during the
+sync, through the same `a_note_folder_for`, so a person sees an empty Notes list
+until they sync once. That is entry 301 in `.planning/WINDOWS.md` rather than a
+design anybody defends.
+
+**Not predicted.** The container decision was taken the day before this work and
+was taken about folders and names, not about when a folder can be known.
+
+### Where the fake was right, and where it was wrong
+
+Worth as much as the list above, because the fake is the method this project
+would otherwise reach for again.
+
+**Right, and the real client confirms it.**
+
+| The fake's constraint | What the real client does |
+|---|---|
+| No `eTag` and no `If-Match`; what there is is `lastModifiedDateTime` | The same. `MsOneNotePage` carries no entity tag and the marker is that timestamp, compared for equality |
+| No whole-document write; a body can only be appended to | The same. `changing_a_page_to` removes what is on the page one element at a time and appends, and no command replaces the body |
+| A container more than one level deep | The same. A page lives under a notebook, any number of section groups, and a section |
+
+**Wrong, and each one mattered.**
+
+**Its identifiers move and the real client's do not.** The fake's third
+constraint says a page gets a new name every time its body changes, because
+reaching an end state means deleting the page and making another. `05.2-02`
+chose remove-and-append instead, for reasons about what a half-finished write
+leaves behind, and that keeps the page and its identifier. So the fake exercised
+`Done`'s `known_as` on every edit and the real backend exercises it only on a
+create. The contract's paragraph giving "a OneNote page's body cannot be
+replaced" as the reason a write may change a note's name is now an argument
+about a design nobody took.
+
+**Its container is three parts and the real one is one.** The fake refuses a
+container that is not a notebook, a section group and a section, which reads
+like a fact about OneNote and is an encoding it invented. The real container is
+the section's own identifier, and the four levels are flattened into the
+folder's *name*. The requirement held; the shape the fake gave it did not, and
+`test_a_container_that_is_not_the_shape_this_backend_needs_is_said_rather_than_guessed_at`
+is a test about the fake.
+
+**Its model of what a page loses is the wrong loss.** `as_a_page_keeps_it`
+collapses runs of whitespace, so the fake reports a nested list losing its
+indentation. `05.2-01` measured the real mapping and the losses are whole
+constructs: bold, italic, struck-out text, a quotation, inline code, a code
+block and a horizontal rule have no representation on a page at all, and nested
+lists survive. A reader of the fake would have expected the wrong thing to go
+missing and would not have expected a job crossed off to read like a job still
+to do.
+
+**It answers instantly and for free**, which is finding 2 above.
+
+### What this report's evidence can and cannot carry
+
+The real client is tested against a loopback server the tests start. **That
+proves what this program sends, in what order, and how it reads a reply it was
+given.** It is a great deal better than a fake agreeing with an interface, and
+it is not a tenant.
+
+It cannot prove what Microsoft sends back. Every fixture answers what
+Microsoft's reference describes, so a place where the reference is wrong, or
+where the service differs from its own page, is a place every test here agrees
+with the mistake. Entries 283 to 301 in `.planning/WINDOWS.md` name those one at
+a time.
+
+Where a finding above rests on the documentation rather than on a run, it says
+so: findings 2 and 4 are about this program's own shape and hold whatever
+Microsoft does, finding 1 was measured against both backends, and finding 3's
+cost was measured by `05.1-04` rather than by this plan.
+
 ## What a second implementation in this repository does not prove
 
 Four things, and they are the boundary of the claim rather than hedging.
@@ -826,6 +994,18 @@ commit rather than a version later.
 
 No account, no calendar server and no OneNote tenant has ever been used with
 this program. Every sentence above is reasoning from documentation, from what
-this repository already does, and from two implementations neither of which has
-opened a socket. Phase 5.2 replaces the second one with a real Graph client and
-is required to report every place it was wrong.
+this repository already does, and from three implementations, two of which have
+never opened a socket and one of which has only ever opened one to a server
+started by its own tests.
+
+The table of containers gains a row now that OneNote ships:
+
+| Backend | One container is | So a note folder is |
+|---|---|---|
+| A calendar server | one journal collection | one calendar, by its own name |
+| OneNote | one section | one section, named by its path, joined with ` / ` |
+
+The separator was chosen on 2026-09-12 in
+`service::onenote_notes::the_folder_name_of`, which is where the backend's own
+business is done. Nobody has heard it, and what a screen reader makes of it at
+its default punctuation level is entry 296 in `.planning/WINDOWS.md`.

@@ -8245,9 +8245,22 @@ fn where_it_came_from(
             .and_then(|calendar| calendar.source_provider)
             .is_some_and(|came_from| came_from != A_CALENDAR_MADE_HERE),
         ContainerKind::TaskList => crate::application::tasks_sync::a_provider_holds(id),
-        // Neither is sent anywhere, so where it was made changes nothing. The
-        // kind is the whole answer and `the_provider_has_a_copy` gives it.
-        ContainerKind::NoteFolder | ContainerKind::ContactGroup => false,
+        // One backend container is one note folder, decided 2026-09-11, so the
+        // container column is the record of which this is: a folder standing
+        // for a calendar server's journal collection or a OneNote section
+        // carries one, and a folder somebody made here carries none. Read from
+        // the row for the same reason a calendar is, and it used to be a
+        // hardcoded false written when a note folder really was sent nowhere.
+        ContainerKind::NoteFolder => cache
+            .get_note_folder(id)
+            .ok()
+            .flatten()
+            .and_then(|folder| folder.container)
+            .is_some(),
+        // A contact group is sent nowhere at all, so where it was made changes
+        // nothing. The kind is the whole answer and `the_provider_has_a_copy`
+        // gives it.
+        ContainerKind::ContactGroup => false,
     };
     if from_a_provider {
         WhereItCameFrom::AProvider
@@ -8475,12 +8488,16 @@ mod where_a_container_came_from {
         // not there answers whatever the rule is. It could not have seen the
         // change.
         let cache = a_cache("folders_and_groups");
-        let backed = cache
-            .a_note_folder_for("acct-1", "1-section", "Work / Notes")
-            .expect("a folder a backend gave");
+        // The folder made here goes first, because `ensure_default_note_folder`
+        // hands back whatever folder the account already has rather than making
+        // a second one. Written the other way round, both halves of this test
+        // were about the same row and the second one failed.
         let made_here = cache
             .ensure_default_note_folder("acct-1")
             .expect("a folder made here");
+        let backed = cache
+            .a_note_folder_for("acct-1", "1-section", "Work / Notes")
+            .expect("a folder a backend gave");
 
         assert_eq!(
             where_it_came_from(&cache, ContainerKind::NoteFolder, &backed.id),

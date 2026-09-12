@@ -129,8 +129,7 @@ impl ANotebookOnAMicrosoftAccount {
     /// A section with nothing above it is its own name, with no separator
     /// anywhere. Nothing here can produce a leading or trailing one.
     pub fn the_folder_name_of(section: &AOneNoteSection) -> String {
-        let _ = section;
-        String::new()
+        section.path.join(" / ")
     }
 
     /// What a failed request means, in the words the seam allows.

@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 527 records have arrived since and have not been through it.
+# 528 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -1734,15 +1734,16 @@ tests_last_seen = [
 name = "the deletion question asks about the container, not its kind"
 file = "src/application/new_item.rs"
 before = """        (
-            ContainerKind::Calendar | ContainerKind::TaskList,
+            ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder,
             WhereItCameFrom::AProvider
         )"""
 after = """        (
-            ContainerKind::Calendar | ContainerKind::TaskList,
+            ContainerKind::Calendar | ContainerKind::TaskList | ContainerKind::NoteFolder,
             WhereItCameFrom::AProvider | WhereItCameFrom::ThisComputer
         )"""
 red = [
     "application::new_item::deletion_tests::test_a_calendar_made_on_this_computer_is_not_promised_back_from_a_provider",
+    "application::new_item::deletion_tests::test_a_group_is_not_promised_back_from_a_provider_and_a_backed_note_folder_is",
     "application::new_item::deletion_tests::test_a_task_list_made_on_this_computer_is_not_promised_back_either",
 ]
 tests_last_seen = [
@@ -18411,7 +18412,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/context_menu.rs", tests = 18 },
     { file = "src/application/new_item.rs", tests = 42 },
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]
 
 # ── A sentence that says the same thing whatever the answer was ─────────────
@@ -18460,7 +18461,7 @@ red = [
     "application::notes_backend::tests::test_the_sentence_says_where_the_notes_really_go",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]
 
 # ── A sentence only one screen reader hears ─────────────────────────────────
@@ -18779,7 +18780,7 @@ red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_backend.rs", tests = 23 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -19414,7 +19415,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/microsoft_graph.rs", tests = 57 },
-    { file = "src/service/onenote_notes.rs", tests = 12 },
+    { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
 # A walk of a notebook stops going deeper into section groups, and says it
@@ -19530,7 +19531,7 @@ red = [
     "service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out",
 ]
 tests_last_seen = [
-    { file = "src/service/onenote_notes.rs", tests = 12 },
+    { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
 # A clash is two copies that disagree, and a marker that moved is not that.
@@ -19597,4 +19598,41 @@ red = [
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
+]
+
+# A consumer Gmail account's notes stay on this computer, and nothing widens
+# that by looking at the wrong side of the question.
+#
+# The break sends them to OneNote, which is the over-widening anybody makes
+# once one provider arm changes and the two arms sit next to each other. It
+# promises a sync that cannot happen: Google Keep's API is Workspace only, so a
+# consumer account cannot use it at all, and OneNote has no idea who this
+# person is. What somebody would see is a Sync now they can press, a settings
+# screen saying their notes go to OneNote, and nothing ever arriving.
+#
+# Five tests red, and the spread is the point: the seam's own answer, the
+# sentence the settings screen says, where a new note is filed, whether a sync
+# is asked for at all, and the "no notes backend" sentence that has to go on
+# being true after all three backends ship. That last one is why this arm is
+# not a placeholder waiting to be filled in.
+#
+# Measured 2026-09-12 by hand on a clean tree with nothing else building, at the
+# default eight threads: 7,012 passed, 5 failed, 69.27 seconds. Two of the five
+# are new with this change and three were already there, which is what a guard
+# on an existing promise should look like.
+[[guard]]
+name = "a consumer gmail account's notes stay on this computer after all three backends ship"
+file = "src/application/notes_backend.rs"
+before = '''        Some("gmail") => NotesBackend::ThisComputer,'''
+after = '''        Some("gmail") => NotesBackend::OneNote,'''
+red = [
+    "application::new_item::tests::test_a_note_is_filed_where_that_providers_answer_says_and_a_reminder_never_leaves",
+    "application::new_item::tests::test_a_note_or_reminder_is_local_even_on_a_gmail_default",
+    "application::notes_backend::tests::test_a_gmail_accounts_notes_stay_on_this_computer",
+    "application::notes_backend::tests::test_an_account_whose_notes_stay_here_is_never_asked_for_a_backend",
+    "application::notes_backend::tests::test_an_account_with_no_notes_backend_is_told_so_rather_than_told_not_yet",
+]
+tests_last_seen = [
+    { file = "src/application/new_item.rs", tests = 42 },
+    { file = "src/application/notes_backend.rs", tests = 25 },
 ]
