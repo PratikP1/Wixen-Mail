@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 05.2
 current_phase_name: Notes in OneNote
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: 05.2-02 merged at 93a3f56. The OneNote client exists and nothing calls it; 05.2-03 is next
-last_updated: "2026-09-12T00:37:12.163Z"
-last_activity: 2026-09-11
-state_head: 93a3f56fafbcc111d1d8782ab4492b9e4820346b
+stopped_at: 05.2-03 merged at 3bc2651. Every plan of the phase is built and merged; the phase's human checkpoint is open and nobody has answered it
+last_updated: "2026-09-12T03:20:00.000Z"
+last_activity: 2026-09-12
+state_head: 3bc2651
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 79
+  completed_plans: 80
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,8 +29,41 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 05.2 (Notes in OneNote). **05.2-02 is merged at `93a3f56`, version
-0.111.0.** The Graph client for OneNote exists: a page made, a notebook's four
+Phase: 05.2 (Notes in OneNote). **05.2-03 is merged at `3bc2651`, version
+0.112.0, and it is the last plan of the phase. The phase's checkpoint is open
+and nothing in it has been answered.**
+
+**A note on a Microsoft account now reaches OneNote.** `service::onenote_notes`
+is the third implementation of `NotesService` and the first hosted one. Each
+section of an account's notebooks is a note folder named by its whole path,
+joined with ` / `; `sync_the_notes_of` asks the account for its sections, makes
+a folder for each, and runs the same `sync_notes` once per folder. The sync's
+code names no backend, which a grep still proves, and the seam did not change at
+all: `NotesService` is untouched.
+
+**The real client found four places the seam was still about CalDAV, and the
+fake from `05.1-04` predicted none of them.** A clash reported by a marker is
+not a clash, and both backends were holding two identical copies for somebody to
+choose between. Saying what a backend kept costs a request for a hosted backend
+and the contract priced it at nothing. A marker missing on one call is a
+different question from a backend with no markers. And a container can be the
+service's answer rather than a row on this computer, which is why a Microsoft
+account's Notes list is empty until the first sync. All four are written into
+`docs/development/the-notes-seam.md`, with what the fake got right and the three
+places it was wrong.
+
+**Nothing has met Microsoft.** Every request is answered by a loopback server
+the tests start. Eleven ledger entries, 291 to 301, name what that cannot
+settle. Neither PIM-07 nor PIM-08 is ticked.
+
+Version `0.112.0`, `guards/guards.toml` holds 720 records with the census
+reading 192 and 528, `.planning/WINDOWS.md` reaches 301, and nothing is pushed.
+
+---
+
+### What came before, kept because it is still the ground this stands on
+
+**05.2-02 is merged at `93a3f56`, version 0.111.0.** The Graph client for OneNote exists: a page made, a notebook's four
 levels walked and bounded at eight section groups, a page changed by removing
 what is on it and appending what is not, and a page removed. Every request is
 read off a loopback server the tests start, and none has met Microsoft. A
@@ -132,7 +165,7 @@ were written as two lines naming a neighbouring match arm, which is the spelling
 that breaks the moment a neighbour moves; all of those are now one
 self-contained edit each.
 
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 3
 
 **What 05.2-01 built.** `src/service/onenote_page.rs`: a note's title and
