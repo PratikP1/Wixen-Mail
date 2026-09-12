@@ -15,11 +15,17 @@ Everything Wixen Mail stores is in one folder on your computer:
 
 ```text
 %LOCALAPPDATA%\wixen-mail\
-    config\           your settings and one file per account
+    config\           your settings, one file per account, and oauth.toml
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    security.key      only on a machine upgraded from an older version
 ```
+
+`security.key` is there only if this computer ran an older version of Wixen Mail. Nothing
+creates it now. Older versions locked saved passwords in a file with it, and it is read once
+so those passwords can be moved into the Windows credential store. A fresh install never has
+one.
 
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential
 store, protected per user by Windows itself.
@@ -317,10 +323,23 @@ sensitive, and if you find something that is, that is a bug worth reporting on i
 
 ## Uninstalling
 
-Uninstalling removes everything: the program, your accounts, your settings, the downloaded
-mail, and your saved passwords and sign-in tokens. It writes a note in your temporary folder
+Uninstalling removes everything Wixen Mail stored: the program, your accounts, your settings,
+the downloaded mail, and your saved passwords and sign-in tokens. It writes a note in your
+temporary folder
 every time, `wixen-mail-uninstall.log`, saying what went and naming anything it could not
 remove, so a leftover is something you are told about rather than something you find. Two
 cases leave no note, and [Installing and uninstalling](installing.md) says which and what to
 check by hand. Your mail itself is untouched, because it is on your provider's server and
 Wixen Mail only ever held a copy.
+
+### One thing uninstalling cannot take back
+
+If you said yes when the installer asked whether Windows Search could index your mail, the
+Windows Search index has been keeping its own copy of your subjects and message text. That
+index is a database under ProgramData, it is not encrypted, and any software running on this
+computer can read it. Uninstalling Wixen Mail does not clear it, and nothing Wixen Mail can do
+will: only rebuilding the Windows Search index does that. Press the Windows key, type Indexing
+Options, choose Advanced, then Rebuild. It takes hours.
+
+The installer says this when it asks, and the uninstaller says it again. It is repeated here
+because both of those go past once and this page is somewhere you can come back to.

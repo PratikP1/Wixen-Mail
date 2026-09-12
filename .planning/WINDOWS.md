@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 280
+open_count: 284
 waived_count: 0
 fixed_count: 21
-total_count: 301
-last_updated: 2026-09-12T02:48:14.390Z
+total_count: 305
+last_updated: 2026-09-12T06:27:51.385Z
 ---
 
 # Broken Windows Ledger
@@ -316,6 +316,10 @@ last_updated: 2026-09-12T02:48:14.390Z
 | 299 | 05.2 | unrun-verify | src/service/onenote_notes.rs |  | Whether five requests per changed note is acceptable against Graph's rate limits. A page with no whole-document write and no entity tag costs a read for the marker, a read for the identifiers, the change, a read for the new marker and a read for what was kept, and no real account has ever been asked once. | open |  | 2026-09-12T02:48:11.499Z |  |
 | 300 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether GET /me/onenote/pages/{id} and GET /me/onenote/pages/{id}/content answer with the resource and the document this client reads. The fixtures answer what the reference describes for onenotePage and for page content, not what anything saw. | open |  | 2026-09-12T02:48:12.950Z |  |
 | 301 | 05.2 | unrun-verify | src/application/notes_backend.rs |  | Whether a Notes list that is empty until the first sync is acceptable for a Microsoft account. A notebook's sections are Microsoft's answer and cannot be asked for while a screen is being filled, so the folders arrive at the first sync rather than before it. | open |  | 2026-09-12T02:48:14.390Z |  |
+| 302 | 07 | unrun-verify | src/presentation/first_run.rs |  | Nobody has heard the first-run storage sentences under a screen reader. Whether they land as an important fact or as more of the same warning, arriving in the middle of a screen that already says everything which writes is experimental, is what criterion 4 really asks and no test here can answer it | open |  | 2026-09-12T06:27:24.809Z |  |
+| 303 | 07 | unrun-verify | src/presentation/command_line.rs |  | The storage paragraph added to the end of what --help prints has never been read in a real terminal or by a screen reader. Its wrapping and its place at the end of a long page are both unmeasured | open |  | 2026-09-12T06:27:38.279Z |  |
+| 304 | 07 | unmet-truth | src/common/logging.rs | 79 | Two of the three writes this program makes to the temporary folder are on no page a user can read. The log fallback at logging.rs:79 can hold whatever the running log holds, on a machine where the data folder could not be resolved, and the converted help pages at help_page.rs:97 hold nothing of anybody's. Neither goes through a paths.rs accessor, so the new check cannot reach either. 07-05 rewrites the privacy page and owns whether the log fallback earns a sentence | open |  | 2026-09-12T06:27:39.183Z |  |
+| 305 | 07 | todo | tests/house_style.rs |  | test_no_document_says_the_cache_is_encrypted and its companion have no guards/guards.toml record, so nothing measures that they still redden when the check they hold is narrowed. The signing guard written beside them in 07-01 does have one, and it breaks house_style.rs itself, so the same shape is available to them | open |  | 2026-09-12T06:27:51.385Z |  |
 
 ````json
 [
@@ -3929,6 +3933,54 @@ last_updated: 2026-09-12T02:48:14.390Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T02:48:14.390Z",
+    "resolved_at": null
+  },
+  {
+    "id": 302,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/first_run.rs",
+    "line": null,
+    "description": "Nobody has heard the first-run storage sentences under a screen reader. Whether they land as an important fact or as more of the same warning, arriving in the middle of a screen that already says everything which writes is experimental, is what criterion 4 really asks and no test here can answer it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T06:27:24.809Z",
+    "resolved_at": null
+  },
+  {
+    "id": 303,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/command_line.rs",
+    "line": null,
+    "description": "The storage paragraph added to the end of what --help prints has never been read in a real terminal or by a screen reader. Its wrapping and its place at the end of a long page are both unmeasured",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T06:27:38.279Z",
+    "resolved_at": null
+  },
+  {
+    "id": 304,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "src/common/logging.rs",
+    "line": 79,
+    "description": "Two of the three writes this program makes to the temporary folder are on no page a user can read. The log fallback at logging.rs:79 can hold whatever the running log holds, on a machine where the data folder could not be resolved, and the converted help pages at help_page.rs:97 hold nothing of anybody's. Neither goes through a paths.rs accessor, so the new check cannot reach either. 07-05 rewrites the privacy page and owns whether the log fallback earns a sentence",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T06:27:39.183Z",
+    "resolved_at": null
+  },
+  {
+    "id": 305,
+    "kind": "todo",
+    "phase": "07",
+    "file": "tests/house_style.rs",
+    "line": null,
+    "description": "test_no_document_says_the_cache_is_encrypted and its companion have no guards/guards.toml record, so nothing measures that they still redden when the check they hold is narrowed. The signing guard written beside them in 07-01 does have one, and it breaks house_style.rs itself, so the same shape is available to them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T06:27:51.385Z",
     "resolved_at": null
   }
 ]

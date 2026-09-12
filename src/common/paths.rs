@@ -491,6 +491,203 @@ mod tests {
         assert!(paths.migrate_legacy(&nowhere()).is_empty());
     }
 
+    /// The two pages that list what Wixen Mail leaves on somebody's disk.
+    ///
+    /// They carry the same listing almost word for word and nothing checked
+    /// that they agreed. For the paths in that listing, the test below is now
+    /// what checks it.
+    const PAGES_LISTING_WHAT_IS_STORED: [&str; 2] = ["docs/installing.md", "docs/privacy.md"];
+
+    /// Every path this module hands out, with the accessor that hands it out.
+    ///
+    /// Built by calling each accessor rather than by reading this file for
+    /// `self.root.join(`, which is the version that looks right and is wrong:
+    /// `oauth_toml` joins onto `config_dir` rather than onto the root, so that
+    /// reading would miss it and pass while missing it. A value cannot be
+    /// missed the way a pattern can.
+    ///
+    /// That leaves one hole and
+    /// `test_the_enumeration_reaches_every_accessor_this_module_has` is what
+    /// fills it: this list is written by hand, so an accessor added later would
+    /// not be in it. That test reads the source for the definitions and fails
+    /// when this list falls behind them.
+    fn every_path_handed_out(paths: &AppPaths) -> Vec<(&'static str, PathBuf)> {
+        vec![
+            ("root", paths.root().to_path_buf()),
+            ("config_dir", paths.config_dir()),
+            ("cache_dir", paths.cache_dir()),
+            ("logs_dir", paths.logs_dir()),
+            ("security_key", paths.security_key()),
+            ("oauth_toml", paths.oauth_toml()),
+            ("sound_schemes_dir", paths.sound_schemes_dir()),
+        ]
+    }
+
+    /// The last part of each path, which is what a page can name.
+    fn the_name_at_the_end(path: &Path) -> String {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    /// Which of those paths a page does not name.
+    ///
+    /// Split out from the test so a page that resolved to nothing can be driven
+    /// as a case rather than waited for.
+    fn paths_not_named_in(page: &str, text: &str, paths: &AppPaths) -> Vec<String> {
+        every_path_handed_out(paths)
+            .into_iter()
+            .filter(|(_, path)| !text.contains(&the_name_at_the_end(path)))
+            .map(|(accessor, path)| {
+                format!(
+                    "{page} does not name {}, which {accessor} hands out",
+                    the_name_at_the_end(&path)
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_every_path_this_module_hands_out_is_named_on_both_pages() {
+        // Somebody backing up a machine, or wiping one, reads those two pages
+        // to find out what is there. A path on neither is a path they do not
+        // know about, and `security.key` was on neither for the whole of this
+        // project's life.
+        //
+        // What this cannot see, said here so a green build is not read as
+        // "every path is written down". Three writes go to the temporary folder
+        // through no accessor at all, so this check cannot reach any of them:
+        //
+        //     src/common/logging.rs:79      %TEMP%\wixen-mail\logs, when
+        //                                   AppPaths::resolve() fails
+        //     src/main.rs:307               %TEMP%\wixen-mail-uninstall.log,
+        //                                   every uninstall
+        //     src/presentation/help_page.rs:97
+        //                                   %TEMP%\wixen-mail-help, when the
+        //                                   folder holding the documents will
+        //                                   not take a file
+        //
+        // Only the second is on a page. They are found with, and this is the
+        // command to re-run rather than trust:
+        //
+        //     grep -rn 'temp_dir()' src/ --include=*.rs | grep -v 'TempDir::new\|tempfile::'
+        //
+        // They are not given accessors to make this check see them.
+        // `logging.rs` falls back there precisely when `AppPaths` cannot
+        // answer, so an accessor for it would be circular, and `help_page.rs`
+        // writes there only when the install folder will not take a file.
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let mut missing = Vec::new();
+        let mut pages_read = 0;
+
+        for page in PAGES_LISTING_WHAT_IS_STORED {
+            let Ok(text) = fs::read_to_string(page) else {
+                continue;
+            };
+            pages_read += 1;
+            missing.extend(paths_not_named_in(page, &text, &paths));
+        }
+
+        assert_eq!(
+            pages_read,
+            PAGES_LISTING_WHAT_IS_STORED.len(),
+            "only {pages_read} of the pages listing what is stored could be \
+             read, so this compared against nothing"
+        );
+        assert!(
+            missing.is_empty(),
+            "these paths are left on somebody's disk and are on no page they \
+             can read:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn test_the_enumeration_reaches_every_accessor_this_module_has() {
+        // The list above is written by hand, so without this an accessor added
+        // later would sit outside the check and its path would never have to be
+        // written down. This is the half that makes a new path fail the build.
+        //
+        // Read from the source rather than from a running program, because
+        // nothing can call a function it only knows the name of. The test
+        // module is cut off first: it calls these accessors rather than
+        // defining them.
+        let source = fs::read_to_string("src/common/paths.rs")
+            .expect("this module to be readable")
+            .replace("\r\n", "\n");
+        let definitions = &source[..source.find("#[cfg(test)]").unwrap_or(source.len())];
+
+        let defined: Vec<&str> = definitions
+            .lines()
+            .filter_map(|line| {
+                let after = line.trim_start().strip_prefix("pub fn ")?;
+                let (name, rest) = after.split_once('(')?;
+                // A path handed out, rather than a constructor or `create`.
+                (rest.contains("-> PathBuf") || rest.contains("-> &Path")).then_some(name)
+            })
+            .collect();
+
+        assert!(
+            defined.len() > 3,
+            "only {} path accessors were found in the source, so the reading is \
+             broken rather than the list",
+            defined.len()
+        );
+
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let enumerated: Vec<&str> = every_path_handed_out(&paths)
+            .into_iter()
+            .map(|(accessor, _)| accessor)
+            .collect();
+
+        let unlisted: Vec<&&str> = defined
+            .iter()
+            .filter(|name| !enumerated.contains(name))
+            .collect();
+        let gone: Vec<&&str> = enumerated
+            .iter()
+            .filter(|name| !defined.contains(name))
+            .collect();
+
+        assert!(
+            unlisted.is_empty(),
+            "these accessors hand out a path that nothing checks is written \
+             down: {unlisted:?}"
+        );
+        assert!(
+            gone.is_empty(),
+            "these are enumerated and no longer exist: {gone:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_page_that_could_not_be_read_is_a_failure_rather_than_a_clean_tree() {
+        // A page renamed or moved would otherwise make the check above pass by
+        // finding nothing to compare against, which is the way a check that
+        // reads documents really fails.
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+
+        let against_nothing = paths_not_named_in("gone.md", "", &paths);
+        assert_eq!(
+            against_nothing.len(),
+            every_path_handed_out(&paths).len(),
+            "a page with nothing in it has to come back naming every path, or \
+             an empty read reads as a clean tree"
+        );
+
+        for page in PAGES_LISTING_WHAT_IS_STORED {
+            assert!(
+                fs::read_to_string(page).is_ok_and(|text| !text.is_empty()),
+                "{page} could not be read, and it is what the check above \
+                 compares against"
+            );
+        }
+    }
+
     #[test]
     fn test_a_legacy_folder_that_never_existed_is_not_a_failure() {
         let dir = TempDir::new().unwrap();

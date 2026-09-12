@@ -132,6 +132,12 @@ Everything that writes is experimental. Sending mail, deleting mail, and
 syncing changes to tasks, contacts and the calendar have never been run against
 a real account, so expect them to have bugs and do not point them at anything
 you cannot afford to lose. Reading is the part that has been used.
+
+The mail this program downloads is not encrypted on this computer. Windows
+keeps other people who use this computer out of the folder, but anyone who
+takes the drive out can read it, unless the disk itself is encrypted. Your
+passwords and sign-in tokens are not in that folder; they are in the Windows
+credential store.
 ";
 
 /// Work out what this run was asked to do.
@@ -505,6 +511,42 @@ mod tests {
         assert!(HELP.contains("experimental"), "{HELP}");
         assert!(HELP.contains("never been run against"), "{HELP}");
         assert!(HELP.contains("Reading is unaffected"), "{HELP}");
+    }
+
+    /// `HELP` with its wrapping taken out, so a phrase can be looked for.
+    ///
+    /// This constant is hard-wrapped to a terminal width, so where a sentence
+    /// breaks is a decision about the page rather than about the words. A
+    /// `contains` against the constant itself therefore asks two questions at
+    /// once and reports the wrong one: the first draft of the test below was
+    /// red after the sentence had been added, because the phrase it looked for
+    /// had a newline in the middle of it. Assert on the words; leave the
+    /// wrapping to whoever is reading it in a terminal.
+    fn help_unwrapped() -> String {
+        HELP.replace('\n', " ")
+    }
+
+    #[test]
+    fn test_the_help_says_the_downloaded_mail_is_not_encrypted() {
+        // The same fact the first-run screen carries, in the other place a
+        // person meets this program before pointing it at their mail. It sits
+        // beside the paragraph about writing being unproven because both
+        // answer the same question: what am I taking on by running this.
+        //
+        // Four parts, asserted apart, so a half-written sentence says which
+        // part went missing rather than only that something did.
+        let help = help_unwrapped();
+
+        assert!(help.contains("is not encrypted on this computer"), "{HELP}");
+        assert!(
+            help.contains("Windows keeps other people who use this computer out"),
+            "{HELP}"
+        );
+        assert!(help.contains("takes the drive out"), "{HELP}");
+        assert!(
+            help.contains("unless the disk itself is encrypted"),
+            "{HELP}"
+        );
     }
 
     #[test]

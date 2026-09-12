@@ -8,6 +8,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The first-run screen and `--help` now say that the downloaded mail is not
+  encrypted.** Nothing about how the mail is stored has changed, and this is not
+  a new protection. What changed is that the program says so. Until now the fact
+  lived only in `docs/installing.md` and `docs/privacy.md`, so the only people
+  who knew were the ones who opened a page, and somebody deciding whether to
+  turn on BitLocker had no reason to think the question applied to them. Both
+  places now say what the pages say: Windows keeps other people who use the
+  computer out of the folder, anyone who takes the drive out can read it unless
+  the disk itself is encrypted, and BitLocker is the answer to that. The
+  first-run screen is shown once per install, so this is one hearing rather than
+  one on every start.
+
+### Fixed
+
+- **A page inside the installer promised that signing the setup file would make
+  the Windows warning stop appearing.** It will not, and no certificate this
+  project can buy changes that. The sentence was corrected by hand on
+  2026-09-04, but it had already shipped, so it is sitting on the disk of
+  anybody who installed a build before then and stays there until they install
+  another one. A failing build now says so if the promise comes back. The alpha
+  testing page also points at the walkthrough for getting past the box with a
+  screen reader, rather than leaving a tester to find it.
+
+- **The two pages listing what is left on your disk were missing two of the
+  files.** `security.key` was on neither of them and `oauth.toml` was on one,
+  which mattered to anybody reading those pages to decide what to back up or
+  what to wipe. Both pages now name every file Wixen Mail writes to its own
+  folder, and a build fails if a new one is added and left off either page.
+
+- **The privacy page now says that uninstalling cannot clear the Windows Search
+  index.** If you let Windows Search index your mail, the index keeps its own
+  copy of your subjects and message text in a database under ProgramData that
+  is not encrypted. Uninstalling Wixen Mail does not remove it and nothing
+  Wixen Mail can do will: only rebuilding the Windows Search index does that.
+  The installer and the uninstaller both said so already, and both go past
+  once; the page is somewhere you can come back to.
+
 - **Notes on an Outlook or Office 365 account now go to OneNote.** Each section
   of your notebooks is a note folder here, named by where it sits, so a section
   called Q3 inside a section group called Projects inside a notebook called Work

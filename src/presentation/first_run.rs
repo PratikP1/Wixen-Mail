@@ -113,6 +113,20 @@ pub const TITLE: &str = "Before you start";
 /// Short on purpose. It is read out in full by a screen reader before the
 /// person reaches the buttons, so anything not worth hearing every time does
 /// not belong here; the longer version is the testing page.
+///
+/// # Why the storage paragraph is here and not behind the button
+///
+/// The rule above reads as though it forbids the third paragraph. It does not,
+/// because "every time" is once per install: `wx_app` returns early when
+/// `told_about_the_alpha` is set and sets it as the screen closes, so the cost
+/// of a sentence here is one hearing on the machine's first start. Against
+/// that, a second button is one more thing to tab past on the screen somebody
+/// meets first, and what is behind a button is read by the people who were
+/// already going to look. The person who needs this fact is the one who would
+/// not have pressed it.
+///
+/// `test_the_first_run_text_stays_short_enough_to_be_heard` is what stops that
+/// reasoning being used a second and a third time.
 pub const INTRODUCTION: &str = "\
 Wixen Mail is an alpha. Reading your mail is the part that has been used.
 
@@ -120,6 +134,11 @@ Everything that writes is experimental: sending, moving, deleting, filing a \
 copy in Sent, and sending your changes to tasks, contacts and the calendar \
 back to your provider. None of that has been run against a real account yet, \
 so expect it to have bugs.
+
+The mail it downloads is not encrypted on this computer. Windows keeps other \
+people who use this computer out of the folder, but anyone who takes the drive \
+out can read it, unless the disk itself is encrypted. Turn on BitLocker if \
+that matters to you.
 
 Choose what Wixen Mail may change. You can change this later in Settings, and \
 the answer covers every account.";
@@ -333,6 +352,73 @@ mod tests {
         // buttons, so a control named here that is not there is a search
         // somebody makes with a screen reader for nothing.
         assert!(INTRODUCTION.contains("the answer covers every account"));
+    }
+
+    #[test]
+    fn test_the_introduction_says_the_downloaded_mail_is_not_encrypted() {
+        // Two documents said this and the program said nothing, so the only
+        // people who knew were the ones who opened a page. Somebody deciding
+        // against turning on BitLocker because they assumed their mail was
+        // protected is the outcome this sentence exists to stop.
+        //
+        // Four parts, asserted apart, because one assertion over one long
+        // literal breaks on a reflow and then says nothing about which part
+        // went missing.
+        //
+        // The negative form of this test is worthless and it is worth saying
+        // why: "the text does not contain the word encrypted" is green today,
+        // and stays green when the sentence is written wrongly, because the
+        // honest sentence contains that word too. Only the positive form can
+        // go red.
+        assert!(
+            INTRODUCTION.contains("is not encrypted on this computer"),
+            "the screen does not say the downloaded mail sits in the clear:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("Windows keeps other people who use this computer out"),
+            "the screen does not say what the folder is protected from, or what \
+             does the protecting:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("takes the drive out"),
+            "the screen does not say what the protection does not cover:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.contains("unless the disk itself is encrypted"),
+            "the screen names no answer to somebody taking the drive out:\n{INTRODUCTION}"
+        );
+    }
+
+    #[test]
+    fn test_the_first_run_text_stays_short_enough_to_be_heard() {
+        // This is read out in full before the buttons are reachable, so its
+        // length is paid by exactly the people the program is for. Somebody
+        // who stops listening and presses Enter gets an answer they never
+        // heard, which is the cost of letting this grow.
+        //
+        // 900 characters is the text as it stands plus about one more
+        // paragraph. A fifth thing worth saying has to displace something
+        // rather than be added to the end. At that bound the text is roughly
+        // 150 words, about a minute of speech at a common default rate; that
+        // estimate is why the number is 900 and not 2,000, and nothing here
+        // measures speech.
+        //
+        // The first assertion is not a duplicate of the test above. A ceiling
+        // on its own is satisfied by a screen that says nothing at all, so
+        // without it this test would pass against an empty constant.
+        const LONGEST_WORTH_HEARING: usize = 900;
+
+        assert!(
+            INTRODUCTION.contains("is not encrypted on this computer"),
+            "a bound on a screen that says nothing about storage measures \
+             nothing:\n{INTRODUCTION}"
+        );
+        assert!(
+            INTRODUCTION.len() <= LONGEST_WORTH_HEARING,
+            "the first-run text is {} characters, past the {LONGEST_WORTH_HEARING} \
+             somebody has to hear before they can reach the buttons",
+            INTRODUCTION.len()
+        );
     }
 
     #[test]

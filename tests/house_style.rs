@@ -2570,6 +2570,257 @@ fn test_the_encryption_check_can_tell_the_two_apart() {
     );
 }
 
+/// Words for code signing, looked for as whole words.
+///
+/// Whole words because "design" holds "sign" and "designed" holds "signed",
+/// and these pages are full of both.
+const ABOUT_CODE_SIGNING: [&str; 7] = [
+    "sign",
+    "signs",
+    "signed",
+    "signing",
+    "signature",
+    "certificate",
+    "authenticode",
+];
+
+/// The sense of "sign" that is about an account, cut out before the words
+/// above are looked for.
+///
+/// These documents use the word three ways, and only one of them is this
+/// subject: signing code, a signed mail message, and signing in to an account.
+/// The third is much the commonest and it sits right beside the vocabulary
+/// this check is about, because a server that will not let somebody sign in
+/// and a Windows box that says it does not recognise a program are described
+/// in the same words.
+///
+/// The second sense needs no cutting out. A sentence about a signed mail
+/// message would also have to name the Windows warning and say it ends before
+/// anything below refused it, and none does.
+const SIGNING_IN_TO_AN_ACCOUNT: [&str; 6] = [
+    "signed in",
+    "signed-in",
+    "signing in",
+    "signs in",
+    "sign in",
+    "sign-in",
+];
+
+/// Words for the box Windows puts up in front of an installer it has not seen
+/// often enough.
+///
+/// "Unknown publisher" is deliberately not here. It is the name inside the box
+/// rather than the box, and signing really does remove it, so a sentence
+/// saying so is true and must not be refused.
+const ABOUT_THE_WARNING: [&str; 7] = [
+    "warning",
+    "warn",
+    "smartscreen",
+    "this box",
+    "the box",
+    "that box",
+    "protected your pc",
+];
+
+/// Words for the box going away.
+const SAYS_THE_WARNING_ENDS: [&str; 16] = [
+    "go away",
+    "goes away",
+    "went away",
+    "stop appearing",
+    "stops appearing",
+    "stopped appearing",
+    "not appear",
+    "never appear",
+    "no longer appear",
+    "disappear",
+    "remove",
+    "removes",
+    "removed",
+    "bypass",
+    "bypasses",
+    "rid of",
+];
+
+/// What makes one of those a denial rather than a promise.
+///
+/// A list of the ways these pages really do deny it, rather than a rule about
+/// negation, and it is the weakest part of this check. A promise written with
+/// one of these phrases doing some other job in the same sentence slips past.
+/// That is the direction this fails in and it is written down here rather than
+/// left to be found.
+const DENIES_IT: [&str; 12] = [
+    "will not",
+    "would not",
+    "does not",
+    "do not",
+    "did not",
+    "cannot",
+    "can not",
+    "never",
+    "no certificate",
+    "no longer",
+    "nothing",
+    "is not",
+];
+
+/// Whether a sentence is about code signing rather than the other two senses.
+fn about_code_signing(lowered: &str) -> bool {
+    let mut without_accounts = lowered.to_string();
+    for phrase in SIGNING_IN_TO_AN_ACCOUNT {
+        without_accounts = without_accounts.replace(phrase, " ");
+    }
+    ABOUT_CODE_SIGNING
+        .iter()
+        .any(|word| !whole_words_at(&without_accounts, word).is_empty())
+}
+
+/// Whether a sentence promises that signing stops the Windows warning.
+///
+/// What this cannot see, said here so a green build is not read as "no promise
+/// exists anywhere". It reads `documents_about_now()`, which is `docs/**.md`
+/// plus `README.md` without the changelog, so a promise written into a Rust
+/// string or into an installer dialog is outside it. Neither exists today. The
+/// command that says so, to be re-run rather than trusted:
+///
+///     grep -rniE "smartscreen|windows protected your pc|run anyway|more info" src/ installer/
+///
+/// The changelog is left out for the reason
+/// `test_no_document_says_the_cache_is_encrypted` leaves it out: it records
+/// what the program used to do, and an entry saying this promise was removed is
+/// a correct entry.
+fn promises_the_warning_goes_away(prose: &str) -> bool {
+    let lowered = prose.to_lowercase();
+    if !about_code_signing(&lowered) {
+        return false;
+    }
+
+    let the_box_ends = ABOUT_THE_WARNING.iter().any(|word| lowered.contains(word))
+        && SAYS_THE_WARNING_ENDS
+            .iter()
+            .any(|word| lowered.contains(word));
+    // "Windows will recognise the program once it is signed" makes the same
+    // promise without naming the box, because not recognising it is what the
+    // box says.
+    let windows_comes_to_know_it = ["recognise", "recognize"]
+        .iter()
+        .any(|word| lowered.contains(word));
+
+    (the_box_ends || windows_comes_to_know_it)
+        && !DENIES_IT.iter().any(|phrase| lowered.contains(phrase))
+}
+
+#[test]
+fn test_no_document_promises_the_windows_warning_will_go_away() {
+    // `docs/installing.md` promised it until 2026-09-04, and the installer
+    // ships the docs folder, so the false sentence sat on the disk of everybody
+    // who had installed a build until they installed another one. It was
+    // corrected by hand, which is how the same page came to be wrong about
+    // signing twice. A failing build is what stops a third time.
+    //
+    // What signing really buys is the publisher's name in place of "Unknown
+    // publisher", Smart App Control no longer blocking the file, and reputation
+    // that accrues across releases under one identity. Sentences saying that
+    // are true and are let through on purpose.
+    let mut promising = Vec::new();
+    let mut sentences_about_signing = 0;
+
+    for document in documents_about_now() {
+        let Ok(text) = fs::read_to_string(&document) else {
+            continue;
+        };
+        for prose in prose_in(&document, &text) {
+            for (at, sentence) in sentences_of(&prose.text) {
+                if !about_code_signing(&sentence.to_lowercase()) {
+                    continue;
+                }
+                sentences_about_signing += 1;
+                if promises_the_warning_goes_away(sentence) {
+                    promising.push(format!(
+                        "{}:{}: {sentence}",
+                        document.display(),
+                        prose.line_at(at)
+                    ));
+                }
+            }
+        }
+    }
+
+    // A floor that proves the reading happened, not a census. If the cutting
+    // out of the account sense ever ate the whole sentence, this would fall to
+    // nothing and the guard would pass by looking at nothing, which is the
+    // failure `CLAUDE.md` describes for a check that reads documents. What it
+    // really read on 2026-09-12 was 31; that is a measurement with a date and
+    // it is not what is asserted.
+    assert!(
+        sentences_about_signing > 10,
+        "only {sentences_about_signing} sentences about signing were read, so \
+         the walk is broken"
+    );
+    assert!(
+        promising.is_empty(),
+        "no certificate this project can buy makes the Windows warning go away, \
+         and these say one does:\n  {}",
+        promising.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_signing_check_can_tell_a_promise_from_a_correction() {
+    // Without this the check above passes by seeing nothing, and that is not a
+    // hypothetical here: `CLAUDE.md` records a guard in this same file that
+    // went quiet because the documents stopped mentioning its subject, and a
+    // page that simply stopped naming the warning would pass this one while
+    // saying nothing useful to a tester.
+    //
+    // The first fixture is the sentence the page really carried, quoted from
+    // `git show 32af82b`. A guard that has never seen the thing it exists to
+    // catch proves nothing, and this is the thing.
+    assert!(promises_the_warning_goes_away(
+        "Once the setup file is signed, this box stops appearing"
+    ));
+    // Two near misses somebody writing the same mistake again would produce.
+    assert!(promises_the_warning_goes_away(
+        "Signing the installer removes the SmartScreen warning"
+    ));
+    assert!(promises_the_warning_goes_away(
+        "Windows will recognise the program once it carries a certificate"
+    ));
+
+    // The sentence that replaced the first one, which must survive.
+    assert!(!promises_the_warning_goes_away(
+        "Signing the setup file will not make this box go away, and an earlier \
+         version of this page said it would"
+    ));
+    // What signing does buy, which is the whole reason to do it.
+    assert!(!promises_the_warning_goes_away(
+        "What signing does change is the name in the box"
+    ));
+    assert!(!promises_the_warning_goes_away(
+        "a signed application still gets the warning until enough people have \
+         downloaded it"
+    ));
+    // The other two senses of the word.
+    assert!(!promises_the_warning_goes_away(
+        "Google will recognise you the next time you sign in"
+    ));
+    assert!(!promises_the_warning_goes_away(
+        "a signed message arrives with its signature already checked"
+    ));
+    // And the wording the roadmap is going to carry, which names a certificate,
+    // the warning and three ways of ending it, and denies all of them.
+    assert!(!promises_the_warning_goes_away(
+        "no certificate available to this project removes the warning on a \
+         first download, since EV certificates no longer bypass SmartScreen"
+    ));
+
+    assert!(
+        documents_about_now().len() > 5,
+        "only {} documents checked, so the walk is broken",
+        documents_about_now().len()
+    );
+}
+
 /// A line with its code spans and link addresses taken out.
 fn without_code_and_addresses(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
