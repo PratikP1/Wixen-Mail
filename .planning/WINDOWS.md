@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 285
+open_count: 289
 waived_count: 0
 fixed_count: 21
-total_count: 306
-last_updated: 2026-09-12T07:45:55.655Z
+total_count: 310
+last_updated: 2026-09-12T09:52:24.787Z
 ---
 
 # Broken Windows Ledger
@@ -321,6 +321,10 @@ last_updated: 2026-09-12T07:45:55.655Z
 | 304 | 07 | unmet-truth | src/common/logging.rs | 79 | Two of the three writes this program makes to the temporary folder are on no page a user can read. The log fallback at logging.rs:79 can hold whatever the running log holds, on a machine where the data folder could not be resolved, and the converted help pages at help_page.rs:97 hold nothing of anybody's. Neither goes through a paths.rs accessor, so the new check cannot reach either. 07-05 rewrites the privacy page and owns whether the log fallback earns a sentence | open |  | 2026-09-12T06:27:39.183Z |  |
 | 305 | 07 | todo | tests/house_style.rs |  | test_no_document_says_the_cache_is_encrypted and its companion have no guards/guards.toml record, so nothing measures that they still redden when the check they hold is narrowed. The signing guard written beside them in 07-01 does have one, and it breaks house_style.rs itself, so the same shape is available to them | open |  | 2026-09-12T06:27:51.385Z |  |
 | 306 | 07 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | Nothing here compiles the installer with ISCC, installs anything or looks at a shortcut, so whether the Start menu entry, the desktop shortcut and the Apps and Features entry really show the icon after a real install is unverified | open |  | 2026-09-12T07:45:55.655Z |  |
+| 307 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | No Linux or macOS build of Wixen Mail has ever been made, so the bridgeless sentences have only ever been produced from arguments a test on Windows chose. Whether they appear at all on a real non-Windows start, and whether the two constants a real non-Windows build supplies are the ones this expects, is unverified. 07-06 is the first thing that could answer the first half | open |  | 2026-09-12T09:52:08.998Z |  |
+| 308 | 07 | unrun-verify | src/presentation/wx_app.rs |  | Whether the About dialog draws the disclosure without the layout breaking is unverified. The dialog is fixed at 380 by 260 when there is nothing to disclose and grows to its contents when there is, and nobody has opened the grown version, because no build without the accessibility bridge exists | open |  | 2026-09-12T09:52:22.929Z |  |
+| 309 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | Nobody who depends on a screen reader has heard the disclosure. Whether the four paragraphs land as useful information or as a wall of apology in front of somebody who has just started a mail client is what guardrail 5 asks and no test here can answer it | open |  | 2026-09-12T09:52:23.841Z |  |
+| 310 | 07 | unrun-verify | src/presentation/accessibility/platform_bridge.rs |  | That adding a third platform module changes the answer with no edit to the code that says it is held structurally rather than by a test. No third platform module exists to add, and this tree has no compile-fail harness in which the absence of one could be expressed: grep -n trybuild Cargo.toml returns nothing | open |  | 2026-09-12T09:52:24.787Z |  |
 
 ````json
 [
@@ -3994,6 +3998,54 @@ last_updated: 2026-09-12T07:45:55.655Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T07:45:55.655Z",
+    "resolved_at": null
+  },
+  {
+    "id": 307,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/accessibility/platform_bridge.rs",
+    "line": null,
+    "description": "No Linux or macOS build of Wixen Mail has ever been made, so the bridgeless sentences have only ever been produced from arguments a test on Windows chose. Whether they appear at all on a real non-Windows start, and whether the two constants a real non-Windows build supplies are the ones this expects, is unverified. 07-06 is the first thing that could answer the first half",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T09:52:08.998Z",
+    "resolved_at": null
+  },
+  {
+    "id": 308,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Whether the About dialog draws the disclosure without the layout breaking is unverified. The dialog is fixed at 380 by 260 when there is nothing to disclose and grows to its contents when there is, and nobody has opened the grown version, because no build without the accessibility bridge exists",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T09:52:22.929Z",
+    "resolved_at": null
+  },
+  {
+    "id": 309,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/accessibility/platform_bridge.rs",
+    "line": null,
+    "description": "Nobody who depends on a screen reader has heard the disclosure. Whether the four paragraphs land as useful information or as a wall of apology in front of somebody who has just started a mail client is what guardrail 5 asks and no test here can answer it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T09:52:23.841Z",
+    "resolved_at": null
+  },
+  {
+    "id": 310,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/presentation/accessibility/platform_bridge.rs",
+    "line": null,
+    "description": "That adding a third platform module changes the answer with no edit to the code that says it is held structurally rather than by a test. No third platform module exists to add, and this tree has no compile-fail harness in which the absence of one could be expressed: grep -n trybuild Cargo.toml returns nothing",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T09:52:24.787Z",
     "resolved_at": null
   }
 ]
