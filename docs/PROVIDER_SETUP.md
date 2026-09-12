@@ -91,15 +91,36 @@ Not an oversight, and not the same reason for each.
 
 **Notes.** Google Keep has an API and it is only available to Workspace
 accounts, so a personal Gmail account cannot use it at all. Microsoft could carry
-notes through OneNote, and that is not built: a OneNote page is a formatted
+notes through OneNote, and that is part built. A OneNote page is a formatted
 document inside a section inside a notebook, and a note here is a title and some
-text, so somebody has to decide what happens to the difference before any of it
-is written.
+text, so what happens to the difference had to be decided first. It has been,
+and what a note loses on the way is measured. What is missing is the part that
+sends anything, so no note you write reaches OneNote and no page in OneNote
+appears here.
 
 **Reminders.** Neither provider has a reminder that exists on its own. Outlook
 and Exchange make a reminder a property of an appointment or a task, and Google
 folded its Reminders into Tasks in 2023. There is nothing on the other side to
 sync one to, so this one is not going to change.
+
+### Wixen Mail asks for a OneNote permission it does not use yet
+
+Signing in to an Outlook or Office 365 account now asks for one permission more
+than before: Microsoft's Notes.ReadWrite. It lets a program read the notebooks,
+sections and pages on your account, make a page, change one, and remove one.
+
+Nothing uses it yet. The permission is asked for now so your account is ready
+when notes do sync, rather than asking you to sign in a second time then.
+
+**An account you set up before this version does not have it.** Permission is
+granted once, at sign-in, so the sign-in your account is holding was given
+without it. That costs you nothing today, because nothing asks OneNote for
+anything. When notes do sync, sign in again: open the account, switch the
+browser sign-in off and back on, and approve the list the browser shows.
+
+Nothing about this has been tried against a real Microsoft account. No notebook
+has ever been opened by Wixen Mail, so whether a personal account can grant this
+permission without an administrator is not something we can tell you yet.
 
 ### If you signed in before tasks synced both ways
 
@@ -113,8 +134,9 @@ back on, and approve the list of permissions when the browser shows it. The
 waiting changes go up on the next sync.
 
 The permission is Google's "See, edit, create and delete your tasks" or
-Microsoft's Tasks.ReadWrite, in place of the read-only version. Nothing else
-about what Wixen Mail asks for has changed.
+Microsoft's Tasks.ReadWrite, in place of the read-only version. Microsoft
+accounts are also asked for Notes.ReadWrite now, which the section above
+explains and which nothing uses yet.
 
 ---
 

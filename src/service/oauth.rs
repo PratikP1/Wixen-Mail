@@ -97,6 +97,16 @@ impl OAuthService {
                     "https://graph.microsoft.com/Calendars.ReadWrite".to_string(),
                     // Read and write, for the same reason as Google's.
                     "https://graph.microsoft.com/Tasks.ReadWrite".to_string(),
+                    // Notes, in OneNote. Read and write because a note is
+                    // edited here and sent back, and because the OneNote API
+                    // has no application-only sign-in, so this is the least
+                    // privileged permission that can change a page at all.
+                    //
+                    // Asking for a new permission means new consent, so
+                    // everybody signs in again once. Nothing syncs notes to
+                    // OneNote yet; this is asked for now so the account that
+                    // meets the first notes sync already has it.
+                    "https://graph.microsoft.com/Notes.ReadWrite".to_string(),
                 ],
             },
         ]
@@ -840,9 +850,10 @@ impl AuthManager {
     ///
     /// What neither half can see is whether these are the right permissions,
     /// which only an account meeting Microsoft can answer.
-    const THE_SCOPES_A_GRAPH_TOKEN_CARRIES: [&'static str; 2] = [
+    const THE_SCOPES_A_GRAPH_TOKEN_CARRIES: [&'static str; 3] = [
         "https://graph.microsoft.com/Contacts.ReadWrite",
         "https://graph.microsoft.com/Calendars.ReadWrite",
+        "https://graph.microsoft.com/Notes.ReadWrite",
     ];
 
     /// Get a valid Microsoft Graph API token.

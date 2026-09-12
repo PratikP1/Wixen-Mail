@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 260
+open_count: 269
 waived_count: 0
 fixed_count: 21
-total_count: 281
-last_updated: 2026-09-11T18:01:04.034Z
+total_count: 290
+last_updated: 2026-09-12T00:07:34.643Z
 ---
 
 # Broken Windows Ledger
@@ -296,6 +296,15 @@ last_updated: 2026-09-11T18:01:04.034Z
 | 279 | 05.2 | unrun-verify | src/data/message_cache/notes.rs |  | Two calendars sharing a display name give a folder named Work and one named Work (2). Nobody has heard that read aloud. At a screen reader's default punctuation level the brackets are expected to be silent, so it should read Work 2, and that is an expectation rather than a measurement. | open |  | 2026-09-11T18:00:11.003Z |  |
 | 280 | 05.2 | todo | src/presentation/managers.rs |  | A note a backend holds, moved into a folder somebody made here, leaves the backend holding its copy for ever. The removal waits for a copy that sits in a folder no push reaches, so it never goes. The task move has the same shape and docs/ALPHA_TESTING.md says so, but nothing in the program tells the person their server still has it. | open |  | 2026-09-11T18:00:11.768Z |  |
 | 281 | 05.2 | todo | docs/development/the-notes-seam.md |  | A folder name carrying a flattened path, Work / Projects / Q3, arrives only when a backend with levels above a note ships. Nothing chooses that separator today and what a screen reader makes of it is unmeasured. | open |  | 2026-09-11T18:00:12.574Z |  |
+| 282 | 05.2 | unmet-truth | src/service/oauth.rs |  | Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false. | open |  | 2026-09-12T00:07:09.234Z |  |
+| 283 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether Graph accepts the input HTML service::onenote_page produces when a page is created, or normalises it into something the fidelity table did not predict. Every request has been read off a loopback socket and none has met Microsoft. | open |  | 2026-09-12T00:07:29.659Z |  |
+| 284 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether OneNote's generated identifiers really change on every page update or only on some. That decides whether reading before every write is necessary or merely safe, and the read inside change_page is built on the reference's word for it. | open |  | 2026-09-12T00:07:30.352Z |  |
+| 285 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether removing a page's elements one at a time by generated identifier and appending new ones leaves a page a person recognises, or leaves it reordered and restyled. Remove-and-append was chosen over delete-and-recreate on a failure argument, not on a measurement of the result. | open |  | 2026-09-12T00:07:31.045Z |  |
+| 286 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a patch command with action delete, naming a generated identifier, is accepted for every element a OneNote page can hold. The supported-actions table quoted in this repository covers replace and says nothing this repository has read about delete, and changing a page depends on it. | open |  | 2026-09-12T00:07:31.736Z |  |
+| 287 | 05.2 | unrun-verify | src/service/oauth.rs |  | Whether a consumer Microsoft account can grant Notes.ReadWrite without an administrator. The reference implies it and does not state it, and docs/PROVIDER_SETUP.md says plainly that we cannot tell somebody yet. | open |  | 2026-09-12T00:07:32.434Z |  |
+| 288 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a section group nested deeper than MOST_SECTION_GROUPS_DEEP, which is eight, is a real notebook anybody has. The bound is a guess at a hostile answer rather than a measurement of anyone's notebook. | open |  | 2026-09-12T00:07:33.175Z |  |
+| 289 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a paged OneNote listing really uses the @odata.nextLink field name and the value shape the walk follows. Paging is modelled on what list_contacts does for a different Graph endpoint and on a fixture this repository wrote. | open |  | 2026-09-12T00:07:33.914Z |  |
+| 290 | 05.2 | unrun-verify | src/service/microsoft_graph.rs |  | Whether a page created by posting text/html to /me/onenote/sections/{id}/pages answers with the onenotePage JSON this client reads, and with which status. The fixture answers 201 with id and title because the reference describes that resource, not because anything saw it. | open |  | 2026-09-12T00:07:34.643Z |  |
 
 ````json
 [
@@ -3669,6 +3678,114 @@ last_updated: 2026-09-11T18:01:04.034Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T18:00:12.574Z",
+    "resolved_at": null
+  },
+  {
+    "id": 282,
+    "kind": "unmet-truth",
+    "phase": "05.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "Tasks.ReadWrite is in the outlook provider's default_scopes and absent from THE_SCOPES_A_GRAPH_TOKEN_CARRIES, the array get_valid_graph_token refreshes with, so no running Microsoft account holds it and every Graph task write is refused. 05.2-02 found it and did not fix it: it is a live defect on another feature. docs/PROVIDER_SETUP.md's 'If you signed in before tasks synced both ways' tells somebody signing in again will send their waiting task changes, which this gap would make false.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:09.234Z",
+    "resolved_at": null
+  },
+  {
+    "id": 283,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether Graph accepts the input HTML service::onenote_page produces when a page is created, or normalises it into something the fidelity table did not predict. Every request has been read off a loopback socket and none has met Microsoft.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:29.659Z",
+    "resolved_at": null
+  },
+  {
+    "id": 284,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether OneNote's generated identifiers really change on every page update or only on some. That decides whether reading before every write is necessary or merely safe, and the read inside change_page is built on the reference's word for it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:30.352Z",
+    "resolved_at": null
+  },
+  {
+    "id": 285,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether removing a page's elements one at a time by generated identifier and appending new ones leaves a page a person recognises, or leaves it reordered and restyled. Remove-and-append was chosen over delete-and-recreate on a failure argument, not on a measurement of the result.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:31.045Z",
+    "resolved_at": null
+  },
+  {
+    "id": 286,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether a patch command with action delete, naming a generated identifier, is accepted for every element a OneNote page can hold. The supported-actions table quoted in this repository covers replace and says nothing this repository has read about delete, and changing a page depends on it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:31.736Z",
+    "resolved_at": null
+  },
+  {
+    "id": 287,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "Whether a consumer Microsoft account can grant Notes.ReadWrite without an administrator. The reference implies it and does not state it, and docs/PROVIDER_SETUP.md says plainly that we cannot tell somebody yet.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:32.434Z",
+    "resolved_at": null
+  },
+  {
+    "id": 288,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether a section group nested deeper than MOST_SECTION_GROUPS_DEEP, which is eight, is a real notebook anybody has. The bound is a guess at a hostile answer rather than a measurement of anyone's notebook.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:33.175Z",
+    "resolved_at": null
+  },
+  {
+    "id": 289,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether a paged OneNote listing really uses the @odata.nextLink field name and the value shape the walk follows. Paging is modelled on what list_contacts does for a different Graph endpoint and on a fixture this repository wrote.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:33.914Z",
+    "resolved_at": null
+  },
+  {
+    "id": 290,
+    "kind": "unrun-verify",
+    "phase": "05.2",
+    "file": "src/service/microsoft_graph.rs",
+    "line": null,
+    "description": "Whether a page created by posting text/html to /me/onenote/sections/{id}/pages answers with the onenotePage JSON this client reads, and with which status. The fixture answers 201 with id and title because the reference describes that resource, not because anything saw it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T00:07:34.643Z",
     "resolved_at": null
   }
 ]

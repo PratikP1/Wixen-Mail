@@ -9786,7 +9786,7 @@ before = """    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {"""
 after = """    if tidy.chars().count() >= MOST_CHARACTERS_FROM_A_REPLY {"""
 red = ["service::oauth::tests::test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more"]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 49 },
+    { file = "src/service/oauth.rs", tests = 51 },
 ]
 
 [[guard]]
@@ -9799,7 +9799,7 @@ red = [
     "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 49 },
+    { file = "src/service/oauth.rs", tests = 51 },
 ]
 
 # ── calendar.rs, contacts_sync.rs, tasks_sync.rs, message_cache/tasks.rs, ──
@@ -11438,7 +11438,7 @@ red = [
     "service::oauth::when_the_credential_store_refuses::test_nothing_keeps_going_after_a_token_it_could_not_keep",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 49 },
+    { file = "src/service/oauth.rs", tests = 51 },
 ]
 
 # The first measurement of this one reddened nothing, which is the whole reason

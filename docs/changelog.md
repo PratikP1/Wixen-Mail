@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Signing in to an Outlook or Office 365 account now asks for one more
+  permission, and nothing uses it yet.** The permission is Microsoft's
+  Notes.ReadWrite, which lets a program read the notebooks, sections and pages
+  on your account, make a page, change one, and remove one.
+
+  **Nothing syncs notes to OneNote.** No note you write here reaches OneNote and
+  no page in OneNote appears here. What exists is the part that would talk to
+  Microsoft, tested against a server started by the tests and never against
+  Microsoft. The part that decides when to send anything is not built.
+
+  The permission is asked for now so the account is ready when notes do sync,
+  rather than asking you to sign in twice.
+
+  **An account you set up before this version does not have it**, because
+  permission is granted once at sign-in. That costs you nothing today, since
+  nothing asks OneNote for anything. When notes do sync you will need to sign in
+  again: open the account, switch the browser sign-in off and back on, and
+  approve the list the browser shows. Wixen Mail will say so when it matters.
+
+  Whether a personal Microsoft account can grant this without an administrator
+  is unknown. No OneNote notebook has ever been opened by this program.
+
 - **Each calendar your notes go to is now its own note folder, and your notes
   stop all landing in one place.** This changes what you see the next time you
   open Notes, so it is worth reading before you do.
