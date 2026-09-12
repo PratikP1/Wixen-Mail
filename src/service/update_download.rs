@@ -47,6 +47,17 @@ use std::path::{Path, PathBuf};
 /// Changes": near enough to look right, far enough to be wrong.
 pub const WHO_SIGNS_THIS: &str = "Pratik Patel";
 
+/// What this project's installer is called, before its version number.
+///
+/// `installer/Wixen-Mail-Setup.iss` builds it as
+/// `OutputBaseFilename=Wixen-Mail-Setup-{#AppVersion}` and the release workflow
+/// publishes it under that name, so this is the one string that decides which
+/// of a release's files is the one to run. Held to the script by
+/// `test_the_name_this_looks_for_is_the_name_the_installer_is_built_under`,
+/// because a release publishes two executables and the other one installs
+/// nothing.
+const WHAT_THE_INSTALLER_IS_CALLED: &str = "Wixen-Mail-Setup-";
+
 /// The host a release's own files are served from before any redirect.
 ///
 /// Named so `docs/privacy.md` can be tied to it rather than to a phrase
@@ -246,6 +257,30 @@ impl From<NotArrivedBecause> for NotArrived {
     }
 }
 
+/// What a check's answer leads to.
+///
+/// A rule of its own rather than a branch buried in the screen, so that "an
+/// offer is fetched without anybody being asked" is a sentence a test can hold
+/// this to. Decision 16 is the whole of it: with a kind of version chosen, the
+/// program checks, downloads and verifies on its own, and the only question is
+/// whether to run what it ended up with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NextStep {
+    /// Fetch the installer from these files. Nobody is asked first.
+    FetchIt(Vec<ReleaseFile>),
+    /// Say what the check found and stop there.
+    JustSayIt,
+}
+
+/// What to do about a check's answer.
+///
+/// An offer leads straight to a fetch. Every other answer leads to a sentence
+/// and nothing else, because there is nothing to fetch.
+pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
+    let _ = answer;
+    NextStep::JustSayIt
+}
+
 /// Which published file is this project's installer.
 ///
 /// By name, not by position. A release publishes three things a person could
@@ -255,6 +290,7 @@ impl From<NotArrivedBecause> for NotArrived {
 /// has written down is one that can change without an announcement, so taking
 /// element zero would be a rule about whatever GitHub happens to return.
 pub fn the_installer_among(files: &[ReleaseFile]) -> Option<&ReleaseFile> {
+    let _ = WHAT_THE_INSTALLER_IS_CALLED;
     files.first()
 }
 
@@ -568,6 +604,130 @@ mod tests {
                 .to_string(),
         }];
         assert_eq!(the_installer_among(&only_notes), None);
+    }
+
+    #[test]
+    fn test_an_offer_is_fetched_without_anybody_being_asked() {
+        use crate::common::version::ReleaseChannel;
+        use crate::service::update_check::Answer;
+
+        let offer = Answer::ANewerVersion {
+            version: "v0.117.0".to_string(),
+            page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0".to_string(),
+            channel: ReleaseChannel::PublicReleases,
+            files: a_real_release(),
+        };
+        assert_eq!(
+            what_to_do_about(&offer),
+            NextStep::FetchIt(a_real_release()),
+            "a kind of version was chosen, so the fetch is the program's own doing"
+        );
+    }
+
+    #[test]
+    fn test_every_other_answer_leads_to_a_sentence_and_nothing_else() {
+        use crate::common::version::ReleaseChannel;
+        use crate::service::update_check::{Answer, NotFetched};
+
+        for answer in [
+            Answer::ThisIsTheNewest {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::NothingPublishedYet {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer,
+            },
+            Answer::CouldNotBeUnderstood { entries: 2 },
+        ] {
+            assert_eq!(
+                what_to_do_about(&answer),
+                NextStep::JustSayIt,
+                "{answer:?} is not an offer, so there is nothing to fetch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_name_this_looks_for_is_the_name_the_installer_is_built_under() {
+        // Read from the script that builds it. A release publishes two
+        // executables and only one of them installs anything, so which name
+        // this looks for is the whole of the choice, and a copy of it that
+        // drifted would quietly start fetching the portable build.
+        let script = std::fs::read_to_string("installer/Wixen-Mail-Setup.iss")
+            .expect("the installer script to be readable");
+        let built_as = script
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("OutputBaseFilename="))
+            .map(str::trim)
+            .expect("the installer script to name what it builds");
+        assert_eq!(
+            built_as.replace("{#AppVersion}", ""),
+            WHAT_THE_INSTALLER_IS_CALLED
+        );
+    }
+
+    #[test]
+    fn test_the_reasons_nothing_arrived_do_not_all_say_the_same_thing() {
+        // Six ways a download does not happen, and they lead somebody to do
+        // different things: wait, check their connection, or go and fetch it by
+        // hand. One sentence for all six would be a status line saying only
+        // that something went wrong.
+        let every = [
+            NotArrived::NoInstallerAmongTheFiles,
+            NotArrived::TheConnectionFailed,
+            NotArrived::ARedirectLeftHttps,
+            NotArrived::TooManyRedirects,
+            NotArrived::BiggerThanWeWillAccept,
+            NotArrived::CouldNotBeKept("the disk is full".to_string()),
+        ];
+        let said: Vec<String> = every.iter().map(NotArrived::said).collect();
+        for sentence in &said {
+            assert!(!sentence.is_empty(), "one of these says nothing at all");
+            assert_eq!(
+                said.iter().filter(|other| *other == sentence).count(),
+                1,
+                "two of these say the same thing: {sentence}"
+            );
+            assert!(
+                sentence.contains(&the_releases_page()),
+                "a download that did not happen leaves somebody with nowhere to go: {sentence}"
+            );
+        }
+    }
+
+    /// Whether the module's shipped half names a way of asking somebody
+    /// something.
+    ///
+    /// Split out so the reading can be shown a violation as well as the tree.
+    fn it_asks_somebody_something(source: &str) -> bool {
+        ["MessageDialog", "show_modal", "wxdragon"]
+            .iter()
+            .any(|way| source.contains(way))
+    }
+
+    #[test]
+    fn test_nothing_in_this_module_asks_anybody_anything() {
+        // The only question in this feature is whether to run an installer, and
+        // that question belongs to a file which has already passed both checks.
+        // A question asked from here could be asked about a file nothing had
+        // looked at yet, which is the one thing the design of this module
+        // exists to make impossible.
+        assert!(
+            !it_asks_somebody_something(&what_this_module_ships()),
+            "this module puts a question in front of somebody, and it has no business doing so"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_question_being_asked() {
+        assert!(
+            it_asks_somebody_something(
+                "let answered = MessageDialog::builder(frame).show_modal();"
+            ),
+            "the reading above cannot see the thing it exists to refuse"
+        );
     }
 
     #[test]

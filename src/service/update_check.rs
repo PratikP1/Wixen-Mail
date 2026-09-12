@@ -128,6 +128,16 @@ pub enum Answer {
         page: String,
         /// Which channel was asked.
         channel: ReleaseChannel,
+        /// The files published beside that release.
+        ///
+        /// Carried with the answer rather than fetched again, because the
+        /// release this names is the one the ordering rule below picked and
+        /// asking GitHub a second time could get a different one. Which of
+        /// them is the installer is
+        /// [`crate::service::update_download::the_installer_among`]'s rule and
+        /// not this module's: asking which versions exist and choosing what to
+        /// fetch are two jobs.
+        files: Vec<crate::service::update_download::ReleaseFile>,
     },
     /// Something is published, and none of it is newer than this build.
     ThisIsTheNewest {
@@ -425,6 +435,7 @@ fn whether_that_one_is_an_offer(
             version: published.tag_name.clone(),
             page: published.html_url.clone(),
             channel,
+            files: Vec::new(),
         },
         // A tag this program cannot read is not a newer version, and saying so
         // is the honest answer for one release: something is published and none
@@ -478,6 +489,7 @@ fn the_newest_offer_among(
             version: offer.tag_name.clone(),
             page: offer.html_url.clone(),
             channel,
+            files: Vec::new(),
         },
         None if unreadable > 0 => Answer::CouldNotBeUnderstood {
             entries: unreadable,
@@ -565,6 +577,20 @@ mod tests {
             .replace("releases/tag/2026-09-07", &format!("releases/tag/{tag}"))
     }
 
+    /// The one file `A_REAL_RELEASE` really publishes beside itself.
+    ///
+    /// Real, like the rest of that fixture: the eighteen assets GitHub sent
+    /// were trimmed to one and this is that one, name and address as they
+    /// arrived. What an offer carries has to be what a release really lists,
+    /// because it is where the installer to fetch is chosen from.
+    fn the_files_that_release_publishes() -> Vec<crate::service::update_download::ReleaseFile> {
+        vec![crate::service::update_download::ReleaseFile {
+            name: "rust-analyzer-aarch64-apple-darwin.gz".to_string(),
+            from: "https://github.com/rust-lang/rust-analyzer/releases/download/2026-09-07/rust-analyzer-aarch64-apple-darwin.gz"
+                .to_string(),
+        }]
+    }
+
     fn answered(body: &str) -> Reply {
         Reply {
             status: 200,
@@ -587,6 +613,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.116.0"
                     .to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: the_files_that_release_publishes(),
             },
             "a published version newer than this build is the whole point of asking"
         );
@@ -618,6 +645,7 @@ mod tests {
                 version: "v0.116.0".to_string(),
                 page: "https://example.invalid/r".to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: Vec::new(),
             },
             Answer::ThisIsTheNewest {
                 channel: ReleaseChannel::PublicReleases,
@@ -840,6 +868,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
                     .to_string(),
                 channel: ReleaseChannel::DevelopmentReleases,
+                files: the_files_that_release_publishes(),
             },
             "the newest is chosen by the ordering, not by where the list happened to put it"
         );
@@ -874,6 +903,7 @@ mod tests {
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v0.117.0"
                     .to_string(),
                 channel: ReleaseChannel::DevelopmentReleases,
+                files: the_files_that_release_publishes(),
             }
         );
         // And a list every entry of which reads, with nothing newer in it, is
@@ -1071,6 +1101,7 @@ mod tests {
                 version: "v9.9.9".to_string(),
                 page: "https://github.com/rust-lang/rust-analyzer/releases/tag/v9.9.9".to_string(),
                 channel: ReleaseChannel::PublicReleases,
+                files: the_files_that_release_publishes(),
             }
         );
     }
@@ -1081,6 +1112,7 @@ mod tests {
             version: "v0.116.0".to_string(),
             page: "https://example.invalid/r".to_string(),
             channel: ReleaseChannel::PublicReleases,
+            files: Vec::new(),
         }
         .said();
         let newest = Answer::ThisIsTheNewest {
