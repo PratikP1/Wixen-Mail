@@ -111,6 +111,28 @@ impl AppPaths {
         self.root.join("sound_schemes")
     }
 
+    /// Where an installer fetched for an update waits until it is used.
+    ///
+    /// Under this application's own root rather than the shared temporary
+    /// folder, and that is a security decision before it is a tidy one. A
+    /// downloaded executable sitting where another person using this computer
+    /// can write is a file they can swap after it was checked and before it is
+    /// run, so the check would have been made against something that is no
+    /// longer there. Under the root, only this user can write.
+    ///
+    /// It also keeps `docs/privacy.md`'s sentence about uninstalling removing
+    /// everything true: the uninstaller clears this root wholesale, so an
+    /// installer waiting here goes with it. In the temporary folder it would
+    /// not, and that page would have needed weakening to stay honest.
+    ///
+    /// It holds one file at most, it exists only while an update is being
+    /// fetched, and it is emptied three times over: after a handover, after any
+    /// refusal, and at the next start, which is the one that covers a program
+    /// that died in between.
+    pub fn updates_dir(&self) -> PathBuf {
+        self.root.join("updates")
+    }
+
     /// Make the folders. Safe to call on every start.
     pub fn create(&self) -> Result<()> {
         for dir in [
@@ -520,6 +542,7 @@ mod tests {
             ("security_key", paths.security_key()),
             ("oauth_toml", paths.oauth_toml()),
             ("sound_schemes_dir", paths.sound_schemes_dir()),
+            ("updates_dir", paths.updates_dir()),
         ]
     }
 
