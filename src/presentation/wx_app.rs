@@ -18,6 +18,7 @@ use crate::data::account::Account;
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
+use crate::presentation::accessibility::platform_bridge;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::one_question_at_a_time;
@@ -21292,6 +21293,16 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
         );
     }
 
+    // What this build's accessibility layer does not do, beside the version,
+    // which is the other fact on this dialog that is about this build rather
+    // than about the program. `None` on Windows, where every half of the bridge
+    // is here, so the dialog a Windows user opens is the one it always was.
+    let missing = platform_bridge::what_this_build_does_not_do();
+    if let Some(missing) = &missing {
+        let label = StaticText::builder(&dlg).with_label(missing).build();
+        sizer.add(&label, 0, SizerFlag::All, 12);
+    }
+
     let ok = Button::builder(&dlg)
         .with_label("OK")
         .with_id(ID_OK)
@@ -21302,7 +21313,15 @@ pub fn build_about_dialog(parent: &Frame, palette: Option<theme::Palette>) -> Di
         SizerFlag::AlignCenterHorizontal | SizerFlag::All,
         16,
     );
-    dlg.set_sizer(sizer, true);
+    // Grown to its contents only when there is a disclosure to draw, so the
+    // fixed 380 by 260 above is still exactly what a build with a whole bridge
+    // gets. Whether the grown dialog lays out properly is unverified: no build
+    // without the bridge has ever been made, let alone opened.
+    if missing.is_some() {
+        dlg.set_sizer_and_fit(sizer, true);
+    } else {
+        dlg.set_sizer(sizer, true);
+    }
 
     ok.on_click({
         let d = dlg;

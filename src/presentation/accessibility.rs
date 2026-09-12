@@ -9,6 +9,7 @@ pub mod feedback;
 pub mod focus;
 pub mod keyboard;
 pub mod names;
+pub mod platform_bridge;
 pub mod screen_reader;
 pub mod sound_scheme;
 pub mod sound_scheme_import;
@@ -423,11 +424,6 @@ impl Accessibility {
     /// Diagnostic snapshot of automation tree.
     pub fn automation_snapshot(&self) -> Result<Vec<automation::AutomationNode>> {
         self.automation.snapshot()
-    }
-
-    /// Return screen reader bridge status.
-    pub fn native_bridge_status(&self) -> screen_reader::NativeBridgeStatus {
-        self.screen_reader.status()
     }
 }
 
