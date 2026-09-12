@@ -76,10 +76,15 @@ Everything Wixen Mail stores about you is in one folder:
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    updates\          an installer being downloaded, while one is
     security.key      only on a machine upgraded from an older version
 ```
 
 Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.
+
+`updates\` exists only while Wixen Mail is fetching a new version, and it holds one file. Wixen
+Mail empties it when the update is installed, when the installer is refused, and again the next
+time it starts, so a download cut short does not leave an installer behind.
 
 `oauth.toml` holds the sign-in keys this build was made with. It says nothing about you, and a
 build made without one cannot offer the browser sign-in at all.

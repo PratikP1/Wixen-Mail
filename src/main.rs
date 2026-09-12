@@ -347,6 +347,16 @@ fn prepare_data_folder() -> Option<MigrationReport> {
         log_crash(&format!("Could not create the data folder: {e}"));
         return None;
     }
+    // The third of the three places a downloaded installer is cleared away, and
+    // the one that catches what the other two cannot. The other two run when an
+    // update is installed and when one is refused; a program killed between
+    // fetching an installer and handing over to it runs neither, and without
+    // this the file would sit in the data folder indefinitely for somebody to
+    // find and run by hand. Logged rather than raised: an update folder that
+    // will not empty is not a reason to stop somebody reading their mail.
+    if let Err(e) = wixen_mail::service::update_download::clear_the_waiting_room(&paths) {
+        tracing::warn!("A downloaded update could not be cleared away at start: {e}");
+    }
     Some(paths.migrate_legacy(&LegacyLocations::detect()))
 }
 

@@ -445,13 +445,28 @@ pub enum UIUpdate {
     /// argued about in a test, and because a dialog may only be opened on the
     /// interface thread while the check runs on a worker.
     ///
-    /// **Nothing here downloads anything.** The page opens in a browser through
-    /// `open::that`. Fetching an installer and running it is plan 07-09's.
-    ANewerVersionIsPublished {
+    /// The page opens in a browser through `open::that`. Sent when a download
+    /// did not produce something to run, so the way forward by hand is still
+    /// offered rather than only described.
+    AnUpdateDidNotHappen {
         /// What is said and written to the status bar.
         said: String,
-        /// The page GitHub published about the release.
+        /// The releases page, which is the way forward by hand.
         page: String,
+    },
+    /// An installer was downloaded, checked, and signed by this project.
+    ///
+    /// Carries the checked file itself rather than its path, and that is the
+    /// whole design of `service::update_download`: `Verified` has a private
+    /// field and only that module's `verify` builds one, so a message of this
+    /// kind cannot be made about a file nothing has looked at. The question and
+    /// the handover both take it, so there is no order of steps anybody can
+    /// rearrange into a version that asks about a file already known to be bad.
+    AnUpdateIsReady {
+        /// The version it will install, as it was published.
+        version: String,
+        /// The checked installer.
+        installer: crate::service::update_download::Verified,
     },
     /// A folder was renumbered by its server, so what was held for it here was
     /// thrown away and is being fetched again.

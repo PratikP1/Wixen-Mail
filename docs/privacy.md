@@ -22,8 +22,16 @@ Everything Wixen Mail stores is in one folder on your computer:
     cache\            the mail that has been downloaded
     sound_schemes\    sound packs you have imported, if any
     logs\             the running log and crash.log
+    updates\          an installer being downloaded, while one is
     security.key      only on a machine upgraded from an older version
 ```
+
+`updates\` is there only while Wixen Mail is fetching a new version, and it holds one file:
+the installer. It is emptied when the update is installed, emptied straight away if the
+installer turns out not to be signed by this project, and emptied again the next time Wixen
+Mail starts, so a download interrupted by a crash or a power cut does not leave an installer
+sitting on your disk. If you have "Tell me about new versions" set to not look, nothing is
+ever put there.
 
 **One exception, on a computer where Windows cannot tell Wixen Mail where your local
 application data lives.** That is rare and it is usually a sign something else is wrong with
@@ -385,11 +393,41 @@ is current when it did not find out.
 folder names, not your mail, and no identifier that would let two requests be recognised as
 coming from the same installation.
 
-**Nothing is downloaded and nothing is run.** When there is a newer version, Wixen Mail says
-so and offers to open the page about it in your browser. Fetching an installer and starting
-it is not built yet. When it is, this page will say what that fetch sends and where it goes,
-and will say separately that a file arrives on your disk without you asking, because those
-are two different things to be told.
+**Something is downloaded now. Nothing is run.** When the check finds a newer version, Wixen
+Mail fetches the installer for it and checks who signed it, without asking you first. It does
+not install anything. [Downloading an update](#downloading-an-update) below says what that
+fetch sends, which computers it reaches, and what arrives on your disk.
+
+## Downloading an update
+
+**What goes, and to whom.** Two computers, both GitHub's. The question about which versions
+exist goes to `api.github.com`, as the section above describes. The installer itself is
+fetched from `github.com`, which passes the request on to `objects.githubusercontent.com`,
+the machine GitHub serves release files from. Neither request carries an account, a sign-in
+or anything that identifies you, and neither is signed in to anything. GitHub's own
+documentation applies to both: an unauthenticated request "is associated with the originating
+IP address, not with the user or application that made the request". So GitHub can see that
+somebody at your address downloaded this version of Wixen Mail.
+
+**A file arrives on your computer without you asking for it.** This is not a promise about
+what is sent, it is a plain fact about what turns up, and it deserves saying on its own.
+If you have chosen a kind of version under "Tell me about new versions", then when a newer
+one is published Wixen Mail downloads its installer on its own, without asking you at that
+moment. It is roughly 12 MB today. It goes in `%LOCALAPPDATA%\wixen-mail\updates`. It is
+removed when the update is installed, removed straight away if it turns out not to be signed
+by this project, and removed again the next time Wixen Mail starts. If the setting is left on
+"Do not look for new versions", none of this ever happens.
+
+**Nothing is run.** This version downloads an installer and checks it. Starting it is not
+wired up yet, so the file is fetched, checked and then left alone.
+
+**Anything this project did not sign is refused, not warned about.** Wixen Mail checks two
+things before it will offer to run an installer: that the signature on it is valid, and that
+the name on that signature is this project's own. A file failing either is deleted and you are
+told why. You are never asked whether to run it anyway.
+
+Today that check refuses everything, because nothing this project publishes is signed yet.
+Until it is, an update will download, be refused, and point you at the releases page.
 
 ## Logging
 

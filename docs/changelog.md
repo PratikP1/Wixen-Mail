@@ -8,6 +8,42 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail now downloads the installer for a newer version on its own, and
+  refuses to have anything to do with one this project did not sign.** If you
+  have chosen a kind of version under "Tell me about new versions", then when a
+  newer one is published the installer for it is fetched without asking you at
+  that moment, which is what you agreed to when you chose. Pressing Check for
+  Updates does the same thing on demand, whatever that setting says.
+
+  **Nothing is run yet.** The file is downloaded, checked, and left alone.
+  Starting the installer and handing over to it is the next piece of work.
+
+  Two things are checked before a downloaded installer is ever offered to you,
+  and both must pass: that its signature is valid, and that the name on that
+  signature is this project's own. The second is the one that matters. A file
+  can be perfectly validly signed and still be someone else's program, so an
+  update that checks only the first would be putting the word "verified" on a
+  stranger's installer. Anything failing either check is deleted at once and you
+  are told which check it failed, and you are never asked whether to run it
+  anyway.
+
+  **Today that refuses everything, because nothing this project publishes is
+  signed.** There is no certificate yet. Until there is, an update will be
+  downloaded, refused, deleted, and you will be pointed at the releases page.
+  That is deliberate: the refusal is the feature, and it was built before the
+  signing so that it could never be added as an afterthought to something that
+  was already running installers.
+
+  Where the bytes come from: `github.com`, which passes the request on to
+  `objects.githubusercontent.com`. Neither carries an account or anything about
+  you. The installer waits in `%LOCALAPPDATA%\wixen-mail\updates`, holds one
+  file, and is emptied when the update is done with, when an installer is
+  refused, and again the next time Wixen Mail starts, so a download interrupted
+  by a crash leaves nothing behind. A download that is sent to an address that
+  is not secure, passed around too many times, or larger than Wixen Mail will
+  accept is stopped and thrown away, and you are told which.
+  [What Wixen Mail sends, and where](privacy.md) says all of it in full.
+
 - **Wixen Mail can now tell you whether a newer version has been published, and
   you decide whether it ever asks on its own.** Help, then Check for Updates,
   asks GitHub which versions exist and says what it found. That item works
@@ -27,11 +63,9 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   address. [What Wixen Mail sends, and where](privacy.md) says all of this in
   full.
 
-  **Nothing is downloaded and nothing is run.** When there is a newer version
-  you are told, and asked whether to open the page about it in your browser.
-  Fetching an installer and starting it is a later piece of work, and choosing
-  a kind of version now is the point at which you would be agreeing to that, so
-  the setting says so where you choose it.
+  Choosing a kind of version is the point at which you agree that installers
+  will be downloaded for you without being asked again, and the setting says so
+  where you choose it.
 
   When it cannot get an answer it says so, rather than telling you that you are
   up to date. Those are different things and only one of them means your version

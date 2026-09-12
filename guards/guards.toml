@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 540 records have arrived since and have not been through it.
+# 541 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -20089,4 +20089,40 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/installer.rs", tests = 13 },
+]
+
+# The break is the half-fix, not the deletion. Taking the publisher comparison
+# out altogether would leave a hole any reader spots; making it always succeed
+# leaves a function that still looks like a check, still has its name, still has
+# its doc comment, and accepts an installer anybody signed. That is the shape a
+# real mistake takes here, and it is the one plan 07-09's threat register calls
+# T-07-41.
+#
+# Measured by hand on 2026-09-12 at 0.117.0, `cargo test --lib --no-fail-fast`
+# at eight threads: 7,103 passed, three failed, and they are exactly the three
+# below. The whole library rather than a filter, because a filter chosen for the
+# subject is how a record comes out short.
+#
+# Note which test does *not* redden: `test_a_refused_installer_is_deleted`
+# stays green, and that is right rather than a gap. Its fixture is a few bytes
+# with no signature at all, so Windows refuses it one step earlier, at
+# `whether_windows_trusts_it`, and never reaches the comparison this breaks.
+# The test that catches this break against a real signature is the first one
+# listed, which asks Windows about a file Microsoft really signed.
+[[guard]]
+name = "an installer is refused unless this project signed it"
+file = "src/service/update_download.rs"
+before = """    if name.eq_ignore_ascii_case(WHO_SIGNS_THIS) {
+        return Ok(());
+    }"""
+after = """    if name.eq_ignore_ascii_case(name) {
+        return Ok(());
+    }"""
+red = [
+    "service::update_download::tests::test_a_file_somebody_else_signed_is_refused_for_that_reason",
+    "service::update_download::tests::test_a_name_that_merely_contains_ours_is_refused",
+    "service::update_download::tests::test_a_signature_from_anybody_else_is_refused_however_valid_it_is",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 29 },
 ]

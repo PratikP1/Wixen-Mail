@@ -181,8 +181,38 @@ impl Refused {
     /// how a person ends up downloading an installer by hand from wherever a
     /// search engine offers one.
     pub fn said(&self) -> String {
-        let _ = (self, the_releases_page());
-        String::new()
+        let page = the_releases_page();
+        match self {
+            Self::NothingSignedIt => format!(
+                "The update Wixen Mail downloaded is not signed by anyone, so Wixen Mail \
+                 will not run it. The file has been deleted. Nothing on this computer has \
+                 changed. You can download a version yourself from {page}."
+            ),
+            Self::TheSignatureIsNotValid { code } => format!(
+                "The update Wixen Mail downloaded carries a signature that does not check \
+                 out, so Wixen Mail will not run it. Windows reported {code}. The file has \
+                 been deleted. Nothing on this computer has changed. You can download a \
+                 version yourself from {page}."
+            ),
+            Self::SomebodyElseSignedIt { who } => format!(
+                "The update Wixen Mail downloaded is signed by {who}, not by \
+                 {WHO_SIGNS_THIS}, so Wixen Mail will not run it. A file can be correctly \
+                 signed and still be someone else's program, which is why this is checked. \
+                 The file has been deleted. Nothing on this computer has changed. You can \
+                 download a version yourself from {page}."
+            ),
+            Self::NoWayToCheckHere => format!(
+                "Wixen Mail has no way to check who signed an update on this system, so it \
+                 will not run one. The file has been deleted. Nothing on this computer has \
+                 changed. You can download a version yourself from {page}."
+            ),
+            Self::TheFileCouldNotBeRead(why) => format!(
+                "Wixen Mail could not read the update it downloaded to find out who signed \
+                 it, so it will not run it. The reason given was: {why}. The file has been \
+                 deleted. Nothing on this computer has changed. You can download a version \
+                 yourself from {page}."
+            ),
+        }
     }
 }
 
@@ -209,9 +239,47 @@ pub enum NotArrived {
 
 impl NotArrived {
     /// The sentence somebody hears and reads.
+    ///
+    /// Six of them, because they lead somebody to do different things: wait,
+    /// look at their connection, or go and fetch the new version by hand. All
+    /// six say the current version is untouched, since a failed download is the
+    /// one case where nothing at all has happened and somebody hearing about a
+    /// failure assumes otherwise.
     pub fn said(&self) -> String {
-        let _ = self;
-        String::new()
+        let page = the_releases_page();
+        match self {
+            Self::NoInstallerAmongTheFiles => format!(
+                "There is a newer version of Wixen Mail, and it does not publish an \
+                 installer Wixen Mail recognises, so nothing was downloaded. You are still \
+                 running the version you were. You can look at what was published on {page}."
+            ),
+            Self::TheConnectionFailed => format!(
+                "Wixen Mail could not download the newer version. You are still running the \
+                 version you were, and nothing has changed. You can download it yourself \
+                 from {page}."
+            ),
+            Self::ARedirectLeftHttps => format!(
+                "The download of the newer version was sent to an address that is not \
+                 secure, so Wixen Mail stopped it. You are still running the version you \
+                 were, and nothing has changed. You can download it yourself from {page}."
+            ),
+            Self::TooManyRedirects => format!(
+                "The download of the newer version was passed from one address to another \
+                 too many times, so Wixen Mail stopped it. You are still running the \
+                 version you were, and nothing has changed. You can download it yourself \
+                 from {page}."
+            ),
+            Self::BiggerThanWeWillAccept => format!(
+                "The download of the newer version was larger than Wixen Mail will accept, \
+                 so it was stopped and thrown away. You are still running the version you \
+                 were, and nothing has changed. You can download it yourself from {page}."
+            ),
+            Self::CouldNotBeKept(why) => format!(
+                "Wixen Mail could not keep the newer version on this computer. The reason \
+                 given was: {why}. You are still running the version you were, and nothing \
+                 has changed. You can download it yourself from {page}."
+            ),
+        }
     }
 }
 
@@ -277,8 +345,12 @@ pub enum NextStep {
 /// An offer leads straight to a fetch. Every other answer leads to a sentence
 /// and nothing else, because there is nothing to fetch.
 pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
-    let _ = answer;
-    NextStep::JustSayIt
+    match answer {
+        crate::service::update_check::Answer::ANewerVersion { files, .. } => {
+            NextStep::FetchIt(files.clone())
+        }
+        _ => NextStep::JustSayIt,
+    }
 }
 
 /// Which published file is this project's installer.
@@ -290,8 +362,11 @@ pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextSt
 /// has written down is one that can change without an announcement, so taking
 /// element zero would be a rule about whatever GitHub happens to return.
 pub fn the_installer_among(files: &[ReleaseFile]) -> Option<&ReleaseFile> {
-    let _ = WHAT_THE_INSTALLER_IS_CALLED;
-    files.first()
+    files.iter().find(|file| {
+        let name = file.name.to_ascii_lowercase();
+        name.starts_with(&WHAT_THE_INSTALLER_IS_CALLED.to_ascii_lowercase())
+            && name.ends_with(".exe")
+    })
 }
 
 /// Whether a redirect may be followed.
@@ -302,7 +377,12 @@ pub fn the_installer_among(files: &[ReleaseFile]) -> Option<&ReleaseFile> {
 /// stranger's program. And the chain has to be short, because a server can
 /// redirect for ever and a client with no bound will follow it for ever.
 pub fn whether_a_redirect_may_be_followed(scheme: &str, already_followed: usize) -> Redirect {
-    let _ = (scheme, already_followed, MOST_REDIRECTS_FOLLOWED);
+    if !scheme.eq_ignore_ascii_case("https") {
+        return Redirect::Stop(NotArrivedBecause::ItLeftHttps);
+    }
+    if already_followed >= MOST_REDIRECTS_FOLLOWED {
+        return Redirect::Stop(NotArrivedBecause::ThereWereTooMany);
+    }
     Redirect::Follow
 }
 
@@ -312,7 +392,9 @@ pub fn whether_a_redirect_may_be_followed(scheme: &str, already_followed: usize)
 /// a bound is to stop before the disk is full, and a check made afterwards
 /// makes it after the damage.
 pub fn whether_this_much_may_still_arrive(so_far: u64) -> std::result::Result<(), NotArrived> {
-    let _ = (so_far, MOST_BYTES_ACCEPTED);
+    if so_far > MOST_BYTES_ACCEPTED {
+        return Err(NotArrived::BiggerThanWeWillAccept);
+    }
     Ok(())
 }
 
@@ -329,8 +411,16 @@ pub struct WhoSignedIt {
 /// "contains": a rule written that way accepts a certificate issued to
 /// "Not Pratik Patel Holdings", which is a name anybody can buy.
 pub fn whether_that_signer_is_ours(who: &WhoSignedIt) -> std::result::Result<(), Refused> {
-    let _ = who;
-    Ok(())
+    let name = who.name.trim();
+    if name.is_empty() {
+        return Err(Refused::NothingSignedIt);
+    }
+    if name.eq_ignore_ascii_case(WHO_SIGNS_THIS) {
+        return Ok(());
+    }
+    Err(Refused::SomebodyElseSignedIt {
+        who: who.name.clone(),
+    })
 }
 
 /// Read the signature off a file.
@@ -340,10 +430,8 @@ pub fn whether_that_signer_is_ours(who: &WhoSignedIt) -> std::result::Result<(),
 /// [`whether_that_signer_is_ours`] above.
 #[cfg(target_os = "windows")]
 fn who_signed(at: &Path) -> std::result::Result<WhoSignedIt, Refused> {
-    let _ = at;
-    Ok(WhoSignedIt {
-        name: String::new(),
-    })
+    whether_windows_trusts_it(at)?;
+    the_name_on_the_signers_certificate(at)
 }
 
 /// Read the signature off a file, where there is no way to read one.
@@ -357,8 +445,244 @@ fn who_signed(at: &Path) -> std::result::Result<WhoSignedIt, Refused> {
 #[cfg(not(target_os = "windows"))]
 fn who_signed(at: &Path) -> std::result::Result<WhoSignedIt, Refused> {
     let _ = at;
+    Err(Refused::NoWayToCheckHere)
+}
+
+/// A path as Windows wants it: wide characters, ending in a nought.
+#[cfg(target_os = "windows")]
+fn as_wide(at: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    at.as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+/// Whether Windows itself trusts the signature on a file.
+///
+/// The first half of the check and the smaller half. This answers "is this file
+/// validly signed by somebody a trusted root vouches for", which millions of
+/// files are. On its own it is worth nothing here, and a module that stopped at
+/// it would report success over a stranger's program. The half that matters is
+/// [`the_name_on_the_signers_certificate`] below.
+///
+/// **Revocation is not checked, deliberately.** Checking the whole chain reaches
+/// the network, and this runs on a computer that has just failed to download
+/// something, or on one behind a connection that allows GitHub and nothing else.
+/// A revocation server that cannot be reached is not a bad signature, and
+/// treating it as one would refuse every genuine update on an aeroplane. What
+/// this trades away is a certificate revoked after it was issued: Windows still
+/// applies whatever it holds in its own local cache, and a stolen key that had
+/// been revoked would pass here until that cache caught up. The narrower risk is
+/// accepted rather than turned into a check that fails offline, and it is
+/// written down here so the next person can weigh it rather than rediscover it.
+#[cfg(target_os = "windows")]
+fn whether_windows_trusts_it(at: &Path) -> std::result::Result<(), Refused> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Security::WinTrust::{
+        WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
+        WTD_CHOICE_FILE, WTD_REVOKE_NONE, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY,
+        WTD_UI_NONE, WinVerifyTrust,
+    };
+
+    /// `TRUST_E_NOSIGNATURE`, which Windows answers for a file nothing signed.
+    ///
+    /// Told apart from every other failure because they are different things to
+    /// be told: an unsigned build is what this project ships today, and a broken
+    /// signature is a file that was interfered with.
+    const NOTHING_SIGNED_IT: i32 = -2_146_762_496;
+    /// What it answers when the file is fine.
+    const IT_IS_FINE: i32 = 0;
+
+    let wide = as_wide(at);
+    let mut file = WINTRUST_FILE_INFO {
+        cbStruct: size_of::<WINTRUST_FILE_INFO>() as u32,
+        pcwszFilePath: windows::core::PCWSTR(wide.as_ptr()),
+        ..Default::default()
+    };
+    let mut data = WINTRUST_DATA {
+        cbStruct: size_of::<WINTRUST_DATA>() as u32,
+        dwUIChoice: WTD_UI_NONE,
+        fdwRevocationChecks: WTD_REVOKE_NONE,
+        dwUnionChoice: WTD_CHOICE_FILE,
+        Anonymous: WINTRUST_DATA_0 {
+            pFile: &raw mut file,
+        },
+        dwStateAction: WTD_STATEACTION_VERIFY,
+        ..Default::default()
+    };
+    let mut which_check = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+
+    // SAFETY: both structures are filled in above, live for the whole of both
+    // calls, and say their own size. The window handle is null because
+    // WTD_UI_NONE means nothing is shown.
+    let verdict = unsafe {
+        WinVerifyTrust(
+            HWND::default(),
+            &raw mut which_check,
+            (&raw mut data).cast(),
+        )
+    };
+
+    // The provider keeps state for the verify above and hands it back only on a
+    // second call. Leaving this out is the easiest mistake in this function and
+    // it leaks a handle per download, which nothing would ever report.
+    data.dwStateAction = WTD_STATEACTION_CLOSE;
+    // SAFETY: as above, with the same two structures still alive.
+    unsafe {
+        WinVerifyTrust(
+            HWND::default(),
+            &raw mut which_check,
+            (&raw mut data).cast(),
+        )
+    };
+
+    match verdict {
+        IT_IS_FINE => Ok(()),
+        NOTHING_SIGNED_IT => Err(Refused::NothingSignedIt),
+        code => Err(Refused::TheSignatureIsNotValid { code }),
+    }
+}
+
+/// The name on the certificate that signed a file.
+///
+/// **This is the check.** Without it any validly signed file passes, which means
+/// any installer anybody bought a certificate for. The first half asks whether
+/// the signature is real; only this one asks whose it is.
+#[cfg(target_os = "windows")]
+fn the_name_on_the_signers_certificate(at: &Path) -> std::result::Result<WhoSignedIt, Refused> {
+    use windows::Win32::Security::Cryptography::{
+        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED, CERT_QUERY_FORMAT_FLAG_BINARY,
+        CERT_QUERY_OBJECT_FILE, CertCloseStore, CryptMsgClose, CryptQueryObject, HCERTSTORE,
+    };
+
+    let wide = as_wide(at);
+    let mut store = HCERTSTORE::default();
+    let mut message: *mut core::ffi::c_void = std::ptr::null_mut();
+
+    // SAFETY: the path lives for the call, and both handles are written only on
+    // success, which is what the `?` below depends on.
+    unsafe {
+        CryptQueryObject(
+            CERT_QUERY_OBJECT_FILE,
+            wide.as_ptr().cast(),
+            CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+            CERT_QUERY_FORMAT_FLAG_BINARY,
+            0,
+            None,
+            None,
+            None,
+            Some(&raw mut store),
+            Some(&raw mut message),
+            None,
+        )
+    }
+    .map_err(|why| Refused::TheFileCouldNotBeRead(why.message()))?;
+
+    let found = the_name_in(store, message);
+
+    // Closed however the reading went. An early return that skipped this would
+    // leak a store and a message per refused download, and a refused download is
+    // the case this module expects to be common.
+    // SAFETY: both were opened by the call above and are closed exactly once.
+    unsafe {
+        let _ = CryptMsgClose(Some(message));
+        let _ = CertCloseStore(Some(store), 0);
+    }
+    found
+}
+
+/// The signer's name, given an open certificate store and message.
+///
+/// Split from its caller so the two handles are closed on one path rather than
+/// on each of the five ways this can give up.
+#[cfg(target_os = "windows")]
+fn the_name_in(
+    store: windows::Win32::Security::Cryptography::HCERTSTORE,
+    message: *mut core::ffi::c_void,
+) -> std::result::Result<WhoSignedIt, Refused> {
+    use windows::Win32::Security::Cryptography::{
+        CERT_FIND_SUBJECT_CERT, CERT_INFO, CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_QUERY_ENCODING_TYPE,
+        CMSG_SIGNER_INFO, CMSG_SIGNER_INFO_PARAM, CertFindCertificateInStore,
+        CertFreeCertificateContext, CertGetNameStringW, CryptMsgGetParam, PKCS_7_ASN_ENCODING,
+        X509_ASN_ENCODING,
+    };
+
+    /// Longer than any certificate subject anybody issues, and bounded because
+    /// this is a buffer a stranger's file decides the contents of.
+    const ROOM_FOR_A_NAME: usize = 1024;
+
+    let mut how_big: u32 = 0;
+    // SAFETY: asking for the size with no buffer is how this call is defined to
+    // be used.
+    unsafe { CryptMsgGetParam(message, CMSG_SIGNER_INFO_PARAM, 0, None, &raw mut how_big) }
+        .map_err(|why| Refused::TheFileCouldNotBeRead(why.message()))?;
+
+    let mut held = vec![0_u8; how_big as usize];
+    // SAFETY: the buffer is exactly the size the call above asked for.
+    unsafe {
+        CryptMsgGetParam(
+            message,
+            CMSG_SIGNER_INFO_PARAM,
+            0,
+            Some(held.as_mut_ptr().cast()),
+            &raw mut how_big,
+        )
+    }
+    .map_err(|why| Refused::TheFileCouldNotBeRead(why.message()))?;
+    if held.len() < size_of::<CMSG_SIGNER_INFO>() {
+        return Err(Refused::TheFileCouldNotBeRead(
+            "the signature holds no signer".to_string(),
+        ));
+    }
+
+    // SAFETY: the call above filled this buffer with a CMSG_SIGNER_INFO, and the
+    // length was checked against that type's size on the line before.
+    let signer = unsafe { &*held.as_ptr().cast::<CMSG_SIGNER_INFO>() };
+    let looking_for = CERT_INFO {
+        Issuer: signer.Issuer,
+        SerialNumber: signer.SerialNumber,
+        ..Default::default()
+    };
+
+    // SAFETY: the store is open and `looking_for` lives for the call.
+    let certificate = unsafe {
+        CertFindCertificateInStore(
+            store,
+            CERT_QUERY_ENCODING_TYPE(X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0),
+            0,
+            CERT_FIND_SUBJECT_CERT,
+            Some((&raw const looking_for).cast()),
+            None,
+        )
+    };
+    if certificate.is_null() {
+        return Err(Refused::TheFileCouldNotBeRead(
+            "the certificate that signed it is not in the file".to_string(),
+        ));
+    }
+
+    let mut name = [0_u16; ROOM_FOR_A_NAME];
+    // SAFETY: the context came from the call above and the buffer is this
+    // stack frame's, with its length handed over so the call cannot overrun it.
+    let written = unsafe {
+        CertGetNameStringW(
+            certificate,
+            CERT_NAME_SIMPLE_DISPLAY_TYPE,
+            0,
+            None,
+            Some(&mut name),
+        )
+    };
+    // SAFETY: freed exactly once, and nothing reads it after this. The answer
+    // is discarded because this call is documented as always answering true.
+    let _ = unsafe { CertFreeCertificateContext(Some(certificate)) };
+
+    // The count includes the closing nought, so a name of one character answers
+    // two and an empty answer answers one.
+    let letters = (written as usize).saturating_sub(1);
     Ok(WhoSignedIt {
-        name: String::new(),
+        name: String::from_utf16_lossy(&name[..letters.min(ROOM_FOR_A_NAME)]),
     })
 }
 
@@ -420,7 +744,16 @@ pub fn clear_the_waiting_room(paths: &AppPaths) -> Result<()> {
 /// falls back to a fixed one, because a refusal that can be walked round by
 /// sending an awkward file name is worse than no refusal at all.
 pub fn a_name_safe_to_write(published: &str) -> String {
-    published.to_string()
+    let kept: String = published
+        .chars()
+        .filter(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '.' | '_' | '-' | '+'))
+        .collect();
+    let kept = kept.trim_matches('.').to_string();
+    if kept.is_empty() {
+        "installer.exe".to_string()
+    } else {
+        kept
+    }
 }
 
 /// What this program calls itself, to the host serving the file.
@@ -1015,41 +1348,77 @@ mod tests {
         );
     }
 
-    /// A file Windows itself signed, which is the fixture that matters.
+    /// Files somebody else really signed, to be tried in order.
     ///
     /// The two easy refusals, nothing signed it and the signature is broken,
     /// are the ones a naive implementation already fails. The one it passes is
-    /// a validly signed executable somebody else published, and Windows ships
-    /// hundreds of those. This one is chosen because it is present on every
-    /// supported version of Windows and because it is not something this
-    /// project could ever have signed.
+    /// a validly signed executable somebody else published, so this is the
+    /// fixture that decides whether any of this is worth having.
+    ///
+    /// **Not `notepad.exe`, and the reason is worth writing down.** That was
+    /// the obvious choice and it is wrong: almost every Windows system binary
+    /// is signed through a catalogue file rather than with a signature inside
+    /// the file, and `WinVerifyTrust` asked about a file does not go looking in
+    /// catalogues. So `notepad.exe` comes back as `TRUST_E_NOSIGNATURE`, which
+    /// would have made this test pass for the wrong reason if the test had been
+    /// written a little more loosely. These were found by asking Windows which
+    /// files in `System32` carry an embedded signature, on 2026-09-12:
+    ///
+    /// ```text
+    /// Get-ChildItem 'C:\Windows\System32\*.exe' |
+    ///   ForEach-Object { Get-AuthenticodeSignature $_.FullName } |
+    ///   Where-Object { $_.SignatureType -eq 'Authenticode' }
+    /// ```
+    ///
+    /// More than one, because none of them ships on literally every machine and
+    /// a fixture missing from one is not a reason for the check to go untested
+    /// on the rest.
     #[cfg(target_os = "windows")]
-    const SIGNED_BY_SOMEBODY_ELSE: &str = r"C:\Windows\System32\notepad.exe";
+    const SIGNED_BY_SOMEBODY_ELSE: [&str; 4] = [
+        r"C:\Windows\System32\microsoft.windows.softwarelogo.showdesktop.exe",
+        r"C:\Windows\System32\MpSigStub.exe",
+        r"C:\Windows\System32\MRT.exe",
+        r"C:\Windows\System32\appverif.exe",
+    ];
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn test_a_file_windows_signed_is_refused_because_somebody_else_signed_it() {
-        let at = Path::new(SIGNED_BY_SOMEBODY_ELSE);
-        if !at.exists() {
-            // Said rather than passed over. A fixture that is not there makes
-            // this test prove nothing, and a silent skip reads as a pass.
-            panic!(
-                "{SIGNED_BY_SOMEBODY_ELSE} is not on this machine, so the one refusal a naive implementation passes is untested"
-            );
-        }
-        match who_signed(at) {
-            Ok(who) => assert!(
-                matches!(
-                    whether_that_signer_is_ours(&who),
-                    Err(Refused::SomebodyElseSignedIt { .. })
-                ),
-                "a file Microsoft signed was accepted as this project's own, and it was signed by {}",
-                who.name
-            ),
-            Err(other) => {
-                panic!("a validly signed Windows file was refused for the wrong reason: {other:?}")
+    fn test_a_file_somebody_else_signed_is_refused_for_that_reason() {
+        let mut tried = Vec::new();
+        for candidate in SIGNED_BY_SOMEBODY_ELSE {
+            let at = Path::new(candidate);
+            if !at.exists() {
+                tried.push(format!("{candidate}: not on this machine"));
+                continue;
+            }
+            match who_signed(at) {
+                Ok(who) => {
+                    assert!(
+                        matches!(
+                            whether_that_signer_is_ours(&who),
+                            Err(Refused::SomebodyElseSignedIt { .. })
+                        ),
+                        "{candidate} is signed by {} and was accepted as this project's own",
+                        who.name
+                    );
+                    assert!(
+                        !who.name.is_empty(),
+                        "{candidate} is validly signed and the signer's name came back empty, \
+                         so the reading of the certificate is broken and every file would be \
+                         refused as unsigned"
+                    );
+                    return;
+                }
+                Err(why) => tried.push(format!("{candidate}: {why:?}")),
             }
         }
+        // Said rather than passed over, because this is the one refusal a naive
+        // implementation passes and a silent skip reads as a green result.
+        panic!(
+            "no file with a signature inside it could be found, so the refusal that matters \
+             is untested on this machine:\n  {}",
+            tried.join("\n  ")
+        );
     }
 
     #[cfg(target_os = "windows")]

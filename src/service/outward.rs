@@ -549,7 +549,7 @@ const GATED: [&str; 8] = [
 /// had thought about. Moving one of these into the list above is what happens
 /// when it grows a write.
 #[cfg(test)]
-const TALKS_BUT_ONLY_READS: [&str; 5] = [
+const TALKS_BUT_ONLY_READS: [&str; 6] = [
     // Searches an organisation's directory for somebody to write to. A search
     // and nothing else: nothing at the directory changes, and nothing is
     // written back to it.
@@ -575,6 +575,24 @@ const TALKS_BUT_ONLY_READS: [&str; 5] = [
     // past: a file that ten guard records fingerprint is not somewhere to
     // settle it.
     "src/service/update_check.rs",
+    // Fetches the installer for a newer version. A GET, and nothing else:
+    // nothing at anybody's account changes, and there is no account, because
+    // the request is not signed in to anything.
+    //
+    // The sentence its five neighbours do not need, and the strongest case yet
+    // for the third list this census has not got. Every other member fetches
+    // something to read or to store. This one fetches an executable, and the
+    // whole reason the file beside it is as careful as it is. "Only reads" is
+    // true of the request and says nothing about what the bytes are for, so
+    // this list's two categories do not describe it.
+    //
+    // Plans 07-05 and 07-09 both raised whether to add a third list and neither
+    // did. Changing the shape of this file costs re-measuring the ten guard
+    // records that read this census, by hand, for a question neither plan is
+    // about, and a category invented on the way past is how a census stops
+    // being a thing anybody trusts. It is on the ledger rather than raised
+    // twice and recorded nowhere.
+    "src/service/update_download.rs",
 ];
 
 /// Every client that can change something at a provider with an HTTP request:

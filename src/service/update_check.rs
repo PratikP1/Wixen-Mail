@@ -351,7 +351,7 @@ fn who_is_asking() -> String {
     format!("wixen-mail/{}", env!("CARGO_PKG_VERSION"))
 }
 
-/// One published release, reduced to the two things this reads.
+/// One published release, reduced to the three things this reads.
 ///
 /// serde passes over the twenty other fields GitHub sends, which was checked
 /// against a response caught off the wire rather than against the reference
@@ -362,6 +362,42 @@ struct Published {
     tag_name: String,
     /// The page a person reads about the release on.
     html_url: String,
+    /// The files published beside it.
+    ///
+    /// Defaulted rather than required, because a release with no files is a
+    /// real thing GitHub will send and it is not a reply this cannot
+    /// understand. It is a release with nothing to download, which the plans
+    /// downstream of this already have an answer for.
+    #[serde(default)]
+    assets: Vec<PublishedFile>,
+}
+
+/// One file published beside a release, as GitHub names its fields.
+///
+/// Turned into [`crate::service::update_download::ReleaseFile`] at the boundary
+/// through [`From`], so GitHub's own field names stop here and nothing
+/// downstream has to know that "browser download url" is what an address is
+/// called in this one API.
+#[derive(Debug, Clone, Deserialize)]
+struct PublishedFile {
+    name: String,
+    browser_download_url: String,
+}
+
+impl From<&PublishedFile> for crate::service::update_download::ReleaseFile {
+    fn from(published: &PublishedFile) -> Self {
+        Self {
+            name: published.name.clone(),
+            from: published.browser_download_url.clone(),
+        }
+    }
+}
+
+impl Published {
+    /// The files beside this release, in the words the rest of the program uses.
+    fn files(&self) -> Vec<crate::service::update_download::ReleaseFile> {
+        self.assets.iter().map(Into::into).collect()
+    }
 }
 
 /// What a reply means for the person in front of us.
@@ -435,7 +471,7 @@ fn whether_that_one_is_an_offer(
             version: published.tag_name.clone(),
             page: published.html_url.clone(),
             channel,
-            files: Vec::new(),
+            files: published.files(),
         },
         // A tag this program cannot read is not a newer version, and saying so
         // is the honest answer for one release: something is published and none
@@ -489,7 +525,7 @@ fn the_newest_offer_among(
             version: offer.tag_name.clone(),
             page: offer.html_url.clone(),
             channel,
-            files: Vec::new(),
+            files: offer.files(),
         },
         None if unreadable > 0 => Answer::CouldNotBeUnderstood {
             entries: unreadable,
