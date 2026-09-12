@@ -562,7 +562,7 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
 **Plans**: nine, listed in `phases/07-installing-updating-and-what-is-stored/PLANS-README.md`.
 
 - [x] 07-01-PLAN.md, merged at `228e6a3`. Criterion 4 closes structurally and is unheard, which is `WINDOWS.md` 302 and 303. The last clause of criterion 1, that SmartScreen is stated and not promised, is now held by a failing build. SHIP-04 closes; SHIP-01 does not, because the signature itself is 07-07 and 07-08.
-- [ ] 07-02-PLAN.md
+- [x] 07-02-PLAN.md, merged at `PENDING`. Criterion 3 closes, and it was smaller and larger than it reads. Smaller because the shortcuts were never iconless: `build.rs` embeds the icon and Windows uses a file's own icon for a shortcut that names none, so nobody's picture changes. Larger because "`IconFilename` on the two `[Icons]` entries and nothing else" would have named a path nothing installs, which Windows falls back from in silence, so the `[Files]` line is part of it and `UninstallDisplayIcon` moved with them. The gate hole underneath it closes too: an installer change now earns the full gate, so the three tests that already read the script and the one this plan added all run on the commits that could break them. `WINDOWS.md` 306: nothing here has installed anything or looked at a shortcut.
 - [ ] 07-03-PLAN.md
 - [ ] 07-04-PLAN.md
 - [ ] 07-05-PLAN.md
@@ -606,7 +606,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 5.1 Notes and contacts reach a server | 6/6 | In Progress|  |
 | 5.2 Notes in OneNote | 3/3 | In Progress| Every plan built and merged; the phase's human checkpoint is open |
 | 6. How the application speaks | 0/TBD | Researched, not planned | - |
-| 7. Installing, updating and what is stored | 1/9 | In Progress| 07-01 merged; SHIP-04 closed, criterion 4 unheard |
+| 7. Installing, updating and what is stored | 2/9 | In Progress| 07-01 and 07-02 merged; criterion 3 closes, criterion 4 unheard |
 | 8. Every number the project quotes | 0/TBD | Researched, not planned | - |
 
 ## Notes on this roadmap

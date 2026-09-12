@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: 07-01 merged at 228e6a3. The program says what it leaves on the disk, no shipped page can promise the Windows warning goes away, and every path paths.rs hands out is on both pages that list them. Nobody has heard any of it
-last_updated: "2026-09-12T07:10:00.000Z"
+stopped_at: 07-02 merged at PENDING. An installer script now earns the full gate, and both shortcuts and the Apps and Features entry name an icon the installer really put there. Nobody has installed anything or looked at a shortcut
+last_updated: "2026-09-12T08:00:00.000Z"
 last_activity: 2026-09-12
-state_head: 228e6a3
+state_head: PENDING
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 81
+  completed_plans: 82
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,9 +29,48 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-01 is merged at
-`228e6a3`, version 0.113.2. It is the first plan of the phase and eight remain.
-Phase 05.2's checkpoint is still open and nothing in it has been answered.**
+Phase: 07 (Installing, updating and what is stored). **07-02 is merged at
+`PENDING`, version 0.113.3. Two plans of nine are done and seven remain. Phase
+05.2's checkpoint is still open and nothing in it has been answered.**
+
+**A commit that changes the installer script now runs the tests that read it.**
+`scripts/which-checks.sh` answers `all` for an `.iss`, which is the manifest
+rule one layer down: something reads the file as data and the softer answer
+reached none of it. The scoped run maps a changed file to a target by its path
+and knows `src/*.rs` and `tests/*.rs`, an `.iss` is neither, so no scoped target
+was chosen at all and the three tests that read the script, all unit tests in
+`src/`, ran on every commit except the ones that could break them. The rule sits
+below the manifest block on purpose: the version-bump exception hands the softer
+answer to a commit whose whole manifest diff is the package version, and this
+project puts that bump in the same commit as the change, so a rule inside that
+branch would have left the hole open for nearly every installer commit there
+will ever be. Measured before and after with a fixture diff rather than argued.
+
+**Both shortcuts and the Apps and Features entry name `{app}\icon.ico`, and
+nobody's picture changes.** `build.rs` already embedded `assets/icon.ico` into
+the executable and Inno's help says a shortcut with no `IconFilename` gets the
+file's default icon, so both already showed it. What changed is that the picture
+no longer depends on the executable's resource table being right, which has
+failed here once. The criterion's own "and nothing else" was wrong by one line:
+naming a path nothing installs makes Windows fall back in silence, so the
+`[Files]` line is part of the change and the test compares the two whole paths
+rather than asking whether each section mentions an icon.
+
+`tests/installer.rs` is new and `07-07` and `07-08` write into it. It reads the
+script as text, which is all anything here can do, and its own doc comment says
+so: nothing compiles it with ISCC, installs anything or looks at a shortcut.
+That is `WINDOWS.md` 306.
+
+Version `0.113.3`, `guards/guards.toml` holds 723 records with the census
+reading 192 and 531, `.planning/WINDOWS.md` reaches 306 with 285 open, and
+nothing is pushed.
+
+Current Plan: 3
+Total Plans in Phase: 9
+
+---
+
+### 07-01, the plan before this one
 
 **The program now says what it leaves on somebody's disk.** The first-run screen
 and the end of `--help` both say the downloaded mail is not encrypted on this
@@ -74,9 +113,6 @@ and `WINDOWS.md` 304 carries it for 07-05, which owns the privacy page.
 Version `0.113.2`, `guards/guards.toml` holds 722 records with the census reading
 192 and 530, `.planning/WINDOWS.md` reaches 305 with 284 open, and nothing is
 pushed.
-
-Current Plan: 2
-Total Plans in Phase: 9
 
 ---
 
