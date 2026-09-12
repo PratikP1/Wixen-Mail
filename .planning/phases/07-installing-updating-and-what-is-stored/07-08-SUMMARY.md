@@ -86,7 +86,13 @@ assumed: see the quoted failure below.
 | `d49c18a1` | RED | the census tests, and a stub answering with nothing |
 | `bc33bcd6` | GREEN | the parse, the Inno help findings in the `.iss`, the guard record, the ledger |
 
-Branch: `what-has-to-be-signed-is-counted-rather-than-remembered`.
+Branch: `what-has-to-be-signed-is-counted-rather-than-remembered`, merged at
+`a818cf5f`. A third commit, `f603d522`, carries this summary and the two
+planning files.
+
+`scripts/check.sh all` was run twice on the branch, because a document commit
+landed after the first: **463 seconds** at `bc33bcd6` and **457 seconds** at
+`f603d522`, four green both times, redirected to a file rather than piped.
 
 The RED commit named three tests and the gate accepted it:
 
