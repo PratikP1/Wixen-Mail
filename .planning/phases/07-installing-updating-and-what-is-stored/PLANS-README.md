@@ -8,6 +8,28 @@ branch `undo-send-really-holds` at `c256197`, with phase 4.2 in flight, because
 `main` at `9611b70` had already moved. Nothing in the repository was changed to
 write or revise them.
 
+**Corrected 2026-09-11 against `main` at `febe8e4`, version 0.112.0, and nothing
+in this phase has executed.** Phases 5, 5.1 and 5.2 landed in between, which is
+seventeen plans of work, and they moved four things these plans quote: the guard
+record total, four per-file record counts, the broken-windows ledger, and the
+number of credential store owners an uninstall has to erase. One premise about
+what `scripts/which-checks.sh` answers for a version bump stopped being true on
+2026-09-09 and is repeated in eight of the nine plans. Every correction is written
+where the stale sentence was, in bold, quoting what it replaced, so an executor
+reading a plan top to bottom meets the correction rather than the figure.
+
+The figures that moved, in one table, so a plan quoting one can be checked against
+it without reading nine files:
+
+| What | Said | Is |
+|---|---|---|
+| `guards/guards.toml` records | 632 | **720** |
+| `.planning/WINDOWS.md` last entry | 146 | **301** |
+| Version | 0.75.0 | **0.112.0** |
+| `main` | `9611b70` | `febe8e4` |
+| Credential store owners an uninstall erases | four | **six** |
+| `Cargo.toml` version bump on a branch | answers `all` | answers **`affected`** |
+
 **What the second round changed, in one line each.** Success criterion 2 is
 widened to cover the download, per D-14. The release channel becomes a `[D]` line
 under SHIP-02 rather than a requirement of its own, per D-15. And the two update
@@ -248,7 +270,14 @@ as fully closed.
 
 ## The roadmap's criterion 1 is wrong and here is the replacement
 
-`.planning/ROADMAP.md:432` currently reads:
+`.planning/ROADMAP.md:555` currently reads, unchanged word for word since this was
+written. **Corrected 2026-09-11: this used to cite line 432**, which after phases
+5, 5.1 and 5.2 is now inside phase 4.2's completion notes. Find it by its text
+rather than by a line, since it will move again before `07-07` runs:
+
+```bash
+grep -n 'only an EV certificate carries reputation' .planning/ROADMAP.md
+```
 
 > The published installer and the executable inside it both carry a valid
 > Authenticode signature with a timestamp countersignature, verified against the
@@ -287,11 +316,18 @@ page nobody re-read would repeat the mechanism that caused the defect.
 
 ## Criterion 2 is widened and here is the replacement
 
-`.planning/ROADMAP.md:433` currently reads:
+`.planning/ROADMAP.md:556` currently reads, unchanged word for word.
+**Corrected 2026-09-11 from line 433**, for the reason criterion 1's citation was
+corrected just above: both numbers moved by 123 lines when phases 5, 5.1 and 5.2
+wrote their completion notes into the file. Find it by its text.
 
 > The application can tell the user a newer version exists, as a deliberate
 > action or an explicit setting, never as a silent background fetch, and declining
 > leaves the current version working.
+
+```bash
+grep -n 'never as a silent background fetch' .planning/ROADMAP.md
+```
 
 D-14 widens it. This is a decision about what the phase must prove rather than a
 correction of a wrong fact, which is why it waited for Pratik and why criterion
@@ -447,10 +483,20 @@ corrections are in the plans that depend on them.
 
 **Guard-record re-measurement is on the critical path.**
 `test_every_guard_record_says_how_many_tests_the_files_it_names_held` lives in
-`tests/house_style.rs`, which is one of the two whole-tree guards, so it runs
+`tests/house_style.rs`, which is one of the whole-tree guards, so it runs
 inside the commit gate on every commit. Its remedy, `scripts/guards.sh
 --remeasure`, is one build and one run per record. It cannot be deferred to the
 end of the phase; only the full sweep can.
+
+**Corrected 2026-09-11: this used to say "one of the two whole-tree guards".**
+There are four. `scripts/check.sh:26` sets
+`guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing)`.
+The third reads `.planning` and the fourth reads prose for the six words
+`CLAUDE.md` bans, and both were added for the same reason as the first two: a
+document lands beside the code it describes, which answers `affected`, so without
+them they would run on every commit except the ones that write prose. It matters
+here because every plan in this phase writes documents, so two more targets run
+on those commits than the plans assume.
 
 **Re-counted twice.** First on 2026-09-06 against `main` at `9611b70`, version
 0.75.0, and again the same day for this revision against branch
@@ -458,23 +504,42 @@ end of the phase; only the full sweep can.
 `guards/guards.toml` also modified in the working tree. Both counts use the `awk`
 over `tests_last_seen` blocks that `CLAUDE.md` gives, not a grep for a file name.
 
-**The tree holds 632 records and that has not moved**, at `9611b70`, at `c256197`
-and in the working tree. Counted with `grep -c '^\[\[guard\]\]'`; a naive
-`grep -c 'tests_last_seen'` answers 634, because a comment header at line 44 and a
-record's prose at line 15573 both carry the phrase.
+**Corrected 2026-09-11, counted a third time against `main` at `febe8e4`, version
+0.112.0, after phases 5, 5.1 and 5.2 landed. Two paragraphs used to sit here and
+both are now false.** They read: "**The tree holds 632 records and that has not
+moved**, at `9611b70`, at `c256197` and in the working tree. Counted with
+`grep -c '^\[\[guard\]\]'`; a naive `grep -c 'tests_last_seen'` answers 634,
+because a comment header at line 44 and a record's prose at line 15573 both carry
+the phrase." And: "**Every per-file record count is unchanged too.** Two stored
+test counts moved and they are the two the executor's in-flight work touches".
 
-**Every per-file record count is unchanged too.** Two stored test counts moved and
-they are the two the executor's in-flight work touches:
+**The tree holds 720 records.** Counted the same way,
+`grep -c '^\[\[guard\]\]' guards/guards.toml`. The census lines at the top of the
+file read 192 swept and 528 not, which add to 720 and are what
+`test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
+compares against. A naive `grep -c 'tests_last_seen'` now answers 723, three too
+many rather than two: the comment header at line 44 is still there, and the prose
+carrying the phrase has moved to lines 15802 and 16529.
 
-| file | at `9611b70` | now | where |
-|---|---|---|---|
-| `tests/wired.rs` | 64 | **66** | committed on `undo-send-really-holds` |
-| `src/data/config.rs` | 53 | **54** | working tree only, not committed |
-| `src/application/sending_later.rs` | 40 | 47 | committed; no plan here touches it |
+**Four of the files this phase cares about moved, and record counts moved as well
+as test counts.** That is the half of the old paragraph that was load-bearing: it
+told an executor the expensive number was stable, and seventeen plans of work later
+it is not.
 
-`src/data/config.rs` is the one to watch, because it is not committed and can move
-again, and because plan `07-05` adds tests to it. Its 2 records will want
-re-measuring against whatever it holds when `07-05` runs, not against 54.
+| file | at `9611b70` | at `c256197` | at `febe8e4` | records then | records now |
+|---|---|---|---|---|---|
+| `tests/wired.rs` | 64 | 66 | **69** | 10 | **14** |
+| `src/data/config.rs` | 53 | 54 | **60** | 2 | **4** |
+| `tests/house_style.rs` | 64 | 64 | **67** | 18 | 18 |
+| `src/presentation/wx_app.rs` | 199 | 199 | 199 | 42 | **48** |
+| `src/presentation/wx_settings.rs` | 0 | 0 | 0 | 1 | **3** |
+| `src/application/sending_later.rs` | 40 | 47 | 47 | 1 | 1 |
+
+`src/data/config.rs` is still the one to watch, and for a stronger reason than the
+old paragraph gave: it was named because its count was uncommitted, and it has
+since gained six tests and two records in commits that are on `main`. Plan `07-05`
+adds tests to it, so its **4** records will want re-measuring against whatever it
+holds when `07-05` runs, not against 60.
 
 **The `#[test] today` column is now read out of the `tests_last_seen` blocks
 rather than counted with a grep, and that changed three numbers.** The per-commit
@@ -482,27 +547,54 @@ count check refuses any record disagreeing with the tree, so on a green tree tho
 stored values are the checker's own current answer, and reading them is both
 cheaper and safer than recomputing. The checker counts a line whose whole trimmed
 content is `#[test]` or `#[tokio::test]`; `grep -c '#\[test\]'` also counts the
-attribute written inside a doc comment, which this tree does nineteen times. It
-says 73 for `tests/house_style.rs` where the checker says 64. The earlier version
-of this table quoted the grep.
+attribute written inside a doc comment. It says 76 for `tests/house_style.rs`
+where the checker says 67. The earlier version of this table quoted the grep.
 
-| File a plan adds tests to | Records fingerprinting it | Then | `#[test]` today | Then | Roughly |
+**Corrected 2026-09-11: this used to say the tree writes the attribute inside a
+doc comment "nineteen times", and that the two figures for `tests/house_style.rs`
+were 73 and 64.** Over `src/` and `tests/` today,
+`grep -rc '#\[test\]'` totals 6,788 and the trimmed-line form totals 6,742, so the
+gap is 46 rather than 19. The point the sentence was making is unchanged and the
+number it made it with is not.
+
+**The whole table below is re-measured 2026-09-11 against `main` at `febe8e4`.**
+Its two "Then" columns used to mix two readings, the `9611b70` one for most rows
+and the raw grep count for `tests/house_style.rs` and `tests/theme_reach.rs`. They
+are now one thing: the `c256197` reading the plans were written against, so a
+figure quoted inside a plan can be found in this table and seen to have moved.
+Five rows moved and each moved figure is bold.
+
+| File a plan adds tests to | Records fingerprinting it | At `c256197` | `#[test]` today | At `c256197` | Roughly |
 |---|---|---|---|---|---|
-| `tests/house_style.rs` | 18 | 18 | **64** | 73 | 25 to 30 minutes |
-| `src/presentation/wx_app.rs` | **42** | 40 | **199** | 196 | about an hour |
-| `tests/wired.rs` | **10** | 10 | **66** | 64 | 14 to 16 minutes |
+| `tests/house_style.rs` | 18 | 18 | **67** | 64 | 25 to 30 minutes |
+| `src/presentation/wx_app.rs` | **48** | 42 | 199 | 199 | about an hour |
+| `tests/wired.rs` | **14** | 10 | **69** | 66 | 20 to 22 minutes |
 | `src/service/outward.rs` | 10 | 10 | 38 | 38 | 14 to 16 minutes |
 | `src/presentation/accessibility.rs` | 7 | 7 | 23 | 23 | 10 minutes |
 | `src/presentation/accessibility/names.rs` | 4 | 4 | 32 | 32 | 6 minutes |
+| `src/data/config.rs` | **4** | 2 | **60** | 54 | 6 minutes |
 | `src/presentation/accessibility/screen_reader.rs` | 3 | 3 | 22 | 22 | 5 minutes |
 | `src/presentation/first_run.rs` | 3 | 3 | 14 | 14 | 5 minutes |
-| `src/data/config.rs` | 2 | 2 | **54** | 53 | 3 minutes |
+| `src/presentation/wx_settings.rs` | **3** | 1 | 0 | 0 | 5 minutes |
 | `src/presentation/wx_first_run.rs` | 2 | 2 | 0 | 0 | 3 minutes |
-| `src/presentation/wx_settings.rs` | 1 | 1 | 0 | 0 | 90 seconds |
 | `src/presentation/command_line.rs` | 1 | 1 | 23 | 23 | 90 seconds |
 | `src/main.rs` | 1 | 1 | 0 | 0 | 90 seconds |
-| `src/common/version.rs`, `src/common/paths.rs`, `tests/theme_reach.rs` | 0 | 0 | 4, 16, 7 | 4, 16, 10 | free |
+| `src/common/version.rs`, `src/common/paths.rs`, `tests/theme_reach.rs` | 0 | 0 | 4, 16, 7 | 4, 16, 7 | free |
 | `src/service/update_check.rs`, `src/service/update_download.rs`, `tests/installer.rs` | absent | absent | n/a | n/a | free until created |
+
+The command that produced the record columns, so the next reader re-runs it rather
+than trusting the table:
+
+```bash
+awk '/^\[\[guard\]\]/ {delete seen}
+     /^tests_last_seen/ {b=1; next} b && /^\]/ {b=0; next}
+     b && match($0, /file = "[^"]+"/) {
+       f=substr($0, RSTART+8, RLENGTH-9)
+       if (!(f in seen)) { n[f]++; seen[f]=1 }
+       if (match($0, /tests = [0-9]+/)) t[f]=substr($0, RSTART+8, RLENGTH-8) }
+     END { for (k in n) printf "%s\t%d records\t%s tests\n", k, n[k], t[k] }' \
+  guards/guards.toml | sort
+```
 
 **Taken while phase 4.2 is still being executed, so treat every figure as dated
 rather than current.** The second count was against `c256197` on branch
@@ -515,31 +607,89 @@ second it had, twice. That is the half-life this kind of fact has, and it is why
 table**, which is this project's own rule about a record being a measurement with a
 date, applied to the table as much as to the records.
 
-**Record counts have been stable across three measurements and test counts have
-not.** `wx_app.rs` went 40 records to 42 and `wired.rs` 8 to 10 during phase 4;
-neither has moved since, and no other file's record count has moved at all. The
-stored test counts moved twice in one day. So the expensive number, how many
-records a file costs, is the stable one, and the cheap number is the one that
-drifts. That stability is worth knowing and is **not** a reason to skip the
-re-measure.
+**Corrected 2026-09-11, and this one was a conclusion drawn from too short a
+window. It used to read:** "**Record counts have been stable across three
+measurements and test counts have not.** `wx_app.rs` went 40 records to 42 and
+`wired.rs` 8 to 10 during phase 4; neither has moved since, and no other file's
+record count has moved at all. The stored test counts moved twice in one day. So
+the expensive number, how many records a file costs, is the stable one, and the
+cheap number is the one that drifts."
 
-The durations come from this project's own figures, 565 records in about 15 hours
-and 63 records in about 90 minutes, so about 1.4 to 1.6 minutes a record. They are
-estimates from a rate, not measurements, and `CLAUDE.md` asks that a duration be
-read with its conditions.
+Across the three phases since, `wx_app.rs` went 42 records to **48**, `wired.rs`
+10 to **14**, `config.rs` 2 to **4** and `wx_settings.rs` 1 to **3**, and the whole
+file went 632 to **720**. The two counts were compared over a few hours and the
+one that looked stable was only the one with a longer period. **Both numbers
+drift, and the expensive one drifts in the direction that costs money.** That is
+still not a reason to skip the re-measure; it is a reason to stop quoting this
+table as the cost and to take the count before committing to an estimate.
+
+**Corrected 2026-09-11: the rate used to be given as "565 records in about 15
+hours and 63 records in about 90 minutes, so about 1.4 to 1.6 minutes a record",
+both of them undated derivations from `CLAUDE.md`. Then corrected again the same
+hour, and the second correction is the one worth reading.**
+
+The first correction written here said `CLAUDE.md` had withdrawn both terms, that
+the per-record cost roughly halved on 2026-09-09, and that **no replacement figure
+could be derived**, so nobody should quote a total at all. That was wrong in the
+way this project keeps warning about: it announced an absence without searching
+for the thing. **A measured per-record figure exists and it is in the tree**, on
+the doc comment of the check the rate is about:
+
+```bash
+grep -n '95 seconds' tests/house_style.rs
+```
+
+`tests/house_style.rs:5219` reads: "a test added to
+`src/application/contacts_sync.rs` flags 77 records, and at **95 seconds** each
+that is two hours rather than minutes. All four figures re-measured **2026-09-10**
+at `eda2719`". That is one day before this correction and after the change that
+halved the library run.
+
+**So the rate was right and only the counts moved.** 95 seconds is 1.58 minutes,
+inside the 1.4 to 1.6 band. The durations in the table above hold at that rate: 2
+records about 3 minutes, 4 about 6, 7 about 11, 14 about 22, 18 about 28, 48 about
+76. What changed is that `wx_app.rs` now costs 48 records rather than 42, so
+"about an hour" becomes about 76 minutes, and `wired.rs` costs 14 rather than 10.
+
+Two caveats the source carries and a table cannot. The 95 seconds was taken when
+`guards.toml` held **683** records and it holds **720** now, so it is a day old
+and 37 records behind. And `CLAUDE.md` asks that a duration be read with its
+conditions, which here are one machine, `WIXEN_TEST_THREADS` at 8, and a warm
+`target/`.
 
 **The count is per file, not per test.** Four new tests in one commit cost the
 same as one. Every plan that touches an expensive file says to land all of its
 additions there in a single commit for exactly that reason.
 
 **Files to add no `#[test]` to, because they are expensive and nothing needs it:**
-`src/presentation/wx_app.rs` (42 records), `tests/wired.rs` (10),
-`src/service/outward.rs` (10), `src/presentation/accessibility.rs` (7).
+`src/presentation/wx_app.rs` (**48** records, corrected 2026-09-11 from 42),
+`tests/wired.rs` (**14**, from 10), `src/service/outward.rs` (10),
+`src/presentation/accessibility.rs` (7).
 
-**A commit touching `Cargo.toml` makes `scripts/which-checks.sh` answer `all`.**
-Every version bump does. Those commits are run detached. Plans `07-01` through
-`07-05`, `07-08` and `07-09` bump the version; `07-06` and `07-07` do not touch
-`Cargo.toml` and answer `affected`.
+**Corrected 2026-09-11: this used to say "A commit touching `Cargo.toml` makes
+`scripts/which-checks.sh` answer `all`. Every version bump does. Those commits are
+run detached." That stopped being true on 2026-09-09,** in commit `0e866e3`, "a
+manifest diff that is only the package version stops escalating". The script now
+carries `only_the_packages_own_version_moved`, reads the staged manifest diff, and
+escalates only when some changed line is something other than this package's own
+`version = "..."`.
+
+So on a branch, a commit that bumps the version beside source and documents
+answers **`affected`**: formatting, clippy, the tests reaching the changed
+modules, and the four whole-tree guards. Not the whole suite and not the release
+build. On `main` the branch decides first and anything that is not `.md` or
+`.txt` still answers `all`, so the exception never applies there, but no plan in
+this phase commits to `main`.
+
+**The dangerous direction is the other one.** The old sentence would have had an
+executor report that the full gate ran on every version-bump commit when neither
+the whole suite nor the release build ran at all. An executor who believes that
+skips the `scripts/check.sh all` the branch owes before its merge, and both then
+run for the first time on `main`. Run it once, before the merge.
+
+```bash
+grep -n -B2 -A4 'only_the_packages_own_version_moved' scripts/which-checks.sh
+```
 
 **Two re-measurements no automated check will ask for.** `07-05` adds a member to
 `TALKS_BUT_ONLY_READS` in `src/service/outward.rs`, and `07-09` adds a second.
@@ -548,8 +698,11 @@ added, and adding a string to a `const` array changes no test count, so the coun
 check stays silent both times. `src/service/outward.rs` is fingerprinted by 10
 records. If those do not appear in the two summaries, they did not happen.
 
-**The Rust floor is 1.88, not 1.87.** `Cargo.toml:15`, moved by `pgp = "0.20"`,
-which declares 1.88. No plan named a Rust version, so nothing needed correcting;
+**The Rust floor is 1.88, not 1.87**, re-checked 2026-09-11 and unchanged.
+`Cargo.toml:15`, moved by `pgp = "0.20"`, which declares 1.88. Clippy still runs
+with `-D warnings`, at `scripts/check.sh:252` and `.github/workflows/ci.yml:145`,
+so this premise is one of the few in the phase that needed nothing. No plan named
+a Rust version, so nothing needed correcting;
 what the floor changes is a cost to expect. Plan `04-09` found that the bump turned
 on a clippy lint family across **seven pre-existing sites in six files it never
 opened**, and clippy runs with `-D warnings`, so that is a build failure rather
@@ -561,6 +714,37 @@ says why, never reach for `#[allow]`.
 `Fails-until-green:` trailers naming every failure and nothing else failing.
 Several plans name the count check among their trailers because there is no
 ordering in which the record fingerprints can be right before the tests exist.
+
+**Added 2026-09-11, and it changes what every plan that writes a ledger entry
+builds. Two targets that read `.planning/` arrived on 2026-09-07, the day after
+these plans were written, and no plan knows about either.**
+
+Every plan here records at least one `unrun-verify` in `.planning/WINDOWS.md`.
+
+**First: a ledger entry now has to be written twice, and the two halves have to
+agree.** `tests/the_planning_files_agree_with_themselves.rs` landed in `70f5194`
+on 2026-09-07. `ledger_disagreements` compares the markdown table at the top of
+`WINDOWS.md` against the JSON array at the bottom, and refuses an id that is in
+one and not the other, or that carries a different status or a different
+description in the two. An entry written into one half only turns the commit red
+at the hook, on a documents-only commit, because `check.sh:361-364` runs that
+target on exactly those. Add the row **and** the object, and keep the frontmatter
+counts (`open_count`, `total_count`) in step.
+
+**Second: `tests/house_style.rs` now reads `.planning/`.** `ours()` collects
+`.planning` with extension `md` at `tests/house_style.rs:50`, added in `cafa0a8`
+on 2026-09-07. Before that day no planning file had ever been opened by the
+em-dash guard or by anything else in that target, which is why `which-checks.sh`
+carries its own correction about the same date. **Two consequences.** A plan's own
+`.planning` edits are now held to the house style, so the replacement wordings in
+this document and every ledger description must carry no em-dash and none of the
+six words `CLAUDE.md` bans. And `07-07`'s premise that "no test in this tree can
+read either file this task writes" is false; see the correction in that plan.
+
+```bash
+grep -n 'collect(Path::new(".planning")' tests/house_style.rs
+grep -n 'is in the JSON block and has no table row' tests/the_planning_files_agree_with_themselves.rs
+```
 
 ## Estimates
 
@@ -652,11 +836,19 @@ revision:
   times from 20+ minutes to under 3 minutes", which is the opposite of the cost
   the research puts on SHIP-05. Whether that holds for the pinned `=0.9.17` on
   these runners is exactly what `07-06` measures rather than assumes.
-- **`ALPHA_TESTING.md`'s "the installer is not signed" is at line 150**, not 146.
-  Confirmed again on 2026-09-06. `.planning/REQUIREMENTS.md`'s SHIP-01 evidence
-  still cites 146, and `07-07` task 2 corrects it, preferring a quoted phrase over
-  a line number since line drift is why the requirements audit of 2026-09-04 asked
-  for symbols.
+- **`ALPHA_TESTING.md`'s "the installer is not signed" is at line 342.**
+  **Corrected 2026-09-11: this used to say line 150, not 146, confirmed again on
+  2026-09-06.** It has moved twice more since: the file went from about 160 lines
+  to 361, and the sentence is now at 342. Three readings, three numbers, in a
+  bullet whose whole subject is line drift. `.planning/REQUIREMENTS.md`'s SHIP-01
+  evidence still cites 146, and `07-07` task 2 corrects it, preferring a quoted
+  phrase over a line number since line drift is why the requirements audit of
+  2026-09-04 asked for symbols. **Correct it to the phrase, not to 342**, or this
+  bullet gets a fourth number.
+
+  ```bash
+  grep -n 'The installer is not signed' docs/ALPHA_TESTING.md
+  ```
 
 Two more the research never had, both still live:
 
@@ -719,5 +911,10 @@ And one measurement that removes a dependency question rather than raising one:
 `CertGetNameStringW` all exist in the `windows` crate already pinned at `0.62.2`,
 behind the `Win32_Security_WinTrust` and `Win32_Security_Cryptography` features,
 which are simply not enabled. Verified on 2026-09-06 by grepping the vendored
-source. The plan carries the greps and requires them re-run, because a feature that
+source, and **re-verified 2026-09-11 and unchanged**: `Cargo.lock` still pins
+`windows` at `0.62.2`, the two feature lines are at `Cargo.toml:518` and `:531` of
+the vendored crate, `WinVerifyTrust` and `WinVerifyTrustEx` are at
+`Win32/Security/WinTrust/mod.rs:48` and `:54`, and `CertGetNameStringW` and
+`CryptQueryObject` are at `Win32/Security/Cryptography/mod.rs:808` and `:1672`.
+The plan carries the greps and still requires them re-run, because a feature that
 exists at one version is not a feature that exists at another.

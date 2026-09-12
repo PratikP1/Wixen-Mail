@@ -215,11 +215,31 @@ tree. `src/common/paths.rs:1-19` is a module whose whole purpose is to be the si
 | Imported sound scheme packs | `<root>\sound_schemes\` (`paths.rs:110-112`) | Yes | `installing.md:65`, `privacy.md:19` |
 | Legacy fallback key | `<root>\security.key` (`paths.rs:98-100`) | Yes | **Nowhere** |
 | Account passwords | Credential store, service `wixen-mail-account` (`credentials.rs:16`) | Yes | `installing.md:71-73`, `:140-142` |
-| OAuth tokens | Credential store, service `wixen-mail-<provider>` (`oauth.rs:658-660`) | Yes | as above |
+| OAuth tokens | Credential store, service `wixen-mail-<provider>` (`oauth.rs:668-670`) | Yes | as above |
 | CalDAV sign-ins | Credential store, service `wixen-mail-caldav-<id>`, users `username` and `password` (`caldav.rs:109-116`) | Yes | as above |
+| **OpenPGP private key** | Credential store, service `wixen-mail-pgp`, user `private-key` (`pgp/mod.rs:70`, `:86`) | Yes | as above |
+| **CardDAV sign-ins** | Credential store, service `wixen-mail-carddav-<id>`, users `username` and `password` (`carddav.rs:62-69`) | Yes | as above |
 | Legacy master key | Credential store, service `wixen-mail`, user `master-key` (`security.rs:91-93`) | Yes | as above |
 | Default-app registry entries | HKCU/HKCR | Yes (`main.rs:252-257`) | Not in the docs |
 | Windows Search index content | ProgramData, the Windows index | **No** | `installing.iss:352-354`, and the uninstall dialog at `:458-459` |
+| **Uninstall note** | `%TEMP%\wixen-mail-uninstall.log` (`main.rs:307`) | No, it is the record that the rest went | `privacy.md`'s "Uninstalling" names the file |
+| **Converted help pages** | `%TEMP%\wixen-mail-help` (`help_page.rs:97`), only when the folder holding the documents will not take a file | No | **Nowhere** |
+| **Log fallback** | `%TEMP%\wixen-mail\logs` (`logging.rs:79`), only when `AppPaths::resolve()` fails | No | **Nowhere** |
+
+**Corrected 2026-09-11 against `main` at `febe8e4`. Five rows were missing and
+two of the five were missing on the day this was written.** The OpenPGP private
+key landed in `29daf7d` on 2026-09-06, the same day as this research, and the
+`guards/guards.toml` comment about it calls it "the highest-value secret this
+program will hold". CardDAV arrived with phase 5.1. The three `%TEMP%` writes are
+all older than this document and were simply never searched for:
+
+```bash
+grep -rn 'temp_dir()' src/ --include=*.rs | grep -v 'TempDir::new\|tempfile::'
+```
+
+Only one of those three is named on any page. That is the finding plan `07-01`
+task 3 now carries, and it is the reason that task's guard cannot claim to cover
+"every path the program writes".
 
 The root is `%LOCALAPPDATA%\wixen-mail` unless `WIXEN_MAIL_DATA` moves it (`paths.rs:30`,
 `:60-70`).
