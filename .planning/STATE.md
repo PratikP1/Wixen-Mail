@@ -4,15 +4,15 @@ current_phase: 7
 current_phase_name: Installing, updating and what is stored
 current_plan: 8
 status: executing
-stopped_at: 07-07 merged, and both halves of it landed. A release that cannot produce one of the four files it promises now stops and names it, before anything is published, held by a test that reads the workflow and the build script rather than by two people having read the same file. The trigger is untouched and a test says so. The certificate decision is on the record with the three options that lost, which of their reasons could move, what the decision commits the project to and what signing does not buy; Microsoft's page was re-fetched rather than quoted and has not moved. Criterion 1 no longer says the opposite of it, criterion 2 is replaced whole per D-14 and 07-09 is measured against it, and SHIP-02 gained its fourth line per D-15. Nothing is signed and criterion 1 waits on an Azure account only Pratik can create. One deviation worth carrying: the guard-record coupling in check.sh could not read a record whose break lands on anything but a src file, so the two records this plan added were invisible to the gate, and that is fixed
-last_updated: "2026-09-12T18:05:00.000Z"
+stopped_at: 07-08 task 1 of three merged, and the plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
+last_updated: "2026-09-12T19:05:00.000Z"
 last_activity: 2026-09-12
 state_head: eab73a40
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 97
-  completed_plans: 87
+  completed_plans: 88
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,12 +29,85 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-07 is merged at
-`eab73a40`, version 0.116.0. Seven plans of nine have run and two remain, 07-08 and 07-09, and both
-need Pratik: 07-08 needs an Azure account only he can create, and 07-09 ends in
-a screen reader pass. 07-06's checkpoint is still open, and so is phase 05.2's.**
+Phase: 07 (Installing, updating and what is stored). **07-08's first task is
+merged, version 0.116.0. Eight plans of nine have a summary on disk and two of
+those eight say `partial`, 07-06 and 07-08. 07-08 stops at its own checkpoint:
+the Azure signing account only Pratik can create, which he is obtaining. Task 3
+must not start before it exists. 07-06's checkpoint is still open, and so is
+phase 05.2's.**
 
-**A release that cannot produce a file it promised now stops and names it.**
+**Seven things have to be signed and SHIP-01's wording says two.** The census in
+`tests/installer.rs` derives both halves rather than holding a list: the
+`[Files]` block gives `wixen-mail.exe`, `wixen_mail_search.dll` and
+`wixen-mail-search-setup.exe`; the workflow's published list gives the setup
+executable, the portable copy and the zip; and the script's own `Uninstallable`
+directive gives the uninstaller Inno writes, which is in neither list and is the
+one a census taken off the two lists loses. A test holding seven strings would
+pass when an eighth executable arrived and never mention it. This one grows and
+names it, proved by adding a fake eighth `Source:` line and reading the failure
+rather than by trusting the shape of the code.
+
+**Nothing is signed, and that is the plan's ordering rather than a shortfall.**
+There is no certificate. No `SignTool` directive, no `SignedUninstaller`, no
+signing step, and `scripts/build-installer.sh` and `.github/workflows/release.yml`
+are not in the diff at all. The three shipped pages saying the build is unsigned
+are untouched and still true; correcting them before something is signed would
+put a false statement into shipped documentation, which is what the plan's
+ordering exists to prevent.
+
+**07-RESEARCH.md's assumption A3 is settled from the local Inno help, and its
+premise was half wrong.** Read 2026-09-12 from `ISetup.chm` in the per-user
+install rather than from a search summary. `SignedUninstaller` defaults to `yes`
+once a `SignTool` is set, and with one set the help says the uninstaller "will be
+signed automatically on the fly": one pass, no prompt. The two-pass prompting
+branch is what `SignedUninstaller=yes` with no `SignTool` gets, so a CI job that
+signs at all cannot hang there. One consequence nobody predicted: a signed
+uninstaller makes Setup write its language messages into a separate
+`unins???.msg`, because embedding them would invalidate the signature, so the
+installed folder gains a file. All of it is written into the `.iss` where
+`SignedUninstaller` will go, so whoever wires it reads it there.
+
+**The portable copy and the zip will inherit.** `release.yml` runs
+`build-installer.sh` and then takes the copy from `target/release/wixen-mail.exe`,
+so a binary signed inside that script is already signed when the copy is made.
+Read off the step order rather than assumed. It is still a claim about the file
+and not about a release: no release has ever been cut here, so nothing has
+watched a signature survive the publish path, and task 3 owes that proof by
+verifying the published copy rather than the source binary.
+
+**A guard record went stale inside its own phase.** 07-07's record for a
+published glob still matching a name the release writes was correct when it was
+written one wave ago. The census added here reads the same published list, so its
+break now reddens two tests where the record named one. Corrected by hand before
+`--remeasure` would accept it; left uncorrected, the remeasure would have refused
+and the cause would have read as a broken tool. Nothing about 07-07's own work
+moved, which is why this is the case that costs most: the only person looking at
+the right moment is the author of the new test.
+
+**Two of this plan's own premises were already false when it ran.**
+`tests/house_style.rs` holds 19 records and 69 tests, not the 18 and 67 the plan
+re-checked on 2026-09-11, both having moved in the day between. And
+`docs/installing.md:7` is at `:8`. The plan's conclusions survive both; the
+pattern does not, and it is the same one this project keeps meeting.
+
+**The append tool corrupts a ledger entry containing a backslash.**
+`gsd-tools windows append` escapes the character in the JSON half and not in the
+markdown table half, so the two disagree and the commit is refused. Caught by
+`test_both_halves_of_the_ledger_say_the_same_thing`, which is the guard working,
+though the message reads as a ledger the author corrupted. Worked around by
+rewording; `WINDOWS.md` 333.
+
+**What the gate really selects was checked rather than assumed**, because three
+separate instances of that blind spot have been found in this phase alone. An
+`.iss` answers `all`, a `tests/*.rs` answers `affected` and maps to its own
+`--test` target, `guards/guards.toml` answers `affected` and maps to no target of
+its own, and a `.planning` markdown file answers `docs_only`. The GREEN commit
+carried the `.iss`, so it ran the whole gate and swallowed the other three.
+
+---
+
+**From 07-07, still true. A release that cannot produce a file it promised stops
+and names it.**
 `release.yml` publishes four globs and `fail_on_unmatched_files` was `false`,
 whose own documentation calls it the indicator of whether to fail if any glob
 matches nothing, so a release that could produce three of the four published
@@ -139,14 +212,16 @@ anything here, and it did not appear in the final gate run. `WINDOWS.md` 328.
 Written down because reading a measurement run by grepping for the failure you
 expected is what stops it finding the one you did not.
 
-Version `0.116.0`, unchanged: nothing here is visible to somebody running the
-program, and a release workflow refusing to publish a broken asset is not
-something anybody using Wixen Mail meets. `guards/guards.toml` holds **731**
-records with the census reading 192 and 539. `.planning/WINDOWS.md` reaches
-**329** with 307 open, and nothing is pushed. `scripts/check.sh all` passed all
-four on the branch tip in **506 seconds** over 7,077 library tests and 51
-targets, with zero failures, which is inside the 419 to 654 the six landed
-branches report.
+Version `0.116.0`, unchanged, and no changelog entry: a census of what would have
+to be signed changes nothing somebody running the program can tell apart, so
+inventing an entry for it would be worse than having none. `guards/guards.toml`
+holds **732** records with the census reading 192 and 540. `.planning/WINDOWS.md`
+reaches **333** with 311 open, and nothing is pushed. `scripts/check.sh all`
+passed all four on the branch tip in **463 seconds**, redirected to a file rather
+than piped, which is inside the 419 to 654 the seven landed branches report.
+`tests/installer.rs` went from 11 tests to 13 and from 3 guard records naming it
+to 4; `tests/house_style.rs` is unchanged at 19 records and 69 tests, because no
+test was added there.
 
 **Owed after the merge and not blocking it:**
 `scripts/guards.sh --touched-by 3e52ab85`. Among files a record names, this
