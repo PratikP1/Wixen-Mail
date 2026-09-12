@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 539 records have arrived since and have not been through it.
+# 540 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19726,7 +19726,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 11 },
+    { file = "tests/installer.rs", tests = 13 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -19999,11 +19999,25 @@ file = ".github/workflows/release.yml"
 suite = "installer"
 before = '        dist/Wixen-Mail-*-windows.zip'
 after = '        dist/Wixen-Mail-*-win.zip'
+# Two tests as of 07-08, and it was one when this record was written a day
+# earlier. The census of what has to be signed reads the same published list
+# and asserts the globs it holds, so a glob that changes shape reddens it as
+# well. Measured by hand on 2026-09-12 before the count check was cleared:
+# `cargo test --test installer --no-fail-fast` with the break applied, 11
+# passed and exactly these two failed.
+#
+# Left as the worked example of a record going stale inside a single phase.
+# Nothing about 07-07's own work moved; a plan one wave later added a test
+# that reaches the same rule, and the record it made short is not the record
+# that plan was writing. That is the case CLAUDE.md warns costs the most,
+# because the author of the new test is the only person who will ever be
+# looking at this file at the right moment.
 red = [
     "test_every_file_the_release_promises_is_one_it_really_produces",
+    "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 11 },
+    { file = "tests/installer.rs", tests = 13 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -20032,5 +20046,47 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 11 },
+    { file = "tests/installer.rs", tests = 13 },
+]
+
+# ── 07-08 ─────────────────────────────────────────────────────────────────
+#
+# The half-fix rather than the absent one. The census still runs, still reads
+# both lists, still counts, and has simply stopped seeing one kind of file.
+# That is the shape a real narrowing takes: somebody trims a filter to make an
+# awkward entry go away, or writes it a little too narrow to begin with, and
+# the census goes on reading as a complete answer. Deleting the test would be
+# caught by anybody. A census that counts six of seven and says nothing is the
+# failure this whole task exists to prevent, applied to the instrument.
+#
+# `.dll` is the extension dropped because it is the one somebody is most
+# likely to think does not need signing. wixen_mail_search.dll is loaded into
+# the Windows indexer's own process, which is a higher bar for a signature
+# than the executables beside it rather than a lower one.
+#
+# Measured by hand on 2026-09-12 against the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads:
+# 7,077 passed in the library, 49 other targets green, and exactly this one
+# test failed. The count check was also red in that run, for the unrelated and
+# expected reason that this commit adds two tests to a file three records
+# fingerprint; it was cleared by `--remeasure` afterwards and is not part of
+# this break. The credential-store flake of ledger 328 did not appear.
+#
+# `test_the_census_can_see_an_artefact_that_arrived_without_being_signed` does
+# not redden here, and that is worth knowing rather than worth papering over.
+# Its fixtures are all `.exe`, so it proves the reading can see an artefact
+# that arrived and cannot see the filter narrowing underneath it. The census
+# over the real tree is the half that catches this one, which is the reason
+# the pair is a pair.
+[[guard]]
+name = "the census still sees every kind of file that has to be signed"
+file = "tests/installer.rs"
+suite = "installer"
+before = 'const WHAT_AUTHENTICODE_SIGNS: [&str; 2] = [".exe", ".dll"];'
+after = 'const WHAT_AUTHENTICODE_SIGNS: [&str; 1] = [".exe"];'
+red = [
+    "test_the_census_of_what_has_to_be_signed_counts_seven_things",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 13 },
 ]

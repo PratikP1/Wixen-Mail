@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 307
+open_count: 311
 waived_count: 0
 fixed_count: 22
-total_count: 329
-last_updated: 2026-09-12T17:44:52.410Z
+total_count: 333
+last_updated: 2026-09-12T18:58:04.273Z
 ---
 
 # Broken Windows Ledger
@@ -344,6 +344,10 @@ last_updated: 2026-09-12T17:44:52.410Z
 | 327 | 07 | deviation | .github/workflows/release.yml |  | cargo release pushes the tag at the Create release version and tag step, before anything is built, so any failure after that point leaves a tag on the remote with no release behind it. The new existence check moves the failure earlier than publication but not earlier than the tag. Changing it means moving cargo release after the build, which changes when a tag exists and so when a release happens, which guardrail 7 says is a deliberate decision rather than something a change about asset names makes on the way past | open |  | 2026-09-12T17:22:14.542Z |  |
 | 328 | 07 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | This target cannot reach the Windows credential store on every run: it fails with No default store has been set, so cannot search or create entries. Seen in two of three whole-tree runs on 2026-09-12, a different test of the file each time, and the file passes on its own on an unbroken tree. Not caused by any change in this plan and not diagnosed | open |  | 2026-09-12T17:22:15.335Z |  |
 | 329 | 07 | unrun-verify | .planning/REQUIREMENTS.md |  | Success criterion 1 cannot close until an Azure Artifact Signing account exists. The certificate is chosen (decision 6 of 2026-09-06, Azure Artifact Signing, about 9.99 dollars a month, publisher name Pratik Patel, residence requirement met) and nothing is signed. Creating the account needs a subscription, an identity check naming a real person, a payment and a role grant in a tenant, none of which is a repository operation. This is a dependency on something outside this repository rather than a defect in it | open |  | 2026-09-12T17:44:52.410Z |  |
+| 330 | 07 | deviation | .planning/REQUIREMENTS.md |  | SHIP-01 says the published installer and the executable inside it, which is two things. The census plan 07-08 task 1 derives from the installer script and the release workflow counts seven: wixen-mail.exe, wixen_mail_search.dll and wixen-mail-search-setup.exe inside the installer, the setup executable, the portable copy and the zip published beside it, and the uninstaller Inno generates, which is in neither list. A plan written to the requirement's own wording would leave five unsigned, two of them executables a user runs from an installed folder. Recorded as a scope finding against SHIP-01 rather than as a defect: the requirement is narrower than the thing it is about | open |  | 2026-09-12T18:48:30.006Z |  |
+| 331 | 07 | unmet-truth | tests/installer.rs |  | The census of what has to be signed counts PE files only, which is .exe and .dll, because those are what Authenticode embeds a signature into. A .ps1, an .msi or a .cat can also carry a signature, each by a different mechanism, and none would be counted. This project ships none of the three today, so the filter is correct about what it claims and incomplete about the question. Widening it without settling how each of those is signed would be worse, because it would pair a file with a signing step that cannot sign it | open |  | 2026-09-12T18:48:43.047Z |  |
+| 332 | 07 | unmet-truth | tests/installer.rs |  | The census reads one Source line as one artefact, so a wildcard naming executables would be a single entry standing for however many files it matched. The installer already carries one wildcard, the line that installs the markdown guides, which the filter drops as prose. If an executable wildcard ever arrives the count is right about the line and wrong about the artefacts, and nothing would say so | open |  | 2026-09-12T18:48:43.841Z |  |
+| 333 | 07 | deviation | .planning/WINDOWS.md |  | gsd-tools windows append writes a description containing a backslash into both halves of the ledger without reconciling the escaping. The JSON half escapes the character and the markdown table half does not, so the two halves disagree and the commit gate refuses the commit. Found on entry 332, whose description quoted a Windows path from the installer script. Worked around by rewording that entry to avoid the character and correcting both halves by hand. Anything appended through the tool that quotes a Windows path or a regular expression meets this, and the failure reads as a ledger the author corrupted rather than as a tool defect | open |  | 2026-09-12T18:58:04.273Z |  |
 
 ````json
 [
@@ -4293,6 +4297,54 @@ last_updated: 2026-09-12T17:44:52.410Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T17:44:52.410Z",
+    "resolved_at": null
+  },
+  {
+    "id": 330,
+    "kind": "deviation",
+    "phase": "07",
+    "file": ".planning/REQUIREMENTS.md",
+    "line": null,
+    "description": "SHIP-01 says the published installer and the executable inside it, which is two things. The census plan 07-08 task 1 derives from the installer script and the release workflow counts seven: wixen-mail.exe, wixen_mail_search.dll and wixen-mail-search-setup.exe inside the installer, the setup executable, the portable copy and the zip published beside it, and the uninstaller Inno generates, which is in neither list. A plan written to the requirement's own wording would leave five unsigned, two of them executables a user runs from an installed folder. Recorded as a scope finding against SHIP-01 rather than as a defect: the requirement is narrower than the thing it is about",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T18:48:30.006Z",
+    "resolved_at": null
+  },
+  {
+    "id": 331,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "tests/installer.rs",
+    "line": null,
+    "description": "The census of what has to be signed counts PE files only, which is .exe and .dll, because those are what Authenticode embeds a signature into. A .ps1, an .msi or a .cat can also carry a signature, each by a different mechanism, and none would be counted. This project ships none of the three today, so the filter is correct about what it claims and incomplete about the question. Widening it without settling how each of those is signed would be worse, because it would pair a file with a signing step that cannot sign it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T18:48:43.047Z",
+    "resolved_at": null
+  },
+  {
+    "id": 332,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "tests/installer.rs",
+    "line": null,
+    "description": "The census reads one Source line as one artefact, so a wildcard naming executables would be a single entry standing for however many files it matched. The installer already carries one wildcard, the line that installs the markdown guides, which the filter drops as prose. If an executable wildcard ever arrives the count is right about the line and wrong about the artefacts, and nothing would say so",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T18:48:43.841Z",
+    "resolved_at": null
+  },
+  {
+    "id": 333,
+    "kind": "deviation",
+    "phase": "07",
+    "file": ".planning/WINDOWS.md",
+    "line": null,
+    "description": "gsd-tools windows append writes a description containing a backslash into both halves of the ledger without reconciling the escaping. The JSON half escapes the character and the markdown table half does not, so the two halves disagree and the commit gate refuses the commit. Found on entry 332, whose description quoted a Windows path from the installer script. Worked around by rewording that entry to avoid the character and correcting both halves by hand. Anything appended through the tool that quotes a Windows path or a regular expression meets this, and the failure reads as a ledger the author corrupted rather than as a tool defect",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T18:58:04.273Z",
     "resolved_at": null
   }
 ]
