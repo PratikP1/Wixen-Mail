@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: 07-02 merged at 2d6ffeb. An installer script now earns the full gate, and both shortcuts and the Apps and Features entry name an icon the installer really put there. Nobody has installed anything or looked at a shortcut
-last_updated: "2026-09-12T08:00:00.000Z"
+stopped_at: 07-03 merged at 85d84d3. The program says which parts of its accessibility layer do nothing on the build it is running as, in the About dialog and at startup, and says nothing on Windows. Both halves of the bridge answer for themselves. Nobody has seen or heard any of it
+last_updated: "2026-09-12T10:15:00.000Z"
 last_activity: 2026-09-12
-state_head: 2d6ffeb
+state_head: 85d84d3
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 82
+  completed_plans: 83
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,9 +29,49 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-02 is merged at
-`2d6ffeb`, version 0.113.3. Two plans of nine are done and seven remain. Phase
+Phase: 07 (Installing, updating and what is stored). **07-03 is merged at
+`85d84d3`, version 0.115.0. Three plans of nine are done and six remain. Phase
 05.2's checkpoint is still open and nothing in it has been answered.**
+
+**The program now says which parts of its accessibility layer do nothing on the
+build it is running as.** In the About dialog, which is where the Help menu's
+own item lands, and on the stream at startup, before anybody has opened a menu.
+On Windows it says nothing, because both halves of the bridge work there and a
+warning that is wrong every time it appears teaches people to ignore warnings.
+SHIP-06 closes. Nothing here makes anything work on any platform, and the
+changelog says so in as many words.
+
+**The criterion names one bridge and there are two.** Announcements go through
+`UiaRaiseNotificationEvent` and had a status nothing had ever read. Accessible
+names go through `wxAccessible` and had no marker anywhere in the code, which
+`grep -n 'cfg(target_os' names.rs` returning nothing is the whole of. A
+disclosure built from the existing status alone would have said that
+announcements do not reach a screen reader and said nothing about every control
+in the window reaching the accessibility tree with no name, which is the larger
+of the two failures. Both halves now answer for themselves.
+
+**Each answer comes from whichever platform arm compiled, not from
+`cfg!(target_os = "windows")`.** `screen_reader.rs` gained a `native` module for
+the case where there is no bridge, carrying the same names the Windows one does,
+so `deliver` has one shape rather than two and the arm whose whole body
+discarded its arguments is gone. `names.rs` is two cfg arms rather than two
+modules, because there is no per-platform code in that file, only a fact about
+what wxWidgets does underneath. That asymmetry is written into the doc comment
+rather than left to look like an oversight.
+
+**`NativeBridgeStatus` and the two accessors nothing had ever called are gone.**
+Removed rather than given a caller: the constant says the same thing from the
+same source and has two real callers, so keeping the enum would have left two
+representations of one fact with the uncalled one still uncalled.
+`grep -rn native_bridge_status src/ tests/` now returns nothing, and clippy said
+nothing about the removal because no caller existed to break.
+
+**None of it has been seen or heard, and the reason is structural.** No Linux or
+macOS build of this program has ever been made, so the sentences have only ever
+been produced from arguments a test on Windows chose. That is `WINDOWS.md` 307
+to 310, which also carries the About dialog's layout, nobody having heard the
+four paragraphs, and the third-platform property being structural rather than
+tested.
 
 **A commit that changes the installer script now runs the tests that read it.**
 `scripts/which-checks.sh` answers `all` for an `.iss`, which is the manifest
@@ -61,11 +101,11 @@ script as text, which is all anything here can do, and its own doc comment says
 so: nothing compiles it with ISCC, installs anything or looks at a shortcut.
 That is `WINDOWS.md` 306.
 
-Version `0.113.3`, `guards/guards.toml` holds 723 records with the census
-reading 192 and 531, `.planning/WINDOWS.md` reaches 306 with 285 open, and
+Version `0.115.0`, `guards/guards.toml` holds 725 records with the census
+reading 192 and 533, `.planning/WINDOWS.md` reaches 310 with 289 open, and
 nothing is pushed.
 
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 9
 
 ---

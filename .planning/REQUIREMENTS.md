@@ -1651,7 +1651,23 @@ write path added by this milestone passes through that gate.
   - [D] No criterion here claims the application is accessible on Linux or macOS, or usable
     there. Building is not the same claim.
 
-- [ ] **SHIP-06**: Off Windows, the application says what its accessibility layer does not do.
+- [x] **SHIP-06**: Off Windows, the application says what its accessibility layer does not do.
+  - **Corrected 2026-09-12 by 07-03, which closed this. Everything below describes the tree
+    before that plan and four of its sentences are now false.** `NativeBridgeStatus`,
+    `ScreenReaderBridge::status` and `Accessibility::native_bridge_status` are gone, so "the
+    accessor is built and nothing calls it" is no longer true of anything and
+    `grep -rn native_bridge_status src/ tests/` returns nothing. The derivation is no longer
+    `cfg!(target_os = "windows")`: `screen_reader::ANNOUNCEMENTS_REACH_A_SCREEN_READER` comes
+    from whichever `native` module compiled, which is what the second `[D]` line below asked
+    for, so the caveat naming that expression as a platform list of one is answered rather than
+    outstanding. And the bridge has a second half that this evidence never mentions:
+    `names::A_NAME_REACHES_THE_ACCESSIBILITY_TREE` now records whether an accessible name
+    reaches the accessibility tree, which had no marker anywhere before.
+    The false sentences are left where they are, because they are what the requirement was
+    measured against. What closes it is
+    `src/presentation/accessibility/platform_bridge.rs`, read by `build_about_dialog` in
+    `src/presentation/wx_app.rs` and by `main` in `src/main.rs`.
+
   - Evidence: rewritten 2026-09-04. The previous evidence reads as though nothing exists, and
     almost all of it does. This is "route an existing fact to two places" rather than "build a
     disclosure".
@@ -1936,7 +1952,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
-| SHIP-06 | Phase 7 | Pending |
+| SHIP-06 | Phase 7 | Complete |
 | PERF-01 | Phase 8 | Pending |
 | PERF-02 | Phase 8 | Pending |
 | PERF-03 | Phase 8 | Pending |
