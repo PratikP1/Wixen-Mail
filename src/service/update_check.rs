@@ -908,6 +908,110 @@ mod tests {
         );
     }
 
+    /// What `docs/privacy.md` holds, or a failure saying it could not be read.
+    ///
+    /// Read rather than asserted about: this project has shipped a document
+    /// guard that passed unconditionally because the page stopped containing
+    /// anything for it to look at, so every check below names something real
+    /// and every one of them has a companion proving the reading can see a
+    /// violation.
+    fn the_privacy_page() -> String {
+        let page = std::fs::read_to_string("docs/privacy.md").expect("the privacy page");
+        assert!(
+            !page.is_empty(),
+            "the privacy page could not be read, so nothing below proves anything"
+        );
+        page
+    }
+
+    #[test]
+    fn test_the_privacy_page_says_what_the_update_check_sends() {
+        // Tied to the constants this module really uses rather than to a phrase
+        // somebody may reword. `docs/privacy.md` opens by promising there is no
+        // update check that says who you are, and this feature is what makes
+        // that sentence something to look at again: GitHub's own documentation
+        // says an unauthenticated request is associated with the address it
+        // came from.
+        //
+        // Homed here rather than in `tests/house_style.rs`, which is
+        // fingerprinted by eighteen guard records, because this file is
+        // fingerprinted by one and the check is the same either way.
+        let page = the_privacy_page();
+
+        for named in [
+            WHERE_THE_ASKING_GOES,
+            SETTINGS_SECTION,
+            WHICH_UPDATES_LABEL,
+            WhichUpdates::NotLooking.words(),
+        ] {
+            assert!(
+                page.contains(named),
+                "docs/privacy.md does not say {named:?}, so the page and the code \
+                 disagree about what this sends or where it is switched on"
+            );
+        }
+        assert!(
+            page.contains("sixty"),
+            "the page does not say what GitHub allows an address without signing in, \
+             which is the other half of what GitHub keeps about the request"
+        );
+
+        // The reading can see a violation. A host this module never asks must
+        // not be found by the same search, or the search would find anything.
+        assert!(
+            !page.contains("api.gitlab.invalid"),
+            "the reading answers yes for a host nothing asks, so it would answer yes \
+             for every host"
+        );
+    }
+
+    #[test]
+    fn test_the_privacy_page_says_where_the_log_goes_when_the_data_folder_cannot_be_found() {
+        // Tied to the code rather than to a habit. `common::logging` falls back
+        // to the temporary folder precisely when the data folder cannot be
+        // worked out, so on such a machine the running log, with everything a
+        // log holds, sits somewhere neither page listing what is stored
+        // mentions. While that fallback exists the page says so; take it out
+        // and this relaxes rather than going stale.
+        let logging = std::fs::read_to_string("src/common/logging.rs").expect("the logging module");
+        assert!(
+            logging.contains("fn default_log_dir"),
+            "the file this reads is not the one this check was written for"
+        );
+        if logging.contains("std::env::temp_dir()") {
+            assert!(
+                the_privacy_page().contains("%TEMP%"),
+                "the log can land in the temporary folder and the page that lists \
+                 everything Wixen Mail stores does not say so, so somebody reading it \
+                 to find out what is on their disk is told the wrong place"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_privacy_page_says_what_happens_to_notes_while_a_notes_permission_is_asked_for() {
+        // The table of who this program talks to had no row for notes while a
+        // Microsoft sign-in asked for `Notes.ReadWrite`, which is a permission
+        // to read, make, change and remove pages in somebody's notebooks. That
+        // nothing uses it is the answer, and an answer worth reading is not the
+        // same as no row: a missing row cannot be told from a question nobody
+        // wrote down.
+        let asking = std::fs::read_to_string("src/service/oauth.rs").expect("the sign-in scopes");
+        assert!(
+            asking.contains("graph.microsoft.com/"),
+            "the file this reads is not the one that asks for Microsoft's permissions"
+        );
+        if asking.contains("Notes.ReadWrite") {
+            let page = the_privacy_page();
+            assert!(
+                page.contains("OneNote"),
+                "a Microsoft sign-in asks for permission over the notebooks on that \
+                 account and the page listing who this program talks to says nothing \
+                 about them"
+            );
+        }
+    }
+
     #[test]
     fn test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest() {
         // Older, which is the ordinary case between releases.
