@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 537 records have arrived since and have not been through it.
+# 539 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19726,7 +19726,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 4 },
+    { file = "tests/installer.rs", tests = 11 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -19957,4 +19957,80 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/update_check.rs", tests = 22 },
+]
+
+# ── 07-07 ─────────────────────────────────────────────────────────────────
+#
+# The half-fix rather than the absent one. The glob is still there, still
+# names a file in `dist/`, and still reads like something the build writes. It
+# has simply stopped matching, which is the shape a real drift takes: somebody
+# shortens a name in the step that writes it and the list that publishes it is
+# left behind, or the other way round. Removing the glob is the easy case and
+# no release would ever fail that way.
+#
+# Until this change the consequence was silence. `fail_on_unmatched_files` was
+# false, whose own documentation calls it the "Indicator of whether to fail if
+# any of the files globs match nothing", so the release published three files,
+# went green, and the fourth was found by somebody trying to download it.
+#
+# `file` is not a Rust file, so the count check skips the count for it and
+# takes the counts off the red list instead, which with `suite` set resolves to
+# tests/installer.rs.
+#
+# One test rather than several, and that is the whole of it. `house_style`
+# reads this workflow, because `ours()` collects `.github` with extension
+# `yml`, but its rules are about prose and a glob is not prose.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads:
+# 7,077 passed in the library, 49 other targets green, and exactly this one
+# test failed.
+#
+# One other test failed in two of the three whole-tree runs taken that day and
+# it is not this break's. `tests/a_move_says_what_has_not_been_sent.rs` cannot
+# reach the Windows credential store on this machine every time it asks: it
+# fails with "No default store has been set", it was a different test of that
+# file in each run, and the file passes on its own on an unbroken tree. Written
+# down rather than filtered out, because a run that anybody trims to the
+# failures they expected is a run that cannot find the one they did not.
+[[guard]]
+name = "a published glob still matches a name the release really writes"
+file = ".github/workflows/release.yml"
+suite = "installer"
+before = '        dist/Wixen-Mail-*-windows.zip'
+after = '        dist/Wixen-Mail-*-win.zip'
+red = [
+    "test_every_file_the_release_promises_is_one_it_really_produces",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 11 },
+]
+
+# Guardrail 7, which is the one this project has already been bitten by: a push
+# to `main` triggered this workflow, cut two releases nobody asked for and
+# promoted an alpha to beta. The test that holds it was green the day it was
+# written, so it has no red half of its own and this record is the substitute.
+#
+# The break swaps the trigger rather than adding one beside it, because that is
+# a single line and expresses the same thing: after it, a release happens
+# without anybody asking for one. The `inputs:` block below is left orphaned,
+# which a text reading does not care about and a real run would reject, and
+# that is fine for a break whose only job is to make the rule speak.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads:
+# 7,077 passed in the library, 50 other targets green, and exactly this one
+# test failed. The credential-store flake described in the record above did
+# not appear in this run.
+[[guard]]
+name = "a release still happens only when somebody asks for one"
+file = ".github/workflows/release.yml"
+suite = "installer"
+before = '  workflow_dispatch:'
+after = '  push:'
+red = [
+    "test_a_release_still_happens_only_when_somebody_asks_for_one",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 11 },
 ]

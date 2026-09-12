@@ -62,6 +62,20 @@ jobs:
     needs: quality-gate
     runs-on: windows-latest
 
+    # Every file this release promises, written once.
+    #
+    # The step that checks they exist and the step that publishes them both
+    # read this list, so the two cannot come to disagree about what a release
+    # is. Two copies of four globs agree right up until somebody edits one of
+    # them, and the release that finds out is the one that publishes three
+    # files and says nothing about the fourth.
+    env:
+      RELEASE_ASSETS: |
+        dist/Wixen-Mail-Setup-*.exe
+        dist/wixen-mail-v*.exe
+        dist/Wixen-Mail-*-windows.zip
+        docs/changelog.md
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -115,6 +129,46 @@ jobs:
           Copy-Item "target/release/wixen-mail.exe" "dist/wixen-mail-$tag.exe"
           Compress-Archive -Path "target/release/wixen-mail.exe" -DestinationPath "dist/Wixen-Mail-$tag-windows.zip" -Force
 
+      # A release that cannot produce a file it promised stops here, before
+      # anything is announced.
+      #
+      # `fail_on_unmatched_files` below is the second net and not a substitute
+      # for this one. It fires inside the publishing step, by which point the
+      # tag is on the remote and the release exists, so a missing asset caught
+      # only there is already a half-published release somebody can find.
+      #
+      # The tag is pushed earlier still, by `cargo release`, so even this
+      # failure leaves a tag with nothing behind it. Moving that is a change to
+      # when a tag exists, which is a change to when a release happens, and
+      # guardrail 7 says that is a deliberate decision rather than something a
+      # change about asset names makes on the way past. Recorded in
+      # `.planning/WINDOWS.md` instead.
+      - name: Check that every promised file exists
+        shell: pwsh
+        run: |
+          $promised = $env:RELEASE_ASSETS -split "`n" |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+          if (-not $promised) {
+            Write-Host "::error::No promised files were read, so this step would pass without checking anything."
+            exit 1
+          }
+          $missing = @()
+          foreach ($pattern in $promised) {
+            $found = @(Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue)
+            if ($found.Count -eq 0) {
+              $missing += $pattern
+            } else {
+              $found | ForEach-Object { Write-Host "  $($_.Name)" }
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::This release promised files it did not produce, so it stops instead of publishing the rest:"
+            $missing | ForEach-Object { Write-Host "::error::  $_ matched nothing" }
+            exit 1
+          }
+          Write-Host "Every promised file is here."
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -128,9 +182,9 @@ jobs:
           name: ${{ steps.release_tag.outputs.tag }}
           generate_release_notes: true
           prerelease: ${{ steps.release_tag.outputs.prerelease }}
-          files: |
-            dist/Wixen-Mail-Setup-*.exe
-            dist/wixen-mail-v*.exe
-            dist/Wixen-Mail-*-windows.zip
-            docs/changelog.md
-          fail_on_unmatched_files: false
+          files: ${{ env.RELEASE_ASSETS }}
+          # The second net. Its own documentation calls this the "Indicator of
+          # whether to fail if any of the files globs match nothing", so with it
+          # false a glob that stopped matching was published as an absence and
+          # the run stayed green.
+          fail_on_unmatched_files: true
