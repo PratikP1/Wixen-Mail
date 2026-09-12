@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 303
+open_count: 307
 waived_count: 0
 fixed_count: 22
-total_count: 325
-last_updated: 2026-09-12T15:49:32.838Z
+total_count: 329
+last_updated: 2026-09-12T17:44:52.410Z
 ---
 
 # Broken Windows Ledger
@@ -340,6 +340,10 @@ last_updated: 2026-09-12T15:49:32.838Z
 | 323 | 07 | unrun-verify | .github/workflows/other-platforms.yml |  | 07-06's checkpoint is open and unrun: nobody has dispatched the Other platforms workflow, so it is still unknown whether this crate builds or its suite passes on Linux or macOS. 07-06 task 3 is unexecuted, SHIP-05 does not close and phase 7 criterion 5 stays open. Dispatch the workflow from the Actions tab on branch one-dispatch-says-whether-this-crate-builds-off-windows or on main, let both jobs finish either way, and report per platform: whether cargo build --all-targets succeeded and the first error in full if not, whether cargo test --all-targets --no-fail-fast succeeded and how many ran and failed if not, the wall clock duration from the run summary, and the runner image label the first step printed | open |  | 2026-09-12T15:35:08.642Z |  |
 | 324 | 07 | unrun-verify | .github/workflows/other-platforms.yml |  | The new workflow has never been run by GitHub, so nothing about it is proven beyond the parts a local test reads. Its YAML has been checked by nothing that parses GitHub Actions, the thirteen apt packages quoted from upstream have never been installed on an ubuntu-latest image, and the macOS step that installs CMake only if it is absent has never taken either branch. A defect in any of those fails the first dispatch for a reason that says nothing about whether the crate builds, which is the question the dispatch is for | open |  | 2026-09-12T15:35:20.673Z |  |
 | 325 | 07 | deviation | .planning/ROADMAP.md |  | A whole-tree guard that reads the disk cannot tell one agent's uncommitted work from another's. test_the_roadmap_counts_the_files_that_are_on_disk runs on every commit and compares the roadmap's progress table with the phase directories as they sit on disk, so while a second agent was planning phase 6 in the same working tree its untracked plan files made that phase's 0/TBD cell false and refused 07-06's document commit. The count also raced: the refused run saw 1 plan and a re-run three minutes later saw 2. The row was set to 0/2 by 07-06 to get past the gate, which is bookkeeping 07-06 does not own and which phase 6's planning will move again. Whether a tree guard should read the index rather than the disk, or whether two agents should share a working tree at all, is raised rather than settled | open |  | 2026-09-12T15:49:32.838Z |  |
+| 326 | 07 | unrun-verify | .github/workflows/release.yml |  | The release workflow has never run: git tag returns nothing and git ls-remote --tags origin returns nothing while --heads answers, so no published glob has ever been matched against a real dist/ and the tag branch in scripts/build-installer.sh has never been taken. dist/wixen-mail-v*.exe agrees with dist/wixen-mail-$tag.exe only while the tag begins with v, which comes from cargo-release's defaults; if it does not, that file was published as a silent absence before this change and is a failed release after it, and the second is what was wanted | open |  | 2026-09-12T17:22:01.452Z |  |
+| 327 | 07 | deviation | .github/workflows/release.yml |  | cargo release pushes the tag at the Create release version and tag step, before anything is built, so any failure after that point leaves a tag on the remote with no release behind it. The new existence check moves the failure earlier than publication but not earlier than the tag. Changing it means moving cargo release after the build, which changes when a tag exists and so when a release happens, which guardrail 7 says is a deliberate decision rather than something a change about asset names makes on the way past | open |  | 2026-09-12T17:22:14.542Z |  |
+| 328 | 07 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | This target cannot reach the Windows credential store on every run: it fails with No default store has been set, so cannot search or create entries. Seen in two of three whole-tree runs on 2026-09-12, a different test of the file each time, and the file passes on its own on an unbroken tree. Not caused by any change in this plan and not diagnosed | open |  | 2026-09-12T17:22:15.335Z |  |
+| 329 | 07 | unrun-verify | .planning/REQUIREMENTS.md |  | Success criterion 1 cannot close until an Azure Artifact Signing account exists. The certificate is chosen (decision 6 of 2026-09-06, Azure Artifact Signing, about 9.99 dollars a month, publisher name Pratik Patel, residence requirement met) and nothing is signed. Creating the account needs a subscription, an identity check naming a real person, a payment and a role grant in a tenant, none of which is a repository operation. This is a dependency on something outside this repository rather than a defect in it | open |  | 2026-09-12T17:44:52.410Z |  |
 
 ````json
 [
@@ -4241,6 +4245,54 @@ last_updated: 2026-09-12T15:49:32.838Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T15:49:32.838Z",
+    "resolved_at": null
+  },
+  {
+    "id": 326,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".github/workflows/release.yml",
+    "line": null,
+    "description": "The release workflow has never run: git tag returns nothing and git ls-remote --tags origin returns nothing while --heads answers, so no published glob has ever been matched against a real dist/ and the tag branch in scripts/build-installer.sh has never been taken. dist/wixen-mail-v*.exe agrees with dist/wixen-mail-$tag.exe only while the tag begins with v, which comes from cargo-release's defaults; if it does not, that file was published as a silent absence before this change and is a failed release after it, and the second is what was wanted",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T17:22:01.452Z",
+    "resolved_at": null
+  },
+  {
+    "id": 327,
+    "kind": "deviation",
+    "phase": "07",
+    "file": ".github/workflows/release.yml",
+    "line": null,
+    "description": "cargo release pushes the tag at the Create release version and tag step, before anything is built, so any failure after that point leaves a tag on the remote with no release behind it. The new existence check moves the failure earlier than publication but not earlier than the tag. Changing it means moving cargo release after the build, which changes when a tag exists and so when a release happens, which guardrail 7 says is a deliberate decision rather than something a change about asset names makes on the way past",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T17:22:14.542Z",
+    "resolved_at": null
+  },
+  {
+    "id": 328,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "tests/a_move_says_what_has_not_been_sent.rs",
+    "line": null,
+    "description": "This target cannot reach the Windows credential store on every run: it fails with No default store has been set, so cannot search or create entries. Seen in two of three whole-tree runs on 2026-09-12, a different test of the file each time, and the file passes on its own on an unbroken tree. Not caused by any change in this plan and not diagnosed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T17:22:15.335Z",
+    "resolved_at": null
+  },
+  {
+    "id": 329,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".planning/REQUIREMENTS.md",
+    "line": null,
+    "description": "Success criterion 1 cannot close until an Azure Artifact Signing account exists. The certificate is chosen (decision 6 of 2026-09-06, Azure Artifact Signing, about 9.99 dollars a month, publisher name Pratik Patel, residence requirement met) and nothing is signed. Creating the account needs a subscription, an identity check naming a real person, a payment and a role grant in a tenant, none of which is a repository operation. This is a dependency on something outside this repository rather than a defect in it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T17:44:52.410Z",
     "resolved_at": null
   }
 ]

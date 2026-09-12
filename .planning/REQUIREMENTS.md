@@ -1405,10 +1405,76 @@ write path added by this milestone passes through that gate.
 ### Installing, updating and what is stored
 
 - [ ] **SHIP-01**: A signed installer.
+  - **The certificate decision, taken 2026-09-06 and written down here on 2026-09-12 by plan
+    07-07.** The evidence below is left as it was, because it is what this requirement was
+    judged against. What follows is the decision and the three options that lost, so the
+    comparison is not rebuilt the first time the recurring cost is questioned.
+
+    **Azure Artifact Signing**, formerly Trusted Signing. Decided by Pratik on 2026-09-06,
+    recorded as decision 6 in `.planning/decisions-2026-09-06.md`. About $9.99 a month.
+    The publisher name a user will see is **Pratik Patel**. Signing runs from CI with no
+    hardware token, because the key stays in a service the build calls rather than on a stick
+    somebody has to plug in. Individuals may use it only from the United States or Canada, and
+    **that requirement is met**, asked and confirmed on 2026-09-06.
+
+    **The three that lost, and what each lost on.**
+
+    - **An OV certificate from a certificate authority**, $150 to $300 a year. Since June 2023
+      the CA/Browser Forum requires the private key on an HSM or a hardware token, so signing
+      from GitHub Actions needs a cloud HSM as well. It is the most build machinery of the
+      four and it buys the same SmartScreen outcome as the option chosen.
+    - **SignPath Foundation**, free for open source. The certificate is issued to SignPath
+      Foundation, and SignPath's own terms say that makes SignPath Foundation the publisher of
+      the project. So that is the name a Wixen Mail user would see on the warning box and in
+      Apps and Features, and it disagrees with `AppPublisher=Pratik Patel` in the installer
+      script and with `CompanyName` in `build.rs`.
+    - **Not signing this milestone.** A real option rather than a straw one. It lost because
+      Smart App Control on Windows 11 blocks unsigned executables that have no reputation, and
+      because reputation never starts accruing while nothing is signed, so a year of not
+      signing leaves the project exactly where it began.
+
+    **Which of those reasons could change, and which could not.** The OV one is a price, and
+    prices move. The SignPath one is a judgement about whose name goes where users look, and
+    it will not move. Read the comparison again if the price of an OV certificate and a cloud
+    HSM falls below $120 a year; do not read it again because SignPath is still free.
+
+    **What the decision commits the project to.** Not "sign two files". Four distinct binaries
+    need signing: `wixen-mail.exe`, `wixen_mail_search.dll` and `wixen-mail-search-setup.exe`
+    inside the installer, and the setup executable itself. Plus the uninstaller Inno generates,
+    whose `SignedUninstaller` directive is recorded as having a two-pass prompting behaviour
+    that would hang a CI job rather than fail it, and **that behaviour is unverified**: it was
+    read through a search summary of the Inno help rather than from the local Inno Setup 6
+    help, and it stays an assumption until somebody reads that. The portable copy and the zip
+    published beside the installer are not two more signing jobs: both are made from
+    `target/release/wixen-mail.exe` after the build runs, so the portable copy inherits the
+    signature already in those bytes, and a zip is a container rather than a signable format,
+    because Authenticode embeds a signature in a PE file and not in an archive.
+
+    **What signing does not buy, which is the part everybody gets wrong.** No certificate
+    available to this project removes the SmartScreen warning on a first download. Only
+    publishing through the Microsoft Store does. Microsoft's page was re-fetched on 2026-09-12
+    rather than quoted from the research, at
+    https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation,
+    and it still says "EV certificates no longer bypass SmartScreen", with its table giving
+    OV and EV the same first-download outcome. The page's `updated_at` is 2026-08-17, the same
+    date the research recorded, so it has not moved since. And `PrivilegesRequired=lowest` at
+    `installer/Wixen-Mail-Setup.iss:39` means a per-user install shows no elevation prompt at
+    all, so the "Unknown publisher" line a signature really does fix is not shown in the common
+    case. The warning everybody meets is the SmartScreen one, and signing does not remove it.
+
+    **Nothing has been signed.** No certificate exists yet, no Azure account exists yet, and
+    every build this project has produced is unsigned. The signing itself is plan 07-08, and it
+    waits on an account only Pratik can create.
+
   - Evidence: re-checked 2026-09-04 and accurate about the tree, every clause.
     `installer/Wixen-Mail-Setup.iss` builds an Inno Setup installer;
     `scripts/build-installer.sh:29` to 48 appends the commit it built from, and appends nothing
-    at a tag; `docs/ALPHA_TESTING.md:146` states the installer is not signed. The evidence was
+    at a tag; `docs/ALPHA_TESTING.md` states the installer is not signed, at the line beginning
+    "**The installer is not signed**, so Windows will warn about it". **That citation said
+    `:146` until 2026-09-12, when `grep -n 'The installer is not signed' docs/ALPHA_TESTING.md`
+    answered 342.** The sentence has carried three different line numbers in a week as the file
+    grew from about 160 lines to 365, so it is cited by its words from here on, which is what
+    the requirements audit of 2026-09-04 asked for. The evidence was
     only ever wrong about Windows, which the SmartScreen paragraph below now covers.
     **One thing it does not say that changes the size of the work.** The first `[D]` line says
     "the installer and the executable inside it". There are three signable artefacts inside it
@@ -1451,8 +1517,14 @@ write path added by this milestone passes through that gate.
   - [D] The verification is done against the published release asset, not against a local
     build.
 
-  - [D] This is blocked on a certificate decision that is Pratik's. Until it is made, the
-    requirement stays open and the docs keep saying the installer is unsigned.
+  - [D] The certificate is chosen and the account is not created. **Corrected 2026-09-12.**
+    This line used to read "This is blocked on a certificate decision that is Pratik's. Until
+    it is made, the requirement stays open and the docs keep saying the installer is unsigned."
+    The decision was made on 2026-09-06 and is written above, so the line said the question was
+    open when it was answered. What the requirement now waits on is an Azure Artifact Signing
+    account, which needs a subscription, an identity check naming a real person, a payment and
+    a role grant in a tenant, none of which is a repository operation. Until something is really
+    signed the requirement stays open and the docs keep saying the installer is unsigned.
 
 - [ ] **SHIP-02**: Check for and apply updates.
   - Evidence: re-checked and widened 2026-09-04. Confirmed absent, and this is the rare absence
@@ -1476,15 +1548,36 @@ write path added by this milestone passes through that gate.
     sentence wants re-reading in the same change, not after it.
 
   - [S] `docs/development/requirements-backlog.md`, platform, priority Medium; roadmap Phase 8.
-  - [D] The application can tell the user a newer version exists, and the check is a
-    deliberate action or an explicit setting, never a silent background fetch, because
-    publishing and fetching both happen on purpose here.
+  - [D] The application can tell the user a newer version exists, and nothing is fetched
+    that the user did not ask for: either by choosing the update item in the Help menu,
+    which works whatever the setting says, or by choosing a release channel in the update
+    setting, which starts off. With a channel chosen the fetch is unattended and the
+    consent for it was given at the control, which says so. It is never a fetch nobody
+    chose, because publishing and fetching both happen on purpose here.
+
+    **Replaced 2026-09-12 by plan 07-07, per decision 16 of 2026-09-06.** The line used to end
+    "and the check is a deliberate action or an explicit setting, never a silent background
+    fetch, because publishing and fetching both happen on purpose here." The intent survives
+    and the words did not: D-16 asks for exactly an unattended fetch once somebody has chosen a
+    channel, so the old wording forbade what the phase is now being built to do. What makes the
+    fetch a chosen one is the choice made at the control, not a question asked each time.
 
   - [D] Applying an update is the user's decision and the current version keeps working if the
     update is declined.
 
   - [D] The check compares the plain `0.x.y` version and ignores `+build` metadata, matching
     `src/common/version.rs` and SemVer ordering.
+
+  - [D] Which releases the user hears about is theirs to choose: one setting with three
+    values, not looking, public releases and development releases, reachable from the
+    settings screen in a section somebody would look in. A prerelease is never offered on
+    the public channel.
+
+    **Added 2026-09-12 by plan 07-07, per decision 15 of 2026-09-06.** A line under SHIP-02
+    rather than a requirement of its own, because choosing a channel is part of what updating
+    means for this product and not a separate capability. It closes a gap the first version of
+    these plans raised: a feature that was planned, tested and named in no requirement, which a
+    later audit finds as scope nothing asked for.
 
 - [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.

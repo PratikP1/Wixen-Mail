@@ -1,4 +1,4 @@
-//! What the installer script says, read as text.
+//! What the installer script and the release workflow say, read as text.
 //!
 //! `installer/Wixen-Mail-Setup.iss` is the artefact and it cannot be run from
 //! here. Nothing in this repository compiles it with ISCC, installs anything,
@@ -7,6 +7,15 @@
 //! an install does. A green run here does not mean a shortcut on somebody's
 //! desktop shows the right picture. `.planning/WINDOWS.md` carries that as a
 //! verification nobody has run.
+//!
+//! The same applies twice over to `.github/workflows/release.yml`, added to
+//! this file on 2026-09-12. No release has ever been cut from this repository:
+//! `git tag` returns nothing and so does `git ls-remote --tags origin`, so the
+//! tag branch in `scripts/build-installer.sh` has never been taken and not one
+//! of the globs the workflow publishes has ever been matched against a real
+//! `dist/`. What the tests below hold is that the names the workflow promises
+//! and the names the build really writes agree on paper. Whether GitHub then
+//! behaves as the file says is unknown until somebody dispatches a release.
 //!
 //! # Why the script gets a target of its own
 //!
@@ -318,4 +327,598 @@ Name: "{group}\Wixen Mail"; Filename: "{app}\wixen-mail.exe"; IconFilename: "{ap
         not_shipped.contains("ships no .ico at all"),
         "{not_shipped}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The release workflow, and the files it promises
+// ---------------------------------------------------------------------------
+
+/// The name of the step that stops a release which cannot keep its promises.
+///
+/// Named once, because the rule below and the message it prints when the step
+/// is missing both have to say the same string, and a step renamed in the
+/// workflow without this moving would read as the step having been deleted.
+const THE_CHECK: &str = "Check that every promised file exists";
+
+/// The release workflow, read from the repository root.
+fn the_release_workflow() -> String {
+    std::fs::read_to_string(".github/workflows/release.yml").expect("the release workflow")
+}
+
+/// This package's version, off its own manifest.
+///
+/// `scripts/build-installer.sh:12` reads the same line the same way and hands
+/// the number to ISCC, so this is what ends up in the setup executable's name.
+fn the_version(manifest: &str) -> String {
+    manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("version = "))
+        .map(|value| value.trim().trim_matches('"').to_string())
+        .expect("a version at the top of Cargo.toml")
+}
+
+/// The lines of a YAML block scalar, given the key that opens it.
+///
+/// A block runs from `key: |` to the first line indented no further than the
+/// key itself. Blank lines and comments are dropped, so the list can be
+/// commented without a comment being read as a member of it.
+///
+/// Absent key, empty answer. Every caller treats that as a failure with its own
+/// message, because a reading that found nothing and a file that promises
+/// nothing read alike.
+fn block_scalar<'a>(yaml: &'a str, key: &str) -> Vec<&'a str> {
+    let opener = format!("{key}: |");
+    let mut lines = yaml.lines().skip_while(|line| line.trim() != opener);
+    let Some(header) = lines.next() else {
+        return Vec::new();
+    };
+    let depth = header.len() - header.trim_start().len();
+    lines
+        .take_while(|line| line.trim().is_empty() || line.len() - line.trim_start().len() > depth)
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect()
+}
+
+/// Every file the release promises to publish, taken off the one list the
+/// publishing step really reads.
+///
+/// The indirection is followed rather than assumed. `files:` either opens a
+/// block of its own or names an `env` entry that does, and the publishing step
+/// reads whichever it is. Following it is what lets the workflow keep a single
+/// copy of the list, which is the only way the step that checks the files exist
+/// and the step that publishes them cannot drift apart.
+fn the_promised_files(yaml: &str) -> Vec<String> {
+    let named_env = yaml.lines().find_map(|line| {
+        let value = line.trim().strip_prefix("files:")?.trim();
+        let inside = value.strip_prefix("${{")?.strip_suffix("}}")?.trim();
+        inside.strip_prefix("env.").map(str::to_string)
+    });
+    let key = named_env.unwrap_or_else(|| "files".to_string());
+    block_scalar(yaml, &key)
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect()
+}
+
+/// The lines of one named workflow step, from its own `- name:` to the next.
+fn step<'a>(yaml: &'a str, name: &str) -> Vec<&'a str> {
+    let header = format!("- name: {name}");
+    yaml.lines()
+        .skip_while(|line| line.trim() != header)
+        .skip(1)
+        .take_while(|line| !line.trim().starts_with("- name:"))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
+/// The steps of the workflow in the order they run.
+fn the_steps(yaml: &str) -> Vec<&str> {
+    yaml.lines()
+        .filter_map(|line| line.trim().strip_prefix("- name: "))
+        .collect()
+}
+
+/// Every `dist/` file name the release really writes, with the tag and the
+/// version filled in.
+///
+/// Both halves are read off the files that write them rather than kept as a
+/// second copy here. A second copy is the failure this whole rule is about: two
+/// lists that agree until one of them is edited.
+fn the_names_the_release_writes(yaml: &str, script: &str, tag: &str, version: &str) -> Vec<String> {
+    let mut written = Vec::new();
+
+    // The setup executable. Inno writes it into `OutputDir` under
+    // `OutputBaseFilename` and appends the extension itself, and
+    // `scripts/build-installer.sh` hands it the version off `Cargo.toml`. At a
+    // tag that version carries no `+build` suffix, because build-installer.sh
+    // appends one only when HEAD is not a tag.
+    if let (Some(folder), Some(base)) = (
+        setup_directive(script, "OutputDir"),
+        setup_directive(script, "OutputBaseFilename"),
+    ) {
+        let folder = folder.trim_start_matches("..\\").replace('\\', "/");
+        let base = base.replace("{#AppVersion}", version);
+        written.push(format!("{folder}/{base}.exe"));
+    }
+
+    // The portable copy and its zip, off the step that writes them.
+    for line in step(yaml, "Prepare the portable download") {
+        written.extend(
+            line.split('"')
+                .filter(|piece| piece.starts_with("dist/"))
+                .map(|piece| piece.replace("$tag", tag)),
+        );
+    }
+
+    written
+}
+
+/// Whether a glob matches a name, with `*` standing for any run of characters
+/// including none.
+///
+/// The patterns in the workflow use nothing else, and `*` here does not stop at
+/// a path separator because none of them needs it to.
+fn glob_matches(glob: &str, name: &str) -> bool {
+    let mut parts = glob.split('*');
+    let first = parts.next().unwrap_or_default();
+    let Some(mut rest) = name.strip_prefix(first) else {
+        return false;
+    };
+
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middles)) = parts.split_last() else {
+        // No wildcard at all, so the whole glob had to be the whole name.
+        return rest.is_empty();
+    };
+    for middle in middles {
+        match rest.find(middle) {
+            Some(at) => rest = &rest[at + middle.len()..],
+            None => return false,
+        }
+    }
+    rest.ends_with(last)
+}
+
+/// Whether every file the release promises is one the release really produces,
+/// and what is wrong when one is not.
+///
+/// **Two categories, not one, and the second names exactly what it excuses.**
+/// Three of the four promised files are built and then published; the fourth,
+/// `docs/changelog.md`, is a tracked file this repository already holds and
+/// nothing builds it. A rule holding all four to "something writes this" fails
+/// on the fourth forever, and a rule with a default category lets a fifth glob
+/// added later join whichever category happens to be the default. So the
+/// exception is a list of exact paths, and it is checked in both directions: a
+/// path excused here that nothing publishes is as wrong as a glob nothing
+/// builds, because that is how the exception rots without anybody seeing it.
+///
+/// The caller is left to say that an excused file really exists. This is where
+/// the promise and the build are held together; whether a tracked file is on
+/// the disk is a different question and reads better where it is asked.
+fn every_promised_file_is_one_the_release_produces(
+    promised: &[String],
+    written: &[String],
+    published_as_it_stands: &[&str],
+) -> Result<(), String> {
+    if promised.is_empty() {
+        return Err(
+            "no list of published files was read at all, so this rule looked \
+                    at nothing"
+                .to_string(),
+        );
+    }
+    if written.is_empty() {
+        return Err(
+            "no name the release writes was read at all, so every glob would \
+                    have been judged against nothing"
+                .to_string(),
+        );
+    }
+
+    let mut wrong: Vec<String> = promised
+        .iter()
+        .filter(|glob| !published_as_it_stands.contains(&glob.as_str()))
+        .filter(|glob| !written.iter().any(|name| glob_matches(glob, name)))
+        .map(|glob| {
+            format!("{glob} matches nothing the release writes, and is not one of the files published as they stand")
+        })
+        .collect();
+
+    wrong.extend(
+        published_as_it_stands
+            .iter()
+            .filter(|excused| !promised.iter().any(|glob| glob == *excused))
+            .map(|excused| {
+                format!("{excused} is excused from being built and nothing publishes it")
+            }),
+    );
+
+    if wrong.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "the release writes these names:\n  {}\nand these promises do not line up with them:\n  {}",
+        written.join("\n  "),
+        wrong.join("\n  ")
+    ))
+}
+
+/// Whether a release that cannot produce a file it promised stops before it
+/// publishes anything, and what is wrong when it does not.
+///
+/// Two nets, and the order between them is the whole point. The first is a step
+/// that checks the promised files exist, after they are built and before
+/// anything is announced. The second is `fail_on_unmatched_files`, which fires
+/// inside the publishing step itself, by which point the tag is on the remote
+/// and the release exists; a missing asset caught only there is already a
+/// half-published release. So the second is worth having and is not a
+/// substitute for the first.
+fn a_release_that_cannot_keep_a_promise_stops(yaml: &str) -> Result<(), String> {
+    let steps = the_steps(yaml);
+    let at = |name: &str| steps.iter().position(|step| *step == name);
+
+    let Some(built) = at("Prepare the portable download") else {
+        return Err(
+            "no step called 'Prepare the portable download' was read, so this \
+                    rule has no build step to be after"
+                .to_string(),
+        );
+    };
+    let Some(published) = at("Publish GitHub release assets") else {
+        return Err(
+            "no step called 'Publish GitHub release assets' was read, so this \
+                    rule has no publishing step to be before"
+                .to_string(),
+        );
+    };
+    let Some(checked) = at(THE_CHECK) else {
+        return Err(format!(
+            "no step called '{THE_CHECK}' was read, so a release that cannot produce \
+             a file it promised publishes the rest and says nothing"
+        ));
+    };
+
+    if checked < built {
+        return Err(format!(
+            "'{THE_CHECK}' runs before the files it is checking for are built"
+        ));
+    }
+    if checked > published {
+        return Err(format!(
+            "'{THE_CHECK}' runs after the release has been published, which is too \
+             late to stop it"
+        ));
+    }
+    if !yaml.contains("fail_on_unmatched_files: true") {
+        return Err("fail_on_unmatched_files is not true, so a glob that stops \
+                    matching is published as a silent absence"
+            .to_string());
+    }
+    Ok(())
+}
+
+/// Every trigger the workflow carries, by name.
+fn the_release_triggers(yaml: &str) -> Vec<String> {
+    let body: Vec<&str> = yaml
+        .lines()
+        .skip_while(|line| *line != "on:")
+        .skip(1)
+        .take_while(|line| line.trim().is_empty() || line.starts_with(char::is_whitespace))
+        .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+        .collect();
+
+    let Some(depth) = body
+        .iter()
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+    else {
+        return Vec::new();
+    };
+    body.iter()
+        .filter(|line| line.len() - line.trim_start().len() == depth)
+        .map(|line| line.trim().trim_end_matches(':').to_string())
+        .collect()
+}
+
+/// Whether a release can still only be started by somebody asking for one.
+///
+/// Guardrail 7, and the comment at the top of the workflow says why it is
+/// there rather than leaving it to be inferred: a push to `main` used to
+/// trigger this file, which cut two releases nobody asked for and promoted an
+/// alpha to beta.
+fn nothing_starts_a_release_but_a_person(yaml: &str) -> Result<(), String> {
+    let triggers = the_release_triggers(yaml);
+    if triggers.is_empty() {
+        return Err("no trigger was read at all, so this rule looked at nothing".to_string());
+    }
+    let uninvited: Vec<&str> = triggers
+        .iter()
+        .map(String::as_str)
+        .filter(|trigger| *trigger != "workflow_dispatch")
+        .collect();
+    if uninvited.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "a release can be started by something other than somebody asking for one: {}",
+        uninvited.join(", ")
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// What the release promises against what it builds
+// ---------------------------------------------------------------------------
+
+/// Nothing here moves the published tag away from the shape one glob expects.
+///
+/// `dist/wixen-mail-$tag.exe` is written and `dist/wixen-mail-v*.exe` is
+/// published, so the two agree only while the tag begins with `v`. No tag has
+/// ever existed here, so the shape comes from cargo-release's defaults, whose
+/// `tag-name` is `{{prefix}}v{{version}}` with an empty `tag-prefix` at a
+/// repository root.
+///
+/// Those defaults apply only while nothing overrides them, and overriding them
+/// is a one-line edit in a file this test names. **That is where the shape of
+/// the string is really decided**, rather than in the code that produces the
+/// value or in the glob that consumes it, and it is the half a reader would
+/// not think to check. The assumption itself stays unverified until a release
+/// is really cut, which `.planning/WINDOWS.md` carries.
+///
+/// Green when it was written, so it has no red half of its own and its break
+/// is recorded in `guards/guards.toml` instead.
+#[test]
+fn test_nothing_here_moves_the_published_tag_away_from_the_shape_a_glob_expects() {
+    for config in ["release.toml", ".cargo/release.toml"] {
+        assert!(
+            !std::path::Path::new(config).exists(),
+            "{config} exists and can set tag-name or tag-prefix, so the published tag \
+             may no longer begin with v, and dist/wixen-mail-v*.exe would then match \
+             nothing"
+        );
+    }
+
+    let manifest = std::fs::read_to_string("Cargo.toml").expect("the manifest");
+    assert!(
+        !manifest.contains("[package.metadata.release]"),
+        "Cargo.toml carries a [package.metadata.release] section, which can set \
+         tag-name or tag-prefix, so the published tag may no longer begin with v, and \
+         dist/wixen-mail-v*.exe would then match nothing"
+    );
+}
+
+/// Every file the release promises is one it really produces.
+///
+/// The two ends are read rather than compared by eye: the promises come off the
+/// list the publishing step uses, and the names come off the installer script's
+/// own output directives and off the step that writes the portable copy. Under
+/// the tag shape the test above holds, they line up.
+#[test]
+fn test_every_file_the_release_promises_is_one_it_really_produces() {
+    let workflow = the_release_workflow();
+    let script = the_installer_script();
+    let manifest = std::fs::read_to_string("Cargo.toml").expect("the manifest");
+
+    let version = the_version(&manifest);
+    let tag = format!("v{version}");
+    let promised = the_promised_files(&workflow);
+    let written = the_names_the_release_writes(&workflow, &script, &tag, &version);
+
+    // The reading really found all four promises and all three names. Without
+    // this the rule below is satisfied by a reading that found one of each, or
+    // by an excuse list that grew to cover everything.
+    assert_eq!(
+        promised.len(),
+        4,
+        "expected four promised files, read {promised:?}"
+    );
+    assert_eq!(
+        written.len(),
+        3,
+        "expected three names the release writes, read {written:?}"
+    );
+
+    if let Err(wrong) =
+        every_promised_file_is_one_the_release_produces(&promised, &written, PUBLISHED_AS_IT_STANDS)
+    {
+        panic!("{wrong}");
+    }
+
+    // The other half of the excuse, asked where it belongs: a file published as
+    // it stands has to be a file that stands there.
+    for excused in PUBLISHED_AS_IT_STANDS {
+        assert!(
+            std::path::Path::new(excused).exists(),
+            "{excused} is published as it stands and is not in the repository"
+        );
+    }
+}
+
+/// The files the release publishes without building them.
+///
+/// Exactly one today. `docs/changelog.md` is a tracked file and the release
+/// hands out the copy already in the repository.
+const PUBLISHED_AS_IT_STANDS: &[&str] = &["docs/changelog.md"];
+
+/// The reading can tell a promise the release keeps from one it does not.
+///
+/// The companion the walk above cannot do without. That walk reads one
+/// workflow, and while that workflow keeps its promises it passes whether the
+/// reading works or has been narrowed until it can see nothing, which is how a
+/// document guard in this tree came to prove nothing at all.
+#[test]
+fn test_the_reading_can_tell_a_promise_the_release_keeps_from_one_it_does_not() {
+    let built = ["dist/Wixen-Mail-Setup-0.1.0.exe".to_string()];
+    let excused: &[&str] = &["docs/changelog.md"];
+
+    let kept = [
+        "dist/Wixen-Mail-Setup-*.exe".to_string(),
+        "docs/changelog.md".to_string(),
+    ];
+    assert_eq!(
+        every_promised_file_is_one_the_release_produces(&kept, &built, excused),
+        Ok(())
+    );
+
+    // The half-fix rather than the absent one, and the shape the real failure
+    // would take: the glob is still there and still looks like a file name.
+    let mistyped = [
+        "dist/Wixen-Mail-Setup-v*.exe".to_string(),
+        "docs/changelog.md".to_string(),
+    ];
+    let wrong = every_promised_file_is_one_the_release_produces(&mistyped, &built, excused)
+        .expect_err("a glob that matches nothing the release writes has to be refused");
+    assert!(wrong.contains("dist/Wixen-Mail-Setup-v*.exe"), "{wrong}");
+
+    // An excuse that outlived the thing it excused.
+    let dropped = ["dist/Wixen-Mail-Setup-*.exe".to_string()];
+    let rotted = every_promised_file_is_one_the_release_produces(&dropped, &built, excused)
+        .expect_err("an excused file nothing publishes has to be refused");
+    assert!(rotted.contains("nothing publishes it"), "{rotted}");
+
+    // Two readings that found nothing, which without these read exactly like a
+    // release that keeps every promise it makes.
+    let nothing_promised = every_promised_file_is_one_the_release_produces(&[], &built, &[])
+        .expect_err("a reading that found no promises has to be refused");
+    assert!(
+        nothing_promised.contains("looked at nothing"),
+        "{nothing_promised}"
+    );
+
+    let nothing_built = every_promised_file_is_one_the_release_produces(&kept, &[], excused)
+        .expect_err("a reading that found no built names has to be refused");
+    assert!(
+        nothing_built.contains("judged against nothing"),
+        "{nothing_built}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Stopping rather than publishing what it has
+// ---------------------------------------------------------------------------
+
+/// A release that cannot produce a file it promised stops before it publishes.
+#[test]
+fn test_a_release_that_cannot_produce_a_promised_file_stops_before_it_publishes() {
+    if let Err(wrong) = a_release_that_cannot_keep_a_promise_stops(&the_release_workflow()) {
+        panic!("{wrong}");
+    }
+}
+
+/// The reading can see a release that publishes before it checks.
+#[test]
+fn test_the_reading_can_see_a_release_that_publishes_before_it_checks() {
+    let steps = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| format!("      - name: {name}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let net = "          fail_on_unmatched_files: true";
+
+    let in_order = format!(
+        "{}\n{net}\n",
+        steps(&[
+            "Prepare the portable download",
+            THE_CHECK,
+            "Publish GitHub release assets",
+        ])
+    );
+    assert_eq!(
+        a_release_that_cannot_keep_a_promise_stops(&in_order),
+        Ok(())
+    );
+
+    let too_late = format!(
+        "{}\n{net}\n",
+        steps(&[
+            "Prepare the portable download",
+            "Publish GitHub release assets",
+            THE_CHECK,
+        ])
+    );
+    let after = a_release_that_cannot_keep_a_promise_stops(&too_late)
+        .expect_err("a check after the release is published has to be refused");
+    assert!(after.contains("too late to stop it"), "{after}");
+
+    let too_early = format!(
+        "{}\n{net}\n",
+        steps(&[
+            THE_CHECK,
+            "Prepare the portable download",
+            "Publish GitHub release assets",
+        ])
+    );
+    let before = a_release_that_cannot_keep_a_promise_stops(&too_early)
+        .expect_err("a check before the files are built has to be refused");
+    assert!(
+        before.contains("before the files it is checking for are built"),
+        "{before}"
+    );
+
+    let unchecked = format!(
+        "{}\n{net}\n",
+        steps(&[
+            "Prepare the portable download",
+            "Publish GitHub release assets",
+        ])
+    );
+    let missing = a_release_that_cannot_keep_a_promise_stops(&unchecked)
+        .expect_err("a release with no check at all has to be refused");
+    assert!(
+        missing.contains("publishes the rest and says nothing"),
+        "{missing}"
+    );
+
+    // The second net on its own, with the first in place. Turning the flag off
+    // is the half-fix: every step is where it should be and a glob that stops
+    // matching is still published as an absence.
+    let no_net = format!(
+        "{}\n          fail_on_unmatched_files: false\n",
+        steps(&[
+            "Prepare the portable download",
+            THE_CHECK,
+            "Publish GitHub release assets",
+        ])
+    );
+    let silent = a_release_that_cannot_keep_a_promise_stops(&no_net)
+        .expect_err("an unmatched glob published as an absence has to be refused");
+    assert!(silent.contains("silent absence"), "{silent}");
+}
+
+// ---------------------------------------------------------------------------
+// When a release can happen
+// ---------------------------------------------------------------------------
+
+/// A release still happens only when somebody asks for one.
+///
+/// Green when it was written, and here so that it stays green: guardrail 7 is
+/// the one this project has already been bitten by, and the bite was a trigger
+/// added to this block. Its break is recorded in `guards/guards.toml`, because
+/// a guard written over a rule that already holds has no red half of its own.
+#[test]
+fn test_a_release_still_happens_only_when_somebody_asks_for_one() {
+    if let Err(wrong) = nothing_starts_a_release_but_a_person(&the_release_workflow()) {
+        panic!("{wrong}");
+    }
+}
+
+/// The reading can see a trigger that was widened.
+#[test]
+fn test_the_reading_can_see_a_release_trigger_that_was_widened() {
+    const ASKED_FOR: &str = "on:\n  workflow_dispatch:\n    inputs:\n      release_level:\n        required: true\n\njobs:\n";
+    const ON_A_PUSH: &str = "on:\n  workflow_dispatch:\n  push:\n    branches: [main]\n\njobs:\n";
+    const NO_TRIGGER_READ: &str = "jobs:\n  build:\n";
+
+    assert_eq!(nothing_starts_a_release_but_a_person(ASKED_FOR), Ok(()));
+
+    let widened = nothing_starts_a_release_but_a_person(ON_A_PUSH)
+        .expect_err("a release a push can start has to be refused");
+    assert!(widened.contains("push"), "{widened}");
+
+    let blind = nothing_starts_a_release_but_a_person(NO_TRIGGER_READ)
+        .expect_err("a reading that found no trigger has to be refused");
+    assert!(blind.contains("looked at nothing"), "{blind}");
 }

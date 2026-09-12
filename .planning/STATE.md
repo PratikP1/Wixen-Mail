@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: 07-06 merged with one task of three done, and it is the first plan of this phase that does not close what it was written for. There is now a workflow anybody can dispatch to find out whether this crate builds and its suite passes on Linux and on macOS. Nobody has dispatched it, so the answer is unknown, SHIP-05 does not close and criterion 5 stays open. Task 3 was not attempted because everything in it acts on an answer that does not exist. The workflow is workflow_dispatch only and read only, so a job nobody knows will pass is not on any push trigger. The guard that holds CI steps to --no-fail-fast read a hardcoded pair of files and now names three, taken red by hand against the new one
-last_updated: "2026-09-12T15:45:00.000Z"
+stopped_at: 07-07 merged, and both halves of it landed. A release that cannot produce one of the four files it promises now stops and names it, before anything is published, held by a test that reads the workflow and the build script rather than by two people having read the same file. The trigger is untouched and a test says so. The certificate decision is on the record with the three options that lost, which of their reasons could move, what the decision commits the project to and what signing does not buy; Microsoft's page was re-fetched rather than quoted and has not moved. Criterion 1 no longer says the opposite of it, criterion 2 is replaced whole per D-14 and 07-09 is measured against it, and SHIP-02 gained its fourth line per D-15. Nothing is signed and criterion 1 waits on an Azure account only Pratik can create. One deviation worth carrying: the guard-record coupling in check.sh could not read a record whose break lands on anything but a src file, so the two records this plan added were invisible to the gate, and that is fixed
+last_updated: "2026-09-12T18:05:00.000Z"
 last_activity: 2026-09-12
 state_head: c6546e66
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 97
-  completed_plans: 86
+  completed_plans: 87
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,11 +29,136 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-06 is merged at
-`c6546e66`, version 0.116.0. Six plans of nine have run and three remain, but 07-06 is the first
-plan of this phase that did not close what it was written for: one task of
-three, with its checkpoint open. Phase 05.2's checkpoint is still open too and
-nothing in it has been answered.**
+Phase: 07 (Installing, updating and what is stored). **07-07 is merged, version
+0.116.0. Seven plans of nine have run and two remain, 07-08 and 07-09, and both
+need Pratik: 07-08 needs an Azure account only he can create, and 07-09 ends in
+a screen reader pass. 07-06's checkpoint is still open, and so is phase 05.2's.**
+
+**A release that cannot produce a file it promised now stops and names it.**
+`release.yml` publishes four globs and `fail_on_unmatched_files` was `false`,
+whose own documentation calls it the indicator of whether to fail if any glob
+matches nothing, so a release that could produce three of the four published
+three, went green, and left the fourth to be found by somebody trying to
+download it. There are two nets now and the order is the point: a step after the
+assets are built and before anything is published checks each promised file
+exists and names the ones missing, and the flag is `true` as the second. The
+flag alone fires inside the publishing step, by which time the tag is on the
+remote and the release exists. The four globs are written once, in a job-level
+`RELEASE_ASSETS` entry both steps read, because two copies of a list agree until
+somebody edits one.
+
+**Nothing changes about when a release can happen, and a test holds that rather
+than a sentence.** The `on:` block is byte-identical, `workflow_dispatch` alone,
+and no token, permission or step that could tag, publish or push was added.
+`test_a_release_still_happens_only_when_somebody_asks_for_one` reads the block
+and refuses any other trigger, with a companion proving the reading can see a
+widened one, and a guard record whose break swaps the trigger for a push. Every
+change here makes publishing stricter and none makes it easier.
+
+**Three of the seven new tests had no red half, and that is said out loud rather
+than left to be noticed.** The names already agreed, the trigger was already
+right, and no cargo-release configuration exists. A test written over a rule
+that already holds has no red half by construction, so the honest substitute is
+its own recorded break: two are in `guards/guards.toml` and the third is
+measured by hand in `07-07-SUMMARY.md`, because the break that would redden it
+is a file appearing and the registry's mechanism is a substitution inside a file
+that exists.
+
+**Where the shape of a produced string is decided, guard the configuration
+rather than the string.** `dist/wixen-mail-$tag.exe` is written and
+`dist/wixen-mail-v*.exe` is published, so the two agree only while the tag
+begins with `v`, which comes from cargo-release's defaults. Rather than write
+that into a comment and assert under it,
+`test_nothing_here_moves_the_published_tag_away_from_the_shape_a_glob_expects`
+fails if `release.toml` or `.cargo/release.toml` appears or `Cargo.toml` grows a
+`[package.metadata.release]` section. The assumption itself stays unverified
+until a release is really cut.
+
+**The workflow has never run and that is now settled rather than locally true.**
+`git tag` returns nothing and `git ls-remote --tags origin` returns nothing while
+`git ls-remote --heads origin` answers with `main`, which is the control the
+research could not run. `WINDOWS.md` 326. The tag is pushed before anything is
+built, so a failure after that leaves a tag with no release behind it; that is
+recorded at 327 and deliberately not changed, because moving it changes when a
+tag exists.
+
+**The certificate decision is on the record as a decision.** Azure Artifact
+Signing, decided 2026-09-06, about $9.99 a month, Pratik Patel as the publisher
+name, residence requirement met and confirmed. The three that lost are each
+named with what they lost on, and with which of those reasons could move: the OV
+price could, SignPath's publisher name could not. SHIP-01 also says what the
+decision commits the project to, which is four binaries plus an uninstaller whose
+prompting behaviour is unverified and not two files, and what signing does not
+buy, which is that no certificate available here removes the SmartScreen warning
+and that `PrivilegesRequired=lowest` means the prompt a signature does fix is not
+shown on a per-user install anyway.
+
+**Microsoft's page was re-fetched rather than quoted, and it has not moved.**
+Read 2026-09-12; still "EV certificates no longer bypass SmartScreen", table
+still giving OV and EV the same first-download outcome, `updated_at` still
+2026-08-17. Its `ms.date` is 2026-05-04, which is a different field and worth
+knowing apart from the one the research recorded. Criterion 1's parenthetical is
+replaced from that reading and the rest of the sentence is byte-identical.
+
+**Criterion 2 is replaced whole per D-14, and this plan wrote the standard 07-09
+is measured against without reading 07-09.** It now asks for a downloaded
+installer verified against this project's own publisher name before anybody is
+asked about it, with a failed check refusing and deleting rather than warning,
+and it tells consented from silent by where the consent was given rather than by
+whether a question was asked at fetch time. SHIP-02's first `[D]` line had the
+same defect and is replaced beside it; the fourth line for the release channel
+is added per D-15; the other two were read and left alone.
+
+**Nothing is signed, nothing pretends to be, and criterion 1 waits on something
+outside this repository.** `WINDOWS.md` 329. Neither SHIP-01 nor SHIP-02 is
+ticked and neither row in the requirement-to-phase table moved.
+
+**A guard record is now read whatever kind of file its break lands on.**
+`check.sh`'s record-to-suite mapping discarded every changed path but
+`src/*.rs`, on the reason that `--lib` was never going to reach anything else.
+That is true about `--lib` and this mapping answers with a `--test` target, so
+the filter discarded exactly the records it exists for. The two records this
+plan added naming `release.yml` sat there looking like coverage while the commit
+that changed the workflow ran four tree guards and nothing that reads it. Four
+cases went in first, two red, and two existing cases that pinned the old rule
+were corrected in place with the wrong reason quoted above them rather than
+quietly deleted. A changed `tests/*.rs` is still left out, because it already
+runs its own target.
+
+**It was found by reading which targets the hook selected rather than its
+verdict**, which is worth keeping: splitting red and green into two commits gives
+them disjoint file lists, so under a scoped gate the green commit can run none
+of the tests it exists to turn green. That is exactly what happened here.
+
+**One failure in the tree is nobody's change.**
+`tests/a_move_says_what_has_not_been_sent.rs` cannot always reach the Windows
+credential store on this machine, failing with "No default store has been set".
+It appeared in two of three whole-tree runs on 2026-09-12, a different test of
+that file each time, and the file passes alone. Not diagnosed, not caused by
+anything here, and it did not appear in the final gate run. `WINDOWS.md` 328.
+Written down because reading a measurement run by grepping for the failure you
+expected is what stops it finding the one you did not.
+
+Version `0.116.0`, unchanged: nothing here is visible to somebody running the
+program, and a release workflow refusing to publish a broken asset is not
+something anybody using Wixen Mail meets. `guards/guards.toml` holds **731**
+records with the census reading 192 and 539. `.planning/WINDOWS.md` reaches
+**329** with 307 open, and nothing is pushed. `scripts/check.sh all` passed all
+four on the branch tip in **506 seconds** over 7,077 library tests and 51
+targets, with zero failures, which is inside the 419 to 654 the six landed
+branches report.
+
+**Owed after the merge and not blocking it:**
+`scripts/guards.sh --touched-by 3e52ab85`. Among files a record names, this
+branch changed `tests/installer.rs` and `.github/workflows/release.yml`.
+
+---
+
+### 07-06, the plan before this one
+
+**07-06 is merged at `c6546e66`. One task of three, and it is the first
+plan of this phase that did not close what it was written for, with its
+checkpoint open.**
 
 **There is a way to find out whether this crate builds off Windows, and nobody
 has used it.** `.github/workflows/other-platforms.yml` builds the main crate and
@@ -239,7 +364,7 @@ phase 7 was editing it. `progress.total_plans` went from 92 to **97** by
 counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
-Current Plan: 7
+Current Plan: 8
 Total Plans in Phase: 9
 
 ---
