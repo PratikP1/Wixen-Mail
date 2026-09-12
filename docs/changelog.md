@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Wixen Mail can now tell you whether a newer version has been published, and
+  you decide whether it ever asks on its own.** Help, then Check for Updates,
+  asks GitHub which versions exist and says what it found. That item works
+  whatever your setting says, so asking is always something you can do
+  deliberately. A new setting under General, "New versions", decides whether
+  anything is asked without you pressing something, and it starts on "Do not
+  look for new versions", so a fresh installation and every existing one ask
+  nobody anything until you choose otherwise. The other two answers are
+  "Released versions" and "Released versions and test versions"; the first never
+  offers you a test version, which is what a version with `alpha`, `beta` or
+  `rc` in its number is.
+
+  What the check sends is one request to `api.github.com` asking which versions
+  have been published. It carries no account, no sign-in and nothing about your
+  mail. GitHub associates an unauthenticated request with the address it came
+  from, which is their own wording, and allows sixty of them an hour from one
+  address. [What Wixen Mail sends, and where](privacy.md) says all of this in
+  full.
+
+  **Nothing is downloaded and nothing is run.** When there is a newer version
+  you are told, and asked whether to open the page about it in your browser.
+  Fetching an installer and starting it is a later piece of work, and choosing
+  a kind of version now is the point at which you would be agreeing to that, so
+  the setting says so where you choose it.
+
+  When it cannot get an answer it says so, rather than telling you that you are
+  up to date. Those are different things and only one of them means your version
+  is current.
+
 - **On a build where the Windows accessibility calls are missing, the program
   now says which parts of its accessibility layer do nothing there, at startup
   and in the About dialog.** This is a disclosure and not a port. Nothing here makes anything work on

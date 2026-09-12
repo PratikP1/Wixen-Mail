@@ -127,6 +127,15 @@ menu_ids!(
     ID_ADD_CALENDAR_BY_ADDRESS,
     ID_ADD_ADDRESS_BOOK_BY_ADDRESS,
     ID_ABOUT,
+    // Asking GitHub whether there is a newer version, on the Help menu beside
+    // About. One id, not one per channel: which channel is asked comes from the
+    // setting, and this item works whatever the setting says.
+    //
+    // Plan 07-09 extends what happens after the answer rather than adding a
+    // second item. Two Help menu items that both mean "update" is a pair
+    // somebody has to tell apart by reading, which is exactly what this program
+    // exists not to make people do.
+    ID_CHECK_FOR_UPDATES,
     ID_THREAD_VIEW,
     ID_APPLY_VIEW_ELSEWHERE,
     ID_OFFLINE_MODE,
@@ -5279,6 +5288,18 @@ impl WxMailApp {
                                 open_help(topic, &ui_tx, &runtime);
                             }
                         }
+                        _ if id == ID_CHECK_FOR_UPDATES => {
+                            // Whatever the setting says, per D-16. This is the
+                            // deliberate path SHIP-02 asks for and it must not
+                            // depend on the automatic one, so somebody who is
+                            // not looking for updates can still ask and gets
+                            // the public channel's answer.
+                            ask_whether_there_is_a_newer_version(
+                                crate::service::update_check::WhoAsked::ByHand,
+                                &ui_tx,
+                                &runtime,
+                            );
+                        }
                         _ if id == ID_ABOUT => show_about_dialog(&frame),
                         _ => tracing::debug!("Unhandled menu ID: {:?}", id),
                     }
@@ -5805,6 +5826,32 @@ impl WxMailApp {
                     &message_cache,
                     &a11y,
                     &switch_for_what_was_opened,
+                );
+            }
+
+            // ── Whether there is a newer version ─────────────────────────
+            //
+            // At most once per start, and only for somebody who chose a kind of
+            // version: `update_check::channel_for` answers nothing for the
+            // default and this returns without asking anybody anything.
+            //
+            // Here, and the position is deliberate. After `frame.show(true)`
+            // and after the two questions above it, so the window is already on
+            // screen and has already said what it says when it opens. The work
+            // itself is spawned on the runtime, so nothing on this thread waits
+            // for it: with no connection at all the request fails on a worker,
+            // a line goes to the log, and a check somebody asked for by hand
+            // says so out loud. Skipped during a scan run, which has nobody to
+            // tell.
+            //
+            // Once per start, not on a timer. That is the bound the removed
+            // `check_updates` had, it is what a person expects, and it is the
+            // only one that needs no stored timestamp and no schedule.
+            if scan_target.is_none() {
+                ask_whether_there_is_a_newer_version(
+                    crate::service::update_check::WhoAsked::AtStart,
+                    &scan_tx,
+                    &scan_rt,
                 );
             }
 
@@ -6846,6 +6893,12 @@ impl WxMailApp {
             wxdragon::menus::ItemKind::Normal,
         );
         help.append_separator();
+        help.append(
+            ID_CHECK_FOR_UPDATES,
+            "Check for &Updates",
+            "Ask GitHub whether a newer version of Wixen Mail has been published",
+            wxdragon::menus::ItemKind::Normal,
+        );
         help.append(
             ID_ABOUT,
             "A&bout",
@@ -9585,6 +9638,60 @@ fn refuse_a_command(tx: &Sender<UIUpdate>, why: &str) {
 /// Said when it fails, because a menu entry that appears to do nothing is the
 /// worst kind of broken: somebody presses it again, and then decides help does
 /// not work rather than that one page is missing.
+/// Ask GitHub whether a newer version has been published, and say what it said.
+///
+/// Off the interface thread, always. This is a network call, and a window that
+/// waits on one is a window that has not appeared and a screen reader that has
+/// not spoken: an answer nobody asked for must never be the reason somebody
+/// cannot hear their inbox.
+///
+/// Whether it happens at all, and on which channel, is
+/// [`crate::service::update_check::channel_for`]'s answer rather than this
+/// function's. Asked for by hand it always happens; at start it happens only
+/// where somebody chose a kind of version, which is what keeps "nothing is
+/// fetched unless somebody asked" true.
+///
+/// The setting is read here rather than passed in, from the same stored file
+/// every other setting is read from, so a choice made in this session's
+/// Settings dialog is the one the next check uses.
+fn ask_whether_there_is_a_newer_version(
+    asked: crate::service::update_check::WhoAsked,
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+) {
+    use crate::service::update_check::{self, Answer, WhoAsked};
+
+    let chosen = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().which_updates)
+        .unwrap_or_default();
+    let Some(channel) = update_check::channel_for(chosen, asked) else {
+        return;
+    };
+
+    // Said only where somebody pressed something. A check at start that
+    // announces "you are up to date" every morning is the flooding guardrail 5
+    // is about, and it would coalesce over whatever the window says as it
+    // opens. News is different: a version somebody has not got is worth one
+    // sentence a session.
+    let say_everything = asked == WhoAsked::ByHand;
+    let tx = tx.clone();
+    rt.spawn(async move {
+        let answer = update_check::ask(channel).await;
+        match answer {
+            Answer::ANewerVersion { ref page, .. } => {
+                let _ = tx.try_send(UIUpdate::ANewerVersionIsPublished {
+                    said: answer.said(),
+                    page: page.clone(),
+                });
+            }
+            _ if say_everything => {
+                let _ = tx.try_send(UIUpdate::CommandAnswered(answer.said()));
+            }
+            _ => tracing::info!("Update check at start: {}", answer.said()),
+        }
+    });
+}
+
 fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     use crate::application::help::plain;
     match crate::presentation::help_page::open(topic.file) {
@@ -16438,6 +16545,40 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // is the answer to a key somebody just pressed, and it must not be
             // coalesced away by the status a sync is producing underneath it.
             let _ = a11y.announce_topic(said, Priority::High, "command");
+        }
+        UIUpdate::ANewerVersionIsPublished { said, page } => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // Said the way an answer to a pressed key is said, on the same
+            // topic, because that is what this is when somebody chose the menu
+            // item and it is news worth one sentence when they did not.
+            let _ = a11y.announce_topic(said, Priority::High, "command");
+
+            // And then a control, because the answer has an act attached to it
+            // and an announcement carries none. Enter answers no, so nothing
+            // opens for somebody who pressed Enter to dismiss the sentence.
+            let asked = MessageDialog::builder(
+                frame,
+                &format!("{said}\n\nOpen the page about it in your browser?"),
+                "A Newer Version",
+            )
+            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+            .build()
+            .show_modal();
+            if asked != ID_YES {
+                return;
+            }
+            // A browser, and nothing else. Nothing is downloaded and nothing
+            // is run: fetching an installer and starting it is plan 07-09's,
+            // after there is a signature to check.
+            if open::that(page).is_err() {
+                let could_not = format!("Could not open a browser. The page is {page}");
+                frame.set_status_text(&could_not, 0);
+                let _ = a11y.announce_topic(&could_not, Priority::High, "command");
+            }
         }
         UIUpdate::CommandRefused(why) => {
             {

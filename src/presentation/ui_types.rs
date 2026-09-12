@@ -431,6 +431,28 @@ pub enum UIUpdate {
     /// and the answer to a key somebody just pressed can be the one that is
     /// dropped.
     CommandAnswered(String),
+    /// A version check found something newer, and there is a page about it.
+    ///
+    /// Separate from [`Self::CommandAnswered`] because this answer has an act
+    /// attached to it. The sentence is said the same way, above the ordinary
+    /// run of status, and then somebody is asked whether to open the releases
+    /// page. An announcement carries no control, so an answer that ends "and
+    /// here is where to get it" with nothing to press is an answer that leaves
+    /// a person to find the page themselves.
+    ///
+    /// Carries the finished sentence and the address, because the words are
+    /// worked out by `service::update_check::Answer::said`, where they can be
+    /// argued about in a test, and because a dialog may only be opened on the
+    /// interface thread while the check runs on a worker.
+    ///
+    /// **Nothing here downloads anything.** The page opens in a browser through
+    /// `open::that`. Fetching an installer and running it is plan 07-09's.
+    ANewerVersionIsPublished {
+        /// What is said and written to the status bar.
+        said: String,
+        /// The page GitHub published about the release.
+        page: String,
+    },
     /// A folder was renumbered by its server, so what was held for it here was
     /// thrown away and is being fetched again.
     ///

@@ -549,7 +549,7 @@ const GATED: [&str; 8] = [
 /// had thought about. Moving one of these into the list above is what happens
 /// when it grows a write.
 #[cfg(test)]
-const TALKS_BUT_ONLY_READS: [&str; 4] = [
+const TALKS_BUT_ONLY_READS: [&str; 5] = [
     // Searches an organisation's directory for somebody to write to. A search
     // and nothing else: nothing at the directory changes, and nothing is
     // written back to it.
@@ -561,6 +561,20 @@ const TALKS_BUT_ONLY_READS: [&str; 4] = [
     "src/service/safebrowsing/client.rs",
     // Trades an authorisation code for a token at the provider's own endpoint.
     "src/service/oauth.rs",
+    // Asks GitHub which versions of this program have been published. A GET,
+    // and nothing else: nothing at anybody's account changes, and there is no
+    // account to change, because the request is not signed in to anything.
+    //
+    // One sentence its four neighbours do not need. Every other member of this
+    // list fetches something to read or to store; this one fetches an answer
+    // that will, once plan 07-09 lands, decide that an executable is
+    // downloaded. That is not a write at somebody's account and it is not the
+    // harmless read this list's name implies either, so the categories here do
+    // not quite describe it. Whether this census wants a third list is a real
+    // question and is raised in 07-05's summary rather than answered on the way
+    // past: a file that ten guard records fingerprint is not somewhere to
+    // settle it.
+    "src/service/update_check.rs",
 ];
 
 /// Every client that can change something at a provider with an HTTP request:

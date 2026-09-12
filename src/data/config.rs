@@ -520,7 +520,7 @@ pub struct AppConfig {
     /// that propagates its error, so a stale `true` against a field of this
     /// type would fail the whole file and take every other setting on the
     /// machine back to its default.
-    #[serde(rename = "check_updates")]
+    #[serde(default)]
     pub which_updates: crate::common::version::WhichUpdates,
 }
 
@@ -663,7 +663,7 @@ impl Default for AppConfig {
             default_account_id: String::new(),
             draft_autosave_minutes: default_autosave_minutes(),
             undo_send_hold_seconds: default_undo_send_hold_seconds(),
-            which_updates: crate::common::version::WhichUpdates::DevelopmentReleases,
+            which_updates: crate::common::version::WhichUpdates::default(),
             message_columns: String::new(),
             feedback_channels: String::new(),
             sound_scheme_id: String::new(),

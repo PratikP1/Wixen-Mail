@@ -24,7 +24,8 @@
 //! an installer and running it is plan 07-09's, after signing lands in 07-08,
 //! and nothing here is a step toward doing it without being asked.
 
-use crate::common::version::{self, ReleaseChannel, WhichUpdates};
+use crate::common::version::{self, Offer, ReleaseChannel, WhichUpdates};
+use serde::Deserialize;
 
 /// The heading the one update setting sits under on the settings screen.
 ///
@@ -82,8 +83,17 @@ pub enum WhoAsked {
 /// exactly what somebody who never opted in should not be handed. Asking which
 /// channel at that moment was the other candidate and it is a question put in
 /// front of somebody who has already asked for the thing, every time.
-pub const fn channel_for(_setting: WhichUpdates, _asked: WhoAsked) -> Option<ReleaseChannel> {
-    Some(ReleaseChannel::DevelopmentReleases)
+pub const fn channel_for(setting: WhichUpdates, asked: WhoAsked) -> Option<ReleaseChannel> {
+    match asked {
+        WhoAsked::AtStart => setting.channel(),
+        // `ReleaseChannel::default()` rather than the variant by name, because
+        // 07-04 already decided that a channel nobody chose is the one that
+        // offers least and said so in that type's own doc comment.
+        WhoAsked::ByHand => Some(match setting.channel() {
+            Some(chosen) => chosen,
+            None => ReleaseChannel::PublicReleases,
+        }),
+    }
 }
 
 /// What came back, reduced to the three things any rule here reads.
@@ -134,9 +144,48 @@ impl Answer {
     /// Built here rather than at the screen, so the wording can be argued about
     /// in a test and so no caller can invent a sixth thing to say.
     pub fn said(&self) -> String {
-        "Wixen Mail checked whether there is a new version.".to_string()
+        match self {
+            Self::ANewerVersion {
+                version, channel, ..
+            } => format!(
+                "Wixen Mail {version} has been published. You are running {}. Asked on: {}.",
+                version::current(),
+                which_was_asked(*channel)
+            ),
+            Self::ThisIsTheNewest { channel } => format!(
+                "You are running the newest published version, {}. Asked on: {}.",
+                version::current(),
+                which_was_asked(*channel)
+            ),
+            Self::CouldNotBeFetched => "Wixen Mail could not ask GitHub which versions have \
+                 been published, so it does not know whether there is a newer one. Your \
+                 version has not changed."
+                .to_string(),
+        }
     }
 }
+
+/// What a channel is called where somebody reads which one was asked.
+///
+/// The same words the control offers, so a person told which channel was asked
+/// can look for it on the settings screen under the name they just heard.
+fn which_was_asked(channel: ReleaseChannel) -> &'static str {
+    match channel {
+        ReleaseChannel::PublicReleases => WhichUpdates::PublicReleases.words(),
+        ReleaseChannel::DevelopmentReleases => WhichUpdates::DevelopmentReleases.words(),
+    }
+}
+
+/// The most releases considered on the development channel.
+///
+/// GitHub's list endpoint is paginated, `per_page` and `page`, thirty by
+/// default and a hundred at most, so this asks for the most one page will give.
+/// One page rather than several: the answer wanted is the newest version, and a
+/// project whose newest release is not among its hundred most recent has other
+/// problems. Somebody in that position is told this is the newest, which is
+/// wrong, and the bound is written down here so the next person can see the
+/// case rather than discover it.
+const MOST_RELEASES_CONSIDERED: u32 = 100;
 
 /// Where a channel's question goes.
 ///
@@ -146,8 +195,28 @@ impl Answer {
 /// [docs.github.com/en/rest/releases/releases], so the public channel gets its
 /// whole rule from GitHub. The development channel cannot use it, because it
 /// would never see an alpha, so it asks for the list and puts it in order here.
-fn endpoint(_channel: ReleaseChannel) -> String {
-    String::new()
+fn endpoint(channel: ReleaseChannel) -> String {
+    let repository = which_repository();
+    match channel {
+        ReleaseChannel::PublicReleases => {
+            format!("https://{WHERE_THE_ASKING_GOES}/repos/{repository}/releases/latest")
+        }
+        ReleaseChannel::DevelopmentReleases => format!(
+            "https://{WHERE_THE_ASKING_GOES}/repos/{repository}/releases?per_page={MOST_RELEASES_CONSIDERED}"
+        ),
+    }
+}
+
+/// Whose releases are asked about, as `owner/name`.
+///
+/// Taken from the manifest rather than written out, so this cannot come to
+/// point at somebody else's project after a move. `Cargo.toml`'s `repository`
+/// is the one place that address is already kept.
+fn which_repository() -> String {
+    env!("CARGO_PKG_REPOSITORY")
+        .trim_end_matches('/')
+        .trim_start_matches("https://github.com/")
+        .to_string()
 }
 
 /// What this program calls itself to GitHub.
@@ -159,7 +228,20 @@ fn endpoint(_channel: ReleaseChannel) -> String {
 /// Measured the same day rather than taken on trust: a request sent with an
 /// empty agent came back `403` with a body naming this requirement.
 fn who_is_asking() -> String {
-    String::new()
+    format!("wixen-mail/{}", env!("CARGO_PKG_VERSION"))
+}
+
+/// One published release, reduced to the two things this reads.
+///
+/// serde passes over the twenty other fields GitHub sends, which was checked
+/// against a response caught off the wire rather than against the reference
+/// page: see `A_REAL_RELEASE` in the tests below.
+#[derive(Debug, Clone, Deserialize)]
+struct Published {
+    /// The tag, which carries a leading `v` on anything this project publishes.
+    tag_name: String,
+    /// The page a person reads about the release on.
+    html_url: String,
 }
 
 /// What a reply means for the person in front of us.
@@ -167,8 +249,83 @@ fn who_is_asking() -> String {
 /// Pure. Every rule about an answer is a rule about a status, a header and a
 /// body, so none of this needs a socket to be tested and none of it can be
 /// right only against a server that happens to be up.
-pub fn what_the_answer_means(_channel: ReleaseChannel, _running: &str, _reply: &Reply) -> Answer {
-    Answer::CouldNotBeFetched
+pub fn what_the_answer_means(channel: ReleaseChannel, running: &str, reply: &Reply) -> Answer {
+    if reply.status != 200 {
+        return Answer::CouldNotBeFetched;
+    }
+    match channel {
+        ReleaseChannel::PublicReleases => match serde_json::from_str::<Published>(&reply.body) {
+            Ok(published) => whether_that_one_is_an_offer(&published, running, channel),
+            Err(_) => Answer::CouldNotBeFetched,
+        },
+        ReleaseChannel::DevelopmentReleases => {
+            match serde_json::from_str::<Vec<Published>>(&reply.body) {
+                Ok(published) => the_newest_offer_among(&published, running, channel),
+                Err(_) => Answer::CouldNotBeFetched,
+            }
+        }
+    }
+}
+
+/// Whether one published release is something to tell somebody about.
+///
+/// The channel rule is [`version::whether_to_offer`]'s and is not repeated
+/// here: a prerelease is never an offer on the public channel, and that lives
+/// in one place for the reason 07-04 gives about two callers deciding
+/// independently.
+fn whether_that_one_is_an_offer(
+    published: &Published,
+    running: &str,
+    channel: ReleaseChannel,
+) -> Answer {
+    match version::whether_to_offer(&published.tag_name, running, channel) {
+        Offer::Yes => Answer::ANewerVersion {
+            version: published.tag_name.clone(),
+            page: published.html_url.clone(),
+            channel,
+        },
+        // A tag this program cannot read is not a newer version, and saying so
+        // is the honest answer for one release: something is published and none
+        // of it is an offer. The list below counts what it could not read,
+        // because there the difference decides whether the answer is worth
+        // anything.
+        Offer::NothingNewer | Offer::CouldNotRead => Answer::ThisIsTheNewest { channel },
+    }
+}
+
+/// The newest offer in a list, by this project's own ordering.
+///
+/// Not element zero. GitHub documents `per_page` and `page` for this endpoint
+/// and documents no ordering for it at all, and an order nobody has written
+/// down can change without an announcement. Measured on 2026-09-12 as well as
+/// read: the first entry of a real list was a rolling `nightly` tag, which is a
+/// prerelease and is not a version this program can put in order, so element
+/// zero was the wrong answer twice over on the first list anybody looked at.
+fn the_newest_offer_among(
+    published: &[Published],
+    running: &str,
+    channel: ReleaseChannel,
+) -> Answer {
+    let mut best: Option<&Published> = None;
+    for candidate in published {
+        if version::whether_to_offer(&candidate.tag_name, running, channel) != Offer::Yes {
+            continue;
+        }
+        let newer_than_best = best.is_none_or(|held| {
+            version::compare(&candidate.tag_name, &held.tag_name) == version::Compared::Newer
+        });
+        if newer_than_best {
+            best = Some(candidate);
+        }
+    }
+    match best {
+        Some(offer) => Answer::ANewerVersion {
+            version: offer.tag_name.clone(),
+            page: offer.html_url.clone(),
+            channel,
+        },
+        None => Answer::ThisIsTheNewest { channel },
+    }
 }
 
 /// Ask GitHub, and say what came back.

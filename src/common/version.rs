@@ -302,7 +302,9 @@ impl WhichUpdates {
     /// somebody scanning a settings screen by ear is looking for.
     pub const fn words(self) -> &'static str {
         match self {
-            Self::NotLooking | Self::PublicReleases | Self::DevelopmentReleases => "",
+            Self::NotLooking => "Do not look for new versions",
+            Self::PublicReleases => "Released versions",
+            Self::DevelopmentReleases => "Released versions and test versions",
         }
     }
 

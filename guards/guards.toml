@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 535 records have arrived since and have not been through it.
+# 536 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -12186,7 +12186,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/data/config.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -13038,7 +13038,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/data/config.rs", tests = 63 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -17229,7 +17229,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/data/config.rs", tests = 63 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18564,7 +18564,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 60 },
+    { file = "src/data/config.rs", tests = 63 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -19876,4 +19876,42 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/version.rs", tests = 24 },
+]
+
+# A fresh installation asking GitHub for a version list nobody asked for. The
+# break turns the default on rather than taking the field out, which is the
+# half-fix: the setting is still there, the control still offers three answers,
+# the check still does what it says. It just does it for somebody who never
+# chose that it should, and once plan 07-09 lands that means an installer is
+# fetched over whatever connection they are on.
+#
+# Deleting the field was the other candidate and it is worse as a measurement,
+# because a missing field is a build failure rather than a wrong answer, and
+# what needs guarding here is the answer. Every other way of getting this wrong
+# routes through this one line: `channel_for` asks the setting, and the setting
+# has one default.
+#
+# One test rather than several, and that is the whole of it rather than a short
+# list. Only `test_a_fresh_installation_is_not_looking_for_new_versions` asks
+# what a new installation's answer is. Its neighbour about an older settings
+# file reads `WhichUpdates::default()` through `#[serde(default)]` rather than
+# `AppConfig::default()`, so it stays green under this break, which is worth
+# knowing: this record guards the fresh-installation half and nothing here
+# guards the upgrade half, because nothing can break it without breaking the
+# type's own default in `src/common/version.rs`.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads: 7,065
+# passed in the library and exactly this one failed, with every other target
+# green.
+[[guard]]
+name = "a fresh installation asks nobody about new versions"
+file = "src/data/config.rs"
+before = '            which_updates: crate::common::version::WhichUpdates::default(),'
+after = '            which_updates: crate::common::version::WhichUpdates::PublicReleases,'
+red = [
+    "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 63 },
 ]
