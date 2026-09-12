@@ -64,7 +64,8 @@ A release that cannot produce one of the four files it promises now stops and na
 test that reads the workflow and the build script rather than by somebody having read both; and the
 certificate decision is on the record with the three options that lost.
 
-**Branch:** `a-release-that-cannot-produce-a-file-it-promised-says-so`, off `main` at `3e52ab85`.
+**Branch:** `a-release-that-cannot-produce-a-file-it-promised-says-so`, off `main` at `3e52ab85`,
+**merged at `eab73a40`.**
 
 ## What landed
 

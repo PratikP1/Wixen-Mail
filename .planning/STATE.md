@@ -7,7 +7,7 @@ status: executing
 stopped_at: 07-07 merged, and both halves of it landed. A release that cannot produce one of the four files it promises now stops and names it, before anything is published, held by a test that reads the workflow and the build script rather than by two people having read the same file. The trigger is untouched and a test says so. The certificate decision is on the record with the three options that lost, which of their reasons could move, what the decision commits the project to and what signing does not buy; Microsoft's page was re-fetched rather than quoted and has not moved. Criterion 1 no longer says the opposite of it, criterion 2 is replaced whole per D-14 and 07-09 is measured against it, and SHIP-02 gained its fourth line per D-15. Nothing is signed and criterion 1 waits on an Azure account only Pratik can create. One deviation worth carrying: the guard-record coupling in check.sh could not read a record whose break lands on anything but a src file, so the two records this plan added were invisible to the gate, and that is fixed
 last_updated: "2026-09-12T18:05:00.000Z"
 last_activity: 2026-09-12
-state_head: c6546e66
+state_head: eab73a40
 progress:
   total_phases: 13
   completed_phases: 0
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-07 is merged, version
-0.116.0. Seven plans of nine have run and two remain, 07-08 and 07-09, and both
+Phase: 07 (Installing, updating and what is stored). **07-07 is merged at
+`eab73a40`, version 0.116.0. Seven plans of nine have run and two remain, 07-08 and 07-09, and both
 need Pratik: 07-08 needs an Azure account only he can create, and 07-09 ends in
 a screen reader pass. 07-06's checkpoint is still open, and so is phase 05.2's.**
 
