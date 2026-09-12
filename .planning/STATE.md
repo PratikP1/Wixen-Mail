@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: 07-03 merged at 85d84d3. The program says which parts of its accessibility layer do nothing on the build it is running as, in the About dialog and at startup, and says nothing on Windows. Both halves of the bridge answer for themselves. Nobody has seen or heard any of it
-last_updated: "2026-09-12T10:15:00.000Z"
+stopped_at: 07-04 merged at MERGE_HASH_07_04. Two version strings can be put in order, including the prerelease cases, and a channel decides whether the newer one is an offer. ReleaseChannel is derived and never stored. A published tag carries a v, which nothing in the plan said and which no tag exists to confirm. Nothing outside the tests calls any of it
+last_updated: "2026-09-12T11:55:00.000Z"
 last_activity: 2026-09-12
-state_head: 85d84d3
+state_head: MERGE_HASH_07_04
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 92
-  completed_plans: 83
+  completed_plans: 84
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,12 +29,52 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-03 is merged at
-`85d84d3`, version 0.115.0. Three plans of nine are done and six remain. Phase
-05.2's checkpoint is still open and nothing in it has been answered.**
+Phase: 07 (Installing, updating and what is stored). **07-04 is merged at
+`MERGE_HASH_07_04`, version 0.115.0. Four plans of nine are done and five
+remain. Phase 05.2's checkpoint is still open and nothing in it has been
+answered.**
 
-**The program now says which parts of its accessibility layer do nothing on the
-build it is running as.** In the About dialog, which is where the Help menu's
+**Two version strings can be put in order, and a channel decides whether the
+newer one is an offer.** Three numbers, then the prerelease staging them, then
+its counter compared as a number. A build identifier after a plus plays no
+part, so two builds of one version stay one version. The answer names four
+outcomes rather than returning a bool, and one of the four is that the string
+could not be read, because reading that as "older" would tell everybody there
+is a new version whenever a server returned something unexpected.
+
+**Nothing offers anybody anything yet, and criterion 2 does not close.**
+Nothing here asks anything, stores anything or draws anything, and nothing
+outside the tests calls any of it. That is `WINDOWS.md` 313 and it is 07-05's
+to close.
+
+**`ReleaseChannel` is derived and never stored, and the plan said both.** Its
+own premise said the setting holds the three-valued answer and the channel is
+worked out from it; two acceptance criteria, a trust boundary and a threat
+entry said a channel value arrives from a settings file. Both halves could have
+been made true separately, which is the failure this project keeps meeting, so
+it was settled one way: the channel has no serde representation at all, there
+is no stored channel spelling for 07-05 to keep, and threat T-07-16 as written
+is about a value nothing writes. What a settings file holds is `WhichUpdates`,
+spelled `not_looking`, `public_releases` or `development_releases`, and those
+three are fixed from here.
+
+**A published tag carries a `v`, and nothing in the plan said so.** `cargo
+release` writes the tag and `release.yml` names the portable download after it,
+published under the glob `wixen-mail-v*.exe`. That glob is the only place in
+the tree where the real shape of the string is written down, and no tag exists
+to confirm it, because no release has ever been cut. Without it the comparison
+would have answered "could not read" for every release this project publishes,
+with every test green and nothing failing. That is `WINDOWS.md` 312.
+
+**A guard record went stale inside its own plan, three hours after it was
+written.** The build-identifier record named two tests when task 1 measured it
+by hand. Task 2's offer decision routes through the same comparison, so a row
+of its table where two versions differ only after a plus turns into an offer
+under the same break, and the count check's remedy is what found it. Three
+tests now, measured and confirmed through the tool.
+
+**The plan before this one: the program says which parts of its accessibility
+layer do nothing on the build it is running as.** In the About dialog, which is where the Help menu's
 own item lands, and on the stream at startup, before anybody has opened a menu.
 On Windows it says nothing, because both halves of the bridge work there and a
 warning that is wrong every time it appears teaches people to ignore warnings.
@@ -101,11 +141,11 @@ script as text, which is all anything here can do, and its own doc comment says
 so: nothing compiles it with ISCC, installs anything or looks at a shortcut.
 That is `WINDOWS.md` 306.
 
-Version `0.115.0`, `guards/guards.toml` holds 725 records with the census
-reading 192 and 533, `.planning/WINDOWS.md` reaches 310 with 289 open, and
+Version `0.115.0`, `guards/guards.toml` holds 727 records with the census
+reading 192 and 535, `.planning/WINDOWS.md` reaches 314 with 293 open, and
 nothing is pushed.
 
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 9
 
 ---
@@ -869,6 +909,7 @@ the paragraph above describes, seen from the tooling's side.
 | Phase 05.1 P04 | 1h 35m | 3 tasks | 9 files |
 | Phase 05.1 P06 | 155min | 3 tasks | 21 files |
 | Phase 05.2 P02 | 155min | 4 tasks | 11 files |
+| Phase 07 P04 | 97min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -877,6 +918,13 @@ the paragraph above describes, seen from the tooling's side.
 Decisions are logged in the PROJECT.md Key Decisions table. The ones that shape the phases
 ahead:
 
+- `ReleaseChannel` is derived from the stored setting and is never written to a file, so
+  there is one stored spelling to keep rather than two. What a settings file holds is
+  `WhichUpdates`, spelled `not_looking`, `public_releases` or `development_releases`, fixed
+  from 07-04 onward because renaming a stored value makes a machine holding it unreadable.
+- A version string this program accepts may carry a leading `v`, because a published tag
+  does. The evidence is `release.yml`'s `wixen-mail-v*.exe` glob rather than a tag, since no
+  release has ever been cut.
 - No EWS. Microsoft blocks third-party EWS from 1 October 2026. Exchange goes through Graph.
 - Writes split into `mail` and `personal_information` in `src/application/allowed.rs`, with
   three places that must agree. Mail writes are off for a new install.

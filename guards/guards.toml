@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 533 records have arrived since and have not been through it.
+# 535 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -19798,4 +19798,82 @@ red = [
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
     { file = "src/presentation/accessibility/platform_bridge.rs", tests = 9 },
+]
+
+# ── 07-04 ─────────────────────────────────────────────────────────────────
+#
+# The half-fix rather than the absent one. The split on the plus is still
+# there and the numbers still decide first; what the break adds is the whole
+# string as a tiebreaker, so two builds of one version stop being one version.
+# That is what somebody reaching for "but these two strings are different"
+# writes, and it is the shape that matters: it tells everybody running
+# 0.5.0+g64c73dd that 0.5.0 is a different version from the one they have.
+#
+# Deleting the split was the other candidate and it was rejected on what it
+# proves. Without the split nothing parses at all, so the answer becomes
+# "could not read" and the record would be measuring whether a function is
+# called rather than whether the rule it holds is right.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads.
+# Both tests named are new with this change, so this break measures this guard
+# rather than an older test catching it by accident.
+#
+# Three tests in the same file stay green under it and that is correct rather
+# than a short list. `test_the_same_version_is_neither_newer_nor_older` and the
+# tag test compare strings that are equal or that sort the same way as their
+# versions, so the tiebreaker never changes their answer, and
+# `test_a_string_that_is_not_a_version_is_refused_rather_than_crashing` returns
+# before the comparison is reached.
+#
+# Re-measured the same day and the red list grew from two to three. The offer
+# decision arrived after this record was written and routes through the same
+# comparison, so a row of its table where two versions differ only after a plus
+# turns from "nothing newer" into an offer under this break. Two tests were
+# right when it was written and short by the afternoon, which is what a record
+# being a measurement with a date means here.
+[[guard]]
+name = "a build identifier is not part of the version"
+file = "src/common/version.rs"
+before = '    match left.cmp(&right) {'
+after = '    match left.cmp(&right).then_with(|| version.cmp(with)) {'
+red = [
+    "common::version::tests::test_a_build_identifier_after_a_plus_is_not_part_of_the_version",
+    "common::version::tests::test_two_builds_of_one_version_are_the_same_version",
+    "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
+]
+tests_last_seen = [
+    { file = "src/common/version.rs", tests = 24 },
+]
+
+# The channel check passing everything through, which is the half-fix rather
+# than the absent one: the type still exists, the setting still stores which
+# channel somebody chose, the offer decision still asks the question, and the
+# answer is yes for everybody. That offers an alpha to somebody who asked only
+# for released versions, and once 07-09 lands it sends them to fetch an
+# installer built from one.
+#
+# Deleting the type was the other candidate and it is worse as a measurement,
+# because a missing type is a build failure rather than a wrong answer, and
+# what needs guarding here is the answer.
+#
+# One test rather than several, and that is the whole of it rather than a short
+# list. Only `test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose`
+# varies the channel; every other test in the file either asks one channel or
+# asks about the ordering underneath. It is new with this change.
+#
+# Measured 2026-09-12 by hand on the tree this commit makes, with
+# `cargo test --all-targets --no-fail-fast` at the default eight threads: 7,051
+# passed in the library and exactly this one failed, with every other target
+# green.
+[[guard]]
+name = "the public channel never offers a prerelease"
+file = "src/common/version.rs"
+before = '            Self::PublicReleases => false,'
+after = '            Self::PublicReleases => true,'
+red = [
+    "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
+]
+tests_last_seen = [
+    { file = "src/common/version.rs", tests = 24 },
 ]
