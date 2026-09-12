@@ -1,0 +1,172 @@
+name: Other platforms
+
+# Dispatched on purpose, and on nothing else.
+#
+# Nobody has ever compiled this crate off Windows, so nobody knows whether
+# these two jobs pass. Putting a job nobody knows about on a push trigger is
+# this project's fourth guardrail exactly: a check nobody reads is worse than
+# no check, and CI here was red for sixty runs across five weeks while looking
+# maintained, with the search handler's steps reported skipped every time.
+#
+# So this runs only when somebody asks for it. Plan 07-06 task 3 is where it
+# becomes a push job, and only if the answer comes back green. If it comes back
+# red, that is a finding about a port rather than a job to leave failing.
+on:
+  workflow_dispatch:
+
+# Read only. No step here is handed a token, and nothing tags, publishes or
+# pushes. Releases are cut deliberately from release.yml, which this file does
+# not touch, so nothing here changes when a release can happen.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Copied from ci.yml rather than inherited. Workflow-level env belongs to the
+  # file it is written in, so a job here gets none of ci.yml's.
+  #
+  # The runners ship no audio driver (actions/runner-images#6983), and that is
+  # as true of ubuntu-latest and macos-latest as it is of windows-latest. rodio
+  # 0.22.2 does not fail cleanly there: it opens something anyway and faults on
+  # the first write, killing the test binary. That is not two failing tests, it
+  # is every test scheduled after the crash never running, and about 3,500 of
+  # ours were lost that way with nothing saying so.
+  #
+  # This does not skip a single sound test. They all still run and all still
+  # assert; the sound goes to a mixer with nothing listening instead of to a
+  # card. src/presentation/accessibility/feedback.rs has the detail.
+  WIXEN_NO_AUDIO: "1"
+
+# Two jobs, neither of which needs the other. macOS and Linux fail differently
+# and one answer is not the other, so a Linux failure must still leave the
+# macOS answer on the table.
+#
+# Neither job builds the search handler. search-handler/ is a second crate
+# rather than a workspace member, so every cargo command below walks straight
+# past it, and that is deliberate: it is a Windows COM server. SHIP-05 asks
+# whether the main crate builds off Windows. Adding working-directory:
+# search-handler here would ask a question nobody wants the answer to and would
+# fail for a reason that says nothing about the platform.
+#
+# No caching anywhere, on purpose. The number this workflow exists to produce
+# is how long a first build takes on a machine that has never built this, and a
+# warm target directory is the one condition that would make that number
+# meaningless. wxDragon also puts the wxWidgets source and its two CMake build
+# trees under the target directory by default, per the upstream README read on
+# 2026-09-12, so a cache of target would carry a C++ toolkit build across runs
+# and the second run would measure nothing. Caching belongs to the push jobs in
+# task 3, if there are any, where the question is speed rather than truth.
+#
+# timeout-minutes on both, because GitHub's default is six hours. Whether this
+# build downloads prebuilt wxWidgets libraries or builds the toolkit from
+# source is the open question here, and the expensive answer has no upper bound
+# anybody has measured. Two hours is generous for a cold source build plus this
+# crate plus its suite, and it bounds a run that is going nowhere.
+jobs:
+  linux:
+    name: Linux (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: read
+
+    steps:
+    # First, and if: always(), so the conditions the measurement was taken
+    # under survive a job that fails at its first real step. A duration or a
+    # failure without the image it happened on is an impression rather than a
+    # measurement.
+    - name: Say what this ran on
+      if: always()
+      run: |
+        echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
+        echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+        uname -a
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      # stable rather than a pinned version. Cargo.toml declares
+      # rust-version = "1.88" and every call site in ci.yml uses stable, so
+      # stable satisfies the floor and the two files answer alike. Pinning
+      # below 1.88 would fail to build; pinning above it would turn on clippy
+      # lints this tree has never been held to, and clippy runs with
+      # -D warnings.
+      uses: dtolnay/rust-toolchain@stable
+
+    # Quoted from the wxDragon README's "Linux Additional Requirements", read
+    # on 2026-09-12 at github.com/AllenDang/wxDragon. Word for word, and dated,
+    # because this is an external fact living in a project file and this
+    # project has already been caught by one of those going stale with no
+    # commit here to notice.
+    #
+    #   libclang-dev pkg-config libgtk-3-dev libpng-dev libjpeg-dev
+    #   libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libexpat1-dev
+    #   libtiff-dev cmake libssl-dev libwebkit2gtk-4.1-dev
+    #
+    # libwebkit2gtk-4.1-dev is on that list for the webview feature, which
+    # Cargo.toml enables alongside aui and richtext. These come from Ubuntu's
+    # own repositories. Nothing here fetches a script and runs it.
+    - name: Install what wxDragon asks for on Linux
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libclang-dev pkg-config libgtk-3-dev libpng-dev libjpeg-dev \
+          libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libexpat1-dev \
+          libtiff-dev cmake libssl-dev libwebkit2gtk-4.1-dev
+
+    # Build before test, so a compile failure is reported as one rather than
+    # arriving inside a test run. --all-targets to match ci.yml's test job and
+    # scripts/check.sh, so a difference in the answer is about the platform
+    # rather than about the command.
+    - name: Build
+      run: cargo build --all-targets --verbose
+
+    # --no-fail-fast because cargo runs each target in turn and stops at the
+    # first that fails, and the library is first. One failing test there would
+    # mean none of the files under tests/ ran at all, so this job could go red
+    # for one reason while saying nothing about the rest. The flag still fails
+    # the run. It runs everything first.
+    - name: Run the tests
+      run: cargo test --all-targets --verbose --no-fail-fast
+
+  macos:
+    name: macOS (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: read
+
+    steps:
+    - name: Say what this ran on
+      if: always()
+      run: |
+        echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
+        echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+        uname -a
+        sw_vers
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    # Upstream lists no macOS packages beyond Rust, CMake and a C++ compiler.
+    # The C++ compiler is the Xcode command line tools, which the image ships.
+    # CMake is on upstream's "All Platforms" list and the Linux job gets it
+    # from the apt line above, so this is the same guarantee rather than an
+    # extra dependency: without it a missing build tool answers a question
+    # nobody asked, and the run would read as "this does not build on macOS".
+    # Homebrew is preinstalled and is its own repository, so this fetches no
+    # script at run time either.
+    - name: Make sure CMake is there
+      run: cmake --version || brew install cmake
+
+    - name: Build
+      run: cargo build --all-targets --verbose
+
+    - name: Run the tests
+      run: cargo test --all-targets --verbose --no-fail-fast

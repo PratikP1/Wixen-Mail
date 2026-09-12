@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 7
 current_phase_name: Installing, updating and what is stored
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: 07-05 merged. A Help menu item asks GitHub whether there is a newer version and the answer is said in words, on the channel one setting picks. That setting has three values, sits under a new New versions heading on the General tab and starts on not looking, so nothing is fetched until somebody chooses. Five answers, and a rate limit is 403 or 429 told apart from the other 403 by x-ratelimit-remaining. Nothing downloads and nothing runs, which is 07-09's. 07-04's code is now reached by a path a person can take. docs/privacy.md stops promising there is no update check and gains the TEMP log fallback and the OneNote permission nothing uses
-last_updated: "2026-09-12T14:55:00.000Z"
+stopped_at: 07-06 merged with one task of three done, and it is the first plan of this phase that does not close what it was written for. There is now a workflow anybody can dispatch to find out whether this crate builds and its suite passes on Linux and on macOS. Nobody has dispatched it, so the answer is unknown, SHIP-05 does not close and criterion 5 stays open. Task 3 was not attempted because everything in it acts on an answer that does not exist. The workflow is workflow_dispatch only and read only, so a job nobody knows will pass is not on any push trigger. The guard that holds CI steps to --no-fail-fast read a hardcoded pair of files and now names three, taken red by hand against the new one
+last_updated: "2026-09-12T15:45:00.000Z"
 last_activity: 2026-09-12
-state_head: d83bed3
+state_head: b8857bc8
 progress:
   total_phases: 13
   completed_phases: 0
-  total_plans: 92
-  completed_plans: 85
+  total_plans: 97
+  completed_plans: 86
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,11 +29,63 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-05 is merged at
-`d83bed3`, version 0.116.0. Five plans of nine are done and four remain. Phase 05.2's checkpoint
-is still open and nothing in it has been answered.**
+Phase: 07 (Installing, updating and what is stored). **07-06 is merged, version
+0.116.0. Six plans of nine have run and three remain, but 07-06 is the first
+plan of this phase that did not close what it was written for: one task of
+three, with its checkpoint open. Phase 05.2's checkpoint is still open too and
+nothing in it has been answered.**
 
-**Somebody can ask whether there is a newer version and be told in words.**
+**There is a way to find out whether this crate builds off Windows, and nobody
+has used it.** `.github/workflows/other-platforms.yml` builds the main crate and
+runs its suite on `ubuntu-latest` and on `macos-latest`, as two jobs that do not
+depend on each other, so a Linux failure still leaves the macOS answer on the
+table. It is `workflow_dispatch` only and `permissions: contents: read`, with no
+token in any step, because a job nobody knows will pass must not go on a push
+trigger: that is how CI here stayed red for sixty runs across five weeks while
+looking maintained. Dispatch it from the Actions tab, under the name "Other
+platforms". `07-06-SUMMARY.md`'s first section says what to report back, four
+things per platform, written so nobody has to re-read the plan.
+
+**SHIP-05 does not close and criterion 5 stays open.** The requirement reads as
+though it were two CI jobs. It might be, and it might be a port, and after this
+plan that is still unknown rather than guessed at, which was the point. Task 3
+of `07-06-PLAN.md` acts on the answer when there is one and spells out both
+branches. `WINDOWS.md` 323 and 324.
+
+**Nothing in this phase waits for it.** 07-07, 07-08 and 07-09 are unaffected.
+
+**One premise of the plan reads more hopefully than the evidence supports.**
+Upstream says wxDragon downloads prebuilt wxWidgets libraries rather than
+building the toolkit from source, and the research here said the opposite. Read
+again on 2026-09-12: every place in that README naming a platform beside the
+word "prebuilt" names Windows, and its Linux requirements list asks for `cmake`
+and GTK development headers, which is what a source build needs. That settles
+nothing, which is why the measurement exists, but both jobs carry
+`timeout-minutes: 120` against GitHub's default of 360 for the expensive case.
+
+**The guard that holds CI steps to `--no-fail-fast` read a hardcoded pair of
+files.** `test_one_failing_target_does_not_hide_the_rest` now names three, and
+the new one was taken red by hand before the violating step came out, because a
+list extended and never proved reads as covered. No `#[test]` was added to
+`tests/house_style.rs`, which 19 records fingerprint, so no re-measurement was
+owed and none was run.
+
+**A workflow-only change answers `affected` on a branch and `all` on `main`,
+measured rather than assumed**, and `which-checks.sh` has no rule about
+`.github/` at all: a `.yml` simply fails the last loop's `.md` or `.txt` test.
+What `affected` then runs for a workflow file is narrower than it sounds. The
+scoped run maps a path to a target and knows `src/*.rs` and `tests/*.rs` only,
+so a workflow file selects no target of its own and is checked by the four
+tree-reading guards, `house_style` among them, which collects
+`.github/**/*.yml`. That is the `.iss` hole one layer along, smaller because
+`house_style` runs on every commit. Recorded rather than fixed.
+
+**`progress.completed_plans` is 86**, counted from the `*-SUMMARY.md` files on
+disk rather than incremented. One of the 86 is `partial` rather than `complete`,
+and it is this one.
+
+**The plan before this one: somebody can ask whether there is a newer version
+and be told in words.**
 Help, then Check for Updates, asks GitHub on the channel the setting picks,
 compares the tag with this build by 07-04's ordering, writes the answer to the
 status bar and says it at high priority on the command topic. When there is a
@@ -165,12 +217,25 @@ script as text, which is all anything here can do, and its own doc comment says
 so: nothing compiles it with ISCC, installs anything or looks at a shortcut.
 That is `WINDOWS.md` 306.
 
-Version `0.116.0`, `guards/guards.toml` holds 729 records with the census
-reading 192 and 537, `.planning/WINDOWS.md` reaches 322 with 300 open, and
-nothing is pushed. `scripts/check.sh all` passed all four on 07-05's branch tip
-in 471 seconds over 7,077 tests.
+Version `0.116.0`, unchanged by 07-06 because nothing user-visible changed and
+`CLAUDE.md` ties a bump to a change that needs one. `guards/guards.toml` holds
+729 records with the census reading 192 and 537, untouched by this plan.
+`.planning/WINDOWS.md` reaches 325 with 303 open, and nothing is pushed.
 
-Current Plan: 6
+**Two agents shared this working tree and the gate noticed.** Phase 6's planning
+was running while 07-06 executed, and its untracked plan files made the
+roadmap's `0/TBD` for phase 6 false, which refused 07-06's document commit:
+`test_the_roadmap_counts_the_files_that_are_on_disk` reads the disk rather than
+the index and cannot tell one agent's uncommitted work from another's. Chasing
+the number failed three times, at 1, 2, 3 and 5 plans, because the planner wrote
+faster than a gate run takes. The row was settled at `0/8` after the count held
+still for several minutes, which is also the figure phase 6's own README asks
+for; that README says it left `.planning/ROADMAP.md` alone on purpose because
+phase 7 was editing it. `progress.total_plans` went from 92 to **97** by
+counting `*-PLAN.md` on disk rather than incrementing, which that README also
+asks of whoever owns the merge. `WINDOWS.md` 325.
+
+Current Plan: 7
 Total Plans in Phase: 9
 
 ---
