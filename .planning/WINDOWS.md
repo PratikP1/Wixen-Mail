@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 306
+open_count: 307
 waived_count: 0
 fixed_count: 22
-total_count: 328
-last_updated: 2026-09-12T17:22:15.335Z
+total_count: 329
+last_updated: 2026-09-12T17:44:52.410Z
 ---
 
 # Broken Windows Ledger
@@ -343,6 +343,7 @@ last_updated: 2026-09-12T17:22:15.335Z
 | 326 | 07 | unrun-verify | .github/workflows/release.yml |  | The release workflow has never run: git tag returns nothing and git ls-remote --tags origin returns nothing while --heads answers, so no published glob has ever been matched against a real dist/ and the tag branch in scripts/build-installer.sh has never been taken. dist/wixen-mail-v*.exe agrees with dist/wixen-mail-$tag.exe only while the tag begins with v, which comes from cargo-release's defaults; if it does not, that file was published as a silent absence before this change and is a failed release after it, and the second is what was wanted | open |  | 2026-09-12T17:22:01.452Z |  |
 | 327 | 07 | deviation | .github/workflows/release.yml |  | cargo release pushes the tag at the Create release version and tag step, before anything is built, so any failure after that point leaves a tag on the remote with no release behind it. The new existence check moves the failure earlier than publication but not earlier than the tag. Changing it means moving cargo release after the build, which changes when a tag exists and so when a release happens, which guardrail 7 says is a deliberate decision rather than something a change about asset names makes on the way past | open |  | 2026-09-12T17:22:14.542Z |  |
 | 328 | 07 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | This target cannot reach the Windows credential store on every run: it fails with No default store has been set, so cannot search or create entries. Seen in two of three whole-tree runs on 2026-09-12, a different test of the file each time, and the file passes on its own on an unbroken tree. Not caused by any change in this plan and not diagnosed | open |  | 2026-09-12T17:22:15.335Z |  |
+| 329 | 07 | unrun-verify | .planning/REQUIREMENTS.md |  | Success criterion 1 cannot close until an Azure Artifact Signing account exists. The certificate is chosen (decision 6 of 2026-09-06, Azure Artifact Signing, about 9.99 dollars a month, publisher name Pratik Patel, residence requirement met) and nothing is signed. Creating the account needs a subscription, an identity check naming a real person, a payment and a role grant in a tenant, none of which is a repository operation. This is a dependency on something outside this repository rather than a defect in it | open |  | 2026-09-12T17:44:52.410Z |  |
 
 ````json
 [
@@ -4280,6 +4281,18 @@ last_updated: 2026-09-12T17:22:15.335Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T17:22:15.335Z",
+    "resolved_at": null
+  },
+  {
+    "id": 329,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": ".planning/REQUIREMENTS.md",
+    "line": null,
+    "description": "Success criterion 1 cannot close until an Azure Artifact Signing account exists. The certificate is chosen (decision 6 of 2026-09-06, Azure Artifact Signing, about 9.99 dollars a month, publisher name Pratik Patel, residence requirement met) and nothing is signed. Creating the account needs a subscription, an identity check naming a real person, a payment and a role grant in a tenant, none of which is a repository operation. This is a dependency on something outside this repository rather than a defect in it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T17:44:52.410Z",
     "resolved_at": null
   }
 ]
