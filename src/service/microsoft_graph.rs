@@ -438,6 +438,357 @@ fn calendar_view_url(
     url
 }
 
+// ── OneNote types ───────────────────────────────────────────────────────────
+
+/// What somebody is told when OneNote refuses for want of a permission.
+///
+/// The notes sibling of [`crate::service::tasks_api::NEEDS_SIGN_IN`], worded
+/// for notes rather than reused as it stands. Both sentences ask for the same
+/// action and they cannot be one sentence: somebody whose notes were refused,
+/// told to sign in again "to send task changes", signs in, finds their tasks
+/// were never the problem, and has been sent to do the right thing for a reason
+/// that names the wrong feature.
+///
+/// `Notes.ReadWrite` is not among the scopes any account signed in before
+/// `0.111.0` holds, so every account that exists today meets this on its first
+/// OneNote call.
+pub const NEEDS_SIGN_IN_FOR_NOTES: &str = "Sign in to this account again to use notes in OneNote";
+
+/// One OneNote page, as the `onenotePage` resource names it.
+///
+/// Two fields of the eleven that resource carries. The rest are a link, an
+/// order, a level and a pair of timestamps, none of which anything here reads,
+/// and a field parsed and never used is a field somebody later believes is
+/// kept.
+///
+/// No entity tag, and that is the resource rather than this reading: there is
+/// no `eTag` property on an `onenotePage` and no `If-Match` in the update
+/// reference, so this backend's concurrency cannot be the one the calendar
+/// backend uses. What it is instead is `05.2-03`'s question and not this file's.
+/// One notebook, as the `notebook` resource names it.
+///
+/// Both fields required, and the name as much as the identifier. A folder here
+/// is named by the path of the section it stands for, so a notebook with no
+/// name is a folder nobody could find, and taking it would put an unnamed step
+/// in the middle of every path below it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteNotebook {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section group, which is the level of a notebook nobody remembers.
+///
+/// It can hold sections and further section groups, so it is the reason a walk
+/// of a notebook is a walk rather than two requests.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteSectionGroup {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section, as the `onenoteSection` resource names it.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNoteSection {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// One section, and the name of everything above it.
+///
+/// The seam behind which this sits calls one backend container one note folder,
+/// and a OneNote container is a section. So a section has to arrive carrying
+/// where it sits, or the folder it becomes is one of several called "Notes"
+/// with nothing to tell them apart.
+///
+/// The path is the notebook, then each section group in turn, then the section
+/// itself, kept as the separate names they are. Joining them into one string is
+/// not done here: `docs/development/the-notes-seam.md` records that nobody has
+/// chosen the separator yet and that what a screen reader makes of it is
+/// unmeasured, and a decision nobody has taken should not be taken by the
+/// module that happens to have the parts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AOneNoteSection {
+    /// What Graph calls this section. The seam's opaque container.
+    pub id: String,
+    /// The notebook, then any section groups, then the section.
+    pub path: Vec<String>,
+}
+
+/// One page of a listing, and where the next one is.
+#[derive(Debug, Deserialize)]
+struct MsOneNoteListing<T> {
+    value: Vec<T>,
+    /// The whole address of the next page, when Graph sent one. Followed as it
+    /// came: it is Graph's address and not one this code builds.
+    #[serde(rename = "@odata.nextLink")]
+    next_link: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MsOneNotePage {
+    /// What Graph calls this page. Required: a page nothing can address is a
+    /// page no later request can read, change or remove.
+    pub id: String,
+    /// The page's name. Absent for a page somebody never named, which is a
+    /// page they really can make.
+    #[serde(default)]
+    pub title: String,
+}
+
+/// How many section groups deep a walk of a notebook will follow.
+///
+/// A section group can hold section groups, with nothing in the reference
+/// saying how far. A walk with no bound holds whatever is waiting on it for as
+/// long as a server keeps answering, and a server answering its own group as
+/// its own child never stops at all. The same reasoning
+/// `application::occurrences` gives for `MOST_STEPS`.
+///
+/// Eight, which is a bound on a hostile or broken answer rather than a limit
+/// anybody meets: OneNote's own window shows a notebook as a tree somebody
+/// walks with the keyboard, and eight levels of group above a section is
+/// already past what anybody keeps. A notebook that really is deeper is not
+/// dropped quietly; the read says it was cut short, and that is a separate
+/// question from whether the number is right.
+const MOST_SECTION_GROUPS_DEEP: usize = 8;
+
+/// How many further pages of one listing a read will follow.
+///
+/// The other end of the same threat. Graph pages a long listing by handing back
+/// the address of the next page, and a server that always hands back another
+/// one is a loop this program would run until it was killed. Nothing in the
+/// reference bounds the chain, so this does. A hundred pages of a hundred
+/// notebooks is more than anybody has.
+const MOST_PAGES_OF_ONE_LISTING: usize = 100;
+
+/// What one command in a page update names.
+///
+/// Two of the three are words the service knows. The third is whatever Graph
+/// generated for one thing on the page, which is why this is an enum and not a
+/// string: `"title"` and `"body"` are not identifiers and treating all three as
+/// one kind of string is how a command ends up naming a thing that does not
+/// exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatAPatchNames {
+    /// The page's name. One of the two targets that is not a generated
+    /// identifier, and the only way to change what a page is called.
+    TheTitle,
+    /// Everything inside the page. Appending is all it supports.
+    TheBody,
+    /// One thing on the page, by the identifier Graph generated for it on the
+    /// read this command was built from.
+    WhatGraphCalls(String),
+}
+
+impl WhatAPatchNames {
+    /// The word this goes out as.
+    ///
+    /// One spelling, used by the wire and by the check that the produced
+    /// commands obey the reference's table, so the two cannot disagree.
+    fn as_written(&self) -> &str {
+        match self {
+            Self::TheTitle => "title",
+            Self::TheBody => "body",
+            Self::WhatGraphCalls(id) => id,
+        }
+    }
+}
+
+impl Serialize for WhatAPatchNames {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> std::result::Result<S::Ok, S::Error> {
+        to.serialize_str(self.as_written())
+    }
+}
+
+/// What one command in a page update does to what it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatAPatchDoes {
+    /// Put this in place of what is there.
+    Replace,
+    /// Put this after what is there, keeping it.
+    Append,
+    /// Take this away.
+    Delete,
+}
+
+impl WhatAPatchDoes {
+    /// The word this goes out as, for the reason [`WhatAPatchNames::as_written`]
+    /// gives.
+    const fn as_written(self) -> &'static str {
+        match self {
+            Self::Replace => "replace",
+            Self::Append => "append",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+impl Serialize for WhatAPatchDoes {
+    fn serialize<S: serde::Serializer>(&self, to: S) -> std::result::Result<S::Ok, S::Error> {
+        to.serialize_str(self.as_written())
+    }
+}
+
+/// One command in a page update.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct APatchCommand {
+    pub target: WhatAPatchNames,
+    pub action: WhatAPatchDoes,
+    /// What to put there, for the commands that put something. A removal
+    /// carries none, and a command carrying an empty one is not the same
+    /// request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+}
+
+/// What the reference's supported-actions table allows for the two targets that
+/// are not a generated identifier.
+///
+/// Read on 2026-09-06 from `learn.microsoft.com/en-us/graph/onenote-update-page`
+/// by the plan that specified this file. **Nobody here has fetched that page
+/// since**, and saying so is cheaper than a later reader assuming it was
+/// checked today.
+///
+/// Held as its own list, apart from the code that builds commands, so that
+/// neither can be checked against the other. `onenote_page.rs` holds the
+/// element set the same way and for the same reason.
+///
+/// Two rows rather than the whole table, because two rows are what that reading
+/// can defend. The table's other rows are about which elements support replace
+/// by generated identifier, and what it says about removing one is not quoted
+/// anywhere in this repository. That gap is in `.planning/WINDOWS.md` rather
+/// than guessed at here.
+/// `#[cfg(test)]` because nothing in the shipped half consults it, and that is
+/// the point rather than an oversight: a builder that read this list could not
+/// be checked against it. `outward.rs` marks its own censuses the same way.
+#[cfg(test)]
+const WHAT_A_NAMED_TARGET_SUPPORTS: [(&str, &[&str]); 2] =
+    [("title", &["replace"]), ("body", &["append"])];
+
+/// The commands that make a page say what a note says.
+///
+/// **Remove and append, not delete the page and make another**, and the choice
+/// is the largest one in this file.
+///
+/// A page's body supports appending and nothing else, so there is no command
+/// that makes its content equal a new document. The two ways round that are
+/// different products. Removing each thing on the page by the identifier Graph
+/// gave it and appending the new content keeps the page: its identifier, its
+/// place in the section, the date it was made, and any link somebody saved to
+/// it. Deleting the page and making another is two requests instead of many and
+/// loses all four.
+///
+/// What decides it is the failure, not the tidiness. A remove-and-append that
+/// stops half way leaves a page holding some of its content, which the person
+/// can see and put right by editing again. A delete-and-recreate that stops
+/// between its two requests leaves no page at all, and the note is gone from
+/// their notebook with nothing to show it was ever there.
+/// `docs/development/the-notes-seam.md` took exactly this decision for moving a
+/// note between folders, create first and remove second, so that a failure
+/// leaves the note in both places rather than in neither. This is the same
+/// question and copying the answer is the point: two orderings of the same two
+/// steps, decided twice, disagree the day either changes.
+///
+/// The second reason is the seam above. It stores the name a backend gave a
+/// note, and delete-and-recreate changes that name on every edit, so every edit
+/// would arrive at the seam as a note that vanished and a different one that
+/// appeared. `application::deletions`' module header is about what a deletion
+/// means when a read may still name the thing, and owing that machinery a
+/// reconciliation for what is really an edit is a cost with nothing bought.
+///
+/// **What this costs, said rather than left out.** It sends one command per
+/// thing on the page instead of two requests, and it rests on removal by
+/// generated identifier working for everything a page can hold. Nobody here has
+/// run either against Microsoft.
+pub fn changing_a_page_to(
+    what_is_on_the_page_now: &[String],
+    note: &crate::service::onenote_page::ANoteOnAPage,
+) -> Vec<APatchCommand> {
+    let mut commands = Vec::with_capacity(what_is_on_the_page_now.len() + 2);
+    // The title first. It is one of the two targets that is not a generated
+    // identifier, so it is the one command here that cannot be made stale by
+    // the page moving underneath the read.
+    commands.push(APatchCommand {
+        target: WhatAPatchNames::TheTitle,
+        action: WhatAPatchDoes::Replace,
+        content: Some(note.title.clone()),
+    });
+    // Then what is there, taken away one thing at a time, before the new
+    // content goes on. The other order would leave the new content underneath
+    // the old for as long as the request took, which nobody would see, and
+    // would leave it there for ever if the removals were refused.
+    for on_the_page in what_is_on_the_page_now {
+        commands.push(APatchCommand {
+            target: WhatAPatchNames::WhatGraphCalls(on_the_page.clone()),
+            action: WhatAPatchDoes::Delete,
+            content: None,
+        });
+    }
+    commands.push(APatchCommand {
+        target: WhatAPatchNames::TheBody,
+        action: WhatAPatchDoes::Append,
+        content: Some(crate::service::onenote_page::the_body_for(note)),
+    });
+    commands
+}
+
+/// What a OneNote request the service refused comes back as.
+///
+/// Unauthorised and forbidden are what a token missing `Notes.ReadWrite` gets,
+/// and that is every token this program has issued, so this arm is the ordinary
+/// case rather than the edge one until somebody signs in again. Named as
+/// itself, because the person is the only one who can fix it and a status code
+/// does not tell them how. The same shape `tasks_api` uses, a few hundred lines
+/// away, for the same reason.
+///
+/// Everything else keeps its status and loses its body: a body from a refused
+/// request can carry the token back, and this goes to a log file.
+fn onenote_refusal(status: reqwest::StatusCode, body: &str) -> Error {
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Error::Authentication(NEEDS_SIGN_IN_FOR_NOTES.to_string());
+    }
+    Error::Api {
+        status: status.as_u16(),
+        provider: "microsoft".to_string(),
+        message: crate::common::error::redact_provider_message(body),
+    }
+}
+
+/// A page later requests can address, or a refusal saying why not.
+///
+/// A page with no identifier is not a page this program can do anything with:
+/// every read, change and removal names it by that identifier. Taking one
+/// anyway would leave a note in the database pointing at nothing and a person
+/// wondering why their edits stopped arriving, which is worse than a refusal
+/// naming the problem. `caldav::discover_calendars` refuses a collection with
+/// no address for the same reason.
+fn a_page_that_can_be_addressed(page: MsOneNotePage) -> Result<MsOneNotePage> {
+    named_by_graph(&page.id, "page")?;
+    Ok(page)
+}
+
+/// The identifier Graph gave a thing, or a refusal saying what had none.
+///
+/// A present field holding the empty string parses perfectly well and is not a
+/// name. Everything this client does afterwards, a read, a change, a removal,
+/// or a walk into what is inside, names the thing by this, so an empty one is
+/// a thing nothing can be asked about. Refused with the kind of thing in the
+/// sentence, because "a section group" and "a page" send somebody looking in
+/// different places.
+fn named_by_graph<'a>(id: &'a str, what: &str) -> Result<&'a str> {
+    if id.is_empty() {
+        return Err(Error::Protocol(format!(
+            "OneNote answered with a {what} carrying no identifier, so nothing could be asked \
+             about it afterwards"
+        )));
+    }
+    Ok(id)
+}
+
 pub struct MsGraphClient {
     http: crate::service::outward::Outward,
     /// Where contacts, the calendar and everything else are asked for.
@@ -705,6 +1056,338 @@ impl MsGraphClient {
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
+    // ── OneNote ─────────────────────────────────────────────────────────
+
+    /// Every section on the account, each carrying the names above it.
+    ///
+    /// Four levels, not three: a notebook holds sections and section groups,
+    /// and a section group holds both again. A reading that stopped at
+    /// notebook, section, page works for most notebooks and loses whole
+    /// branches of somebody's.
+    ///
+    /// The walk is bounded by [`MOST_SECTION_GROUPS_DEEP`], and a notebook that
+    /// goes deeper comes back with `complete` false rather than with its
+    /// deepest sections missing and nothing said. [`PagedRead`] rather than a
+    /// type of its own: its second field already means "this program ran out of
+    /// room rather than the provider running out of items", which is exactly
+    /// what a bound reached means here.
+    pub async fn every_section(
+        &self,
+        token: &str,
+    ) -> Result<crate::service::tasks_api::PagedRead<AOneNoteSection>> {
+        use crate::service::tasks_api::PagedRead;
+
+        // Container, the names above it, and how many section groups deep it
+        // is. A work list rather than a function calling itself, because the
+        // bound is then a number this loop reads rather than a depth argument
+        // every call site has to remember to pass on.
+        let mut still_to_walk: Vec<(String, Vec<String>, usize)> = Vec::new();
+        let mut found = Vec::new();
+        let mut whole = true;
+
+        for notebook in self
+            .every_page_of::<MsOneNoteNotebook>(&self.onenote_url("notebooks"), token)
+            .await?
+        {
+            let named = named_by_graph(&notebook.id, "notebook")?;
+            still_to_walk.push((
+                format!("notebooks/{}", in_a_path(named)),
+                vec![notebook.display_name.clone()],
+                0,
+            ));
+        }
+
+        while let Some((container, above, groups_deep)) = still_to_walk.pop() {
+            for section in self
+                .every_page_of::<MsOneNoteSection>(
+                    &self.onenote_url(&format!("{container}/sections")),
+                    token,
+                )
+                .await?
+            {
+                let named = named_by_graph(&section.id, "section")?;
+                let mut path = above.clone();
+                path.push(section.display_name.clone());
+                found.push(AOneNoteSection {
+                    id: named.to_string(),
+                    path,
+                });
+            }
+
+            for group in self
+                .every_page_of::<MsOneNoteSectionGroup>(
+                    &self.onenote_url(&format!("{container}/sectionGroups")),
+                    token,
+                )
+                .await?
+            {
+                let named = named_by_graph(&group.id, "section group")?;
+                if groups_deep == MOST_SECTION_GROUPS_DEEP {
+                    // Found, named by its parent, and not walked into. The
+                    // read comes back cut short rather than short and silent,
+                    // which is the difference between a caller that can say
+                    // "some of your notebook was too deep to read" and one
+                    // that reports somebody's sections as deleted.
+                    whole = false;
+                    continue;
+                }
+                let mut inside = above.clone();
+                inside.push(group.display_name.clone());
+                still_to_walk.push((
+                    format!("sectionGroups/{}", in_a_path(named)),
+                    inside,
+                    groups_deep + 1,
+                ));
+            }
+        }
+
+        Ok(if whole {
+            PagedRead::whole(found)
+        } else {
+            PagedRead::cut_short(found)
+        })
+    }
+
+    /// Where one of OneNote's listings lives on this client's server.
+    fn onenote_url(&self, under: &str) -> String {
+        format!("{}/me/onenote/{under}", self.base)
+    }
+
+    /// Every item of a listing, following Graph's own next-page addresses.
+    ///
+    /// A page after the first is a whole address Graph handed back, followed as
+    /// it came rather than rebuilt, the way a stored delta link already is a
+    /// few hundred lines up.
+    ///
+    /// A chain longer than [`MOST_PAGES_OF_ONE_LISTING`] is refused rather than
+    /// cut short. A hundred pages of one listing is a server answering in a
+    /// circle, and answering a circle with "here is part of your notebook"
+    /// would let a sync read the part it got as the whole of it.
+    async fn every_page_of<T: serde::de::DeserializeOwned>(
+        &self,
+        first: &str,
+        token: &str,
+    ) -> Result<Vec<T>> {
+        let mut everything = Vec::new();
+        let mut next = Some(first.to_string());
+        let mut pages = 0_usize;
+        while let Some(url) = next.take() {
+            pages += 1;
+            if pages > MOST_PAGES_OF_ONE_LISTING {
+                return Err(Error::Protocol(format!(
+                    "OneNote went on offering another page of one listing past \
+                     {MOST_PAGES_OF_ONE_LISTING}, which is a server answering in a circle \
+                     rather than a notebook anybody has"
+                )));
+            }
+            let page: MsOneNoteListing<T> = self.onenote_get(&url, token).await?;
+            everything.extend(page.value);
+            next = page.next_link;
+        }
+        Ok(everything)
+    }
+
+    /// A OneNote answer that is a document rather than a resource.
+    ///
+    /// A page's content comes back as HTML and not as JSON, so it is read as
+    /// the text it is. The refusal is classified exactly as
+    /// [`Self::read_onenote`] classifies one.
+    async fn read_onenote_text(resp: reqwest::Response) -> Result<String> {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("Failed to read OneNote response: {e}")))?;
+        if status.is_client_error() || status.is_server_error() {
+            return Err(onenote_refusal(status, &body));
+        }
+        Ok(body)
+    }
+
+    /// A OneNote answer that carries nothing.
+    ///
+    /// A page update that worked answers `204 No Content` with no body, so
+    /// there is nothing to read and reading it as JSON would fail against a
+    /// request that succeeded. What matters is the status and the refusal
+    /// behind it.
+    async fn read_onenote_without_an_answer(resp: reqwest::Response) -> Result<()> {
+        let status = resp.status();
+        if !status.is_client_error() && !status.is_server_error() {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        Err(onenote_refusal(status, &body))
+    }
+
+    /// One OneNote read.
+    async fn onenote_get<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        token: &str,
+    ) -> Result<T> {
+        let resp = self
+            .http
+            .reading(url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API GET failed: {e}")))?;
+        Self::read_onenote(resp).await
+    }
+
+    /// Make a page in a section, from the HTML a note becomes.
+    ///
+    /// The body is whatever [`crate::service::onenote_page::the_page_for`]
+    /// produced, handed over as it came. Nothing here builds HTML: that module
+    /// has a fidelity table behind it, and a second builder would drift from
+    /// the first the day either changed.
+    ///
+    /// `text/html` rather than JSON, because a page with no binary content is
+    /// created by posting the document itself. A page carrying a picture is a
+    /// multipart request with a `Presentation` part, which nothing here sends
+    /// and which no note in this program can yet produce.
+    pub async fn create_page(
+        &self,
+        token: &str,
+        section_id: &str,
+        page_html: &str,
+    ) -> Result<MsOneNotePage> {
+        let url = format!(
+            "{}/me/onenote/sections/{}/pages",
+            self.base,
+            in_a_path(section_id)
+        );
+        // No retry, for the reason `create_event` gives two hundred lines up: a
+        // create is not idempotent, every network failure counts as retryable
+        // including this client's own timeout, and a create sent twice is a
+        // second copy of somebody's note in their notebook.
+        let resp = self
+            .http
+            .changing(reqwest::Method::POST, &url, "add a note to this account")?
+            .bearer_auth(token)
+            .header(reqwest::header::CONTENT_TYPE, "text/html")
+            .body(page_html.to_string())
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API POST failed: {e}")))?;
+        a_page_that_can_be_addressed(Self::read_onenote(resp).await?)
+    }
+
+    /// A page's content, with the identifiers Graph generated for it.
+    ///
+    /// `includeIDs=true`, which is the only way to learn the names a change can
+    /// use: the identifiers are Graph's, are not in the page as it was sent,
+    /// and are not the `data-id` anybody here could set.
+    pub async fn page_content_with_identifiers(
+        &self,
+        token: &str,
+        page_id: &str,
+    ) -> Result<String> {
+        let url = self.onenote_url(&format!(
+            "pages/{}/content?includeIDs=true",
+            in_a_path(page_id)
+        ));
+        let resp = self
+            .http
+            .reading(&url)
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API GET failed: {e}")))?;
+        Self::read_onenote_text(resp).await
+    }
+
+    /// Make a page say what a note says.
+    ///
+    /// The read is inside this method rather than beside it, and that is the
+    /// design. The reference says the generated identifiers "might change after
+    /// a page update, so you should get the current values before building a
+    /// PATCH request". A caller handed the identifiers and trusted to re-read
+    /// before the next write is a caller that will one day not, and the request
+    /// that follows names things on a page that have since been renamed. With
+    /// the read in here there is nothing for a caller to hold.
+    pub async fn change_page(
+        &self,
+        token: &str,
+        page_id: &str,
+        note: &crate::service::onenote_page::ANoteOnAPage,
+    ) -> Result<()> {
+        let there_now = self.page_content_with_identifiers(token, page_id).await?;
+        let commands = changing_a_page_to(
+            &crate::service::onenote_page::what_graph_calls_the_page_content(&there_now),
+            note,
+        );
+        let url = self.onenote_url(&format!("pages/{}/content", in_a_path(page_id)));
+        // No retry. The commands name things by identifiers the read before
+        // this one gave, and the reference says those move after an update, so
+        // a second attempt at the same request is a request built from a page
+        // that no longer exists. A change that failed is re-read and rebuilt,
+        // which is what calling this again does.
+        let resp = self
+            .http
+            .changing(
+                reqwest::Method::PATCH,
+                &url,
+                "change a note in this account",
+            )?
+            .bearer_auth(token)
+            .json(&commands)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API PATCH failed: {e}")))?;
+        Self::read_onenote_without_an_answer(resp).await
+    }
+
+    /// Take a page away.
+    pub async fn delete_page(&self, token: &str, page_id: &str) -> Result<()> {
+        let url = self.onenote_url(&format!("pages/{}", in_a_path(page_id)));
+        let resp = self
+            .http
+            .changing(
+                reqwest::Method::DELETE,
+                &url,
+                "delete a note from this account",
+            )?
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Graph API DELETE failed: {e}")))?;
+        // Gone and Not Found both count as done, for the reason `api_delete`
+        // gives three hundred lines down: the page is not there, which is the
+        // state that was asked for, and treating either as a failure means a
+        // removal re-sent on every sync for ever.
+        if resp.status() == reqwest::StatusCode::NOT_FOUND
+            || resp.status() == reqwest::StatusCode::GONE
+        {
+            return Ok(());
+        }
+        Self::read_onenote_without_an_answer(resp).await
+    }
+
+    /// One OneNote answer, read as the JSON resource it carries.
+    ///
+    /// Not [`Self::parse_response`], and the difference is the whole point: a
+    /// refusal here is classified through [`onenote_refusal`] so that a token
+    /// without the notes permission arrives as a sentence the person can act
+    /// on rather than as a status code. Every account this program has ever
+    /// signed in holds such a token.
+    async fn read_onenote<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T> {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("Failed to read OneNote response: {e}")))?;
+        if status.is_client_error() || status.is_server_error() {
+            return Err(onenote_refusal(status, &body));
+        }
+        serde_json::from_str(&body).map_err(|e| {
+            Error::Other(format!(
+                "Failed to parse OneNote response: {e} (body length: {})",
+                body.len()
+            ))
+        })
+    }
+
     // ── HTTP Helpers ────────────────────────────────────────────────────
 
     async fn api_get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
@@ -831,7 +1514,7 @@ impl MsGraphClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::answering::{answering, asked_for, heard};
+    use crate::common::answering::{answering, answering_as_asked, asked_for, heard};
 
     /// A server that answers one read, and the client aimed at it.
     async fn a_graph_client_talking_to_itself()
@@ -1609,5 +2292,683 @@ mod tests {
         assert_eq!(home.city, "Springfield");
         let biz = contact.business_address.unwrap();
         assert_eq!(biz.city, "Chicago");
+    }
+
+    // ── OneNote ─────────────────────────────────────────────────────────
+
+    /// A note, and the page HTML `service::onenote_page` makes of it.
+    ///
+    /// Built through that module rather than written here, so the body this
+    /// client sends is the body that module produces and the two cannot drift.
+    fn a_note_as_a_page() -> String {
+        crate::service::onenote_page::the_page_for(&crate::service::onenote_page::ANoteOnAPage {
+            title: "Fuses".to_string(),
+            body: "Live is brown".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_a_note_reaches_onenote_as_a_page_in_the_section_it_was_given() {
+        let (address, listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"1-page","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await
+            .expect("the page to be made");
+
+        let request = heard(listening, "the page being made")
+            .await
+            .expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "POST /me/onenote/sections/1-section/pages",
+            "{request}"
+        );
+        // Header names are matched without case, because the client writes
+        // them lower case and HTTP says that is the same header. Written
+        // capitalised, the first of these two passed against nothing.
+        let headers = request.to_lowercase();
+        assert!(
+            headers.contains("authorization: bearer a-token"),
+            "the token has to travel, and it travels in the header: {request}"
+        );
+        // `text/html`, not JSON. A page with no binary content is created by
+        // posting the document, and Graph reads the content type to decide
+        // what it was handed.
+        assert!(headers.contains("content-type: text/html"), "{request}");
+        // The body is the other module's output, whole. Both halves are
+        // asserted because a client that sent only the title would satisfy
+        // either one alone.
+        assert!(request.contains("<title>Fuses</title>"), "{request}");
+        assert!(request.contains("Live is brown"), "{request}");
+    }
+
+    #[tokio::test]
+    async fn test_the_page_onenote_answers_with_is_read_back_by_its_name_and_its_title() {
+        let (address, _listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"1-abc!2-def","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let made = graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await
+            .expect("the page to be made");
+
+        assert_eq!(made.id, "1-abc!2-def");
+        assert_eq!(made.title, "Fuses");
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_makes_no_onenote_page() {
+        // The gate is applied where the client is built, so a new constructor
+        // is exactly how it stops applying. Reading `create_page` and seeing
+        // it go through the gated transport is not this assertion: this one
+        // stands up a server and proves nothing arrived.
+        let (address, listening) =
+            answering("201 Created", "application/json", "{}".to_string()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a page that must never be made")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_onenote_refusing_for_want_of_a_permission_asks_for_a_new_sign_in() {
+        // Every account that exists today holds a token without
+        // `Notes.ReadWrite`, so this is the first thing any of them meets.
+        // What it must not read as is a broken account: the person can fix
+        // this, and only if they are told which thing to fix.
+        let (address, _listening) = answering(
+            "401 Unauthorized",
+            "application/json",
+            r#"{"error":{"code":"InvalidAuthenticationToken"}}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let refused = graph
+            .create_page("a-stale-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        let Err(crate::common::Error::Authentication(said)) = refused else {
+            panic!("a refusal for want of a permission, not {refused:?}");
+        };
+        assert_eq!(said, NEEDS_SIGN_IN_FOR_NOTES);
+        assert!(
+            said.to_lowercase().contains("onenote"),
+            "the sentence has to name what needs the new sign-in: {said}"
+        );
+        // One classification, shared with tasks rather than copied beside it.
+        assert!(crate::service::tasks_api::asks_for_a_new_sign_in(
+            &crate::common::Error::Authentication(said)
+        ));
+    }
+
+    /// Where a captured request was sent, read out of its own `Host` header.
+    ///
+    /// A paged listing hands back the whole address of the next page, so a
+    /// fixture that pages has to name the loopback port. The port is not known
+    /// until the listener has bound, which is after the replies are built, so
+    /// the only place it can come from is the request being answered.
+    fn where_it_was_asked(request: &str) -> String {
+        let host = request
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(": ")?;
+                name.eq_ignore_ascii_case("host").then_some(value.trim())
+            })
+            .unwrap_or_default();
+        format!("http://{host}")
+    }
+
+    /// Several replies, each worked out from the address it is answering.
+    ///
+    /// A walk of a notebook asks for sections and section groups under every
+    /// container it finds, in whatever order its work list happens to take
+    /// them, so a fixture keyed on the address survives a change of order and
+    /// one keyed on the position in the sequence does not.
+    fn answering_each(
+        how_many: usize,
+        route: fn(&str, &str) -> String,
+    ) -> Vec<crate::common::answering::Reply> {
+        (0..how_many)
+            .map(|_| -> crate::common::answering::Reply {
+                Box::new(move |asked| {
+                    let request = asked.last().map(String::as_str).unwrap_or_default();
+                    route(asked_for(request), &where_it_was_asked(request))
+                })
+            })
+            .collect()
+    }
+
+    /// A listing Graph would answer with, with no further page after it.
+    fn one_page_of(items: &str) -> String {
+        format!(r#"{{"value":[{items}]}}"#)
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_listing_is_followed_to_its_last_page() {
+        fn route(asked: &str, base: &str) -> String {
+            match asked {
+                "GET /me/onenote/notebooks" => format!(
+                    r#"{{"value":[{{"id":"nb-1","displayName":"Work"}}],"@odata.nextLink":"{base}/the-rest-of-them"}}"#
+                ),
+                "GET /the-rest-of-them" => one_page_of(r#"{"id":"nb-2","displayName":"Home"}"#),
+                "GET /me/onenote/notebooks/nb-1/sections" => {
+                    one_page_of(r#"{"id":"s-1","displayName":"Projects"}"#)
+                }
+                "GET /me/onenote/notebooks/nb-2/sections" => {
+                    one_page_of(r#"{"id":"s-2","displayName":"Bills"}"#)
+                }
+                _ => one_page_of(""),
+            }
+        }
+        // Two pages of notebooks, then sections and section groups under each
+        // of the two notebooks.
+        let (address, _listening) =
+            answering_as_asked("200 OK", "application/json", answering_each(6, route)).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert!(read.complete, "nothing here is past any bound");
+        // The second notebook is only reachable by following the next link,
+        // so a client that read the first page and stopped fails here.
+        assert!(
+            read.items.contains(&AOneNoteSection {
+                id: "s-2".to_string(),
+                path: vec!["Home".to_string(), "Bills".to_string()],
+            }),
+            "{:?}",
+            read.items
+        );
+        assert!(
+            read.items.contains(&AOneNoteSection {
+                id: "s-1".to_string(),
+                path: vec!["Work".to_string(), "Projects".to_string()],
+            }),
+            "{:?}",
+            read.items
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_section_inside_a_section_group_arrives_with_the_group_in_its_path() {
+        fn route(asked: &str, _base: &str) -> String {
+            match asked {
+                "GET /me/onenote/notebooks" => one_page_of(r#"{"id":"nb-1","displayName":"Work"}"#),
+                "GET /me/onenote/notebooks/nb-1/sectionGroups" => {
+                    one_page_of(r#"{"id":"g-1","displayName":"Projects"}"#)
+                }
+                "GET /me/onenote/sectionGroups/g-1/sections" => {
+                    one_page_of(r#"{"id":"s-1","displayName":"Q3"}"#)
+                }
+                _ => one_page_of(""),
+            }
+        }
+        let (address, listening) =
+            answering_as_asked("200 OK", "application/json", answering_each(5, route)).await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert_eq!(
+            read.items,
+            vec![AOneNoteSection {
+                id: "s-1".to_string(),
+                path: vec!["Work".to_string(), "Projects".to_string(), "Q3".to_string()],
+            }],
+            "a section three levels down carries all three names"
+        );
+        // The addresses, off the socket. Nothing hands the requests back until
+        // every reply has been served, so this is also the assertion that the
+        // walk asked five times and not four or six.
+        let asked = heard(listening, "the walk of the notebook")
+            .await
+            .expect("the requests");
+        let addresses: Vec<&str> = asked.iter().map(|r| asked_for(r)).collect();
+        assert!(
+            addresses.contains(&"GET /me/onenote/sectionGroups/g-1/sections"),
+            "{addresses:?}"
+        );
+        assert!(
+            addresses.contains(&"GET /me/onenote/notebooks/nb-1/sectionGroups"),
+            "{addresses:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_section_group_nested_past_the_bound_is_not_followed_and_the_read_says_so() {
+        // A notebook holding one chain of section groups, each inside the last,
+        // going one deeper than the walk will follow. Each group holds one
+        // section, so what did and did not get read is visible in the answer.
+        fn route(asked: &str, _base: &str) -> String {
+            if asked == "GET /me/onenote/notebooks" {
+                return one_page_of(r#"{"id":"nb-1","displayName":"Work"}"#);
+            }
+            let Some(under) = asked
+                .strip_prefix("GET /me/onenote/sectionGroups/g-")
+                .or_else(|| asked.strip_prefix("GET /me/onenote/notebooks/nb-1"))
+            else {
+                return one_page_of("");
+            };
+            let deep: usize = under
+                .split('/')
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            if under.ends_with("/sections") {
+                return one_page_of(&format!(
+                    r#"{{"id":"s-{deep}","displayName":"Papers {deep}"}}"#
+                ));
+            }
+            one_page_of(&format!(
+                r#"{{"id":"g-{}","displayName":"Group {}"}}"#,
+                deep + 1,
+                deep + 1
+            ))
+        }
+        // The notebook listing, the notebook's own two listings, then two for
+        // each group followed. The group past the bound is named by its
+        // parent's listing and never asked about, so it costs no request.
+        let (address, _listening) = answering_as_asked(
+            "200 OK",
+            "application/json",
+            answering_each(1 + 2 + MOST_SECTION_GROUPS_DEEP * 2, route),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let read = graph.every_section("a-token").await.expect("the sections");
+
+        assert!(
+            !read.complete,
+            "a notebook deeper than the walk follows has to say so"
+        );
+        // The positive half: everything down to the bound really did arrive.
+        let deepest_read = read
+            .items
+            .iter()
+            .find(|section| section.id == format!("s-{MOST_SECTION_GROUPS_DEEP}"));
+        assert!(deepest_read.is_some(), "{:?}", read.items);
+        assert!(
+            !read
+                .items
+                .iter()
+                .any(|section| section.id == format!("s-{}", MOST_SECTION_GROUPS_DEEP + 1)),
+            "nothing past the bound may arrive: {:?}",
+            read.items
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_that_is_not_json_at_all_is_refused_with_a_reason() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "text/html",
+            "<html><body>Sign in</body></html>".to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_with_no_name_is_refused_rather_than_read_as_one_with_none() {
+        // Half a notebook is not a notebook. The name is not decoration: a
+        // folder here is named by the path of the section it stands for, so a
+        // nameless notebook puts a nameless step in the middle of every path
+        // under it.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":"nb-1"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_whose_identifier_is_a_number_is_refused() {
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":42,"displayName":"Work"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Other(said)) = refused else {
+            panic!("a refusal naming what could not be read, not {refused:?}");
+        };
+        assert!(said.contains("OneNote"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_a_notebook_named_by_graph_with_nothing_is_refused_and_the_reason_says_what() {
+        // Present and empty, which parses perfectly and is not a name. This is
+        // the shape a required field cannot refuse on its own.
+        let (address, _listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"value":[{"id":"","displayName":"Work"}]}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = graph.every_section("a-token").await;
+
+        let Err(crate::common::Error::Protocol(said)) = refused else {
+            panic!("a refusal naming what had no identifier, not {refused:?}");
+        };
+        assert!(
+            said.contains("notebook"),
+            "the reason has to say which kind of thing had none: {said}"
+        );
+    }
+
+    /// A page as Graph hands it back when asked for identifiers.
+    ///
+    /// Two things inside the body, each carrying the kind of identifier the
+    /// reference shows: a `p:` prefix, a pair of braced identifiers, and an
+    /// index. `which` lets one fixture stand for two reads of the same page
+    /// with different identifiers, which is what the reference says really
+    /// happens after an update.
+    fn a_page_graph_hands_back(which: &str) -> String {
+        format!(
+            "<html><head><title>Fuses</title></head><body data-absolute-enabled=\"true\">\
+             <div id=\"div:{{{which}}}{{1}}\">\
+             <p id=\"p:{{{which}}}{{2}}\">Live is brown</p>\
+             <p id=\"p:{{{which}}}{{3}}\">Neutral is blue</p>\
+             </div></body></html>"
+        )
+    }
+
+    /// The note a change is asking the page to say.
+    fn the_note_being_sent() -> crate::service::onenote_page::ANoteOnAPage {
+        crate::service::onenote_page::ANoteOnAPage {
+            title: "Fuses, corrected".to_string(),
+            body: "Earth is green and yellow".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_a_change_replaces_the_title_by_name_and_never_the_body() {
+        // The two halves belong together. On its own the second is an absence
+        // assertion, which an empty command list satisfies, so the first says
+        // the list really has commands in it and the second says none of them
+        // asks for something the service refuses.
+        let commands = changing_a_page_to(
+            &["p:{one}{2}".to_string(), "p:{one}{3}".to_string()],
+            &the_note_being_sent(),
+        );
+
+        assert!(
+            commands.contains(&APatchCommand {
+                target: WhatAPatchNames::TheTitle,
+                action: WhatAPatchDoes::Replace,
+                content: Some("Fuses, corrected".to_string()),
+            }),
+            "{commands:?}"
+        );
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.target == WhatAPatchNames::TheBody
+                    && command.action == WhatAPatchDoes::Append),
+            "the new content has to reach the page, and appending is the only \
+             way the body takes it: {commands:?}"
+        );
+        for command in &commands {
+            let Some((_, allowed)) = WHAT_A_NAMED_TARGET_SUPPORTS
+                .iter()
+                .find(|(named, _)| *named == command.target.as_written())
+            else {
+                continue;
+            };
+            assert!(
+                allowed.contains(&command.action.as_written()),
+                "{} does not support {}, so this command would be refused: {command:?}",
+                command.target.as_written(),
+                command.action.as_written()
+            );
+        }
+    }
+
+    #[test]
+    fn test_everything_on_the_page_now_is_named_for_removal() {
+        let commands = changing_a_page_to(
+            &["p:{one}{2}".to_string(), "p:{one}{3}".to_string()],
+            &the_note_being_sent(),
+        );
+
+        // A page's body cannot be replaced, so what is there has to go one
+        // thing at a time or the new content lands underneath the old.
+        for there in ["p:{one}{2}", "p:{one}{3}"] {
+            assert!(
+                commands.contains(&APatchCommand {
+                    target: WhatAPatchNames::WhatGraphCalls(there.to_string()),
+                    action: WhatAPatchDoes::Delete,
+                    content: None,
+                }),
+                "{there} is on the page and nothing takes it away: {commands:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_things_on_a_page_are_read_by_the_names_graph_generated() {
+        let there = crate::service::onenote_page::what_graph_calls_the_page_content(
+            &a_page_graph_hands_back("one"),
+        );
+
+        // The top level and not what is nested inside it: a command removing
+        // the div takes the paragraphs with it, so naming those as well would
+        // ask twice for one removal.
+        assert_eq!(there, vec!["div:{one}{1}".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_a_change_reads_the_page_before_it_writes() {
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "text/html",
+            vec![
+                Box::new(|_| a_page_graph_hands_back("one")),
+                Box::new(|_| String::new()),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the change to be sent");
+
+        let asked = heard(listening, "the read and the change")
+            .await
+            .expect("both requests");
+        assert_eq!(
+            asked_for(&asked[0]),
+            "GET /me/onenote/pages/1-page/content?includeIDs=true",
+            "{:?}",
+            asked[0]
+        );
+        assert_eq!(
+            asked_for(&asked[1]),
+            "PATCH /me/onenote/pages/1-page/content",
+            "{:?}",
+            asked[1]
+        );
+        assert!(
+            asked[1]
+                .to_lowercase()
+                .contains("content-type: application/json"),
+            "{:?}",
+            asked[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_second_change_names_what_the_second_read_said_and_not_the_first() {
+        // The whole reason the read is inside the change. The reference says
+        // the generated identifiers might move after an update, so this server
+        // moves them, and a client holding the first read's answer across the
+        // write names things that are no longer called that.
+        let (address, listening) = answering_as_asked(
+            "200 OK",
+            "text/html",
+            vec![
+                Box::new(|_| a_page_graph_hands_back("before")),
+                Box::new(|_| String::new()),
+                Box::new(|_| a_page_graph_hands_back("after")),
+                Box::new(|_| String::new()),
+            ],
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the first change");
+        graph
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await
+            .expect("the second change");
+
+        let asked = heard(listening, "two reads and two changes")
+            .await
+            .expect("four requests");
+        assert!(
+            asked[3].contains("div:{after}{1}"),
+            "the second change has to name what the second read said: {:?}",
+            asked[3]
+        );
+        assert!(
+            !asked[3].contains("div:{before}{1}"),
+            "an identifier from the earlier read is one the page no longer \
+             answers to: {:?}",
+            asked[3]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_is_removed_by_the_identifier_graph_gave_and_no_other() {
+        let (address, listening) = answering("204 No Content", "text/html", String::new()).await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        graph
+            .delete_page("a-token", "1-abc/2?x")
+            .await
+            .expect("the removal to be sent");
+
+        let request = heard(listening, "the removal").await.expect("a request");
+        assert_eq!(
+            asked_for(&request),
+            "DELETE /me/onenote/pages/1-abc%2F2%3Fx",
+            "a character that ends a path or starts a query asks about some \
+             other page or about none: {request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_changes_no_page() {
+        let (address, listening) =
+            answering("200 OK", "text/html", a_page_graph_hands_back("one")).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut
+            .change_page("a-token", "1-page", &the_note_being_sent())
+            .await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        // The read before the write is allowed out, because reading changes
+        // nothing. What must not go is the change, so what this waits for is a
+        // second request.
+        assert!(
+            heard(listening, "the read before the change").await.is_ok(),
+            "reading a page is not a change and is not gated"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_account_that_may_only_be_read_removes_no_page() {
+        let (address, listening) = answering("204 No Content", "text/html", String::new()).await;
+        let shut = MsGraphClient::new().pointed_at(&format!("http://{address}"));
+
+        let refused = shut.delete_page("a-token", "1-page").await;
+
+        assert!(
+            matches!(refused, Err(crate::common::Error::Security(_))),
+            "{refused:?}"
+        );
+        assert!(
+            heard(listening, "a removal that must never be sent")
+                .await
+                .is_err(),
+            "nothing may reach the network with the gate shut"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_page_onenote_named_with_nothing_is_refused_rather_than_kept() {
+        // A page with no name is a page no later read, change or removal can
+        // address. Taking it leaves a note in the database pointing at
+        // nothing, which is worse than a refusal saying so.
+        let (address, _listening) = answering(
+            "201 Created",
+            "application/json",
+            r#"{"id":"","title":"Fuses"}"#.to_string(),
+        )
+        .await;
+        let graph = MsGraphClient::allowed_to_change_things_at(&format!("http://{address}"));
+
+        let refused = graph
+            .create_page("a-token", "1-section", &a_note_as_a_page())
+            .await;
+
+        assert!(refused.is_err(), "{refused:?}");
     }
 }

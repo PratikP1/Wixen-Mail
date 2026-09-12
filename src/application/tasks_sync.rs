@@ -817,8 +817,14 @@ async fn push_tasks<S: TaskService>(
 /// naming: the alternative is another variant on `common::Error` for one case
 /// in one module. Both ends are in this crate and there is a test that they
 /// still agree.
+///
+/// The matching itself moved to [`crate::service::tasks_api::asks_for_a_new_sign_in`]
+/// when notes in OneNote needed the same classification, so that there is one
+/// predicate rather than one per feature. It answers true for the notes
+/// sentence as well, which changes nothing here: a notes refusal is built by a
+/// OneNote call and no OneNote call is on any path this function sits on.
 fn refused_for_permission(error: &Error) -> bool {
-    matches!(error, Error::Authentication(said) if said == crate::service::tasks_api::NEEDS_SIGN_IN)
+    crate::service::tasks_api::asks_for_a_new_sign_in(error)
 }
 
 /// Send one task, and record what the provider made of it.

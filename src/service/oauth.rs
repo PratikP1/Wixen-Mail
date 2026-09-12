@@ -97,6 +97,16 @@ impl OAuthService {
                     "https://graph.microsoft.com/Calendars.ReadWrite".to_string(),
                     // Read and write, for the same reason as Google's.
                     "https://graph.microsoft.com/Tasks.ReadWrite".to_string(),
+                    // Notes, in OneNote. Read and write because a note is
+                    // edited here and sent back, and because the OneNote API
+                    // has no application-only sign-in, so this is the least
+                    // privileged permission that can change a page at all.
+                    //
+                    // Asking for a new permission means new consent, so
+                    // everybody signs in again once. Nothing syncs notes to
+                    // OneNote yet; this is asked for now so the account that
+                    // meets the first notes sync already has it.
+                    "https://graph.microsoft.com/Notes.ReadWrite".to_string(),
                 ],
             },
         ]
@@ -816,6 +826,36 @@ impl AuthManager {
         Ok(tokens.access_token)
     }
 
+    /// The permissions the token every Graph call really uses is asked for.
+    ///
+    /// **Not the same list as the outlook provider's `default_scopes`, and the
+    /// difference has cost this project once already.** That list is what the
+    /// consent screen asks a person to approve. This one is what
+    /// [`Self::get_valid_graph_token`] refreshes against, and Microsoft issues
+    /// a token for the resource that refresh names. So a permission on the
+    /// consent list and off this one is a permission somebody granted and no
+    /// running account holds, which looks from the screen exactly like an
+    /// account that needs signing in again.
+    ///
+    /// `Tasks.ReadWrite` is in that state today. It is on the consent list and
+    /// not here, it is a live defect on another feature, and it is recorded in
+    /// `.planning/WINDOWS.md` rather than fixed in a plan about notes.
+    ///
+    /// A named constant rather than an array written inside the method, and
+    /// private on purpose. Private means the build fails if
+    /// `get_valid_graph_token` stops using it, so the constant cannot drift
+    /// into being a description of what the method used to do. A test reads it,
+    /// which is the other half: between them, a permission cannot leave this
+    /// list quietly and the list cannot stop being the one that is used.
+    ///
+    /// What neither half can see is whether these are the right permissions,
+    /// which only an account meeting Microsoft can answer.
+    const THE_SCOPES_A_GRAPH_TOKEN_CARRIES: [&'static str; 3] = [
+        "https://graph.microsoft.com/Contacts.ReadWrite",
+        "https://graph.microsoft.com/Calendars.ReadWrite",
+        "https://graph.microsoft.com/Notes.ReadWrite",
+    ];
+
     /// Get a valid Microsoft Graph API token.
     ///
     /// Microsoft v2.0 issues resource-specific tokens. The main token stored in
@@ -841,17 +881,12 @@ impl AuthManager {
                 )
             })?;
 
-        let graph_scopes = &[
-            "https://graph.microsoft.com/Contacts.ReadWrite",
-            "https://graph.microsoft.com/Calendars.ReadWrite",
-        ];
-
         let new_tokens = OAuthService::refresh_with_scopes(
             &self.provider,
             refresh_token,
             &self.client_id,
             self.client_secret.as_deref(),
-            graph_scopes,
+            &Self::THE_SCOPES_A_GRAPH_TOKEN_CARRIES,
         )
         .await?;
 
@@ -1224,6 +1259,46 @@ mod tests {
         assert!(scopes_str.contains("graph.microsoft.com/Calendars.ReadWrite"));
         assert!(scopes_str.contains("IMAP.AccessAsUser.All"));
         assert!(scopes_str.contains("SMTP.Send"));
+    }
+
+    /// The permission OneNote needs, spelled once.
+    const THE_NOTES_PERMISSION: &str = "https://graph.microsoft.com/Notes.ReadWrite";
+
+    #[test]
+    fn test_a_new_microsoft_sign_in_asks_for_the_notes_permission() {
+        // The consent screen's half. This is what somebody is shown and asked
+        // to approve when they sign in.
+        let outlook = OAuthService::provider_by_name("outlook").expect("the outlook provider");
+
+        assert!(
+            outlook
+                .default_scopes
+                .iter()
+                .any(|scope| scope == THE_NOTES_PERMISSION),
+            "{:?}",
+            outlook.default_scopes
+        );
+    }
+
+    #[test]
+    fn test_the_token_every_graph_call_uses_carries_the_notes_permission() {
+        // The other half, and the one a test reading only the consent list
+        // cannot fail against. Microsoft issues a token for the resource a
+        // refresh names, and every Graph call in the running program takes its
+        // token from `get_valid_graph_token`, which refreshes against this
+        // list. A permission approved at sign-in and missing here is a
+        // permission no running account holds: every OneNote call would be
+        // refused, which at the screen is indistinguishable from an account
+        // signed in before the permission existed.
+        //
+        // What this cannot see is that `get_valid_graph_token` still uses this
+        // list. The build says that instead: the constant is private, so a
+        // method that stopped using it would leave it dead.
+        assert!(
+            AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES.contains(&THE_NOTES_PERMISSION),
+            "{:?}",
+            AuthManager::THE_SCOPES_A_GRAPH_TOKEN_CARRIES
+        );
     }
 
     #[test]

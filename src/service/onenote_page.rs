@@ -66,8 +66,50 @@ pub fn the_page_for(note: &ANoteOnAPage) -> String {
     format!(
         "<html>\n<head>\n<title>{}</title>\n</head>\n<body>\n{}\n</body>\n</html>\n",
         html_escape::encode_text(&note.title),
-        only_what_a_page_keeps(&long_text::as_markup(&note.body))
+        the_body_for(note)
     )
+}
+
+/// The body of the page a note becomes, without the document around it.
+///
+/// What a page update appends. A page's body cannot be replaced, only appended
+/// to, so making a page say something new means appending this and removing
+/// what was there. Appending [`the_page_for`]'s answer instead would put a
+/// whole HTML document inside a body.
+///
+/// Tested from `service::microsoft_graph`'s test module rather than from this
+/// file's, and that is a priced choice rather than a misplacement: twelve guard
+/// records name a test in this file, measured 2026-09-11, so a `#[test]` added
+/// here puts twelve builds and twelve full library runs in front of the commit
+/// that adds it. The same test in a file no record names costs nothing and
+/// proves the same thing.
+pub fn the_body_for(note: &ANoteOnAPage) -> String {
+    only_what_a_page_keeps(&long_text::as_markup(&note.body))
+}
+
+/// The identifiers Graph generated for the things directly inside a page.
+///
+/// Read out of the answer to a content request asking for identifiers. Only the
+/// top level of the body: Graph puts an identifier on nested elements too, and
+/// a command removing a paragraph takes what is inside it, so naming the
+/// children as well would ask twice for one removal.
+///
+/// The identifiers a page carries are Graph's and move. The reference says they
+/// "might change after a page update", so what this returns belongs to the read
+/// it came from and to no later one. Nothing here caches, and the client that
+/// calls this reads immediately before every write for that reason.
+///
+/// Tested from `service::microsoft_graph`'s test module, for the reason
+/// [`the_body_for`] gives.
+pub fn what_graph_calls_the_page_content(page_html: &str) -> Vec<String> {
+    let document = scraper::Html::parse_document(page_html);
+    let Some(body) = first_named(document.root_element(), "body") else {
+        return Vec::new();
+    };
+    body.child_elements()
+        .filter_map(|element| element.value().attr("id"))
+        .map(str::to_string)
+        .collect()
 }
 
 /// The note a page's returned HTML carries.
