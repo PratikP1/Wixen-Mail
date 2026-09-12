@@ -19956,5 +19956,5 @@ red = [
     "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 19 },
+    { file = "src/service/update_check.rs", tests = 22 },
 ]

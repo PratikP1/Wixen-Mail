@@ -3,8 +3,11 @@
 Short version: your mail goes to your mail provider, and your contacts, your calendar and
 your tasks go to the provider you signed in to, because a new installation allows changes
 to those three to be sent. Showing a message that points at a picture asks that address for
-the picture, and the section below says what that means. There is no analytics, no telemetry,
-no crash reporting service and no update check that says who you are.
+the picture, and the section below says what that means. There is no analytics, no
+telemetry and no crash reporting service. Wixen Mail can ask GitHub whether a newer version
+has been published, which sends nothing about you but does reach a server; it is off on a
+new installation and [Asking whether there is a newer version](#asking-whether-there-is-a-newer-version)
+says exactly what it sends.
 
 This page is the long version, because "we respect your privacy" is a sentence anybody can
 write.
@@ -21,6 +24,14 @@ Everything Wixen Mail stores is in one folder on your computer:
     logs\             the running log and crash.log
     security.key      only on a machine upgraded from an older version
 ```
+
+**One exception, on a computer where Windows cannot tell Wixen Mail where your local
+application data lives.** That is rare and it is usually a sign something else is wrong with
+the profile, but when it happens the log has to go somewhere, so it goes to
+`%TEMP%\wixen-mail\logs` instead. Everything the Logging section below describes is in it,
+in the same place anything else on the computer writes its temporary files. Paste `%TEMP%`
+into File Explorer to look. Nothing else moves: only the log has a fallback, because only
+the log has to be written before anything can report that the folder could not be found.
 
 `security.key` is there only if this computer ran an older version of Wixen Mail. Nothing
 creates it now. Older versions locked saved passwords in a file with it, and it is read once
@@ -129,11 +140,30 @@ group changes nothing about their contact.
 | Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc |
 | Google or Microsoft sign-in | When you sign in with a browser | The sign-in, in your browser |
 | Google Safe Browsing | Only if you switch it on, see below | Four bytes, and only sometimes |
+| GitHub | Checking whether a newer version has been published, which you ask for or switch on, see below | The request, which carries nothing about you |
+| OneNote | Never. Nothing here reads or writes a notebook, see below | Nothing |
 | Whoever a sender points a picture at | Showing a message in the preview pane or a conversation window | The request for the picture, which says the message was opened |
 
 Nothing else is asked for by this program on its own account. There is no server belonging
-to this project, so there is nowhere for anything to go even by accident. The last row is
-the sender choosing, not this program, and the section below says what it means.
+to this project, so there is nowhere for anything of yours to go even by accident. The
+GitHub row is the one place this program asks anything for its own reasons rather than
+yours, and it carries no account and no identifier. The last row is the sender choosing,
+not this program, and the section below says what it means.
+
+### The OneNote permission, which nothing uses
+
+Signing in to an Outlook or Office 365 account asks Microsoft for `Notes.ReadWrite`, which
+would let a program read the notebooks, sections and pages on that account, make a page,
+change one and remove one. **Nothing in Wixen Mail uses it.** No notebook has ever been
+opened, no page has ever been read, and no note you write here goes anywhere.
+
+It is asked for now so that your account is ready when notes do sync, rather than sending
+you back through a browser sign-in at that point.
+
+That is a permission you have granted and Wixen Mail is not using, which is worth knowing
+rather than worth hiding: it is wider than what the program does. If you would rather not
+grant it, the account works without it, and everything except notes behaves exactly the
+same. [Setting up a provider](PROVIDER_SETUP.md) says how the sign-in is redone.
 
 ## Looking somebody up while you type
 
@@ -310,6 +340,56 @@ they always have. They come from what is already in the message:
 
 None of that involves anybody else. It is all either already in the message or worked out
 here.
+
+## Asking whether there is a newer version
+
+This is the one thing Wixen Mail asks for its own reasons rather than yours, so here is all
+of it.
+
+**When it happens.** Two ways, and one of them is always available. Help, then Check for
+Updates, asks straight away, whatever your setting says, because asking deliberately is
+something you should be able to do without changing a setting first. Separately, the program
+can ask once each time it starts, and it does that only if you have chosen a kind of version
+to hear about.
+
+**What decides the second one.** A setting in Settings, then General, under "New versions".
+It is called "Tell me about new versions" and it has three answers:
+
+- **Do not look for new versions.** Nothing is asked when the program starts. This is where
+  a new installation begins, and where every installation that existed before this feature
+  begins, so nobody starts sending anything to GitHub because of an upgrade.
+- **Released versions.** Finished versions only.
+- **Released versions and test versions.** Also the versions that stage a release, the ones
+  with `alpha`, `beta` or `rc` in the number. These go to a small group of testers on
+  purpose, so they are never offered on "Released versions"; if you have been sent one and
+  the check keeps saying you are current, this is the setting that explains why.
+
+**What goes.** One request to `api.github.com`, asking which versions of Wixen Mail have
+been published. It carries no account, no sign-in, no identifier for you, and nothing about
+the mail on this computer. It would be the same request from any copy of this version on any
+computer.
+
+**What GitHub gets.** The address the request came from, because every request carries one.
+GitHub's own documentation puts it plainly: an unauthenticated request "is associated with
+the originating IP address, not with the user or application that made the request". So what
+GitHub can see is that somebody at your address is running Wixen Mail and asked this
+question. That is not nothing, and saying it is would be the sort of promise this page
+exists to avoid.
+
+GitHub allows sixty such requests an hour from one address. That is generous for one person
+and reachable from an office, a campus or anywhere a lot of people share a connection. When
+it is reached, the check says so and says to try later; it never tells you that your version
+is current when it did not find out.
+
+**What does not go.** Not your email address, not your accounts, not your provider, not your
+folder names, not your mail, and no identifier that would let two requests be recognised as
+coming from the same installation.
+
+**Nothing is downloaded and nothing is run.** When there is a newer version, Wixen Mail says
+so and offers to open the page about it in your browser. Fetching an installer and starting
+it is not built yet. When it is, this page will say what that fetch sends and where it goes,
+and will say separately that a file arrives on your disk without you asking, because those
+are two different things to be told.
 
 ## Logging
 
