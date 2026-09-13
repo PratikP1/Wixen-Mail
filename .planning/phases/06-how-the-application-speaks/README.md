@@ -29,7 +29,7 @@ inherited from phase 1.
 |---|---|---|---|---|---|
 | 06-01 | 1 | 1 | none | no | **Done.** The model can say what somebody chose, separately from what they get, and a seventeenth event cannot exist without a control |
 | 06-02 | 2 | 1 | 06-01 | decision, answered | **Done.** Sixteen events, three answers each, on the Feedback tab, and the two global boxes that cannot mean what they say are one that can. Criterion 1 has five clauses, four close structurally, none is heard |
-| 06-03 | 3 | 2 | none | decision | Month and day names come from Windows, through `GetDateFormatEx`, at all four shipping sites |
+| 06-03 | 3 | 2 | none | decision, answered | **Tasks 1 and 2 done.** Month and day names come from Windows, through `GetDateFormatEx`, at all four shipping sites. Since 2026-09-13, four tasks: task 3 puts the relative wording through Project Fluent as the first piece of version 2, and task 4 is the day names and the signature sentence |
 | 06-04 | 4 | inherited A | none | decision | A permission for one account gets a screen, and the list that recorded it as unreachable empties without disarming its own guard |
 | 06-05 | 5 | inherited B | none | decision | A reminder and somebody who is typing |
 | 06-06 | 6 | 3 | none | decision | The scan is reproducible, and a change to it earns the checks that could catch it |
@@ -202,7 +202,7 @@ it is needed. None is answered here and none is answered in a plan.
 
 | Decision | Plan | What it changes |
 |---|---|---|
-| 1. What relative wording does in a non-English locale | 06-03 | Whether "2 days ago" is kept English, replaced by the date, or given real plural rules and a new dependency |
+| ~~1. What relative wording does in a non-English locale~~ | 06-03 | **Answered 2026-09-13: option 3, widened.** Real plural rules through Project Fluent, as the first piece of version 2, in Pratik's words "3 + the start of real internationalization". The audit the answer was gated on is in 06-03's `<package_legitimacy_audit>`, and the package was confirmed the same day. See "Version 2 starts here" below |
 | ~~2. The panel's shape, against the comment that argues for no panel~~ | 06-02 | **Answered 2026-09-12: option 1, a Choice with three controls and a reset button beneath it.** Not option 4's extra row setting one answer for everything, whose state is ambiguous when the sixteen disagree; it costs one row to add later if a listening pass says the sixteen trips are the real problem |
 | 3. Whether a per-account Allow Changes answer is three or one | 06-04 | `Allowed` has three fields and `allowed_for` can only narrow |
 | 4. Whether a reminder waits for typing to stop | 06-05 | Wait, raise without focus, or hold briefly and raise anyway |
@@ -214,6 +214,91 @@ it is needed. None is answered here and none is answered in a plan.
 
 Each checkpoint carries a recommendation rather than a menu, and says what each
 option costs. A decision put without a recommendation is a list, not a question.
+
+## Version 2 starts here: Project Fluent, chosen 2026-09-13
+
+Written for the planner of the next milestone, so the audit is not run twice.
+The full audit, with the three options that lost and what each lost on, is in
+`06-03-PLAN.md` under `<package_legitimacy_audit>`, and the decision is
+recorded under FEEDBACK-02 in `.planning/REQUIREMENTS.md`. This section is the
+direction and the measurement, not a plan.
+
+**What was decided.** Translation support for the interface and the screen
+reader speech starts in version 2, on Project Fluent: `fluent-bundle` 0.16 and
+`unic-langid` 0.9, with `fluent-langneg` and `intl-memoizer` as direct
+dependencies from the same closure. Decided by Pratik on 2026-09-13 at 06-03's
+checkpoint, confirmed the same day. Not ICU4X, which has no message system and
+a floor that moves in minor releases; not `intl_pluralrules` alone, which is one
+primitive where a message system is needed; not a hand-written table, which is
+a private copy of an open standard.
+
+**Why Fluent, for this project in particular.** A Fluent message carries
+attributes, so a control's visible label, its accessible name and its keyboard
+mnemonic are one translatable unit. That is the shape of what this project does
+with a label plus `set_accessible_name`, and it is the answer to the problem
+nobody meets until the first translation: an `&` mnemonic has to be a letter in
+the translated label. No other candidate is designed for an interface that is
+heard.
+
+**What 06-03 leaves behind as the seed.** `locales/en-US/dates.ftl`, four
+messages, in a layout chosen for five thousand: `locales/<locale>/<area>.ftl`,
+ids `<area>-<meaning>` in lower-case kebab with the area being the file's name,
+variables named for the thing they count, and the attribute names `.label`,
+`.accessible-name` and `.mnemonic` reserved in the file's header for the first
+control that is migrated. The loader is `src/common/catalogue.rs`: compiled in
+through `include_str!`, parsed once, a `Sync` bundle in a `OnceLock`, one
+private function applying the three settings Firefox's production use of these
+crates requires, a message-id list generated from one declaration on the
+`menu_ids!` pattern, and a completeness check that holds both directions. The
+bundle's locale is the catalogue's language, never the machine's, because
+plural rules select on it and English text under Russian rules writes "21 day
+ago"; the machine's locale chooses the catalogue through `fluent-langneg`, and
+with one catalogue every machine gets English, silently, which is criterion 2's
+own fallback clause.
+
+**What the tree measurement found about adoptability, 2026-09-13 at
+`50d41d75`.** Roughly 5,300 user-facing string occurrences by the audit's
+count. Three reasons the migration is easier than that number suggests, each
+with the command that re-derives it in the plan's audit block: the dominant
+idiom is one `format!` per message with the whole sentence in the literal, so
+the sentence is already the unit (3,476 `format!` sites); the tree has already
+started a catalogue by hand, 487 named string constants with names like
+`NO_JUNK_FOLDER_FOUND`, plus 38 `spoken()` and 46 `say`/`said` functions that
+are the seams a catalogue call slots into; and the hostile patterns are about
+220 sites of 5,300, around 4%, with three helpers carrying most of them. Two
+places need rewriting rather than adapting: `src/application/summing_up.rs`
+joins fragments with `", "` and pushes a full stop, English punctuation in an
+application-layer type with 13 callers in 12 files, and `caldav::how_many` at
+`src/service/caldav.rs:871` is an English plural helper with 40 call sites,
+tests included.
+
+**What the version 2 planner has to decide, and none of it is decided here.**
+
+1. Which languages ship, and who writes them. 06-03 ships English only and
+   proves the plural machinery with a Russian resource written inside a test.
+   No executor writes a translation in a language they do not speak and calls
+   it shipped; that is Pratik's to commission.
+2. Whether the prose guards walk `locales/`. `ours()` in `tests/house_style.rs`
+   collects `src`, `docs`, `.planning`, `tests`, `scripts`, `guards`,
+   `installer` and `.github`, and not `locales`, so the catalogue sits outside
+   every rule about em dashes and empty words. Four messages do not need it;
+   five thousand do, and adding the directory touches a file fingerprinted by
+   21 records.
+3. Retiring the second reader of `LOCALE_SNAME`. `spellcheck::system_language`
+   at `src/service/spellcheck/mod.rs:335` reads it through `GetLocaleInfoW`, and
+   06-03's task 3 adds a reader in `src/common/` through `GetLocaleInfoEx`
+   because `common` cannot reach `service`. Two readers of one constant, in a
+   file fingerprinted by 30 records; the retirement waits for a plan that is
+   in that file anyway.
+4. The order of migration. The audit's own suggestion: the six relative-date
+   sites first, which 06-03 does; then the 40 through `caldav::how_many`; then
+   the inline count branches; then the rest, which the catalogue makes
+   addressable without a second migration.
+5. Numbers follow the catalogue's language, not the machine's, because a
+   formatter can only learn its bundle's locale. Today that is a distinction
+   without a difference; on a French machine with a French catalogue it is the
+   same locale. The day a machine's locale and its catalogue's differ for a
+   number over 999 is the day this is revisited.
 
 ## What no plan in this phase can close
 
@@ -338,6 +423,18 @@ that needs it.** Nothing in this phase adds a dependency, so
 real plural rules, that is a new crate, a `dependency-audit` conversation and a
 `Package Legitimacy Audit` that `06-RESEARCH.md` explicitly does not carry. The
 checkpoint in 06-03 says so.
+
+**Corrected 2026-09-13: the exception went live.** Decision 1 went to real
+plural rules, so 06-03's task 3 adds four lines to `[dependencies]`, and the
+commit that does answers `all` and pays the whole gate. The audit
+`06-RESEARCH.md` did not carry is now in 06-03 as `<package_legitimacy_audit>`.
+Two things that commit has to know, both found by reading rather than by the
+plan that first described it: `service::outward::tests::test_every_dependency_has_been_told_apart_from_a_way_out`
+reads the manifest and refuses a dependency on neither of its two lists, so the
+four crates are classified in `src/service/outward.rs` in the same commit; and
+the manifest rule in `scripts/which-checks.sh` is reached only after the `red`
+answer, so a red commit carrying the manifest runs scoped rather than `all`,
+which is why the manifest goes in its own commit ahead of the red.
 
 **A commit touching `.github/workflows/*.yml` answers `affected` and selects no
 tests at all.** Verified 2026-09-12 by reading `scripts/which-checks.sh:325-338`

@@ -1338,6 +1338,71 @@ write path added by this milestone passes through that gate.
     its own check, and the criterion above is it.
 
 - [ ] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
+  - **The relative-wording decision, taken 2026-09-13 and written down here the same day by the
+    rewrite of 06-03's task 3.** The evidence below is left as it was, because it is what this
+    requirement was judged against. What follows is the decision and the three options that lost,
+    so the comparison is not rebuilt the first time the recurring cost is questioned.
+
+    **Project Fluent**, `fluent-bundle` 0.16 with `unic-langid` 0.9, and `fluent-langneg` 0.13
+    and `intl-memoizer` 0.5 as direct dependencies from the same closure. Decided by Pratik on
+    2026-09-13 at 06-03's checkpoint, which asked what "2 days ago" should do on a French
+    computer and offered three options: keep it English, fall back to the date, or take on real
+    plural rules. He chose the third and widened it: "3 + the start of real internationalization.
+    We'll be starting translation support for the interface and screen reader speech in version
+    2." The package was confirmed the same day, "Yes. do that.", after an audit across four
+    parallel evaluations. The audit table is in `06-03-PLAN.md` under
+    `<package_legitimacy_audit>`, with every figure's command beside it.
+
+    **The three that lost, and what each lost on.**
+
+    - **ICU4X.** `icu_plurals` is Unicode's own rules and excellent as a primitive, but ICU4X
+      carries no message system: the reserved `icu_message` crate has been an empty stub since
+      2021 and upstream issue #3028 has been open since January 2023. Its MSRV is exactly this
+      project's 1.88 floor with no headroom, and it has raised that floor in minor releases. Its
+      `icu_experimental::relativetime` produces "2 days ago" in every locale and is explicitly
+      pre-release, breaking about every six months.
+    - **`intl_pluralrules` alone.** One primitive where a message system is needed. Its data is
+      CLDR 37, its repository has been untouched since November 2022, its published tarball
+      ships no licence text, and it fails with a `&'static str`. It is in the chosen closure
+      regardless, one layer down, where `fluent-bundle` wraps its error and negotiates around its
+      lookup.
+    - **A hand-written CLDR table.** A private copy of an open standard, which this project's
+      guardrails refuse: it goes stale with no commit here and nobody pressured to fix it.
+
+    **Which of those reasons could change, and which could not.** ICU4X's is a missing crate and
+    an unstable one, and projects ship those eventually: read the comparison again if
+    `icu_message` gains a release or `relativetime` reaches 1.0. The other two will not move.
+
+    **The reason Fluent won, which is specific to this project.** A Fluent message carries
+    attributes, so a control's visible label, its accessible name and its keyboard mnemonic are
+    one translatable unit. That is what this project does with a label plus
+    `set_accessible_name`, and it answers the problem nobody meets until the first translation:
+    an `&` mnemonic has to be a letter in the translated label. No other candidate is designed
+    for an interface that is heard.
+
+    **What the decision commits the project to.** Eight new packages in `Cargo.lock`, none with a
+    build script or a proc macro, licensed `Apache-2.0 OR MIT` throughout. A catalogue at
+    `locales/en-US/dates.ftl`, four messages now, laid out for five thousand: one file per area,
+    ids `<area>-<meaning>`, and the attribute names `.label`, `.accessible-name` and `.mnemonic`
+    reserved for controls. A loader in `src/common/catalogue.rs` with the four conditions
+    Firefox's production use of these crates requires: isolation marks off, numbers through
+    `GetNumberFormatEx`, counts passed as numbers with the error vector checked, and a
+    completeness check holding both directions. The tree measurement of 2026-09-13 found roughly
+    5,300 user-facing string occurrences, adoptable more easily than the count suggests: the
+    sentence is already the unit in 3,476 `format!` sites, 487 named constants and 38 `spoken()`
+    functions are the seams, and the hostile patterns are about 4%. The commands are in the
+    plan's audit block.
+
+    **What the decision does not buy, which is the part to be clear about.** Nothing a user hears
+    changes when 06-03's task 3 lands. Only an English catalogue exists, so on a French computer
+    "2 days ago" is still "2 days ago", which is this requirement's own fallback clause. The
+    plural machinery is proved with a Russian resource written inside a test, on an English
+    machine, never on a Russian one. Which languages ship, and who writes them, is a version 2
+    decision and Pratik's; no executor writes a translation in a language they do not speak.
+
+    **Nothing has been installed.** No line naming any of the eight is in `Cargo.toml` as this is
+    written. The install is 06-03's task 3, in a commit of its own that answers `all`.
+
   - Evidence: rewritten 2026-09-04. The core claim holds and half of this is already done.
     **The order of the day and month, and the clock, already follow the machine.**
     `DateOrder::from_system` (`src/presentation/date_display.rs:226`) reads the Windows locale
