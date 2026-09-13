@@ -14,6 +14,7 @@ provides:
 affects: [08-every-number-the-project-quotes]
 
 branch: what-this-project-accepts-is-still-what-the-run-reports
+merge: e56774adf27443ed3e81a451f91c8b76a6d1aacc
 date: 2026-09-13
 
 key-files:
@@ -285,8 +286,14 @@ All 4 advisory(ies) this project accepts are still reported.
 No advisory outside .cargo/audit.toml, and nothing is being held open.
 ```
 
-Exit status 0. It costs 11.5 seconds warm, against about 6 for the single run it
-replaced, in a gate of about 330.
+Exit status 0, and 11.5 seconds warm, measured here today. The two figures it is
+worth setting beside are not mine and are quoted with their source: the comment
+in `scripts/check.sh` says the single run this replaces cost about six seconds of
+a gate of about 330, written 2026-09-13 without a re-measurement recorded. So the
+second run roughly doubles this step and the step is still a small part of the
+gate, and the ratio is the claim rather than either number.
+
+`scripts/check.sh all` on this branch, warm, not piped, under 1.98.1: green.
 
 The three unlisted warnings are the honest gap in all of this. They are printed
 on every run and nobody has decided any of them, which is the same shape as the
