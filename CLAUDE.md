@@ -208,14 +208,27 @@ means:
 
 ### CI must stay green
 
-Every commit builds, passes tests, and passes lint. These are the same four checks CI runs, and
-clippy is enforced with `-D warnings`, so a warning is a build failure:
+Every commit builds, passes tests, and passes lint. Clippy is enforced with `-D warnings`, so a
+warning is a build failure:
 
 ```bash
 bash scripts/check.sh
 ```
 
-Use the script rather than running the four commands by hand. Cargo shares build
+**This paragraph said "the same four checks CI runs" until 2026-09-13, and CI has seven jobs.**
+A full local run covers five of them: Rustfmt, Clippy, the `scripts/*.test.sh` suites, the Test
+Suite, the release half of Build, and, since 2026-09-13, Security Audit. It does not run the debug
+build, the setup executable, or the search handler's own fmt, clippy and tests, because that crate
+is not a workspace member and every cargo command here walks past it.
+
+The wrong count was not harmless. `cargo audit` was one of the two jobs nothing local ran, it went
+red on 2026-09-10, and it sat unread for three days behind a sentence saying the local script
+covered everything. A count in a document is a claim like any other, and this one had drifted in
+the file whose whole argument is that claims need checks. The last block of `scripts/check.sh` now
+prints what a run covered and what it did not, so the next person reads it from the run rather than
+from here.
+
+Use the script rather than running the commands by hand. Cargo shares build
 fingerprints between `check`, `build`, `test`, and `clippy`, so a clippy run that
 follows a build can be treated as fresh and report success without linting
 anything. That has already put a clippy failure on `main` after a local run

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Run the four checks CI runs, in the same order, and fail on the first one.
+# Run most of what CI runs, in the same order, and fail on the first one.
+#
+# "The four checks CI runs" is what this line said until 2026-09-13, and CI has
+# seven jobs. The last block in this file names which five a full run here
+# covers and which two it does not, rather than leaving a count to drift again.
 #
 # Touching lib.rs first is not optional. Cargo shares fingerprints between
 # `check`, `build`, `test`, and `clippy`, so a clippy run after a build can be
@@ -534,6 +538,24 @@ fi
 # Worth picking up again: the gate is compilation more than testing, and
 # `target/debug` was 269GB when this was measured.
 
+# Advisories against the dependency tree, which nothing local asked about until
+# 2026-09-13. CI has had a job for this since the beginning; it went red on
+# 2026-09-10 and sat unread for three days, because a job page is the one place
+# a person never looks on a day they think is fine.
+#
+# Only in this mode. An advisory is not a consequence of a commit, so scoping it
+# to what changed makes no sense, and `all` is what every code commit on main and
+# every pre-merge run does. Six seconds of a run that is about 330.
+#
+# Before the suite rather than after it, because it is the cheapest thing here
+# and a finding should not wait four minutes to be said.
+#
+# What it is allowed not to block on, and why that is not a silencing, is in
+# scripts/audit.sh. The short version: an advisory nobody has decided yet is set
+# aside here by name, on this machine only, so CI stays red on it.
+echo "== security advisories =="
+"$(dirname "$0")/audit.sh"
+
 echo "== tests =="
 # --no-fail-fast because without it cargo stops at the first target that fails,
 # and the library is the first target. One failing test there means none of the
@@ -546,4 +568,24 @@ cargo test --all-targets --no-fail-fast
 echo "== release build =="
 cargo build --release
 
-echo "All four checks passed."
+# Five of CI's seven jobs, not four, and not all seven.
+#
+# This line said "All four checks passed" until 2026-09-13, and the header at
+# the top of this file said the same. It was wrong twice over: the count was
+# five even then, counting the shell suites, and CI runs seven jobs.
+#
+# What this run covers: Rustfmt, Clippy, the scripts that decide what runs, the
+# Test Suite, the release half of Build, and Security Audit.
+#
+# What it does not, so that nobody reads the line above as "CI will be green":
+#
+#   * Build (debug). The test run compiles every target, so a debug build
+#     failure would have to be something only a non-test profile reaches.
+#   * Setup Executable. scripts/build-installer.sh needs Inno Setup.
+#   * search-handler. CI runs fmt, clippy and the tests inside that crate, and
+#     nothing here does. It is a second crate rather than a workspace member,
+#     so every cargo command above walks straight past it.
+echo "Formatting, clippy, the script suites, the tests, the release build and"
+echo "the advisory check passed. That is five of CI's seven jobs. The debug"
+echo "build, the setup executable and the search handler's own checks did not"
+echo "run here."
