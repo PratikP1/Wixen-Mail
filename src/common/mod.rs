@@ -4,6 +4,13 @@
 #[cfg(test)]
 pub mod answering;
 pub mod error;
+/// How this computer writes a date, asked rather than assumed.
+///
+/// Here rather than beside the other date code in `presentation`, because
+/// `service::signed_mail` writes a date into a sentence somebody hears and
+/// `service` reaches `presentation` nowhere. `common` imports nothing from the
+/// other three layers, which is the same reason `moment` is here.
+pub mod how_the_machine_writes_dates;
 pub mod logging;
 /// The shapes a stored moment takes, read here rather than listed again in
 /// every module that reads one.
