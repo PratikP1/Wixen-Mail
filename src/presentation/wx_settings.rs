@@ -14,7 +14,7 @@ use crate::common::paths::AppPaths;
 use crate::data::account::Account;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::Accessibility;
-use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings};
+use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings, Switch};
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
@@ -23,6 +23,8 @@ use crate::presentation::accessibility::sound_scheme_import;
 use crate::presentation::theme;
 use crate::presentation::ui_types::CalendarView;
 use crate::service::spellcheck::available_languages;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
@@ -117,6 +119,14 @@ pub struct SettingsWidgets {
     // Feedback channels: each box carries the channel it switches, so a tick
     // cannot be read back against a different one.
     feedback: Vec<(Channel, CheckBox)>,
+    // The same tab's per-event half. Public because a test builds this dialog
+    // and reads these back: wxdragon offers no way to raise a selection event
+    // from outside, so a test that could not reach these could prove the
+    // controls exist and never that moving between events keeps what was
+    // ticked.
+    pub feedback_global: Vec<(Switch, CheckBox)>,
+    pub feedback_event: Choice,
+    pub feedback_per_event: PerEventControls,
     // Which sound plays. Read back by re-running the same discovery that
     // populated it and indexing by selection, the same shape `sel` already
     // gives every other Choice, rather than carrying a second, parallel
@@ -277,7 +287,7 @@ pub fn build_settings_dialog(
 
     // ── Tab 6: Feedback
     let feedback_panel = Panel::builder(&notebook).build();
-    let (feedback, sound_scheme) = build_feedback_tab(&feedback_panel, config, a11y);
+    let feedback = build_feedback_tab(&feedback_panel, config, a11y);
     notebook.add_page(&feedback_panel, "Feedback", false, None);
 
     // ── Tab 7: Advanced
@@ -423,8 +433,11 @@ pub fn build_settings_dialog(
         download_folder,
         look_at_message_contents,
         check_links_with_google,
-        feedback,
-        sound_scheme,
+        feedback: feedback.channels,
+        feedback_global: feedback.global,
+        feedback_event: feedback.event,
+        feedback_per_event: feedback.per_event,
+        sound_scheme: feedback.sound_scheme,
     }
 }
 
@@ -2124,6 +2137,65 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
     (log_choice, dl_field, body_box, links_box)
 }
 
+/// The three controls that answer for whichever event the picker is showing,
+/// and the two lines beneath them.
+///
+/// Held together rather than passed around separately because moving between
+/// events touches all five at once, and a caller that updated four of them
+/// would leave a screen saying one thing about an event and another thing
+/// about the event before it.
+#[derive(Clone)]
+pub struct PerEventControls {
+    /// One per [`Switch`], in `Switch::ALL`'s order, each carrying the switch
+    /// it answers so a tick cannot be read back against a different one.
+    pub ticks: Vec<(Switch, CheckBox)>,
+    /// What the selected event will really produce, which is not always what
+    /// the ticks say.
+    pub what_really_happens: StaticText,
+    /// Whether the selected event has an answer of its own or is on the
+    /// default. Ticks alone cannot tell those two apart.
+    pub whose_answer: StaticText,
+    /// Which event of [`Event::ALL`] the ticks are describing right now.
+    ///
+    /// Needed because a selection change says where the picker has arrived and
+    /// not where it came from, and what is on screen belongs to where it came
+    /// from.
+    pub showing: Rc<Cell<usize>>,
+    /// Everything this tab has been told so far, including answers for events
+    /// the picker is not showing. The save path writes this.
+    pub working: Rc<RefCell<FeedbackSettings>>,
+}
+
+impl PerEventControls {
+    /// Write what is on screen into the working settings for the event the
+    /// ticks are describing.
+    pub fn remember_what_is_on_screen(&self) {}
+
+    /// Show the event at `at` in [`Event::ALL`], having first remembered the
+    /// one being left.
+    pub fn show(&self, at: usize) {
+        let _ = at;
+    }
+
+    /// Put the event being shown back to the default.
+    pub fn put_the_shown_event_back_to_the_default(&self) {}
+}
+
+/// Everything the Feedback tab hands back.
+pub struct FeedbackTabControls {
+    /// The three controls that answer for every event at once.
+    pub global: Vec<(Switch, CheckBox)>,
+    /// The four boxes that answered for every event at once before there were
+    /// three. Two of them offered speech and braille as independent choices,
+    /// which is a thing this program cannot do, and they go when `global`
+    /// arrives.
+    pub channels: Vec<(Channel, CheckBox)>,
+    /// Which event the three controls beneath it are describing.
+    pub event: Choice,
+    pub per_event: PerEventControls,
+    pub sound_scheme: Choice,
+}
+
 /// Feedback channels: how the application tells you something happened.
 ///
 /// One checkbox per channel rather than a grid of events, because the choice
@@ -2138,7 +2210,7 @@ fn build_feedback_tab(
     panel: &Panel,
     config: &AppConfig,
     a11y: &Arc<Accessibility>,
-) -> (Vec<(Channel, CheckBox)>, Choice) {
+) -> FeedbackTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
     let settings = FeedbackSettings::from_stored(&config.feedback_channels);
 
@@ -2232,8 +2304,27 @@ fn build_feedback_tab(
 
     sizer.add_sizer(&scheme_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // Stubbed, so the live check that follows names every property it wants
+    // and none of them is answered by accident. The picker holds no events,
+    // there are no per-event controls, and moving between events does nothing.
+    let event_choice = Choice::builder(panel).build();
+    set_accessible_name(&event_choice, "Event");
+    let per_event = PerEventControls {
+        ticks: Vec::new(),
+        what_really_happens: StaticText::builder(panel).with_label("").build(),
+        whose_answer: StaticText::builder(panel).with_label("").build(),
+        showing: Rc::new(Cell::new(0)),
+        working: Rc::new(RefCell::new(settings)),
+    };
+
     panel.set_sizer(sizer, true);
-    (boxes, scheme_choice)
+    FeedbackTabControls {
+        global: Vec::new(),
+        channels: boxes,
+        event: event_choice,
+        per_event,
+        sound_scheme: scheme_choice,
+    }
 }
 
 /// Rebuild the picker's items and the delete button's enabled state from
