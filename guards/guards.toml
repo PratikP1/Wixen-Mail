@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 551 records have arrived since and have not been through it.
+# 553 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3449,6 +3449,52 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 71 },
+]
+
+# ── The two questions Windows answers about a withdrawal ────────────────────
+#
+# Both tests these records cover were rewritten on 2026-09-13 because they were
+# claims about the machine wearing the clothes of claims about the code: they
+# passed here and failed on a CI runner whose certificate store is not this
+# one's. A rewritten test that has never been red proves nothing, so each of
+# them gets the break that must redden it written down and measured.
+
+[[guard]]
+# Written naming one test and measured on 2026-09-13 as reddening eight, which
+# is the warning CLAUDE.md gives about writing a red list from what a break
+# obviously ought to break. Two of the eight are end-to-end tests under
+# `application`, in modules nobody thinking about a certificate store would have
+# filtered for. All eight are here because that is what really went red.
+name = "a withdrawal answer is read out of the chain rather than invented"
+file = "src/service/signed_mail.rs"
+before = """        if chain.error_status & CERT_TRUST_IS_REVOKED != 0 {"""
+after = """        if true {"""
+red = [
+    "application::checking_signatures::end_to_end::test_a_signed_message_reopened_from_the_cache_says_what_it_said_the_first_time",
+    "application::importing_messages::end_to_end::test_a_signed_message_brought_in_from_a_file_can_still_have_its_signature_checked",
+    "service::signed_mail::tests::test_a_strangers_own_certificate_is_never_asked_about_over_the_network",
+    "service::signed_mail::tests::test_asking_this_computer_about_withdrawal_answers_without_asking_anybody",
+    "service::signed_mail::tests::test_the_withdrawal_question_does_not_manufacture_bad_news",
+    "service::signed_mail::windows_store::tests::test_a_certificate_really_checked_and_found_sound_says_so",
+    "service::signed_mail::windows_store::tests::test_every_way_of_not_finding_out_says_which_one_it_was",
+    "service::signed_mail::windows_store::tests::test_nothing_asked_about_withdrawal_is_not_the_same_as_nothing_wrong",
+]
+tests_last_seen = [
+    { file = "src/application/checking_signatures.rs", tests = 8 },
+    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/service/signed_mail.rs", tests = 112 },
+]
+
+[[guard]]
+name = "the walk into Windows own chain structures really happens"
+file = "src/service/signed_mail.rs"
+before = """                    _ => withdrawal_result_of_the_first(chain),"""
+after = """                    _ => None,"""
+red = [
+    "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
+]
+tests_last_seen = [
+    { file = "src/service/signed_mail.rs", tests = 112 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -11045,6 +11091,16 @@ tests_last_seen = [
 ]
 
 [[guard]]
+# Found short on 2026-09-13 by a run filtered for something else entirely, while
+# measuring two new records about certificate withdrawal. This break reddens a
+# fourth test, in `data::config`, and no count of `src/service/spellcheck/mod.rs`
+# could ever have predicted it: the file that gained the test is not a file this
+# record names. That is the third of the three limits the header of this file
+# lists, happening in the open.
+#
+# The name is added by hand rather than by the runner, because a record that
+# comes out short does not get its counts written. The next measurement records
+# them.
 name = "a real Windows language list is used instead of the built-in fallback, not the other way round"
 file = "src/service/spellcheck/mod.rs"
 before = """    if !windows_choices.is_empty() {"""
@@ -11053,8 +11109,10 @@ red = [
     "service::spellcheck::tests::test_an_empty_windows_list_falls_back_to_the_built_in_six",
     "service::spellcheck::tests::test_a_real_windows_list_is_used_instead_of_the_fallback",
     "service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback",
+    "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
 ]
 tests_last_seen = [
+    { file = "src/data/config.rs", tests = 63 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 

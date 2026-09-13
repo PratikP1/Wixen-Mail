@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 331
+open_count: 333
 waived_count: 0
 fixed_count: 22
-total_count: 353
-last_updated: 2026-09-13T06:50:57.999Z
+total_count: 355
+last_updated: 2026-09-13T08:39:33.202Z
 ---
 
 # Broken Windows Ledger
@@ -368,6 +368,8 @@ last_updated: 2026-09-13T06:50:57.999Z
 | 351 | 06 | todo | src/presentation/accessibility/feedback.rs |  | Channel::setting_label now has no shipping caller. The global boxes are built from Switch, so the four strings it holds are reached only by its own two tests. The plan for 06-02 said not to change them and a test guards them, so it was left alone rather than removed quietly. Point dead-code-hunter at it in a later plan of this phase | open |  | 2026-09-13T06:02:21.175Z |  |
 | 352 | 06 | todo | tests/checkbox_labels.rs |  | The label walk reaches the six feedback check boxes and no other check box the settings dialog builds, because SettingsWidgets keeps the rest of its fields private. Widening it means making about twenty fields public for a test, which is worth deciding deliberately rather than as a side effect of 06-02 | open |  | 2026-09-13T06:02:22.235Z |  |
 | 353 | 06 | unrun-verify | .planning/ROADMAP.md |  | Criterion 1 clause 2, by keyboard, does not close. Every control on the Feedback tab is a native Choice, CheckBox or Button so Tab reaches them, and every check box and the button carries a mnemonic distinct from the other nine on the tab. Both facts were established by reading the source, not by pressing a key. Nobody has tabbed through this tab and no test presses one | open |  | 2026-09-13T06:50:57.999Z |  |
+| 354 | 07 | unmet-truth | Cargo.toml | 15 | Nothing in this repository builds at the declared floor. Cargo.toml says rust-version = 1.88 and every workflow plus rust-toolchain.toml now uses 1.98.1, so 1.88 is a claim no build has tested since it was written. Found 2026-09-13 while pinning the toolchain. Whether an MSRV job belongs here is a scoping question nobody has settled; recorded rather than fixed. | open |  | 2026-09-13T08:39:16.912Z |  |
+| 355 | 07 | skipped-test | src/service/signed_mail.rs | 6523 | test_the_withdrawal_question_really_reaches_windows_own_answer stops guarding on a machine that holds no intermediate authority it trusts. Windows does not check withdrawal for the root of a chain, so an intermediate whose issuer is not installed gets no verdict, and nothing here can tell that from a broken walk. The test reads that precondition off issuer_trust and returns early when it is absent, printing why. Recorded 2026-09-13 rather than hidden: a guard that can quietly stop guarding is the shape this project keeps meeting. | open |  | 2026-09-13T08:39:33.202Z |  |
 
 ````json
 [
@@ -4605,6 +4607,30 @@ last_updated: 2026-09-13T06:50:57.999Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T06:50:57.999Z",
+    "resolved_at": null
+  },
+  {
+    "id": 354,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "Cargo.toml",
+    "line": 15,
+    "description": "Nothing in this repository builds at the declared floor. Cargo.toml says rust-version = 1.88 and every workflow plus rust-toolchain.toml now uses 1.98.1, so 1.88 is a claim no build has tested since it was written. Found 2026-09-13 while pinning the toolchain. Whether an MSRV job belongs here is a scoping question nobody has settled; recorded rather than fixed.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T08:39:16.912Z",
+    "resolved_at": null
+  },
+  {
+    "id": 355,
+    "kind": "skipped-test",
+    "phase": "07",
+    "file": "src/service/signed_mail.rs",
+    "line": 6523,
+    "description": "test_the_withdrawal_question_really_reaches_windows_own_answer stops guarding on a machine that holds no intermediate authority it trusts. Windows does not check withdrawal for the root of a chain, so an intermediate whose issuer is not installed gets no verdict, and nothing here can tell that from a broken walk. The test reads that precondition off issuer_trust and returns early when it is absent, printing why. Recorded 2026-09-13 rather than hidden: a guard that can quietly stop guarding is the shape this project keeps meeting.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T08:39:33.202Z",
     "resolved_at": null
   }
 ]
