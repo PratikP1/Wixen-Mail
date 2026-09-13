@@ -35,8 +35,6 @@ subject="$root/scripts/audit.sh"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 
-fixtures=0
-
 # A log in the shape cargo-audit really writes one, naming whichever advisories
 # a case wants reported.
 #
@@ -44,9 +42,18 @@ fixtures=0
 # is not a run, so it is here rather than only in the cases that are about it: a
 # fixture missing a line the subject looks for tests the subject's reading of
 # that line by accident, in every case at once.
+#
+# `mktemp` rather than a counter, and that is a measurement rather than a
+# preference. Every call to this is a command substitution, so it runs in a
+# subshell, so a counter kept in a variable is incremented in a process that
+# then exits. The first version of this used one and every fixture came back as
+# the same path: two cases that wanted a wide log and a narrow one got the
+# narrow one twice, and the case about a run reporting less than another was
+# comparing a file with itself. Two cases caught it, both by refusing where they
+# should have allowed, which is the direction a broken fixture is visible from.
 a_run_reporting() {
-    fixtures=$(( fixtures + 1 ))
-    local file="$scratch/audit-$fixtures.log"
+    local file
+    file="$(mktemp "$scratch/audit-XXXXXX.log")"
     {
         echo "    Fetching advisory database from \`https://github.com/RustSec/advisory-db.git\`"
         echo "      Loaded 1243 security advisories"
@@ -65,8 +72,8 @@ a_run_reporting() {
 # An accepted list in the shape `.cargo/audit.toml` really holds one, from lines
 # handed in whole so a case can write a shape as well as a list.
 an_accepted_list_of() {
-    fixtures=$(( fixtures + 1 ))
-    local file="$scratch/audit-toml-$fixtures.toml"
+    local file
+    file="$(mktemp "$scratch/audit-toml-XXXXXX.toml")"
     printf '%s\n' "$@" > "$file"
     echo "$file"
 }
@@ -324,8 +331,7 @@ expect_still_apply refused \
     "an unfiltered run that never happened is refused" \
     "$scratch/no-second-run.log" "$filtered" RUSTSEC-2026-0194
 
-fixtures=$(( fixtures + 1 ))
-not_a_run="$scratch/not-a-run-$fixtures.log"
+not_a_run="$(mktemp "$scratch/not-a-run-XXXXXX.log")"
 echo "error: could not find Cargo.lock" > "$not_a_run"
 expect_still_apply refused \
     "an unfiltered log that is not a run at all is refused" \
