@@ -225,6 +225,42 @@ pub fn the_twelve_month_names(which: WhichLocale<'_>) -> [String; 12] {
     ask_for_the_twelve_month_names(which).unwrap_or_else(|_| IN_ENGLISH.map(str::to_string))
 }
 
+/// The name of one day of the week, as this computer says it in full.
+///
+/// A day name stands on its own in every sentence this program puts one in,
+/// "every week on Monday", so it is the standalone form, looked up the way
+/// the twelve month names for a list are, and there is no second mechanism
+/// to choose between.
+pub fn a_day_name(which: WhichLocale<'_>, day: chrono::Weekday) -> String {
+    ask_for_a_day_name(which, day)
+        .unwrap_or_else(|_| DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
+}
+
+/// Where a day sits, Monday first, which is how both chrono and Windows count.
+///
+/// That the two agree is a coincidence worth stating rather than relying on
+/// silently: `chrono::Weekday::num_days_from_monday` is 0 for Monday, and
+/// Windows numbers `LOCALE_SDAYNAME1` as Monday too, measured across four
+/// locales on 2026-09-13. Neither starts on Sunday, which is how a calendar
+/// on the wall is printed and how `chrono::Weekday::num_days_from_sunday`
+/// counts, and the wrong one of those two would answer a real day name for
+/// the wrong day and look fine in every test written on a Monday.
+fn days_from_monday(day: chrono::Weekday) -> usize {
+    day.num_days_from_monday() as usize
+}
+
+/// The seven day names in English, Monday first, for where there is no
+/// Windows locale API and for where the ask failed.
+const DAYS_IN_ENGLISH: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
+
 /// What this computer calls its own locale: "en-US", "fr-FR", "en-GB".
 ///
 /// The one question here whose answer is a locale name rather than a word in
@@ -462,6 +498,11 @@ fn ask_for_the_twelve_month_names(which: WhichLocale<'_>) -> Result<[String; 12]
     Ok(names)
 }
 
+#[cfg(target_os = "windows")]
+fn ask_for_a_day_name(_which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
+    Ok(DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
+}
+
 /// The name of a locale, as Windows spells it: "en-US". `LOCALE_SNAME`.
 #[cfg(target_os = "windows")]
 const THE_NAME_OF_THE_LOCALE: u32 = 0x0000_005C;
@@ -626,6 +667,11 @@ fn ask_for_a_date(_which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -
 #[cfg(not(target_os = "windows"))]
 fn ask_for_the_twelve_month_names(_which: WhichLocale<'_>) -> Result<[String; 12]> {
     Ok(IN_ENGLISH.map(str::to_string))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ask_for_a_day_name(_which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
+    Ok(DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
 }
 
 /// A locale name is the one question with no English answer to give: "this
@@ -846,6 +892,251 @@ mod tests {
         assert_eq!(
             a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 5.0).as_deref(),
             Some("5")
+        );
+    }
+
+    /// The seven, under a forced `en-US`, which must hold on every machine.
+    #[test]
+    fn test_an_english_machine_gets_the_english_day_names_this_program_always_wrote() {
+        use chrono::Weekday::*;
+        let english = WhichLocale::NamedInATest("en-US");
+
+        assert_eq!(
+            [Mon, Tue, Wed, Thu, Fri, Sat, Sun].map(|day| a_day_name(english, day)),
+            [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    /// Both ends of the week, so a lookup counting from Sunday, which is how
+    /// a calendar on the wall is printed, cannot pass by luck on a Monday.
+    ///
+    /// Windows only, for the reason given above the French month test.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_french_machine_gets_french_day_names_counted_from_monday() {
+        let french = WhichLocale::NamedInATest("fr-FR");
+
+        assert_eq!(a_day_name(french, chrono::Weekday::Mon), "lundi");
+        assert_eq!(a_day_name(french, chrono::Weekday::Sun), "dimanche");
+        assert_eq!(
+            a_day_name(WhichLocale::NamedInATest("ru-RU"), chrono::Weekday::Wed),
+            "среда"
+        );
+    }
+
+    /// The English month and day names, and the chrono directives that
+    /// write one, found inside string literals in one file's shipped half,
+    /// each with the literal it was found in.
+    ///
+    /// String literals only, because prose in a comment saying "counted from
+    /// Monday" is not a sentence anybody hears, and a comment line is skipped
+    /// whole because prose quotes things. The shipped half only, through
+    /// `what_ships`, because a test fixture may say "Monday" all it likes.
+    /// Whole words, so that "Mayor" is not May and "Sunday" is not found
+    /// inside "Sundays" twice.
+    fn english_date_words_in(source: &str) -> Vec<(usize, String, String)> {
+        const NAMES: [&str; 19] = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ];
+        // The four chrono directives that write a month or day name, which
+        // is how the signature sentence wrote English before task 4.
+        const DIRECTIVES: [&str; 4] = ["%A", "%a", "%B", "%b"];
+
+        let mut found = Vec::new();
+        for (at, line) in crate::common::what_ships::what_ships(source)
+            .lines()
+            .enumerate()
+        {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            // The odd-numbered pieces between quotes are the literals. An
+            // escaped quote inside one splits it wrongly, which can hide a
+            // word but cannot invent one, and nothing this reads escapes a
+            // quote beside a month name.
+            for literal in line.split('"').skip(1).step_by(2) {
+                for name in NAMES {
+                    let whole_word = literal
+                        .split(|c: char| !c.is_ascii_alphabetic())
+                        .any(|word| word == name);
+                    if whole_word {
+                        found.push((at + 1, name.to_string(), literal.to_string()));
+                    }
+                }
+                for directive in DIRECTIVES {
+                    if literal.contains(directive) {
+                        found.push((at + 1, directive.to_string(), literal.to_string()));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// The literals that may name a month or a day in English, each with its
+    /// reason. Whole literals rather than whole files, so that a new English
+    /// name anywhere else in a listed file is still read.
+    ///
+    /// Three kinds of reason, and they are different. The first two are
+    /// formats other programs read, where the English word is the format and
+    /// translating it would corrupt a file or a request. The rest are
+    /// interface text: a label on a choice with an example date or a pair of
+    /// day names inside an English sentence. Those are still English because
+    /// the sentence around them is, and putting a French day inside an
+    /// English label is not better than an English one. They are among the
+    /// five thousand sentences version 2 translates, and they are here so the
+    /// reading names them rather than being narrowed until it sees nothing.
+    const A_LITERAL_ALLOWED_TO_BE_ENGLISH: [(&str, &str); 6] = [
+        (
+            "%a %b %e %T %Y",
+            "the mbox From_ separator in message_files.rs, an on-disk interchange format that \
+             other mail programs read",
+        ),
+        (
+            "%d-%b-%Y %H:%M:%S %z",
+            "IMAP's INTERNALDATE in protocols/imap.rs, which the server parses and which RFC \
+             3501 spells in English",
+        ),
+        (
+            "Every weekday, Monday to Friday",
+            "the label of a Repeat choice, in repeating.rs and item_fields.rs: interface text \
+             for version 2, and matched against what the item form offers",
+        ),
+        (
+            "Month first, July 26",
+            "a settings choice on the Reading tab with an example date in its label, interface \
+             text for version 2",
+        ),
+        ("Day first, 26 July", "the same choice's other answer"),
+        (
+            "A word, July 26, 2026",
+            "the date-wording choice on the Reading tab, the same shape",
+        ),
+    ];
+
+    /// Every `.rs` file under `src/`, apart from the one named with a reason.
+    fn every_shipping_file_that_may_not_name_a_month_or_day_in_english() -> Vec<std::path::PathBuf>
+    {
+        // One file is excluded whole, and it is this one: the English
+        // fallback lives here, the twelve month names and the seven day names
+        // for where there is no Windows locale API and for where the ask
+        // failed, and they are the reason this file exists.
+        //
+        // Not excluded, and worth saying why. `src/application/repeating.rs`
+        // holds the RRULE weekday codes, `MO` to `SU`, which are protocol and
+        // must stay as they are; they are two letters and never match a name
+        // this reads for. `src/presentation/date_display.rs` writes every
+        // date through this module now and holds no English name in a string,
+        // so it is read like any other file. And `locales/` is not walked at
+        // all: it is prose in a catalogue, not code, and the first message
+        // there to name a month is a translator's decision, not this reading's.
+        const THE_FALLBACK_ITSELF: &str = "src/common/how_the_machine_writes_dates.rs";
+        let mut files = Vec::new();
+        collect_rust_files(std::path::Path::new("src"), &mut files);
+        files.retain(|path| path.to_string_lossy().replace('\\', "/") != THE_FALLBACK_ITSELF);
+        assert!(
+            files.len() > 100,
+            "only {} files found, so the walk is broken",
+            files.len()
+        );
+        files
+    }
+
+    fn collect_rust_files(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rust_files(&path, into);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                into.push(path);
+            }
+        }
+    }
+
+    /// The property the whole plan is for: nothing this program reads aloud
+    /// names a month or a day in English unless this computer does.
+    ///
+    /// Homed here rather than in `tests/house_style.rs`, which is fingerprinted
+    /// by twenty-one guard records where this module is fingerprinted by one.
+    #[test]
+    fn test_no_shipping_file_names_a_month_or_a_day_in_english() {
+        let mut offenders = Vec::new();
+        let mut allowed_and_seen = std::collections::HashSet::new();
+        for path in every_shipping_file_that_may_not_name_a_month_or_day_in_english() {
+            let source = std::fs::read_to_string(&path).expect("a source file that reads");
+            for (line, word, literal) in english_date_words_in(&source) {
+                if A_LITERAL_ALLOWED_TO_BE_ENGLISH
+                    .iter()
+                    .any(|(allowed, _)| *allowed == literal)
+                {
+                    allowed_and_seen.insert(literal);
+                    continue;
+                }
+                offenders.push(format!("{}:{line}: {word} in {literal:?}", path.display()));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "an English month or day name is written into a sentence somebody hears, rather \
+             than asked of this computer:\n{}",
+            offenders.join("\n")
+        );
+        // The other direction: an allowance for a literal that no longer
+        // exists is an allowance nobody is reading, and it would let the
+        // literal come back reworded and unread.
+        for (allowed, _) in A_LITERAL_ALLOWED_TO_BE_ENGLISH {
+            assert!(
+                allowed_and_seen.contains(allowed),
+                "{allowed:?} is allowed to be English and is no longer in the tree; take it \
+                 off the list"
+            );
+        }
+    }
+
+    /// The reading above walks obedient files and passes whether it works or
+    /// has been narrowed to nothing. So: a planted name in a string is
+    /// reported, a planted name in a comment is not, a planted name inside a
+    /// test module is not, and a directive is.
+    #[test]
+    fn test_the_reading_sees_a_planted_english_name_and_ignores_one_in_a_test_block() {
+        let planted = "fn said() -> &'static str {\n    // Counted from Monday, which is prose.\n    /// Says \"Tuesday\" in a doc comment, which is prose too.\n    \"every week on Monday\"\n}\nfn stamp() -> String {\n    now.format(\"%-d %B %Y\").to_string()\n}\n#[cfg(test)]\nmod tests {\n    const FIXTURE: &str = \"Tuesday\";\n}\n";
+
+        assert_eq!(
+            english_date_words_in(planted),
+            vec![
+                (4, "Monday".to_string(), "every week on Monday".to_string()),
+                (7, "%B".to_string(), "%-d %B %Y".to_string()),
+            ]
         );
     }
 

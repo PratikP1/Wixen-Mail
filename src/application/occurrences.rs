@@ -1,5 +1,6 @@
 //! Which days a repeating event actually falls on.
 
+use crate::common::how_the_machine_writes_dates::WhichLocale;
 use crate::data::message_cache::CalendarEventEntry;
 
 /// What is said about a series written in a way this cannot work out.
@@ -64,6 +65,19 @@ pub fn falls_on(
     from: chrono::NaiveDate,
     to: chrono::NaiveDate,
 ) -> FallsOn {
+    falls_on_asking(WhichLocale::ThisComputer, event, from, to)
+}
+
+/// The same, asked in a named locale, so a test can assert "every week on
+/// Monday" as a statement about this code rather than about the machine it
+/// ran on. The pattern `date_display` set: the public reading asks this
+/// computer, the private twin takes the locale.
+fn falls_on_asking(
+    which: WhichLocale<'_>,
+    event: &CalendarEventEntry,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> FallsOn {
     let (start, end) = when(event);
     let once = || FallsOn {
         days: vec![Day {
@@ -108,7 +122,7 @@ pub fn falls_on(
 
     FallsOn {
         days,
-        how_often: rule.spoken(written, &start),
+        how_often: rule.spoken(which, written, &start),
     }
 }
 
@@ -634,7 +648,7 @@ impl Rule {
     /// and in the calendar. That is decided by writing every choice out and
     /// comparing, which cannot drift and cannot flatter a rule it half
     /// recognises. Anything else is described here from what was parsed.
-    fn spoken(&self, written: &str, start: &str) -> String {
+    fn spoken(&self, which: WhichLocale<'_>, written: &str, start: &str) -> String {
         use crate::application::repeating::{self, Repeat};
 
         let weekday = repeating::weekday_of_month(start);
@@ -651,11 +665,16 @@ impl Rule {
                 return repeating::spoken(repeat, &self.stops);
             }
         }
-        with_the_ending(&self.how_often(), &self.stops)
+        with_the_ending(&self.how_often(which), &self.stops)
     }
 
     /// How often this comes round, in words, without the ending.
-    fn how_often(&self) -> String {
+    ///
+    /// The day names are this computer's; the words around them, "every week
+    /// on", are still English until the interface is translated, which is
+    /// version 2. Said here because a French day inside an English frame is
+    /// a sentence somebody will hear before then.
+    fn how_often(&self, which: WhichLocale<'_>) -> String {
         let unit = match self.how {
             How::Daily => "day",
             How::Weekly => "week",
@@ -670,7 +689,12 @@ impl Rule {
         if self.weekdays.is_empty() {
             return how_often;
         }
-        let named: Vec<&str> = self.weekdays.iter().map(weekday_called).collect();
+        let named: Vec<String> = self
+            .weekdays
+            .iter()
+            .map(|day| weekday_called(which, day))
+            .collect();
+        let named: Vec<&str> = named.iter().map(String::as_str).collect();
         format!("{how_often} on {}", one_after_another(&named))
     }
 }
@@ -696,7 +720,7 @@ fn one_after_another(names: &[&str]) -> String {
 }
 
 /// What a weekday is called when it is read out, said in full.
-fn weekday_called(day: &chrono::Weekday) -> &'static str {
+fn weekday_called(_which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
     match day {
         chrono::Weekday::Mon => "Monday",
         chrono::Weekday::Tue => "Tuesday",
@@ -706,6 +730,7 @@ fn weekday_called(day: &chrono::Weekday) -> &'static str {
         chrono::Weekday::Sat => "Saturday",
         chrono::Weekday::Sun => "Sunday",
     }
+    .to_string()
 }
 
 /// How many whole months lie between the months two dates fall in.
@@ -892,6 +917,12 @@ mod tests {
         shown.days.iter().map(|d| d.start.clone()).collect()
     }
 
+    /// Forced, so an assertion about "Monday" is about this code and not
+    /// about the computer that ran it.
+    fn english() -> WhichLocale<'static> {
+        WhichLocale::NamedInATest("en-US")
+    }
+
     #[test]
     fn test_an_event_that_does_not_repeat_falls_on_one_day() {
         // The commonest event there is, and it must cost nothing: one day, and
@@ -1007,7 +1038,7 @@ mod tests {
             );
             let (from, to) = between("2026-03-02", "2026-03-08");
 
-            let shown = falls_on(&event, from, to);
+            let shown = falls_on_asking(english(), &event, from, to);
 
             assert_eq!(starts(&shown), [day], "for {named}");
             assert_eq!(shown.how_often, said, "for {named}");
@@ -2014,8 +2045,35 @@ mod tests {
             let event = an_event("2026-03-05 09:00", "2026-03-05 09:15", Some(rule));
             let (from, to) = window();
 
-            assert_eq!(falls_on(&event, from, to).how_often, expected, "for {rule}");
+            assert_eq!(
+                falls_on_asking(english(), &event, from, to).how_often,
+                expected,
+                "for {rule}"
+            );
         }
+    }
+
+    /// The day names follow the computer; the words around them do not yet.
+    /// "every week on mardi and jeudi" is what a French computer hears until
+    /// the interface is translated, and this test says so rather than
+    /// letting the mixed sentence pass unremarked.
+    ///
+    /// Windows only, because where there is no Windows locale API every day
+    /// name is English by design.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_french_computer_hears_french_day_names_inside_the_english_frame() {
+        let event = an_event(
+            "2026-03-05 09:00",
+            "2026-03-05 09:15",
+            Some("FREQ=WEEKLY;BYDAY=TU,TH"),
+        );
+        let (from, to) = window();
+
+        assert_eq!(
+            falls_on_asking(WhichLocale::NamedInATest("fr-FR"), &event, from, to).how_often,
+            "every week on mardi and jeudi"
+        );
     }
 
     #[test]
