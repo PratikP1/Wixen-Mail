@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 546 records have arrived since and have not been through it.
+# 547 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -13756,6 +13756,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "tests/checkbox_labels.rs", tests = 1 },
+]
+
+# The same rule, on the second screen that walk now reaches, and the record
+# exists so the gate knows it does. The plan for this task said no record was
+# owed because the one above still describes its own break, which is true and is
+# about the wrong thing: without this, `checkbox_labels` runs when
+# `wx_item_form.rs` changes and on no commit touching the settings screen it now
+# also guards. That is guardrail 4, a check that reads as covering something it
+# is never asked about.
+#
+# The break is the shape that passes every source-reading test and every
+# listening pass done with one screen reader: a real accessible name, set through
+# the call that writes MSAA, on a control whose own text is empty. NVDA reads it
+# correctly. Narrator reads an unnamed check box, because Windows supplies its
+# own UI Automation provider for a native check box and that provider takes the
+# name from the window's text.
+#
+# Measured by hand on 2026-09-13 against the target: the one test in the suite
+# went red naming all three per-event controls, each with the label it should
+# have carried.
+[[guard]]
+name = "a check box on the settings screen carries its own label too"
+file = "src/presentation/wx_settings.rs"
+suite = "checkbox_labels"
+before = """        let tick = CheckBox::builder(panel).with_label(label).build();"""
+after = """        let tick = CheckBox::builder(panel).with_label("").build();"""
+red = [
+    "test_every_check_box_in_a_form_carries_its_own_label",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/checkbox_labels.rs", tests = 1 },
 ]
 
