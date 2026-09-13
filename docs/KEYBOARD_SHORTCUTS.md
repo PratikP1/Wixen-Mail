@@ -295,9 +295,17 @@ reaches it, and `F7` jumps to it from anywhere in the text. `F7` again goes
 back to where you were reading.
 
 The warning is also announced when the message opens. That announcement is an
-ordinary feedback event, so you can turn it off, change which channels it uses,
-or make it a tone instead of speech, in Settings. Turning the announcement off
-does not remove the warning: the bar is still there and `F7` still reaches it.
+ordinary feedback event, so in Settings, Feedback you can pick "Unsafe message"
+from the event list and say whether it is announced, whether it plays a sound
+and whether it appears in the status bar, for that event on its own. Turning the
+announcement off does not remove the warning: the bar is still there and `F7`
+still reaches it.
+
+Leaving only the sound on does not give you a tone instead of words. An event
+left with nothing but a sound has the quietest written channel added back,
+because a sound with nothing written alongside it is a noise somebody who cannot
+hear it has no way to perceive. The line under the controls says what the event
+will really do, so you can see that happening rather than find out later.
 
 Messages with nothing wrong with them have no warning bar at all, so there is
 nothing extra to tab past on ordinary mail.

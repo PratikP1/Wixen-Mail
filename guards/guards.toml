@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 543 records have arrived since and have not been through it.
+# 549 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10255,7 +10255,7 @@ before = """        f.write_str(self.key())"""
 after = """        Ok(Default::default())"""
 red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
 ]
 
 # The plausible wrong implementation, and the one a reader reaches for: an
@@ -10282,7 +10282,152 @@ red = [
     "presentation::accessibility::feedback::tests::test_putting_an_event_with_no_override_back_to_the_default_changes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+]
+
+# The defect the whole of criterion 1 is about, written as the wrong
+# implementation a reader would reach for. One control on the screen stands for
+# words, and words means speech and braille, because the notification carrying
+# them takes no medium parameter and the screen reader decides. A switch naming
+# only speech puts braille back where it was: a channel the storage holds and no
+# control on any screen can reach, which is the setting-nobody-can-find shape
+# this phase exists to remove.
+#
+# Measured by applying the break by hand on 2026-09-13 and running the whole
+# library, 7,126 tests, not predicted from reading the code. One test went red
+# and nothing else did, and the prediction written down first was the same one.
+# A second candidate break was considered and not measured, for the reason in
+# the summary: every break of this arm reaches the same single test, because
+# that test is the only reader of `channels()` until the panel lands.
+[[guard]]
+name = "the one control standing for words names braille as well as speech"
+file = "src/presentation/accessibility/feedback.rs"
+before = """            Switch::SpokenOrBrailled => &[Channel::Speech, Channel::Braille],"""
+after = """            Switch::SpokenOrBrailled => &[Channel::Speech],"""
+red = [
+    "presentation::accessibility::feedback::tests::test_every_channel_is_named_by_exactly_one_switch",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+]
+
+# Moving the event picker has two halves and the first is the one that gets
+# forgotten: what is on screen belongs to the event being left, and it has to be
+# written down before the event being arrived at is painted over it. Without it,
+# ticking a box and then moving the picker throws the tick away in silence,
+# which is the worst shape of settings bug because the screen afterwards looks
+# correct.
+#
+# Measured by applying the break by hand on 2026-09-13 and running the target:
+# the one test in the suite went red with five findings, three ticks lost, the
+# model holding None where it should hold an empty answer, and the line about
+# whose answer it is saying the wrong thing.
+#
+# The signature line is part of the break because `remember_what_is_on_screen`
+# is called twice in the file, here and at the save path, and a break has to be
+# exactly one occurrence.
+[[guard]]
+name = "moving the event picker writes down what is on screen before painting over it"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """    pub fn show(&self, at: usize) {
+        self.remember_what_is_on_screen();"""
+after = """    pub fn show(&self, at: usize) {"""
+red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
+tests_last_seen = [
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# "The setting survives a restart" is a claim about the join between two halves
+# that were each proved on their own: the model round trips an answer, and the
+# screen holds one. What carries the second across to the first is the save path,
+# and nothing held it, so the criterion's third clause rested on reading.
+#
+# The break is the save path exactly as it stood before the panel existed:
+# rebuilding from the stored value and writing only the global channels. It was a
+# correct implementation of a tab that could not create a per-event answer, and
+# it silently discards every one of them the moment the tab can. That is the
+# break worth recording because it is not hypothetical, it is what was there.
+#
+# Measured by hand on 2026-09-13: the one test in the suite went red saying a
+# restart reads None for an event the panel was left answering.
+#
+# A second break was measured on the global half, writing only the first channel
+# a switch answers for, and it reddens on its own with a different sentence. The
+# two halves of that check discriminate independently, which is worth knowing
+# because one control standing for two channels is the whole reason there are
+# three answers and four channels.
+[[guard]]
+name = "pressing OK writes the answers the panel holds rather than rebuilding from the stored value"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """    w.feedback_per_event.remember_what_is_on_screen();
+    {
+        let mut feedback = w.feedback_per_event.working.borrow_mut();"""
+after = """    {
+        let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);"""
+red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
+tests_last_seen = [
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# The last clause of the roadmap's first criterion is a sentence rather than a
+# control, and a sentence is the easiest thing in a dialog to lose: a static text
+# nobody hands back is invisible to every check in the tree, so deleting it would
+# break the criterion and redden nothing.
+#
+# The break is the realistic near-miss rather than an empty label, because an
+# obviously-absent case is one every version of the check catches, including the
+# broken ones. This is the sentence a competent author would write while failing
+# the rule: accurate, helpful, and silent about whose decision it is.
+#
+# Measured by hand on 2026-09-13: the one test in the suite went red twice over
+# the same sentence, once for not naming the screen reader and once for not
+# saying the choice is not made here.
+[[guard]]
+name = "the screen says whose decision speech or braille is"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """            "Whether something is spoken, shown on a braille display, or both is \\
+             chosen in your screen reader, not here. Wixen Mail sends one \\
+             notification and your screen reader decides what to do with it.","""
+after = """            "Choose whether events are announced, sounded, or shown. Announcing \\
+             covers both speech and braille.","""
+red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
+tests_last_seen = [
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# The second rule of the same panel, and the plan for this task asked for one
+# record rather than two. Both breaks were measured because the first plausible
+# break is often the weak one, both turned out equally strong, and they guard
+# different rules, so both are written down.
+#
+# Putting an event back to the default and switching every channel off for it
+# are opposite answers. The model keeps them apart on purpose, in two methods
+# named for the difference, because an empty answer round trips and means
+# silence while no entry at all means the default. A button that empties instead
+# of removing silences the event it claims to have restored.
+#
+# Measured by hand on 2026-09-13: the one test in the suite went red with five
+# findings, three ticks that did not come back, the event still holding an
+# answer of its own, and the line about whose answer it is saying the wrong
+# thing.
+[[guard]]
+name = "the button putting an event back to the default removes its answer rather than emptying it"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """        self.working.borrow_mut().use_the_default_for(self.shown());"""
+after = """        self.working
+            .borrow_mut()
+            .set_event_channels(self.shown(), BTreeSet::new());"""
+red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
+tests_last_seen = [
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
 [[guard]]
@@ -13673,6 +13818,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_item_form.rs", tests = 14 },
+    { file = "tests/checkbox_labels.rs", tests = 1 },
+]
+
+# The same rule, on the second screen that walk now reaches, and the record
+# exists so the gate knows it does. The plan for this task said no record was
+# owed because the one above still describes its own break, which is true and is
+# about the wrong thing: without this, `checkbox_labels` runs when
+# `wx_item_form.rs` changes and on no commit touching the settings screen it now
+# also guards. That is guardrail 4, a check that reads as covering something it
+# is never asked about.
+#
+# The break is the shape that passes every source-reading test and every
+# listening pass done with one screen reader: a real accessible name, set through
+# the call that writes MSAA, on a control whose own text is empty. NVDA reads it
+# correctly. Narrator reads an unnamed check box, because Windows supplies its
+# own UI Automation provider for a native check box and that provider takes the
+# name from the window's text.
+#
+# Measured by hand on 2026-09-13 against the target: the one test in the suite
+# went red naming all three per-event controls, each with the label it should
+# have carried.
+[[guard]]
+name = "a check box on the settings screen carries its own label too"
+file = "src/presentation/wx_settings.rs"
+suite = "checkbox_labels"
+before = """        let tick = CheckBox::builder(panel).with_label(label).build();"""
+after = """        let tick = CheckBox::builder(panel).with_label("").build();"""
+red = [
+    "test_every_check_box_in_a_form_carries_its_own_label",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/checkbox_labels.rs", tests = 1 },
 ]
 

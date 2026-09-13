@@ -27,8 +27,8 @@ inherited from phase 1.
 
 | Plan | Wave | Criterion | Depends on | Human | What it does |
 |---|---|---|---|---|---|
-| 06-01 | 1 | 1 | none | no | The model can say what somebody chose, separately from what they get, and a seventeenth event cannot exist without a control |
-| 06-02 | 2 | 1 | 06-01 | decision | Sixteen events, three answers each, on the Feedback tab, and the two global boxes that cannot mean what they say become one that can |
+| 06-01 | 1 | 1 | none | no | **Done.** The model can say what somebody chose, separately from what they get, and a seventeenth event cannot exist without a control |
+| 06-02 | 2 | 1 | 06-01 | decision, answered | **Done.** Sixteen events, three answers each, on the Feedback tab, and the two global boxes that cannot mean what they say are one that can. Criterion 1 has five clauses, four close structurally, none is heard |
 | 06-03 | 3 | 2 | none | decision | Month and day names come from Windows, through `GetDateFormatEx`, at all four shipping sites |
 | 06-04 | 4 | inherited A | none | decision | A permission for one account gets a screen, and the list that recorded it as unreachable empties without disarming its own guard |
 | 06-05 | 5 | inherited B | none | decision | A reminder and somebody who is typing |
@@ -61,6 +61,7 @@ by grepping a file name:
 |---|---|---|---|
 | 06-01 | `src/presentation/accessibility/feedback.rs` | 1 | 41 |
 | 06-02 | `tests/checkbox_labels.rs`, plus a new file under `tests/` | 1, plus one new record | 1 |
+| 06-02, as it turned out | `feedback.rs` gained 2 tests, `tests/every_event_has_a_control.rs` is new at 1, `tests/checkbox_labels.rs` stayed at 1 | 2 flagged and remeasured, 5 written | 49, 1, 1 |
 | 06-03 | `src/presentation/date_display.rs` | 3 | 37 |
 | 06-04 | `src/data/config.rs`, `tests/house_style.rs` | 5 and 19 | 63 and 69 |
 | 06-05 | `src/presentation/one_question_at_a_time.rs` | 1 | 19 |
@@ -202,7 +203,7 @@ it is needed. None is answered here and none is answered in a plan.
 | Decision | Plan | What it changes |
 |---|---|---|
 | 1. What relative wording does in a non-English locale | 06-03 | Whether "2 days ago" is kept English, replaced by the date, or given real plural rules and a new dependency |
-| 2. The panel's shape, against the comment that argues for no panel | 06-02 | A Choice with three controls beneath it, or a grid |
+| ~~2. The panel's shape, against the comment that argues for no panel~~ | 06-02 | **Answered 2026-09-12: option 1, a Choice with three controls and a reset button beneath it.** Not option 4's extra row setting one answer for everything, whose state is ambiguous when the sixteen disagree; it costs one row to add later if a listening pass says the sixteen trips are the real problem |
 | 3. Whether a per-account Allow Changes answer is three or one | 06-04 | `Allowed` has three fields and `allowed_for` can only narrow |
 | 4. Whether a reminder waits for typing to stop | 06-05 | Wait, raise without focus, or hold briefly and raise anyway |
 | 5. Whether to widen the scan's target list | 06-06 | Eleven windows are scanned and at least nine more dialogs exist |

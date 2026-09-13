@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 current_phase: 6
 current_phase_name: How the application speaks
-current_plan: 1
+current_plan: 2
 status: executing
-stopped_at: 06-01 merged, all of it, and criterion 1 does not close because every one of its four clauses is about a screen and this plan is the half that is not one. The model can now say what somebody chose apart from what they get: `what_was_chosen_for` answers the choice as it was made and tells "no override" apart from "all four ticked", which the only public reader could not, because `channels_for` defaults a missing entry to every channel, drops the globally switched-off ones and adds a braille tick where only a sound was picked. A panel built on it would have shown somebody four ticks they never put there. `use_the_default_for` removes the entry rather than emptying it, since an empty set round trips and means silence, and `set_event_channels` is public where before it had eleven references all in its own file. `enum Event` and `Event::ALL` come from one list, so a seventeenth event cannot exist without a control, a sound scheme slot and test coverage. That was measured by hand on both sides rather than argued, because no test could express it: the variant absent from `ALL` left the whole library green at 7,118 tests, and in the list it is in `ALL` without anybody touching `ALL` while removing it is four compile errors. It is the plan's one declared test-first exception and carries no guard record, because the break fails to compile rather than reddening a test and guards.py reads cargo's FAILED lines. Nothing a user can reach changed, so no version bump and no changelog entry; 06-02 is the panel. Four deviations, none of which changed what was built, the largest being that the plan and the phase README both say three exhaustive matches where there are four. `Channel::ALL` carries the same hole, is out of scope, and is WINDOWS.md 343; FEEDBACK-01's evidence now says something the tree disproves and is WINDOWS.md 344, left for decision 7 at 06-07. The earlier entry, still true. 07-09 tasks 1 and 2 of three merged, and the plan is partial on purpose. An update is now fetched without anybody being asked once a kind of version has been chosen, checked twice, and offered once before it runs. The second check is the whole point: WinVerifyTrust says a file is validly signed, which millions are, and only reading the signer's certificate and comparing the name says it is ours, exactly rather than by containment. The refusal is proven against a real Microsoft-signed system file and the acceptance is proven by nothing, because this project signs nothing, so as this ships every real installer is refused and four pages say so. The checked file is a type only the check constructs and both the question and the run take it, so there is no ordering to rearrange into "run it anyway?". Two features on the windows crate already pinned at 0.62.2, no new dependency, and streaming turned out to need no reqwest feature at all. Reading criterion 2 from ROADMAP.md clause by clause found two clauses open that no test could have: a computer with no way to check a signature was downloading first and refusing after, and the setting's own description still said "nothing is downloaded yet" four commits after that stopped being true. Both fixed with their own red halves. Task 3 is the screen reader checkpoint, recorded and not attempted; it needs a published signed release, which is 07-08's. Criterion 2 does not close and SHIP-02 does not close: twelve of thirteen clauses are structurally complete and nothing has ever applied anything. The earlier entry, still true. 07-08 task 1 of three merged, and that plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
-last_updated: "2026-09-13T00:40:00.000Z"
+stopped_at: 06-02 merged, all of it, version 0.120.0, and it is the first plan of this phase a person meets. The sixteen per-event answers that have been in the settings file all along are reachable from a screen: a picker read from `Event::ALL`, three controls, a button that removes an answer rather than emptying it, and two lines. The ticks are painted from `what_was_chosen_for` and the first line from `channels_for` because those are different questions, and the second line is what keeps the ticks honest by saying what the event will really produce, since a channel switched off everywhere stays off and an event left with only a sound has a written channel added back. The two global boxes for speech and braille are one, built from `Switch`, whose three answers name all four channels between them because a notification rides one `UiaRaiseNotificationEvent` that takes no medium parameter. Criterion 1 does not close and it has five clauses rather than the four 06-01's summary names: that reading folds "by keyboard" into the first, which is the clause this plan can least attest to, since every control is native with a distinct mnemonic by reading and nobody has tabbed through the tab. Four close structurally, none is heard, and the rest is 06-06's listening pass. Two clauses were open when the plan's own tasks were finished and its success criteria claimed both, that pressing OK saves a per-event answer and that the screen says whose decision speech or braille is; reading the criterion from ROADMAP.md clause by clause found them, nothing in the tree reads a criterion, and both now have a check taken red by hand. Five guard records rather than two, because a record guards a rule and the plan counted per task, all five re-run through scripts/guards.sh itself. The two house_style settings guards did not redden on arrival as the plan promised, because they fire on controls written the wrong way and these were written the right way first, so each was instead shown to see a planted violation in the new code. wxdragon exposes no way to raise a widget event from outside, so that the picker's and the button's handlers call the functions the test drives is proved by reading two lines, which the test file's header says rather than letting the test's name cover both halves. WINDOWS.md 345 to 353, nine entries, one per unrun thing. The earlier entry, still true. 06-01 merged, all of it, and criterion 1 does not close because every one of its four clauses is about a screen and this plan is the half that is not one. The model can now say what somebody chose apart from what they get: `what_was_chosen_for` answers the choice as it was made and tells "no override" apart from "all four ticked", which the only public reader could not, because `channels_for` defaults a missing entry to every channel, drops the globally switched-off ones and adds a braille tick where only a sound was picked. A panel built on it would have shown somebody four ticks they never put there. `use_the_default_for` removes the entry rather than emptying it, since an empty set round trips and means silence, and `set_event_channels` is public where before it had eleven references all in its own file. `enum Event` and `Event::ALL` come from one list, so a seventeenth event cannot exist without a control, a sound scheme slot and test coverage. That was measured by hand on both sides rather than argued, because no test could express it: the variant absent from `ALL` left the whole library green at 7,118 tests, and in the list it is in `ALL` without anybody touching `ALL` while removing it is four compile errors. It is the plan's one declared test-first exception and carries no guard record, because the break fails to compile rather than reddening a test and guards.py reads cargo's FAILED lines. Nothing a user can reach changed, so no version bump and no changelog entry; 06-02 is the panel. Four deviations, none of which changed what was built, the largest being that the plan and the phase README both say three exhaustive matches where there are four. `Channel::ALL` carries the same hole, is out of scope, and is WINDOWS.md 343; FEEDBACK-01's evidence now says something the tree disproves and is WINDOWS.md 344, left for decision 7 at 06-07. The earlier entry, still true. 07-09 tasks 1 and 2 of three merged, and the plan is partial on purpose. An update is now fetched without anybody being asked once a kind of version has been chosen, checked twice, and offered once before it runs. The second check is the whole point: WinVerifyTrust says a file is validly signed, which millions are, and only reading the signer's certificate and comparing the name says it is ours, exactly rather than by containment. The refusal is proven against a real Microsoft-signed system file and the acceptance is proven by nothing, because this project signs nothing, so as this ships every real installer is refused and four pages say so. The checked file is a type only the check constructs and both the question and the run take it, so there is no ordering to rearrange into "run it anyway?". Two features on the windows crate already pinned at 0.62.2, no new dependency, and streaming turned out to need no reqwest feature at all. Reading criterion 2 from ROADMAP.md clause by clause found two clauses open that no test could have: a computer with no way to check a signature was downloading first and refusing after, and the setting's own description still said "nothing is downloaded yet" four commits after that stopped being true. Both fixed with their own red halves. Task 3 is the screen reader checkpoint, recorded and not attempted; it needs a published signed release, which is 07-08's. Criterion 2 does not close and SHIP-02 does not close: twelve of thirteen clauses are structurally complete and nothing has ever applied anything. The earlier entry, still true. 07-08 task 1 of three merged, and that plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
+last_updated: "2026-09-13T03:55:00.000Z"
 last_activity: 2026-09-13
-state_head: dacaa719
+state_head: MERGE_HASH_PENDING
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 97
-  completed_plans: 90
+  completed_plans: 91
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,14 +29,58 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 06 (How the application speaks). **06-01 of eight is merged, version
-0.119.0, and nothing a user can reach changed. The model can now say what
-somebody chose separately from what they get, and a seventeenth event cannot
-exist without a control, a sound scheme slot and test coverage. Criterion 1
-does not close: all four of its clauses are about a screen and 06-02 is the
-screen.**
+Phase: 06 (How the application speaks). **06-02 of eight is merged, version
+0.120.0, and this is the first plan in the phase a person meets. The sixteen
+per-event answers that have been in the settings file all along are reachable
+from a screen, and the two boxes that offered speech and braille as independent
+choices are one box that can mean what it says. Criterion 1 still does not
+close.**
 
-**What somebody chose and what they get were one answer, and now they are
+**Criterion 1 has five clauses, not the four 06-01's summary names.** That
+reading folds "by keyboard" into the first, and the folded clause is the one
+this plan can least attest to: every control is a native Choice, CheckBox or
+Button with a distinct mnemonic, both established by reading, and nobody has
+tabbed through the tab. Four clauses close structurally and none of the five is
+heard. What is left of criterion 1 is a listening pass, which is 06-06.
+
+**Two of those clauses were open when 06-02's own tasks were finished, and its
+success criteria claimed both.** That pressing OK saves a per-event answer, and
+that the screen says whose decision speech or braille is. The model round trip
+was proved, the screen was proved, and the function carrying one across to the
+other was reached by nothing; the sentence was on the tab and no check knew it
+was there, so deleting it would have broken the criterion and reddened nothing.
+Reading the criterion from `ROADMAP.md` clause by clause found both. Nothing in
+the tree reads a criterion, so no test, guard or review could have. **That is
+the second phase running where this practice found what nothing else did.**
+
+**The panel.** A picker of the sixteen events read from `Event::ALL`, three
+controls, a button and two lines. The ticks are painted from
+`what_was_chosen_for` and the first line from `channels_for`, because those are
+different questions: painting ticks from the second would show somebody four
+answers they never gave. The second line is what keeps the ticks honest, saying
+what the event will really produce, because a channel switched off everywhere
+stays off and an event left with only a sound has the quietest written channel
+added back. The rule was not weakened to match the screen. The button removes an
+answer and switching all three boxes off stores an empty one, which are opposite
+outcomes and do not share a control.
+
+**Five guard records, not the two the plan asked for, because a record guards a
+rule and the plan counted per task.** All five were re-run through
+`scripts/guards.sh` itself and each reddens exactly the test it names. The two
+`house_style` settings guards did not redden on arrival as the plan promised:
+they fire on a control written the wrong way, not on a new control, so
+collecting that red would have meant writing the defective version on purpose.
+Each was instead shown to see a planted violation in the new code, quoted, and
+the code put back by hand.
+
+**wxdragon 0.9.17 exposes no way to raise a widget event from outside**, so the
+live test moves the real picker and reads the real check boxes but cannot open
+the picker or press the button. That the two handlers call the functions the
+test drives is proved by reading two lines and by nothing else, said in the test
+file's own header rather than left implied by a passing test whose name covers
+both halves. `WINDOWS.md` 345 to 353, nine entries, one per unrun thing.
+
+**06-01, still true. What somebody chose and what they get were one answer, and now they are
 two.** The only public reader was `channels_for`, which defaults an event
 nobody has touched to every channel, drops the channels switched off
 everywhere, and adds a written channel where only a sound was picked. So it
@@ -535,7 +579,7 @@ phase 7 was editing it. `progress.total_plans` went from 92 to **97** by
 counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
-Current Plan: 1
+Current Plan: 2
 Total Plans in Phase: 8
 
 ---

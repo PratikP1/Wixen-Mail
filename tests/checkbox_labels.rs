@@ -18,6 +18,20 @@
 //! text field is the case where that is right. A check box is not, because a
 //! check box has somewhere of its own to put it.
 //!
+//! **What this walks.** The item form, for every kind of item it can build, and
+//! the six check boxes the Settings Feedback tab builds: the three that answer
+//! for every event at once and the three that answer for whichever event the
+//! picker is on. The settings screen was added to the walk when those six
+//! arrived, because they are check boxes on a tab about how this program
+//! speaks, and nothing in the tree would have caught one being built label-less.
+//!
+//! **What it does not walk, and this is a gap rather than a decision.** Every
+//! other check box the settings dialog builds, of which there are many, because
+//! `SettingsWidgets` keeps those fields private and this file can only read what
+//! it is handed. Widening that is not free: it means making about twenty fields
+//! public for a test, and it is worth doing deliberately rather than as a side
+//! effect of this one.
+//!
 //! One `#[test]` function building real dialogs, for the reason
 //! `tests/theme_reach.rs` gives: wxWidgets supports one application per process
 //! and `cargo test` runs each file under `tests/` as its own process.
@@ -25,9 +39,12 @@
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::item_fields::Filled;
 use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::accessibility::feedback::Switch;
 use wixen_mail::presentation::date_display::DateSettings;
 use wixen_mail::presentation::wx_item_form::{Chrome, Prefill, build_item_form_dialog};
+use wixen_mail::presentation::wx_settings;
 use wxdragon::prelude::*;
 
 /// One check that failed: what it was, and what was wrong with it.
@@ -137,6 +154,56 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                 }
                 widgets.dialog.destroy();
             }
+
+            // The settings screen, built in this same `#[test]` and this same
+            // process. Its own counter and its own zero check, so the count
+            // above goes on meaning what it meant: settings boxes must not be
+            // able to answer the question "did any form build one".
+            let settings = wx_settings::build_settings_dialog(
+                &frame,
+                &AppConfig::default(),
+                &[],
+                false,
+                &a11y,
+            );
+            let mut settings_ticks_seen = 0;
+            for (what, ticks, wording) in [
+                (
+                    "the controls answering for every event",
+                    &settings.feedback_global,
+                    Switch::setting_label as fn(&Switch) -> &'static str,
+                ),
+                (
+                    "the controls answering for one event",
+                    &settings.feedback_per_event.ticks,
+                    Switch::label_beside_one_event as fn(&Switch) -> &'static str,
+                ),
+            ] {
+                for (switch, tick) in ticks {
+                    settings_ticks_seen += 1;
+                    let carried = tick.get_label().unwrap_or_default();
+                    let wanted = without_mnemonic(wording(switch));
+                    if without_mnemonic(&carried) != wanted {
+                        wrong.push((
+                            format!("Settings, Feedback, {what}, {switch:?}"),
+                            format!(
+                                "the check box carries {carried:?}, so UI Automation has \
+                                 no name for it and Narrator reads an unnamed check box. \
+                                 Wanted {wanted:?} on the control itself"
+                            ),
+                        ));
+                    }
+                }
+            }
+            if settings_ticks_seen == 0 {
+                wrong.push((
+                    "the settings check boxes themselves".to_string(),
+                    "the Feedback tab built none, so this half of the guard \
+                     measured nothing"
+                        .to_string(),
+                ));
+            }
+            settings.dialog.destroy();
 
             drop(wrong);
             wxdragon::call_after(Box::new(move || {

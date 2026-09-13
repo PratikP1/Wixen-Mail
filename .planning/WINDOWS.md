@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 322
+open_count: 331
 waived_count: 0
 fixed_count: 22
-total_count: 344
-last_updated: 2026-09-13T00:35:32.541Z
+total_count: 353
+last_updated: 2026-09-13T06:50:57.999Z
 ---
 
 # Broken Windows Ledger
@@ -359,6 +359,15 @@ last_updated: 2026-09-13T00:35:32.541Z
 | 342 | 07 | unrun-verify | src/service/update_download.rs |  | the revocation policy is not checked against a revoked certificate, because none exists to check against | open |  | 2026-09-12T22:38:02.066Z |  |
 | 343 | 06 | todo | src/presentation/accessibility/feedback.rs | 348 | Channel::ALL is still a hand-written [Channel; 4] and carries the same hole 06-01 closed for Event::ALL: nothing forces a fifth channel into it. Out of scope deliberately, four is a much smaller surface than sixteen and nothing in phase 6 adds a channel | open |  | 2026-09-13T00:24:47.583Z |  |
 | 344 | 06 | unmet-truth | .planning/REQUIREMENTS.md | 1288 | FEEDBACK-01's evidence says set_event_channels is private and that no screen could write an override without changing a visibility. 06-01 made it pub and added a public reader, so that sentence and its four line numbers are now wrong about the tree. Not corrected here because whether REQUIREMENTS.md is corrected in place is decision 7, which 06-07 puts to Pratik | open |  | 2026-09-13T00:35:32.541Z |  |
+| 345 | 06 | unrun-verify | src/presentation/wx_settings.rs |  | The per-event panel on the Settings Feedback tab has never been heard. A live test builds the real dialog and reads back sixteen events, six labelled check boxes and two lines, which proves the structure is there and says nothing about whether it reads well with NVDA, Narrator or JAWS | open |  | 2026-09-13T06:01:27.680Z |  |
+| 346 | 06 | unrun-verify | src/presentation/wx_settings.rs |  | The three per-event controls reload beneath the cursor when the event picker changes, and nothing in this repository can prove that reads well. It is a live-region shaped problem: a screen reader user moves to the picker, changes it, and three controls below them silently become about a different event. The Reading tab already uses this pattern, so a listening pass should judge both at once | open |  | 2026-09-13T06:01:49.898Z |  |
+| 347 | 06 | unrun-verify | src/presentation/wx_settings.rs |  | The sentence saying that choosing between speech and braille is done in the screen reader and not here has never been heard. It is the sentence the whole of criterion 1 exists to make somebody meet, and whether it lands where they meet it is a listening question | open |  | 2026-09-13T06:01:51.248Z |  |
+| 348 | 06 | unrun-verify | src/presentation/wx_settings.rs |  | Somebody whose settings file has braille on and speech off, or the other way round, now meets one control where there were two, and it opens ticked. Nobody has judged how that reads or whether the change is noticed. The direction is deliberate and safe, nothing being announced stops being announced, but safe is not the same as understood | open |  | 2026-09-13T06:01:52.528Z |  |
+| 349 | 06 | unrun-verify | src/presentation/wx_settings.rs |  | That the event picker's selection handler and the reset button's click handler really call the functions the tests drive is proved by reading one line each and by nothing else. wxdragon 0.9.17 exposes no way to raise a widget event from outside, so tests/every_event_has_a_control.rs drives the real controls through those functions directly. The behaviour is proved; the wiring is not | open |  | 2026-09-13T06:02:16.927Z |  |
+| 350 | 06 | unmet-truth | src/presentation/wx_settings.rs |  | The event picker is a Choice, which has no label of its own to carry, so it is named with set_accessible_name plus a static text beside it, the way every other Choice in this dialog is. That name reaches MSAA, which NVDA reads. On UI Automation, which Narrator reads, the name arrives only through Windows falling back to the nearest static text, which is a fallback rather than something this code set. Neither channel has been checked for this control | open |  | 2026-09-13T06:02:19.760Z |  |
+| 351 | 06 | todo | src/presentation/accessibility/feedback.rs |  | Channel::setting_label now has no shipping caller. The global boxes are built from Switch, so the four strings it holds are reached only by its own two tests. The plan for 06-02 said not to change them and a test guards them, so it was left alone rather than removed quietly. Point dead-code-hunter at it in a later plan of this phase | open |  | 2026-09-13T06:02:21.175Z |  |
+| 352 | 06 | todo | tests/checkbox_labels.rs |  | The label walk reaches the six feedback check boxes and no other check box the settings dialog builds, because SettingsWidgets keeps the rest of its fields private. Widening it means making about twenty fields public for a test, which is worth deciding deliberately rather than as a side effect of 06-02 | open |  | 2026-09-13T06:02:22.235Z |  |
+| 353 | 06 | unrun-verify | .planning/ROADMAP.md |  | Criterion 1 clause 2, by keyboard, does not close. Every control on the Feedback tab is a native Choice, CheckBox or Button so Tab reaches them, and every check box and the button carries a mnemonic distinct from the other nine on the tab. Both facts were established by reading the source, not by pressing a key. Nobody has tabbed through this tab and no test presses one | open |  | 2026-09-13T06:50:57.999Z |  |
 
 ````json
 [
@@ -4488,6 +4497,114 @@ last_updated: 2026-09-13T00:35:32.541Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T00:35:32.541Z",
+    "resolved_at": null
+  },
+  {
+    "id": 345,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "The per-event panel on the Settings Feedback tab has never been heard. A live test builds the real dialog and reads back sixteen events, six labelled check boxes and two lines, which proves the structure is there and says nothing about whether it reads well with NVDA, Narrator or JAWS",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:01:27.680Z",
+    "resolved_at": null
+  },
+  {
+    "id": 346,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "The three per-event controls reload beneath the cursor when the event picker changes, and nothing in this repository can prove that reads well. It is a live-region shaped problem: a screen reader user moves to the picker, changes it, and three controls below them silently become about a different event. The Reading tab already uses this pattern, so a listening pass should judge both at once",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:01:49.898Z",
+    "resolved_at": null
+  },
+  {
+    "id": 347,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "The sentence saying that choosing between speech and braille is done in the screen reader and not here has never been heard. It is the sentence the whole of criterion 1 exists to make somebody meet, and whether it lands where they meet it is a listening question",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:01:51.248Z",
+    "resolved_at": null
+  },
+  {
+    "id": 348,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Somebody whose settings file has braille on and speech off, or the other way round, now meets one control where there were two, and it opens ticked. Nobody has judged how that reads or whether the change is noticed. The direction is deliberate and safe, nothing being announced stops being announced, but safe is not the same as understood",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:01:52.528Z",
+    "resolved_at": null
+  },
+  {
+    "id": 349,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "That the event picker's selection handler and the reset button's click handler really call the functions the tests drive is proved by reading one line each and by nothing else. wxdragon 0.9.17 exposes no way to raise a widget event from outside, so tests/every_event_has_a_control.rs drives the real controls through those functions directly. The behaviour is proved; the wiring is not",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:02:16.927Z",
+    "resolved_at": null
+  },
+  {
+    "id": 350,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "The event picker is a Choice, which has no label of its own to carry, so it is named with set_accessible_name plus a static text beside it, the way every other Choice in this dialog is. That name reaches MSAA, which NVDA reads. On UI Automation, which Narrator reads, the name arrives only through Windows falling back to the nearest static text, which is a fallback rather than something this code set. Neither channel has been checked for this control",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:02:19.760Z",
+    "resolved_at": null
+  },
+  {
+    "id": 351,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/accessibility/feedback.rs",
+    "line": null,
+    "description": "Channel::setting_label now has no shipping caller. The global boxes are built from Switch, so the four strings it holds are reached only by its own two tests. The plan for 06-02 said not to change them and a test guards them, so it was left alone rather than removed quietly. Point dead-code-hunter at it in a later plan of this phase",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:02:21.175Z",
+    "resolved_at": null
+  },
+  {
+    "id": 352,
+    "kind": "todo",
+    "phase": "06",
+    "file": "tests/checkbox_labels.rs",
+    "line": null,
+    "description": "The label walk reaches the six feedback check boxes and no other check box the settings dialog builds, because SettingsWidgets keeps the rest of its fields private. Widening it means making about twenty fields public for a test, which is worth deciding deliberately rather than as a side effect of 06-02",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:02:22.235Z",
+    "resolved_at": null
+  },
+  {
+    "id": 353,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": ".planning/ROADMAP.md",
+    "line": null,
+    "description": "Criterion 1 clause 2, by keyboard, does not close. Every control on the Feedback tab is a native Choice, CheckBox or Button so Tab reaches them, and every check box and the button carries a mnemonic distinct from the other nine on the tab. Both facts were established by reading the source, not by pressing a key. Nobody has tabbed through this tab and no test presses one",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T06:50:57.999Z",
     "resolved_at": null
   }
 ]

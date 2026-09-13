@@ -400,6 +400,90 @@ impl fmt::Display for Channel {
     }
 }
 
+/// One control on the Feedback tab: an answer a person gives, and the channels
+/// that answer switches.
+///
+/// There are three of these and four channels, and the difference is the whole
+/// point. Speech and braille are one answer because they are one call. A
+/// notification goes out through `UiaRaiseNotificationEvent`, whose declared
+/// signature takes a provider, a kind, a processing hint, a string and an
+/// activity id, and no medium parameter of any sort: see the declaration at
+/// `src/presentation/accessibility/screen_reader.rs:91-97`. Whether that
+/// notification is spoken, shown on a braille display, or both, is decided by
+/// the screen reader reading it and by how its user has configured it. So a
+/// settings screen offering speech and braille as two independent tick boxes is
+/// offering a control that cannot do what it says, whichever way it is ticked.
+///
+/// The stored model keeps all four channels and is not collapsed to three.
+/// [`Channel::carries_text`] needs braille to be its own channel for the
+/// never-sound-alone rule, and a settings file written before this type existed
+/// holds speech and braille separately. The screen offers three, the storage
+/// holds four, and [`Switch::channels`] is the only place the two meet.
+///
+/// Both forms of wording live here rather than in the dialog, which is the rule
+/// [`Channel::setting_label`]'s own doc comment already states and for the
+/// reason it gives: a label and the thing it switches used to be two arrays
+/// paired by position, and the cost of them drifting is that somebody ticks the
+/// sound box, their speech goes off instead, and nothing says so, because the
+/// thing that would say so is what was just switched off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switch {
+    /// Words, through the screen reader, in whichever medium it chooses.
+    SpokenOrBrailled,
+    /// The event's own tone.
+    Sounded,
+    /// The status bar.
+    Shown,
+}
+
+impl Switch {
+    pub const ALL: [Switch; 3] = [Switch::SpokenOrBrailled, Switch::Sounded, Switch::Shown];
+
+    /// The channels this one answer switches.
+    ///
+    /// Every channel in [`Channel::ALL`] is named by exactly one switch, which
+    /// `test_every_channel_is_named_by_exactly_one_switch` holds by counting
+    /// rather than by a list of expected pairs, so a fifth channel added later
+    /// cannot be one no control on the screen reaches.
+    pub fn channels(&self) -> &'static [Channel] {
+        match self {
+            Switch::SpokenOrBrailled => &[Channel::Speech, Channel::Braille],
+            Switch::Sounded => &[Channel::Earcon],
+            Switch::Shown => &[Channel::Visual],
+        }
+    }
+
+    /// The wording above a list of everything.
+    ///
+    /// The ampersand marks the keyboard accelerator, as everywhere else in the
+    /// dialog. The accessible name is derived from this by dropping it rather
+    /// than written out a second time by hand.
+    pub fn setting_label(&self) -> &'static str {
+        match self {
+            Switch::SpokenOrBrailled => "&Announce events through your screen reader",
+            Switch::Sounded => "Play a short &sound for each event",
+            Switch::Shown => "Show events in the s&tatus bar",
+        }
+    }
+
+    /// The wording beside one event, under a heading naming that event.
+    ///
+    /// Two forms rather than one because the global sentence reads wrongly in
+    /// the per-event place: "Play a short sound for each event" is right above a
+    /// list of everything and wrong underneath a heading that says New mail.
+    /// The accelerators here are deliberately not the ones on
+    /// [`Switch::setting_label`]. Both sets of three sit on the Feedback tab at
+    /// once, and two controls on one page answering the same key is a page
+    /// where the key cycles instead of acting.
+    pub fn label_beside_one_event(&self) -> &'static str {
+        match self {
+            Switch::SpokenOrBrailled => "Anno&unce this event through your screen reader",
+            Switch::Sounded => "&Play a sound for this event",
+            Switch::Shown => "Show this event in the status &bar",
+        }
+    }
+}
+
 /// Which channels each event reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeedbackSettings {
@@ -1482,6 +1566,52 @@ mod tests {
                 "{:?} would be named with the accelerator marker still in it",
                 channel
             );
+        }
+    }
+
+    #[test]
+    fn test_every_channel_is_named_by_exactly_one_switch() {
+        // Counted per channel rather than written out as expected pairs,
+        // because a list of expected pairs is a second thing to keep in step
+        // with the first and it goes stale in silence. What this holds is that
+        // the three controls somebody meets between them reach all four
+        // channels, and that no channel is reached by two of them.
+        //
+        // A fifth channel added later with no control to switch it fails here,
+        // which is the setting-nobody-can-find defect this whole phase is
+        // about, caught at the point it is introduced.
+        for channel in Channel::ALL {
+            let switches_naming_it = Switch::ALL
+                .iter()
+                .filter(|switch| switch.channels().contains(&channel))
+                .count();
+            assert_eq!(
+                switches_naming_it, 1,
+                "{channel} is switched by {switches_naming_it} of the controls on the \
+                 Feedback tab, and every channel needs exactly one"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_two_switches_share_either_form_of_words() {
+        // The same shape as test_each_channel_carries_its_own_wording above,
+        // asked of both wordings. Two controls reading alike is two controls
+        // somebody cannot tell apart when they are met one after another with
+        // nothing on screen to distinguish them.
+        for (at, switch) in Switch::ALL.iter().enumerate() {
+            for other in &Switch::ALL[at + 1..] {
+                assert_ne!(
+                    switch.setting_label(),
+                    other.setting_label(),
+                    "{switch:?} and {other:?} read alike above a list of everything"
+                );
+                assert_ne!(
+                    switch.label_beside_one_event(),
+                    other.label_beside_one_event(),
+                    "{switch:?} and {other:?} read alike beside one event"
+                );
+            }
         }
     }
 

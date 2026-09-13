@@ -8,6 +8,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **You can now decide how Wixen Mail tells you about each of the sixteen
+  things it tells you about, one at a time, from Settings, Feedback.** Pick an
+  event from the list, then choose whether it is announced through your screen
+  reader, whether it plays a sound, and whether it appears in the status bar.
+  "Use the default for this event" takes your answer away again so the event
+  goes back to following the settings above.
+
+  Two lines underneath say what the ticks cannot. One says whether the event
+  you are looking at has an answer of its own or is using the default, because
+  an answer can happen to be the same as the default and still be an answer.
+  The other says what the event will really do, which is not always what the
+  ticks say: a channel you have switched off for everything stays off whatever
+  one event says, and an event left with only a sound has words added back,
+  because a sound with nothing written alongside it is a noise somebody who
+  cannot hear it has no way to perceive.
+
+  These sixteen answers have been in Wixen Mail's settings file all along, and
+  until now nothing on any screen could set one. That was the gap this closes.
+
+  **Nobody has heard any of this.** Not the new panel, not the three controls
+  reloading when you change the event, not the two lines under them. All of it
+  is proved by tests that build the real window and read back what the real
+  controls are holding, which proves the structure is there. It does not prove
+  any of it reads well with NVDA, Narrator or JAWS, and controls reloading
+  underneath where your cursor is sitting is exactly the kind of change a
+  listening pass is needed to judge. Please say if it is confusing.
+
 - **Wixen Mail now downloads the installer for a newer version on its own,
   asks you once whether to install it, and refuses to have anything to do with
   one this project did not sign.** If you
@@ -135,6 +162,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   one on every start.
 
 ### Changed
+
+- **The two boxes offering "Speak events through the screen reader" and "Send
+  events to a braille display" separately are now one box, "Announce events
+  through your screen reader".** The old pair promised something Wixen Mail
+  cannot do. Wixen Mail sends one notification to your screen reader, and
+  whether your screen reader speaks it, sends it to a braille display, or does
+  both is decided by your screen reader and by how you have set it up. There is
+  no way for this program to ask for one and not the other, so offering the
+  choice here was offering a switch with nothing behind it. The Feedback tab now
+  says whose decision it is, in the place the answer is given.
+
+  If your settings file has speech on and braille off, or the other way round,
+  the new box opens ticked and saving turns both on. That direction is
+  deliberate: nothing you were being told about stops being told.
+
+  Nobody has heard this sentence either, and it is the one the whole change
+  exists to say.
 
 - **The Start menu shortcut, the desktop shortcut and the Apps and Features
   entry now take their icon from a file the installer puts in the program
