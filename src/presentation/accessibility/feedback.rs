@@ -446,7 +446,11 @@ impl Switch {
     /// rather than by a list of expected pairs, so a fifth channel added later
     /// cannot be one no control on the screen reaches.
     pub fn channels(&self) -> &'static [Channel] {
-        &[]
+        match self {
+            Switch::SpokenOrBrailled => &[Channel::Speech, Channel::Braille],
+            Switch::Sounded => &[Channel::Earcon],
+            Switch::Shown => &[Channel::Visual],
+        }
     }
 
     /// The wording above a list of everything.
@@ -455,7 +459,11 @@ impl Switch {
     /// dialog. The accessible name is derived from this by dropping it rather
     /// than written out a second time by hand.
     pub fn setting_label(&self) -> &'static str {
-        ""
+        match self {
+            Switch::SpokenOrBrailled => "&Announce events through your screen reader",
+            Switch::Sounded => "Play a short &sound for each event",
+            Switch::Shown => "Show events in the s&tatus bar",
+        }
     }
 
     /// The wording beside one event, under a heading naming that event.
@@ -463,8 +471,16 @@ impl Switch {
     /// Two forms rather than one because the global sentence reads wrongly in
     /// the per-event place: "Play a short sound for each event" is right above a
     /// list of everything and wrong underneath a heading that says New mail.
+    /// The accelerators here are deliberately not the ones on
+    /// [`Switch::setting_label`]. Both sets of three sit on the Feedback tab at
+    /// once, and two controls on one page answering the same key is a page
+    /// where the key cycles instead of acting.
     pub fn label_beside_one_event(&self) -> &'static str {
-        ""
+        match self {
+            Switch::SpokenOrBrailled => "Anno&unce this event through your screen reader",
+            Switch::Sounded => "&Play a sound for this event",
+            Switch::Shown => "Show this event in the status &bar",
+        }
     }
 }
 

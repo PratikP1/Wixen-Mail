@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 543 records have arrived since and have not been through it.
+# 544 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10255,7 +10255,7 @@ before = """        f.write_str(self.key())"""
 after = """        Ok(Default::default())"""
 red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
 ]
 
 # The plausible wrong implementation, and the one a reader reaches for: an
@@ -10282,7 +10282,33 @@ red = [
     "presentation::accessibility::feedback::tests::test_putting_an_event_with_no_override_back_to_the_default_changes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
+]
+
+# The defect the whole of criterion 1 is about, written as the wrong
+# implementation a reader would reach for. One control on the screen stands for
+# words, and words means speech and braille, because the notification carrying
+# them takes no medium parameter and the screen reader decides. A switch naming
+# only speech puts braille back where it was: a channel the storage holds and no
+# control on any screen can reach, which is the setting-nobody-can-find shape
+# this phase exists to remove.
+#
+# Measured by applying the break by hand on 2026-09-13 and running the whole
+# library, 7,126 tests, not predicted from reading the code. One test went red
+# and nothing else did, and the prediction written down first was the same one.
+# A second candidate break was considered and not measured, for the reason in
+# the summary: every break of this arm reaches the same single test, because
+# that test is the only reader of `channels()` until the panel lands.
+[[guard]]
+name = "the one control standing for words names braille as well as speech"
+file = "src/presentation/accessibility/feedback.rs"
+before = """            Switch::SpokenOrBrailled => &[Channel::Speech, Channel::Braille],"""
+after = """            Switch::SpokenOrBrailled => &[Channel::Speech],"""
+red = [
+    "presentation::accessibility::feedback::tests::test_every_channel_is_named_by_exactly_one_switch",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/feedback.rs", tests = 49 },
 ]
 
 [[guard]]
