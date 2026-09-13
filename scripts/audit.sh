@@ -84,15 +84,16 @@ set -euo pipefail
 # Seen, not decided. One line of reason and one exit condition each, in the
 # same shape `.cargo/audit.toml` uses for the ones that were decided.
 #
-#   RUSTSEC-2023-0071  rsa 0.9.10, the Marvin timing sidechannel, 5.9 medium.
-#   It arrives through pgp 0.20, which is a real dependency rather than a dev
-#   one, and the advisory says plainly that no fixed upgrade is available. The
-#   options are all costly: drop OpenPGP support, carry a patched fork, or wait
-#   for the pgp crate to move off rsa. That is a product decision, not a gate
-#   decision. Clears when it is made, either way.
-awaiting_a_decision=(
-    RUSTSEC-2023-0071
-)
+# Empty, and that is the state a decided project is in rather than a fault.
+# `RUSTSEC-2023-0071` sat here from 2026-09-10 until 2026-09-13 and was then
+# accepted, with its reasoning and its expiry condition, in `.cargo/audit.toml`.
+# The run says on every pass that nothing is being held open, so an empty list
+# is something this gate reports rather than something it hides.
+#
+# The mechanism stays for the next advisory that arrives with nobody to decide
+# it. Its cases in `scripts/audit.test.sh` hand it the advisories they are
+# about, so they go on testing it while this list holds nothing.
+awaiting_a_decision=()
 
 if [ "${1:-}" = "--awaiting-a-decision" ]; then
     printf '%s\n' "${awaiting_a_decision[@]+"${awaiting_a_decision[@]}"}"

@@ -4,29 +4,168 @@
 # Anything NOT listed fails the build, which is the point: the job exists to
 # catch the next advisory, not to be silenced wholesale. Review this list when
 # the dependencies it names are upgraded.
+#
+# # Every entry here is checked, and an entry that goes says so here
+#
+# `scripts/audit.sh` checks on every full local run that each advisory named
+# below is still really reported, by a second run that applies no ignore list at
+# all. An entry that has stopped applying is not harmless bookkeeping: it names
+# an advisory id, so it goes on silencing that id while a second advisory against
+# the same crate is reported by nothing.
+#
+# When an entry goes, say inside the list which one went and why. That placement
+# is deliberate. The reader in `audit.sh` strips comments before it looks for
+# ids, and a note naming a removed advisory is the shape that would defeat a
+# reader which did not, so keeping the notes here is what makes that part of the
+# reader load bearing rather than hypothetical. `scripts/audit.test.sh` has the
+# case.
 
 [advisories]
 ignore = [
+    # Four entries went on 2026-09-13, and all four were found by the check
+    # described above on the first run it ever made.
+    #
+    # RUSTSEC-2026-0098, RUSTSEC-2026-0099 and RUSTSEC-2026-0104 named
+    # rustls-webpki 0.101.7 and said the fix was an oauth2 5 migration. That
+    # migration has not happened: oauth2 is still 4.4.2. The dependency graph
+    # moved underneath the entry instead, and the tree now resolves rustls 0.23.42
+    # and rustls-webpki 0.103.13, so those three advisories stopped applying and
+    # nothing said so. RUSTSEC-2025-0134 named rustls-pemfile, which is no longer
+    # in the tree at all.
+    #
+    # Worth reading as a warning about the shape rather than about those four.
+    # None of them was removed by a person deciding anything. They stopped
+    # applying as a side effect of an unrelated upgrade, and they would have gone
+    # on sitting here silencing four advisory ids indefinitely.
+
     # quick-xml denial of service, reached only through wxdragon-macros.
     # That is a proc macro: it runs at compile time and never sees network
     # data, so neither issue is reachable in a shipped binary. The quick-xml
-    # that parses CalDAV responses is a separate, fixed 0.41.
+    # that parses CalDAV responses is a separate, fixed 0.41, and both are in
+    # Cargo.lock: 0.38.4 for the macro crate and 0.41.0 for the rest.
     # Clears when wxdragon updates its macro crate.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 
-    # rustls-webpki 0.101.7, pinned by oauth2 4 -> reqwest 0.11 -> rustls 0.21.
-    # These are runtime reachable and affect certificate validation on the
-    # OAuth token endpoints. Accepted only because the fix is the oauth2 5
-    # migration, which changes client construction and token exchange and has
-    # to be verified against a live account rather than shipped on a green
-    # compile. Tracked as the next dependency task; remove these three the day
-    # that lands.
-    "RUSTSEC-2026-0098",
-    "RUSTSEC-2026-0099",
-    "RUSTSEC-2026-0104",
-
-    # Unmaintained transitive crates, no known vulnerability.
+    # paste 1.0.15, unmaintained, no known vulnerability. Note that cargo audit
+    # does not fail on an unmaintained warning without `-D warnings`, so this
+    # entry has never changed an exit status. What it does is keep the warning
+    # out of the output, which is why it still has to be checked: an entry that
+    # silences a line is an entry that can silence the wrong line later.
     "RUSTSEC-2024-0436",
-    "RUSTSEC-2025-0134",
+
+    # RUSTSEC-2023-0071. rsa 0.9.10, reached through pgp 0.20.0, which is how
+    # this program reads OpenPGP mail. Decided on 2026-09-13 after being held
+    # open, undecided, since the local audit gate was written three days before.
+    #
+    # ## What the advisory is, which is more than its summary says
+    #
+    # It reads as "Marvin Attack: potential key recovery through timing
+    # sidechannels", 5.9 medium, and that undersells it. Its own tracking issue,
+    # RustCrypto/RSA issue 626, holds four separate concerns rather than one bug:
+    #
+    #   Modexp timing                      fixed, constant-time backend, issue 19
+    #   The Ok or Err behavioural oracle   open, PR 680, not a draft
+    #   Constant-time left-padding         open, folded into PR 680
+    #   Unblinded modexp on the default path   open, PR 702, still a draft
+    #
+    # The second is the one to read. On 2026-06-01 a researcher ran the adaptive
+    # Bleichenbacher attack end to end against published rsa 0.10.0-rc.18: it
+    # recovers a full RSA-1024 plaintext in 275,490 queries and forges a
+    # signature over a chosen message, read straight off the Ok or Err return
+    # value with no timing involved at all. A behavioural oracle that needs no
+    # timing is a different thing from a timing side channel, and a worse one.
+    # Anyone re-judging this entry needs that fact and the query count, because
+    # the severity score and the title do not carry them.
+    #
+    # ## Why there is nothing to upgrade to and nothing to switch off
+    #
+    # pgp 0.20.0 is the latest published version and this project is on it. In
+    # its manifest, [dependencies.rsa] carries no `optional = true` and no
+    # feature excludes it. `large-rsa` is about key sizes, not presence. An
+    # OpenPGP implementation cannot drop RSA and still read most existing PGP
+    # mail. rsa 0.10.0-rc.18 exists and is a release candidate, and this
+    # advisory's `patched` list is empty, so nothing is marked fixed. cargo audit
+    # says the same thing in one line: "No fixed upgrade is available!".
+    #
+    # An alternative does exist, and it was refused for a reason that has nothing
+    # to do with this advisory. sequoia-openpgp with its Nettle backend does not
+    # use this crate. It is LGPL-2.0-or-later against an MIT project shipping a
+    # statically linked binary, which is a decision about how the product may be
+    # distributed, and it needs a C library and pkg-config at build time. Its
+    # pure Rust backend is turned on with `allow-experimental-crypto` and
+    # `allow-variable-time-crypto`, which is worse than what is accepted here.
+    # The whole comparison is in docs/development/pgp-implementation-choice.md.
+    # Saying "there is no alternative" would be false; the alternative was
+    # refused on licence and build cost, and a later reader may weigh that
+    # differently.
+    #
+    # ## Why accepting it is right today, and this is an argument not a proof
+    #
+    # The attack needs roughly 275,000 adaptive queries, each one answered with
+    # an observable success or failure. A mail client reading mail on the
+    # reader's own machine gives a sender no per-query feedback: what happened
+    # when a PGP message was opened is shown to the person reading and goes
+    # nowhere else.
+    #
+    # Two things narrow it further and both are already true. S/MIME decryption
+    # is refused rather than half-built, in src/service/signed_mail.rs, which
+    # says in as many words that code which looks like it decrypts and never has
+    # is the worst thing that file could contain. And PGP private key import is
+    # labelled experimental in the File menu, so very few machines hold a key for
+    # anything to be an oracle about.
+    #
+    # The one automatic outbound response this program has was checked rather
+    # than assumed, because "this program sends nothing back" is exactly the kind
+    # of absence claim that is wrong. A read receipt is decided in
+    # `receipt_for_the_open_message` in src/presentation/wx_app.rs, from the
+    # Disposition-Notification-To header, which PGP leaves in the clear because
+    # it encrypts the body and not the headers. It is sent when a message is
+    # selected, not when a body decrypts. So a sender who sets that header and
+    # sends 275,000 messages gets 275,000 identical answers, each of which says
+    # "this was opened" and none of which says "this decrypted". The setting is
+    # Never by default, and a receipt to anything in the junk folder is refused
+    # whatever the setting says.
+    #
+    # ## The expiry condition
+    #
+    # The day anything in this program gives a sender a distinguishable,
+    # observable response to a PGP message, the oracle becomes real and this
+    # entire argument expires. An auto-reply, a bounce, a read receipt tied to
+    # decryption succeeding, a delivery notification that differs by outcome, or
+    # a background fetch whose presence or timing depends on whether a body
+    # opened. Any of them.
+    #
+    # The line it turns on, named so it can be recognised: today
+    # `receipt_for_the_open_message` decides what to send without reading
+    # `crate::service::pgp::WhatOpeningItFound` at all. Make what is sent depend
+    # on that value, in either direction, and the channel exists.
+    #
+    # Whoever adds such a feature in a year will not connect it to a security
+    # advisory. That is why the condition is written in the words they would
+    # recognise rather than in the words the advisory uses.
+    #
+    # ## What to watch, and it is not the advisory
+    #
+    # RustCrypto/RSA PR 680. The advisory clears only when all four concerns are
+    # closed and a version is published, which may be a long way off. PR 680 is
+    # the one that closes the behavioural oracle, and the behavioural oracle is
+    # what the argument above is about. When it lands and is released, re-read
+    # this entry rather than waiting for the advisory to change.
+    #
+    # ## What was measured here and what was taken on trust
+    #
+    # Checked on this machine on 2026-09-13: both crate versions in Cargo.lock;
+    # pgp 0.20.0's own manifest, read from the vendored crate source; the
+    # advisory's empty `patched` list in the local advisory database and cargo
+    # audit's "No fixed upgrade is available!" line; and every claim above about
+    # this program's own code.
+    #
+    # Taken from the investigation of the same day and not re-checked, because
+    # this machine could reach neither crates.io nor GitHub while this was
+    # written: that pgp 0.20.0 is the latest published version, the contents of
+    # RustCrypto/RSA issue 626 and of PRs 680 and 702, and the 2026-06-01 result
+    # with its query count. Anyone re-judging this should re-read those three
+    # rather than trust this paragraph.
+    "RUSTSEC-2023-0071",
 ]
