@@ -2719,7 +2719,14 @@ fn discovered_schemes() -> Vec<SoundScheme> {
 // ── Read settings back from widget references ────────────────────────────────
 
 /// Collect current widget values and produce an updated `AppConfig`.
-fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
+///
+/// Public so a test can ask what pressing OK would save without showing a
+/// modal. That join is not a detail: the model can hold a per-event answer and
+/// the screen can show one, and "the setting survives a restart" is the claim
+/// that this function carries the first across to the second. Both halves were
+/// proved separately before this was reachable, and the join was proved by
+/// reading.
+pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     let mut cfg = base.clone();
 
     // Feedback. The tab's working settings hold every per-event answer it has

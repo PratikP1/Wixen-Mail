@@ -31,7 +31,7 @@
 use std::sync::{Arc, Mutex};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
-use wixen_mail::presentation::accessibility::feedback::{Event, Switch};
+use wixen_mail::presentation::accessibility::feedback::{Event, FeedbackSettings, Switch};
 use wixen_mail::presentation::wx_settings;
 use wxdragon::prelude::*;
 
@@ -74,6 +74,7 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
             the_screen_says_whose_choice_speech_or_braille_is(&widgets, &mut wrong);
             a_tick_survives_moving_away_and_coming_back(&widgets, &mut wrong);
             the_button_puts_one_event_back_to_the_default(&widgets, &mut wrong);
+            pressing_ok_saves_what_the_panel_holds(&widgets, &config, &mut wrong);
 
             widgets.dialog.destroy();
             drop(wrong);
@@ -361,5 +362,76 @@ fn the_button_puts_one_event_back_to_the_default(
              getting a written channel added back"
                 .to_string(),
         ));
+    }
+}
+
+/// What pressing OK would write, read back the way a restart reads it.
+///
+/// The clause of the criterion that says the setting survives a restart, and the
+/// join nothing held. The model round trip was proved when the model was
+/// written, and the screen was proved above, and between them sits the function
+/// that turns one into the other. Both halves being right is not the claim; the
+/// claim is that a tick reaches the settings file.
+///
+/// Read back through `from_stored` rather than by looking for a substring in the
+/// stored string, because a substring is a claim about a format and this is a
+/// claim about a setting.
+fn pressing_ok_saves_what_the_panel_holds(
+    widgets: &wx_settings::SettingsWidgets,
+    opened_with: &AppConfig,
+    wrong: &mut Wrong,
+) {
+    let per_event = &widgets.feedback_per_event;
+    if per_event.ticks.is_empty() || widgets.feedback_global.is_empty() {
+        return;
+    }
+
+    // One event answered, one global control switched off, and fourteen events
+    // left alone. The last of those is the half that a save writing too much
+    // would fail rather than a save writing too little.
+    per_event.show(ONE_EVENT);
+    for (_, tick) in &per_event.ticks {
+        tick.set_value(false);
+    }
+    let (spoken_or_brailled, announce) = &widgets.feedback_global[0];
+    announce.set_value(false);
+
+    let saved = wx_settings::read_settings(widgets, opened_with);
+    let reopened = FeedbackSettings::from_stored(&saved.feedback_channels);
+
+    match reopened.what_was_chosen_for(Event::ALL[ONE_EVENT]) {
+        Some(channels) if channels.is_empty() => {}
+        other => wrong.push((
+            format!("what a restart reads for {:?}", Event::ALL[ONE_EVENT]),
+            format!(
+                "{other:?}, where the panel was left with all three boxes off for \
+                 that event, which is an answer meaning silence"
+            ),
+        )),
+    }
+
+    if let Some(chosen) = reopened.what_was_chosen_for(Event::ALL[ANOTHER_EVENT]) {
+        wrong.push((
+            format!("what a restart reads for {:?}", Event::ALL[ANOTHER_EVENT]),
+            format!(
+                "{chosen:?}, where nobody answered for this event, so saving has \
+                 invented an answer for an event that was only ever looked at"
+            ),
+        ));
+    }
+
+    // One control, two channels. This is the whole point of there being three
+    // answers and four channels, asked of the save path rather than of the type.
+    for channel in spoken_or_brailled.channels() {
+        if reopened.is_channel_enabled(*channel) {
+            wrong.push((
+                format!("what a restart reads for {channel}"),
+                format!(
+                    "still switched on, where the one control standing for \
+                     {spoken_or_brailled:?} was switched off, so saving wrote \
+                     only some of the channels it answers for"
+                ),
+            ));
+        }
     }
 }
