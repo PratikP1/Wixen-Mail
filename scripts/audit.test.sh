@@ -191,6 +191,26 @@ else
     suite_case_passed "this project accepts at least one advisory"
 fi
 
+# A list that holds nothing has to print nothing, and that is not the same
+# statement as the one above about the accepted list. `printf '%s\n'` with no
+# arguments still prints one newline, so an empty list read back through
+# `mapfile` arrives as a list of one empty advisory id. Everything downstream
+# then quietly asks whether the run reported an advisory called "", which it
+# never does, so the answer depends on which check happens to look first.
+#
+# Asserted as a property of every line rather than as a count, so it goes on
+# saying something the day the list has an entry in it again.
+blank_lines=0
+for advisory in "${awaiting[@]+"${awaiting[@]}"}"; do
+    [ -z "$advisory" ] && blank_lines=$(( blank_lines + 1 ))
+done
+if [ "$blank_lines" -gt 0 ]; then
+    suite_case_failed "every line the held-open list prints names an advisory" \
+        "$blank_lines of the ${#awaiting[@]} line(s) it printed were empty"
+else
+    suite_case_passed "every line the held-open list prints names an advisory"
+fi
+
 # An advisory cannot be both accepted and undecided. If one reaches
 # .cargo/audit.toml it has been decided, and holding it open here as well would
 # leave a local exception nothing can ever clear.
