@@ -90,7 +90,7 @@ Two things the plan says about this shape that this plan owns, both recorded rat
 | 6 | `268e3546` | The sentence criterion 1 ends on is held by something |
 | 7 | `056a0f8e` | What pressing OK saves is held by something |
 
-**Merged at:** `MERGE_HASH_PENDING`
+**Merged at:** `3969208e`, from the branch `what-the-screen-offers-is-what-the-program-can-do`. The merge itself ran the full gate on `main` and passed all four.
 
 ## What landed
 
