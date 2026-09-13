@@ -78,6 +78,9 @@ status: complete
 2. **Task 2 RED: failing tests for what somebody chose** - `1b4e15f3` (test)
 3. **Task 2 GREEN: the three methods and the guard record** - `1e67fb9a` (feat)
 
+**Plan metadata:** `a21c89b2` (docs: the summary, the ledger, and phase 6 opened)
+**Merged at:** `dacaa719`, from the branch `what-somebody-chose-is-not-what-they-get`
+
 ## The declared test-first exception in task 1
 
 The plan declared this before execution began and required three things. All three were done.
