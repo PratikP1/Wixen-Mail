@@ -1592,7 +1592,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 49] = [
+    const A_CRATE_THAT_CANNOT: [&str; 53] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1662,6 +1662,15 @@ mod completeness {
         // key on Windows and a file on the other two. It asks nobody: the
         // whole point of it is that the answer is already on the computer.
         "iana-time-zone",
+        // Plural rules and message formatting over bytes already in memory:
+        // a catalogue compiled into the binary, a locale name this computer
+        // answered, and a count. No socket, no file. The four are one closure,
+        // Project Fluent, and none of the eight packages in it has a build
+        // script, a proc macro, or any runtime data to fetch.
+        "fluent-bundle",
+        "fluent-langneg",
+        "intl-memoizer",
+        "unic-langid",
         "windows",
         "winresource",
         "boa_engine",
