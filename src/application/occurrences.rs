@@ -719,18 +719,10 @@ fn one_after_another(names: &[&str]) -> String {
     }
 }
 
-/// What a weekday is called when it is read out, said in full.
-fn weekday_called(_which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
-    match day {
-        chrono::Weekday::Mon => "Monday",
-        chrono::Weekday::Tue => "Tuesday",
-        chrono::Weekday::Wed => "Wednesday",
-        chrono::Weekday::Thu => "Thursday",
-        chrono::Weekday::Fri => "Friday",
-        chrono::Weekday::Sat => "Saturday",
-        chrono::Weekday::Sun => "Sunday",
-    }
-    .to_string()
+/// What a weekday is called when it is read out, said in full, the way this
+/// computer says it.
+fn weekday_called(which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
+    crate::common::how_the_machine_writes_dates::a_day_name(which, *day)
 }
 
 /// How many whole months lie between the months two dates fall in.

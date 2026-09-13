@@ -1377,13 +1377,23 @@ impl Finding {
     }
 }
 
-/// A date the way somebody would say it.
+/// A date the way somebody would say it, with the month name this computer
+/// uses in the form a date puts a month in.
 ///
 /// Day first, whatever order the person chose for their lists: this is a
 /// sentence about a certificate, not a column, and the stored order setting
-/// lives in `presentation`, which this layer does not reach.
-fn day_asking(_which: WhichLocale<'_>, moment: DateTime<Utc>) -> String {
-    moment.format("%-d %B %Y").to_string()
+/// lives in `presentation`, which this layer does not reach. That is also why
+/// the wrapper is in `common` rather than beside the other date code.
+fn day_asking(which: WhichLocale<'_>, moment: DateTime<Utc>) -> String {
+    use crate::common::how_the_machine_writes_dates::{Shape, a_date};
+    use chrono::Datelike;
+
+    a_date(
+        which,
+        Shape::DayMonthYear(moment.year()),
+        moment.month(),
+        moment.day(),
+    )
 }
 
 /// What checking a signature came to.

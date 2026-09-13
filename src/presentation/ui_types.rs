@@ -1051,10 +1051,11 @@ impl CalendarView {
 /// the calendar, and this module's dates already carry one:
 /// [`crate::presentation::date_display::ENGLISH_ONLY`] records what is still
 /// English whatever the machine is set to. That used to include the month
-/// names and no longer does; what is left there is the relative wording, "2
-/// days ago", and the day names in a repeating appointment. A week that starts
-/// where the locale says while the wording beside it is English is half an
-/// answer that reads as a bug rather than as a limitation.
+/// names and the day names and no longer does; what is left there is the
+/// wording around a date, "2 days ago" and "every week on", until the
+/// interface is translated. A week that starts where the locale says while
+/// the wording beside it is English is half an answer that reads as a bug
+/// rather than as a limitation.
 ///
 /// So: one honest small answer now, and the locale question answered once, for
 /// dates and weeks together, when phase 6 opens it. What that costs somebody

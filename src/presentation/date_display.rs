@@ -86,37 +86,40 @@ impl Default for DateSettings {
 
 /// What these settings do not reach, said where somebody meets it.
 ///
-/// The month names now come from this computer, along with the order of the day
-/// and month and the clock. What is left in English is the relative wording,
-/// "2 days ago", which no Windows API answers and which needs real plural rules
-/// in most languages rather than the English one form for 1 and one for
-/// everything else.
+/// Every date this program writes now follows this computer: the month names,
+/// the day names, the order of the day and month, and the clock. What is left
+/// in English is the wording around them. "2 days ago" comes out of a
+/// translation catalogue now, and only an English catalogue exists, so on a
+/// computer whose language has no catalogue, which today is every computer not
+/// set to English, it is English. And the sentences a date or a day name sits
+/// inside, "every week on", "A timestamp says this was signed on", are English
+/// until the interface is translated, which is version 2.
 ///
-/// **Narrowed rather than removed, and it will narrow again.** The day names in
-/// a repeating appointment and the date in a signature outcome are still
-/// English too. Saying so is the point: a settings screen that stops mentioning
-/// a limitation the moment part of it is fixed is worse than one that never
-/// mentioned it, because somebody reading it now believes the rest is done.
+/// **Narrowed for the second time in one plan rather than removed, and it
+/// stays until version 2 has nothing left to say here.** A settings screen
+/// that stops mentioning a limitation the moment part of it is fixed is worse
+/// than one that never mentioned it, because somebody reading it now believes
+/// the rest is done.
 ///
-/// **The comment and the sentence have to name the same things, and they did
-/// not.** The paragraph above named the signature date from the first draft of
-/// this rewording; the string underneath it, which is the only half anybody
-/// reads, said the month names follow this computer and stopped. That is not a
-/// smaller claim than the truth, it is a larger one:
-/// `src/service/signed_mail.rs` writes `%B` into eight sentences a person hears
-/// about a signature, so a month name there is still English. A doc comment is
-/// read by whoever is changing this file and the constant is read by whoever is
-/// using the program, and the second is the one a disclosure is for.
+/// **The comment and the sentence have to name the same things.** They did
+/// not once: the first rewording's comment named the signature date and its
+/// string, which is the only half anybody reads, said the month names follow
+/// this computer and stopped, while `signed_mail.rs` was still writing `%B`.
+/// A doc comment is read by whoever is changing this file and the constant is
+/// read by whoever is using the program, and the second is the one a
+/// disclosure is for. Both now say: dates follow the computer, wording does
+/// not yet.
 ///
 /// No count of what is left, deliberately. The list shortens as each site is
 /// done, and a number in the text is one more thing to remember to change.
 ///
 /// Nothing here has been heard. No date written in any language has been read
 /// by a screen reader in that language, which is the part no test can settle.
-pub const ENGLISH_ONLY: &str = "The month names in a date, the order of the day and month, \
-     and the clock all follow this computer. Some wording stays in English whatever language \
-     this computer is set to: phrases such as \"2 days ago\", the day names in a repeating \
-     appointment, and the date in a message about a signature.";
+pub const ENGLISH_ONLY: &str = "The dates follow this computer: the names of the months and \
+     the days, the order of the day and month, and the clock. The wording around them is \
+     still English whatever language this computer is set to, such as \"2 days ago\" and \
+     \"every week on\", until Wixen Mail has a translation for this computer's language. \
+     Today it has only English.";
 
 /// Which way round this machine writes a date. 0 means month first, 1 day
 /// first, 2 year first.

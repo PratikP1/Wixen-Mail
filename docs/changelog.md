@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The day names in a repeating appointment, and the date in a message about
+  a signature, now follow your computer too.** "Every week on Tuesday and
+  Thursday" names the days the way your computer does, and "A timestamp says
+  this was signed on 28 August 2026" writes the month the way your computer
+  writes one inside a date. With this, every date Wixen Mail writes follows
+  the computer: month names, day names, the order of the day and month, and
+  the clock. The note in Settings, Reading now says exactly that, and says
+  what is still English: the wording around a date, such as "every week on"
+  and "2 days ago", until Wixen Mail has a translation for your computer's
+  language.
+
+  **Known limitations.** On a French computer a repeating appointment reads
+  "every week on mardi and jeudi", a French day inside an English sentence,
+  because the day name follows the computer and the sentence does not yet.
+  That is said here rather than smoothed over: it is what version 2's
+  translation of the interface is for. Two labels on the settings screens
+  still carry English day and month names as examples, "Every weekday, Monday
+  to Friday" and "Month first, July 26", because they are interface text and
+  belong to that same translation. Neither the repeat-series sentence nor the
+  signature sentence has been heard by anybody in any language.
+
 - **Nothing you hear has changed, and this is the first piece of a translated
   Wixen Mail.** The wording "just now", "5 minutes ago", "3 hours ago" and "2
   days ago" now comes out of a translation catalogue, `locales/en-US/dates.ftl`,

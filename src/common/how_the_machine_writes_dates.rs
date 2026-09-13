@@ -498,9 +498,19 @@ fn ask_for_the_twelve_month_names(which: WhichLocale<'_>) -> Result<[String; 12]
     Ok(names)
 }
 
+/// The first of the seven day names said in full, Monday. `LOCALE_SDAYNAME1`.
+/// The other six follow it one at a time, Tuesday to Sunday, measured
+/// consecutive across four locales on 2026-09-13: en-US, fr-FR, ru-RU and
+/// pl-PL all answered their Monday first and their Sunday last.
 #[cfg(target_os = "windows")]
-fn ask_for_a_day_name(_which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
-    Ok(DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
+const FIRST_DAY_NAMED_IN_FULL: u32 = 0x0000_002A;
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_day_name(which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
+    ask_windows_about(
+        which,
+        FIRST_DAY_NAMED_IN_FULL + days_from_monday(day) as u32,
+    )
 }
 
 /// The name of a locale, as Windows spells it: "en-US". `LOCALE_SNAME`.

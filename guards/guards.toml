@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 560 records have arrived since and have not been through it.
+# 563 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3491,7 +3491,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 37 },
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 [[guard]]
@@ -3503,7 +3503,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -8538,7 +8538,7 @@ red = [
     "application::occurrences::tests::test_wkst_other_than_monday_is_accepted_wherever_it_cannot_change_the_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # A monthly or yearly rule fast-forwards past a first date far before the
@@ -8562,7 +8562,7 @@ red = [
     "application::occurrences::tests::test_months_apart_counts_signed_month_boundaries_crossed",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # blocks exists only so a test can watch how much work the stepping loop in
@@ -8583,7 +8583,7 @@ red = [
     "application::occurrences::tests::test_a_hand_counted_weekly_walk_matches_the_blocks_it_reports",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # ── long_text.rs's markup walk, tag by tag ──────────────────────────────────
@@ -11682,7 +11682,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 [[guard]]
@@ -16603,7 +16603,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -20563,7 +20563,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 23 },
     { file = "src/application/sending_later.rs", tests = 47 },
-    { file = "src/common/how_the_machine_writes_dates.rs", tests = 13 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
     { file = "src/presentation/date_display.rs", tests = 42 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
@@ -20714,4 +20714,87 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/catalogue.rs", tests = 14 },
+]
+
+# ── Day names and the signing date, 06-03 task 4 ─────────────────────────────
+#
+# Three records. Two put an English site back the way it was, which is the
+# break the source-reading guard exists for, so each reddens that guard as
+# well as the forced-locale test beside the site. The third is the off-by-one
+# nobody would see on a Monday.
+
+# The day names in a repeat-series sentence, answered from an English match
+# again. The guard that reads every shipped string literal for an English day
+# name sees the seven come back, and the French test hears "Tuesday".
+[[guard]]
+name = "a repeat-series sentence names its days the way this computer does"
+file = "src/application/occurrences.rs"
+before = """fn weekday_called(which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
+    crate::common::how_the_machine_writes_dates::a_day_name(which, *day)
+}"""
+after = """fn weekday_called(_which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
+    match day {
+        chrono::Weekday::Mon => "Monday",
+        chrono::Weekday::Tue => "Tuesday",
+        chrono::Weekday::Wed => "Wednesday",
+        chrono::Weekday::Thu => "Thursday",
+        chrono::Weekday::Fri => "Friday",
+        chrono::Weekday::Sat => "Saturday",
+        chrono::Weekday::Sun => "Sunday",
+    }
+    .to_string()
+}"""
+red = [
+    "application::occurrences::tests::test_a_french_computer_hears_french_day_names_inside_the_english_frame",
+    "common::how_the_machine_writes_dates::tests::test_no_shipping_file_names_a_month_or_a_day_in_english",
+]
+tests_last_seen = [
+    { file = "src/application/occurrences.rs", tests = 63 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+]
+
+# The signing date written with chrono's %B again, which is English on every
+# machine. The same two shapes of witness: the guard sees the directive, and
+# the French test hears "August".
+[[guard]]
+name = "a signature sentence writes its date the way this computer does"
+file = "src/service/signed_mail.rs"
+before = """    a_date(
+        which,
+        Shape::DayMonthYear(moment.year()),
+        moment.month(),
+        moment.day(),
+    )
+}"""
+after = """    let _ = (which, Shape::DayMonthYear(moment.year()), a_date);
+    moment.format("%-d %B %Y").to_string()
+}"""
+red = [
+    "common::how_the_machine_writes_dates::tests::test_no_shipping_file_names_a_month_or_a_day_in_english",
+    "service::signed_mail::tests::test_a_french_computer_hears_the_signing_date_in_french",
+]
+tests_last_seen = [
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
+]
+
+# Counting the week from Sunday, which is how a calendar on the wall is
+# printed and how chrono's other counter counts. Every day name is then a
+# real name for the wrong day, and a test written on a Monday alone would
+# not see it; the ones that assert both ends of the week do.
+[[guard]]
+name = "day names are counted from Monday, which is where Windows starts them"
+file = "src/common/how_the_machine_writes_dates.rs"
+before = """    day.num_days_from_monday() as usize"""
+after = """    day.num_days_from_sunday() as usize"""
+red = [
+    "application::occurrences::tests::test_a_french_computer_hears_french_day_names_inside_the_english_frame",
+    "application::occurrences::tests::test_a_series_says_how_often_it_repeats_and_when_it_stops",
+    "application::occurrences::tests::test_every_weekday_a_rule_can_name_is_read_as_the_day_it_names",
+    "common::how_the_machine_writes_dates::tests::test_a_french_machine_gets_french_day_names_counted_from_monday",
+    "common::how_the_machine_writes_dates::tests::test_an_english_machine_gets_the_english_day_names_this_program_always_wrote",
+]
+tests_last_seen = [
+    { file = "src/application/occurrences.rs", tests = 63 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
 ]
