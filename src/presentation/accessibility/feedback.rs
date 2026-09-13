@@ -442,20 +442,49 @@ impl FeedbackSettings {
     }
 
     /// Choose the channels for one event, overriding the global setting.
+    ///
+    /// An empty set is a real answer and means silence for that event. Putting
+    /// an event back to the default is [`FeedbackSettings::use_the_default_for`],
+    /// not an empty set.
     pub fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
         self.per_event.retain(|(e, _)| *e != event);
         self.per_event.push((event, channels));
     }
 
-    // Both written in the green half that follows this commit.
+    /// What somebody ticked for one event, or `None` where they ticked
+    /// nothing.
+    ///
+    /// This and [`FeedbackSettings::channels_for`] are two different questions
+    /// and a settings screen needs both. This one is the choice as it was
+    /// made, with no default filled in, no intersection with the channels
+    /// switched off everywhere, and no never-sound-alone fallback.
+    /// `channels_for` is what the event gets after all three.
+    ///
+    /// A panel rendered from `channels_for` would show four ticks for an event
+    /// nobody has touched, because a missing entry defaults to every channel,
+    /// and a braille tick nobody set, because the fallback adds one where only
+    /// a sound was picked. That is a screen telling somebody they chose
+    /// something they did not, which is what this method exists to prevent.
     pub fn what_was_chosen_for(&self, event: Event) -> Option<BTreeSet<Channel>> {
-        let _ = event;
-        todo!()
+        self.per_event
+            .iter()
+            .find(|(e, _)| *e == event)
+            .map(|(_, channels)| channels.clone())
     }
 
+    /// Put one event back to the default, which is not the same as switching
+    /// every channel off for it.
+    ///
+    /// Named for what the button on the settings screen says rather than for
+    /// what happens to the data, because a name reading as "clear" invites
+    /// being used for "switch everything off", and those mean opposite things:
+    /// the entry is removed here so the default comes back, where an empty set
+    /// stored through [`FeedbackSettings::set_event_channels`] round trips and
+    /// means silence, which `test_an_event_with_no_channels_at_all_signals_nothing`
+    /// holds. An event with no override is left alone rather than treated as an
+    /// error.
     pub fn use_the_default_for(&mut self, event: Event) {
-        let _ = event;
-        todo!()
+        self.per_event.retain(|(e, _)| *e != event);
     }
 
     /// The channels an event actually reaches.
