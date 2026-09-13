@@ -87,13 +87,26 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Rust
-      # stable rather than a pinned version. Cargo.toml declares
-      # rust-version = "1.88" and every call site in ci.yml uses stable, so
-      # stable satisfies the floor and the two files answer alike. Pinning
-      # below 1.88 would fail to build; pinning above it would turn on clippy
-      # lints this tree has never been held to, and clippy runs with
-      # -D warnings.
-      uses: dtolnay/rust-toolchain@stable
+      # 1.98.1, which is what rust-toolchain.toml pins and what every other
+      # workflow names. tests/house_style.rs compares the two, so this line and
+      # the pin file cannot drift apart without a test saying so.
+      #
+      # This comment argued for stable until 2026-09-13, and it was half right.
+      # It said that pinning above the 1.88 floor "would turn on clippy lints
+      # this tree has never been held to, and clippy runs with -D warnings".
+      # That risk is real, and it is the half worth keeping.
+      #
+      # What it did not know, on the day it was written, is that the thing it
+      # warned about had already happened. Stable moved to 1.98.1 on
+      # 2026-09-01, which added chunks_exact_to_as_chunks, and CI had been red
+      # on exactly that since 2026-09-10. Asking for whatever is newest does
+      # not avoid new lints. It takes them without warning, on a day nobody
+      # chose, in a run nobody was watching.
+      #
+      # The two sites it would have broken are fixed. Raising this version is
+      # now a commit that turns new lints on deliberately, with whatever they
+      # find in front of the person who raised it.
+      uses: dtolnay/rust-toolchain@1.98.1
 
     # Quoted from the wxDragon README's "Linux Additional Requirements", read
     # on 2026-09-12 at github.com/AllenDang/wxDragon. Word for word, and dated,
@@ -152,7 +165,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.98.1
 
     # Upstream lists no macOS packages beyond Rust, CMake and a C++ compiler.
     # The C++ compiler is the Xcode command line tools, which the image ships.

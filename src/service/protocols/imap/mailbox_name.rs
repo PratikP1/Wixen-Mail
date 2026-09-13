@@ -80,13 +80,15 @@ pub fn decode(encoded: &str) -> String {
 /// Decode one `&...-` run: modified Base64 over UTF-16BE code units.
 fn decode_run(chunk: &str) -> Option<String> {
     let bytes = MODIFIED_BASE64.decode(chunk).ok()?;
-    if bytes.len() % 2 != 0 {
+    // `as_chunks` pairs the bytes and hands back whatever did not pair, so the
+    // odd-length refusal and the pairing read the same thing once instead of
+    // twice. A run whose bytes do not pair up is not UTF-16BE, so it is not a
+    // name this can show.
+    let (pairs, unpaired) = bytes.as_chunks::<2>();
+    if !unpaired.is_empty() {
         return None;
     }
-    let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
-        .collect();
+    let units: Vec<u16> = pairs.iter().copied().map(u16::from_be_bytes).collect();
     // An unpaired surrogate is a malformed name, not a character we can show.
     char::decode_utf16(units)
         .collect::<Result<String, _>>()

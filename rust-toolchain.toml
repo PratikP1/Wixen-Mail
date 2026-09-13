@@ -1,0 +1,48 @@
+# The compiler this project is built with, everywhere.
+#
+# Pinned on 2026-09-13, after CI had been red for three days because it was not.
+# Stable moved to 1.98.1 on 2026-09-01, that release added the
+# chunks_exact_to_as_chunks lint, clippy runs with -D warnings, and this machine
+# was still on 1.97.1. The compiler was named in two places, neither place was
+# wrong on its own, and nothing compared them.
+#
+# tests/house_style.rs::test_ci_and_this_machine_are_told_to_use_the_same_compiler
+# now compares them, and every workflow names this same version, so the two
+# cannot disagree without a test saying so.
+#
+# # Why this file wins in CI, measured rather than assumed
+#
+# Every workflow installs Rust with dtolnay/rust-toolchain. That action runs
+# "rustup toolchain install" and then "rustup default". It sets no directory
+# override and no RUSTUP_TOOLCHAIN. Measured on 2026-09-13 against rustup's
+# precedence: a directory override beats this file and RUSTUP_TOOLCHAIN beats
+# everything, but "rustup default" is the lowest precedence of all, so this file
+# beats it. The pin therefore decides what CI compiles with whatever a workflow
+# says.
+#
+# The workflows name the version anyway. The run log then says which compiler
+# really built the tree, no job installs a second toolchain it will not use, and
+# a check comparing two places needs both places to name something.
+#
+# # Raising it
+#
+# Bump the channel here and in every workflow in the same commit. The check
+# above refuses a commit that moves one and not the other. Expect the first
+# local build afterwards to be slow: a new compiler invalidates all of target/.
+#
+# Cargo.toml declares rust-version = "1.88", and nothing in this repository
+# builds at that floor, because every build here uses the pin. That gap is
+# recorded in .planning/WINDOWS.md rather than fixed: whether an MSRV job
+# belongs here is a scoping question nobody has settled.
+[toolchain]
+channel = "1.98.1"
+# The two the gate needs. scripts/check.sh runs cargo fmt and cargo clippy on
+# every commit, and CI has a job for each.
+#
+# These matter more than they look. Because this file wins, the compiler the
+# build uses is the one rustup installs from here, with these components, not
+# the one the action installed with whatever a workflow step asked for. A
+# component named in a workflow and missing here is a component the build does
+# not get, and the check above compares those two lists for that reason.
+components = ["clippy", "rustfmt"]
+profile = "minimal"

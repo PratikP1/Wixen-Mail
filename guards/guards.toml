@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 549 records have arrived since and have not been through it.
+# 551 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -3372,7 +3372,7 @@ red = [
     "test_the_new_installation_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A path added to the data folder and left off the pages listing it ────────
@@ -3435,7 +3435,7 @@ red = [
     "test_the_signing_check_can_tell_a_promise_from_a_correction",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3448,7 +3448,42 @@ red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
+]
+
+# ── The compiler named in two places ────────────────────────────────────────
+#
+# CI was red from 2026-09-10 to 2026-09-13 because rust-toolchain.toml did not
+# exist and every workflow asked for whatever stable happened to be. The check
+# that now compares them is a corpus walk over a directory, which is the kind
+# that passes by finding nothing, so both halves of the reading get a record.
+
+[[guard]]
+name = "the compiler a workflow names is really read out of the workflow"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = '''                .split_once("dtolnay/rust-toolchain@")'''
+after = '''                .split_once("a string no workflow holds")'''
+red = [
+    "test_ci_and_this_machine_are_told_to_use_the_same_compiler",
+    "test_the_compiler_agreement_check_can_see_a_disagreement",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 71 },
+]
+
+[[guard]]
+name = "the components the pin file installs are really read out of the pin file"
+file = "tests/house_style.rs"
+suite = "house_style"
+before = '''        .find_map(|line| line.strip_prefix("components = ["))'''
+after = '''        .find_map(|line| line.strip_prefix("a key the pin file does not have"))'''
+red = [
+    "test_ci_and_this_machine_are_told_to_use_the_same_compiler",
+    "test_the_compiler_agreement_check_can_see_a_disagreement",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A record in this file that had stopped naming one place ─────────────────
@@ -3474,7 +3509,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3492,7 +3527,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A change the mail server refused, reported as one that happened ─────────
@@ -3727,7 +3762,7 @@ red = [
     "test_no_mutation_result_is_read_from_the_lists_written_for_people",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3740,7 +3775,7 @@ red = [
     "test_what_a_change_touched_is_asked_the_same_way_in_both_places",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3753,7 +3788,7 @@ red = [
     "test_no_mutation_run_has_its_failure_swallowed",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3766,7 +3801,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A run the suite never finished against, read as one that found nothing ───
@@ -3803,7 +3838,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3818,7 +3853,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3831,7 +3866,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -3844,7 +3879,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A reason a mail server already punctuated, punctuated again ──────────────
@@ -3964,7 +3999,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 11 },
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────
@@ -5559,7 +5594,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -5928,7 +5963,7 @@ red = [
     "test_the_machinery_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── A meeting that repeats, on its way to Google ────────────────────────────
@@ -6216,7 +6251,7 @@ red = [
     "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 suite = "house_style"
 
@@ -11534,7 +11569,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -13769,7 +13804,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
-    { file = "tests/house_style.rs", tests = 69 },
+    { file = "tests/house_style.rs", tests = 71 },
 ]
 
 # ── The two integration guards that named no source file ────────────────────
