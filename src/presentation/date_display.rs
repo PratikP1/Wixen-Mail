@@ -9,6 +9,8 @@
 //! want to know whether it is recent, and "2 days ago" answers that in three
 //! syllables where "July 24, 2026 at 9:15 AM" takes a dozen.
 
+use crate::common::how_the_machine_writes_dates as the_machine;
+use crate::common::how_the_machine_writes_dates::WhichLocale;
 use chrono::{DateTime, Datelike, Local, Timelike};
 
 /// Which way round the day and month are written.
@@ -77,40 +79,37 @@ impl Default for DateSettings {
 
 /// What these settings do not reach, said where somebody meets it.
 ///
-/// The order of the day and month and the clock follow this machine, so the
-/// dates look as though they follow its language too. They do not: the month
-/// names and the relative wording below are English and only English. On a
-/// French machine that puts an English word in the middle of every date, read
-/// with French pronunciation rules, in every list in every module. It sounds
-/// like the screen reader misbehaving rather than like this application
-/// speaking one language.
+/// The month names now come from this computer, along with the order of the day
+/// and month and the clock. What is left in English is the relative wording,
+/// "2 days ago", which no Windows API answers and which needs real plural rules
+/// in most languages rather than the English one form for 1 and one for
+/// everything else.
 ///
-/// This is a statement, not a fix. Localising dates means the month names, the
-/// relative wording, the examples in the settings screen and eventually every
-/// other string in the application, which is a piece of work with a build cost.
-/// Until then the limitation is written on the settings screen and in
-/// `docs/accessibility.md` rather than left to be discovered.
-pub const ENGLISH_ONLY: &str = "Dates are written in English. The order of the day and month \
-     and the clock follow this computer, but the month names and wording such as \"2 days ago\" \
-     stay in English whatever language this computer is set to.";
-
-/// The twelve month names, January first. `pub(crate)` so the item form can
-/// build a real, named choice of them for entering a date, rather than a
-/// number a screen reader has to translate.
-pub(crate) const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
+/// **Narrowed rather than removed, and it will narrow again.** The day names in
+/// a repeating appointment and the date in a signature outcome are still
+/// English too. Saying so is the point: a settings screen that stops mentioning
+/// a limitation the moment part of it is fixed is worse than one that never
+/// mentioned it, because somebody reading it now believes the rest is done.
+///
+/// **The comment and the sentence have to name the same things, and they did
+/// not.** The paragraph above named the signature date from the first draft of
+/// this rewording; the string underneath it, which is the only half anybody
+/// reads, said the month names follow this computer and stopped. That is not a
+/// smaller claim than the truth, it is a larger one:
+/// `src/service/signed_mail.rs` writes `%B` into eight sentences a person hears
+/// about a signature, so a month name there is still English. A doc comment is
+/// read by whoever is changing this file and the constant is read by whoever is
+/// using the program, and the second is the one a disclosure is for.
+///
+/// No count of what is left, deliberately. The list shortens as each site is
+/// done, and a number in the text is one more thing to remember to change.
+///
+/// Nothing here has been heard. No date written in any language has been read
+/// by a screen reader in that language, which is the part no test can settle.
+pub const ENGLISH_ONLY: &str = "The month names in a date, the order of the day and month, \
+     and the clock all follow this computer. Some wording stays in English whatever language \
+     this computer is set to: phrases such as \"2 days ago\", the day names in a repeating \
+     appointment, and the date in a message about a signature.";
 
 /// Which way round this machine writes a date. 0 means month first, 1 day
 /// first, 2 year first.
@@ -285,6 +284,29 @@ impl Clock {
 /// understood is still better shown as it was stored than replaced with a
 /// guess or an empty cell.
 pub fn format_for_list(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+    format_for_list_asking(WhichLocale::ThisComputer, stored, now, settings)
+}
+
+/// Every public reading here has one of these beside it, and they exist for the
+/// reason [`DateOrder::from_setting_or`] does.
+///
+/// Joined to the machine's own locale, a test asserting "July 26, 2026" is a
+/// statement about the computer it ran on. It would pass here, pass in CI, and
+/// say nothing at all about whether the stored preferences were obeyed, because
+/// this machine and the assertion happen to agree. Split, a test forces `en-US`
+/// and the assertion is about this code.
+///
+/// The locale is threaded rather than put on [`DateSettings`], and that was a
+/// measurement rather than a preference: `DateSettings` is built as a literal
+/// at 50 places in 13 files, 27 of them without a `..` spread, so a new field
+/// would be 27 edits across files this task has no other business in. These
+/// wrappers are one file.
+fn format_for_list_asking(
+    which: WhichLocale<'_>,
+    stored: &str,
+    now: DateTime<Local>,
+    settings: DateSettings,
+) -> String {
     let Some(when) = parse(stored) else {
         return stored.to_string();
     };
@@ -294,7 +316,7 @@ pub fn format_for_list(stored: &str, now: DateTime<Local>, settings: DateSetting
     {
         return relative;
     }
-    absolute(when, settings)
+    absolute_asking(which, when, settings)
 }
 
 /// One stored date, written the way this reader asked for it.
@@ -310,6 +332,15 @@ pub fn format_for_list(stored: &str, now: DateTime<Local>, settings: DateSetting
 ///
 /// Nothing stored is nothing said, rather than the word "none" or today's date.
 pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+    spoken_asking(WhichLocale::ThisComputer, stored, now, settings)
+}
+
+fn spoken_asking(
+    which: WhichLocale<'_>,
+    stored: &str,
+    now: DateTime<Local>,
+    settings: DateSettings,
+) -> String {
     use crate::common::moment::Moment;
 
     if stored.trim().is_empty() {
@@ -320,7 +351,7 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     // which answers nothing for it and hands the reader "--03-14" character by
     // character.
     if stored.trim().starts_with(YEAR_LEFT_OUT) {
-        return a_day_in_words(stored, settings);
+        return a_day_in_words_asking(which, stored, settings);
     }
     let Some(moment) = crate::common::moment::read(stored) else {
         return stored.to_string();
@@ -330,7 +361,7 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     // today is the reading calling it overdue. The birthday reading already
     // refuses that; the rule is the same for every stored day.
     if let Moment::WholeDay(day) = moment {
-        return date_part(day, settings);
+        return date_part_asking(which, day, settings);
     }
     let Some(when) = local_instant(moment) else {
         return stored.to_string();
@@ -340,7 +371,7 @@ pub fn spoken(stored: &str, now: DateTime<Local>, settings: DateSettings) -> Str
     {
         return relative;
     }
-    absolute(when, settings)
+    absolute_asking(which, when, settings)
 }
 
 /// How a stored date whose year nobody gave is written: "--03-14".
@@ -368,26 +399,34 @@ pub use crate::common::types::YEAR_LEFT_OUT;
 /// it was stored, so nothing is invented from a run of characters nobody here
 /// understands.
 pub fn a_day_in_words(stored: &str, settings: DateSettings) -> String {
+    a_day_in_words_asking(WhichLocale::ThisComputer, stored, settings)
+}
+
+fn a_day_in_words_asking(which: WhichLocale<'_>, stored: &str, settings: DateSettings) -> String {
     let trimmed = stored.trim();
     if trimmed.is_empty() {
         return String::new();
     }
     let Some(after_the_missing_year) = trimmed.strip_prefix(YEAR_LEFT_OUT) else {
         return match parse(trimmed) {
-            Some(when) => date_part(when, settings),
+            Some(when) => date_part_asking(which, when, settings),
             None => stored.to_string(),
         };
     };
     let Some((month, day)) = a_month_and_a_day(after_the_missing_year) else {
         return stored.to_string();
     };
-    let month_name = MONTHS[(month - 1) as usize];
     match (settings.wording, settings.order) {
+        // A day sits beside the month, so the machine is asked for a date and
+        // not for a month name. The year is the one thing this reading has not
+        // got, and the module borrows a leap year to stand the date on so that
+        // somebody born on the 29th of February can still have their birthday
+        // written; nothing of the borrowed year is said.
         (DateWording::Verbal, DateOrder::MonthFirst) => {
-            format!("{} {}", month_name, ordinal(day))
+            the_machine::a_date(which, the_machine::Shape::MonthDay, month, day)
         }
         (DateWording::Verbal, DateOrder::DayFirst) => {
-            format!("{} {}", ordinal(day), month_name)
+            the_machine::a_date(which, the_machine::Shape::DayMonth, month, day)
         }
         (DateWording::Numeric, DateOrder::MonthFirst) => format!("{:02}/{:02}", month, day),
         (DateWording::Numeric, DateOrder::DayFirst) => format!("{:02}/{:02}", day, month),
@@ -406,11 +445,25 @@ pub fn a_day_in_words(stored: &str, settings: DateSettings) -> String {
 /// The order of the day and month does not arise: there is no day. So the two
 /// orders answer alike and only the wording decides.
 pub fn a_month_in_words(year: i32, month: u32, settings: DateSettings) -> String {
-    let Some(name) = MONTHS.get(month.wrapping_sub(1) as usize) else {
+    a_month_in_words_asking(WhichLocale::ThisComputer, year, month, settings)
+}
+
+/// The one reading that really does want the standalone form, because there is
+/// no day beside the month for it to agree with.
+fn a_month_in_words_asking(
+    which: WhichLocale<'_>,
+    year: i32,
+    month: u32,
+    settings: DateSettings,
+) -> String {
+    if !(1..=12).contains(&month) {
         return year.to_string();
-    };
+    }
     match settings.wording {
-        DateWording::Verbal => format!("{name} {year}"),
+        DateWording::Verbal => {
+            let named = the_machine::the_twelve_month_names(which);
+            format!("{} {year}", named[(month - 1) as usize])
+        }
         DateWording::Numeric => format!("{month:02}/{year}"),
     }
 }
@@ -428,22 +481,6 @@ fn a_month_and_a_day(written: &str) -> Option<(u32, u32)> {
         return None;
     }
     Some((month, day))
-}
-
-/// A day of the month as it is said: "1st", "2nd", "3rd", "4th".
-///
-/// The eleventh, twelfth and thirteenth take "th" although they end in one,
-/// two and three, which is the whole reason this is a function rather than a
-/// look at the last digit.
-fn ordinal(day: u32) -> String {
-    let ending = match (day % 100, day % 10) {
-        (11..=13, _) => "th",
-        (_, 1) => "st",
-        (_, 2) => "nd",
-        (_, 3) => "rd",
-        _ => "th",
-    };
-    format!("{}{}", day, ending)
 }
 
 /// The hour of the day a stored moment is spoken at, when it names one.
@@ -465,7 +502,19 @@ pub fn the_hour_spoken(stored: &str) -> Option<u32> {
 
 /// The full date and time.
 pub fn absolute(when: DateTime<Local>, settings: DateSettings) -> String {
-    format!("{} at {}", date_part(when, settings), clock(when, settings))
+    absolute_asking(WhichLocale::ThisComputer, when, settings)
+}
+
+fn absolute_asking(
+    which: WhichLocale<'_>,
+    when: DateTime<Local>,
+    settings: DateSettings,
+) -> String {
+    format!(
+        "{} at {}",
+        date_part_asking(which, when, settings),
+        clock(when, settings)
+    )
 }
 
 /// The date, without the time.
@@ -473,15 +522,26 @@ pub fn absolute(when: DateTime<Local>, settings: DateSettings) -> String {
 /// Over anything with a calendar date on it rather than a full moment, so a
 /// whole day is written straight from the day it names and no midnight is
 /// constructed just to be left unsaid.
-fn date_part(when: impl Datelike, settings: DateSettings) -> String {
-    let month = MONTHS[(when.month() - 1) as usize];
+fn date_part_asking(which: WhichLocale<'_>, when: impl Datelike, settings: DateSettings) -> String {
     match (settings.wording, settings.order) {
-        (DateWording::Verbal, DateOrder::MonthFirst) => {
-            format!("{} {}, {}", month, when.day(), when.year())
-        }
-        (DateWording::Verbal, DateOrder::DayFirst) => {
-            format!("{} {} {}", when.day(), month, when.year())
-        }
+        // The person's stored wording and order choose which of these two the
+        // machine is asked for, and the machine chooses only the words inside
+        // it. Asking Windows for its own idea of a long date instead would
+        // have written a French date the French way and thrown away the order
+        // this person picked, on every machine whose locale disagrees with
+        // them.
+        (DateWording::Verbal, DateOrder::MonthFirst) => the_machine::a_date(
+            which,
+            the_machine::Shape::MonthDayYear(when.year()),
+            when.month(),
+            when.day(),
+        ),
+        (DateWording::Verbal, DateOrder::DayFirst) => the_machine::a_date(
+            which,
+            the_machine::Shape::DayMonthYear(when.year()),
+            when.month(),
+            when.day(),
+        ),
         // Padded, because an unpadded numeric date is harder to scan in a
         // column and no shorter to hear.
         (DateWording::Numeric, DateOrder::MonthFirst) => {
@@ -584,6 +644,38 @@ mod tests {
         parse(text).expect("test timestamp should parse")
     }
 
+    /// Forced, so every English assertion below is about this code rather than
+    /// about the computer that ran it.
+    ///
+    /// Before the month names came from the machine, every one of these could
+    /// be written against the public reading and be right anywhere, because
+    /// the answer was English wherever you asked. That is no longer true: the
+    /// same assertion through [`absolute`] passes here and fails on a French
+    /// machine, and it would be the test that was wrong, not the code.
+    fn english() -> WhichLocale<'static> {
+        WhichLocale::NamedInATest("en-US")
+    }
+
+    /// The four readings under a forced `en-US`. Named apart from the public
+    /// ones on purpose: a test module that shadowed `absolute` with a local
+    /// `absolute` would read as testing the public function while testing
+    /// something else.
+    fn as_english_says_it(when: DateTime<Local>, settings: DateSettings) -> String {
+        absolute_asking(english(), when, settings)
+    }
+
+    fn an_english_day(stored: &str, settings: DateSettings) -> String {
+        a_day_in_words_asking(english(), stored, settings)
+    }
+
+    fn an_english_reading(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+        spoken_asking(english(), stored, now, settings)
+    }
+
+    fn an_english_cell(stored: &str, now: DateTime<Local>, settings: DateSettings) -> String {
+        format_for_list_asking(english(), stored, now, settings)
+    }
+
     /// Fixed rather than [`DateSettings::default`], which asks the machine, so
     /// these read the same on every machine they run on.
     fn settings() -> DateSettings {
@@ -597,7 +689,11 @@ mod tests {
 
     #[test]
     fn test_a_birthday_with_no_year_is_read_as_a_day_and_a_month() {
-        assert_eq!(a_day_in_words("--03-14", settings()), "March 14th");
+        // No ordinal. `date_part` has always written "9 December 1906" without
+        // one, so this reading used to disagree with its own module about the
+        // same day; a date picture cannot produce "14th"; and no language
+        // other than English wants one.
+        assert_eq!(an_english_day("--03-14", settings()), "March 14");
     }
 
     #[test]
@@ -607,7 +703,7 @@ mod tests {
             ..settings()
         };
 
-        assert_eq!(a_day_in_words("--03-14", day_first), "14th March");
+        assert_eq!(an_english_day("--03-14", day_first), "14 March");
     }
 
     #[test]
@@ -622,53 +718,45 @@ mod tests {
             ..settings()
         };
 
-        assert_eq!(a_day_in_words("--03-14", month_first), "03/14");
-        assert_eq!(a_day_in_words("--03-14", day_first), "14/03");
+        assert_eq!(an_english_day("--03-14", month_first), "03/14");
+        assert_eq!(an_english_day("--03-14", day_first), "14/03");
     }
 
+    /// A birthday on a day the calendar only has every four years is a real
+    /// person's, and it is the case that breaks if a year-less date is stood
+    /// on any year at all: Windows checks the whole date and refuses the 29th
+    /// of February in a year that has none.
     #[test]
-    fn test_the_eleventh_the_twelfth_and_the_thirteenth_are_not_first_second_and_third() {
-        let read = |day: &str| a_day_in_words(&format!("--03-{day}"), settings());
-
-        assert_eq!(read("01"), "March 1st");
-        assert_eq!(read("02"), "March 2nd");
-        assert_eq!(read("03"), "March 3rd");
-        assert_eq!(read("04"), "March 4th");
-        assert_eq!(read("11"), "March 11th");
-        assert_eq!(read("12"), "March 12th");
-        assert_eq!(read("13"), "March 13th");
-        assert_eq!(read("21"), "March 21st");
-        assert_eq!(read("22"), "March 22nd");
-        assert_eq!(read("23"), "March 23rd");
-        assert_eq!(read("31"), "March 31st");
+    fn test_a_birthday_on_the_twenty_ninth_of_february_is_still_read_as_a_day() {
+        assert_eq!(an_english_day("--02-29", settings()), "February 29");
     }
 
     #[test]
     fn test_a_birthday_that_names_no_real_month_is_left_as_it_was_stored() {
-        assert_eq!(a_day_in_words("--13-14", settings()), "--13-14");
-        assert_eq!(a_day_in_words("--00-14", settings()), "--00-14");
-        assert_eq!(a_day_in_words("--03-00", settings()), "--03-00");
-        assert_eq!(a_day_in_words("--03-32", settings()), "--03-32");
-        assert_eq!(a_day_in_words("--ab-14", settings()), "--ab-14");
-        assert_eq!(a_day_in_words("--0314", settings()), "--0314");
+        assert_eq!(an_english_day("--13-14", settings()), "--13-14");
+        assert_eq!(an_english_day("--00-14", settings()), "--00-14");
+        assert_eq!(an_english_day("--03-00", settings()), "--03-00");
+        assert_eq!(an_english_day("--03-32", settings()), "--03-32");
+        assert_eq!(an_english_day("--ab-14", settings()), "--ab-14");
+        assert_eq!(an_english_day("--0314", settings()), "--0314");
     }
 
     #[test]
     fn test_nothing_stored_is_nothing_said_for_a_day_in_words() {
-        assert_eq!(a_day_in_words("", settings()), "");
-        assert_eq!(a_day_in_words("   ", settings()), "");
+        assert_eq!(an_english_day("", settings()), "");
+        assert_eq!(an_english_day("   ", settings()), "");
     }
 
     #[test]
     fn test_a_birthday_with_a_year_is_still_read_as_a_whole_date() {
-        assert_eq!(a_day_in_words("1906-12-09", settings()), "December 9, 1906");
+        assert_eq!(an_english_day("1906-12-09", settings()), "December 9, 1906");
 
         let relative = DateSettings {
             style: DateStyle::RelativeWithinWeek,
             ..settings()
         };
         assert_eq!(
-            a_day_in_words("1906-12-09", relative),
+            an_english_day("1906-12-09", relative),
             "December 9, 1906",
             "a birthday is never how long ago it was"
         );
@@ -677,28 +765,130 @@ mod tests {
     #[test]
     fn test_a_date_with_no_year_reaching_the_ordinary_reading_is_read_as_words() {
         assert_eq!(
-            spoken("--03-14", at("2026-07-26 09:15:00"), settings()),
-            "March 14th"
+            an_english_reading("--03-14", at("2026-07-26 09:15:00"), settings()),
+            "March 14"
         );
     }
 
     #[test]
-    fn test_the_month_is_spelled_in_english_whatever_the_order_says() {
-        // A pin, green from the first run, and it is here to go red one day.
-        // The settings screen and `docs/accessibility.md` now say out loud that
-        // dates are English only. When localisation lands this test fails, and
-        // that is the reminder to take those two statements back out rather
-        // than leave the application claiming a limitation it no longer has.
+    fn test_the_month_is_spelled_the_way_this_computer_spells_it() {
+        // This replaces a pin that was written to be green and to go red the
+        // day localisation landed, as the reminder to take the English-only
+        // statements back out. That day is this one, and the pin could not
+        // have kept its promise: it asked the machine's own locale, so on an
+        // English machine it would have gone on passing through the whole
+        // change. What it was really pinning is asserted here instead, on both
+        // sides, with the locale forced rather than read.
         let day_first = DateSettings {
             style: DateStyle::Absolute,
             order: DateOrder::DayFirst,
             wording: DateWording::Verbal,
             clock: Clock::TwentyFourHour,
         };
+        let when = at("2026-07-26 09:15:00");
 
-        let written = date_part(at("2026-07-26 09:15:00"), day_first);
+        assert_eq!(date_part_asking(english(), when, day_first), "26 July 2026");
+    }
 
-        assert!(written.contains("July"), "{written}");
+    /// The month name follows the machine, and the shape does not.
+    ///
+    /// Both halves matter and the second is the one that is easy to lose.
+    /// Asking Windows for its own idea of a long date would have written a
+    /// French date the French way and thrown away the order and wording this
+    /// person chose, on every machine whose locale disagrees with them.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_french_machine_gets_a_french_month_in_the_order_the_person_chose() {
+        let french = WhichLocale::NamedInATest("fr-FR");
+        let when = at("2026-07-26 09:15:00");
+        let day_first = DateSettings {
+            order: DateOrder::DayFirst,
+            ..settings()
+        };
+
+        assert_eq!(date_part_asking(french, when, day_first), "26 juillet 2026");
+        // Month first is what this person chose, and it is obeyed even though
+        // no French machine writes a date that way on its own.
+        assert_eq!(
+            date_part_asking(french, when, settings()),
+            "juillet 26, 2026"
+        );
+    }
+
+    /// The two mechanisms, seen from up here rather than inside the wrapper.
+    ///
+    /// A date has a day in it and wants the genitive; a month heading has no
+    /// day and wants the standalone form. If these two ever answer alike, one
+    /// of the two readings is using the other's mechanism.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_date_and_a_month_heading_name_the_same_month_differently() {
+        let russian = WhichLocale::NamedInATest("ru-RU");
+        let in_a_date = date_part_asking(russian, at("2026-01-02 09:15:00"), settings());
+        let on_its_own = a_month_in_words_asking(russian, 2026, 1, settings());
+
+        assert!(in_a_date.contains("января"), "{in_a_date}");
+        assert!(on_its_own.starts_with("Январь"), "{on_its_own}");
+    }
+
+    /// The four stored combinations, each written out whole.
+    ///
+    /// This is the criterion's own test: the same code asked for `en-US` still
+    /// produces what this program always produced, so nothing that worked
+    /// stops working. The two numeric ones never go near the machine, because
+    /// a numeric date has no month name in it to localise and letting a locale
+    /// decide its separators would change a shape the person chose.
+    #[test]
+    fn test_the_four_stored_combinations_still_read_as_they_always_did() {
+        let when = at("2026-03-14 09:15:00");
+        let verbal_month_first = settings();
+        let verbal_day_first = DateSettings {
+            order: DateOrder::DayFirst,
+            ..settings()
+        };
+        let numeric_month_first = DateSettings {
+            wording: DateWording::Numeric,
+            ..settings()
+        };
+        let numeric_day_first = DateSettings {
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            ..settings()
+        };
+
+        assert_eq!(
+            date_part_asking(english(), when, verbal_month_first),
+            "March 14, 2026"
+        );
+        assert_eq!(
+            date_part_asking(english(), when, verbal_day_first),
+            "14 March 2026"
+        );
+        assert_eq!(
+            date_part_asking(english(), when, numeric_month_first),
+            "03/14/2026"
+        );
+        assert_eq!(
+            date_part_asking(english(), when, numeric_day_first),
+            "14/03/2026"
+        );
+    }
+
+    #[test]
+    fn test_a_month_heading_outside_the_twelve_is_the_year_on_its_own() {
+        // A corrupt stored row must not index past the end of the twelve.
+        assert_eq!(
+            a_month_in_words_asking(english(), 2026, 0, settings()),
+            "2026"
+        );
+        assert_eq!(
+            a_month_in_words_asking(english(), 2026, 13, settings()),
+            "2026"
+        );
+        assert_eq!(
+            a_month_in_words_asking(english(), 2026, 7, settings()),
+            "July 2026"
+        );
     }
 
     #[test]
@@ -737,11 +927,11 @@ mod tests {
         };
 
         assert_eq!(
-            absolute(at("2026-07-26 14:30"), day),
+            as_english_says_it(at("2026-07-26 14:30"), day),
             "July 26, 2026 at 14:30"
         );
         assert_eq!(
-            absolute(at("2026-07-26 00:05"), day),
+            as_english_says_it(at("2026-07-26 00:05"), day),
             "July 26, 2026 at 00:05"
         );
     }
@@ -768,9 +958,12 @@ mod tests {
         // digits. One function, so a date sounds the same in every module.
         let now = at("2026-07-26 12:00");
 
-        assert_eq!(spoken("2026-07-30", now, settings()), "July 30, 2026");
         assert_eq!(
-            spoken("2026-07-30 09:15", now, settings()),
+            an_english_reading("2026-07-30", now, settings()),
+            "July 30, 2026"
+        );
+        assert_eq!(
+            an_english_reading("2026-07-30 09:15", now, settings()),
             "July 30, 2026 at 9:15 AM"
         );
     }
@@ -794,8 +987,14 @@ mod tests {
         };
         let noon = at("2026-07-26 12:00");
 
-        assert_eq!(spoken("2026-07-26", noon, relative), "July 26, 2026");
-        assert_eq!(spoken("2026-07-25", noon, relative), "July 25, 2026");
+        assert_eq!(
+            an_english_reading("2026-07-26", noon, relative),
+            "July 26, 2026"
+        );
+        assert_eq!(
+            an_english_reading("2026-07-25", noon, relative),
+            "July 25, 2026"
+        );
     }
 
     #[test]
@@ -808,7 +1007,7 @@ mod tests {
         };
 
         assert_eq!(
-            spoken("2026-07-30", at("2026-07-26 12:00"), relative),
+            an_english_reading("2026-07-30", at("2026-07-26 12:00"), relative),
             "July 30, 2026"
         );
     }
@@ -841,7 +1040,7 @@ mod tests {
     #[test]
     fn test_month_first_order() {
         assert_eq!(
-            absolute(at("2026-07-26 14:30"), settings()),
+            as_english_says_it(at("2026-07-26 14:30"), settings()),
             "July 26, 2026 at 2:30 PM"
         );
     }
@@ -849,7 +1048,7 @@ mod tests {
     #[test]
     fn test_day_first_order() {
         assert_eq!(
-            absolute(
+            as_english_says_it(
                 at("2026-07-26 14:30"),
                 DateSettings {
                     order: DateOrder::DayFirst,
@@ -901,7 +1100,7 @@ mod tests {
     #[test]
     fn test_beyond_a_week_gives_the_date() {
         let now = at("2026-07-26 12:00");
-        let shown = format_for_list(
+        let shown = an_english_cell(
             "2026-07-18 12:00",
             now,
             DateSettings {
@@ -917,7 +1116,7 @@ mod tests {
         // A message dated ahead of now is a clock difference or a forgery.
         // "in 3 days" would present either as ordinary.
         let now = at("2026-07-26 12:00");
-        let shown = format_for_list(
+        let shown = an_english_cell(
             "2026-07-29 12:00",
             now,
             DateSettings {
@@ -931,7 +1130,7 @@ mod tests {
     #[test]
     fn test_absolute_style_never_goes_relative() {
         let now = at("2026-07-26 12:00");
-        let shown = format_for_list("2026-07-26 11:00", now, settings());
+        let shown = an_english_cell("2026-07-26 11:00", now, settings());
         assert_eq!(shown, "July 26, 2026 at 11:00 AM");
     }
 

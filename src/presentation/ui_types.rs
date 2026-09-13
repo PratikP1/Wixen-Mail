@@ -1049,11 +1049,12 @@ impl CalendarView {
 /// this machine's locale starts a week on, and asking it would be the answer
 /// most people expect. It would also put a second locale-shaped question in
 /// the calendar, and this module's dates already carry one:
-/// [`crate::presentation::date_display::ENGLISH_ONLY`] records that the month
-/// names and the relative wording are English whatever the machine is set to,
-/// and FEEDBACK-02 in phase 6 is the requirement that changes it. A week that
-/// starts where the locale says while the month beside it is written in
-/// English is half an answer that reads as a bug rather than as a limitation.
+/// [`crate::presentation::date_display::ENGLISH_ONLY`] records what is still
+/// English whatever the machine is set to. That used to include the month
+/// names and no longer does; what is left there is the relative wording, "2
+/// days ago", and the day names in a repeating appointment. A week that starts
+/// where the locale says while the wording beside it is English is half an
+/// answer that reads as a bug rather than as a limitation.
 ///
 /// So: one honest small answer now, and the locale question answered once, for
 /// dates and weeks together, when phase 6 opens it. What that costs somebody
@@ -1986,7 +1987,7 @@ mod tests {
         };
         assert_eq!(
             contact.detail_text(date_settings()),
-            "Ada Lovelace\nBirthday: December 10th"
+            "Ada Lovelace\nBirthday: December 10"
         );
     }
 

@@ -163,6 +163,47 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Month names in dates now come from your computer instead of always being
+  English.** If Windows is set to French, a date reads "26 juillet 2026". If it
+  is set to Russian, it reads "26 июля 2026". The order of the day and the
+  month, and whether the clock runs to twelve or twenty-four, are still yours
+  to choose in Settings, Reading: your computer supplies only the words, not
+  the shape. Choose month first on a French computer and you get "juillet 26,
+  2026", which no French computer writes on its own, because that is what you
+  asked for.
+
+  Wixen Mail asks Windows twice, in two different ways, and the difference
+  matters in more languages than it does in English. A month inside a date and
+  a month on its own are different words in Russian, Polish, Czech and
+  Lithuanian: a date says "2 января" and a list of months says "Январь". So a
+  date is asked for as a whole date, and the month list in the appointment form
+  is asked for as twelve names. Getting this the wrong way round is not
+  untidiness, it is writing the language incorrectly.
+
+  Where Windows has no names for a language, dates stay English and nothing is
+  said about it, which is what you want from a fallback.
+
+  **Nobody has heard any of this.** No date in any language has been read aloud
+  by a screen reader in that language. The words are the ones Windows gives, so
+  they are the right words; whether a French month inside an order you chose
+  sounds right to somebody French is a question only a French listener can
+  answer. Please say if it is wrong.
+
+- **A birthday is now read as "14 March" rather than "14th March".** The
+  ordinal is gone. Wixen Mail's other dates never had one, so the same day was
+  being said two ways in two places, and no language other than English wants
+  one at all: there is no way to ask Windows for a French date with an English
+  "14th" in it, and no reason to want one.
+
+- **The note in Settings, Reading about what stays in English has been
+  narrowed to what is actually still English.** It used to say dates were
+  written in English. It now says the month names in a date follow your
+  computer, and names the parts that do not: wording such as "2 days ago", the
+  day names in a repeating appointment, and the date in a message about a
+  signature. Those parts are still being worked on. The note stays until they
+  are all done, because a note that stops mentioning a limitation the moment
+  part of it is fixed leaves you believing the rest is finished.
+
 - **The two boxes offering "Speak events through the screen reader" and "Send
   events to a braille display" separately are now one box, "Announce events
   through your screen reader".** The old pair promised something Wixen Mail

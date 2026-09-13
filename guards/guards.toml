@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 553 records have arrived since and have not been through it.
+# 554 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2279,7 +2279,7 @@ tests_last_seen = [
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -2850,15 +2850,24 @@ tests_last_seen = [
 # noon: the reading calling it overdue. The birthday reading always refused
 # this; the rule is now kept for every stored day. The break lets a whole day
 # fall through to the relative measurement again, which is where this started.
+#
+# The call in the break text became `date_part_asking(which, ...)` on
+# 2026-09-13, when the month names started coming from the machine and every
+# reading here grew a locale to be asked about. Found by
+# `test_every_guard_record_still_names_one_place_in_the_tree` rather than by
+# anybody noticing: a rename leaves a record that reads as fine and is
+# unmeasurable, because `guards.py` refuses a break it cannot find and says so
+# as though the tool were broken. Re-measured rather than edited until it
+# applied.
 
 [[guard]]
 name = "a whole day is spoken as a date under the relative style"
 file = "src/presentation/date_display.rs"
 before = """    if let Moment::WholeDay(day) = moment {
-        return date_part(day, settings);
+        return date_part_asking(which, day, settings);
     }"""
 after = """    if let (Moment::WholeDay(day), DateStyle::Absolute) = (moment, settings.style) {
-        return date_part(day, settings);
+        return date_part_asking(which, day, settings);
     }"""
 red = [
     "application::due::tests::test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count",
@@ -2871,7 +2880,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 23 },
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
@@ -2902,7 +2911,7 @@ red = [
     "presentation::pim_rows::tests::test_garbage_in_a_start_time_earns_no_working_day_note",
 ]
 tests_last_seen = [
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]
 
@@ -20463,4 +20472,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/update_download.rs", tests = 40 },
+]
+
+# The person chose whether the day comes before the month and whether the month
+# is a word. The machine supplies the names inside that choice and decides
+# nothing else. The plausible wrong version of this module asks Windows for its
+# own idea of a date, which throws away both preferences on every machine whose
+# locale disagrees with them, and on an English machine it looks fine.
+#
+# The break makes every shape answer the same picture, which is that mistake in
+# its smallest form. Measured by hand on 2026-09-13 against this branch: four
+# tests red, all four new with this module, 7131 of 7136 still passing. The two
+# that did not redden are worth naming, because a record that expected them
+# would rot on the next change. `test_a_day_no_month_has_is_still_written_rather
+# _than_lost` is about the English fallback, which this break does not reach,
+# and `test_the_twelve_names_for_a_list_come_from_the_machine` does not go
+# through a picture at all, which is the whole reason there are two mechanisms.
+[[guard]]
+name = "the shape the person chose decides the picture"
+file = "src/common/how_the_machine_writes_dates.rs"
+before = """            Shape::DayMonthYear(_) => "d MMMM yyyy",
+            Shape::MonthDayYear(_) => "MMMM d, yyyy",
+            Shape::DayMonth => "d MMMM",
+            Shape::MonthDay => "MMMM d","""
+after = """            Shape::DayMonthYear(_) => "d MMMM yyyy",
+            Shape::MonthDayYear(_) => "d MMMM yyyy",
+            Shape::DayMonth => "d MMMM yyyy",
+            Shape::MonthDay => "d MMMM yyyy","""
+red = [
+    "common::how_the_machine_writes_dates::tests::test_a_birthday_on_the_twenty_ninth_of_february_is_written_rather_than_refused",
+    "common::how_the_machine_writes_dates::tests::test_a_french_machine_gets_a_french_month",
+    "common::how_the_machine_writes_dates::tests::test_a_month_inside_a_date_is_a_different_word_from_the_month_named_alone",
+    "common::how_the_machine_writes_dates::tests::test_an_english_machine_still_gets_the_english_this_program_always_wrote",
+]
+tests_last_seen = [
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 9 },
 ]

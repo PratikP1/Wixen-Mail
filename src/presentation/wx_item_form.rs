@@ -844,9 +844,18 @@ pub fn build_date_fields(
     // so building month first and showing day first would read one way and
     // tab the other.
     let day_first = order == DateOrder::DayFirst;
+    // The twelve names this computer uses, asked for as twelve names rather
+    // than read out of a date. There is no day beside them here, so the
+    // standalone form is the right one: a list of dates-with-the-day-removed
+    // is grammatically wrong in Russian and Polish.
     let a_month = || {
         Choice::builder(parent)
-            .with_choices(date_display::MONTHS.iter().map(|m| m.to_string()).collect())
+            .with_choices(
+                crate::common::how_the_machine_writes_dates::the_twelve_month_names(
+                    crate::common::how_the_machine_writes_dates::WhichLocale::ThisComputer,
+                )
+                .to_vec(),
+            )
             .with_selection(Some(anchor_month - 1))
             .build()
     };

@@ -943,8 +943,17 @@ mod tests {
 
         let reading = contact.read_full(aloud());
 
+        // The whole thing said about the birthday, not a `contains` of its
+        // start. Measured on 2026-09-13: putting the English ordinal back
+        // reddened six tests and not this one, because "Birthday: March 14th"
+        // contains "Birthday: March 14". An assertion on a prefix cannot see
+        // anything added to the end of it, and the end is the half of this
+        // reading most likely to change.
+        //
+        // Split on the separator `spoken` joins with, because this reading is
+        // one utterance rather than lines.
         assert!(
-            reading.contains("Birthday: March 14th"),
+            reading.split(". ").any(|said| said == "Birthday: March 14"),
             "a birthday nobody gave a year for is still said as words: {reading}"
         );
     }
