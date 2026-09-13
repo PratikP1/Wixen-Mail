@@ -64,7 +64,15 @@
 //! path a Windows machine takes when the call fails, so it is exercised by tests
 //! on both platforms rather than only on the one nobody builds.
 
-use crate::common::{Error, Result};
+use crate::common::Result;
+
+/// Only the half that talks to Windows ever builds one, so only that half
+/// imports it. Measured on 2026-09-13 by compiling the other half on this
+/// machine: an import the compiled arm does not use is a warning, and warnings
+/// are build failures here, so an unconditional import would have broken the
+/// Linux and macOS builds while every Windows check stayed green.
+#[cfg(target_os = "windows")]
+use crate::common::Error;
 
 /// The twelve month names in English, January first.
 ///
@@ -98,6 +106,11 @@ const IN_ENGLISH: [&str; 12] = [
 /// Nothing ever sees it. The two year-less shapes write no year, checked the
 /// same day across 1601, 1900, 2026, 2400 and 9999, every one of which wrote
 /// the same "March 14".
+///
+/// Windows only, along with the two methods that read it, because a year to
+/// stand a date on is a thing Windows asks for and the English fallback never
+/// needs one.
+#[cfg(target_os = "windows")]
 const A_YEAR_WITH_A_TWENTY_NINTH_OF_FEBRUARY: i32 = 2024;
 
 /// Which locale to ask.
@@ -144,6 +157,7 @@ impl Shape {
     /// the condition Microsoft states for the genitive month form. That is not
     /// a coincidence to be tidied away later: a picture here that lost its day
     /// would go on writing correct English and start writing wrong Russian.
+    #[cfg(target_os = "windows")]
     fn picture(self) -> &'static str {
         match self {
             Shape::DayMonthYear(_) => "d MMMM yyyy",
@@ -155,6 +169,7 @@ impl Shape {
 
     /// The year this shape is asked about, which for the two that write none
     /// is only there to make the date one Windows will look at.
+    #[cfg(target_os = "windows")]
     fn year(self) -> i32 {
         match self {
             Shape::DayMonthYear(year) | Shape::MonthDayYear(year) => year,
