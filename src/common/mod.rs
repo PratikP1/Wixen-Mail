@@ -3,6 +3,12 @@
 /// A loopback server tests point a provider client at.
 #[cfg(test)]
 pub mod answering;
+/// The sentences this program speaks, out of a translation catalogue.
+///
+/// Here for the reason `how_the_machine_writes_dates` is: `presentation`,
+/// `application` and `service` will all ask it for a sentence, and `common`
+/// imports from none of them.
+pub mod catalogue;
 pub mod error;
 /// How this computer writes a date, asked rather than assumed.
 ///

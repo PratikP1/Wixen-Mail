@@ -52,6 +52,7 @@
 //! of the two it means. See [`SignatureReport::limits`], which is said every
 //! time and not only when something is wrong.
 
+use crate::common::how_the_machine_writes_dates::WhichLocale;
 use crate::common::{Error, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
@@ -1153,6 +1154,14 @@ pub enum Finding {
 impl Finding {
     /// The sentence read out for this finding.
     pub fn spoken(&self) -> String {
+        self.spoken_asking(WhichLocale::ThisComputer)
+    }
+
+    /// The same, with the dates in it written the way a named locale writes
+    /// one, so a test can assert "28 August 2026" about this code rather than
+    /// about the machine it ran on. The pattern `date_display` set.
+    fn spoken_asking(&self, which: WhichLocale<'_>) -> String {
+        let day = |moment: DateTime<Utc>| day_asking(which, moment);
         match self {
             Self::ContentIsWhatWasSigned => {
                 "The message is exactly what was signed. Nothing has been changed since.".into()
@@ -1368,9 +1377,23 @@ impl Finding {
     }
 }
 
-/// A date the way somebody would say it.
-fn day(moment: DateTime<Utc>) -> String {
-    moment.format("%-d %B %Y").to_string()
+/// A date the way somebody would say it, with the month name this computer
+/// uses in the form a date puts a month in.
+///
+/// Day first, whatever order the person chose for their lists: this is a
+/// sentence about a certificate, not a column, and the stored order setting
+/// lives in `presentation`, which this layer does not reach. That is also why
+/// the wrapper is in `common` rather than beside the other date code.
+fn day_asking(which: WhichLocale<'_>, moment: DateTime<Utc>) -> String {
+    use crate::common::how_the_machine_writes_dates::{Shape, a_date};
+    use chrono::Datelike;
+
+    a_date(
+        which,
+        Shape::DayMonthYear(moment.year()),
+        moment.month(),
+        moment.day(),
+    )
 }
 
 /// What checking a signature came to.
@@ -5924,7 +5947,22 @@ mod tests {
             stamped.authority.subject
         );
         let said = report.detail().join(" ");
-        assert!(said.contains("28 August 2026"), "{said}");
+        // The date is asserted under a forced en-US below, through the
+        // finding itself, because through `detail()` it is written the way
+        // this computer writes one and "28 August 2026" would be a statement
+        // about the machine the test ran on.
+        let signed_at = report
+            .findings
+            .iter()
+            .find(|finding| matches!(finding, Finding::SignedAtByATimestamp { .. }))
+            .expect("the finding that says when it was signed");
+        assert!(
+            signed_at
+                .spoken_asking(WhichLocale::NamedInATest("en-US"))
+                .contains("28 August 2026"),
+            "{}",
+            signed_at.spoken()
+        );
         assert!(
             said.contains("calling itself Wixen Test Timestamps,"),
             "the authority was named the way a certificate spells it, not the way somebody says \
@@ -5933,6 +5971,29 @@ mod tests {
         assert!(
             said.contains("not from the sender"),
             "the sentence has to say why a timestamp is worth more than a claim: {said}"
+        );
+    }
+
+    /// The date in a signature sentence follows the computer, in the form a
+    /// date puts a month in. The words around it are still English until the
+    /// interface is translated, and the assertion says so by asserting the
+    /// whole clause.
+    ///
+    /// Windows only: where there is no Windows locale API the date is English
+    /// by design, and the test above holds that.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_french_computer_hears_the_signing_date_in_french() {
+        let finding = Finding::SignedAtByATimestamp {
+            moment: at("2026-08-28T19:02:04Z"),
+            authority: "Wixen Test Timestamps".to_string(),
+        };
+
+        let said = finding.spoken_asking(WhichLocale::NamedInATest("fr-FR"));
+
+        assert!(
+            said.starts_with("A timestamp says this was signed on 28 août 2026."),
+            "{said}"
         );
     }
 

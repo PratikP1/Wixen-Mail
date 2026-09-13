@@ -115,17 +115,25 @@ const A_YEAR_WITH_A_TWENTY_NINTH_OF_FEBRUARY: i32 = 2024;
 
 /// Which locale to ask.
 ///
-/// Two variants rather than a bare string, because the two have different
-/// rules about where the value may come from and a string cannot say which
-/// one it is.
+/// Three variants rather than a bare string, because each has its own rule
+/// about where the value may come from and a string cannot say which one it
+/// is. None of the three is ever built from a message, a file, or anything a
+/// person typed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhichLocale<'a> {
-    /// Whatever this computer is set to. The only one shipping code uses.
+    /// Whatever this computer is set to. What shipping code passes when it
+    /// wants a date.
     ThisComputer,
     /// A named locale, for a test that has to read the same on every machine
-    /// it runs on. A literal written in a test, never a value out of a message,
-    /// a file, or anything a person typed.
+    /// it runs on. A literal written in a test.
     NamedInATest(&'a str),
+    /// The language a translation catalogue declares itself to be written in.
+    /// A literal in this tree beside the catalogue it names, or in a test
+    /// beside a resource written there, and it reaches here through the
+    /// bundle that speaks it: a number inside a Russian sentence is written
+    /// the Russian way whatever this computer is set to, because the sentence
+    /// around it is Russian.
+    ACatalogueIsWrittenIn(&'a str),
 }
 
 /// The shapes this program writes a date in.
@@ -217,6 +225,76 @@ pub fn the_twelve_month_names(which: WhichLocale<'_>) -> [String; 12] {
     ask_for_the_twelve_month_names(which).unwrap_or_else(|_| IN_ENGLISH.map(str::to_string))
 }
 
+/// The name of one day of the week, as this computer says it in full.
+///
+/// A day name stands on its own in every sentence this program puts one in,
+/// "every week on Monday", so it is the standalone form, looked up the way
+/// the twelve month names for a list are, and there is no second mechanism
+/// to choose between.
+pub fn a_day_name(which: WhichLocale<'_>, day: chrono::Weekday) -> String {
+    ask_for_a_day_name(which, day)
+        .unwrap_or_else(|_| DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
+}
+
+/// Where a day sits, Monday first, which is how both chrono and Windows count.
+///
+/// That the two agree is a coincidence worth stating rather than relying on
+/// silently: `chrono::Weekday::num_days_from_monday` is 0 for Monday, and
+/// Windows numbers `LOCALE_SDAYNAME1` as Monday too, measured across four
+/// locales on 2026-09-13. Neither starts on Sunday, which is how a calendar
+/// on the wall is printed and how `chrono::Weekday::num_days_from_sunday`
+/// counts, and the wrong one of those two would answer a real day name for
+/// the wrong day and look fine in every test written on a Monday.
+fn days_from_monday(day: chrono::Weekday) -> usize {
+    day.num_days_from_monday() as usize
+}
+
+/// The seven day names in English, Monday first, for where there is no
+/// Windows locale API and for where the ask failed.
+const DAYS_IN_ENGLISH: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
+
+/// What this computer calls its own locale: "en-US", "fr-FR", "en-GB".
+///
+/// The one question here whose answer is a locale name rather than a word in
+/// one. It is what chooses a translation catalogue, and the caller decides
+/// what a read that fails means; this does not fall back to English on its
+/// own, because "this computer could not say" and "this computer said
+/// English" are different answers and the caller's fallback is the same
+/// either way.
+///
+/// `src/service/spellcheck/mod.rs` reads the same constant through the older
+/// `GetLocaleInfoW`, for the spelling dictionary. Two readers of one fact;
+/// measured agreeing on this machine on 2026-09-13, both answering `en-US`.
+/// Retiring one is a version 2 job, because that file is fingerprinted by
+/// thirty guard records and this layer cannot reach it.
+pub fn this_computers_locale_name() -> Result<String> {
+    ask_this_computers_locale_name()
+}
+
+/// One number, written the way that locale writes one: "1,234" in English,
+/// "1.234" in German, "1 234" with a no-break space in Russian.
+///
+/// For the four counts a date reading passes today, every one under sixty,
+/// this and the plain digits agree in every locale there is. It exists so
+/// that the day a catalogue message carries a larger number, or a fraction,
+/// the number inside a sentence is written by the same Windows that writes
+/// the date beside it, rather than becoming a second opinion.
+///
+/// `None` when Windows will not write it, or where there is no Windows, and
+/// the caller writes the digits itself. Never an empty string: a sentence
+/// with a hole where its number was is worse than one with plain digits.
+pub fn a_number(which: WhichLocale<'_>, value: f64) -> Option<String> {
+    ask_for_a_number(which, value)
+}
+
 /// What Windows writes into a caller's buffer, as it is laid out in memory.
 ///
 /// `day_of_week` is left at zero and Windows works the real one out: asked for
@@ -287,7 +365,9 @@ fn what_went_wrong() -> u32 {
 fn as_windows_wants_it(which: WhichLocale<'_>) -> Option<Vec<u16>> {
     match which {
         WhichLocale::ThisComputer => None,
-        WhichLocale::NamedInATest(name) => Some(wide(name)),
+        WhichLocale::NamedInATest(name) | WhichLocale::ACatalogueIsWrittenIn(name) => {
+            Some(wide(name))
+        }
     }
 }
 
@@ -418,6 +498,171 @@ fn ask_for_the_twelve_month_names(which: WhichLocale<'_>) -> Result<[String; 12]
     Ok(names)
 }
 
+/// The first of the seven day names said in full, Monday. `LOCALE_SDAYNAME1`.
+/// The other six follow it one at a time, Tuesday to Sunday, measured
+/// consecutive across four locales on 2026-09-13: en-US, fr-FR, ru-RU and
+/// pl-PL all answered their Monday first and their Sunday last.
+#[cfg(target_os = "windows")]
+const FIRST_DAY_NAMED_IN_FULL: u32 = 0x0000_002A;
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_day_name(which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
+    ask_windows_about(
+        which,
+        FIRST_DAY_NAMED_IN_FULL + days_from_monday(day) as u32,
+    )
+}
+
+/// The name of a locale, as Windows spells it: "en-US". `LOCALE_SNAME`.
+#[cfg(target_os = "windows")]
+const THE_NAME_OF_THE_LOCALE: u32 = 0x0000_005C;
+
+#[cfg(target_os = "windows")]
+fn ask_this_computers_locale_name() -> Result<String> {
+    ask_windows_about(WhichLocale::ThisComputer, THE_NAME_OF_THE_LOCALE)
+}
+
+/// What Windows wants to know about how to write a number, as it is laid
+/// out in memory. `NUMBERFMTW`.
+///
+/// Every field has to be set when the pointer is not null; there is no
+/// "use the locale's own" for one field and not another. A null pointer
+/// uses the locale's own for all six, and one of the six is the number of
+/// fraction digits, which for every locale here is two: asked for 5 that way
+/// Windows writes "5.00", measured on 2026-09-13, and a count is not a price.
+/// So the pointer is never null, five fields are read from the locale and
+/// the sixth is the value's own.
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct HowToWriteANumber {
+    fraction_digits: u32,
+    leading_zero: u32,
+    grouping: u32,
+    decimal_separator: *const u16,
+    thousands_separator: *const u16,
+    negative_order: u32,
+}
+
+/// The five things about writing a number that are read from the locale.
+/// `LOCALE_ILZERO`, `LOCALE_SGROUPING`, `LOCALE_SDECIMAL`, `LOCALE_STHOUSAND`
+/// and `LOCALE_INEGNUMBER`.
+#[cfg(target_os = "windows")]
+const WHETHER_A_FRACTION_STARTS_WITH_A_ZERO: u32 = 0x0000_0012;
+#[cfg(target_os = "windows")]
+const HOW_DIGITS_ARE_GROUPED: u32 = 0x0000_0010;
+#[cfg(target_os = "windows")]
+const THE_DECIMAL_SEPARATOR: u32 = 0x0000_000E;
+#[cfg(target_os = "windows")]
+const THE_THOUSANDS_SEPARATOR: u32 = 0x0000_000F;
+#[cfg(target_os = "windows")]
+const HOW_A_NEGATIVE_IS_WRITTEN: u32 = 0x0000_1010;
+
+/// The grouping string as the structure wants it, by Microsoft's own rule.
+///
+/// The locale answers "3;0", meaning groups of three repeating. The
+/// structure wants one number, and the rule for making it is the line
+/// somebody will "simplify": drop a trailing zero and run the sizes
+/// together, and where there is no trailing zero append one. So "3;0" is 3,
+/// "3;2;0" is 32, and "3" on its own, meaning one group of three and no
+/// more, is 30. A bare "0" is no grouping at all.
+#[cfg(target_os = "windows")]
+fn grouping_as_the_structure_wants_it(grouping: &str) -> Option<u32> {
+    let mut sizes: Vec<&str> = grouping.split(';').collect();
+    let repeats = sizes.last() == Some(&"0");
+    if repeats {
+        sizes.pop();
+    }
+    let mut digits = sizes.concat();
+    if digits.is_empty() {
+        return Some(0);
+    }
+    if !repeats {
+        digits.push('0');
+    }
+    digits.parse().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_number(which: WhichLocale<'_>, value: f64) -> Option<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetNumberFormatEx(
+            locale: *const u16,
+            flags: u32,
+            value: *const u16,
+            how: *const HowToWriteANumber,
+            into: *mut u16,
+            how_many: i32,
+        ) -> i32;
+    }
+
+    // Windows takes the value as text: digits, one optional leading minus,
+    // one optional period. `f64` writes exactly that for any finite value
+    // and something else for the rest, which Windows then refuses.
+    if !value.is_finite() {
+        return None;
+    }
+    let as_text = value.to_string();
+    let fraction_digits = as_text
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+
+    let decimal = wide(&ask_windows_about(which, THE_DECIMAL_SEPARATOR).ok()?);
+    let thousands = wide(&ask_windows_about(which, THE_THOUSANDS_SEPARATOR).ok()?);
+    let how = HowToWriteANumber {
+        fraction_digits: u32::try_from(fraction_digits).ok()?,
+        leading_zero: ask_windows_about(which, WHETHER_A_FRACTION_STARTS_WITH_A_ZERO)
+            .ok()?
+            .parse()
+            .ok()?,
+        grouping: grouping_as_the_structure_wants_it(
+            &ask_windows_about(which, HOW_DIGITS_ARE_GROUPED).ok()?,
+        )?,
+        // The two separators live in `decimal` and `thousands` above, which
+        // outlive both calls below. The structure holds pointers into them
+        // and nothing else keeps them alive.
+        decimal_separator: decimal.as_ptr(),
+        thousands_separator: thousands.as_ptr(),
+        negative_order: ask_windows_about(which, HOW_A_NEGATIVE_IS_WRITTEN)
+            .ok()?
+            .parse()
+            .ok()?,
+    };
+
+    let named = as_windows_wants_it(which);
+    let locale = named.as_ref().map_or(std::ptr::null(), Vec::as_ptr);
+    let value_as_windows_wants_it = wide(&as_text);
+
+    let how_many = unsafe {
+        GetNumberFormatEx(
+            locale,
+            0,
+            value_as_windows_wants_it.as_ptr(),
+            &how,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if how_many <= 0 {
+        return None;
+    }
+    let mut buffer = vec![0u16; how_many as usize];
+    let written = unsafe {
+        GetNumberFormatEx(
+            locale,
+            0,
+            value_as_windows_wants_it.as_ptr(),
+            &how,
+            buffer.as_mut_ptr(),
+            how_many,
+        )
+    };
+    if written <= 0 {
+        return None;
+    }
+    Some(without_the_zero(&buffer[..written as usize]))
+}
+
 /// Where there is no Windows locale API, English, and nothing said about it.
 ///
 /// This is the same path a Windows machine takes when the call fails, so it is
@@ -432,6 +677,28 @@ fn ask_for_a_date(_which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -
 #[cfg(not(target_os = "windows"))]
 fn ask_for_the_twelve_month_names(_which: WhichLocale<'_>) -> Result<[String; 12]> {
     Ok(IN_ENGLISH.map(str::to_string))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ask_for_a_day_name(_which: WhichLocale<'_>, day: chrono::Weekday) -> Result<String> {
+    Ok(DAYS_IN_ENGLISH[days_from_monday(day)].to_string())
+}
+
+/// A locale name is the one question with no English answer to give: "this
+/// computer could not say" is the truthful one, and the caller's fallback
+/// turns it into English the same way a failed read on Windows is.
+#[cfg(not(target_os = "windows"))]
+fn ask_this_computers_locale_name() -> Result<String> {
+    Err(crate::common::Error::Other(
+        "there is no Windows locale API to ask what this computer's locale is called".to_string(),
+    ))
+}
+
+/// The caller writes the digits itself, which is the same path a Windows
+/// machine takes when the call fails.
+#[cfg(not(target_os = "windows"))]
+fn ask_for_a_number(_which: WhichLocale<'_>, _value: f64) -> Option<String> {
+    None
 }
 
 #[cfg(test)]
@@ -589,5 +856,321 @@ mod tests {
 
         assert_eq!(a_date(english, Shape::DayMonth, 13, 14), "14");
         assert_eq!(a_date(english, Shape::DayMonth, 0, 14), "14");
+    }
+
+    /// Windows only, because where there is no locale API the honest answer
+    /// is that the question cannot be asked, and that arm says so.
+    ///
+    /// A weak assertion on purpose: whatever this computer is called, the
+    /// name has a language and a region in it. Asserting `en-US` would be a
+    /// statement about the machine the test ran on.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_this_computer_can_say_what_its_locale_is_called() {
+        let name = this_computers_locale_name().expect("a locale name from Windows");
+
+        let (language, region) = name.split_once('-').expect("a language and a region");
+        assert!(language.chars().all(|c| c.is_ascii_lowercase()), "{name}");
+        assert!(!region.is_empty(), "{name}");
+    }
+
+    /// The four counts a date reading passes today never reach a thousand,
+    /// so a value under sixty proves nothing: Windows and plain digits agree
+    /// on "5" in every locale there is. 1234 is where they part.
+    ///
+    /// Windows only, for the reason given above the French month test.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_number_is_written_the_way_that_locale_writes_one() {
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 1234.0).as_deref(),
+            Some("1,234")
+        );
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("de-DE"), 1234.0).as_deref(),
+            Some("1.234")
+        );
+        // Russian groups with U+00A0, a no-break space, measured on this
+        // machine on 2026-09-13. A test asserting an ordinary space would be
+        // wrong in a way nobody can see on a screen.
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("ru-RU"), 1234.0).as_deref(),
+            Some("1\u{a0}234")
+        );
+        // Nothing appended: a null format pointer makes Windows write "5.00",
+        // measured, and a count is not a price.
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 5.0).as_deref(),
+            Some("5")
+        );
+    }
+
+    /// The seven, under a forced `en-US`, which must hold on every machine.
+    #[test]
+    fn test_an_english_machine_gets_the_english_day_names_this_program_always_wrote() {
+        use chrono::Weekday::*;
+        let english = WhichLocale::NamedInATest("en-US");
+
+        assert_eq!(
+            [Mon, Tue, Wed, Thu, Fri, Sat, Sun].map(|day| a_day_name(english, day)),
+            [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+            .map(str::to_string)
+        );
+    }
+
+    /// Both ends of the week, so a lookup counting from Sunday, which is how
+    /// a calendar on the wall is printed, cannot pass by luck on a Monday.
+    ///
+    /// Windows only, for the reason given above the French month test.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_french_machine_gets_french_day_names_counted_from_monday() {
+        let french = WhichLocale::NamedInATest("fr-FR");
+
+        assert_eq!(a_day_name(french, chrono::Weekday::Mon), "lundi");
+        assert_eq!(a_day_name(french, chrono::Weekday::Sun), "dimanche");
+        assert_eq!(
+            a_day_name(WhichLocale::NamedInATest("ru-RU"), chrono::Weekday::Wed),
+            "среда"
+        );
+    }
+
+    /// The English month and day names, and the chrono directives that
+    /// write one, found inside string literals in one file's shipped half,
+    /// each with the literal it was found in.
+    ///
+    /// String literals only, because prose in a comment saying "counted from
+    /// Monday" is not a sentence anybody hears, and a comment line is skipped
+    /// whole because prose quotes things. The shipped half only, through
+    /// `what_ships`, because a test fixture may say "Monday" all it likes.
+    /// Whole words, so that "Mayor" is not May and "Sunday" is not found
+    /// inside "Sundays" twice.
+    fn english_date_words_in(source: &str) -> Vec<(usize, String, String)> {
+        const NAMES: [&str; 19] = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ];
+        // The four chrono directives that write a month or day name, which
+        // is how the signature sentence wrote English before task 4.
+        const DIRECTIVES: [&str; 4] = ["%A", "%a", "%B", "%b"];
+
+        let mut found = Vec::new();
+        for (at, line) in crate::common::what_ships::what_ships(source)
+            .lines()
+            .enumerate()
+        {
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            // The odd-numbered pieces between quotes are the literals. An
+            // escaped quote inside one splits it wrongly, which can hide a
+            // word but cannot invent one, and nothing this reads escapes a
+            // quote beside a month name.
+            for literal in line.split('"').skip(1).step_by(2) {
+                for name in NAMES {
+                    let whole_word = literal
+                        .split(|c: char| !c.is_ascii_alphabetic())
+                        .any(|word| word == name);
+                    if whole_word {
+                        found.push((at + 1, name.to_string(), literal.to_string()));
+                    }
+                }
+                for directive in DIRECTIVES {
+                    if literal.contains(directive) {
+                        found.push((at + 1, directive.to_string(), literal.to_string()));
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// The literals that may name a month or a day in English, each with its
+    /// reason. Whole literals rather than whole files, so that a new English
+    /// name anywhere else in a listed file is still read.
+    ///
+    /// Three kinds of reason, and they are different. The first two are
+    /// formats other programs read, where the English word is the format and
+    /// translating it would corrupt a file or a request. The rest are
+    /// interface text: a label on a choice with an example date or a pair of
+    /// day names inside an English sentence. Those are still English because
+    /// the sentence around them is, and putting a French day inside an
+    /// English label is not better than an English one. They are among the
+    /// five thousand sentences version 2 translates, and they are here so the
+    /// reading names them rather than being narrowed until it sees nothing.
+    const A_LITERAL_ALLOWED_TO_BE_ENGLISH: [(&str, &str); 6] = [
+        (
+            "%a %b %e %T %Y",
+            "the mbox From_ separator in message_files.rs, an on-disk interchange format that \
+             other mail programs read",
+        ),
+        (
+            "%d-%b-%Y %H:%M:%S %z",
+            "IMAP's INTERNALDATE in protocols/imap.rs, which the server parses and which RFC \
+             3501 spells in English",
+        ),
+        (
+            "Every weekday, Monday to Friday",
+            "the label of a Repeat choice, in repeating.rs and item_fields.rs: interface text \
+             for version 2, and matched against what the item form offers",
+        ),
+        (
+            "Month first, July 26",
+            "a settings choice on the Reading tab with an example date in its label, interface \
+             text for version 2",
+        ),
+        ("Day first, 26 July", "the same choice's other answer"),
+        (
+            "A word, July 26, 2026",
+            "the date-wording choice on the Reading tab, the same shape",
+        ),
+    ];
+
+    /// Every `.rs` file under `src/`, apart from the one named with a reason.
+    fn every_shipping_file_that_may_not_name_a_month_or_day_in_english() -> Vec<std::path::PathBuf>
+    {
+        // One file is excluded whole, and it is this one: the English
+        // fallback lives here, the twelve month names and the seven day names
+        // for where there is no Windows locale API and for where the ask
+        // failed, and they are the reason this file exists.
+        //
+        // Not excluded, and worth saying why. `src/application/repeating.rs`
+        // holds the RRULE weekday codes, `MO` to `SU`, which are protocol and
+        // must stay as they are; they are two letters and never match a name
+        // this reads for. `src/presentation/date_display.rs` writes every
+        // date through this module now and holds no English name in a string,
+        // so it is read like any other file. And `locales/` is not walked at
+        // all: it is prose in a catalogue, not code, and the first message
+        // there to name a month is a translator's decision, not this reading's.
+        const THE_FALLBACK_ITSELF: &str = "src/common/how_the_machine_writes_dates.rs";
+        let mut files = Vec::new();
+        collect_rust_files(std::path::Path::new("src"), &mut files);
+        files.retain(|path| path.to_string_lossy().replace('\\', "/") != THE_FALLBACK_ITSELF);
+        assert!(
+            files.len() > 100,
+            "only {} files found, so the walk is broken",
+            files.len()
+        );
+        files
+    }
+
+    fn collect_rust_files(dir: &std::path::Path, into: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_rust_files(&path, into);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                into.push(path);
+            }
+        }
+    }
+
+    /// The property the whole plan is for: nothing this program reads aloud
+    /// names a month or a day in English unless this computer does.
+    ///
+    /// Homed here rather than in `tests/house_style.rs`, which is fingerprinted
+    /// by twenty-one guard records where this module is fingerprinted by one.
+    #[test]
+    fn test_no_shipping_file_names_a_month_or_a_day_in_english() {
+        let mut offenders = Vec::new();
+        let mut allowed_and_seen = std::collections::HashSet::new();
+        for path in every_shipping_file_that_may_not_name_a_month_or_day_in_english() {
+            let source = std::fs::read_to_string(&path).expect("a source file that reads");
+            for (line, word, literal) in english_date_words_in(&source) {
+                if A_LITERAL_ALLOWED_TO_BE_ENGLISH
+                    .iter()
+                    .any(|(allowed, _)| *allowed == literal)
+                {
+                    allowed_and_seen.insert(literal);
+                    continue;
+                }
+                offenders.push(format!("{}:{line}: {word} in {literal:?}", path.display()));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "an English month or day name is written into a sentence somebody hears, rather \
+             than asked of this computer:\n{}",
+            offenders.join("\n")
+        );
+        // The other direction: an allowance for a literal that no longer
+        // exists is an allowance nobody is reading, and it would let the
+        // literal come back reworded and unread.
+        for (allowed, _) in A_LITERAL_ALLOWED_TO_BE_ENGLISH {
+            assert!(
+                allowed_and_seen.contains(allowed),
+                "{allowed:?} is allowed to be English and is no longer in the tree; take it \
+                 off the list"
+            );
+        }
+    }
+
+    /// The reading above walks obedient files and passes whether it works or
+    /// has been narrowed to nothing. So: a planted name in a string is
+    /// reported, a planted name in a comment is not, a planted name inside a
+    /// test module is not, and a directive is.
+    #[test]
+    fn test_the_reading_sees_a_planted_english_name_and_ignores_one_in_a_test_block() {
+        let planted = "fn said() -> &'static str {\n    // Counted from Monday, which is prose.\n    /// Says \"Tuesday\" in a doc comment, which is prose too.\n    \"every week on Monday\"\n}\nfn stamp() -> String {\n    now.format(\"%-d %B %Y\").to_string()\n}\n#[cfg(test)]\nmod tests {\n    const FIXTURE: &str = \"Tuesday\";\n}\n";
+
+        assert_eq!(
+            english_date_words_in(planted),
+            vec![
+                (4, "Monday".to_string(), "every week on Monday".to_string()),
+                (7, "%B".to_string(), "%-d %B %Y".to_string()),
+            ]
+        );
+    }
+
+    /// Microsoft's rule for the grouping field, held here because it is the
+    /// line somebody will tidy into `parse()` and get 3 for "3" instead of 30.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_the_grouping_string_becomes_the_number_the_structure_wants() {
+        assert_eq!(grouping_as_the_structure_wants_it("3;0"), Some(3));
+        assert_eq!(grouping_as_the_structure_wants_it("3;2;0"), Some(32));
+        assert_eq!(grouping_as_the_structure_wants_it("3"), Some(30));
+        assert_eq!(grouping_as_the_structure_wants_it("0"), Some(0));
+        assert_eq!(grouping_as_the_structure_wants_it("three"), None);
+    }
+
+    /// A value Windows will not write comes back as nothing, so the caller
+    /// writes the digits itself, rather than as an empty string with a hole
+    /// in the sentence where the number was.
+    #[test]
+    fn test_a_number_windows_cannot_write_is_left_to_the_caller() {
+        assert_eq!(a_number(WhichLocale::NamedInATest("en-US"), f64::NAN), None);
+        assert_eq!(
+            a_number(WhichLocale::NamedInATest("not a locale"), 1234.0),
+            None
+        );
     }
 }

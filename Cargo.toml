@@ -317,6 +317,42 @@ ring = "0.17"
 # `docs/development/pgp-implementation-choice.md`.
 pgp = "0.20"
 
+# Translation catalogues, Project Fluent. The first piece of version 2, which
+# translates the interface and the screen reader's speech; what arrives with it
+# is four messages, the relative wording "2 days ago" in `locales/en-US/`, read
+# through `common::catalogue`.
+#
+# Chosen on 2026-09-13 over ICU4X, which has no message system, over
+# `intl_pluralrules` alone, which is one primitive where a message system is
+# needed, and over a hand-written CLDR table, which is a private copy of an open
+# standard. The whole comparison and the audit of all eight crates, read from
+# their published sources rather than from pages about them, is in
+# `.planning/phases/06-how-the-application-speaks/06-03-PLAN.md` under
+# `package_legitimacy_audit`. No build scripts, no proc macros, no runtime data,
+# no network; `Apache-2.0 OR MIT` throughout, so the MIT arm keeps this MIT.
+#
+# Why Fluent for this project in particular: a message carries attributes, so
+# a control's visible label, its accessible name and its keyboard mnemonic are
+# one translatable unit, and an `&` mnemonic has to be a letter in the
+# translated label. Nothing else is designed for an interface that is heard.
+#
+# Four lines, not two. `fluent-langneg` and `intl-memoizer` are already inside
+# `fluent-bundle`'s own closure, so naming them adds no package; they are named
+# because this crate calls a function of the first and implements a trait of
+# the second, and a dependency this code calls should say so, which is the same
+# reason `flate2` and `x509-parser` are named above. `intl-memoizer` is direct
+# for a reason worth writing down: `set_formatter` takes a plain `fn` and the
+# memoizer's locale is private, so the only way a number formatter learns which
+# language it is writing is a `Memoizable` of ours, and the trait is not
+# re-exported.
+#
+# One cost carried openly: `intl_pluralrules`, one layer down, carries CLDR 37
+# and has not been touched upstream since 2022. It is what Firefox ships.
+fluent-bundle = "0.16"
+fluent-langneg = "0.13"
+intl-memoizer = "0.5"
+unic-langid = "0.9"
+
 # Only for the platform spell checker, which is COM. Everything else this
 # project needs from Windows is a flat call behind a small `#[link]` block, and
 # stays that way. Windows-only so a future port does not pay for it.

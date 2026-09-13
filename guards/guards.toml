@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 554 records have arrived since and have not been through it.
+# 563 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -2279,7 +2279,7 @@ tests_last_seen = [
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
-    { file = "src/presentation/date_display.rs", tests = 41 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -2880,7 +2880,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 23 },
-    { file = "src/presentation/date_display.rs", tests = 41 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
@@ -2911,7 +2911,7 @@ red = [
     "presentation::pim_rows::tests::test_garbage_in_a_start_time_earns_no_working_day_note",
 ]
 tests_last_seen = [
-    { file = "src/presentation/date_display.rs", tests = 41 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]
 
@@ -3491,7 +3491,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 37 },
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 [[guard]]
@@ -3503,7 +3503,7 @@ red = [
     "service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 # ── The compiler named in two places ────────────────────────────────────────
@@ -8538,7 +8538,7 @@ red = [
     "application::occurrences::tests::test_wkst_other_than_monday_is_accepted_wherever_it_cannot_change_the_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # A monthly or yearly rule fast-forwards past a first date far before the
@@ -8562,7 +8562,7 @@ red = [
     "application::occurrences::tests::test_months_apart_counts_signed_month_boundaries_crossed",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # blocks exists only so a test can watch how much work the stepping loop in
@@ -8583,7 +8583,7 @@ red = [
     "application::occurrences::tests::test_a_hand_counted_weekly_walk_matches_the_blocks_it_reports",
 ]
 tests_last_seen = [
-    { file = "src/application/occurrences.rs", tests = 62 },
+    { file = "src/application/occurrences.rs", tests = 63 },
 ]
 
 # ── long_text.rs's markup walk, tag by tag ──────────────────────────────────
@@ -11682,7 +11682,7 @@ red = [
     "service::signed_mail::the_words_that_were_signed::test_words_beside_a_signature_are_checked_against_those_words",
 ]
 tests_last_seen = [
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 [[guard]]
@@ -16603,7 +16603,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
-    { file = "src/service/signed_mail.rs", tests = 112 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
 # ── The sentence reached the bar and the body still said "no text" ──────────
@@ -20488,6 +20488,17 @@ tests_last_seen = [
 # _than_lost` is about the English fallback, which this break does not reach,
 # and `test_the_twelve_names_for_a_list_come_from_the_machine` does not go
 # through a picture at all, which is the whole reason there are two mechanisms.
+#
+# **Stale within its own plan, and the count check could not see it.** The
+# four above were measured when this module had no callers. Task 2 gave it
+# three, in `date_display`, and every reading downstream of those, in seven
+# more files, asserts a date this break rewrites. Re-measured on 2026-09-13
+# during task 3: 48 red, the four plus 44 in eight files. None of those eight
+# gained a test between the two measurements, so the check that counts tests
+# per named file had nothing to say; this is the case `CLAUDE.md` names as the
+# first of three the count check cannot see, met here two tasks after the
+# record was written. Found only because task 3 changed this file's own test
+# count and the remedy it printed ran this record.
 [[guard]]
 name = "the shape the person chose decides the picture"
 file = "src/common/how_the_machine_writes_dates.rs"
@@ -20500,11 +20511,290 @@ after = """            Shape::DayMonthYear(_) => "d MMMM yyyy",
             Shape::DayMonth => "d MMMM yyyy",
             Shape::MonthDay => "d MMMM yyyy","""
 red = [
+    "application::due::tests::test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count",
+    "application::due::tests::test_an_alert_says_what_it_is_and_when_it_was_due",
+    "application::sending_later::tests::test_a_scheduled_message_says_when_it_will_go",
+    "application::sending_later::tests::test_every_row_in_the_outbox_says_what_it_is_doing",
     "common::how_the_machine_writes_dates::tests::test_a_birthday_on_the_twenty_ninth_of_february_is_written_rather_than_refused",
     "common::how_the_machine_writes_dates::tests::test_a_french_machine_gets_a_french_month",
     "common::how_the_machine_writes_dates::tests::test_a_month_inside_a_date_is_a_different_word_from_the_month_named_alone",
     "common::how_the_machine_writes_dates::tests::test_an_english_machine_still_gets_the_english_this_program_always_wrote",
+    "presentation::date_display::tests::test_a_birthday_on_the_twenty_ninth_of_february_is_still_read_as_a_day",
+    "presentation::date_display::tests::test_a_birthday_with_a_year_is_still_read_as_a_whole_date",
+    "presentation::date_display::tests::test_a_birthday_with_no_year_follows_the_order_the_locale_uses",
+    "presentation::date_display::tests::test_a_birthday_with_no_year_is_read_as_a_day_and_a_month",
+    "presentation::date_display::tests::test_a_date_with_no_year_reaching_the_ordinary_reading_is_read_as_words",
+    "presentation::date_display::tests::test_a_french_machine_gets_a_french_month_in_the_order_the_person_chose",
+    "presentation::date_display::tests::test_a_future_timestamp_is_never_dressed_up_as_relative",
+    "presentation::date_display::tests::test_a_whole_day_in_the_future_stays_a_date_under_the_relative_style",
+    "presentation::date_display::tests::test_a_whole_day_under_the_relative_style_is_a_date_and_never_an_hour_count",
+    "presentation::date_display::tests::test_absolute_style_never_goes_relative",
+    "presentation::date_display::tests::test_beyond_a_week_gives_the_date",
+    "presentation::date_display::tests::test_month_first_order",
+    "presentation::date_display::tests::test_one_stored_date_is_spoken_the_same_way_wherever_it_appears",
+    "presentation::date_display::tests::test_the_clock_can_run_to_twenty_four",
+    "presentation::date_display::tests::test_the_four_stored_combinations_still_read_as_they_always_did",
+    "presentation::managers::tests::test_moving_an_events_time_leaves_a_moment_that_is_read_out_as_a_date",
+    "presentation::pim_rows::tests::test_a_missing_due_date_is_blank_not_the_word_none",
+    "presentation::pim_rows::tests::test_a_note_row_says_when_it_was_last_changed",
+    "presentation::pim_rows::tests::test_a_reminder_with_a_due_date_says_the_date_rather_than_nothing",
+    "presentation::pim_rows::tests::test_an_all_day_event_says_so_instead_of_a_time",
+    "presentation::read_aloud::tests::test_a_birthday_this_week_is_still_a_date_and_not_how_long_ago_it_was",
+    "presentation::read_aloud::tests::test_a_birthday_with_no_year_is_read_aloud_as_a_day_and_a_month",
+    "presentation::read_aloud::tests::test_a_due_date_in_a_reading_is_spoken_in_words_not_as_stored_digits",
+    "presentation::read_aloud::tests::test_a_full_reminder_reading_carries_the_description_the_column_hides",
+    "presentation::read_aloud::tests::test_a_full_task_reading_carries_the_description_the_column_hides",
+    "presentation::read_aloud::tests::test_a_note_updated_on_a_bare_date_is_a_date_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_a_reminder_due_on_a_day_is_a_date_not_an_hour_count_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_a_reminder_reads_its_own_due_field_in_the_short_form",
+    "presentation::read_aloud::tests::test_a_task_due_today_is_a_date_not_an_hour_count_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_a_timed_event_says_when_it_starts_in_the_short_reading",
+    "presentation::read_aloud::tests::test_a_whole_day_keeps_its_shape_and_an_unreadable_moment_is_still_said",
+    "presentation::read_aloud::tests::test_an_all_day_event_says_so_in_the_short_reading_too",
+    "presentation::read_aloud::tests::test_an_event_missing_one_of_its_times_does_not_trail_off_on_the_word_to",
+    "presentation::read_aloud::tests::test_an_event_on_a_bare_date_is_a_date_not_an_hour_count_under_the_shipped_default",
+    "presentation::read_aloud::tests::test_every_shape_a_stored_moment_takes_is_read_as_a_date",
+    "presentation::reader_text::tests::test_a_composed_message_carries_its_date_in_the_wording_the_reader_asked_for",
+    "presentation::ui_types::tests::test_a_contact_detail_reads_a_birthday_that_has_a_year_as_a_whole_date",
+    "presentation::ui_types::tests::test_a_contact_detail_reads_a_birthday_with_no_year_as_words",
+    "presentation::ui_types::tests::test_contact_detail_text_includes_every_populated_field",
+    "presentation::ui_types::tests::test_the_heading_for_a_week_names_the_week_even_when_nothing_is_in_it",
 ]
 tests_last_seen = [
-    { file = "src/common/how_the_machine_writes_dates.rs", tests = 9 },
+    { file = "src/application/due.rs", tests = 23 },
+    { file = "src/application/sending_later.rs", tests = 47 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "src/presentation/pim_rows.rs", tests = 25 },
+    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/ui_types.rs", tests = 78 },
+]
+
+# ── The catalogue, 06-03 task 3 ──────────────────────────────────────────────
+#
+# Five records for the one function that builds every bundle and the two that
+# format a sentence, one per setting the module comment lists and one for the
+# completeness check. Each break is the setting put back to the library's
+# default, or the plausible tidying of a line, which is the shape the module
+# comment says somebody will do. Every red list below was measured on
+# 2026-09-13 through `scripts/guards.sh --remeasure` against this branch, and
+# the prediction each was measured against is in 06-03-SUMMARY.md.
+
+# Fluent's default wraps every placeable in U+2068 and U+2069. Turned back on,
+# every exact-string assertion about a sentence with a number in it goes red,
+# in the catalogue, in date_display, and in one read_aloud test that asserts
+# "Updated: 3 hours ago" through the shipped reading.
+[[guard]]
+name = "a sentence out of the catalogue carries no isolation mark"
+file = "src/common/catalogue.rs"
+before = """    bundle.set_use_isolating(false);"""
+after = """    bundle.set_use_isolating(true);"""
+red = [
+    "common::catalogue::tests::test_a_count_of_one_takes_the_singular_form",
+    "common::catalogue::tests::test_a_locale_nobody_has_rules_for_takes_english_plurals_silently",
+    "common::catalogue::tests::test_a_machine_with_no_catalogue_in_its_language_gets_english",
+    "common::catalogue::tests::test_a_number_inside_a_sentence_is_written_the_way_the_language_writes_it",
+    "common::catalogue::tests::test_a_polish_resource_produces_the_polish_forms",
+    "common::catalogue::tests::test_a_russian_resource_produces_the_four_russian_forms",
+    "common::catalogue::tests::test_no_sentence_out_of_the_catalogue_carries_an_isolation_mark",
+    "common::catalogue::tests::test_the_four_english_sentences_are_the_ones_this_program_always_said",
+    "presentation::date_display::tests::test_a_computer_whose_language_has_no_catalogue_hears_english",
+    "presentation::date_display::tests::test_relative_wording_within_the_week",
+    "presentation::read_aloud::tests::test_a_note_updated_hours_ago_still_reads_relatively_under_the_shipped_default",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/presentation/read_aloud.rs", tests = 49 },
+]
+
+# A count passed as a string matches no plural category and falls through to
+# `*[other]` with no error, so 1 is "1 days ago". Only an assertion that sees
+# a singular, or a form other than `other`, can tell; a count of 2 or 3 in
+# English reads the same either way, and the formatter never sees a string.
+[[guard]]
+name = "a count reaches the catalogue as a number and not as a string"
+file = "src/common/catalogue.rs"
+before = """        args.set(counts, count);"""
+after = """        args.set(counts, count.to_string());"""
+red = [
+    "common::catalogue::tests::test_a_count_of_one_takes_the_singular_form",
+    "common::catalogue::tests::test_a_locale_nobody_has_rules_for_takes_english_plurals_silently",
+    "common::catalogue::tests::test_a_number_inside_a_sentence_is_written_the_way_the_language_writes_it",
+    "common::catalogue::tests::test_a_polish_resource_produces_the_polish_forms",
+    "common::catalogue::tests::test_a_russian_resource_produces_the_four_russian_forms",
+    "common::catalogue::tests::test_the_four_english_sentences_are_the_ones_this_program_always_said",
+    "presentation::date_display::tests::test_a_computer_whose_language_has_no_catalogue_hears_english",
+    "presentation::date_display::tests::test_relative_wording_within_the_week",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/presentation/date_display.rs", tests = 42 },
+]
+
+# Without the formatter Fluent writes every number as `f64` writes it, "1234"
+# in every language. Under sixty that agrees with Windows everywhere, which is
+# why one test reddens and it is the one written with 1234 under de-DE.
+[[guard]]
+name = "a number inside a sentence is written by Windows"
+file = "src/common/catalogue.rs"
+before = """    bundle.set_formatter(Some(as_this_locale_writes_a_number));"""
+after = """    bundle.set_formatter(None);"""
+red = [
+    "common::catalogue::tests::test_a_number_inside_a_sentence_is_written_the_way_the_language_writes_it",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+]
+
+# The error list `format_pattern` fills is the only place a missing argument
+# is visible: the sentence itself comes back as "{$minutes} minutes ago" with
+# no other sign. Ignore the list and that sentence is spoken.
+[[guard]]
+name = "a sentence the catalogue could not say is an error and not a sentence"
+file = "src/common/catalogue.rs"
+before = """        if !errors.is_empty() {
+            return Err(Error::Other(format!(
+                "{} could not be said: {errors:?}",
+                message.id()
+            )));
+        }
+        Ok(text.into_owned())"""
+after = """        Ok(text.into_owned())"""
+red = [
+    "common::catalogue::tests::test_a_missing_argument_is_an_error_and_not_a_sentence_with_a_brace_in_it",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+]
+
+# `LanguageIdentifier::default()` is `und`, and today negotiation turns `und`
+# into English because English is the default catalogue, so through the
+# public reading the two look alike. They stop looking alike with a second
+# catalogue, which is why the fallback is asked for by name and held by two
+# tests on the function that answers it rather than on what a machine hears.
+[[guard]]
+name = "a locale name that cannot be read asks for English by name"
+file = "src/common/catalogue.rs"
+before = """        .unwrap_or_else(english)"""
+after = """        .unwrap_or_default()"""
+red = [
+    "common::catalogue::tests::test_a_locale_name_that_is_not_one_asks_for_english",
+    "common::catalogue::tests::test_a_locale_this_computer_could_not_name_asks_for_english",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+]
+
+# A message the code can ask for that the catalogue does not hold. The break
+# declares a fifth rather than deleting one of the four from the `.ftl`,
+# because a record breaks a source file whose tests this file counts, and the
+# catalogue is not one. The check that walks `ALL` reddens, and so do the two
+# tests that walk `ALL` to format every message, because the fifth cannot be
+# said, and the companion that plants a short resource and expects exactly
+# three missing now finds four.
+[[guard]]
+name = "every message the code can ask for is in the English catalogue"
+file = "src/common/catalogue.rs"
+before = """    /// Within the week.
+    DaysAgo = "dates-days-ago" counting "days",
+}"""
+after = """    /// Within the week.
+    DaysAgo = "dates-days-ago" counting "days",
+    /// Declared and never written.
+    Never = "dates-never",
+}"""
+red = [
+    "common::catalogue::tests::test_every_message_formats_with_its_argument_and_no_error",
+    "common::catalogue::tests::test_no_sentence_out_of_the_catalogue_carries_an_isolation_mark",
+    "common::catalogue::tests::test_the_completeness_reading_sees_a_message_missing_and_a_message_nobody_asks_for",
+    "common::catalogue::tests::test_the_english_catalogue_is_complete_in_both_directions",
+]
+tests_last_seen = [
+    { file = "src/common/catalogue.rs", tests = 14 },
+]
+
+# ── Day names and the signing date, 06-03 task 4 ─────────────────────────────
+#
+# Three records. Two put an English site back the way it was, which is the
+# break the source-reading guard exists for, so each reddens that guard as
+# well as the forced-locale test beside the site. The third is the off-by-one
+# nobody would see on a Monday.
+
+# The day names in a repeat-series sentence, answered from an English match
+# again. The guard that reads every shipped string literal for an English day
+# name sees the seven come back, and the French test hears "Tuesday".
+[[guard]]
+name = "a repeat-series sentence names its days the way this computer does"
+file = "src/application/occurrences.rs"
+before = """fn weekday_called(which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
+    crate::common::how_the_machine_writes_dates::a_day_name(which, *day)
+}"""
+after = """fn weekday_called(_which: WhichLocale<'_>, day: &chrono::Weekday) -> String {
+    match day {
+        chrono::Weekday::Mon => "Monday",
+        chrono::Weekday::Tue => "Tuesday",
+        chrono::Weekday::Wed => "Wednesday",
+        chrono::Weekday::Thu => "Thursday",
+        chrono::Weekday::Fri => "Friday",
+        chrono::Weekday::Sat => "Saturday",
+        chrono::Weekday::Sun => "Sunday",
+    }
+    .to_string()
+}"""
+red = [
+    "application::occurrences::tests::test_a_french_computer_hears_french_day_names_inside_the_english_frame",
+    "common::how_the_machine_writes_dates::tests::test_no_shipping_file_names_a_month_or_a_day_in_english",
+]
+tests_last_seen = [
+    { file = "src/application/occurrences.rs", tests = 63 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+]
+
+# The signing date written with chrono's %B again, which is English on every
+# machine. The same two shapes of witness: the guard sees the directive, and
+# the French test hears "August".
+[[guard]]
+name = "a signature sentence writes its date the way this computer does"
+file = "src/service/signed_mail.rs"
+before = """    a_date(
+        which,
+        Shape::DayMonthYear(moment.year()),
+        moment.month(),
+        moment.day(),
+    )
+}"""
+after = """    let _ = (which, Shape::DayMonthYear(moment.year()), a_date);
+    moment.format("%-d %B %Y").to_string()
+}"""
+red = [
+    "common::how_the_machine_writes_dates::tests::test_no_shipping_file_names_a_month_or_a_day_in_english",
+    "service::signed_mail::tests::test_a_french_computer_hears_the_signing_date_in_french",
+]
+tests_last_seen = [
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+    { file = "src/service/signed_mail.rs", tests = 113 },
+]
+
+# Counting the week from Sunday, which is how a calendar on the wall is
+# printed and how chrono's other counter counts. Every day name is then a
+# real name for the wrong day, and a test written on a Monday alone would
+# not see it; the ones that assert both ends of the week do.
+[[guard]]
+name = "day names are counted from Monday, which is where Windows starts them"
+file = "src/common/how_the_machine_writes_dates.rs"
+before = """    day.num_days_from_monday() as usize"""
+after = """    day.num_days_from_sunday() as usize"""
+red = [
+    "application::occurrences::tests::test_a_french_computer_hears_french_day_names_inside_the_english_frame",
+    "application::occurrences::tests::test_a_series_says_how_often_it_repeats_and_when_it_stops",
+    "application::occurrences::tests::test_every_weekday_a_rule_can_name_is_read_as_the_day_it_names",
+    "common::how_the_machine_writes_dates::tests::test_a_french_machine_gets_french_day_names_counted_from_monday",
+    "common::how_the_machine_writes_dates::tests::test_an_english_machine_gets_the_english_day_names_this_program_always_wrote",
+]
+tests_last_seen = [
+    { file = "src/application/occurrences.rs", tests = 63 },
+    { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
 ]

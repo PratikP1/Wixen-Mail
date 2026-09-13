@@ -8,6 +8,48 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The day names in a repeating appointment, and the date in a message about
+  a signature, now follow your computer too.** "Every week on Tuesday and
+  Thursday" names the days the way your computer does, and "A timestamp says
+  this was signed on 28 August 2026" writes the month the way your computer
+  writes one inside a date. With this, every date Wixen Mail writes follows
+  the computer: month names, day names, the order of the day and month, and
+  the clock. The note in Settings, Reading now says exactly that, and says
+  what is still English: the wording around a date, such as "every week on"
+  and "2 days ago", until Wixen Mail has a translation for your computer's
+  language.
+
+  **Known limitations.** On a French computer a repeating appointment reads
+  "every week on mardi and jeudi", a French day inside an English sentence,
+  because the day name follows the computer and the sentence does not yet.
+  That is said here rather than smoothed over: it is what version 2's
+  translation of the interface is for. Two labels on the settings screens
+  still carry English day and month names as examples, "Every weekday, Monday
+  to Friday" and "Month first, July 26", because they are interface text and
+  belong to that same translation. Neither the repeat-series sentence nor the
+  signature sentence has been heard by anybody in any language.
+
+- **Nothing you hear has changed, and this is the first piece of a translated
+  Wixen Mail.** The wording "just now", "5 minutes ago", "3 hours ago" and "2
+  days ago" now comes out of a translation catalogue, `locales/en-US/dates.ftl`,
+  through Project Fluent, rather than out of the code. The sentences are the
+  same four English sentences they were. What is different is underneath them:
+  a language whose plurals have three or four forms can now have three or four,
+  because the rule for which form a number takes belongs to the language rather
+  than to this program, and a French or Russian catalogue can be dropped in
+  beside the English one without touching the code. Translating the interface
+  and what your screen reader says is version 2's work, and this is where it
+  starts.
+
+  **Known limitations.** Only English exists. On a computer set to any other
+  language, "2 days ago" is still "2 days ago", silently, and the note in
+  Settings, Reading still says so. No sentence out of the catalogue has been
+  heard by anybody through a screen reader. The Russian and Polish plural forms
+  that prove the machinery were produced on an English computer, from a
+  resource written inside a test by people who do not read Russian or Polish,
+  and that resource ships nowhere; which languages Wixen Mail will speak, and
+  who writes them, is not decided here.
+
 - **You can now decide how Wixen Mail tells you about each of the sixteen
   things it tells you about, one at a time, from Settings, Feedback.** Pick an
   event from the list, then choose whether it is announced through your screen
