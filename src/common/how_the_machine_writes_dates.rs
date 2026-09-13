@@ -115,17 +115,25 @@ const A_YEAR_WITH_A_TWENTY_NINTH_OF_FEBRUARY: i32 = 2024;
 
 /// Which locale to ask.
 ///
-/// Two variants rather than a bare string, because the two have different
-/// rules about where the value may come from and a string cannot say which
-/// one it is.
+/// Three variants rather than a bare string, because each has its own rule
+/// about where the value may come from and a string cannot say which one it
+/// is. None of the three is ever built from a message, a file, or anything a
+/// person typed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhichLocale<'a> {
-    /// Whatever this computer is set to. The only one shipping code uses.
+    /// Whatever this computer is set to. What shipping code passes when it
+    /// wants a date.
     ThisComputer,
     /// A named locale, for a test that has to read the same on every machine
-    /// it runs on. A literal written in a test, never a value out of a message,
-    /// a file, or anything a person typed.
+    /// it runs on. A literal written in a test.
     NamedInATest(&'a str),
+    /// The language a translation catalogue declares itself to be written in.
+    /// A literal in this tree beside the catalogue it names, or in a test
+    /// beside a resource written there, and it reaches here through the
+    /// bundle that speaks it: a number inside a Russian sentence is written
+    /// the Russian way whatever this computer is set to, because the sentence
+    /// around it is Russian.
+    ACatalogueIsWrittenIn(&'a str),
 }
 
 /// The shapes this program writes a date in.
@@ -217,6 +225,40 @@ pub fn the_twelve_month_names(which: WhichLocale<'_>) -> [String; 12] {
     ask_for_the_twelve_month_names(which).unwrap_or_else(|_| IN_ENGLISH.map(str::to_string))
 }
 
+/// What this computer calls its own locale: "en-US", "fr-FR", "en-GB".
+///
+/// The one question here whose answer is a locale name rather than a word in
+/// one. It is what chooses a translation catalogue, and the caller decides
+/// what a read that fails means; this does not fall back to English on its
+/// own, because "this computer could not say" and "this computer said
+/// English" are different answers and the caller's fallback is the same
+/// either way.
+///
+/// `src/service/spellcheck/mod.rs` reads the same constant through the older
+/// `GetLocaleInfoW`, for the spelling dictionary. Two readers of one fact;
+/// measured agreeing on this machine on 2026-09-13, both answering `en-US`.
+/// Retiring one is a version 2 job, because that file is fingerprinted by
+/// thirty guard records and this layer cannot reach it.
+pub fn this_computers_locale_name() -> Result<String> {
+    ask_this_computers_locale_name()
+}
+
+/// One number, written the way that locale writes one: "1,234" in English,
+/// "1.234" in German, "1 234" with a no-break space in Russian.
+///
+/// For the four counts a date reading passes today, every one under sixty,
+/// this and the plain digits agree in every locale there is. It exists so
+/// that the day a catalogue message carries a larger number, or a fraction,
+/// the number inside a sentence is written by the same Windows that writes
+/// the date beside it, rather than becoming a second opinion.
+///
+/// `None` when Windows will not write it, or where there is no Windows, and
+/// the caller writes the digits itself. Never an empty string: a sentence
+/// with a hole where its number was is worse than one with plain digits.
+pub fn a_number(which: WhichLocale<'_>, value: f64) -> Option<String> {
+    ask_for_a_number(which, value)
+}
+
 /// What Windows writes into a caller's buffer, as it is laid out in memory.
 ///
 /// `day_of_week` is left at zero and Windows works the real one out: asked for
@@ -287,7 +329,9 @@ fn what_went_wrong() -> u32 {
 fn as_windows_wants_it(which: WhichLocale<'_>) -> Option<Vec<u16>> {
     match which {
         WhichLocale::ThisComputer => None,
-        WhichLocale::NamedInATest(name) => Some(wide(name)),
+        WhichLocale::NamedInATest(name) | WhichLocale::ACatalogueIsWrittenIn(name) => {
+            Some(wide(name))
+        }
     }
 }
 
@@ -418,6 +462,20 @@ fn ask_for_the_twelve_month_names(which: WhichLocale<'_>) -> Result<[String; 12]
     Ok(names)
 }
 
+/// The name of a locale, as Windows spells it: "en-US". `LOCALE_SNAME`.
+#[cfg(target_os = "windows")]
+const THE_NAME_OF_THE_LOCALE: u32 = 0x0000_005C;
+
+#[cfg(target_os = "windows")]
+fn ask_this_computers_locale_name() -> Result<String> {
+    ask_windows_about(WhichLocale::ThisComputer, THE_NAME_OF_THE_LOCALE)
+}
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_number(_which: WhichLocale<'_>, _value: f64) -> Option<String> {
+    None
+}
+
 /// Where there is no Windows locale API, English, and nothing said about it.
 ///
 /// This is the same path a Windows machine takes when the call fails, so it is
@@ -432,6 +490,23 @@ fn ask_for_a_date(_which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -
 #[cfg(not(target_os = "windows"))]
 fn ask_for_the_twelve_month_names(_which: WhichLocale<'_>) -> Result<[String; 12]> {
     Ok(IN_ENGLISH.map(str::to_string))
+}
+
+/// A locale name is the one question with no English answer to give: "this
+/// computer could not say" is the truthful one, and the caller's fallback
+/// turns it into English the same way a failed read on Windows is.
+#[cfg(not(target_os = "windows"))]
+fn ask_this_computers_locale_name() -> Result<String> {
+    Err(crate::common::Error::Other(
+        "there is no Windows locale API to ask what this computer's locale is called".to_string(),
+    ))
+}
+
+/// The caller writes the digits itself, which is the same path a Windows
+/// machine takes when the call fails.
+#[cfg(not(target_os = "windows"))]
+fn ask_for_a_number(_which: WhichLocale<'_>, _value: f64) -> Option<String> {
+    None
 }
 
 #[cfg(test)]
@@ -589,5 +664,64 @@ mod tests {
 
         assert_eq!(a_date(english, Shape::DayMonth, 13, 14), "14");
         assert_eq!(a_date(english, Shape::DayMonth, 0, 14), "14");
+    }
+
+    /// Windows only, because where there is no locale API the honest answer
+    /// is that the question cannot be asked, and that arm says so.
+    ///
+    /// A weak assertion on purpose: whatever this computer is called, the
+    /// name has a language and a region in it. Asserting `en-US` would be a
+    /// statement about the machine the test ran on.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_this_computer_can_say_what_its_locale_is_called() {
+        let name = this_computers_locale_name().expect("a locale name from Windows");
+
+        let (language, region) = name.split_once('-').expect("a language and a region");
+        assert!(language.chars().all(|c| c.is_ascii_lowercase()), "{name}");
+        assert!(!region.is_empty(), "{name}");
+    }
+
+    /// The four counts a date reading passes today never reach a thousand,
+    /// so a value under sixty proves nothing: Windows and plain digits agree
+    /// on "5" in every locale there is. 1234 is where they part.
+    ///
+    /// Windows only, for the reason given above the French month test.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_a_number_is_written_the_way_that_locale_writes_one() {
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 1234.0).as_deref(),
+            Some("1,234")
+        );
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("de-DE"), 1234.0).as_deref(),
+            Some("1.234")
+        );
+        // Russian groups with U+00A0, a no-break space, measured on this
+        // machine on 2026-09-13. A test asserting an ordinary space would be
+        // wrong in a way nobody can see on a screen.
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("ru-RU"), 1234.0).as_deref(),
+            Some("1\u{a0}234")
+        );
+        // Nothing appended: a null format pointer makes Windows write "5.00",
+        // measured, and a count is not a price.
+        assert_eq!(
+            a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 5.0).as_deref(),
+            Some("5")
+        );
+    }
+
+    /// A value Windows will not write comes back as nothing, so the caller
+    /// writes the digits itself, rather than as an empty string with a hole
+    /// in the sentence where the number was.
+    #[test]
+    fn test_a_number_windows_cannot_write_is_left_to_the_caller() {
+        assert_eq!(a_number(WhichLocale::NamedInATest("en-US"), f64::NAN), None);
+        assert_eq!(
+            a_number(WhichLocale::NamedInATest("not a locale"), 1234.0),
+            None
+        );
     }
 }

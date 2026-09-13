@@ -8,7 +8,14 @@
 //! Relative wording goes further. Most of the time nobody wants the date, they
 //! want to know whether it is recent, and "2 days ago" answers that in three
 //! syllables where "July 24, 2026 at 9:15 AM" takes a dozen.
+//!
+//! Which words: the month and day names are this computer's, asked through
+//! `common::how_the_machine_writes_dates`, and the relative wording is a
+//! message out of `common::catalogue`, so that a language with four plural
+//! forms can have four. Nothing in this file writes a month, a day or a
+//! sentence in English of its own.
 
+use crate::common::catalogue::{self, Message};
 use crate::common::how_the_machine_writes_dates as the_machine;
 use crate::common::how_the_machine_writes_dates::WhichLocale;
 use chrono::{DateTime, Datelike, Local, Timelike};
@@ -312,7 +319,7 @@ fn format_for_list_asking(
     };
 
     if settings.style == DateStyle::RelativeWithinWeek
-        && let Some(relative) = relative_to(when, now)
+        && let Some(relative) = relative_to_asking(which, when, now)
     {
         return relative;
     }
@@ -367,7 +374,7 @@ fn spoken_asking(
         return stored.to_string();
     };
     if settings.style == DateStyle::RelativeWithinWeek
-        && let Some(relative) = relative_to(when, now)
+        && let Some(relative) = relative_to_asking(which, when, now)
     {
         return relative;
     }
@@ -572,13 +579,53 @@ fn clock(when: DateTime<Local>, settings: DateSettings) -> String {
     }
 }
 
-/// How long ago, if that is within the last week.
+/// How long ago, if that is within the last week, in the words of the
+/// catalogue for this locale.
 ///
 /// Returns `None` beyond a week, where "9 days ago" stops being easier to place
 /// than the date itself, and for anything in the future, where a message dated
 /// ahead of now is either a clock difference or a forgery and saying "in 3
 /// days" would dress that up as normal.
-fn relative_to(when: DateTime<Local>, now: DateTime<Local>) -> Option<String> {
+///
+/// The words come from [`catalogue`], which is where the plural rules live:
+/// this function decides *which* sentence and *what number*, and never writes
+/// a word of English itself. Today only an English catalogue exists, so on a
+/// French computer the sentence is English, silently, which is the documented
+/// fallback. A catalogue that cannot say the sentence, which shipping never
+/// reaches and a test in `catalogue` holds, is `None`, so the caller falls
+/// through to the absolute date, and the log gets the message id once.
+fn relative_to_asking(
+    which: WhichLocale<'_>,
+    when: DateTime<Local>,
+    now: DateTime<Local>,
+) -> Option<String> {
+    let (message, count) = which_relative_message(when, now)?;
+    let said = catalogue::for_this(which).and_then(|catalogue| match count {
+        None => catalogue.say(message),
+        Some(count) => catalogue.say_how_many(message, count),
+    });
+    match said {
+        Ok(text) => Some(text),
+        Err(why) => {
+            static SAID_ONCE: std::sync::Once = std::sync::Once::new();
+            SAID_ONCE.call_once(|| {
+                tracing::warn!("the catalogue could not say {}: {why}", message.id());
+            });
+            None
+        }
+    }
+}
+
+/// Which sentence a moment gets, and the count that goes in it.
+///
+/// Pure, so the boundaries can be tested without a catalogue: under a minute
+/// is "just now" with no count, under an hour counts minutes, under a day
+/// counts hours, up to and including seven days counts days, and anything
+/// later or in the future is nothing.
+fn which_relative_message(
+    when: DateTime<Local>,
+    now: DateTime<Local>,
+) -> Option<(Message, Option<i64>)> {
     let elapsed = now.signed_duration_since(when);
     if elapsed.num_seconds() < 0 {
         return None;
@@ -586,30 +633,22 @@ fn relative_to(when: DateTime<Local>, now: DateTime<Local>) -> Option<String> {
 
     let minutes = elapsed.num_minutes();
     if minutes < 1 {
-        return Some("just now".to_string());
+        return Some((Message::JustNow, None));
     }
     if minutes < 60 {
-        return Some(plural(minutes, "minute"));
+        return Some((Message::MinutesAgo, Some(minutes)));
     }
 
     let hours = elapsed.num_hours();
     if hours < 24 {
-        return Some(plural(hours, "hour"));
+        return Some((Message::HoursAgo, Some(hours)));
     }
 
     let days = elapsed.num_days();
     if days <= 7 {
-        return Some(plural(days, "day"));
+        return Some((Message::DaysAgo, Some(days)));
     }
     None
-}
-
-fn plural(count: i64, unit: &str) -> String {
-    if count == 1 {
-        format!("1 {} ago", unit)
-    } else {
-        format!("{} {}s ago", count, unit)
-    }
 }
 
 /// Read a stored timestamp.
@@ -1082,7 +1121,7 @@ mod tests {
         ];
         for (stored, expected) in cases {
             assert_eq!(
-                format_for_list(
+                an_english_cell(
                     stored,
                     now,
                     DateSettings {
@@ -1095,6 +1134,71 @@ mod tests {
                 stored
             );
         }
+    }
+
+    /// The fallback clause of the criterion, forced rather than read off the
+    /// machine: a computer whose language has no catalogue hears English,
+    /// and nothing is said about it. Today that is every computer not set to
+    /// English, because only an English catalogue exists.
+    ///
+    /// `fr-FR` is a language a translation could exist for; `xx-YY` is one
+    /// nobody has rules for at all. Both get the same eight sentences.
+    #[test]
+    fn test_a_computer_whose_language_has_no_catalogue_hears_english() {
+        let now = at("2026-07-26 12:00");
+        let relative = DateSettings {
+            style: DateStyle::RelativeWithinWeek,
+            ..settings()
+        };
+        for name in ["fr-FR", "xx-YY"] {
+            let which = WhichLocale::NamedInATest(name);
+            assert_eq!(
+                format_for_list_asking(which, "2026-07-26 11:59:30", now, relative),
+                "just now",
+                "for {name}"
+            );
+            assert_eq!(
+                format_for_list_asking(which, "2026-07-26 11:59", now, relative),
+                "1 minute ago",
+                "for {name}"
+            );
+            assert_eq!(
+                format_for_list_asking(which, "2026-07-24 12:00", now, relative),
+                "2 days ago",
+                "for {name}"
+            );
+            assert_eq!(
+                spoken_asking(which, "2026-07-25 12:00", now, relative),
+                "1 day ago",
+                "for {name}"
+            );
+        }
+    }
+
+    /// The boundaries, apart from the words. A count of zero minutes is
+    /// "just now" and not "0 minutes ago"; the eighth day is a date.
+    #[test]
+    fn test_which_sentence_a_moment_gets_and_the_count_that_goes_in_it() {
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(
+            which_relative_message(at("2026-07-26 11:59:30"), now),
+            Some((Message::JustNow, None))
+        );
+        assert_eq!(
+            which_relative_message(at("2026-07-26 11:01"), now),
+            Some((Message::MinutesAgo, Some(59)))
+        );
+        assert_eq!(
+            which_relative_message(at("2026-07-26 11:00"), now),
+            Some((Message::HoursAgo, Some(1)))
+        );
+        assert_eq!(
+            which_relative_message(at("2026-07-19 12:00"), now),
+            Some((Message::DaysAgo, Some(7)))
+        );
+        assert_eq!(which_relative_message(at("2026-07-18 12:00"), now), None);
+        assert_eq!(which_relative_message(at("2026-07-26 12:01"), now), None);
     }
 
     #[test]
@@ -1309,7 +1413,7 @@ mod tests {
         // second the list repaints. It is "just now", not the full date.
         let now = at("2026-07-26 12:00");
         assert_eq!(
-            format_for_list(
+            an_english_cell(
                 "2026-07-26 12:00",
                 now,
                 DateSettings {
@@ -1319,12 +1423,5 @@ mod tests {
             ),
             "just now"
         );
-    }
-
-    #[test]
-    fn test_singular_and_plural_agree() {
-        assert_eq!(plural(1, "day"), "1 day ago");
-        assert_eq!(plural(2, "day"), "2 days ago");
-        assert_eq!(plural(0, "minute"), "0 minutes ago");
     }
 }
