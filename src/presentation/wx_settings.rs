@@ -14,7 +14,9 @@ use crate::common::paths::AppPaths;
 use crate::data::account::Account;
 use crate::data::config::AppConfig;
 use crate::presentation::accessibility::Accessibility;
-use crate::presentation::accessibility::feedback::{Channel, FeedbackSettings, Switch};
+// `Event` is reached through the module rather than imported, because
+// `wxdragon::prelude` brings its own `Event` and the two would shadow.
+use crate::presentation::accessibility::feedback::{self, Channel, FeedbackSettings, Switch};
 use crate::presentation::accessibility::names::{
     name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
@@ -24,6 +26,7 @@ use crate::presentation::theme;
 use crate::presentation::ui_types::CalendarView;
 use crate::service::spellcheck::available_languages;
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
 use wxdragon::prelude::*;
@@ -116,10 +119,8 @@ pub struct SettingsWidgets {
     pub download_folder: TextCtrl,
     look_at_message_contents: CheckBox,
     check_links_with_google: CheckBox,
-    // Feedback channels: each box carries the channel it switches, so a tick
-    // cannot be read back against a different one.
-    feedback: Vec<(Channel, CheckBox)>,
-    // The same tab's per-event half. Public because a test builds this dialog
+    // Feedback: each box carries the answer it gives, so a tick cannot be read
+    // back against a different one. Public because a test builds this dialog
     // and reads these back: wxdragon offers no way to raise a selection event
     // from outside, so a test that could not reach these could prove the
     // controls exist and never that moving between events keeps what was
@@ -433,7 +434,6 @@ pub fn build_settings_dialog(
         download_folder,
         look_at_message_contents,
         check_links_with_google,
-        feedback: feedback.channels,
         feedback_global: feedback.global,
         feedback_event: feedback.event,
         feedback_per_event: feedback.per_event,
@@ -2155,7 +2155,8 @@ pub struct PerEventControls {
     /// Whether the selected event has an answer of its own or is on the
     /// default. Ticks alone cannot tell those two apart.
     pub whose_answer: StaticText,
-    /// Which event of [`Event::ALL`] the ticks are describing right now.
+    /// Which event of [`feedback::Event::ALL`] the ticks are describing right
+    /// now.
     ///
     /// Needed because a selection change says where the picker has arrived and
     /// not where it came from, and what is on screen belongs to where it came
@@ -2166,30 +2167,147 @@ pub struct PerEventControls {
     pub working: Rc<RefCell<FeedbackSettings>>,
 }
 
+/// The two sentences that tell an event with an answer of its own from one on
+/// the default. Ticks alone cannot say which, because an answer can be the same
+/// as the default and still be an answer.
+const THIS_EVENT_HAS_ITS_OWN_ANSWER: &str =
+    "This event has an answer of its own. The boxes above are what you chose for it.";
+const THIS_EVENT_IS_USING_THE_DEFAULT: &str =
+    "This event is using the default. The boxes above show what the default is.";
+
+/// Which of the three controls a stored answer paints as ticked.
+///
+/// `None` is nobody having touched the event, which paints as the default:
+/// every channel. A switch is ticked where the answer holds any of the channels
+/// it stands for rather than all of them, because a settings file can hold
+/// speech on and braille off. Older builds really could write that, since the
+/// two boxes standing here were independent. Painting it as unticked would show
+/// silence to somebody who has announcements, and saving that screen would then
+/// make it true.
+fn ticks_for(chosen: Option<&BTreeSet<Channel>>) -> [bool; Switch::ALL.len()] {
+    let default: BTreeSet<Channel> = Channel::ALL.into_iter().collect();
+    let answer = chosen.unwrap_or(&default);
+    Switch::ALL.map(|switch| switch.channels().iter().any(|c| answer.contains(c)))
+}
+
+/// What one event will really produce, which is not always what the three
+/// controls above it say.
+///
+/// Two rules bend an answer on its way out. A channel switched off everywhere
+/// is off for every event whatever that event says, and an event left with only
+/// a sound has the quietest written channel added back, because a sound with no
+/// words anywhere is a noise a deaf-blind user cannot perceive at all. Saying so
+/// here is what stops the ticks being a lie. The rule itself is not weakened to
+/// match the screen: it lives in `channels_for` so that no call site can forget
+/// it, and two tests hold it there.
+fn what_this_event_will_really_do(settings: &FeedbackSettings, event: feedback::Event) -> String {
+    let reaching = settings.channels_for(event);
+    let mut parts: Vec<&str> = Vec::new();
+    if reaching.contains(&Channel::Speech) || reaching.contains(&Channel::Braille) {
+        parts.push("announced through your screen reader");
+    }
+    if reaching.contains(&Channel::Earcon) {
+        parts.push("given its own sound");
+    }
+    if reaching.contains(&Channel::Visual) {
+        parts.push("shown in the status bar");
+    }
+    let sentence = match parts.as_slice() {
+        [] => "nothing happens for this event at all".to_string(),
+        [only] => (*only).to_string(),
+        [all_but_last @ .., last] => format!("{} and {last}", all_but_last.join(", ")),
+    };
+    format!("Right now: {sentence}.")
+}
+
 impl PerEventControls {
+    /// The event the ticks are describing.
+    fn shown(&self) -> feedback::Event {
+        feedback::Event::ALL[self.showing.get().min(feedback::Event::ALL.len() - 1)]
+    }
+
     /// Write what is on screen into the working settings for the event the
     /// ticks are describing.
-    pub fn remember_what_is_on_screen(&self) {}
+    ///
+    /// Nothing is written where the ticks still show exactly what was painted
+    /// into them, so visiting an event and changing nothing does not give it an
+    /// answer of its own. Those two states are not the same: an event with no
+    /// answer follows the default wherever the default goes, and one whose
+    /// answer happens to match the default today does not.
+    pub fn remember_what_is_on_screen(&self) {
+        let event = self.shown();
+        let mut working = self.working.borrow_mut();
+        let as_painted = ticks_for(working.what_was_chosen_for(event).as_ref());
+        let now: Vec<bool> = self
+            .ticks
+            .iter()
+            .map(|(_, tick)| tick.get_value())
+            .collect();
+        if now == as_painted {
+            return;
+        }
+        let picked = self
+            .ticks
+            .iter()
+            .filter(|(_, tick)| tick.get_value())
+            .flat_map(|(switch, _)| switch.channels().iter().copied())
+            .collect();
+        working.set_event_channels(event, picked);
+    }
 
-    /// Show the event at `at` in [`Event::ALL`], having first remembered the
-    /// one being left.
+    /// Show the event at `at` in [`feedback::Event::ALL`], having first
+    /// remembered the one being left.
+    ///
+    /// The first half is the one that gets forgotten. Without it, ticking a box
+    /// and then moving the picker throws the tick away in silence, which is the
+    /// bug `tests/every_event_has_a_control.rs` mainly exists to catch.
     pub fn show(&self, at: usize) {
-        let _ = at;
+        self.remember_what_is_on_screen();
+        self.showing.set(at.min(feedback::Event::ALL.len() - 1));
+        self.paint_the_shown_event();
     }
 
     /// Put the event being shown back to the default.
-    pub fn put_the_shown_event_back_to_the_default(&self) {}
+    ///
+    /// What is on screen is deliberately not remembered first, because
+    /// discarding it is the whole point. This removes the entry, where
+    /// switching all three boxes off stores an empty answer, and the two mean
+    /// opposite things: an empty answer round trips and means silence for that
+    /// event, and no entry at all means the default. They must not share a
+    /// control, which is why the model has two methods and this calls the one
+    /// named for what the button says.
+    pub fn put_the_shown_event_back_to_the_default(&self) {
+        self.working.borrow_mut().use_the_default_for(self.shown());
+        self.paint_the_shown_event();
+    }
+
+    /// Paint the three ticks and both lines from the working settings.
+    ///
+    /// The ticks come from `what_was_chosen_for` and the first line from
+    /// `channels_for`, and those are different questions. `channels_for`
+    /// defaults a missing entry to every channel, drops the channels switched
+    /// off everywhere and adds a written channel where only a sound was picked,
+    /// so ticks painted from it would show somebody answers they never gave.
+    fn paint_the_shown_event(&self) {
+        let event = self.shown();
+        let working = self.working.borrow();
+        let chosen = working.what_was_chosen_for(event);
+        for ((_, tick), on) in self.ticks.iter().zip(ticks_for(chosen.as_ref())) {
+            tick.set_value(on);
+        }
+        self.whose_answer.set_label(match chosen {
+            Some(_) => THIS_EVENT_HAS_ITS_OWN_ANSWER,
+            None => THIS_EVENT_IS_USING_THE_DEFAULT,
+        });
+        self.what_really_happens
+            .set_label(&what_this_event_will_really_do(&working, event));
+    }
 }
 
 /// Everything the Feedback tab hands back.
 pub struct FeedbackTabControls {
     /// The three controls that answer for every event at once.
     pub global: Vec<(Switch, CheckBox)>,
-    /// The four boxes that answered for every event at once before there were
-    /// three. Two of them offered speech and braille as independent choices,
-    /// which is a thing this program cannot do, and they go when `global`
-    /// arrives.
-    pub channels: Vec<(Channel, CheckBox)>,
     /// Which event the three controls beneath it are describing.
     pub event: Choice,
     pub per_event: PerEventControls,
@@ -2198,14 +2316,27 @@ pub struct FeedbackTabControls {
 
 /// Feedback channels: how the application tells you something happened.
 ///
-/// One checkbox per channel rather than a grid of events, because the choice
-/// people actually make is "words, not sounds" or "sounds, not words". The
-/// per-event overrides exist in the model for anyone who wants them and are
-/// not worth forty checkboxes here.
+/// **Not a grid of events**, because the choice people actually make is "words,
+/// not sounds" or "sounds, not words", and forty-eight boxes met one after
+/// another by somebody who cannot skim is worse than the setting being missing.
+/// That argument stood here before this panel did and it is still right.
+///
+/// What changed is its conclusion. Offering nothing left sixteen per-event
+/// answers in the model that no screen could reach, which is the
+/// setting-nobody-can-find rule in `CLAUDE.md` broken in the one place this
+/// program is most about. The shape below answers the objection rather than
+/// overruling it: a picker, three controls, a button and a line, so the page
+/// holds five controls whatever the event count becomes.
+///
+/// **Three controls and four channels, and the difference is the point.**
+/// Speech and braille are one answer because they are one call, which
+/// [`Switch`]'s own doc comment explains. The two boxes that used to offer them
+/// apart could not do what they said whichever way they were ticked.
 ///
 /// Nothing here can produce a sound-only application by accident: the routing
-/// adds a written equivalent unless every text channel is off, and the wording
-/// says so rather than leaving it to be discovered.
+/// adds a written equivalent unless every text channel is off, and the line
+/// beneath the per-event controls says what the selected event will really do
+/// rather than leaving it to be discovered.
 fn build_feedback_tab(
     panel: &Panel,
     config: &AppConfig,
@@ -2223,20 +2354,41 @@ fn build_feedback_tab(
         .build();
     sizer.add(&intro, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-    let sec = section(panel, "Channels");
-    // Each box carries the channel it switches. The wording comes off the
-    // channel too, so there is no second list to fall out of step with this
-    // one and no position to pair by.
-    let mut boxes = Vec::new();
-    for channel in Channel::ALL {
-        let label = channel.setting_label();
+    let sec = section(panel, "Every event");
+    // Each box carries the answer it gives. The wording comes off the answer
+    // too, so there is no second list to fall out of step with this one and no
+    // position to pair by.
+    let mut global = Vec::new();
+    for switch in Switch::ALL {
+        let label = switch.setting_label();
         let cb = CheckBox::builder(panel).with_label(label).build();
         set_accessible_name(&cb, &name_from_label(label));
-        cb.set_value(settings.is_channel_enabled(channel));
+        // Ticked where any of the channels it stands for is on, not where all
+        // of them are, for the reason `ticks_for` gives about a settings file
+        // holding speech on and braille off.
+        cb.set_value(
+            switch
+                .channels()
+                .iter()
+                .any(|channel| settings.is_channel_enabled(*channel)),
+        );
         sec.add(&cb, 0, SizerFlag::All, 4);
-        boxes.push((channel, cb));
+        global.push((switch, cb));
     }
     sizer.add_sizer(&sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // The sentence criterion 1 asks for, said once and in the place the answer
+    // it is about is given. Saying it twice would be two sentences to keep in
+    // step, and somebody moving through this page by keyboard meets each line
+    // in order rather than skimming past a repeat.
+    let whose_choice = StaticText::builder(panel)
+        .with_label(
+            "Whether something is spoken, shown on a braille display, or both is \
+             chosen in your screen reader, not here. Wixen Mail sends one \
+             notification and your screen reader decides what to do with it.",
+        )
+        .build();
+    sizer.add(&whose_choice, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     let note = StaticText::builder(panel)
         .with_label(
@@ -2304,23 +2456,89 @@ fn build_feedback_tab(
 
     sizer.add_sizer(&scheme_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
-    // Stubbed, so the live check that follows names every property it wants
-    // and none of them is answered by accident. The picker holds no events,
-    // there are no per-event controls, and moving between events does nothing.
-    let event_choice = Choice::builder(panel).build();
+    // One event at a time. A picker, the same three answers for whichever
+    // event it is on, a button that takes the answer away again, and two lines
+    // saying whose answer is on screen and what it will really produce.
+    let per_event_sec = section(panel, "One event at a time");
+    let picker_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let picker_label = StaticText::builder(panel).with_label("&Event:").build();
+    let event_choice = Choice::builder(panel)
+        .with_choices(
+            feedback::Event::ALL
+                .iter()
+                .map(|event| event.text().to_string())
+                .collect(),
+        )
+        .build();
     set_accessible_name(&event_choice, "Event");
+    picker_row.add(
+        &picker_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    picker_row.add(&event_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    per_event_sec.add_sizer(&picker_row, 0, SizerFlag::Expand, 0);
+
+    let mut ticks = Vec::new();
+    for switch in Switch::ALL {
+        let label = switch.label_beside_one_event();
+        let tick = CheckBox::builder(panel).with_label(label).build();
+        set_accessible_name(&tick, &name_from_label(label));
+        per_event_sec.add(&tick, 0, SizerFlag::All, 4);
+        ticks.push((switch, tick));
+    }
+
+    // Not "clear" and not "switch everything off". Switching all three boxes
+    // off is its own answer and means silence for this event; this takes the
+    // answer away so the default comes back. The model keeps the two apart and
+    // so does the screen.
+    let use_the_default = Button::builder(panel)
+        .with_label("Use the de&fault for this event")
+        .build();
+    set_accessible_name(&use_the_default, "Use the default for this event");
+    per_event_sec.add(&use_the_default, 0, SizerFlag::All, 4);
+
+    let whose_answer = StaticText::builder(panel)
+        .with_label(THIS_EVENT_IS_USING_THE_DEFAULT)
+        .build();
+    per_event_sec.add(&whose_answer, 0, SizerFlag::Expand | SizerFlag::All, 4);
+    let what_really_happens = StaticText::builder(panel).with_label("").build();
+    per_event_sec.add(
+        &what_really_happens,
+        0,
+        SizerFlag::Expand | SizerFlag::All,
+        4,
+    );
+    sizer.add_sizer(&per_event_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     let per_event = PerEventControls {
-        ticks: Vec::new(),
-        what_really_happens: StaticText::builder(panel).with_label("").build(),
-        whose_answer: StaticText::builder(panel).with_label("").build(),
+        ticks,
+        what_really_happens,
+        whose_answer,
         showing: Rc::new(Cell::new(0)),
         working: Rc::new(RefCell::new(settings)),
     };
+    // The picker opens on the first event and the controls beneath it are
+    // painted by the same function every later change uses, so the two cannot
+    // disagree, not even on the first paint. Painted rather than shown, because
+    // `show` remembers what is on screen first and nothing has been painted
+    // into the ticks yet.
+    event_choice.set_selection(0);
+    per_event.paint_the_shown_event();
+
+    event_choice.on_selection_changed({
+        let per_event = per_event.clone();
+        move |_| per_event.show(sel(&event_choice) as usize)
+    });
+    use_the_default.on_click({
+        let per_event = per_event.clone();
+        move |_| per_event.put_the_shown_event_back_to_the_default()
+    });
 
     panel.set_sizer(sizer, true);
     FeedbackTabControls {
-        global: Vec::new(),
-        channels: boxes,
+        global,
         event: event_choice,
         per_event,
         sound_scheme: scheme_choice,
@@ -2495,13 +2713,25 @@ fn discovered_schemes() -> Vec<SoundScheme> {
 fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     let mut cfg = base.clone();
 
-    // Feedback channels. The per-event overrides in the stored value are
-    // preserved: this tab only decides which channels are on at all.
-    let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);
-    for (channel, cb) in &w.feedback {
-        feedback.set_channel_enabled(*channel, cb.get_value());
+    // Feedback. The tab's working settings hold every per-event answer it has
+    // been given, including for events the picker is not showing, so what is on
+    // screen is remembered first and then the whole thing is written.
+    //
+    // This used to rebuild from `base.feedback_channels` and set only the
+    // global channels, with a comment saying the per-event overrides in the
+    // stored value were preserved because "this tab only decides which channels
+    // are on at all". That stopped being true the moment the tab could create
+    // them.
+    w.feedback_per_event.remember_what_is_on_screen();
+    {
+        let mut feedback = w.feedback_per_event.working.borrow_mut();
+        for (switch, cb) in &w.feedback_global {
+            for channel in switch.channels() {
+                feedback.set_channel_enabled(*channel, cb.get_value());
+            }
+        }
+        cfg.feedback_channels = feedback.to_stored();
     }
-    cfg.feedback_channels = feedback.to_stored();
 
     // The scheme picker's own order is whatever discovery produced when the
     // dialog was built; reading it back the same way is what makes the
