@@ -64,6 +64,42 @@
 //! path a Windows machine takes when the call fails, so it is exercised by tests
 //! on both platforms rather than only on the one nobody builds.
 
+use crate::common::{Error, Result};
+
+/// The twelve month names in English, January first.
+///
+/// Not a preference and not a default anybody chose. It is the answer where
+/// there is no Windows locale API to ask and the answer where the ask failed,
+/// which is the silent English fallback the success criterion asks for in as
+/// many words.
+const IN_ENGLISH: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// A year to stand a year-less date on, so Windows will look at it.
+///
+/// A birthday stored as "--02-29" belongs to somebody, and Windows checks the
+/// whole date against the calendar before it writes a word of it: the 29th of
+/// February in a year that has none is refused outright with error 87,
+/// measured on 2026-09-13. So a day with no year of its own has to borrow one,
+/// and it has to be a leap year or that person's birthday cannot be written.
+///
+/// Nothing ever sees it. The two year-less shapes write no year, checked the
+/// same day across 1601, 1900, 2026, 2400 and 9999, every one of which wrote
+/// the same "March 14".
+const A_YEAR_WITH_A_TWENTY_NINTH_OF_FEBRUARY: i32 = 2024;
+
 /// Which locale to ask.
 ///
 /// Two variants rather than a bare string, because the two have different
@@ -101,15 +137,61 @@ pub enum Shape {
     MonthDay,
 }
 
+impl Shape {
+    /// The date picture Windows is given for this shape.
+    ///
+    /// Every one of the four carries both a numeric day and `MMMM`, which is
+    /// the condition Microsoft states for the genitive month form. That is not
+    /// a coincidence to be tidied away later: a picture here that lost its day
+    /// would go on writing correct English and start writing wrong Russian.
+    fn picture(self) -> &'static str {
+        match self {
+            Shape::DayMonthYear(_) => "d MMMM yyyy",
+            Shape::MonthDayYear(_) => "MMMM d, yyyy",
+            Shape::DayMonth => "d MMMM",
+            Shape::MonthDay => "MMMM d",
+        }
+    }
+
+    /// The year this shape is asked about, which for the two that write none
+    /// is only there to make the date one Windows will look at.
+    fn year(self) -> i32 {
+        match self {
+            Shape::DayMonthYear(year) | Shape::MonthDayYear(year) => year,
+            Shape::DayMonth | Shape::MonthDay => A_YEAR_WITH_A_TWENTY_NINTH_OF_FEBRUARY,
+        }
+    }
+
+    /// This shape written in English, asking nothing.
+    ///
+    /// A month outside 1 to 12 has no name, so the date is written without one
+    /// rather than indexing past the end of the twelve. A stored row can hold
+    /// anything, and an odd-looking birthday is a better answer than the
+    /// application going down while reading a contact card.
+    fn in_english(self, month: u32, day: u32) -> String {
+        let name = IN_ENGLISH
+            .get(month.wrapping_sub(1) as usize)
+            .copied()
+            .unwrap_or_default();
+        match self {
+            Shape::DayMonthYear(year) => format!("{day} {name} {year}"),
+            Shape::MonthDayYear(year) => format!("{name} {day}, {year}"),
+            Shape::DayMonth => format!("{day} {name}"),
+            Shape::MonthDay => format!("{name} {day}"),
+        }
+        .trim()
+        .to_string()
+    }
+}
+
 /// One date, written the way this computer writes one in that shape.
 ///
-/// `month` is 1 for January. A month or a day that names no real date comes
-/// back in English rather than empty or missing, because a corrupt stored row
-/// should show an odd date and not take the reading down.
+/// `month` is 1 for January. Anything this computer will not write, a locale
+/// name that is not one, a day no month has, a year outside what a Windows
+/// date can hold, comes back in English rather than empty or missing. A
+/// corrupt stored row should show an odd date, not take the reading down.
 pub fn a_date(which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -> String {
-    // A body that is present and wrong, so the tests below fail on what they
-    // assert rather than on a name the compiler cannot find. Replaced at green.
-    format!("{which:?} {shape:?} {month} {day}")
+    ask_for_a_date(which, shape, month, day).unwrap_or_else(|_| shape.in_english(month, day))
 }
 
 /// The twelve month names this computer uses, January first, each on its own.
@@ -117,8 +199,224 @@ pub fn a_date(which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -> Str
 /// On its own is the point: these go in a list where no day sits beside them,
 /// so they want the standalone form and not the one a date puts a month in.
 pub fn the_twelve_month_names(which: WhichLocale<'_>) -> [String; 12] {
-    // Wrong on purpose, for the same reason as [`a_date`].
-    std::array::from_fn(|which_month| format!("{which:?} {which_month}"))
+    ask_for_the_twelve_month_names(which).unwrap_or_else(|_| IN_ENGLISH.map(str::to_string))
+}
+
+/// What Windows writes into a caller's buffer, as it is laid out in memory.
+///
+/// `day_of_week` is left at zero and Windows works the real one out: asked for
+/// `dddd` on the 14th of March 2026 with this field zero it answered
+/// "Saturday", measured on 2026-09-13. Worth knowing rather than relying on
+/// silently, because a day name is the next thing that wants asking.
+#[cfg(target_os = "windows")]
+#[repr(C)]
+struct WindowsDate {
+    year: u16,
+    month: u16,
+    day_of_week: u16,
+    day: u16,
+    hour: u16,
+    minute: u16,
+    second: u16,
+    milliseconds: u16,
+}
+
+/// The first of the twelve standalone month names.
+///
+/// The other eleven follow it one at a time. That they are consecutive was
+/// measured rather than assumed, across four locales on 2026-09-13, because a
+/// wrong constant here would answer a real month name for the wrong month and
+/// nothing would look broken.
+#[cfg(target_os = "windows")]
+const FIRST_MONTH_NAMED_ON_ITS_OWN: u32 = 0x0000_0038;
+
+/// A string as Windows wants one: its characters, then a zero.
+#[cfg(target_os = "windows")]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// The characters Windows wrote, without the zero it counted.
+///
+/// Both calls here answer the number of characters written **including** the
+/// terminating zero: "14 March 2026" is thirteen characters and the call
+/// answers fourteen, measured. Taking that answer at face value puts a zero on
+/// the end of every date this program speaks, which a screen reader then has
+/// to decide what to do with.
+#[cfg(target_os = "windows")]
+fn without_the_zero(written: &[u16]) -> String {
+    String::from_utf16_lossy(written.strip_suffix(&[0]).unwrap_or(written))
+}
+
+/// Whatever Windows last complained about.
+#[cfg(target_os = "windows")]
+fn what_went_wrong() -> u32 {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLastError() -> u32;
+    }
+
+    unsafe { GetLastError() }
+}
+
+/// The locale name as a pointer, and the buffer keeping it alive.
+///
+/// Null rather than an empty string for this computer, and that is the trap
+/// worth naming out loud. An empty name is `LOCALE_NAME_INVARIANT`, which
+/// answers English on every machine there is. Passed where the user's own
+/// locale was meant, every date stays English, every test stays green, and the
+/// whole of this module does nothing. Measured on 2026-09-13: on this en-US
+/// machine the two are indistinguishable, which is exactly why the mistake
+/// would have survived being tested here.
+#[cfg(target_os = "windows")]
+fn as_windows_wants_it(which: WhichLocale<'_>) -> Option<Vec<u16>> {
+    match which {
+        WhichLocale::ThisComputer => None,
+        WhichLocale::NamedInATest(name) => Some(wide(name)),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_date(which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -> Result<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetDateFormatEx(
+            locale: *const u16,
+            flags: u32,
+            date: *const WindowsDate,
+            picture: *const u16,
+            into: *mut u16,
+            how_many: i32,
+            calendar: *const u16,
+        ) -> i32;
+    }
+
+    let year = shape.year();
+    let refused = |what: &str| {
+        Error::Other(format!(
+            "no Windows date has a {what}: {year}-{month}-{day}"
+        ))
+    };
+    let when = WindowsDate {
+        year: u16::try_from(year).map_err(|_| refused("year like that"))?,
+        month: u16::try_from(month).map_err(|_| refused("month like that"))?,
+        day: u16::try_from(day).map_err(|_| refused("day like that"))?,
+        day_of_week: 0,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        milliseconds: 0,
+    };
+
+    let named = as_windows_wants_it(which);
+    let locale = named.as_ref().map_or(std::ptr::null(), Vec::as_ptr);
+    let picture = wide(shape.picture());
+
+    // Asked how long the answer is before being given anywhere to put it,
+    // rather than guessing a length. A buffer too small is refused outright
+    // with error 122 and nothing is written into it, measured, so the guess
+    // that went wrong would show up as a date that vanished.
+    let how_many = unsafe {
+        GetDateFormatEx(
+            locale,
+            0,
+            &when,
+            picture.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+        )
+    };
+    if how_many <= 0 {
+        return Err(Error::Other(format!(
+            "Windows would not size a date: error {}",
+            what_went_wrong()
+        )));
+    }
+
+    let mut buffer = vec![0u16; how_many as usize];
+    let written = unsafe {
+        GetDateFormatEx(
+            locale,
+            0,
+            &when,
+            picture.as_ptr(),
+            buffer.as_mut_ptr(),
+            how_many,
+            std::ptr::null(),
+        )
+    };
+    if written <= 0 {
+        return Err(Error::Other(format!(
+            "Windows would not write a date: error {}",
+            what_went_wrong()
+        )));
+    }
+
+    Ok(without_the_zero(&buffer[..written as usize]))
+}
+
+/// One thing Windows knows about a locale, by name.
+///
+/// `GetLocaleInfoEx` rather than `GetLocaleInfoW`, and the reason is the one
+/// that chose `GetDateFormatEx` too: the `Ex` forms take a locale *name*, so a
+/// test can force one and assert the same answer on every machine. The older
+/// form takes a numeric locale id, and the only id shipping code has is
+/// "whatever this machine is", which makes every test a statement about the
+/// machine that ran it.
+#[cfg(target_os = "windows")]
+fn ask_windows_about(which: WhichLocale<'_>, wanted: u32) -> Result<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetLocaleInfoEx(locale: *const u16, wanted: u32, into: *mut u16, how_many: i32) -> i32;
+    }
+
+    let named = as_windows_wants_it(which);
+    let locale = named.as_ref().map_or(std::ptr::null(), Vec::as_ptr);
+
+    let how_many = unsafe { GetLocaleInfoEx(locale, wanted, std::ptr::null_mut(), 0) };
+    if how_many <= 0 {
+        return Err(Error::Other(format!(
+            "Windows would not size what it calls {wanted:#x}: error {}",
+            what_went_wrong()
+        )));
+    }
+
+    let mut buffer = vec![0u16; how_many as usize];
+    let written = unsafe { GetLocaleInfoEx(locale, wanted, buffer.as_mut_ptr(), how_many) };
+    if written <= 0 {
+        return Err(Error::Other(format!(
+            "Windows would not say what it calls {wanted:#x}: error {}",
+            what_went_wrong()
+        )));
+    }
+
+    Ok(without_the_zero(&buffer[..written as usize]))
+}
+
+#[cfg(target_os = "windows")]
+fn ask_for_the_twelve_month_names(which: WhichLocale<'_>) -> Result<[String; 12]> {
+    let mut names: [String; 12] = std::array::from_fn(|_| String::new());
+    for (months_along, name) in names.iter_mut().enumerate() {
+        *name = ask_windows_about(which, FIRST_MONTH_NAMED_ON_ITS_OWN + months_along as u32)?;
+    }
+    Ok(names)
+}
+
+/// Where there is no Windows locale API, English, and nothing said about it.
+///
+/// This is the same path a Windows machine takes when the call fails, so it is
+/// exercised by tests on both platforms rather than only on the one nobody
+/// builds. It is not a way of skipping the question: every caller still calls,
+/// and what it gets back is the documented answer rather than a silence.
+#[cfg(not(target_os = "windows"))]
+fn ask_for_a_date(_which: WhichLocale<'_>, shape: Shape, month: u32, day: u32) -> Result<String> {
+    Ok(shape.in_english(month, day))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ask_for_the_twelve_month_names(_which: WhichLocale<'_>) -> Result<[String; 12]> {
+    Ok(IN_ENGLISH.map(str::to_string))
 }
 
 #[cfg(test)]
@@ -146,6 +444,13 @@ mod tests {
         assert_eq!(a_date(english, Shape::MonthDay, 3, 14), "March 14");
     }
 
+    /// Windows only, and this is not a way of skipping it.
+    ///
+    /// Where there is no Windows locale API every answer is English, by
+    /// design, so asking a machine like that for French and asserting French
+    /// would be asserting something this module never promised. The English
+    /// assertions above run on both and are what holds this to its word there.
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_a_french_machine_gets_a_french_month() {
         let french = WhichLocale::NamedInATest("fr-FR");
@@ -162,6 +467,9 @@ mod tests {
     /// Russian and Polish put a month into a different case when a day stands
     /// beside it. If these two ever answer alike, one of the two mechanisms has
     /// been used for the other's job and a date somewhere is ungrammatical.
+    ///
+    /// Windows only, for the reason given above the French one.
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_a_month_inside_a_date_is_a_different_word_from_the_month_named_alone() {
         let russian = WhichLocale::NamedInATest("ru-RU");
@@ -174,6 +482,8 @@ mod tests {
         assert_eq!(the_twelve_month_names(polish)[0], "styczeń");
     }
 
+    /// Windows only, for the reason given above the French one.
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_the_twelve_names_for_a_list_come_from_the_machine() {
         assert_eq!(
