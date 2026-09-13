@@ -345,3 +345,9 @@ of work is about.
 
 Two red commits, each held by `scripts/red-commit.sh` to exactly the failures it
 named. Nothing used `--no-verify`. No tracked file was edited by a script.
+
+Merged into `main` as `0e7ae623`, after a second `scripts/check.sh all` at
+`473d5cdf` came back green in 7m58s. The merge commit's tree is byte for byte the
+branch tip's, so the gated tree and the merged tree are the same tree. Nothing is
+pushed: `origin/main` is still at `1aba3a5b`, and `main` is 205 commits ahead of
+it.
