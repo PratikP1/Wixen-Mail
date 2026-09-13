@@ -2279,7 +2279,7 @@ tests_last_seen = [
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -2850,15 +2850,24 @@ tests_last_seen = [
 # noon: the reading calling it overdue. The birthday reading always refused
 # this; the rule is now kept for every stored day. The break lets a whole day
 # fall through to the relative measurement again, which is where this started.
+#
+# The call in the break text became `date_part_asking(which, ...)` on
+# 2026-09-13, when the month names started coming from the machine and every
+# reading here grew a locale to be asked about. Found by
+# `test_every_guard_record_still_names_one_place_in_the_tree` rather than by
+# anybody noticing: a rename leaves a record that reads as fine and is
+# unmeasurable, because `guards.py` refuses a break it cannot find and says so
+# as though the tool were broken. Re-measured rather than edited until it
+# applied.
 
 [[guard]]
 name = "a whole day is spoken as a date under the relative style"
 file = "src/presentation/date_display.rs"
 before = """    if let Moment::WholeDay(day) = moment {
-        return date_part(day, settings);
+        return date_part_asking(which, day, settings);
     }"""
 after = """    if let (Moment::WholeDay(day), DateStyle::Absolute) = (moment, settings.style) {
-        return date_part(day, settings);
+        return date_part_asking(which, day, settings);
     }"""
 red = [
     "application::due::tests::test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count",
@@ -2871,7 +2880,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 23 },
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
@@ -2902,7 +2911,7 @@ red = [
     "presentation::pim_rows::tests::test_garbage_in_a_start_time_earns_no_working_day_note",
 ]
 tests_last_seen = [
-    { file = "src/presentation/date_display.rs", tests = 37 },
+    { file = "src/presentation/date_display.rs", tests = 41 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]
 

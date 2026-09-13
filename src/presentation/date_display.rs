@@ -417,16 +417,16 @@ fn a_day_in_words_asking(which: WhichLocale<'_>, stored: &str, settings: DateSet
         return stored.to_string();
     };
     match (settings.wording, settings.order) {
-        // RED stub: the standalone month lookup used inside a date, which is
-        // exactly the mistake this task exists to avoid and the one that looks
-        // right in English and in French. Replaced at green.
+        // A day sits beside the month, so the machine is asked for a date and
+        // not for a month name. The year is the one thing this reading has not
+        // got, and the module borrows a leap year to stand the date on so that
+        // somebody born on the 29th of February can still have their birthday
+        // written; nothing of the borrowed year is said.
         (DateWording::Verbal, DateOrder::MonthFirst) => {
-            let named = the_machine::the_twelve_month_names(which);
-            format!("{} {}", named[(month - 1) as usize], day)
+            the_machine::a_date(which, the_machine::Shape::MonthDay, month, day)
         }
         (DateWording::Verbal, DateOrder::DayFirst) => {
-            let named = the_machine::the_twelve_month_names(which);
-            format!("{} {}", day, named[(month - 1) as usize])
+            the_machine::a_date(which, the_machine::Shape::DayMonth, month, day)
         }
         (DateWording::Numeric, DateOrder::MonthFirst) => format!("{:02}/{:02}", month, day),
         (DateWording::Numeric, DateOrder::DayFirst) => format!("{:02}/{:02}", day, month),
@@ -524,18 +524,24 @@ fn absolute_asking(
 /// constructed just to be left unsaid.
 fn date_part_asking(which: WhichLocale<'_>, when: impl Datelike, settings: DateSettings) -> String {
     match (settings.wording, settings.order) {
-        // RED stub, the same wrong mechanism as in `a_day_in_words_asking`.
-        // Replaced at green.
-        (DateWording::Verbal, DateOrder::MonthFirst) => {
-            let named = the_machine::the_twelve_month_names(which);
-            let month = &named[(when.month() - 1) as usize];
-            format!("{} {}, {}", month, when.day(), when.year())
-        }
-        (DateWording::Verbal, DateOrder::DayFirst) => {
-            let named = the_machine::the_twelve_month_names(which);
-            let month = &named[(when.month() - 1) as usize];
-            format!("{} {} {}", when.day(), month, when.year())
-        }
+        // The person's stored wording and order choose which of these two the
+        // machine is asked for, and the machine chooses only the words inside
+        // it. Asking Windows for its own idea of a long date instead would
+        // have written a French date the French way and thrown away the order
+        // this person picked, on every machine whose locale disagrees with
+        // them.
+        (DateWording::Verbal, DateOrder::MonthFirst) => the_machine::a_date(
+            which,
+            the_machine::Shape::MonthDayYear(when.year()),
+            when.month(),
+            when.day(),
+        ),
+        (DateWording::Verbal, DateOrder::DayFirst) => the_machine::a_date(
+            which,
+            the_machine::Shape::DayMonthYear(when.year()),
+            when.month(),
+            when.day(),
+        ),
         // Padded, because an unpadded numeric date is harder to scan in a
         // column and no shorter to hear.
         (DateWording::Numeric, DateOrder::MonthFirst) => {
