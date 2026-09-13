@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-current_phase: 7
-current_phase_name: Installing, updating and what is stored
-current_plan: 9
+current_phase: 6
+current_phase_name: How the application speaks
+current_plan: 1
 status: executing
-stopped_at: 07-09 tasks 1 and 2 of three merged, and the plan is partial on purpose. An update is now fetched without anybody being asked once a kind of version has been chosen, checked twice, and offered once before it runs. The second check is the whole point: WinVerifyTrust says a file is validly signed, which millions are, and only reading the signer's certificate and comparing the name says it is ours, exactly rather than by containment. The refusal is proven against a real Microsoft-signed system file and the acceptance is proven by nothing, because this project signs nothing, so as this ships every real installer is refused and four pages say so. The checked file is a type only the check constructs and both the question and the run take it, so there is no ordering to rearrange into "run it anyway?". Two features on the windows crate already pinned at 0.62.2, no new dependency, and streaming turned out to need no reqwest feature at all. Reading criterion 2 from ROADMAP.md clause by clause found two clauses open that no test could have: a computer with no way to check a signature was downloading first and refusing after, and the setting's own description still said "nothing is downloaded yet" four commits after that stopped being true. Both fixed with their own red halves. Task 3 is the screen reader checkpoint, recorded and not attempted; it needs a published signed release, which is 07-08's. Criterion 2 does not close and SHIP-02 does not close: twelve of thirteen clauses are structurally complete and nothing has ever applied anything. The earlier entry, still true. 07-08 task 1 of three merged, and that plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
-last_updated: "2026-09-12T23:10:00.000Z"
-last_activity: 2026-09-12
+stopped_at: 06-01 merged, all of it, and criterion 1 does not close because every one of its four clauses is about a screen and this plan is the half that is not one. The model can now say what somebody chose apart from what they get: `what_was_chosen_for` answers the choice as it was made and tells "no override" apart from "all four ticked", which the only public reader could not, because `channels_for` defaults a missing entry to every channel, drops the globally switched-off ones and adds a braille tick where only a sound was picked. A panel built on it would have shown somebody four ticks they never put there. `use_the_default_for` removes the entry rather than emptying it, since an empty set round trips and means silence, and `set_event_channels` is public where before it had eleven references all in its own file. `enum Event` and `Event::ALL` come from one list, so a seventeenth event cannot exist without a control, a sound scheme slot and test coverage. That was measured by hand on both sides rather than argued, because no test could express it: the variant absent from `ALL` left the whole library green at 7,118 tests, and in the list it is in `ALL` without anybody touching `ALL` while removing it is four compile errors. It is the plan's one declared test-first exception and carries no guard record, because the break fails to compile rather than reddening a test and guards.py reads cargo's FAILED lines. Nothing a user can reach changed, so no version bump and no changelog entry; 06-02 is the panel. Four deviations, none of which changed what was built, the largest being that the plan and the phase README both say three exhaustive matches where there are four. `Channel::ALL` carries the same hole, is out of scope, and is WINDOWS.md 343; FEEDBACK-01's evidence now says something the tree disproves and is WINDOWS.md 344, left for decision 7 at 06-07. The earlier entry, still true. 07-09 tasks 1 and 2 of three merged, and the plan is partial on purpose. An update is now fetched without anybody being asked once a kind of version has been chosen, checked twice, and offered once before it runs. The second check is the whole point: WinVerifyTrust says a file is validly signed, which millions are, and only reading the signer's certificate and comparing the name says it is ours, exactly rather than by containment. The refusal is proven against a real Microsoft-signed system file and the acceptance is proven by nothing, because this project signs nothing, so as this ships every real installer is refused and four pages say so. The checked file is a type only the check constructs and both the question and the run take it, so there is no ordering to rearrange into "run it anyway?". Two features on the windows crate already pinned at 0.62.2, no new dependency, and streaming turned out to need no reqwest feature at all. Reading criterion 2 from ROADMAP.md clause by clause found two clauses open that no test could have: a computer with no way to check a signature was downloading first and refusing after, and the setting's own description still said "nothing is downloaded yet" four commits after that stopped being true. Both fixed with their own red halves. Task 3 is the screen reader checkpoint, recorded and not attempted; it needs a published signed release, which is 07-08's. Criterion 2 does not close and SHIP-02 does not close: twelve of thirteen clauses are structurally complete and nothing has ever applied anything. The earlier entry, still true. 07-08 task 1 of three merged, and that plan is partial on purpose. What has to be signed is now counted from the build rather than remembered: a census in tests/installer.rs derives the three binaries from the [Files] block, the three published downloads from the workflow's own list and the uninstaller from the script's Uninstallable directive, which is seven where SHIP-01's wording names two. It was taken red by hand with an eighth Source line and named the new file. The one unverified fact in 07-RESEARCH.md is settled from the local Inno help and its premise was half wrong: the two-pass prompting behaviour belongs to a build with no SignTool, not to SignedUninstaller, so a CI job that signs at all never reaches it, and a signed uninstaller makes Setup write its messages to a separate unins???.msg. The portable copy and the zip are taken after build-installer.sh runs, so they inherit whatever it signs. Nothing is signed, nothing signs anything, and the three shipped pages that say the build is unsigned are untouched and still true. Task 2 is the Azure account only Pratik can create and is open; task 3 must not start before it. One deviation worth carrying: a guard record 07-07 wrote one wave ago went stale inside this phase, because the census reads the same published list its break changes, and it was corrected by hand before --remeasure would accept it
+last_updated: "2026-09-13T00:40:00.000Z"
+last_activity: 2026-09-13
 state_head: f0f20815
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 97
-  completed_plans: 89
+  completed_plans: 90
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
 last_activity_desc: "02-06 done: the writer and the condition dialog a rule editor needs are built and tested, and nothing in the running program opens either of them yet. That is 02-07's job and both are recorded as stubs rather than left to be found. The replace writes a search and its whole question list in one transaction, with the row stamped last on purpose, because stamping it first would make the only failure a person can cause fire before anything was destroyed and leave no test able to tell a transaction from three loose statements"
@@ -29,13 +29,47 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 07 (Installing, updating and what is stored). **07-09's first two tasks
-are merged, version 0.119.0. All nine plans have a summary on disk and three of
-them say `partial`: 07-06, 07-08 and 07-09. Three checkpoints are open and none
-of them can be closed by anything in this repository: 07-06's needs a workflow
-run, 07-08's needs an Azure signing account only Pratik can create, and 07-09's
-needs a published, signed release, so it waits on 07-08's. Phase 05.2's is open
-too.**
+Phase: 06 (How the application speaks). **06-01 of eight is merged, version
+0.119.0, and nothing a user can reach changed. The model can now say what
+somebody chose separately from what they get, and a seventeenth event cannot
+exist without a control, a sound scheme slot and test coverage. Criterion 1
+does not close: all four of its clauses are about a screen and 06-02 is the
+screen.**
+
+**What somebody chose and what they get were one answer, and now they are
+two.** The only public reader was `channels_for`, which defaults an event
+nobody has touched to every channel, drops the channels switched off
+everywhere, and adds a written channel where only a sound was picked. So it
+answered the same for "no override" and "all four ticked" and reported a
+braille tick nobody set. A settings panel rendered from it would have told
+somebody they chose something they did not. `what_was_chosen_for` answers the
+choice as it was made, and `Some(empty)`, meaning silence for that event, is
+told apart from `None`, meaning the default. `use_the_default_for` removes the
+entry rather than emptying it, which are opposite outcomes wearing similar
+names. `set_event_channels` is public, where before it had eleven references
+and every one was in its own file, so a per-event override could only ever
+arrive by hand-editing the stored settings string.
+
+**The sixteenth event was defended by nothing, which was measured rather than
+argued.** `Event::ALL` was a hand-written array. Four exhaustive matches force
+a new variant to be described and nothing forced it into `ALL`, and `ALL` is
+the only enumeration of the variants that exists, so no test could ask for a
+variant that is not in it. A seventeenth variant answered in all four matches
+and left out of `ALL` passed the whole library, 7,118 tests, nothing red. Both
+now come from one list, so the disagreement is unrepresentable rather than
+detectable, and removing a variant from the list is four compile errors. That
+is the plan's one declared test-first exception and it carries no guard
+record, because a break that fails to compile reddens nothing and `guards.py`
+reads cargo's FAILED lines. `Channel::ALL` has the same hole and is left open
+on purpose, `WINDOWS.md` 343.
+
+Phase 07 (Installing, updating and what is stored) is where the last nine
+plans went and it has not closed. **All nine have a summary on disk and three
+say `partial`: 07-06, 07-08 and 07-09. Three checkpoints are open and none can
+be closed by anything in this repository: 07-06's needs a workflow run,
+07-08's needs an Azure signing account only Pratik can create, and 07-09's
+needs a published, signed release, so it waits on 07-08's. Phase 05.2's is
+open too.**
 
 **Wixen Mail can now fetch an update and refuses to run anything this project
 did not sign, and it has never updated anything.** With a kind of version
@@ -501,8 +535,8 @@ phase 7 was editing it. `progress.total_plans` went from 92 to **97** by
 counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
-Current Plan: 9
-Total Plans in Phase: 9
+Current Plan: 1
+Total Plans in Phase: 8
 
 ---
 

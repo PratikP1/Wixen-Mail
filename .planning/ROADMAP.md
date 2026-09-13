@@ -537,7 +537,17 @@ owes: `scripts/guards.sh --touched-by 9611b70`.
   3. The accessibility scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so "roughly half" becomes a list.
   4. The interactions only a human screen reader pass can cover are written down as a scoped list, and each of the five WebView2 findings is either fixed or recorded as upstream with the upstream named.
 
-**Plans**: TBD
+**Plans**: eight, listed in `phases/06-how-the-application-speaks/README.md`.
+
+- [x] 06-01-PLAN.md, on the branch `what-somebody-chose-is-not-what-they-get`; the merge hash goes in the commit after the merge. Criterion 1 does not close and is not meant to: every one of its four clauses is about a screen, and this plan is the half that is not one. What landed is a model that can say what somebody chose apart from what they get. `what_was_chosen_for` answers the choice as it was made, telling "no override" apart from "all four ticked", which the only public reader before this could not do: `channels_for` defaults a missing entry to every channel, drops the globally switched-off ones and adds a braille tick where only a sound was picked, so a panel built on it would have shown somebody four ticks they never put there. `use_the_default_for` removes the entry rather than emptying it, because an empty set round trips and means silence. `set_event_channels` is public, where before it had eleven references and every one was in its own file, so the only route into an override was editing the stored string by hand. `enum Event` and `Event::ALL` now come from one list: the four exhaustive matches always forced a new variant to be described and nothing forced it into `ALL`, and a variant missing from `ALL` had no control, no sound scheme slot and no test coverage. That was measured rather than argued, on both sides, because no test could express it: a seventeenth variant absent from `ALL` left the whole library green at 7,118 tests, and the same variant in the list is in `ALL` without anybody touching `ALL` while removing it is four compile errors. That measurement is the plan's one declared test-first exception and it carries no guard record, because the break fails to compile rather than reddening a test. `Channel::ALL` has the same hole, is out of scope, and is `WINDOWS.md` 343; FEEDBACK-01's evidence is now wrong about the tree and is `WINDOWS.md` 344, left for decision 7 at 06-07.
+- [ ] 06-02-PLAN.md
+- [ ] 06-03-PLAN.md
+- [ ] 06-04-PLAN.md
+- [ ] 06-05-PLAN.md
+- [ ] 06-06-PLAN.md
+- [ ] 06-07-PLAN.md
+- [ ] 06-08-PLAN.md
+
 **UI hint**: yes
 
 **Inherited from phase 1** (see `.planning/phases/01-folders-and-conversations/deferred-items.md`):
@@ -605,7 +615,7 @@ the earlier phases produce and can be reordered if something makes that useful.
 | 5. The other five modules keep up | 8/8 | In Progress|  |
 | 5.1 Notes and contacts reach a server | 6/6 | In Progress|  |
 | 5.2 Notes in OneNote | 3/3 | In Progress| Every plan built and merged; the phase's human checkpoint is open |
-| 6. How the application speaks | 0/8 | Planned, not started | Not `TBD` any more, because plans are on disk and the check that reads this row treats `TBD` as honest only while a phase has none. Eight plan files, written on 2026-09-12 and stable for several minutes before this was taken, and phase 6's own README asks for exactly `0/8`. Written here by 07-06's executor because that README says it deliberately left `.planning/ROADMAP.md` alone while phase 7 was editing it |
+| 6. How the application speaks | 1/8 | In Progress| 06-01 merged. The model can now say what somebody chose, separately from what they get, and `Event` with `Event::ALL` come from one list so a seventeenth event cannot exist without a control, a sound scheme slot and test coverage. Criterion 1 does not close: all four of its clauses are about a screen and there is no screen yet, which is 06-02. Nothing a user can reach changed, so no version bump and no changelog entry. The row was `0/8` until this, written by 07-06's executor because phase 6's README deliberately left this file alone while phase 7 was editing it |
 | 7. Installing, updating and what is stored | 9/9 | In Progress| 07-01 to 07-05 merged; criteria 3 and 6 close, neither heard; criterion 2 has everything but applying, and nothing it can say has met a published release. 07-06 merged one task of three and its summary says `partial`: criterion 5 needs a workflow run nobody has made, so SHIP-05 is still either two CI jobs or a port. 07-07 closes the half of criterion 1 that is about this repository rather than a certificate authority, and rewrites criterion 2 to cover the download. 07-08 merged one task of three and its summary also says `partial`: what has to be signed is now counted from the build rather than remembered, seven things where SHIP-01's wording names two, and nothing is signed because there is no certificate. Criterion 1 waits on an Azure account only Pratik can create, which is 07-08's open checkpoint. 07-09 merged two tasks of three and its summary says `partial` as well: an update is fetched unasked, refused unless this project signed it, and offered once before it runs, and none of it has ever run. The count is of summary files on disk, which is what the check that reads this row counts, so it is not a count of plans that closed what they were written for: three of these nine are partial and say so |
 | 8. Every number the project quotes | 0/TBD | Researched, not planned | - |
 
