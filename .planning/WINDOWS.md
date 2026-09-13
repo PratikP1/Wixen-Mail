@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 333
+open_count: 337
 waived_count: 0
 fixed_count: 22
-total_count: 355
-last_updated: 2026-09-13T08:39:33.202Z
+total_count: 359
+last_updated: 2026-09-13T11:20:09.076Z
 ---
 
 # Broken Windows Ledger
@@ -370,6 +370,10 @@ last_updated: 2026-09-13T08:39:33.202Z
 | 353 | 06 | unrun-verify | .planning/ROADMAP.md |  | Criterion 1 clause 2, by keyboard, does not close. Every control on the Feedback tab is a native Choice, CheckBox or Button so Tab reaches them, and every check box and the button carries a mnemonic distinct from the other nine on the tab. Both facts were established by reading the source, not by pressing a key. Nobody has tabbed through this tab and no test presses one | open |  | 2026-09-13T06:50:57.999Z |  |
 | 354 | 07 | unmet-truth | Cargo.toml | 15 | Nothing in this repository builds at the declared floor. Cargo.toml says rust-version = 1.88 and every workflow plus rust-toolchain.toml now uses 1.98.1, so 1.88 is a claim no build has tested since it was written. Found 2026-09-13 while pinning the toolchain. Whether an MSRV job belongs here is a scoping question nobody has settled; recorded rather than fixed. | open |  | 2026-09-13T08:39:16.912Z |  |
 | 355 | 07 | skipped-test | src/service/signed_mail.rs | 6523 | test_the_withdrawal_question_really_reaches_windows_own_answer stops guarding on a machine that holds no intermediate authority it trusts. Windows does not check withdrawal for the root of a chain, so an intermediate whose issuer is not installed gets no verdict, and nothing here can tell that from a broken walk. The test reads that precondition off issuer_trust and returns early when it is absent, printing why. Recorded 2026-09-13 rather than hidden: a guard that can quietly stop guarding is the shape this project keeps meeting. | open |  | 2026-09-13T08:39:33.202Z |  |
+| 356 | 07 | unmet-truth | Cargo.toml |  | This ships a known-broken RSA implementation and will go on doing so. rsa 0.9.10 arrives through pgp 0.20.0, which cannot drop it, and RUSTSEC-2023-0071 has an empty patched list. The advisory is four concerns, not one: modexp timing is fixed, but the Ok or Err behavioural oracle is open at RustCrypto/RSA PR 680 and unblinded modexp on the default path is open at PR 702. The oracle needs no timing at all and recovers an RSA-1024 plaintext in 275,490 queries against published 0.10.0-rc.18. Accepted on 2026-09-13 on an exposure argument, not a fix: this program gives a sender no per-query feedback, so the oracle has no channel here. That argument can be wrong and it expires the day anything here answers a sender differently depending on whether a PGP body decrypted. PR 680 landing and shipping is what changes the answer, not the advisory clearing. Full reasoning in .cargo/audit.toml. | open |  | 2026-09-13T11:19:24.037Z |  |
+| 357 | 07 | unmet-truth | scripts/audit.sh |  | cargo audit does not fail on an unmaintained or yanked warning without -D warnings, so the audit gate is blind to a whole class it looks like it covers. Measured 2026-09-13 after RUSTSEC-2023-0071 was accepted: the plain run exits 0 while printing three warnings nobody has decided, lzw RUSTSEC-2020-0144 unmaintained, proc-macro-error RUSTSEC-2024-0370 unmaintained, and chacha20 0.10.1 yanked. One unmaintained crate, paste, is in the accepted list, which makes the treatment of the class inconsistent: one is written down and three are printed and ignored. Not fixed here because turning on -D warnings needs a decision on each of the three, which is the same product decision the rsa entry just took and is out of this change's scope. | open |  | 2026-09-13T11:19:39.327Z |  |
+| 358 | 07 | unmet-truth | .cargo/audit.toml |  | The still-reported check cannot see an acceptance whose basis has evaporated while the advisory goes on being reported. The rsa entry rests on the advisory having an empty patched list, which cargo audit prints as No fixed upgrade is available. The day that becomes Upgrade to something, the run still reports the advisory, the check stays green, and an acceptance resting on there being nothing to upgrade to has quietly stopped being true. A crate version fingerprint was considered on 2026-09-13 and decided against, with the reason written in scripts/audit.sh and in the phase 7 RSA advisory report: for every way an acceptance has really gone stale here the version moving and the advisory ceasing to be reported are the same event, so the fingerprint fires no earlier and costs a hand-maintained number per entry. It also would not close this gap, which is about the advisory rather than the crate. Closing it means recording the Solution line each acceptance was judged against and comparing it on every run. | open |  | 2026-09-13T11:19:54.227Z |  |
+| 359 | 07 | deviation | scripts/audit.sh |  | The run that checks the acceptances depends on where cargo-audit looks for its config, and nothing would say so if that moved. Measured 2026-09-13 against cargo-audit 0.22.2 by running from target/auditprobe, two directories below the project config: it reads .cargo/audit.toml from the working directory only and does not walk upwards. The second run is made from a scratch directory carrying a config that ignores nothing, so it is correct whether or not that measurement holds. What it would not survive is a cargo-audit that merged configs from several directories, and the failure would be silent in the worst direction: every acceptance would read as still applying while nothing was actually checked. The narrower-than-the-filtered-run refusal catches the opposite direction only. | open |  | 2026-09-13T11:20:09.076Z |  |
 
 ````json
 [
@@ -4631,6 +4635,54 @@ last_updated: 2026-09-13T08:39:33.202Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T08:39:33.202Z",
+    "resolved_at": null
+  },
+  {
+    "id": 356,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "Cargo.toml",
+    "line": null,
+    "description": "This ships a known-broken RSA implementation and will go on doing so. rsa 0.9.10 arrives through pgp 0.20.0, which cannot drop it, and RUSTSEC-2023-0071 has an empty patched list. The advisory is four concerns, not one: modexp timing is fixed, but the Ok or Err behavioural oracle is open at RustCrypto/RSA PR 680 and unblinded modexp on the default path is open at PR 702. The oracle needs no timing at all and recovers an RSA-1024 plaintext in 275,490 queries against published 0.10.0-rc.18. Accepted on 2026-09-13 on an exposure argument, not a fix: this program gives a sender no per-query feedback, so the oracle has no channel here. That argument can be wrong and it expires the day anything here answers a sender differently depending on whether a PGP body decrypted. PR 680 landing and shipping is what changes the answer, not the advisory clearing. Full reasoning in .cargo/audit.toml.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T11:19:24.037Z",
+    "resolved_at": null
+  },
+  {
+    "id": 357,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": "scripts/audit.sh",
+    "line": null,
+    "description": "cargo audit does not fail on an unmaintained or yanked warning without -D warnings, so the audit gate is blind to a whole class it looks like it covers. Measured 2026-09-13 after RUSTSEC-2023-0071 was accepted: the plain run exits 0 while printing three warnings nobody has decided, lzw RUSTSEC-2020-0144 unmaintained, proc-macro-error RUSTSEC-2024-0370 unmaintained, and chacha20 0.10.1 yanked. One unmaintained crate, paste, is in the accepted list, which makes the treatment of the class inconsistent: one is written down and three are printed and ignored. Not fixed here because turning on -D warnings needs a decision on each of the three, which is the same product decision the rsa entry just took and is out of this change's scope.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T11:19:39.327Z",
+    "resolved_at": null
+  },
+  {
+    "id": 358,
+    "kind": "unmet-truth",
+    "phase": "07",
+    "file": ".cargo/audit.toml",
+    "line": null,
+    "description": "The still-reported check cannot see an acceptance whose basis has evaporated while the advisory goes on being reported. The rsa entry rests on the advisory having an empty patched list, which cargo audit prints as No fixed upgrade is available. The day that becomes Upgrade to something, the run still reports the advisory, the check stays green, and an acceptance resting on there being nothing to upgrade to has quietly stopped being true. A crate version fingerprint was considered on 2026-09-13 and decided against, with the reason written in scripts/audit.sh and in the phase 7 RSA advisory report: for every way an acceptance has really gone stale here the version moving and the advisory ceasing to be reported are the same event, so the fingerprint fires no earlier and costs a hand-maintained number per entry. It also would not close this gap, which is about the advisory rather than the crate. Closing it means recording the Solution line each acceptance was judged against and comparing it on every run.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T11:19:54.227Z",
+    "resolved_at": null
+  },
+  {
+    "id": 359,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "scripts/audit.sh",
+    "line": null,
+    "description": "The run that checks the acceptances depends on where cargo-audit looks for its config, and nothing would say so if that moved. Measured 2026-09-13 against cargo-audit 0.22.2 by running from target/auditprobe, two directories below the project config: it reads .cargo/audit.toml from the working directory only and does not walk upwards. The second run is made from a scratch directory carrying a config that ignores nothing, so it is correct whether or not that measurement holds. What it would not survive is a cargo-audit that merged configs from several directories, and the failure would be silent in the worst direction: every acceptance would read as still applying while nothing was actually checked. The narrower-than-the-filtered-run refusal catches the opposite direction only.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T11:20:09.076Z",
     "resolved_at": null
   }
 ]
