@@ -471,10 +471,31 @@ entries:
 | `a7f6346b` | fix(06-03), the non-Windows half builds clean rather than merely builds |
 | `455f30ce` | test(06-03), task 2 red, three tests named and held to it |
 | `082ab42e` | feat(06-03), task 2 green, version 0.121.0 |
+| `cf07ea3a` | docs(06-03), this summary, the ledger, `STATE.md` and `ROADMAP.md` |
+| `e98514b0` | the merge into `main` |
 
 The first three are the terminated executor's. The last two are mine, and the
 staged work it left is inside `455f30ce` with the one correction described
 above.
+
+## The gate, and one run of three that went red
+
+`scripts/check.sh all` was run on the branch at `cf07ea3a` under rustc 1.98.1,
+not piped into anything. Zero failures, release build included, exit 0.
+
+**The first attempt at the merge commit then failed one integration target,
+`a_move_says_what_has_not_been_sent`, and nothing explains it.** The tree had
+not changed. That target ran alone immediately afterwards and passed, all ten
+cases, and it passed again in the run that completed the merge at `e98514b0`.
+So the same tree is green on two full runs and red on one.
+
+**The detail was lost, and that is the part worth not repeating.** The merge
+output was read through `tail -20` and which case failed scrolled past. A
+transient failure whose text nobody kept is one nobody can diagnose. This
+target builds a live window and the failing run followed another full run
+closely, so contention is the obvious guess, and it is only a guess.
+`WINDOWS.md` 365 rather than absorbed, because a check that fails one run in
+three while reading as green is guardrail 4.
 
 ## Task 3
 

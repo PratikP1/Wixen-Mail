@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 342
+open_count: 343
 waived_count: 0
 fixed_count: 22
-total_count: 364
-last_updated: 2026-09-13T14:46:34.120Z
+total_count: 365
+last_updated: 2026-09-13T15:42:15.765Z
 ---
 
 # Broken Windows Ledger
@@ -379,6 +379,7 @@ last_updated: 2026-09-13T14:46:34.120Z
 | 362 | 06 | unmet-truth | .planning/ROADMAP.md |  | Success criterion 2 of phase 6 has four clauses and plan 06-03 closes part of one. Month names follow the machine in a date and in a month heading and in the appointment form's month list, but not in the eight signature-outcome sentences, which still write an English month through the chrono format %B at src/service/signed_mail.rs line 1373. Day names do not follow the machine at all: src/application/occurrences.rs line 701 still matches a chrono Weekday to an English string. Relative wording is the plan's own blocking checkpoint and was left unanswered on purpose. The silent English fallback is the one clause that is met. Task 3 of 06-03 carries the first two and is written against the checkpoint's answer. | open |  | 2026-09-13T14:46:05.068Z |  |
 | 363 | 06 | unmet-truth | src/common/how_the_machine_writes_dates.rs |  | A stored day that no month has falls back to English on a machine that does have the language, which is a wider fallback than the criterion asks for. The criterion says English where there is no translation. a_month_and_a_day accepts a day from 1 to 31 without asking which month it is, so a birthday stored as --02-30 reaches Windows, Windows refuses the whole date, and the wrapper answers in English. On a French machine that reads February 30 rather than fevrier 30. It is a corrupt stored row either way and it does not take the reading down, which is what the threat register asked for, but the reason the reader sees English there is not the reason the sentence on the settings screen gives. Found by reading at green on 2026-09-13, not by a test. | open |  | 2026-09-13T14:46:18.671Z |  |
 | 364 | 06 | unrun-verify | src/presentation/date_display.rs |  | The Russian genitive was produced on an en-US machine by passing ru-RU as a locale name, never on a Windows installed in Russian. Measured 2026-09-13: a date reads 2 января and a month heading reads Январь, which are different words, so the two mechanisms are doing different things and the test that separates them is real. What that does not settle is whether a Windows whose own language is Russian gives the same answers, or whether a machine missing the NLS data for a language behaves as this one does when asked for a locale it has. The French assertion is weaker still and says so in the test: fr-FR writes juillet both ways, so it passes against the wrong mechanism and would not have caught the fault the Russian one caught. | open |  | 2026-09-13T14:46:34.120Z |  |
+| 365 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | The first attempt at the 06-03 merge commit failed the full gate on one integration target, a_move_says_what_has_not_been_sent, and nothing explains why. It passed on its own immediately afterwards, all 10 cases, and passed again in the run that completed the merge at e98514b0, and the same target had passed minutes earlier in the full run on the branch. So the merge is green on two full runs and red on one, with no change to the tree between them. Which case failed was not captured, because the merge output was read through tail and the detail scrolled past, which is the part that should not happen again: a transient failure whose text nobody kept is a transient failure nobody can diagnose. This target builds a live window and the run that failed followed another full run closely, so contention is the obvious guess and it is only a guess. Recorded rather than absorbed, because a check that fails one run in three while reading as green is guardrail 4. | open |  | 2026-09-13T15:42:15.765Z |  |
 
 ````json
 [
@@ -4748,6 +4749,18 @@ last_updated: 2026-09-13T14:46:34.120Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T14:46:34.120Z",
+    "resolved_at": null
+  },
+  {
+    "id": 365,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "tests/a_move_says_what_has_not_been_sent.rs",
+    "line": null,
+    "description": "The first attempt at the 06-03 merge commit failed the full gate on one integration target, a_move_says_what_has_not_been_sent, and nothing explains why. It passed on its own immediately afterwards, all 10 cases, and passed again in the run that completed the merge at e98514b0, and the same target had passed minutes earlier in the full run on the branch. So the merge is green on two full runs and red on one, with no change to the tree between them. Which case failed was not captured, because the merge output was read through tail and the detail scrolled past, which is the part that should not happen again: a transient failure whose text nobody kept is a transient failure nobody can diagnose. This target builds a live window and the run that failed followed another full run closely, so contention is the obvious guess and it is only a guess. Recorded rather than absorbed, because a check that fails one run in three while reading as green is guardrail 4.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T15:42:15.765Z",
     "resolved_at": null
   }
 ]
