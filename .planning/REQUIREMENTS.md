@@ -1337,7 +1337,21 @@ write path added by this milestone passes through that gate.
     setting, and it reads documents rather than counting call sites. The per-event case needs
     its own check, and the criterion above is it.
 
-- [ ] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
+- [x] **FEEDBACK-02**: Dates and relative wording in the user's own language and format.
+  - **Complete structurally on 2026-09-13 at `39417f88`, 06-03 tasks 3 and 4, and heard by
+    nobody.** Every date this program writes follows the computer: month names in a date, the
+    twelve for a list, the seven day names, order and clock, through
+    `src/common/how_the_machine_writes_dates.rs`, with a source-reading guard holding that no
+    shipped literal names a month or a day in English apart from six allowed by name. "2 days
+    ago" comes out of `locales/en-US/dates.ftl` through Project Fluent with the four conditions
+    below held by tests, and a Russian resource inside a test produces the four Russian forms on
+    an en-US machine. The fallback is English, silently, forced in tests rather than read off the
+    machine. What is still English is the wording around a date, "every week on" and the
+    sentences of the interface, which is version 2's, and the four interface labels with example
+    dates named in `WINDOWS.md` 372. No date, day name, sentence or number has been heard by a
+    screen reader in any language: `WINDOWS.md` 360, 364, 366, 368, 370 and 371, for the pass
+    after phase 8. The plan said nothing had been installed when the paragraph below was
+    written; the install was `3c1291f0`, which answered `all`.
   - **The relative-wording decision, taken 2026-09-13 and written down here the same day by the
     rewrite of 06-03's task 3.** The evidence below is left as it was, because it is what this
     requirement was judged against. What follows is the decision and the three options that lost,
@@ -2103,7 +2117,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-08 | Phase 5 | Pending |
 | PIM-05 | Phase 5 | Complete |
 | FEEDBACK-01 | Phase 6 | Pending |
-| FEEDBACK-02 | Phase 6 | Pending |
+| FEEDBACK-02 | Phase 6 | Complete |
 | FEEDBACK-03 | Phase 6 | Pending |
 | SHIP-01 | Phase 7 | Pending |
 | SHIP-02 | Phase 7 | Pending |

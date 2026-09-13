@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 343
+open_count: 352
 waived_count: 0
 fixed_count: 22
-total_count: 365
-last_updated: 2026-09-13T15:42:15.765Z
+total_count: 374
+last_updated: 2026-09-13T23:13:22.733Z
 ---
 
 # Broken Windows Ledger
@@ -380,6 +380,15 @@ last_updated: 2026-09-13T15:42:15.765Z
 | 363 | 06 | unmet-truth | src/common/how_the_machine_writes_dates.rs |  | A stored day that no month has falls back to English on a machine that does have the language, which is a wider fallback than the criterion asks for. The criterion says English where there is no translation. a_month_and_a_day accepts a day from 1 to 31 without asking which month it is, so a birthday stored as --02-30 reaches Windows, Windows refuses the whole date, and the wrapper answers in English. On a French machine that reads February 30 rather than fevrier 30. It is a corrupt stored row either way and it does not take the reading down, which is what the threat register asked for, but the reason the reader sees English there is not the reason the sentence on the settings screen gives. Found by reading at green on 2026-09-13, not by a test. | open |  | 2026-09-13T14:46:18.671Z |  |
 | 364 | 06 | unrun-verify | src/presentation/date_display.rs |  | The Russian genitive was produced on an en-US machine by passing ru-RU as a locale name, never on a Windows installed in Russian. Measured 2026-09-13: a date reads 2 января and a month heading reads Январь, which are different words, so the two mechanisms are doing different things and the test that separates them is real. What that does not settle is whether a Windows whose own language is Russian gives the same answers, or whether a machine missing the NLS data for a language behaves as this one does when asked for a locale it has. The French assertion is weaker still and says so in the test: fr-FR writes juillet both ways, so it passes against the wrong mechanism and would not have caught the fault the Russian one caught. | open |  | 2026-09-13T14:46:34.120Z |  |
 | 365 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | The first attempt at the 06-03 merge commit failed the full gate on one integration target, a_move_says_what_has_not_been_sent, and nothing explains why. It passed on its own immediately afterwards, all 10 cases, and passed again in the run that completed the merge at e98514b0, and the same target had passed minutes earlier in the full run on the branch. So the merge is green on two full runs and red on one, with no change to the tree between them. Which case failed was not captured, because the merge output was read through tail and the detail scrolled past, which is the part that should not happen again: a transient failure whose text nobody kept is a transient failure nobody can diagnose. This target builds a live window and the run that failed followed another full run closely, so contention is the obvious guess and it is only a guess. Recorded rather than absorbed, because a check that fails one run in three while reading as green is guardrail 4. | open |  | 2026-09-13T15:42:15.765Z |  |
+| 366 | 06 | unrun-verify | src/common/catalogue.rs |  | No sentence out of the translation catalogue has been heard by anybody through a screen reader. The four English sentences are byte-identical to what relative_to wrote before, held by the table test under a forced en-US, and that proves structure, not that a listener hears them the same. Waits for the pass after phase 8. | open |  | 2026-09-13T23:12:55.075Z |  |
+| 367 | 06 | unmet-truth | locales/en-US/dates.ftl |  | No non-English catalogue exists. On every computer not set to English, 2 days ago is still English, silently, which is criterion 2's own fallback clause and is disclosed on the Reading tab. Which languages Wixen Mail speaks and who writes them is a version 2 decision and Pratik's; the Russian and Polish resources that prove the plural machinery live inside tests and ship nowhere, because a translation nobody here can read is not a translation to ship. | open |  | 2026-09-13T23:12:56.008Z |  |
+| 368 | 06 | unrun-verify | src/common/catalogue.rs |  | Whether a Russian listener hears 2 дня назад as natural in a list cell, and whether a number the formatter writes with a U+00A0 group separator is read correctly by a screen reader in that locale, are questions only a Russian Windows, a Russian voice and a Russian speaker can settle. The forms were produced on an en-US machine through a resource written inside a test. Waits for the pass after phase 8. | open |  | 2026-09-13T23:12:56.963Z |  |
+| 369 | 06 | deviation | src/service/spellcheck/mod.rs |  | Two readers of LOCALE_SNAME now exist: spellcheck::system_language at spellcheck/mod.rs through GetLocaleInfoW, and how_the_machine_writes_dates::this_computers_locale_name through GetLocaleInfoEx, which chooses the catalogue. Measured agreeing on this machine on 2026-09-13, both en-US. The spellchecker's copy is in src/service, which src/common cannot reach without a new layering direction, and its file is fingerprinted by 30 guard records, so retiring one is version 2's job and not this plan's. | open |  | 2026-09-13T23:12:57.918Z |  |
+| 370 | 06 | unrun-verify | src/application/occurrences.rs |  | The repeat-series sentence has never been heard in any language. every week on mardi and jeudi is what a French computer now hears, a French day inside an English frame, held by a test under a forced fr-FR; whether a French listener hears the day as a day, or hears the sentence as a fault, waits for the pass after phase 8 and for version 2's translation of the frame. | open |  | 2026-09-13T23:13:18.748Z |  |
+| 371 | 06 | unrun-verify | src/service/signed_mail.rs |  | The eight signature-outcome sentences have never been heard in any language. The date in them now follows the computer in the form a date puts a month in, held by a test under a forced fr-FR asserting 28 août 2026; whether the sentence reads as a date to a listener waits for the pass after phase 8. | open |  | 2026-09-13T23:13:19.744Z |  |
+| 372 | 06 | unmet-truth | src/application/repeating.rs |  | Four interface literals still carry English day and month names and are allowed by name in the source-reading guard with a reason beside each: Every weekday, Monday to Friday in repeating.rs and item_fields.rs, and Month first, July 26, Day first, 26 July and A word, July 26, 2026 in wx_settings.rs. They are labels on choices, interface text version 2 translates; a French day inside an English label is not better than an English one. The guard asserts each allowance is still in the tree so the list cannot outlive its subjects. | open |  | 2026-09-13T23:13:20.732Z |  |
+| 373 | 06 | deviation | locales/en-US/dates.ftl |  | locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions. | open |  | 2026-09-13T23:13:21.714Z |  |
+| 374 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix. | open |  | 2026-09-13T23:13:22.733Z |  |
 
 ````json
 [
@@ -4761,6 +4770,114 @@ last_updated: 2026-09-13T15:42:15.765Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T15:42:15.765Z",
+    "resolved_at": null
+  },
+  {
+    "id": 366,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/common/catalogue.rs",
+    "line": null,
+    "description": "No sentence out of the translation catalogue has been heard by anybody through a screen reader. The four English sentences are byte-identical to what relative_to wrote before, held by the table test under a forced en-US, and that proves structure, not that a listener hears them the same. Waits for the pass after phase 8.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:12:55.075Z",
+    "resolved_at": null
+  },
+  {
+    "id": 367,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "locales/en-US/dates.ftl",
+    "line": null,
+    "description": "No non-English catalogue exists. On every computer not set to English, 2 days ago is still English, silently, which is criterion 2's own fallback clause and is disclosed on the Reading tab. Which languages Wixen Mail speaks and who writes them is a version 2 decision and Pratik's; the Russian and Polish resources that prove the plural machinery live inside tests and ship nowhere, because a translation nobody here can read is not a translation to ship.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:12:56.008Z",
+    "resolved_at": null
+  },
+  {
+    "id": 368,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/common/catalogue.rs",
+    "line": null,
+    "description": "Whether a Russian listener hears 2 дня назад as natural in a list cell, and whether a number the formatter writes with a U+00A0 group separator is read correctly by a screen reader in that locale, are questions only a Russian Windows, a Russian voice and a Russian speaker can settle. The forms were produced on an en-US machine through a resource written inside a test. Waits for the pass after phase 8.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:12:56.963Z",
+    "resolved_at": null
+  },
+  {
+    "id": 369,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/service/spellcheck/mod.rs",
+    "line": null,
+    "description": "Two readers of LOCALE_SNAME now exist: spellcheck::system_language at spellcheck/mod.rs through GetLocaleInfoW, and how_the_machine_writes_dates::this_computers_locale_name through GetLocaleInfoEx, which chooses the catalogue. Measured agreeing on this machine on 2026-09-13, both en-US. The spellchecker's copy is in src/service, which src/common cannot reach without a new layering direction, and its file is fingerprinted by 30 guard records, so retiring one is version 2's job and not this plan's.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:12:57.918Z",
+    "resolved_at": null
+  },
+  {
+    "id": 370,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/application/occurrences.rs",
+    "line": null,
+    "description": "The repeat-series sentence has never been heard in any language. every week on mardi and jeudi is what a French computer now hears, a French day inside an English frame, held by a test under a forced fr-FR; whether a French listener hears the day as a day, or hears the sentence as a fault, waits for the pass after phase 8 and for version 2's translation of the frame.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:13:18.748Z",
+    "resolved_at": null
+  },
+  {
+    "id": 371,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/service/signed_mail.rs",
+    "line": null,
+    "description": "The eight signature-outcome sentences have never been heard in any language. The date in them now follows the computer in the form a date puts a month in, held by a test under a forced fr-FR asserting 28 août 2026; whether the sentence reads as a date to a listener waits for the pass after phase 8.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:13:19.744Z",
+    "resolved_at": null
+  },
+  {
+    "id": 372,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "src/application/repeating.rs",
+    "line": null,
+    "description": "Four interface literals still carry English day and month names and are allowed by name in the source-reading guard with a reason beside each: Every weekday, Monday to Friday in repeating.rs and item_fields.rs, and Month first, July 26, Day first, 26 July and A word, July 26, 2026 in wx_settings.rs. They are labels on choices, interface text version 2 translates; a French day inside an English label is not better than an English one. The guard asserts each allowance is still in the tree so the list cannot outlive its subjects.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:13:20.732Z",
+    "resolved_at": null
+  },
+  {
+    "id": 373,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "locales/en-US/dates.ftl",
+    "line": null,
+    "description": "locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:13:21.714Z",
+    "resolved_at": null
+  },
+  {
+    "id": 374,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "tests/a_move_says_what_has_not_been_sent.rs",
+    "line": null,
+    "description": "Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T23:13:22.733Z",
     "resolved_at": null
   }
 ]
