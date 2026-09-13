@@ -471,9 +471,145 @@ fn ask_this_computers_locale_name() -> Result<String> {
     ask_windows_about(WhichLocale::ThisComputer, THE_NAME_OF_THE_LOCALE)
 }
 
+/// What Windows wants to know about how to write a number, as it is laid
+/// out in memory. `NUMBERFMTW`.
+///
+/// Every field has to be set when the pointer is not null; there is no
+/// "use the locale's own" for one field and not another. A null pointer
+/// uses the locale's own for all six, and one of the six is the number of
+/// fraction digits, which for every locale here is two: asked for 5 that way
+/// Windows writes "5.00", measured on 2026-09-13, and a count is not a price.
+/// So the pointer is never null, five fields are read from the locale and
+/// the sixth is the value's own.
 #[cfg(target_os = "windows")]
-fn ask_for_a_number(_which: WhichLocale<'_>, _value: f64) -> Option<String> {
-    None
+#[repr(C)]
+struct HowToWriteANumber {
+    fraction_digits: u32,
+    leading_zero: u32,
+    grouping: u32,
+    decimal_separator: *const u16,
+    thousands_separator: *const u16,
+    negative_order: u32,
+}
+
+/// The five things about writing a number that are read from the locale.
+/// `LOCALE_ILZERO`, `LOCALE_SGROUPING`, `LOCALE_SDECIMAL`, `LOCALE_STHOUSAND`
+/// and `LOCALE_INEGNUMBER`.
+#[cfg(target_os = "windows")]
+const WHETHER_A_FRACTION_STARTS_WITH_A_ZERO: u32 = 0x0000_0012;
+#[cfg(target_os = "windows")]
+const HOW_DIGITS_ARE_GROUPED: u32 = 0x0000_0010;
+#[cfg(target_os = "windows")]
+const THE_DECIMAL_SEPARATOR: u32 = 0x0000_000E;
+#[cfg(target_os = "windows")]
+const THE_THOUSANDS_SEPARATOR: u32 = 0x0000_000F;
+#[cfg(target_os = "windows")]
+const HOW_A_NEGATIVE_IS_WRITTEN: u32 = 0x0000_1010;
+
+/// The grouping string as the structure wants it, by Microsoft's own rule.
+///
+/// The locale answers "3;0", meaning groups of three repeating. The
+/// structure wants one number, and the rule for making it is the line
+/// somebody will "simplify": drop a trailing zero and run the sizes
+/// together, and where there is no trailing zero append one. So "3;0" is 3,
+/// "3;2;0" is 32, and "3" on its own, meaning one group of three and no
+/// more, is 30. A bare "0" is no grouping at all.
+#[cfg(target_os = "windows")]
+fn grouping_as_the_structure_wants_it(grouping: &str) -> Option<u32> {
+    let mut sizes: Vec<&str> = grouping.split(';').collect();
+    let repeats = sizes.last() == Some(&"0");
+    if repeats {
+        sizes.pop();
+    }
+    let mut digits = sizes.concat();
+    if digits.is_empty() {
+        return Some(0);
+    }
+    if !repeats {
+        digits.push('0');
+    }
+    digits.parse().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn ask_for_a_number(which: WhichLocale<'_>, value: f64) -> Option<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetNumberFormatEx(
+            locale: *const u16,
+            flags: u32,
+            value: *const u16,
+            how: *const HowToWriteANumber,
+            into: *mut u16,
+            how_many: i32,
+        ) -> i32;
+    }
+
+    // Windows takes the value as text: digits, one optional leading minus,
+    // one optional period. `f64` writes exactly that for any finite value
+    // and something else for the rest, which Windows then refuses.
+    if !value.is_finite() {
+        return None;
+    }
+    let as_text = value.to_string();
+    let fraction_digits = as_text
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+
+    let decimal = wide(&ask_windows_about(which, THE_DECIMAL_SEPARATOR).ok()?);
+    let thousands = wide(&ask_windows_about(which, THE_THOUSANDS_SEPARATOR).ok()?);
+    let how = HowToWriteANumber {
+        fraction_digits: u32::try_from(fraction_digits).ok()?,
+        leading_zero: ask_windows_about(which, WHETHER_A_FRACTION_STARTS_WITH_A_ZERO)
+            .ok()?
+            .parse()
+            .ok()?,
+        grouping: grouping_as_the_structure_wants_it(
+            &ask_windows_about(which, HOW_DIGITS_ARE_GROUPED).ok()?,
+        )?,
+        // The two separators live in `decimal` and `thousands` above, which
+        // outlive both calls below. The structure holds pointers into them
+        // and nothing else keeps them alive.
+        decimal_separator: decimal.as_ptr(),
+        thousands_separator: thousands.as_ptr(),
+        negative_order: ask_windows_about(which, HOW_A_NEGATIVE_IS_WRITTEN)
+            .ok()?
+            .parse()
+            .ok()?,
+    };
+
+    let named = as_windows_wants_it(which);
+    let locale = named.as_ref().map_or(std::ptr::null(), Vec::as_ptr);
+    let value_as_windows_wants_it = wide(&as_text);
+
+    let how_many = unsafe {
+        GetNumberFormatEx(
+            locale,
+            0,
+            value_as_windows_wants_it.as_ptr(),
+            &how,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if how_many <= 0 {
+        return None;
+    }
+    let mut buffer = vec![0u16; how_many as usize];
+    let written = unsafe {
+        GetNumberFormatEx(
+            locale,
+            0,
+            value_as_windows_wants_it.as_ptr(),
+            &how,
+            buffer.as_mut_ptr(),
+            how_many,
+        )
+    };
+    if written <= 0 {
+        return None;
+    }
+    Some(without_the_zero(&buffer[..written as usize]))
 }
 
 /// Where there is no Windows locale API, English, and nothing said about it.
@@ -711,6 +847,18 @@ mod tests {
             a_number(WhichLocale::ACatalogueIsWrittenIn("en-US"), 5.0).as_deref(),
             Some("5")
         );
+    }
+
+    /// Microsoft's rule for the grouping field, held here because it is the
+    /// line somebody will tidy into `parse()` and get 3 for "3" instead of 30.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_the_grouping_string_becomes_the_number_the_structure_wants() {
+        assert_eq!(grouping_as_the_structure_wants_it("3;0"), Some(3));
+        assert_eq!(grouping_as_the_structure_wants_it("3;2;0"), Some(32));
+        assert_eq!(grouping_as_the_structure_wants_it("3"), Some(30));
+        assert_eq!(grouping_as_the_structure_wants_it("0"), Some(0));
+        assert_eq!(grouping_as_the_structure_wants_it("three"), None);
     }
 
     /// A value Windows will not write comes back as nothing, so the caller

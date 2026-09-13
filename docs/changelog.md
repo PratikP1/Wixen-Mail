@@ -8,6 +8,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **Nothing you hear has changed, and this is the first piece of a translated
+  Wixen Mail.** The wording "just now", "5 minutes ago", "3 hours ago" and "2
+  days ago" now comes out of a translation catalogue, `locales/en-US/dates.ftl`,
+  through Project Fluent, rather than out of the code. The sentences are the
+  same four English sentences they were. What is different is underneath them:
+  a language whose plurals have three or four forms can now have three or four,
+  because the rule for which form a number takes belongs to the language rather
+  than to this program, and a French or Russian catalogue can be dropped in
+  beside the English one without touching the code. Translating the interface
+  and what your screen reader says is version 2's work, and this is where it
+  starts.
+
+  **Known limitations.** Only English exists. On a computer set to any other
+  language, "2 days ago" is still "2 days ago", silently, and the note in
+  Settings, Reading still says so. No sentence out of the catalogue has been
+  heard by anybody through a screen reader. The Russian and Polish plural forms
+  that prove the machinery were produced on an English computer, from a
+  resource written inside a test by people who do not read Russian or Polish,
+  and that resource ships nowhere; which languages Wixen Mail will speak, and
+  who writes them, is not decided here.
+
 - **You can now decide how Wixen Mail tells you about each of the sixteen
   things it tells you about, one at a time, from Settings, Feedback.** Pick an
   event from the list, then choose whether it is announced through your screen

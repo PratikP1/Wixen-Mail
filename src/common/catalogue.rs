@@ -67,8 +67,10 @@
 use std::sync::OnceLock;
 
 use fluent_bundle::concurrent::FluentBundle;
-use fluent_bundle::{FluentArgs, FluentResource};
+use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
 use fluent_langneg::{NegotiationStrategy, negotiate_languages};
+use intl_memoizer::Memoizable;
+use intl_memoizer::concurrent::IntlLangMemoizer;
 use unic_langid::LanguageIdentifier;
 
 use crate::common::how_the_machine_writes_dates::{self as the_machine, WhichLocale};
@@ -181,10 +183,25 @@ pub fn for_this(which: WhichLocale<'_>) -> Result<&'static Catalogue> {
 }
 
 /// The locale a name asks for, and English when the name cannot be read.
+///
+/// English by name rather than `LanguageIdentifier::default()`, which is
+/// `und`, the undetermined language. Negotiation would turn `und` into
+/// English today because English is the default catalogue, so the two look
+/// alike with one catalogue compiled in; they stop looking alike the day a
+/// second arrives and `und` is negotiated against a list rather than sent
+/// straight to the fallback. The fallback clause is "English", so ask for it.
 fn requested_locale(name: Result<String>) -> LanguageIdentifier {
     name.ok()
         .and_then(|name| name.parse().ok())
-        .unwrap_or_default()
+        .unwrap_or_else(english)
+}
+
+/// The catalogue every machine gets when none matches its language.
+fn english() -> LanguageIdentifier {
+    // Parsed from a literal that is also the name of a shipped catalogue,
+    // and the test that walks `SHIPPED` holds that it parses; the fallback
+    // is only for the type's sake.
+    WHERE_THERE_IS_NO_TRANSLATION.parse().unwrap_or_default()
 }
 
 /// Which shipped catalogue serves a requested locale.
@@ -193,7 +210,7 @@ fn chosen_for(requested: &LanguageIdentifier) -> &'static str {
         .iter()
         .filter_map(|catalogue| catalogue.locale.parse().ok())
         .collect();
-    let english: LanguageIdentifier = WHERE_THERE_IS_NO_TRANSLATION.parse().unwrap_or_default();
+    let english = english();
     let chosen = negotiate_languages(
         std::slice::from_ref(requested),
         &available,
@@ -224,12 +241,55 @@ fn a_bundle_speaking(locale: &str, source: &str) -> Result<FluentBundle<FluentRe
         ))
     })?;
     let mut bundle = FluentBundle::new_concurrent(vec![locale.clone()]);
+    // Setting 1. Off, as Firefox ships it; the module comment says what the
+    // marks do to a Windows title bar and a screen reader.
+    bundle.set_use_isolating(false);
+    // Setting 2. Numbers by Windows, in the bundle's own language.
+    bundle.set_formatter(Some(as_this_locale_writes_a_number));
     bundle.add_resource(resource).map_err(|errors| {
         Error::Other(format!(
             "the catalogue for {locale} repeats itself: {errors:?}"
         ))
     })?;
     Ok(bundle)
+}
+
+/// What language a bundle is writing, learned the only way a plain `fn` can.
+///
+/// `set_formatter` takes a function pointer, so the formatter has no state of
+/// its own, and the memoizer's locale is private. What the memoizer will do
+/// is construct a value of any type that implements `Memoizable`, once per
+/// bundle, handing it the locale. This is that type, and the locale is all it
+/// keeps.
+struct TheLocaleThisBundleSpeaks(String);
+
+impl Memoizable for TheLocaleThisBundleSpeaks {
+    type Args = ();
+    type Error = ();
+
+    fn construct(lang: LanguageIdentifier, (): ()) -> std::result::Result<Self, ()> {
+        Ok(Self(lang.to_string()))
+    }
+}
+
+/// Numbers written the way the bundle's language writes them, by Windows.
+///
+/// `None` hands the value back to Fluent, which writes the digits itself;
+/// that is the answer for anything that is not a number and for a number
+/// Windows will not write. Never an empty string.
+fn as_this_locale_writes_a_number(
+    value: &FluentValue<'_>,
+    memoizer: &IntlLangMemoizer,
+) -> Option<String> {
+    let FluentValue::Number(number) = value else {
+        return None;
+    };
+    memoizer
+        .with_try_get::<TheLocaleThisBundleSpeaks, _, _>((), |locale| {
+            the_machine::a_number(WhichLocale::ACatalogueIsWrittenIn(&locale.0), number.value)
+        })
+        .ok()
+        .flatten()
 }
 
 impl Catalogue {
@@ -245,7 +305,9 @@ impl Catalogue {
             .counts()
             .ok_or_else(|| Error::Other(format!("{} takes no count", message.id())))?;
         let mut args = FluentArgs::new();
-        args.set(counts, count.to_string());
+        // Setting 3, first half. As a number: a string matches no plural
+        // category and falls to `*[other]` with no error, so "1 days ago".
+        args.set(counts, count);
         self.format(message, args)
     }
 
@@ -261,6 +323,14 @@ impl Catalogue {
         let text = self
             .bundle
             .format_pattern(pattern, Some(&args), &mut errors);
+        // Setting 3, second half. A missing argument is written into the
+        // sentence as `{$days}` and reported here, and only here.
+        if !errors.is_empty() {
+            return Err(Error::Other(format!(
+                "{} could not be said: {errors:?}",
+                message.id()
+            )));
+        }
         Ok(text.into_owned())
     }
 

@@ -46,6 +46,8 @@
 ### picks the category; the translator writes the variants that language
 ### distinguishes and no more.
 
+dates-just-now = just now
+
 dates-minutes-ago = { $minutes ->
     [one] { $minutes } minute ago
    *[other] { $minutes } minutes ago
