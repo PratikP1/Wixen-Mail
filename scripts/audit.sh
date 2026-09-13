@@ -3,7 +3,9 @@
 #
 #   audit.sh                          run it and decide
 #   audit.sh --awaiting-a-decision    the advisories this gate holds open
-#   audit.sh --verdict <log> <status> the decision, given a run that happened
+#   audit.sh --accepted [<file>]      the advisories this project has accepted
+#   audit.sh --verdict <log> <status> [<held-open id>...]
+#   audit.sh --acceptances-still-apply <unfiltered log> <log> [<accepted id>...]
 #
 # # Why this exists
 #
@@ -55,8 +57,23 @@ awaiting_a_decision=(
 )
 
 if [ "${1:-}" = "--awaiting-a-decision" ]; then
-    printf '%s\n' "${awaiting_a_decision[@]}"
+    printf '%s\n' "${awaiting_a_decision[@]+"${awaiting_a_decision[@]}"}"
     exit 0
+fi
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+the_accepted_list="$repo_root/.cargo/audit.toml"
+
+# What this project has accepted, read out of `.cargo/audit.toml`.
+advisories_accepted_in() {
+    local file="${1:-$the_accepted_list}"
+    : "$file"
+    return 0
+}
+
+if [ "${1:-}" = "--accepted" ]; then
+    advisories_accepted_in "${2:-$the_accepted_list}"
+    exit $?
 fi
 
 # The decision, given a run that already happened.
@@ -71,6 +88,7 @@ fi
 #   <status>  the exit status of `cargo audit` with the list above set aside
 the_verdict() {
     local log="$1" filtered_status="$2"
+    shift 2
     local id
     local -a gone=()
 
@@ -116,7 +134,22 @@ the_verdict() {
 }
 
 if [ "${1:-}" = "--verdict" ]; then
-    the_verdict "${2:-}" "${3:-}"
+    shift
+    the_verdict "${1:-}" "${2:-}" "${@:3}"
+    exit $?
+fi
+
+# Whether every advisory this project accepts is still really reported.
+the_acceptances_still_apply() {
+    local unfiltered="$1" filtered="$2"
+    shift 2
+    : "$unfiltered" "$filtered" "$*"
+    return 0
+}
+
+if [ "${1:-}" = "--acceptances-still-apply" ]; then
+    shift
+    the_acceptances_still_apply "${1:-}" "${2:-}" "${@:3}"
     exit $?
 fi
 
@@ -142,10 +175,11 @@ cargo audit > "$plain_log" 2>&1 || true
 # command line rather than in .cargo/audit.toml, so CI reads the file and stays
 # red while this machine can still commit.
 ignore_flags=()
-for advisory in "${awaiting_a_decision[@]}"; do
+for advisory in "${awaiting_a_decision[@]+"${awaiting_a_decision[@]}"}"; do
     ignore_flags+=(--ignore "$advisory")
 done
 filtered_status=0
-cargo audit "${ignore_flags[@]}" >/dev/null 2>&1 || filtered_status=$?
+cargo audit "${ignore_flags[@]+"${ignore_flags[@]}"}" >/dev/null 2>&1 || filtered_status=$?
 
-the_verdict "$plain_log" "$filtered_status"
+the_verdict "$plain_log" "$filtered_status" \
+    "${awaiting_a_decision[@]+"${awaiting_a_decision[@]}"}"
