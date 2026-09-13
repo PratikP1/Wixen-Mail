@@ -96,7 +96,12 @@ set -euo pipefail
 awaiting_a_decision=()
 
 if [ "${1:-}" = "--awaiting-a-decision" ]; then
-    printf '%s\n' "${awaiting_a_decision[@]+"${awaiting_a_decision[@]}"}"
+    # Guarded rather than left to `printf`, which prints its format once even
+    # with nothing to fill it, so an empty list would come back as one blank
+    # line and read as one advisory with an empty name.
+    if [ "${#awaiting_a_decision[@]}" -gt 0 ]; then
+        printf '%s\n' "${awaiting_a_decision[@]}"
+    fi
     exit 0
 fi
 
