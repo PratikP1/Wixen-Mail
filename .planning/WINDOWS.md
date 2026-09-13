@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 337
+open_count: 342
 waived_count: 0
 fixed_count: 22
-total_count: 359
-last_updated: 2026-09-13T11:20:09.076Z
+total_count: 364
+last_updated: 2026-09-13T14:46:34.120Z
 ---
 
 # Broken Windows Ledger
@@ -374,6 +374,11 @@ last_updated: 2026-09-13T11:20:09.076Z
 | 357 | 07 | unmet-truth | scripts/audit.sh |  | cargo audit does not fail on an unmaintained or yanked warning without -D warnings, so the audit gate is blind to a whole class it looks like it covers. Measured 2026-09-13 after RUSTSEC-2023-0071 was accepted: the plain run exits 0 while printing three warnings nobody has decided, lzw RUSTSEC-2020-0144 unmaintained, proc-macro-error RUSTSEC-2024-0370 unmaintained, and chacha20 0.10.1 yanked. One unmaintained crate, paste, is in the accepted list, which makes the treatment of the class inconsistent: one is written down and three are printed and ignored. Not fixed here because turning on -D warnings needs a decision on each of the three, which is the same product decision the rsa entry just took and is out of this change's scope. | open |  | 2026-09-13T11:19:39.327Z |  |
 | 358 | 07 | unmet-truth | .cargo/audit.toml |  | The still-reported check cannot see an acceptance whose basis has evaporated while the advisory goes on being reported. The rsa entry rests on the advisory having an empty patched list, which cargo audit prints as No fixed upgrade is available. The day that becomes Upgrade to something, the run still reports the advisory, the check stays green, and an acceptance resting on there being nothing to upgrade to has quietly stopped being true. A crate version fingerprint was considered on 2026-09-13 and decided against, with the reason written in scripts/audit.sh and in the phase 7 RSA advisory report: for every way an acceptance has really gone stale here the version moving and the advisory ceasing to be reported are the same event, so the fingerprint fires no earlier and costs a hand-maintained number per entry. It also would not close this gap, which is about the advisory rather than the crate. Closing it means recording the Solution line each acceptance was judged against and comparing it on every run. | open |  | 2026-09-13T11:19:54.227Z |  |
 | 359 | 07 | deviation | scripts/audit.sh |  | The run that checks the acceptances depends on where cargo-audit looks for its config, and nothing would say so if that moved. Measured 2026-09-13 against cargo-audit 0.22.2 by running from target/auditprobe, two directories below the project config: it reads .cargo/audit.toml from the working directory only and does not walk upwards. The second run is made from a scratch directory carrying a config that ignores nothing, so it is correct whether or not that measurement holds. What it would not survive is a cargo-audit that merged configs from several directories, and the failure would be silent in the worst direction: every acceptance would read as still applying while nothing was actually checked. The narrower-than-the-filtered-run refusal catches the opposite direction only. | open |  | 2026-09-13T11:20:09.076Z |  |
+| 360 | 06 | unrun-verify | src/presentation/date_display.rs |  | No date written in any language has been read aloud by a screen reader in that language. Plan 06-03 task 2 makes the month names in a date come from Windows, and every assertion about them is a string comparison in a test. The French and Russian tests force a locale name and compare bytes, which proves the words Windows hands back are the words this code writes. Whether a French month inside an order the person chose, spoken by a French NVDA voice, sounds like a date rather than like a fault needs a French Windows, a French voice and somebody who speaks French. | open |  | 2026-09-13T14:45:37.895Z |  |
+| 361 | 06 | unmet-truth | src/presentation/wx_item_form.rs | 849 | The twelve month names in the appointment form's month list now come from Windows, and nothing tests that they do. Measured 2026-09-13: wx_item_form.rs holds 14 tests and not one of them reads the Choice this line builds, because the Choice is built inside a closure in build_date_fields and needs a real parent window. The change is glue over a function that is itself tested, and it is reached from wx_item_form.rs line 1007 and wx_send_later.rs line 127, so it runs. What nobody has done is open the form and look at the list. Proving the wiring wants a live-window test on the pattern of the checkbox_labels suite. | open |  | 2026-09-13T14:45:52.425Z |  |
+| 362 | 06 | unmet-truth | .planning/ROADMAP.md |  | Success criterion 2 of phase 6 has four clauses and plan 06-03 closes part of one. Month names follow the machine in a date and in a month heading and in the appointment form's month list, but not in the eight signature-outcome sentences, which still write an English month through the chrono format %B at src/service/signed_mail.rs line 1373. Day names do not follow the machine at all: src/application/occurrences.rs line 701 still matches a chrono Weekday to an English string. Relative wording is the plan's own blocking checkpoint and was left unanswered on purpose. The silent English fallback is the one clause that is met. Task 3 of 06-03 carries the first two and is written against the checkpoint's answer. | open |  | 2026-09-13T14:46:05.068Z |  |
+| 363 | 06 | unmet-truth | src/common/how_the_machine_writes_dates.rs |  | A stored day that no month has falls back to English on a machine that does have the language, which is a wider fallback than the criterion asks for. The criterion says English where there is no translation. a_month_and_a_day accepts a day from 1 to 31 without asking which month it is, so a birthday stored as --02-30 reaches Windows, Windows refuses the whole date, and the wrapper answers in English. On a French machine that reads February 30 rather than fevrier 30. It is a corrupt stored row either way and it does not take the reading down, which is what the threat register asked for, but the reason the reader sees English there is not the reason the sentence on the settings screen gives. Found by reading at green on 2026-09-13, not by a test. | open |  | 2026-09-13T14:46:18.671Z |  |
+| 364 | 06 | unrun-verify | src/presentation/date_display.rs |  | The Russian genitive was produced on an en-US machine by passing ru-RU as a locale name, never on a Windows installed in Russian. Measured 2026-09-13: a date reads 2 января and a month heading reads Январь, which are different words, so the two mechanisms are doing different things and the test that separates them is real. What that does not settle is whether a Windows whose own language is Russian gives the same answers, or whether a machine missing the NLS data for a language behaves as this one does when asked for a locale it has. The French assertion is weaker still and says so in the test: fr-FR writes juillet both ways, so it passes against the wrong mechanism and would not have caught the fault the Russian one caught. | open |  | 2026-09-13T14:46:34.120Z |  |
 
 ````json
 [
@@ -4683,6 +4688,66 @@ last_updated: 2026-09-13T11:20:09.076Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T11:20:09.076Z",
+    "resolved_at": null
+  },
+  {
+    "id": 360,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/date_display.rs",
+    "line": null,
+    "description": "No date written in any language has been read aloud by a screen reader in that language. Plan 06-03 task 2 makes the month names in a date come from Windows, and every assertion about them is a string comparison in a test. The French and Russian tests force a locale name and compare bytes, which proves the words Windows hands back are the words this code writes. Whether a French month inside an order the person chose, spoken by a French NVDA voice, sounds like a date rather than like a fault needs a French Windows, a French voice and somebody who speaks French.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:45:37.895Z",
+    "resolved_at": null
+  },
+  {
+    "id": 361,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": 849,
+    "description": "The twelve month names in the appointment form's month list now come from Windows, and nothing tests that they do. Measured 2026-09-13: wx_item_form.rs holds 14 tests and not one of them reads the Choice this line builds, because the Choice is built inside a closure in build_date_fields and needs a real parent window. The change is glue over a function that is itself tested, and it is reached from wx_item_form.rs line 1007 and wx_send_later.rs line 127, so it runs. What nobody has done is open the form and look at the list. Proving the wiring wants a live-window test on the pattern of the checkbox_labels suite.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:45:52.425Z",
+    "resolved_at": null
+  },
+  {
+    "id": 362,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": ".planning/ROADMAP.md",
+    "line": null,
+    "description": "Success criterion 2 of phase 6 has four clauses and plan 06-03 closes part of one. Month names follow the machine in a date and in a month heading and in the appointment form's month list, but not in the eight signature-outcome sentences, which still write an English month through the chrono format %B at src/service/signed_mail.rs line 1373. Day names do not follow the machine at all: src/application/occurrences.rs line 701 still matches a chrono Weekday to an English string. Relative wording is the plan's own blocking checkpoint and was left unanswered on purpose. The silent English fallback is the one clause that is met. Task 3 of 06-03 carries the first two and is written against the checkpoint's answer.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:46:05.068Z",
+    "resolved_at": null
+  },
+  {
+    "id": 363,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "src/common/how_the_machine_writes_dates.rs",
+    "line": null,
+    "description": "A stored day that no month has falls back to English on a machine that does have the language, which is a wider fallback than the criterion asks for. The criterion says English where there is no translation. a_month_and_a_day accepts a day from 1 to 31 without asking which month it is, so a birthday stored as --02-30 reaches Windows, Windows refuses the whole date, and the wrapper answers in English. On a French machine that reads February 30 rather than fevrier 30. It is a corrupt stored row either way and it does not take the reading down, which is what the threat register asked for, but the reason the reader sees English there is not the reason the sentence on the settings screen gives. Found by reading at green on 2026-09-13, not by a test.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:46:18.671Z",
+    "resolved_at": null
+  },
+  {
+    "id": 364,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/date_display.rs",
+    "line": null,
+    "description": "The Russian genitive was produced on an en-US machine by passing ru-RU as a locale name, never on a Windows installed in Russian. Measured 2026-09-13: a date reads 2 января and a month heading reads Январь, which are different words, so the two mechanisms are doing different things and the test that separates them is real. What that does not settle is whether a Windows whose own language is Russian gives the same answers, or whether a machine missing the NLS data for a language behaves as this one does when asked for a locale it has. The French assertion is weaker still and says so in the test: fr-FR writes juillet both ways, so it passes against the wrong mechanism and would not have caught the fault the Russian one caught.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:46:34.120Z",
     "resolved_at": null
   }
 ]
