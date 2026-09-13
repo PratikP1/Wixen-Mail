@@ -297,6 +297,10 @@ That failure is also the answer to why `roadmap update-plan-progress` being brok
 
 Every commit went through the `commit-msg` hook. Nothing used `--no-verify`. No tracked file was edited by a script: every change to source, to `guards/guards.toml` and to every document was made with the editor, and the only script that wrote to a tracked file is `scripts/guards.sh --remeasure`, which is the project's own tool and is what `CLAUDE.md` prescribes.
 
+## Self-Check: PASSED
+
+Every file this summary says was created exists on disk, every commit hash it names resolves in `git log`, and the counts in the tables above were taken with the commands beside them rather than carried over from the plan. The one figure this summary got wrong on the first pass was records naming `wx_settings.rs`, written as 7 from arithmetic and corrected to 8 by parsing `tests_last_seen` blocks, which is `CLAUDE.md`'s own rule about not writing a count you have not just taken, met by breaking it once.
+
 ## Next
 
 06-03 can start. 06-04 inherits a panel that is built and unheard, and 06-06 inherits seven listening questions.
