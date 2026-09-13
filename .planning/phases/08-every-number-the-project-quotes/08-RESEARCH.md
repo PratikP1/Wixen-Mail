@@ -1,853 +1,953 @@
 # Phase 8: Every number the project quotes - Research
 
-**Researched:** 2026-09-06
-**Domain:** In-repo. Nothing here came from a web search and no external package is added by
-this phase.
-**Confidence:** HIGH on everything measured this session, and every measured claim below
-carries the command that produced it. MEDIUM on the two cost estimates, which are
-extrapolations and are labelled as such. The two places I could not settle a question are named
-in "What I could not settle".
+**Researched:** 2026-09-12
+**Domain:** In-repo measurement and provenance. Nothing here came from a web search, no external
+package is added by this phase, and no library recommendation is made.
+**Confidence:** HIGH for every figure in the tables below; each carries the command that produced
+it and the commit it was taken at. MEDIUM for the two long-job cost models, which multiply a
+measured rate by a measured count and say so. LOW for nothing: where I could not settle a
+question it is in "Open questions" rather than stated.
 
-**How this was read.** The repository was read-only for this session: another agent is
-executing a plan in the same checkout on branch `spelling-caret-walk`, so nothing was built, no
-`cargo` command was run, and no file in the repository was written. Every number below came
-from reading files, from `git`, or from a small Python reader over the tree. Where the answer
-needs a build I say so and name the command that would produce it.
+---
 
-**The conditions on my own numbers.** Counts taken from the working tree are on branch
-`spelling-caret-walk` at `eda6ef7`, which carries nine uncommitted files including
-`guards/guards.toml`. Counts taken from `main` are at `48ace28`, 2026-09-06. Where the two
-differ I give both, because a plan written against the working tree of another agent's branch
-is a plan written against a number that does not exist yet.
+## How this document was taken, and how to read it
+
+This phase is about numbers that go stale, so this document is one of the artefacts the phase has
+to judge. Four rules were applied to it and you should hold it to them.
+
+1. **Every figure carries the date it was taken and the command that took it.** No figure is
+   given without both.
+2. **No figure is restated in two places.** Each measured value appears in exactly one table row.
+   Everything else refers to it by name. If you find the same number written twice in this file,
+   that is a defect in this file.
+3. **Nothing was quoted from another document.** Every number was taken again from the thing that
+   decides it. Where a document's figure is reported, it is reported as *what that document
+   claims*, in a column beside what the source says today.
+4. **What was measured is separated from what was inferred.** Inferences are labelled.
+
+**Conditions on everything below.** Taken on `main` at `a0b909e8`, 2026-09-12, working tree clean
+(`git status --porcelain` empty), version `0.119.0` from `Cargo.toml`. The machine is the same
+Windows 11 box the rest of the project's figures come from, 24 logical cores. Nothing was built
+and no `cargo` command that compiles was run, because a build contends with the gate and because
+several figures were available without one. Commands that need a build are named rather than run.
+
+**Line numbers are given with the commit.** `.planning/REQUIREMENTS.md` cites
+`docs/IMPLEMENTATION_STATUS.md:123` for a line that is at 164 today, and `wx_app.rs:9125` for a
+constant at 9778. Those citations were correct on 2026-09-04 and are eight days old. A line
+number without a commit is not a citation.
+
+---
+
+## What this supersedes
+
+`.planning/phases/08-every-number-the-project-quotes/08-RESEARCH.md` dated 2026-09-06, taken from
+`main` at `48ace28`. That document is good and this one keeps its best work rather than redoing
+it: **its four-kind taxonomy is carried forward unchanged and attributed, and its list of
+existing machinery to extend rather than rebuild is still right.**
+
+What has changed in six days is the thing the phase is about. Between `48ace28` and `a0b909e8`
+the repository took **431** commits (`git rev-list --count 48ace28..a0b909e8`, 2026-09-12), and:
+
+> **This document got that number wrong on its first pass**, giving 197, which was a guess
+> written beside a command nobody had run. It was caught by running the command that was already
+> written next to it, before the file was reviewed. Recorded here rather than tidied away,
+> because it is the exact defect this phase exists to end and it took four sentences of
+> discipline to catch: **writing the command down is not the same as running it.** Phase 8 should
+> assume every figure handed to it, including the ones in this file, is a guess until the command
+> beside it has been run.
+
+- Six of the figures that document quotes have moved.
+- Two of the six questions it could not settle are now settled, one of them by a commit that
+  landed four days later and one by work done in this session.
+- A third figure for the guard sweep's cost has appeared in the tree, so there are now four.
+- A class of counting error has appeared in `guards/guards.toml` that did not exist then.
+
+That is the phase's own argument arriving on schedule. It is not a criticism of the earlier
+reading; it is the reason the phase exists.
 
 ---
 
 ## Summary
 
-**Three things make this phase larger than the roadmap allows for, and one makes a criterion
-unbuildable as written.**
+**The project has already done phase 8 once, by hand, for five figures, and it worked.** Commit
+`20c42110` of 2026-09-10 re-measured five numbers at a named commit, wrote down what each had
+been and what it is, and said which two mattered and why. That commit is the model for this
+whole phase. It is also the proof that doing it by hand does not stick: two of the five figures
+it published were taken again in this session and one of them is wrong.
 
-**The guard sweep is 615 records, not 565, and the recorded 15 hours is the smaller of two
-figures the tree gives for the same job.** `guards/guards.toml` held 615 records on `main` this
-morning and 617 in the working tree. `CLAUDE.md` says 565 in one paragraph, 548 in another and
-536 in a third, none of them dated. The per-record cost in `scripts/guards.py` is about 112
-seconds; the per-record cost implied by `CLAUDE.md`'s "565 records and about 15 hours" is about
-96. Taking the script's figure and today's record count, the sweep is closer to twenty hours
-than fifteen, and there is no resume: an interrupted run loses everything it had measured.
+**The single highest-value thing this phase can build is not a set of numbers. It is a small
+number of checks that compute, from the repository, the figures the documents currently assert
+by hand.** The precedents are already in the tree, with companions, and they work. See "Which
+numbers a check can hold instead of a person".
 
-**The whole-tree mutation run is several times the recorded two days, because the recorded
-figure is a rate times a mutant count from a tree that has since roughly two and a half times
-its mutable size.** The non-test, non-excluded source in `src/` went from 38,985 lines on
-2026-08-03 to 96,649 on `main` today. The measured mutant counts from the August sweep add to
-roughly 4,400 to 4,800, so the same tree today is plausibly near 11,000 to 12,000 mutants. At
-the two rates the tree records, one per twenty-six seconds and one per sixty, that is between
-about 85 and about 200 hours of continuous running. This is an extrapolation and the first task
-of the phase should replace it with `cargo mutants --list`, which parses rather than builds and
-costs seconds.
+**The most alarming finding is that the counting method this project prescribes is itself
+wrong.** `CLAUDE.md` records at length that counting guard records by grepping a file name
+overcounts, and prescribes an awk snippet as the corrected method. That snippet silently
+undercounts, because `guards/guards.toml` now contains four records written in TOML's inline
+table form, which the snippet's line-oriented reader skips. The same question, asked of the same
+commit, gives three different answers depending on who counts. Detail in the next section.
 
-**One part of criterion 2 cannot be built as written.** The 200,000 row sample mailbox is
-synthetic and is pushed straight into the in-memory list; it never enters SQLite. The mail
-list has no in-memory filter: filtering is `MessageCache::search_messages`, which is a SQL query
-with a limit. So there is no path by which the sample mailbox can produce a filter number. The
-sort and scroll numbers are straightforward. The filter number needs either a different fixture
-(write 200,000 rows into a `tempfile` cache and time the search) or a revised criterion.
+**The two long jobs are both larger than the roadmap allows, and only one of them has a rate
+anybody has measured.** The guard sweep is about nineteen and a half hours at the rate the tree
+itself records. The whole-tree mutation run has no current rate at all: the only one recorded
+predates a change that halved the suite it depends on.
 
-**And one thing in the brief for this research was already fixed.**
-`test_no_status_page_names_a_version_the_code_does_not_ship` is described in `CLAUDE.md` as
-disarmed and in need of a companion. The companion exists:
-`test_the_version_reading_can_see_one_on_a_real_page`, `tests/house_style.rs:3104`, splices a
-version nobody ships into each page's own real text and requires the reading to answer with
-exactly that page, that line and that version. It is a working model for every other check this
-phase writes, and it is quoted in full below rather than designed again.
+**Most of the measurements this phase needs already exist in the repository, dated and
+conditioned, in commit messages.** Nobody has aggregated them. A merge-hash commit in this
+project records the gate duration it paid for, and several record test counts and per-record
+costs. Harvesting them costs one `git log` pass and produces a dated series rather than a single
+figure. See "Numbers the tree already holds".
 
-**Primary recommendation:** start the phase with the two cheap counting tasks that resize
-everything else (`cargo mutants --list` and a re-count of guard records), settle the four
-scheduling decisions at the end of this document before any long job starts, and write the
-provenance check against the taxonomy in the next section rather than against the word "count".
+**Primary recommendation:** open the phase with the cheap counting tasks that resize everything
+else, settle the four decisions at the end of this document before any long job starts, and
+spend the bulk of the phase writing checks rather than taking measurements, because the
+measurements will be stale before the phase closes and the checks will not.
 
 ---
 
-## The taxonomy criterion 3 needs, and why it is the whole design
+## Phase Requirements
 
-Criterion 3 says every count in the documentation carries the command it came from and the
-date, and then says nothing may assert that a written number equals what a tool reports today.
-Those two sentences are only compatible if "count" is split first. A check written against the
-word "count" fails on the first line of `docs/privacy.md` and on every line of the changelog.
+| ID | What it asks | Which findings here bear on it |
+|----|--------------|-------------------------------|
+| PERF-01 | Memory under 150 MB with 1,000 cached messages, measured | Table C row 1; "Requirement by requirement"; no instrument exists (Table E) |
+| PERF-02 | Cold start under 2 seconds, measured | Table C row 2; the scan harness is the nearest existing instrument |
+| PERF-03 | A mailbox of 100,000+ exercised; sort, filter, scroll numbers; a test that the virtual callback issues no query | Table A rows 12 to 14; "Requirement by requirement"; the filter path problem carried forward |
+| PERF-04 | Idle memory under 100 MB, measured | Table C row 3; same missing instrument as PERF-01 |
+| PERF-05 | Line coverage re-measured | Table A row 11; `cargo-llvm-cov` is installed |
+| PERF-06 | Every document that quotes a test count quotes the same measurement; durations carry conditions | The whole of the inventory, the taxonomy, and "Which numbers a check can hold" |
+| PERF-07 | One whole-tree mutation run with a real result | Table A rows 15 and 16; the rate problem; `cargo-mutants` is installed |
 
-Four kinds of number live in this project's documents, and only the first wants a command and a
-date.
+There is no `08-CONTEXT.md` in this phase directory (`ls .planning/phases/08-every-number-the-project-quotes/`, 2026-09-12), so there are no locked decisions from a discussion to honour. The
+roadmap's six success criteria and the seven PERF requirements are the whole of the constraint.
 
-| Kind | Example, with its real location | What it needs | Can a check assert it? |
+---
+
+## The taxonomy criterion 3 needs
+
+**Carried forward from the 2026-09-06 reading, which got this right and should not be redone.**
+Criterion 3 says every count carries its command and its date, and then says nothing may assert
+that a written number equals what a tool reports today. Those two sentences are compatible only
+if "count" is split first. Four kinds of number live in this project's documents and only the
+first wants a command and a date.
+
+| Kind | What it needs | Can a check assert it? |
+|---|---|---|
+| **A measurement of the tree** | The command, the date, and any setting that changes it | Only that the command and date are **present**, never that the number is current |
+| **A target** | To be marked as a target, with where it came from | That it is not written as though it were a measurement |
+| **A constant the code holds** | To agree with the code | **Yes, on every commit.** Both halves are in the repository |
+| **A historical record** | To stay exactly as written | **Yes, that it is not silently updated.** Correcting it would falsify it |
+
+The dividing line is **whether the thing counted is in the repository**. That is the load-bearing
+sentence of the whole phase and it is not mine.
+
+**One addition this session.** There is a fifth kind, and it is the one that has caused the most
+damage here: **a ratio written as two absolute numbers**. "Red/green started at commit 182 of
+344" is not a measurement, a target, a constant or a record. Both numbers stay true forever while
+the conclusion the reader draws from them inverts. Table D row 4 has the case. A ratio needs the
+ratio written out, dated, or it needs to be a check.
+
+---
+
+## The headline finding: the prescribed counting command is wrong
+
+**What the project says.** `CLAUDE.md` (the section "Count records, not mentions, and do not use
+a ratio to convert between them") records that ten plans were misled by grepping a file name in
+`guards/guards.toml`, that the grep-to-truth ratio is neither two nor stable, and prescribes an
+awk snippet as the method. The research brief for this phase repeats that instruction as
+authoritative.
+
+**What is true.** The snippet is a line-oriented reader. It sets a flag on a line beginning
+`tests_last_seen`, clears it on a line that is a bare `]`, and counts `file =` lines in between.
+TOML also permits the block written inline on one line, and `guards/guards.toml` now holds four
+of those, at lines 16533, 16566, 16616 and 16651 (`grep -n 'tests_last_seen = \[{'
+guards/guards.toml`, 2026-09-12). On an inline record the flag is set, the line is consumed by
+`next`, its entry is never counted, and the flag then stays set until some later bare `]`.
+
+**Measured, this session, at four commits.** The quantity is "records whose `tests_last_seen`
+names exactly one file", which `CLAUDE.md` and `tests/house_style.rs` both publish.
+
+| Tree | Records | Published figure | Truth, by `tomllib` | The prescribed awk | Inline records present |
+|---|---|---|---|---|---|
+| `9d6543a`, 2026-09-02 | 548 | 471 (`tests/house_style.rs:5471`) | **439** | 439 | 0 |
+| `485030f`, 2026-09-06 | 617 | 477 (`CLAUDE.md:427`) | **477** | not taken | 0 |
+| `eda2719`, 2026-09-10 | 683 | 510 (`tests/house_style.rs:5467`) | **512** | 508 | 4 |
+| `a0b909e8`, 2026-09-12 | 734 | none | **537** | 533 | 4 |
+
+Command for the truth column, run against each commit's file:
+
+```bash
+python -c "
+import tomllib,sys
+g=tomllib.load(open(sys.argv[1],'rb'))['guard']
+print(sum(1 for r in g if len(r.get('tests_last_seen',[]))==1))" guards/guards.toml
+```
+
+Three alternative readings of "names one file" were tried against all four trees (one entry in
+the block; one distinct file in the block; one distinct file counting the record's own `file`
+key). None reproduces 471 and none reproduces 510. The 477 at `485030f` reproduces exactly under
+the first two.
+
+**What this means for the phase.** This quantity has been published three times and been wrong
+twice, at a total error of 32 and 2. It is computable in milliseconds from a file in the
+repository. `tests/house_style.rs` already parses that file with `toml::from_str` in the adjacent
+test, so the parser is in hand. **This is the cleanest worked example in the repository of a
+number that should be a check rather than a sentence, and phase 8 should make it one and delete
+the sentences.**
+
+**And the general rule it argues for:** where the thing counted is a structured file, the
+counting command must be the format's parser, not a line reader. A line reader for a structured
+format is right for the spelling the file happens to use today and silently wrong for the others
+the format allows, and it returns a plausible number rather than an error. That the wrong method
+arrived as the correction to a known miscount is the part worth remembering.
+
+---
+
+## The inventory
+
+Every number the project quotes, by kind. Each row gives where the claim lives, what it claims,
+what the source says today, and what would hold it.
+
+### Table A: measurements of the tree
+
+| # | Where the claim lives | What it claims | Source today, 2026-09-12 at `a0b909e8` | Command that takes it | Holdable by a check? |
+|---|---|---|---|---|---|
+| 1 | `guards/guards.toml:79-80` census | 192 swept + 542 since | 734 records; the two add up | `grep -c '^\[\[guard\]\]' guards/guards.toml` | **Already held**, by `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it` |
+| 2 | `guards/guards.toml:75` prose | "548 records" | 734 | as row 1 | **No, and must not be.** Historical record of 2026-09-02, see Table D |
+| 3 | `CLAUDE.md:427` and `:518` | 617 records, 2026-09-06 at `485030f` | 734 | as row 1 | Yes, if the sentence becomes a reference to row 1 |
+| 4 | `CLAUDE.md:539` | "the 536 that existed then" | 734 | as row 1 | Historical, but undated in the text |
+| 5 | `.planning/REQUIREMENTS.md:1958` | 565 records, 2026-09-04 | 734 | as row 1 | Out of scope if `.planning` is excluded; see Decision 2 |
+| 6 | `.planning/STATE.md:583` | 720 records, census 192 and 528 | 734, census 192 and 542 | as row 1 | Historical section of STATE |
+| 7 | `.planning/PROJECT.md:133` | 501 records | 734 | as row 1 | See Decision 2 |
+| 8 | `tests/house_style.rs:5428,5467,5471` | 683 records; 510 of them name one file; 77 name `contacts_sync.rs` | 734; 537; 77 | doc-comment figures, see headline section | **Yes**, and the parser is already in that file |
+| 9 | `docs/IMPLEMENTATION_STATUS.md:164` | 5,430 tests, 5,269 unit and 161 integration, counted 2026-08-29 | 7,077 tests over `--all-targets`, recorded in commit `b8857bc8` on 2026-09-12; 7,544 test attribute lines in source | `cargo test --all-targets -- --list`; source proxy `grep -rcE '^\s*#\[(test\|tokio::test)\]\s*$' src/ tests/` | **Only that the command and the date are present.** PERF-06's fifth clause forbids asserting the value |
+| 10 | `.planning/PROJECT.md:133` | 259,723 lines under `src/`; `caldav.rs` at 8,149; "over 38,000 lines across five `*_sync.rs` files" | 352,680 lines across 280 files; `caldav.rs` 8,337; **eight** `*_sync.rs` files totalling 36,328 | `find src -name '*.rs' \| xargs wc -l \| tail -1`; `find src -name '*_sync.rs' \| xargs wc -l` | Yes for all three |
+| 11 | `docs/IMPLEMENTATION_STATUS.md:242` | line coverage 60.4%, measured 2026-07-26 | not re-measured; 1,679 of the repository's 1,911 commits postdate the reading | `cargo llvm-cov --lib --summary-only`; `git rev-list --count --since=2026-07-26 HEAD` | Command and date only |
+| 12 | `.planning/REQUIREMENTS.md` PERF-03 evidence | `SAMPLE_MAILBOX_SIZE` 200,000 at `wx_app.rs:9125`; callback at `1101`; comment at `1093` | constant at `wx_app.rs:9778`; callback at `1205`; comment at `1196-1198`. Value 200,000 unchanged | `grep -n 'SAMPLE_MAILBOX_SIZE' src/presentation/wx_app.rs` | Line numbers: no. The constant's value: yes |
+| 13 | `wx_app.rs:1196-1198` comment | the callback "reads what is already in memory and never touches the database" | true by reading; the closure captures `state` and `column_layout` and no cache handle | read the closure | **Yes**, and PERF-03 requires it |
+| 14 | nothing | sort, filter and scroll timings over 200,000 rows | **nothing in the tree records one** | none exists | No. These are measurements to take |
+| 15 | `docs/IMPLEMENTATION_STATUS.md:197` and `CLAUDE.md:366` | a whole-tree mutation run is "about two days" | undated, no conditions, and the rate behind it predates the 2026-09-09 suite change | `cargo mutants --list` for the count | No. Conditions can be required |
+| 16 | `docs/plans/20260801-mutation-sweep.md:12-15` | 4,171 mutants; one every 26 seconds; "near thirty hours" | 2026-08-01 figures. The rate's denominator has since roughly halved and the mutable source has grown | as row 15 | Historical record |
+| 17 | `.cargo/mutants.toml:37` | "the suite takes about 46 seconds, measured 2026-08-06", and `timeout_multiplier` and `minimum_test_timeout` are read against it | library runs recorded on 2026-09-11 in commits `c5c43c6d`, `c58bfc1a`, `7ad70ffe` are 63.86 s, 69.99 s and 57.65 s at eight threads; the `--all-targets` term is larger again | `cargo test --all-targets` prints it | The value, no. That the calibration was re-taken, yes, as a dated note |
+| 18 | `tests/house_style.rs` self-reference in `.planning/writing-checks-widened.md:26` | "it stays at 64 [test functions] and none of the 649 guard records needs re-measuring" | 69 test functions; 734 records | `grep -cE '^\s*#\[(test\|tokio::test)\]\s*$' tests/house_style.rs` | See Decision 2 |
+
+### Table B: constants the code holds, quoted in prose
+
+All of these agree with the code today. None is held by a check. Both halves are in the
+repository, so all of them are holdable, and the taxonomy says this is the kind that a check can
+assert outright.
+
+| Claim in prose | Where | Constant | Where |
 |---|---|---|---|
-| **A measurement** | "5,430 tests pass ... counted 2026-08-29 with `cargo test --all-targets -- --list`", `docs/IMPLEMENTATION_STATUS.md:129` | The command, the date, and any setting that changes it | Only that the command and date are **present**, never that the number is current |
-| **A target** | "Startup time optimization (<2 seconds)", `docs/roadmap.md:221` | To be marked as a target, with where the target came from | That it is not written as though it were a measurement |
-| **A constant the code holds** | "A single file is kept up to 25 MB", `docs/privacy.md:41`, against `LARGEST_ATTACHMENT_KEPT_BYTES` at `src/data/message_cache/attachment_content.rs:51` | To agree with the code | **Yes, on every commit.** Both halves are in the repository |
-| **A historical record** | "The numbers on every record below were written on 2026-09-02 ... not a statement that 548 records are correct", `guards/guards.toml:74` | To stay exactly as written | **Yes, that it is not silently updated.** Correcting it would falsify it |
+| a single file kept up to 25 MB | `docs/privacy.md:66` | `LARGEST_ATTACHMENT_KEPT_BYTES` | `src/data/message_cache/attachment_content.rs:51` |
+| all of them together up to 512 MB | `docs/privacy.md:67` | `ATTACHMENT_CACHE_BUDGET_BYTES` | `src/data/message_cache/attachment_content.rs:64` |
+| a signed message larger than 25 MB is dropped | `docs/privacy.md:91` | `LARGEST_SIGNED_MESSAGE_KEPT_BYTES` | `src/data/message_cache/signed_original.rs:63` |
+| these copies pass 128 MB | `docs/privacy.md:92` and `:94` | `SIGNED_ORIGINAL_BUDGET_BYTES` | `src/data/message_cache/signed_original.rs:75` |
+| a message larger than 25 MB is not kept at all | `docs/privacy.md:114` | `LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES` | `src/data/message_cache/moves_in_flight.rs:64` |
+| interrupted moves adding to more than 64 MB | `docs/privacy.md:115` | `MOVES_IN_FLIGHT_BUDGET_BYTES` | `src/data/message_cache/moves_in_flight.rs:77` |
+| PNG, JPEG, GIF and WebP up to 2 MB | `docs/KEYBOARD_SHORTCUTS.md:843` | `MOST_ONE_PICTURE_MAY_BE` | `src/application/pictures.rs:116` |
+| 20 MB zip, 5 MB per file, 50 MB total, 2 seconds | `docs/plans/20260823-earcon-sound-schemes.md:196-214` | `MAX_ZIP_BYTES`, `MAX_FILE_BYTES`, `MAX_TOTAL_BYTES`, `MAX_SOUND_DURATION` | `src/presentation/accessibility/sound_scheme_import.rs:27-41` |
+| an attachment size warning over 10MB | `docs/roadmap.md:138` | `LIMIT_BYTES` is 25 MB | `src/application/attaching.rs:27` |
 
-The dividing line is not "count" against "not a count". It is **whether the thing counted is in
-the repository**. A count of `[[guard]]` records in `guards/guards.toml` is checkable in
-milliseconds on every commit, and should be. A count of what `cargo test --list` reports is not,
-because the checker would have to run the suite to know, and it would fail on the next commit
-that adds a test.
+**The last row does not agree**, and it is the only one that does not. `docs/roadmap.md:138`
+ticks "Attachment size warnings (>10MB)" while the shipped limit is 25 MB. Whether that is a
+stale document or a different feature is for the planner to establish, not me; I record that the
+two numbers differ.
 
-`tests/house_style.rs` already holds the pattern for each of the two checkable kinds:
+**One number in this class has no constant behind it.** `docs/privacy.md:417` says the update
+download "is roughly 12 MB today". "Today" is not a date, the size of a release artefact is not
+in the repository, and nothing can check it. It belongs in the ledger or it needs a date.
 
-- `test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it`
-  (`tests/house_style.rs:2924`) asserts a stated count agrees with the bullets it introduces.
-  Internal consistency, no tool run.
-- `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`
-  (`tests/house_style.rs:4780`) asserts two numbers in a header add up to the records in the
-  file they head. Its own comment says what it cannot see: "whether a record the sweep counted
-  was really swept. Only `scripts/guards.sh` can say that."
+### Table C: targets
 
-Both of those are the right shape and both carry a companion proving the reading can see a
-violation. Copy them; do not invent a third shape.
+Each of these is a target with no measurement attached. PERF-01, PERF-02 and PERF-04 exist to
+attach one, and criterion 6 says each is then met or revised with the reason.
 
-**The historical-record case is worth stating out loud, because the obvious check breaks it.**
-`guards/guards.toml:74` says 548 records were recounted on 2026-09-02. The file holds 615 today.
-That sentence is **correct**, and a check demanding it equal today's count would demand it be
-falsified. Measured: the file held 548 records from `b232622` (2026-09-01 13:28) through
-`9d6543a` (2026-09-02 05:56), so the number was right for the event it describes.
+| # | Target | Where | What exists today |
+|---|---|---|---|
+| 1 | under 150 MB with 1,000 cached messages | `docs/development/requirements-backlog.md:81` | no instrument at all; see Table E |
+| 2 | cold start under 2 seconds | `docs/roadmap.md:221` and `:253`, `docs/development/requirements-backlog.md:82` | no instrument; the accessibility workflow starts the release binary per window and is the nearest thing |
+| 3 | low memory footprint, under 100 MB idle | `docs/roadmap.md:254` | as row 1 |
+| 4 | high code coverage, target 80%+ | `docs/architecture.md:400` | last reading 60.4%, Table A row 11. Two different targets in the tree: this and the 95% at `docs/integration-guide.md:6`, which that page already describes as never met and keeps as a historical page |
+| 5 | 100% keyboard accessible | `docs/roadmap.md:255` | not a number this phase can measure; belongs to the accessibility work |
 
-```bash
-for c in $(git log --since=2026-09-01 --until=2026-09-03 --format=%H main -- guards/guards.toml); do
-  echo "$(git show "$c:guards/guards.toml" | grep -c '^\[\[guard\]\]') $(git log -1 --format='%h %cd' --date=format:'%m-%d %H:%M' $c)"
-done | sort -n
-# 548 appears from b232622 09-01 13:28 to 9d6543a 09-02 05:56
-```
+### Table D: historical records, which must not be corrected
 
----
+Correcting any of these would falsify a statement about a past tree. `tests/house_style.rs:3042`
+already states the principle for the version guard. The check to write, if any, is that they are
+**not silently updated**, not that they match today.
 
-## What already exists, measured
+| # | The record | Where | Why it must stay |
+|---|---|---|---|
+| 1 | "548 records ... written on 2026-09-02 by `--recount-everything`" | `guards/guards.toml:74-75` | The file really held 548 records on 2026-09-02; confirmed this session at `9d6543a` |
+| 2 | every dated row of the mutation progress table | `docs/plans/20260801-mutation-sweep.md:413-420` | Each row is a run that happened on the date beside it |
+| 3 | "3,362 from 2026-08-09 is what a number without its command and its date turns into" | `docs/IMPLEMENTATION_STATUS.md:165-166` | The example is the point |
+| 4 | "red/green started at commit 182 of 344" | `CLAUDE.md:349`, `docs/IMPLEMENTATION_STATUS.md:191`, `.cargo/mutants.toml:8`, `01-VALIDATION.md:45`, `02.1-VALIDATION.md:54` | **This one is different and needs a decision.** See below |
 
-Read this before planning anything. Four of the six criteria have machinery in the tree that a
-plan should extend rather than build.
+**Row 4 is the fossilised ratio, and it is the worst number in the repository.** Both figures
+are true statements about the past: red/green did start at commit 182, and the repository did
+hold 344 commits when that was written. The repository holds 1,911 today
+(`git rev-list --count HEAD`, 2026-09-12, first commit `ca131605` on 2026-02-13). So the same
+sentence that once said "53% of this project's history predates the practice" now says 9.5%, and
+the conclusion it was written to support, that most tests here describe the code rather than
+specify it, may now be false. It is quoted in five places including the configuration for the
+mutation tool, and it is the stated justification for PERF-07. Nothing failed and nothing could
+have: neither number moved.
 
-### The document-reading harness reaches everything except `.planning/`
-
-`ours()` at `tests/house_style.rs:33` collects `src` (`.rs`), `docs` (`.md`), `tests` (`.rs`),
-`scripts` (`.sh`, `.py`, `.ps1`), `guards` (`.toml`), `installer` (`.iss`), `.github` (`.yml`),
-and the five single files `README.md`, `CLAUDE.md`, `Cargo.toml`, `.gitignore`, `build.rs`.
-
-**`.planning/` is not in it and never has been.** Measured:
-
-```bash
-git log --oneline -S '".planning"' -- tests/house_style.rs      # no output
-git log --oneline -S 'Path::new(".planning")' -- tests/house_style.rs   # no output
-grep -rn "\.planning" tests/*.rs scripts/*.sh scripts/*.py .githooks/*
-# Only two doc comments naming .planning/WINDOWS.md, plus two cases in
-# scripts/which-checks.test.sh that classify a .planning path as docs_only.
-```
-
-Two consequences. A provenance check hung on `ours()` covers every document in the tree except
-the planning documents, which is probably right and is a decision for Pratik. And a change to a
-`.planning/` file is classified `docs_only` by `scripts/which-checks.sh`, which then runs the
-document-reading targets, **and none of those targets opens the file that changed**. A planning
-document is currently checked by nothing.
-
-That also means one sentence in `CLAUDE.md` is not reproducible: it says the em-dash guard has
-caught two breaks in markdown, "one in `CLAUDE.md` and one in a planning file". `CLAUDE.md` is
-in `ours()`; a planning file is not, and never was. I could not find what else could have caught
-it. Marked as unsettled rather than as wrong.
-
-### A documents-only commit already runs five targets, cheaply
-
-`scripts/check.sh:326` in `docs_only` mode runs `cargo test --lib help_page::` and then
-`cargo test --no-fail-fast --test house_style --test docs_links --test wired --test
-checkbox_labels --test manager_delete_stays_open`. So a new provenance check placed in
-`house_style.rs` runs on every documents commit at no extra build. That is the cheap home.
-
-### The version guard's companion, which is the model for this phase
-
-`tests/house_style.rs:3104`, and this is the pattern criterion 3 wants copied:
-
-```rust
-const A_VERSION_NOBODY_SHIPS: &str = "0.0.0-notashippedversion.1";
-
-#[test]
-fn test_the_version_reading_can_see_one_on_a_real_page() {
-    // ... asserts the page list is non-empty, asserts each page opens and is
-    // non-empty, asserts the page names no version today (the vacuity, asserted
-    // rather than assumed), then splices A_VERSION_NOBODY_SHIPS into the page's
-    // own real lines and requires the reading to answer with exactly that page,
-    // that line and that version.
-}
-```
-
-Three things it does that a naive companion does not. It runs over the real files rather than
-over literals, because "the file opens", "the file holds text" and "the file is read line by
-line" are the links that break. It asserts the current vacuity rather than assuming it, so the
-day a page does name a version the companion says so. And it names the exact expected string,
-not just "non-empty", so a reading that answers with the wrong line fails.
-
-`test_the_version_reading_can_see_one` (`:3167`) sits beside it and proves the extractor against
-the shapes that were really in the two pages, plus four neighbours that must not match
-("OAuth 2.0", "WCAG 2.2", "60.4%", a commit hash).
-
-### The guard-record bookkeeping, which the sweep will interact with
-
-Two checks run in milliseconds on every commit and are named in `CLAUDE.md`:
-
-- `test_every_guard_record_says_how_many_tests_the_files_it_names_held`,
-  `tests/house_style.rs:5014`. Compares each record's `tests_last_seen` counts against a static
-  count of `#[test]` and `#[tokio::test]` attributes in the files it names, and prints
-  `scripts/guards.sh --remeasure "..."` for the records that moved.
-- `test_every_test_a_guard_record_names_is_a_test_that_exists`, `tests/house_style.rs:5117`.
-  Catches a rename, which a count cannot see.
-
-`scripts/guards.py` reads the same anchored regex (`scripts/guards.py:64`):
-`^[ \t]*#\[(?:tokio::)?test\][ \t]*$`, both spellings, because 573 of the tests here are
-`#[tokio::test]`.
-
-**This matters to criterion 3 more than it looks.** The project already has a working mechanism
-for comparing a written count against a static count of test attributes in named files. It is
-the one existing precedent for checking a test-count claim without running the suite. It also
-proves the limit: a static attribute count is **not** the number `cargo test --list` reports, so
-a check built on it could not be pointed at the documents' 5,430 without comparing two different
-quantities.
-
-### The scale sample ships and is reachable
-
-`SAMPLE_MAILBOX_SIZE = 200_000` at `src/presentation/wx_app.rs:9212`; `sample_mailbox` at
-`:9224`; `ID_LOAD_SCALE_SAMPLE` declared at `:97`, menu item at `:6453`, handler at `:5004`.
-The handler builds the rows and sends `UIUpdate::MessagesLoaded(generated)`. The rows never
-touch SQLite.
-
-### The virtual text callback, and what type already guarantees
-
-`msg_list.set_virtual_text_callback(...)` at `src/presentation/wx_app.rs:1150`. The closure
-captures exactly two things: `state: Arc<StdMutex<WxUIState>>` and
-`column_layout: Rc<RefCell<ColumnLayout>>`. It reads `state.showing`, then
-`state.conversations.get(row)` or `state.messages.get(row)`, and calls
-`message_rows::conversation_cell_text` or `message_rows::cell_text`. The comment at `:1141`
-already states the property: "The callback runs while wxWidgets paints, so it reads what is
-already in memory and never touches the database."
-
-`WxUIState` (`:246` to `:663`) holds no database connection and no `MessageCache`. Its one
-field that sounds like one, `saved_searches`, holds
-`std::collections::HashMap<String, ...saved_searches::SavedSearchesRead>`, which is a read
-result rather than a handle. `cell_text` (`src/presentation/message_rows.rs:59`) and
-`conversation_cell_text` (`:125`) take `&MessageItem` / `&ConversationItem`, a column, a
-`DateSettings` and a `chrono` instant, and nothing else.
-
-**So the property holds by type today, and that is the strongest form of it.** The gap
-criterion 2 names is real but narrower than it sounds: it is that a future edit could add a
-query inside the closure body, and nothing would notice.
+I am not claiming the conclusion **is** false. Commits are not tests, and the fraction of tests
+written before their code is a different quantity that nobody has measured. I am claiming the
+number as written no longer supports what it is cited for, and that a phase about numbers cannot
+leave it alone.
 
 ---
 
-## Criterion by criterion
+## Numbers the tree already holds, dated, that nobody has aggregated
 
-### Criterion 1: memory with 1,000 messages, cold start, idle memory
+**This is the cheapest useful thing in this document.** This project records, in the body of its
+merge-hash commits, the gate duration each branch paid for, and in several commits the test count
+and per-record costs beside it. That is a dated, conditioned time series sitting in `git log`,
+and no document reads it.
 
-**Nothing exists.** Re-checked 2026-09-06, and the audit's finding of 2026-09-04 still holds:
-
-```bash
-ls -d benches                     # no benches/
-grep -n "bench\|criterion\|divan" Cargo.toml     # no output
-grep -rn "sysinfo\|GetProcessMemoryInfo\|working_set" src/ --include=*.rs   # no output
-grep -n '^name = "sysinfo"' Cargo.lock            # no output
-```
-
-`Instant::now` appears 19 times in `src/`, all of them in feature code (announcement
-coalescing, OAuth expiry, free/busy), none timing startup.
-
-**Reading resident memory needs no new dependency, and the house pattern is already set.**
-Twenty `#[link(name = "...")]` extern blocks exist in `src/`, and `Cargo.toml:283` states the
-convention out loud: "Everything else this project needs from Windows is a flat call behind a
-small `#[link]` block, and stays that way." The nearest model is
-`src/service/handover.rs:51`:
-
-```rust
-#[cfg(target_os = "windows")]
-fn this_session() -> u32 {
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetCurrentProcessId() -> u32;
-        fn ProcessIdToSessionId(process: u32, session: *mut u32) -> i32;
-    }
-    // ...
-}
-```
-
-`K32GetProcessMemoryInfo` is exported from `kernel32`, so a memory reading fits that shape
-exactly, and the `windows` crate's `Win32_System_ProcessStatus` feature (not currently enabled,
-`Cargo.toml:286`) does not need turning on. A non-Windows fallback keeps the crate building, as
-every other block here does.
-
-**Cold start is the one that has to run in production, not in a test.** Guardrail 1 says a
-feature is done when a non-test path reaches it. A cold-start number produced only by a test
-harness is a number about the harness. The route that satisfies both the guardrail and the
-criterion's "date, machine and build" is to have the application log it: `tracing` is already
-set up with a file appender (`tracing-appender`, `Cargo.toml:61`), and `common::version::current()`
-(`src/common/version.rs:32`) already yields `0.45.0` or `0.45.0+g64c73dd` for a build the
-installer script made. One log line at the moment the message list becomes usable gives the
-number, the build and the date at once, on any machine anybody runs it on.
-
-**"Usable message list" needs defining before it can be measured**, and the requirement already
-says why: "not to the window appearing, because an empty window is not a usable inbox". The
-honest marker is the first `UIUpdate::MessagesLoaded` reaching the list, or the first successful
-`set_item_count` on it. Naming which is a plan decision, and whichever is chosen the definition
-belongs beside the number, because two definitions of cold start differ by seconds here.
-
-`tests/command_line_output.rs` is the precedent for running the real executable from a test; it
-runs `--help`, `--version` and a refusal, none of which opens a window.
-
-### Criterion 2: 200,000 rows, and the filter path that does not exist
-
-**Sort: straightforward, and expect it to find a freeze.** `sort_messages`
-(`src/presentation/wx_app.rs:20141`) is a private free function over `&mut [MessageItem]`, so a
-timing test lives beside it in `wx_app.rs`'s own `#[cfg(test)] mod tests` and runs under
-`cargo test --lib presentation::wx_app::`.
-
-Its caller is the finding. `apply_sort` (`:20092`):
-
-```rust
-let sorted = {
-    let mut s = lock_state(state);
-    s.sort_order = order;
-    let mut msgs = s.messages.clone();   // 200,000 MessageItem, cloned under the lock
-    sort_messages(&mut msgs, order);     // sorted under the lock
-    msgs
-};
-```
-
-The whole vector is cloned and sorted while the UI state mutex is held. The requirement's own
-`[S]` line says a multi-second freeze on a header click is an accessibility failure rather than
-a performance one, and `Cargo.toml`'s clippy section records that a held lock guard is how this
-application once froze NVDA. So the sort measurement is likely to produce a number that fails
-its own criterion, and the plan should expect to carry a fix, not only a figure.
-
-**Scroll: the virtual callback, and the property is already true by type.** Timing it means
-timing `cell_text` and `conversation_cell_text` across the row set, which is a plain unit test.
-
-**The "no SQLite query" assertion has three candidate shapes and one is much stronger.**
-
-1. *Make it a type property and pin the type.* Extract the closure body into a named function
-   whose parameters are `&WxUIState`, the visible columns, the row and column indices, the
-   `DateSettings` and the instant, and register the closure as a single call to it. A query then
-   cannot be written without adding a parameter or an import, which is a compile error rather
-   than a silent regression. Cost: the guard cannot be recorded in `guards/guards.toml`, because
-   `scripts/guards.py` measures a break by which **tests go red**, and a break that stops the
-   build raises `Wrong` instead (`scripts/guards.py:500`, `why_no_test_was_named`).
-2. *A source-reading guard over the registered closure.* Assert the block passed to
-   `set_virtual_text_callback` names no cache type. Cheap, recordable, and this project has
-   written down five distinct ways a source-reading guard goes vacuous, including "a
-   source-reading guard anchored on the line its own GREEN half deletes". It needs a companion
-   in the shape of the version companion above, and the companion is most of the work.
-3. *Instrument the connection.* `rusqlite` 0.40 is the SQLite crate (`Cargo.toml:81`) and offers
-   `trace` and `profile` hooks. Nothing in `src/data/` installs one today (`grep -rn
-   "trace(\|profile(\|set_authorizer" src/data/ --include=*.rs` returns nothing). This is the
-   only shape that would notice a query arriving by a route nobody predicted, and it is also the
-   only one that needs a connection on the path, which today there is not.
-
-My recommendation is 1 plus 2: take the type guarantee, and record a source guard over the
-closure with a real companion, because the type guarantee is invisible to anyone reading the
-callback in six months.
-
-**Filter: this is the part that cannot be built as the criterion describes it.**
-
-- The sample rows never enter SQLite. The handler at `wx_app.rs:5004` sends them straight to the
-  list.
-- The mail list has no in-memory filter. `grep -n "group_filter\|active_group\|retain(" 
-  src/presentation/wx_app.rs` returns one line, and it is a **contacts** test
-  (`test_clearing_the_search_box_returns_to_the_active_group_filter_alone`, `:20983`), reached
-  through `recompute_which_contacts_are_shown`. Contacts have an in-memory filter; mail does not.
-- Mail filtering is `MessageCache::search_messages` (`src/data/message_cache/searching.rs:477`),
-  a SQL query taking a `limit`, called with 50 in its own tests.
-
-So a filter number over the sample mailbox would be a number about an empty database. Two honest
-routes, and choosing between them is a decision below: write 200,000 rows into a `tempfile`
-cache and time `search_messages` against that, which answers the real question and needs no
-window; or revise the criterion to say sort and scroll and record why filter was dropped.
-
-### Criterion 3: provenance in the documents
-
-**The scale is about a hundred sites, not a thousand.** A heuristic reading of every `*.md`
-under `docs/` plus `README.md`, looking for a figure attached to a countable noun and for a
-provenance marker within three lines:
+One pass over the last 800 commits, 2026-09-12:
 
 ```bash
-# reader saved at scratchpad/phase-08/numbers.py; pattern is a number followed by one of
-# tests|records|mutants|commits|guards|percent|%|MB|seconds|minutes|hours|days|rows|messages|
-# files|modules|survivors|misses|events|channels|settings|shortcuts
-python numbers.py docs README.md
-# number-shaped claims found: 112
-# with a provenance marker within 3 lines: 30
-# without: 82
-#   38 (33 bare)  docs/changelog.md
-#   24 ( 7 bare)  docs/plans/20260801-mutation-sweep.md
-#   11 (10 bare)  docs/plans/20260726-mail-at-scale.md
-#   11 ( 7 bare)  docs/plans/20260823-earcon-sound-schemes.md
-#    5 ( 3 bare)  docs/IMPLEMENTATION_STATUS.md
-#    5 ( 5 bare)  docs/privacy.md
-#    5 ( 5 bare)  docs/roadmap.md
+git log --format='@@@%ad %h%n%B' --date=short -800 | awk '
+  /^@@@/ {hdr=substr($0,4); next}
+  /[0-9][0-9]+ seconds/ { if (match($0, /[0-9]+ seconds/)) print hdr "  " substr($0, RSTART, RLENGTH) }'
 ```
 
-That reading is crude and I say so: it counts "10MB" in an attachment warning and "100%
-keyboard accessible" as claims. Its value is the order of magnitude. A hand pass over roughly a
-hundred sites is a day's work, not a week's, and most of the bare ones turn out to be targets or
-constants once the taxonomy above is applied.
+What it yields for the full gate, `scripts/check.sh all`, all on 2026-09-12 and all four checks
+green: 419, 463, 465, 471, 473, 506 and 654 seconds. Commit `44615216` had already noticed the
+band and wrote it down as "419 to 654 the six landed branches report". `a0b909e8`, this
+session's HEAD, records two runs of 473 and 465.
 
-**The three test-count sites already agree and already carry command and date.** Measured
-2026-09-06:
+Three things follow.
 
-```bash
-grep -n "5,430\|5,269" docs/changelog.md docs/integration-guide.md docs/IMPLEMENTATION_STATUS.md
-# docs/changelog.md:1963, 1966, 1967
-# docs/integration-guide.md:5
-# docs/IMPLEMENTATION_STATUS.md:129
-```
+**The gate's own recorded figure is out of date.** `CLAUDE.md:280` gives 311 seconds for the
+whole gate, measured warm 2026-08-30. The band today is 1.3x to 2.1x that. Nobody re-measured it,
+and nobody had to, because every branch was recording the real number in its own commit message.
 
-`docs/IMPLEMENTATION_STATUS.md:129` reads "5,430 tests pass: 5,269 unit and 161 integration,
-counted 2026-08-29 with `cargo test --all-targets -- --list`". Note that the audit of 2026-09-04
-cited this as line 123. It is now 129. That is the line-number rot the audit itself warned about,
-observed inside two days.
+**A single figure for the gate would be a wrong answer.** The spread within one day is 1.56x.
+`CLAUDE.md` already warns about this for the documents-only path (36 seconds once, 2m56s another
+time) and the warning applies to the full gate too. Whatever the phase publishes for gate cost
+must be a band with a date and a note about what moves it, not a number.
 
-**How far behind those numbers are, without running cargo.** A static count of the test
-attribute, using the same anchored regex `scripts/guards.py` uses:
+**The per-record guard cost is settled and decomposed, and one sentence in `CLAUDE.md` has not
+caught up.** Commit `20c42110`, 2026-09-10, measured at `eda2719`:
 
-```bash
-python - <<'PY'
-import re, pathlib
-A = re.compile(r'^[ \t]*#\[(?:tokio::)?test\][ \t]*$', re.M)
-for root in ("src", "tests"):
-    n = sum(len(A.findall(p.read_text(encoding='utf-8', errors='replace')))
-            for p in pathlib.Path(root).rglob("*.rs") if "vendor" not in p.as_posix())
-    print(root, n)
-PY
-# src   6355
-# tests  234
-```
+> 112 seconds a record -> 95, being 29s rebuild and 66s library run at 8 threads
 
-Working tree, 2026-09-06. This is **not** the number `cargo test --list` reports and must not be
-written into a document as though it were. The most recent recorded library run is 6,291 passed,
-in `.planning/phases/04-writing-and-reading-a-message-in-full/04-03-SUMMARY.md:254`, dated
-2026-09-05, from a `scripts/check.sh all` run that took 5m06s.
+`CLAUDE.md:527-529` says "The rebuild term was never measured beside the run term". It was, one
+day after that paragraph was written. The 2026-09-06 research listed "the real per-record guard
+cost on today's tree" as a question it could not settle; it is settled, at 95 seconds, with both
+components named.
 
-**`CLAUDE.md` breaks the rule it states, three times in one file, and none of the three carries a
-date.** This is the clearest single example of what the phase is for.
+The same commit records the library run and shell-suite figures, and commits `c5c43c6d`,
+`c58bfc1a` and `7ad70ffe` of 2026-09-11 record library-run wall times of 63.86 s, 69.99 s and
+57.65 s over 6,905 to 6,993 tests at eight threads.
 
-| Line | Says | Measured 2026-09-06 |
+**Recommendation for the planner:** make harvesting this series a task, and make the harvested
+series the thing the documents point at. A document that says "the gate costs between X and Y,
+from the N branches that recorded it, most recent Z" is the only shape of durational claim that
+does not perish, because the next branch extends it automatically.
+
+---
+
+## Which numbers a check can hold instead of a person
+
+**The most valuable section, per the brief.** The repository does this well already and the
+precedents are better than anything I would design.
+
+### What already works, and the shape to copy
+
+| Check | Where | What it holds | Companion that proves it can fail |
+|---|---|---|---|
+| `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it` | `tests/house_style.rs` | two numbers in a file header add to the records in that file | `test_the_sweep_header_check_can_tell_the_two_apart` |
+| `test_no_changelog_list_is_introduced_by_a_count_that_disagrees_with_it` | `tests/house_style.rs` | a count stated in prose agrees with the bullets it introduces | `test_the_count_check_can_see_a_count_that_disagrees` |
+| `test_every_guard_record_says_how_many_tests_the_files_it_names_held` | `tests/house_style.rs` | recorded per-file test counts against the tree, and prints the scoped remedy | `test_the_recorded_count_check_can_tell_a_drift_from_an_agreement`, plus two more |
+| `test_every_test_a_guard_record_names_is_a_test_that_exists` | `tests/house_style.rs` | a renamed test cannot leave a record unmeasurable | its own siblings |
+| six readings in `tests/the_planning_files_agree_with_themselves.rs` | that file | STATE frontmatter against its prose, plan and summary counts against disk, both halves of the ledger, the roadmap against disk | one companion per reading, six of them, each splicing a disagreement into the real file's own lines |
+| `test_no_status_page_names_a_version_the_code_does_not_ship` | `tests/house_style.rs` | no page names a version the code does not ship | `test_the_version_reading_can_see_one_on_a_real_page`, which splices a version nobody ships into each page's real text |
+
+**The rule every one of these follows: a reading guard ships with a companion that proves the
+reading can see a violation.** `CLAUDE.md` explains why (a guard whose trigger is "a document
+mentions X" is disarmed by the workaround it recommends) and the version guard is the live
+example: neither page it reads names a version today, so it iterates over nothing, and only the
+companion keeps it honest. Every check this phase writes needs one. **Budget for that: the
+companion is most of the work.**
+
+### What phase 8 could add, ranked by value against cost
+
+| Candidate check | Holds | Cost | Why it is worth it |
+|---|---|---|---|
+| **Guard-record shape figures computed, not written** | the record count, how many name one file, how many name each hot file | low; `tests/house_style.rs` already parses the file with `toml::from_str` | The headline finding. Three publications, two wrong. Delete the sentences and have the failure message print the figures |
+| **Prose figures in `docs/privacy.md` against their constants** | Table B, nine rows | medium; needs a mapping from a sentence to a constant | Both halves are in the repository, which the taxonomy says is exactly the checkable kind. Today nothing reads a single one |
+| **A measurement carries a date and a command** | the *presence* of provenance beside a number, never its value | medium to high; needs the taxonomy encoded so a target, a constant and a record are not flagged | This is criterion 3 itself. Scope it to the four product pages first, not to the changelog |
+| **A duration carries its conditions** | that a figure in seconds, minutes or hours is accompanied by a date and a machine or setting | medium | PERF-06's fourth clause, added 2026-09-04, asks for exactly this |
+| **A stated ratio of two absolutes is banned or dated** | Table D row 4's failure mode | low | One pattern, five sites, and the class has no other detector |
+| **The `Cargo.toml` version against pages that name one** | already exists and is vacuous | zero; it is written | Not a new check. Worth noting that it stays vacuous until some page names a version |
+
+**What must not be checked:** any assertion that a written number equals what a tool reports
+today. PERF-06's fifth clause records that this is what the requirement used to ask for and that
+it was corrected on 2026-08-29 because it is false the next time anybody adds a test. The phase
+must not reintroduce it.
+
+---
+
+## Numbers that must be quoted with their conditions
+
+Each of these is a figure whose value depends on something the figure does not name. PERF-06's
+fourth clause makes carrying the conditions a requirement.
+
+| Figure | Conditions that change it | Evidence |
 |---|---|---|
-| `CLAUDE.md:456` | "The whole sweep is 565 records and about 15 hours" | 615 on `main`, 617 in the working tree |
-| `CLAUDE.md:384` | "471 of the 548 records name one file" | 475 of 615 on `main`; **471 is not reproducible, see below** |
-| `CLAUDE.md:385` | "a test added to `src/application/contacts_sync.rs` flags 74 of them" | 77 on `main` |
-| `CLAUDE.md:458` | "63 records of the 536 that existed then" | correctly scoped to a past event, so this one is fine |
+| Full gate duration | whether the previous commits forced a clippy rebuild; branch or `main`; what else is running | the 419 to 654 band on one day, above |
+| Documents-only gate duration | the same, plus the 108-second shell-suite floor | `CLAUDE.md:253` gives 36 seconds and `:268` gives 2m56s for the same path |
+| Library suite duration | `WIXEN_TEST_THREADS`; whether the schema template is in play | the 2026-09-09 and 2026-09-11 series |
+| Per-guard-record cost | thread count; that it decomposes into a rebuild and a run, which moved for different reasons | `20c42110` |
+| Any whole-sweep or whole-run total | it is a rate times a count and **both terms move**, sometimes in opposite directions | see the cost models below |
+| Mutation timeout behaviour | calibrated against a suite figure of 2026-08-06 that has since grown several times over | `.cargo/mutants.toml:37-48` |
+| `target/` disk cost | measured 258.5 GB total and 246.1 GB in `target/debug` over 229,412 files, 2026-09-12, with `Get-ChildItem -Recurse -File \| Measure-Object -Property Length -Sum` | relevant because both long jobs rebuild repeatedly |
 
-```bash
-grep -c '^\[\[guard\]\]' guards/guards.toml                     # 617  (working tree, eda6ef7)
-git show main:guards/guards.toml | grep -c '^\[\[guard\]\]'     # 615  (main, 48ace28)
-```
+---
 
-The distribution, re-measured with a reader saved at `scratchpad/phase-08/dist.py` (it splits on
-`[[guard]]` and reads each record's `tests_last_seen` entries):
+## Cost models for the two long jobs
 
-```
-main (615 records)                working tree (617 records)
-  1 file:  475                      1 file:  477
-  2 files: 113                      2 files: 113
-  3 files:  17                      3 files:  17
-  4 files:   5                      4 files:   5
-  5 files:   2                      5 files:   2
-  8 files:   1                      8 files:   1
-  9 files:   1                      9 files:   1
- 12 files:   1                     12 files:   1
+Both are a rate times a count. **Take the count today and measure the rate today** is the
+project's own instruction and it is the right one; what follows is the best available starting
+point, labelled.
 
-top files by how many records name them (identical on both):
-  77  src/application/contacts_sync.rs
-  69  src/application/calendar.rs
-  40  src/presentation/wx_app.rs
-  40  src/presentation/managers.rs
-  35  src/service/protocols/imap.rs
-  34  src/data/message_cache/contacts.rs
-  30  src/service/spellcheck/mod.rs
-  29  src/service/caldav.rs
-141 distinct files named; red lists total 1,644 named tests, mean 2.67, max 42
-```
+### The guard sweep, roadmap criterion 5
 
-**`CLAUDE.md` names only `contacts_sync.rs` as the worst case, and `calendar.rs` at 69 is a
-close second that nothing mentions.** A test added to `src/application/calendar.rs` costs 69
-re-measurements, and a plan that budgets only for contacts_sync will be surprised.
+- **Count, measured 2026-09-12:** 734 records.
+- **Rate, measured 2026-09-10 at `eda2719` and recorded in commit `20c42110`:** 95 seconds a
+  record, being 29 s rebuild plus 66 s library run at eight threads.
+- **Product:** 69,730 seconds, **19 h 22 m**, plus triage.
 
-**On the 471.** `CLAUDE.md:384-385` was written 2026-09-02 (`git blame`: `1a1a6b4f`), when the
-file held 548 records. At that tree, `74` reproduces exactly and `471` does not. Three readings
-tried against `git show 9d6543a:guards/guards.toml`:
+That is an inference from two measurements, not a measurement. It is also the fourth figure the
+tree gives for this job, and the phase should retire the other three rather than adding a fifth:
 
-| Reading | Result at 548 records |
+| Where | Figure | When it was right |
+|---|---|---|
+| `.planning/ROADMAP.md`, criterion 5 | "roughly 15 hours" | at a smaller count and the pre-halving rate |
+| `CLAUDE.md:520` | "about 20 hours", then superseded two paragraphs later without a replacement | 2026-09-06, at 617 records and 119 s |
+| `tests/house_style.rs:5429` | "eighteen hours" | 2026-09-10, at 683 records and 95 s |
+| `guards/guards.toml:40` | "a full run is an hour or two" | a fossil from about 192 records; out by an order of magnitude |
+
+**Three practical notes for the planner.** The job is unattended and restores each file after
+each break, but it needs a quiet machine: `scripts/guards.sh:41` records that a commit hook
+running the suite during one reported three guards green that go red on their own. A plain sweep
+has no resume and writes nothing back, so its only artefact is the log. And `--remeasure` writes
+counts back for records that agreed, which a plain sweep deliberately does not, so the two are
+not interchangeable.
+
+### The whole-tree mutation run, roadmap criterion 4 and PERF-07
+
+- **Count:** unknown. `cargo mutants --list` parses rather than builds and answers in seconds.
+  `cargo-mutants 27.1.0` is installed. **This should be the first task of the phase**, because
+  everything about criterion 4's schedule depends on it.
+- **Rate:** no current figure exists. The only measured rate, one mutant every 26 seconds, is
+  from 2026-08-01 and its denominator is a suite run that has since roughly halved. The "about
+  two days" in two documents is undated and has no conditions at all.
+- **Product:** not given here, deliberately. Multiplying a 2026-08-01 rate by a count nobody has
+  taken would be exactly the mistake this phase exists to end.
+
+**One risk the planner must carry.** `.cargo/mutants.toml` sets `timeout_multiplier = 5.0` and
+`minimum_test_timeout = 60`, and its own comment says both are read against a suite figure of
+about 46 seconds measured 2026-08-06. The suite is several times that now. The 2026-08-05
+whole-tree attempt already reported 81 spurious timeouts from a busy machine, and its comment
+warns against lowering the multiplier to hide them. Re-deriving that calibration before the run
+is cheaper than discovering it at hour forty.
+
+---
+
+## What cannot be measured on this machine at all
+
+Each of these belongs in `.planning/WINDOWS.md` rather than in a plan. Verified this session
+unless stated.
+
+| What | Evidence |
 |---|---|
-| records with one distinct file in `tests_last_seen` | 439 |
-| records whose red tests all live in one exact module | 324 |
-| records whose red tests all share a top-level module | 353 |
+| **Anything against a real mail account** | recorded across the ledger and the roadmap; no account has ever been used |
+| **PERF-03's "a real mailbox of 100,000 messages"** | the requirement itself already says synthetic rows answer the list question and the provider question waits for a live account |
+| **A OneNote tenant, a CalDAV or CardDAV server, Google or Microsoft Graph** | `.planning/STATE.md` records every request being answered by a loopback server the tests start |
+| **A Linux or macOS build** | `.github/workflows/other-platforms.yml` is `workflow_dispatch` only and its header says nobody has ever compiled this crate off Windows |
+| **A published release, or any signed artefact** | phase 7's summaries record that nothing is signed because there is no certificate, and that criterion 1 waits on an Azure account only Pratik can create |
+| **The update download's real size** | `docs/privacy.md:417`'s "roughly 12 MB today" is about an artefact no release has produced |
+| **Screen reader confirmation of anything** | the project's second guardrail; 320 of the 342 ledger entries are open and many are `unrun-verify` |
 
-My reading reaches 471 only at about 611 records, which the file held on the evening of
-2026-09-05. So the sentence appears to hold three numbers from three different trees, and it
-names no command, so nobody can tell. I could not determine what "471" counted. This is recorded
-as a finding rather than resolved.
+### One more that the brief did not anticipate
 
-**Two more internal inconsistencies found while counting, both in
-`docs/plans/20260801-mutation-sweep.md`:**
+**CI has been red, and the local gate cannot see it.** Measured 2026-09-12 with `gh run list`:
+the last three CI runs on `main`, all on 2026-09-10 at commit `1aba3a5b`, failed. Run
+`34467657848` shows Clippy, Test Suite and Security Audit failing and four jobs passing. The
+Clippy failure is two instances of "using `chunks_exact` with a constant chunk size", a lint the
+local toolchain does not have: local is `rustc 1.97.1` and `clippy 0.1.97` of 2026-07-14, the
+workflows use `dtolnay/rust-toolchain@stable` resolved at run time, and the repository pins no
+toolchain (no `rust-toolchain.toml`, no `rust-toolchain`). Meanwhile `git rev-list --count
+origin/main..HEAD` is **180**.
 
-1. Its "Scale" section says "4,171 mutants outside the four already done", and its own table
-   directly beneath sums to 3,172 (89 + 327 + 513 + 1,307 + 211 + 725). A difference of 999,
-   with nothing reconciling them.
-2. Its Progress table cannot be summed without knowing whether the `service` row (1,296 mutants)
-   includes the `service/protocols` row (327). The order table above treats them as separate
-   ("`service` (rest) | 211"), the progress table does not say. So the measured total is either
-   about 4,444 or about 4,771 and the document does not settle it.
+Three consequences for this phase.
 
-**What the roadmap's "the documents agree with each other" already has going for it.** The
-three test-count sites agree. The disagreement PERF-06's evidence was originally about is closed.
-What remains is drift, which the criterion explicitly says to refresh rather than fail on.
+1. `CLAUDE.md` says the local script runs "the same four checks CI runs". CI runs seven jobs.
+   One of them, `cargo audit`, has no local counterpart at all and is among the failures. That is
+   a documented claim that is not true, in the file whose whole argument is that documented
+   claims need checks.
+2. Every long job this phase schedules will run against a tree that CI has never judged.
+3. `.cargo/audit.toml` accepts seven advisories, each with a written exit condition and none with
+   a date: `RUSTSEC-2026-0194`, `-0195`, `-0098`, `-0099`, `-0104`, `RUSTSEC-2024-0436`,
+   `RUSTSEC-2025-0134`. An exit condition nobody re-reads is the same kind of thing as an
+   undated measurement, and the audit job failing means an eighth advisory has arrived that
+   nobody has read.
 
-### Criterion 4: one whole-tree mutation run
-
-**What is recorded, with its conditions.**
-
-| Source | Figure | Conditions given |
-|---|---|---|
-| `.cargo/mutants.toml:38` | suite takes about 46 seconds | measured 2026-08-06, nothing else running; 57 in that run's own baseline with a build alongside |
-| `docs/plans/20260801-mutation-sweep.md:13` | "roughly one every twenty-six seconds ... near thirty hours" | dated by the document, 2026-08-01. Machine not named |
-| `scripts/mutants.sh:70` | "Serial is roughly a minute per mutant" | cargo-mutants 27.1.0, `MUTANTS_JOBS` default 1 because parallel workers collide with "The file exists (os error 80)" on Windows. Date not given; the file was last touched 2026-09-03 |
-| `docs/IMPLEMENTATION_STATUS.md:162` and `CLAUDE.md:323` | "about two days" | none |
-
-Three rates for one job. Twenty-six seconds a mutant against 4,771 is 34 hours; sixty seconds is
-80 hours. Neither is two days. The two-day figure matches nothing in the tree.
-
-**The 2026-08-05 run, and a scope disagreement I could not settle.**
-`scripts/mutants_report.py:6` records it precisely: 1,470 mutants, 734 caught, 60 missed, 81
-timed out, 122 that the compiler rejected, and 473 that never built at all, each dying in a
-tenth of a second on a Windows status with no output. Only 997 were really tested. That is also
-in commit `9c8b9f9` (2026-08-11) and at `CLAUDE.md:544`, both of which call it a **whole-tree**
-run. `docs/plans/20260801-mutation-sweep.md:307` calls the same run "the narrower run of
-2026-08-05 that covered `src/application` and `src/presentation` only".
-
-1,470 is well below every whole-tree figure the tree records before or after, which favours the
-narrower reading, but that is an inference and the run's `mutants.out` is gone. The only
-mutation artefact still on disk is `mutants.out.old/` at the repository root, untracked, dated
-2026-07-30, holding 102 mutants over four files (60 in `mail_sync.rs`, 27 in
-`imap/special_use.rs`, 14 in `destinations.rs`, 1 in `abilities.rs`), so it is a different run
-entirely. **Settling which the 2026-08-05 run was, and correcting whichever document is wrong,
-is a task for this phase.**
-
-**How big the run is today, and why the recorded figure cannot be trusted.** The mutable surface
-has grown by about two and a half times since the August sweep:
-
-```bash
-ref=$(git rev-list -1 --before=2026-08-04 main)     # 02cc65f, 2026-08-03
-# non-test lines (everything before the first #[cfg(test)]) in src/*.rs,
-# excluding what .cargo/mutants.toml excludes
-for r in "$ref" main; do
-  tot=0
-  for f in $(git ls-tree -r --name-only "$r" -- src | grep '\.rs$' \
-      | grep -v -e 'src/presentation/wx_' -e 'src/presentation/managers\.rs' \
-                -e 'src/main\.rs' -e 'src/vendor/'); do
-    n=$(git show "$r:$f" | awk '/^#\[cfg\(test\)\]/{print NR-1; found=1; exit} END{if(!found) print NR}')
-    tot=$((tot+n))
-  done
-  echo "$r $tot"
-done
-# 02cc65f  38985
-# main     96649
-```
-
-Ratio 2.48. Applied to the 4,444 to 4,771 measured in August, that is roughly 11,000 to 11,800
-mutants today. At twenty-six seconds each, 80 to 85 hours. At sixty seconds each, 183 to 197
-hours, which is eight days of continuous running.
-
-**This is an extrapolation and must be replaced, not quoted.** Mutant density per line is not
-constant, and this project writes very long comments, so a line-count ratio overstates. The
-correct first task of the phase is:
-
-```bash
-cargo mutants --list | wc -l
-```
-
-`--list` parses the source with `syn` and does not build, so it costs seconds and answers
-exactly. Nothing should be scheduled before it has been run.
-
-**How the report must be read, and what `scripts/mutants.sh` now refuses.**
-`scripts/mutants_report.py:305`, `why_this_is_not_an_answer`, refuses five shapes, each with its
-own sentence:
-
-- the build failed before anything was changed, so no mutant was tested;
-- N of the M mutants never built, with the Windows status printed and the real tested count
-  given;
-- the run stopped part way through, so this is part of an answer: wait, or read it as the part
-  it is;
-- every mutant was rejected by the compiler, so the suite never ran;
-- there were no mutants at all.
-
-Two operational rules follow from the tree's own record. **Read `mutants.out` only after the
-process exits**: reading it early once produced a commit message quoting seventeen of eighteen
-caught when the finished figure was thirty-seven of fifty-one. And **a mutant that never started
-is re-run, not counted**: six mutants that never built on 2026-08-11 all built when the same
-twelve were asked again twenty minutes later, and five of the six were caught.
-
-**Expect the survivor list to be large and to be mostly triage.** The August areas produced 483
-misses in `service` alone, of which about half is socket code that stays. The criterion says
-every survivor is killed with a test or recorded with a reason, and the sweep plan already
-records how that goes wrong: a pass was reported as closing 52 findings and closed 7, found only
-because a confirming re-run said 45 were still open byte for byte. Its rule is worth carrying
-into this plan verbatim: **past about three findings per new test, ask which test kills which
-mutant and expect a named answer, and a sweep is not finished until a second run says so.**
-
-### Criterion 5: the one whole-tree guard sweep
-
-**Size, measured 2026-09-06:** 615 records on `main`, 617 in the working tree, across 141
-distinct named files and 112 distinct break-target files.
-
-```bash
-git show main:guards/guards.toml | grep -c '^\[\[guard\]\]'          # 615
-grep -c '^suite = ' guards/guards.toml                                # 44
-grep '^suite = ' guards/guards.toml | sort | uniq -c                  # 14 distinct targets
-grep '^file = ' guards/guards.toml | sort -u | wc -l                  # 112
-```
-
-571 of the 615 run against `--lib`. The other 44 name one of 14 integration targets: 18
-`house_style`, 8 `wired`, and one or two each of `a_whole_folder_moves_both_bounds`,
-`an_encrypted_message_is_not_left_unexplained`, `checkbox_labels`,
-`manager_delete_stays_open`, `manager_dialog_labels`, `nothing_leaves_the_outbox_unasked`,
-`nothing_sends_a_flag_change_unasked`, `one_sign_in_per_piece_of_work`,
-`the_conflict_choice_can_be_heard`, `the_list_warning_reads_the_message`,
-`tree_dialogs_resolve_the_row_somebody_is_on`, `tree_rows_leave_no_registry_entry`.
-
-**Cost, and why fifteen hours is optimistic.** `scripts/guards.py` gives two per-record figures
-with conditions:
-
-- `scripts/guards.py:580`: "the rebuild a break forces is 23 seconds and the library is 89, so
-  filtering would take a 220-record sweep from 6.8 hours to about 88 minutes." That is
-  111 seconds a record, and the `--named-only` help text at `:1060` states it as "about 112
-  seconds a record against 24".
-- `scripts/guards.py:30`: the library suite was 5,837 tests on 2026-08-31, on 24 logical cores,
-  at 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, harness default 196s.
-  `WIXEN_TEST_THREADS` defaults to 4 for that reason and applies to the guard runs only.
-
-The library is now about 6,291 tests (recorded 2026-09-05), 7.8% more than the 5,837 those
-timings were taken on. Scaling the 89 second run term gives about 96 seconds, plus the 23 second
-rebuild, so about 119 seconds a record. 615 records is 73,185 seconds, **about 20.3 hours**,
-plus one full baseline run per distinct suite before any break is applied
-(`scripts/guards.py:931`, `what_is_already_failing`), which is 15 more suite runs.
-
-That is an inference from two measured components and I mark it so. `CLAUDE.md`'s "565 records
-and about 15 hours" implies 96 seconds a record, which is the library run term with no rebuild.
-The two figures in the tree disagree by about 17% and neither is dated.
-
-**There is no resume, and the failure modes are recorded.** Reading
-`scripts/guards.py:811-1065`:
-
-- No `--resume` flag and no checkpoint file. The options are a positional substring filter,
-  `--touched-by REF`, `--named-only`, `--remeasure NAME...` (exact names, one or many), and
-  `--recount-everything`.
-- **A plain sweep writes nothing.** `write_down_the_counts` is called in only two places:
-  under `--recount-everything` (`:862`) and under `--remeasure` after the loop (`:1017`). An
-  ordinary run is a report, deliberately: "a report that edits the thing it reports on is not
-  one."
-- **An interrupt leaves the tree clean but loses the work.** `measure` restores the file in a
-  `finally` (`:706`), writing bytes rather than text so line endings and timestamps survive, and
-  `KeyboardInterrupt` is not caught by the per-record `except Exception`. A killed process, as
-  opposed to Ctrl-C, would leave a broken source file behind; that is the one case to be careful
-  of.
-- **One bad record no longer takes the run down.** `:983` catches any exception per record,
-  counts it as slipped, and continues. That was added after "a sweep of 208 records died on its
-  122nd with `NoneType + str` after about an hour of work".
-- **Output is flushed per record on purpose.** `:966` records why: "a 220-record run showed an
-  empty file for seven hours". So the log is watchable, and the log is the only artefact.
-
-**Therefore resuming is manual, and the shape of it should be in the plan.** Take the record
-names already reported in the log, subtract them from the names in `guards/guards.toml`, and
-pass the remainder to a fresh invocation. `--remeasure` accepts many exact names and is the only
-mode that also writes the counts for records that agreed, so it is the mode a resumed sweep
-wants; the positional filter is substring-matched and cannot express a list.
-
-**Expect findings, and here is the base rate.** The header of `guards/guards.toml` says 192
-records were swept on 2026-08-12 and 425 have arrived since (working tree; 423 on `main`), and
-those two numbers are checked on every commit. `CLAUDE.md` gives two prior sweeps: one of 208
-records found 23 wrong, a later one of 220 found 1. The difference is attributed to phase 2.1
-running the scoped remedy every time a commit printed it. Ledger 100
-(`.planning/WINDOWS.md`, recorded 2026-09-05, still open) is the most recent data point: two
-records wrong, both surfaced by the count check when `mail_sync.rs` gained one test, and one of
-them had been **unmeasurable** rather than stale since a struct gained a field hours earlier,
-so the run reported a broken tool rather than a finding.
-
-At the 23-in-208 rate, 615 records is about 68 findings. At the 1-in-220 rate it is about 3. The
-truth depends entirely on how consistently the per-commit remedy has been run across phases 3
-and 4, which I did not measure. Budget for the higher number and be pleased.
-
-**A finding at hour eleven costs a correction by hand plus one more record's run**, about two
-minutes, and correcting by hand needs whoever is doing it to understand what the break should
-redden. It does not stall the sweep: `scripts/guards.sh` reports and continues, and the
-corrections are applied afterwards. So the sweep is one long unattended job followed by a
-triage pass, not an interactive session, which is the fact that makes the scheduling decision
-below tractable.
-
-**The sweep will change the header, and the header is checked.** After the sweep,
-`guards/guards.toml`'s two numbers must be rewritten to say what this sweep covered and that
-zero have arrived since, and
-`test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it` will fail
-until they add up. That is one line in the same edit and should be a named task.
-
-### Criterion 6: each target met or revised, with the reason
-
-Four numbers are targets rather than measurements today, and all four are correctly written as
-targets:
-
-| Target | Where | Source |
-|---|---|---|
-| under 150 MB with 1,000 cached messages | `docs/development/requirements-backlog.md:81` | that backlog, Medium |
-| cold start under 2 seconds | `docs/roadmap.md:221` and `:253`, `requirements-backlog.md:82` | roadmap and backlog |
-| under 100 MB idle | `docs/roadmap.md:254` | roadmap success metrics |
-| line coverage | `docs/IMPLEMENTATION_STATUS.md:207`, 60.4% on 2026-07-26 | last measurement, not a target |
-
-`docs/roadmap.md:255` also carries "100% keyboard accessible", which is a target of a different
-kind and is not this phase's.
-
-**Coverage is the one where the criterion tells you what the answer is.** Criterion 3 says low
-coverage is attributed to the untested network transport rather than treated as a number to
-raise. `docs/IMPLEMENTATION_STATUS.md:207-212` already says exactly that. So the work here is a
-re-measure with its date, and leaving the attribution alone.
-
-Since the last coverage reading, per the audit of 2026-09-04, 1,195 of the repository's 1,373
-commits have landed, so 87% of the project's history postdates it. Re-run
-`git rev-list --count --since="2026-07-26" HEAD` on the day, because that figure has moved too.
+I have not fixed any of this and it is not obviously phase 8's work. It is recorded because the
+phase cannot honestly publish "the gate is green" without it.
 
 ---
 
-## Pitfalls specific to this phase
+## Requirement by requirement
+
+### PERF-01, memory under 150 MB with 1,000 cached messages
+
+**Evidence today:** no instrument exists. Verified 2026-09-12: no `benches/` directory, no
+`criterion`, `divan` or `[[bench]]` in `Cargo.toml`, and `grep -rn 'sysinfo|GetProcessMemoryInfo|
+PROCESS_MEMORY_COUNTERS|WorkingSet' src/ Cargo.toml` returns nothing. The 2026-09-04 evidence in
+`.planning/REQUIREMENTS.md` is still accurate.
+
+**What would have to be produced:** a repeatable procedure that builds a cache holding 1,000
+messages, starts the release binary against it, and reads the working set, recorded with date,
+machine and build. The mechanism for the controlled profile already exists and is used by the
+accessibility workflow: `WIXEN_MAIL_DATA` (`src/common/paths.rs:30`) redirects the whole data
+folder, and `.github/workflows/accessibility.yml:109` sets it to a scratch directory and starts
+`target/release/wixen-mail.exe` with `Start-Process`. That is most of the harness already
+written. Reading the working set is a PowerShell one-liner over the started process; no new
+dependency is needed and none should be added.
+
+**Open question the planner must settle:** what "1,000 cached messages" means concretely, since
+the cache holds envelopes, bodies, attachments and signed originals under separate budgets
+(Table B). A thousand envelopes and a thousand full bodies with attachments are different
+measurements by a wide margin.
+
+### PERF-02, cold start under 2 seconds
+
+**Evidence today:** nothing in `src/` times process start against a usable list. The target is
+correctly written as a target in all three places.
+
+**What would have to be produced:** a measurement from process start to the message list being
+usable, not to the window appearing. The requirement is explicit about that and it is the part
+that makes this hard: "usable" is a state inside the application, so either the application logs
+a timestamped line at that moment or the measurement is of something else. The application
+already emits `tracing::info!` around the sample mailbox load (`wx_app.rs:5255-5262`), so the
+pattern of timestamping a milestone in the log is established. `hyperfine` is **not** installed;
+`Measure-Command` is available and adequate.
+
+### PERF-03, exercised at scale
+
+**Evidence today, all verified this session:**
+
+- The 200,000 row generator ships and is reachable from the Help menu, not behind a build flag
+  (`SAMPLE_MAILBOX_SIZE` and `ID_LOAD_SCALE_SAMPLE` per Table A row 12).
+- No sort, filter or scroll number exists anywhere (Table A row 14).
+- The virtual text callback does not touch the database, and no test says so (Table A row 13).
+
+**Carried forward from the 2026-09-06 reading, and re-checked:** the sample mailbox is pushed
+straight into the in-memory list through `UIUpdate::MessagesLoaded` and never enters SQLite, and
+the mail list's filter is `MessageCache::search_messages`, a SQL query. So the sample mailbox
+cannot produce a filter number. That is unchanged and is Decision 3.
+
+**For the no-query test, a precedent exists and is better than inventing one.**
+`test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not`
+(`src/data/message_cache/messages.rs:7973`) builds a database holding only what a listing may
+read, prepares every query the listing can run against it, and requires none to be refused. Its
+companion `test_a_listing_that_read_the_columns_message_text_used_to_live_in_is_caught` proves
+the reading can fail. That is the shape. For the callback the assertion is different in kind,
+because the callback runs no query at all: the strongest version is that the closure captures no
+connection, which is a type-level fact. Decision 4 is which shape to use, and the earlier
+reading's recommendation to do both still looks right to me.
+
+### PERF-04, idle memory under 100 MB
+
+Same missing instrument as PERF-01, same harness, and the same open question in a milder form:
+"idle, after startup, with a cache present" needs the cache defined.
+
+### PERF-05, line coverage re-measured
+
+**Evidence today:** `cargo-llvm-cov 0.8.7` is installed. The last reading is Table A row 11.
+The requirement's own `[D]` line already says the low areas are to be attributed to the untested
+network transport rather than treated as a number to raise, and roadmap criterion 3 repeats it.
+This is the cheapest of the seven: one command, one number, one date, one attribution paragraph.
+
+**One caution.** A coverage run recompiles with instrumentation, so it will not share
+fingerprints with the ordinary build and will cost a full rebuild on a tree whose `target/` is
+already 246 GB in debug artefacts alone.
+
+### PERF-06, every document that quotes a test count quotes the same measurement
+
+This is the requirement the rest of this document serves. Three things are worth stating.
+
+**The three documents that agreed on 2026-08-29 still agree with each other** and are all behind
+the tree together, which under the requirement's own third clause is a re-measure rather than a
+failure. The sites are `docs/IMPLEMENTATION_STATUS.md:164`, `docs/changelog.md:3519-3523` and
+`docs/integration-guide.md:5`.
+
+**The split between unit and integration is preserved in all three** and the requirement says
+keep it rather than add it.
+
+**The structural count and the `--list` count are different quantities and must not be
+conflated.** `grep` over test attributes counts what is written in source; `cargo test --list`
+counts what compiles for this platform and feature set. Table A row 9 gives both for today and
+they differ by several hundred. Whichever the phase publishes, it must say which.
+
+### PERF-07, one whole-tree mutation run with a real result
+
+**Evidence today:** `cargo-mutants 27.1.0` installed; `scripts/mutants.sh` refuses a partial run,
+a run whose build failed before anything changed, and a run in which the suite was never once run
+against a mutant; `.cargo/mutants.toml` excludes the wxWidgets layer, `main.rs` and vendored code
+with the reasoning written down. The count and rate problems are in the cost model above.
+
+**The justification problem.** PERF-07's argument for existing is Table D row 4, the fossilised
+ratio. If the phase corrects that number, it should say plainly whether the requirement's
+motivation survives the correction. My reading is that it does, for a different reason than the
+one given: mutation testing found real dead code and whole families of untested behaviour in the
+August sweeps regardless of when the tests were written. But that is a different sentence, and
+writing it is part of criterion 6.
+
+---
+
+## Existing machinery to extend rather than build
+
+| What | Where | Use it for |
+|---|---|---|
+| TOML parsing of `guards.toml` | `tests/house_style.rs`, `test_every_guard_record_says_how_many_tests_the_files_it_names_held` | every guard-shape figure |
+| The companion pattern | `test_the_version_reading_can_see_one_on_a_real_page` and the six in `the_planning_files_agree_with_themselves.rs` | every new reading guard |
+| `WIXEN_MAIL_DATA` plus `Start-Process` | `src/common/paths.rs:30`, `.github/workflows/accessibility.yml` | the memory and startup harnesses |
+| `--scan-target` and `--scan-window` | `src/presentation/command_line.rs` | starting the app in a controlled state |
+| `tracing::info!` milestones | `wx_app.rs` sample mailbox handler | timestamping "usable" for cold start |
+| A stripped database and `prepare` | `src/data/message_cache/messages.rs:7973` | the no-query assertion |
+| Gate durations in commit bodies | `git log` | the durational series |
+| `scripts/guards.sh --remeasure` and `--touched-by` | those scripts | scoped record work during the phase |
+
+---
+
+## Don't hand-roll
+
+| Problem | Do not build | Use instead | Why |
+|---|---|---|---|
+| Counting records in a structured file | a line-oriented reader | the format's parser, already linked into the test target | the headline finding: three answers to one question |
+| Proving a reading guard can fail | a hand-written negative case with a literal string | splice the violation into the real file's real lines, as `test_the_version_reading_can_see_one_on_a_real_page` does | six recorded ways a guard goes vacuous, and a literal fixture catches none of them |
+| Timing a suite | a stopwatch quoted once | harvest the existing series and extend it | a single figure is wrong within a day at this spread |
+| Reading working set | a new dependency | the OS, through the already-started process | this project's dependency bar, and nothing here needs a crate |
+| A whole-sweep total | a number | a rate and a count, each dated, with the product shown | both terms move and they have moved in opposite directions |
+
+---
+
+## Common pitfalls
 
 **Do not write a check that compares a document's number to what a tool reports.** Criterion 3
-forbids it and PERF-06's fifth `[D]` line records that this is what the requirement used to ask
-for and that it was corrected on 2026-08-29 because it is false the next time anyone adds a test.
-A check on a number checks that its command and its date are present, and that documents agree
-with each other.
+and PERF-06's fifth clause both forbid it, and the requirement records that it was corrected on
+2026-08-29 for exactly this reason.
 
-**Do not treat a stale number as a defect.** The three documents quoting 5,430 are about 900
-unit tests behind. Under the rule this phase is enforcing, that is a re-measure, not a failure.
+**Do not treat a stale number as a defect.** The three documents behind on the test count are a
+re-measure, not a failure.
 
-**Do not update a historical record.** `guards/guards.toml:74` and every dated row in
-`docs/plans/20260801-mutation-sweep.md`'s progress table are statements about a past tree.
-`tests/house_style.rs:3042` states the principle for the version guard: "The changelog and the
-development history are dated records of versions that really shipped, and correcting a version
-in a record would be falsifying it."
+**Do not correct a historical record.** Table D exists for this. Correcting a dated statement
+about a past tree falsifies it.
 
-**Every new source-reading guard needs a companion, and the companion is most of the work.**
-This project has recorded at least six distinct ways one goes vacuous: anchored on a line its
-own green half deletes, answered by an import line naming two symbols, answered by the code
-formatter, satisfied by a comment quoting its own marker, counting fixture strings inside a
-test file, and disarmed by the workaround its own comment recommends. Copy
-`test_the_version_reading_can_see_one_on_a_real_page`, which splices a violation into the real
-file's real lines.
+**A census that asserts a floor weakens the guard beside it.** `CLAUDE.md` records the case: a
+constant saying "at least 8 of these exist" stops being load-bearing at 9. If a new check counts
+claim sites, re-measure every guard record that reads that census.
 
-**A census that asserts a floor weakens the guard beside it.** `CLAUDE.md` records this: a
-constant saying "at least 8 of these exist" stops being load-bearing at 9. If a provenance check
-counts documents or claim sites, re-measure every guard record that reads that census.
-
-**A commit adding a test to `contacts_sync.rs` or `calendar.rs` costs 77 or 69
-re-measurements.** Both are named by more records than any other file. Where a new test can
-honestly live in a smaller file, that is a real cost saving, and the project has already
-recorded it as a planning decision.
+**Adding a test to a hot file costs re-measurements.** Measured 2026-09-12 with a TOML parse:
+`src/application/contacts_sync.rs` is named by 77 records and `src/application/calendar.rs` by
+72; 190 distinct files are named across 734 records carrying 1,899 red-list entries in total. At
+95 seconds each, a test added to the first costs about two hours of scoped re-measurement. Where
+a new test can honestly live in a smaller file, that is real money.
 
 **Do not pipe `scripts/check.sh` into anything whose exit status you then read.** Recorded in
 `CLAUDE.md`; it has already put an unformatted tree onto a commit.
 
-**Nothing else may be building while `scripts/guards.sh` runs.** `scripts/guards.sh:41`: "A
-commit hook running the suite in the middle of one already reported three guards green that go
-red on their own."
+**Nothing else may be building while `scripts/guards.sh` runs.**
 
-**`WIXEN_TEST_THREADS` applies to the guard runs and not to `scripts/check.sh`.** Measured
-2026-08-31 and recorded in `CLAUDE.md`: under `--all-targets` the test term falls from 197s to
-111s and the whole gate does not move, 335s against 353s.
+**`cargo test` takes one `--lib`.** `CLAUDE.md` records that 55 plans told executors to pass
+several and none could ever have run. Any verification command this phase writes must be one
+`--lib` per invocation, joined with `&&`.
 
-**Every number this phase writes gets its date and its conditions, including the ones about the
-phase's own machinery.** The gate itself is the cautionary example: a documents-only run was 36
-seconds once and 2m56s another time, because the second followed commits that forced a clippy
-rebuild.
+**Read a partial mutation run as partial.** The script refuses to summarise one now, but the
+report is still written as it goes and reading it mid-run has already produced a wrong commit
+message.
+
+**A red commit here has three conditions at once** and this phase will produce them: every named
+test ran, every named test failed, and nothing else failed. `test_every_guard_record_says_how_many
+_tests_the_files_it_names_held` reddening on an added test is the known collision, and
+`CLAUDE.md` says the answer is to name the count check among the failures rather than to split
+the commit.
 
 ---
 
-## What I could not settle
+## What phase 6 could invalidate
 
-1. **Whether the 2026-08-05 mutation run was whole-tree or covered `src/application` and
-   `src/presentation` only.** `CLAUDE.md:544`, commit `9c8b9f9` and
-   `scripts/mutants_report.py:6` say whole-tree; `docs/plans/20260801-mutation-sweep.md:307`
-   says narrower. The run's output is gone. 1,470 mutants is well below any whole-tree figure
-   recorded before or after, which favours the narrower reading, but that is an inference.
-2. **What `CLAUDE.md`'s "471 of the 548 records name one file" counted.** Three readings tried,
-   none reproduces 471 at the 548-record tree, while "74" in the same sentence reproduces
-   exactly. The sentence names no command.
-3. **How the em-dash guard is said to have caught a break in a planning file**, when
-   `tests/house_style.rs` has never read `.planning/` (verified with `git log -S` in both
-   spellings) and nothing else in `tests/`, `scripts/` or `.githooks/` reads it either.
-4. **The real mutant count today.** `cargo mutants --list` answers it in seconds and I could not
-   run cargo. Everything I give for the mutation run's size is an extrapolation from a line
-   ratio.
-5. **The real per-record guard cost on today's tree.** Extrapolated from two measured components
-   taken on 2026-08-31 and about 2026-09-01. One record measured on the day would settle it, and
-   costs two minutes.
-6. **How many of the 615 records are stale.** The two prior sweeps disagree by a factor of
-   twenty (23 in 208, 1 in 220), and which rate applies depends on how consistently the
-   per-commit remedy was run through phases 3 and 4, which I did not measure.
+**This section was measured twice in one session and the answer changed between them. Both
+readings are kept, because that is the finding.**
+
+**First reading, at `a0b909e8`, early in the session.** Phase 6 was not executing.
+`.planning/phases/06-how-the-application-speaks/` held eight `*-PLAN.md` files and no
+`*-SUMMARY.md`, the roadmap row read `0/8, Planned, not started`, and `.planning/STATE.md`
+frontmatter had `current_phase: 7` with `status: executing`. Phase 7 was the one in flight, at
+`07-09` with task 3 open. The eight phase 6 plans had been written earlier the same day in commit
+`3e52ab85`.
+
+**Second reading, about ninety minutes later, at the end of this session.** Phase 6 had started.
+`dcbe5ee4 refactor(06-01): Event and Event::ALL come from one list` had landed on top of
+`a0b909e8`, and a further 140-line change to `src/presentation/accessibility/feedback.rs` was
+staged in the working tree by that executor. `.planning/STATE.md` still read `current_phase: 7`
+and the roadmap row still read `0/8, Planned, not started`, so **the two documents that answer
+"which phase is running" were both wrong at the moment I read them the second time**, and would
+have been the only evidence available to anybody who did not look at `git log`.
+
+Nothing here was rewritten to hide the first reading. A measurement that was correct when taken
+and false ninety minutes later, in a document whose subject is measurements that go stale, is
+worth more on the record than a tidy answer. It is also the strongest possible argument for the
+central recommendation: the documents should not be asserting this at all when `git log` and the
+phase directory can be read.
+
+The exposure to phase 8 is unchanged by which reading is current:
+
+1. **The WCAG coverage claim.** Phase 6's criterion 3 turns "roughly half of WCAG" into a list.
+   That phrase occurs **28 times across 14 files** (`grep -rn 'half of WCAG'` over the tree
+   excluding `target/`, 2026-09-12), including `CLAUDE.md`, `docs/principles.md`,
+   `docs/IMPLEMENTATION_STATUS.md`, `docs/changelog.md`, `.github/workflows/accessibility.yml`,
+   three `.planning/intel` and audit files, and four phase plan or research files. Phase 8's
+   criterion 3 asks that the documents agree with each other. **If phase 6 corrects some of those
+   28 and not others, phase 8 inherits the disagreement.** Whether the merged plan files count as
+   documents to correct or as historical records is Decision 2.
+2. **The two figures phase 6's research established.** Axe.Windows carries 155 rules across five
+   standards, and WCAG 2.2 Level AA conformance is 55 success criteria rather than the commonly
+   published 56, both counted 2026-09-12 and both recorded in `06-RESEARCH.md` with the reasoning
+   and the earlier wrong answers (144 with a breakdown summing to 155; 173 from one reading; 141
+   from another). Phase 8 should treat those as phase 6's to publish and should not re-derive
+   them, but must check that whatever phase 6 writes carries its command and its date.
+3. **File-level collisions.** Phase 6 will change `feedback.rs`, `config.rs`, `wx_settings.rs`,
+   four date sites and the scan configuration. Any figure phase 8 pins about those files, in
+   particular guard-record test counts, will need re-measuring after phase 6 merges.
+
+---
+
+## Assumptions log
+
+| # | Claim | Where | Risk if wrong |
+|---|---|---|---|
+| A1 | The guard sweep is about 19 h 22 m | cost model | It is a rate of 2026-09-10 times a count of 2026-09-12, not a measurement. One record measured on the day settles it and costs two minutes |
+| A2 | The mutation run's mutant count is unknown rather than estimable | cost model | I declined to extrapolate; the earlier research did and got 11,000 to 12,000. `cargo mutants --list` settles it in seconds |
+| A3 | "Red/green started at commit 182 of 344" no longer supports its conclusion | Table D row 4 | The conclusion is about tests, and I measured commits. It may still be true for a reason the number does not give |
+| A4 | The nine prose figures in Table B all agree with their constants | Table B | I matched by reading the sentence and the constant. A mapping written as a check may find a tenth I missed, or find that one of mine pairs the wrong sentence with the right constant |
+| A5 | `docs/roadmap.md:138`'s 10MB warning and the shipped 25 MB limit are the same feature | Table B note | If they are two different things, there is no disagreement to fix |
+| A6 | The 510 published at `eda2719` was measured rather than derived | headline section | Commit `20c42110` says "re-measured rather than scaled". If it was measured with the file's own reader, the 2-record gap is a bug in that reader and worth finding |
+
+---
+
+## Open questions
+
+1. **Why the published one-file counts are wrong at two of three commits.** Settled: the true
+   values are 439, 477 and 512. Not settled: what produced 471 and 510. The inline-record
+   mechanism explains a 4-record undercount at `eda2719`, not a 32-record overcount at
+   `9d6543a`, and not the 2 that separates 510 from 512.
+
+2. **Whether the 2026-08-05 mutation run was whole-tree.** Carried forward unresolved from the
+   2026-09-06 reading; the run's output is gone. It matters only for what shape of failure to
+   expect, not for the plan.
+
+3. **How many of the 734 records are stale.** The two prior sweeps disagree by a factor of
+   twenty, 23 in 208 against 1 in 220, and which rate applies depends on how consistently the
+   per-commit remedy was run through phases 3 to 7. I did not measure that. It is knowable
+   cheaply: the remedy prints a command, and whether it was run is visible in the commits that
+   followed.
+
+4. **What "1,000 cached messages" and "idle with a cache present" mean concretely.** PERF-01 and
+   PERF-04 both need this pinned before a number means anything, and neither requirement says.
+
+5. **Whether the `cargo audit` failure is an eighth advisory or something else.** I read the job
+   list, not the job log for that job.
 
 ---
 
 ## Decisions for Pratik
 
-These change what gets built or when, and are not mine to settle.
+Listed with options and costs. I have not answered any of them.
 
-**1. When does the twenty-hour guard sweep run, and who is at the keyboard when it reports?**
+**1. When does the guard sweep run, and does it get a resume flag first?**
 
-The job is unattended: it reports and continues, it restores each file after each break, and one
-bad record no longer stops it. It needs a quiet machine, because a concurrent build has already
-made it report three guards green that go red on their own. It writes nothing to
-`guards/guards.toml`, so a run that dies leaves no half-finished artefact, only a log. Findings
-are triaged afterwards, by hand, and each correction wants a second run of that record alone.
+Roughly nineteen and a half hours, unattended, needs a quiet machine, no resume, writes nothing
+back, and its only artefact is the log. The options and their costs are set out in the
+2026-09-06 research under the same heading and have not changed except for the total; they are
+one overnight run, split by suite, split into named chunks through `--remeasure`, or a resume
+flag first. The one new fact is that the total is now nineteen and a half hours rather than
+twenty, and that the rate behind it is now a real decomposed measurement rather than an
+extrapolation, so the estimate is firmer than it was.
 
-Four options, with what each costs:
+**2. What counts as "the documentation" for criterion 3?**
 
-| Option | Cost | What it risks |
-|---|---|---|
-| One overnight run, roughly 20 hours, machine otherwise idle | One night plus a triage day | If it dies at hour 18 there is no resume and the remainder has to be reconstructed from the log by hand |
-| Split by suite: 571 `--lib` records in one run, the 44 integration records in another | Same total, two shorter jobs | The `--lib` job is still 19 hours, so this splits off the small half |
-| Split into four runs of about 155 records, five hours each, by name list into `--remeasure` | Same total, four resumable chunks, plus one extra baseline run per chunk per suite | `--remeasure` also writes the counts for records that agreed, which an ordinary sweep deliberately does not |
-| Ask for a resume flag first, one small change to `scripts/guards.py` | An hour or two of work before the sweep starts | Nothing, and it makes every future sweep cheaper |
+Four candidate scopes, widening: the four product pages; all of `docs/`; `docs/` plus `CLAUDE.md`
+and `README.md`; all of that plus `.planning/`.
 
-My recommendation is the fourth then the first, but the trade is yours: a resume flag is work
-this phase did not plan for, and the third option gets most of the benefit today.
+The precedent is already written and it argues for excluding `.planning`.
+`.planning/writing-checks-widened.md` records that when the writing checks were pointed at
+`.planning`, the rules about *what the product claims* produced twelve findings and zero real
+ones, because a planning tree is a different genre, and that the exclusion is by genre in one
+place with the reasoning in a doc comment. It also names its cost plainly: a planning document
+really could promise something false and nothing would say.
 
-**2. Does `.planning/` count as "the documentation" for criterion 3?**
-
-`tests/house_style.rs` has never read it, and a `.planning/` change is currently checked by
-nothing that opens it. `.planning/REQUIREMENTS.md` and the audit are full of numbers, and the
-audit is the best-provenanced document in the repository. Including it means teaching `ours()`
-about a directory whose files are written by a workflow, and the em-dash guard would then start
-firing on planning documents. Excluding it means the documents that carry the most numbers stay
-outside the rule.
+The cost of following that precedent here is larger than it was there, because the documents
+carrying the most numbers are `.planning/REQUIREMENTS.md`, `.planning/PROJECT.md` and
+`.planning/STATE.md`, and three of Table A's rows are in them. The cost of not following it is
+that every merged plan and every audit becomes a document the check reads, and most of those are
+historical records that must not be corrected.
 
 **3. What answers criterion 2's filter number?**
 
-Either write 200,000 rows into a `tempfile` `MessageCache` and time `search_messages` against
-it, which measures the real filter path and needs no window, or drop the filter number and
-record why. The sample mailbox cannot answer it either way, because its rows never reach SQLite
-and mail has no in-memory filter.
+Unchanged from the 2026-09-06 reading and still open: either write 200,000 rows into a `tempfile`
+cache and time `search_messages`, which measures the real filter path and needs no window, or
+drop the filter number and record why.
 
-**4. Which shape of check asserts that the virtual text callback issues no query?**
+**4. Which shape of check asserts that the virtual callback issues no query?**
 
-The type-level version is the strongest and cannot be recorded in `guards/guards.toml`, because
-its break is a compile error and `scripts/guards.py` measures breaks by which tests go red. The
+The type-level version is strongest and cannot be recorded in `guards/guards.toml`, because its
+break is a compile error and the runner measures breaks by which tests go red. The
 source-reading version is recordable and is the shape this project has most often watched go
-vacuous. Doing both is my recommendation and costs a companion test.
+vacuous.
 
-**5. Two targets are likely to be missed rather than met, and criterion 6 says say why.**
+**5. What happens to "red/green started at commit 182 of 344"?**
 
-`apply_sort` clones and sorts 200,000 rows while holding the UI state mutex. If the sort
-measurement shows a multi-second freeze, the requirement's own `[S]` line calls that an
-accessibility failure rather than a performance one, so the phase either grows a fix or records
-a revised target with the reason. Worth deciding in advance which, because it changes the phase's
-size.
+Five sites. Three options: leave it and date it as a historical statement, which is honest but
+leaves the inference wrong in the reader's head; replace it with the ratio as of a date, which
+is one sentence and needs re-taking; or make it a check that computes the fraction of history
+predating red/green and prints it, which never goes stale and costs a companion. The third is
+also the only one that would have caught it.
+
+**6. Does phase 8 own the CI problem?**
+
+CI has been red since 2026-09-10 and `main` is 180 commits ahead of what CI has seen, because the
+toolchain is unpinned and the runner's clippy is newer. This is not a number and it is not in the
+PERF requirements. It is in this document because a phase whose deliverable is trustworthy
+figures cannot publish them from a tree nothing outside this machine has judged. Pinning the
+toolchain is a small change; deciding whether it belongs here is yours.
 
 ---
 
-*Research written 2026-09-06, read-only, from `main` at `48ace28` and the working tree of
-branch `spelling-caret-walk` at `eda6ef7`. Readers used for the counts are saved beside this
-file as `dist.py`, `numbers.py` and `nontest.sh`. Nothing in the repository was written or
-built.*
+## What in the research brief turned out wrong
+
+Recorded because the brief asked, and because a brief is an artefact of the same kind this phase
+judges.
+
+1. **"The guard sweep is roughly eleven hours at the current record count and rate."** It is
+   about nineteen and a half. The brief re-took the count correctly, 734, and inherited a rate
+   nobody re-derived: eleven hours implies 54 seconds a record, which is below the 66-second
+   library run alone and ignores the 29-second rebuild. This is the exact failure the brief warns
+   about, one term re-measured and the other inherited, arriving in the warning itself.
+
+2. **"Count guard records by parsing `tests_last_seen` blocks with the awk in `CLAUDE.md`, never
+   by grepping a file name."** The grep half is right; the awk half is not. See the headline
+   section.
+
+3. **"Phase 6 is executing in parallel with you."** Wrong when I first measured it and right by
+   the end of the session: phase 6 had eight plans and no summaries at `a0b909e8`, with phase 7
+   in flight, and began executing about ninety minutes later at `dcbe5ee4`. Both readings are in
+   "What phase 6 could invalidate" with their times. The instruction not to write into phase 6's
+   directory was followed, and nothing under `src/`, `tests/`, `scripts/`, `guards/` or `docs/`
+   was touched by me; the staged change to `feedback.rs` in the working tree is phase 6's
+   executor's.
+
+4. **Three figures the brief gave were correct and are confirmed:** `main` at `a0b909e8`, version
+   `0.119.0`, 734 guard records. `.planning/WINDOWS.md` reaching entry 342 is also confirmed, and
+   its frontmatter counts agree exactly with its own table: 342 total, 320 open, 22 fixed.
+
+---
+
+## Environment availability
+
+| Dependency | Required by | Available | Version | Note |
+|---|---|---|---|---|
+| `cargo-mutants` | PERF-07 | yes | 27.1.0 | `cargo mutants --list` needs no build |
+| `cargo-llvm-cov` | PERF-05 | yes | 0.8.7 | a coverage run costs a full instrumented rebuild |
+| `python` with `tomllib` | any structured counting | yes | 3.14.3 | the authoritative reader for `guards.toml` outside the test target |
+| `gh` | reading CI state | yes | authenticated | |
+| `hyperfine` | PERF-02 | **no** | | `Measure-Command` is the fallback and is adequate |
+| a memory profiler | PERF-01, PERF-04 | **no**, and none is wanted | | the OS answers it through the started process |
+| a Linux or macOS machine | nothing in this phase | no | | recorded under what cannot be measured |
+| disk headroom | both long jobs | `target/` already 258.5 GB | | worth checking before a sweep starts |
+
+---
+
+## Validation architecture
+
+`.planning/config.json` sets `workflow.tdd_mode: true` and does not set
+`workflow.nyquist_validation`, so validation is on.
+
+| Property | Value |
+|---|---|
+| Framework | `cargo test`, with `#[cfg(test)] mod tests` beside the code and integration targets under `tests/` |
+| Config | `Cargo.toml`; `.cargo/mutants.toml` for mutation; `WIXEN_TEST_THREADS` defaults to 8 |
+| Quick run | one `--lib` path per invocation, joined with `&&` |
+| Full suite | `bash scripts/check.sh all` |
+| Gate | `commit-msg` hook via `git config core.hooksPath .githooks`; `scripts/which-checks.sh` decides scope |
+
+**Requirements to tests.** Every check this phase writes is a source-reading guard plus a
+companion, in `tests/house_style.rs` or a new integration target. A new integration target needs
+a `guards/guards.toml` record, or `scripts/check.sh` cannot tell which commits could break it;
+`CLAUDE.md` records two guards that ran on every commit except the ones that mattered for exactly
+that reason.
+
+**Wave 0 gaps.** None for infrastructure. The gap is a decision: whether the new checks live in
+`tests/house_style.rs`, which already holds 69 test functions and is named by many guard records,
+or in a new target. `CLAUDE.md` records that where a new test lives is a planning cost decision
+once per-file test-count bookkeeping exists, and that the cheapest home can be much cheaper than
+the obvious one. Measured this session: `tests/house_style.rs` holds 69 test functions, and a
+test added to it flags every guard record whose `tests_last_seen` names it.
+
+**One measurement this phase must take before it writes any test:** how many records name
+`tests/house_style.rs`. It decides where the phase's own tests go.
+
+---
+
+## Sources
+
+**Primary, HIGH confidence.** Everything above came from one of these, this session:
+
+- The working tree at `a0b909e8`, read with `grep`, `sed`, `find`, `wc` and `python -c` with
+  `tomllib`.
+- Historical file contents at `9d6543a`, `485030f` and `eda2719` through `git show`.
+- Commit bodies through `git log`, which is where the durational series lives.
+- `gh run list` and `gh run view` for CI state.
+- `command -v` and `--version` for installed tooling.
+- PowerShell `Get-ChildItem -Recurse -File | Measure-Object -Property Length -Sum` for disk.
+
+**Carried forward with attribution:** the four-kind taxonomy and the "existing machinery" list
+from `08-RESEARCH.md` of 2026-09-06, and the two accessibility figures from `06-RESEARCH.md` of
+2026-09-12, which are phase 6's to publish.
+
+**Nothing came from a web search, and no external source was consulted.** This phase adds no
+package, so there is no package legitimacy audit to run.
+
+---
+
+## Metadata
+
+**Confidence breakdown:**
+
+- The inventory and every figure in it: HIGH. Each was taken from the thing that decides it, at a
+  named commit, with the command written down.
+- The two cost models: MEDIUM, and each says which term is measured and which is inherited.
+- The claim that the fossilised ratio no longer supports its conclusion: MEDIUM, and A3 says why.
+- What cannot be measured here: HIGH, verified by search over the whole tree or by the absence
+  of any workflow run.
+
+**Research date:** 2026-09-12. Every figure was taken on `main` at `a0b909e8`, version `0.119.0`,
+with the working tree clean. **The tree moved before this file was finished:** `dcbe5ee4` landed
+during the session and a change to `src/presentation/accessibility/feedback.rs` was staged by
+phase 6's executor. No figure above was re-taken at the newer commit, so read every one of them
+as measured at `a0b909e8` and not as a description of the tree you are looking at.
+
+**Valid until:** the figures in Table A are good for days, not weeks. This repository took 440
+commits in the seven days to 2026-09-12 (`git rev-list --count --since=2026-09-05 HEAD`), about
+63 a day, so expect the guard record count and the test count to have moved before this phase's
+first plan is written. **Take them again rather than
+quoting this file.** That instruction is the whole point of the phase, and it applies to the
+phase's own research first.
