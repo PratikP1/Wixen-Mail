@@ -3392,6 +3392,20 @@ pub mod windows_store {
         }
     }
 
+    /// What is said when nothing asked about withdrawal at all.
+    ///
+    /// Named rather than written twice, because a test has to be able to tell
+    /// this answer from every other one. It is the answer a broken walk into
+    /// Windows' chain structures would give for every certificate on earth:
+    /// every pointer read as null, every answer honest and useless. It is also
+    /// the answer for a certificate Windows never checked, such as one whose
+    /// issuer this machine does not hold, so the chain has one element and the
+    /// root is excluded from the check. Those two are indistinguishable from
+    /// here, which is why the test that guards the walk has to establish
+    /// separately that Windows had something to check.
+    pub(super) const NOTHING_ASKED_ABOUT_WITHDRAWAL: &str =
+        "this computer holds no withdrawal list for whoever issued the certificate";
+
     /// Windows' numbers turned into the one answer somebody hears.
     ///
     /// Written apart from the call that produces them so the deciding can be
@@ -3406,8 +3420,7 @@ pub mod windows_store {
         }
         match chain.withdrawal_result {
             None => Withdrawal::CouldNotFindOut {
-                reason: "this computer holds no withdrawal list for whoever issued the certificate"
-                    .to_string(),
+                reason: NOTHING_ASKED_ABOUT_WITHDRAWAL.to_string(),
             },
             Some(REVOCATION_IS_FINE) => Withdrawal::NotWithdrawn,
             Some(CRYPT_E_REVOKED) => Withdrawal::Withdrawn,
@@ -6453,39 +6466,110 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn test_none_of_this_computers_own_authorities_is_reported_as_withdrawn() {
+    fn test_the_withdrawal_question_does_not_manufacture_bad_news() {
         // A weaker claim than it looks, and worth making: it says the call runs
-        // against real certificates and does not manufacture bad news. What it
+        // against real certificates and does not invent a withdrawal. What it
         // cannot show is a real withdrawal, which needs a certificate somebody
         // has really withdrawn and a list this machine holds.
+        //
+        // This used to assert that *no* root came back withdrawn, and that was
+        // a claim about the machine wearing the clothes of a claim about the
+        // code. It passed here and failed on the CI runner on 2026-09-10, where
+        // a root really did come back withdrawn. That is a true fact about that
+        // machine: Windows keeps a list of authorities it has stopped trusting,
+        // a root on that list is still physically in the store, and the chain
+        // engine sets the revoked bit on it. Nothing about the code was wrong,
+        // and the test said something was.
+        //
+        // What holds on any machine is the thing the comment above always meant
+        // to say. A call that manufactures bad news says "withdrawn" about
+        // everything. A machine may hold one distrusted root, or a few; it may
+        // not hold nothing but distrusted roots, because then it trusts nobody
+        // and could not reach a single mail server.
         let store = this_computers_certificates();
         let roots = windows_store::certificates_in("ROOT", false);
-        assert!(!roots.is_empty(), "this machine trusts no authorities");
+        assert!(
+            !roots.is_empty(),
+            "this machine trusts no authorities, so there is nothing real here to ask about"
+        );
 
-        for root in roots.iter().take(20) {
-            let found = store.withdrawal(
-                root,
-                while_the_certificate_was_good(),
-                Reach::WhatIsAlreadyHere,
-            );
-            assert_ne!(found, Withdrawal::Withdrawn);
-        }
+        let asked = roots.iter().take(20);
+        let looked_at = asked.len();
+        let withdrawn = asked
+            .filter(|root| {
+                store.withdrawal(
+                    root,
+                    while_the_certificate_was_good(),
+                    Reach::WhatIsAlreadyHere,
+                ) == Withdrawal::Withdrawn
+            })
+            .count();
+
+        // Visible with --nocapture and nowhere else, which is the right level
+        // of noise for a true fact about the machine that is not a finding. On
+        // the machine this was written on it is nought; on the CI runner of
+        // 2026-09-10 it was at least one.
+        println!("{withdrawn} of {looked_at} of this machine's own roots are distrusted");
+
+        assert!(
+            withdrawn < looked_at,
+            "every one of the {looked_at} authorities this machine trusts came back withdrawn, \
+             which is this call manufacturing bad news rather than reading it"
+        );
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn test_the_withdrawal_question_really_reaches_windows_own_answer() {
-        // Without this the two tests above would pass against a function that
-        // can only ever say "nothing was found out", which is what a wrong walk
+        // Without this the test above would pass against a function that can
+        // only ever say "nothing was found out", which is what a wrong walk
         // through Windows' chain structures would produce: every pointer read
         // as null, every answer honest and useless.
         //
-        // The intermediate authorities this machine holds are the certificates
-        // that really carry a withdrawal address, so at least one of them has
-        // to come back with something Windows decided rather than with nothing
-        // at all. Measured on the machine this was written on: ten answered
-        // "not withdrawn" from a list already here, one answered "withdrawn",
-        // and six said the authority could not be reached.
+        // # What this assumes, and why it now says so
+        //
+        // This test failed on the CI runner on 2026-09-10 and passed here, and
+        // the two reasons are worth separating because only one of them was a
+        // fault in the test.
+        //
+        // The first is a plain bug. It counted a certificate as answered only
+        // when Windows said "not withdrawn" or "the authority could not be
+        // reached". Those are two of the five things Windows can say, and every
+        // one of the five is Windows answering. A certificate that carries no
+        // withdrawal address at all gets a verdict saying exactly that, which
+        // this code can only read by walking into the chain, and the old
+        // predicate threw it away. That is fixed below by asking the question
+        // the walk really answers: did anything ask at all.
+        //
+        // The second is a real precondition, and it cannot be asserted away.
+        // Windows does not check withdrawal for the root of the chain it built,
+        // so a certificate whose issuer this machine does not hold is a
+        // one-element chain, is its own root, and gets no check. A fresh runner
+        // holds a handful of intermediate authorities whose issuers were never
+        // installed. For those, "nothing asked" is the true answer and is
+        // indistinguishable from a broken walk.
+        //
+        // So the precondition is read from something the walk has no part in:
+        // whether this machine trusts the authority, which comes off the
+        // chain's error bits. A trusted authority chained to something, so the
+        // chain has more than one element, so Windows checked it, so a walk
+        // that works must return a verdict for it. Where there is no such
+        // authority the question cannot be asked here at all, and the test says
+        // so rather than failing as though the code were wrong.
+        //
+        // What that costs: on a machine holding no trusted intermediate
+        // authority this guard is off. That is recorded in .planning/WINDOWS.md
+        // rather than hidden, because a guard that can quietly stop guarding is
+        // the thing this project keeps getting caught by. It is off in the one
+        // place the walk was never the risk: this is Windows-specific code
+        // exercised on Windows machines, and a developer's machine holds
+        // dozens.
+        //
+        // Measured on the machine this was written on: 17 intermediate
+        // authorities, of which ten answered "not withdrawn" from a list
+        // already here, one answered "withdrawn", and six said the authority
+        // could not be reached. On the CI runner of 2026-09-10: three, and not
+        // one of them counted under the old predicate.
         let store = this_computers_certificates();
         let authorities = windows_store::certificates_in("CA", false);
         assert!(
@@ -6493,27 +6577,49 @@ mod tests {
             "this machine holds no intermediate authorities to ask about"
         );
 
-        // Only the two answers that Windows can give per certificate and this
-        // code can only reach by walking into the chain it built. A certificate
-        // marked withdrawn by the chain's own error bits does not count here,
-        // because that one is readable without the walk.
-        let answered = authorities.iter().filter(|certificate| {
-            match store.withdrawal(
-                certificate,
-                while_the_certificate_was_good(),
-                Reach::WhatIsAlreadyHere,
-            ) {
-                Withdrawal::NotWithdrawn => true,
-                Withdrawal::CouldNotFindOut { reason } => reason.contains("could not be reached"),
-                _ => false,
-            }
-        });
+        let chained_to_something: Vec<&Vec<u8>> = authorities
+            .iter()
+            .filter(|certificate| {
+                matches!(
+                    store.issuer_trust(certificate, while_the_certificate_was_good()),
+                    IssuerTrust::Trusted
+                )
+            })
+            .collect();
+
+        if chained_to_something.is_empty() {
+            println!(
+                "none of the {} intermediate authorities this machine holds chains to a root it \
+                 trusts, so Windows checks none of them for withdrawal and this test has nothing \
+                 to ask. Not a pass and not a failure: the question cannot be put here.",
+                authorities.len()
+            );
+            return;
+        }
+
+        // The one thing the walk decides. Every other answer, including
+        // "withdrawn" and "this certificate names no withdrawal list", is
+        // Windows having given a verdict that only the walk could read.
+        let answered = chained_to_something
+            .iter()
+            .filter(|certificate| {
+                !matches!(
+                    store.withdrawal(
+                        certificate,
+                        while_the_certificate_was_good(),
+                        Reach::WhatIsAlreadyHere,
+                    ),
+                    Withdrawal::CouldNotFindOut { ref reason }
+                        if reason == windows_store::NOTHING_ASKED_ABOUT_WITHDRAWAL
+                )
+            })
+            .count();
 
         assert!(
-            answered.count() > 0,
-            "not one of the {} authorities this machine holds got a per-certificate answer out of \
-             Windows, so nothing here is reading its verdict",
-            authorities.len()
+            answered > 0,
+            "not one of the {} authorities this machine both holds and trusts got a \
+             per-certificate answer out of Windows, so nothing here is reading its verdict",
+            chained_to_something.len()
         );
     }
 

@@ -138,15 +138,22 @@ kept in the cache while a move is in the air, which
 
 ## Quality gates
 
-Every commit must pass four checks, run together by `scripts/check.sh`:
+Every commit must pass the checks `scripts/check.sh` runs together:
 
 ```bash
 bash scripts/check.sh
 ```
 
-`rustfmt`, `clippy` with `-D warnings`, the test suite, and a release build. Turn
-them on for every commit with `git config core.hooksPath .githooks`, so the
-answer cannot be lost between running them and committing.
+`rustfmt`, `clippy` with `-D warnings`, the suites that test the gate's own
+scripts, the test suite, a release build, and `cargo audit` against the
+dependency tree. Turn them on for every commit with
+`git config core.hooksPath .githooks`, so the answer cannot be lost between
+running them and committing.
+
+That list said "four checks" until 2026-09-13, when the advisory check was added
+and the count was found to have been wrong before that as well. The run itself
+now prints what it covered and what it left to CI, which is a better place for
+the answer than a page somebody has to remember to correct.
 
 A separate non-blocking workflow starts the application once per window and
 scans it on both of Windows' accessibility channels: Axe.Windows over the UI

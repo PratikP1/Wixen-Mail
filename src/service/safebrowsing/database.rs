@@ -178,10 +178,11 @@ impl PrefixSet {
             return Self::new();
         };
         let body = &bytes[4 + state_length..];
-        let mut prefixes: Vec<u32> = body
-            .chunks_exact(PREFIX_BYTES)
-            .map(|chunk| u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect();
+        // A trailing part-prefix is dropped, which is what `chunks_exact` did
+        // here before: a half-written file is read as far as it goes rather
+        // than refused, for the reason the doc comment above gives.
+        let (whole, _part) = body.as_chunks::<PREFIX_BYTES>();
+        let mut prefixes: Vec<u32> = whole.iter().copied().map(u32::from_be_bytes).collect();
         // Sorted on the way in rather than trusted. A file somebody edited, or
         // one half-written by a crash, would otherwise make the binary search
         // report matches at random.

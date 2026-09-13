@@ -6215,6 +6215,234 @@ fn test_the_fail_fast_check_can_tell_the_two_apart() {
     ));
 }
 
+// ── One compiler, named in two places, and nothing compared them ────────────
+
+/// The compiler `rust-toolchain.toml` pins, and the components it installs.
+///
+/// A two-line TOML file read with two line scans rather than a parser, for the
+/// reason `scripts/check.sh` gives about `guards.toml`: nothing here has a TOML
+/// reader, and the shapes this misses are written down instead of left to be
+/// found. It reads `channel = "..."` and `components = [...]` at column 0, so a
+/// value spelled as a bare word, a single-quoted string, or a key indented
+/// under a table header written some other way is invisible to it. The file it
+/// reads is nine lines long and this project wrote it.
+fn the_compiler_the_pin_file_names(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("channel = \""))
+        .and_then(|rest| rest.split('"').next())
+        .map(str::to_string)
+}
+
+/// The components `rust-toolchain.toml` says to install with that compiler.
+fn the_components_the_pin_file_installs(text: &str) -> Vec<String> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("components = ["))
+        .map(|rest| {
+            rest.trim_end_matches(']')
+                .split(',')
+                .map(|piece| piece.trim().trim_matches('"').to_string())
+                .filter(|piece| !piece.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every compiler a workflow installs, as `(line number, what it named)`.
+///
+/// The ref after the `@` is what the action installs, and it is the only
+/// spelling this project uses. `dtolnay/rust-toolchain@master` with a
+/// `toolchain:` input would install the same compiler and is not read here: it
+/// would be reported as a workflow naming `master`, which disagrees with the
+/// pin and fails, which is the answer wanted. One spelling, held to by the
+/// check rather than by a paragraph.
+fn the_compilers_a_workflow_installs(text: &str) -> Vec<(usize, String)> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let trimmed = line.trim();
+            // A commented-out line is not a step that runs. Same reasoning as
+            // the fail-fast reading above.
+            if trimmed.starts_with('#') {
+                return None;
+            }
+            trimmed
+                .split_once("dtolnay/rust-toolchain@")
+                .map(|(_, named)| (index + 1, named.trim().to_string()))
+        })
+        .collect()
+}
+
+/// Every component a workflow asks that action for, as `(line number, name)`.
+fn the_components_a_workflow_asks_for(text: &str) -> Vec<(usize, String)> {
+    let mut asked = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        let Some(rest) = trimmed.strip_prefix("components:") else {
+            continue;
+        };
+        for piece in rest.split(',') {
+            let name = piece.trim();
+            if !name.is_empty() {
+                asked.push((index + 1, name.to_string()));
+            }
+        }
+    }
+    asked
+}
+
+/// Every workflow file, read off the directory rather than from a list.
+///
+/// A list would cover the files that were there when it was written, which is
+/// the shape of a guard whose reputation outgrows its reach. A seventh workflow
+/// added later is covered by this the day it arrives.
+fn the_workflows() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    collect(Path::new(".github/workflows"), &["yml", "yaml"], &mut found);
+    found.sort();
+    found
+}
+
+#[test]
+fn test_ci_and_this_machine_are_told_to_use_the_same_compiler() {
+    // CI was red from 2026-09-10 to 2026-09-13 for exactly the failure this
+    // check exists to stop. Stable moved to 1.98.1 on 2026-09-01, that release
+    // added `clippy::chunks_exact_to_as_chunks`, clippy runs with `-D warnings`,
+    // and this machine was still on 1.97.1. The compiler was named in two
+    // places, neither place was wrong on its own, and nothing compared them.
+    //
+    // How the two places interact, measured on 2026-09-13 rather than assumed.
+    // `dtolnay/rust-toolchain` runs `rustup toolchain install` and then
+    // `rustup default`; it sets no directory override and no `RUSTUP_TOOLCHAIN`.
+    // `rustup default` is the *lowest* of rustup's precedences, so a
+    // `rust-toolchain.toml` in the working directory beats it, and rustup
+    // installs the pinned compiler on first use. The pin therefore wins in CI
+    // whatever the workflows say. The workflows name it anyway, for three
+    // reasons: the run log then says which compiler really built the tree, no
+    // run installs a second toolchain it will not use, and a check comparing
+    // two places needs both places to name something.
+    let pin = fs::read_to_string("rust-toolchain.toml").expect(
+        "rust-toolchain.toml, which is what stops CI and this machine drifting on to \
+         different compilers",
+    );
+    let pinned = the_compiler_the_pin_file_names(&pin)
+        .expect("rust-toolchain.toml names no channel, so nothing is pinned");
+
+    let mut disagreeing = Vec::new();
+    let mut call_sites = 0;
+    let mut missing_components = Vec::new();
+    let installed = the_components_the_pin_file_installs(&pin);
+
+    for path in the_workflows() {
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        for (line, named) in the_compilers_a_workflow_installs(&text) {
+            call_sites += 1;
+            if named != pinned {
+                disagreeing.push(format!("{}:{line}: {named}", path.display()));
+            }
+        }
+        // The pin winning has a consequence that is easy to miss. The action
+        // installs its own toolchain with whatever `components:` a step asks
+        // for, but the compiler the build actually uses is the pinned one,
+        // which rustup installs from the pin file with the pin file's
+        // components. A component asked for in a workflow and absent from the
+        // pin file is therefore a component the build does not get.
+        for (line, component) in the_components_a_workflow_asks_for(&text) {
+            if !installed.contains(&component) {
+                missing_components.push(format!("{}:{line}: {component}", path.display()));
+            }
+        }
+    }
+
+    // A check that iterates over nothing passes unconditionally, which this
+    // project has been caught by twice. If no workflow installs a compiler, the
+    // reading is broken or the action has been replaced, and either way this
+    // has proved nothing.
+    assert!(
+        call_sites > 0,
+        "no workflow installs a compiler, so this check read nothing and its \
+         passing means nothing"
+    );
+
+    assert!(
+        disagreeing.is_empty(),
+        "rust-toolchain.toml pins {pinned}, and {} workflow step(s) name a \
+         different compiler:\n  {}",
+        disagreeing.len(),
+        disagreeing.join("\n  ")
+    );
+
+    assert!(
+        missing_components.is_empty(),
+        "{} workflow step(s) ask for a component that rust-toolchain.toml does \
+         not install, so the pinned compiler will not have it:\n  {}",
+        missing_components.len(),
+        missing_components.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_compiler_agreement_check_can_see_a_disagreement() {
+    // The companion, because the reading above is the kind that quietly finds
+    // nothing: it walks a directory, matches a string, and passes when no line
+    // matches. A guard that reads files needs a second one proving the reading
+    // can see a violation when there is one, which is why several guards here
+    // carry one.
+    assert_eq!(
+        the_compiler_the_pin_file_names("[toolchain]\nchannel = \"1.98.1\"\n").as_deref(),
+        Some("1.98.1")
+    );
+    assert_eq!(
+        the_compiler_the_pin_file_names("[toolchain]\nprofile = \"minimal\"\n"),
+        None,
+        "a pin file naming no channel has to read as no pin, not as agreement"
+    );
+
+    assert_eq!(
+        the_components_the_pin_file_installs("components = [\"clippy\", \"rustfmt\"]\n"),
+        vec!["clippy".to_string(), "rustfmt".to_string()]
+    );
+    assert!(the_components_the_pin_file_installs("[toolchain]\n").is_empty());
+
+    // The drift itself, in the spelling it really had.
+    assert_eq!(
+        the_compilers_a_workflow_installs(
+            "    - name: Setup Rust\n      uses: dtolnay/rust-toolchain@stable\n"
+        ),
+        vec![(2, "stable".to_string())],
+        "the reading cannot see a workflow that asks for whatever is newest"
+    );
+    // And what it was changed to, which must not be reported.
+    assert_eq!(
+        the_compilers_a_workflow_installs("      uses: dtolnay/rust-toolchain@1.98.1\n"),
+        vec![(1, "1.98.1".to_string())]
+    );
+    // A workflow that installs no compiler is not a disagreement.
+    assert!(the_compilers_a_workflow_installs("name: CI\non:\n  push:\n").is_empty());
+    // Neither is a line somebody commented out.
+    assert!(
+        the_compilers_a_workflow_installs("      # uses: dtolnay/rust-toolchain@stable\n")
+            .is_empty()
+    );
+
+    assert_eq!(
+        the_components_a_workflow_asks_for("      with:\n        components: rustfmt, clippy\n"),
+        vec![(2, "rustfmt".to_string()), (2, "clippy".to_string())]
+    );
+    assert!(
+        the_components_a_workflow_asks_for("      with:\n        toolchain: 1.98.1\n").is_empty()
+    );
+
+    // And the walk has to find the files, or everything above is theatre.
+    assert!(
+        the_workflows().len() >= 6,
+        "the workflow walk found {} files, and there were six on 2026-09-13",
+        the_workflows().len()
+    );
+}
+
 // ── A handler that can refuse has to consume the click ──────────────────────
 
 /// Every `on_click(...)` closure body in one file, as text.
