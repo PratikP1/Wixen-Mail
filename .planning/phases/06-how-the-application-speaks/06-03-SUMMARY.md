@@ -497,6 +497,21 @@ closely, so contention is the obvious guess, and it is only a guess.
 `WINDOWS.md` 365 rather than absorbed, because a check that fails one run in
 three while reading as green is guardrail 4.
 
+## Self-Check: PASSED
+
+Every claim above checked against the tree at `eb445e95` rather than against
+this document.
+
+| Claim | Check | Result |
+|---|---|---|
+| The wrapper exists | `src/common/how_the_machine_writes_dates.rs` on disk | found |
+| Eight commits exist | each short hash against `git log --all` | all eight found |
+| `MONTHS` is gone | `grep -rn 'MONTHS' src/ tests/` | 0 lines |
+| `ordinal` is gone | `grep -n 'fn ordinal' src/presentation/date_display.rs` | 0 lines |
+| No lint was silenced | `grep -rn 'allow(dead_code)' src/presentation/date_display.rs` | 0 lines |
+| Both ledger halves agree | 365 table rows, 365 JSON entries | equal |
+| The full gate is green | `scripts/check.sh all`, branch and merge | 0 failures, exit 0 |
+
 ## Task 3
 
 Not attempted, on instruction and correctly. It is written against the
