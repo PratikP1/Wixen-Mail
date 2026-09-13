@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 542 records have arrived since and have not been through it.
+# 543 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10255,7 +10255,34 @@ before = """        f.write_str(self.key())"""
 after = """        Ok(Default::default())"""
 red = ["presentation::accessibility::feedback::tests::test_a_channel_displays_as_its_stored_key"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/feedback.rs", tests = 41 },
+    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
+]
+
+# The plausible wrong implementation, and the one a reader reaches for: an
+# empty set looks like the absence of a choice and is a choice, so emptying
+# the entry silences the event while the screen says it is back to normal.
+# The three tests below were measured by applying this break by hand on
+# 2026-09-12 and running the whole library, 7,124 tests, not predicted from
+# reading the code.
+#
+# The signature line is part of the break because `set_event_channels` holds
+# the same `retain` line, and a break has to be exactly one edit.
+[[guard]]
+name = "putting an event back to the default removes the override rather than emptying it"
+file = "src/presentation/accessibility/feedback.rs"
+before = """    pub fn use_the_default_for(&mut self, event: Event) {
+        self.per_event.retain(|(e, _)| *e != event);
+    }"""
+after = """    pub fn use_the_default_for(&mut self, event: Event) {
+        self.set_event_channels(event, BTreeSet::new());
+    }"""
+red = [
+    "presentation::accessibility::feedback::tests::test_an_override_survives_a_round_trip_and_so_does_taking_it_away",
+    "presentation::accessibility::feedback::tests::test_putting_an_event_back_to_the_default_removes_the_override",
+    "presentation::accessibility::feedback::tests::test_putting_an_event_with_no_override_back_to_the_default_changes_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/feedback.rs", tests = 47 },
 ]
 
 [[guard]]

@@ -26,13 +26,54 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::time::Duration;
 
-/// Something worth telling the user about.
+/// Declares `Event` and [`Event::ALL`] from one list, so the two cannot
+/// disagree.
 ///
-/// Deliberately a closed set. An open "signal this string" call is how a
-/// codebase ends up with forty near-identical sounds that nobody can tell
-/// apart, which is the failure this enum exists to prevent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Event {
+/// Four exhaustive matches in this file already force a new variant to be
+/// described: `key`, `text`, `priority` and `tone` all refuse to compile
+/// without an arm for it. Nothing forced it into `ALL`, which was a
+/// hand-written array beside them, and `ALL` is the only enumeration of the
+/// variants that exists. So an event left out of it is an event with no
+/// control on the Feedback tab, no slot in a sound scheme and no test
+/// coverage at all, because every test of the "every event has" family
+/// iterates `ALL`. Measured by hand on 2026-09-12: a seventeenth variant
+/// answered in all four matches and absent from `ALL` left the whole library
+/// green, 7,118 tests, nothing red.
+///
+/// Generating both from the list makes that disagreement unrepresentable
+/// rather than detectable. It is the argument [`menu_ids!`] already makes in
+/// `wx_app.rs`: nothing here depends on the list being written twice, only on
+/// the two copies agreeing, so keeping them in step is not a thing a person
+/// should be doing.
+///
+/// [`menu_ids!`]: crate::presentation::wx_app
+macro_rules! events {
+    ($($(#[$about:meta])* $name:ident),* $(,)?) => {
+        /// Something worth telling the user about.
+        ///
+        /// Deliberately a closed set. An open "signal this string" call is how a
+        /// codebase ends up with forty near-identical sounds that nobody can tell
+        /// apart, which is the failure this enum exists to prevent.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Event {
+            $($(#[$about])* $name,)*
+        }
+
+        impl Event {
+            /// Every event, so settings and tests can cover the whole set.
+            ///
+            /// Still a `[Event; N]` in the order the list is written, because
+            /// `SoundScheme::covers` and the sound scheme import census count
+            /// against its length and the settings screen reads its order. The
+            /// length is counted from the list rather than written down.
+            pub const ALL: [Event; events!(@count $($name)*)] = [$(Event::$name,)*];
+        }
+    };
+    (@count $($name:ident)*) => { 0usize $(+ events!(@one $name))* };
+    (@one $name:ident) => { 1usize };
+}
+
+events!(
     /// The cursor landed on a message that is part of a conversation.
     ThreadLanded,
     /// The cursor tried to move past the first or last row.
@@ -107,29 +148,9 @@ pub enum Event {
     /// rather than alarming, and its own tone means somebody does not have
     /// to listen to a whole sentence to know a search came back empty.
     NothingFound,
-}
+);
 
 impl Event {
-    /// Every event, so settings and tests can cover the whole set.
-    pub const ALL: [Event; 16] = [
-        Event::ThreadLanded,
-        Event::EdgeOfList,
-        Event::NewMail,
-        Event::MessageSent,
-        Event::SendFailed,
-        Event::ConnectionLost,
-        Event::ConnectionRestored,
-        Event::SyncComplete,
-        Event::ActionRefused,
-        Event::UnsafeMessage,
-        Event::MisspelledWord,
-        Event::Reminder,
-        Event::HasAttachment,
-        Event::AccountNeedsAttention,
-        Event::Confirmed,
-        Event::NothingFound,
-    ];
-
     /// The identifier used when preferences are stored.
     pub fn key(&self) -> &'static str {
         match self {
@@ -421,9 +442,49 @@ impl FeedbackSettings {
     }
 
     /// Choose the channels for one event, overriding the global setting.
-    fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
+    ///
+    /// An empty set is a real answer and means silence for that event. Putting
+    /// an event back to the default is [`FeedbackSettings::use_the_default_for`],
+    /// not an empty set.
+    pub fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
         self.per_event.retain(|(e, _)| *e != event);
         self.per_event.push((event, channels));
+    }
+
+    /// What somebody ticked for one event, or `None` where they ticked
+    /// nothing.
+    ///
+    /// This and [`FeedbackSettings::channels_for`] are two different questions
+    /// and a settings screen needs both. This one is the choice as it was
+    /// made, with no default filled in, no intersection with the channels
+    /// switched off everywhere, and no never-sound-alone fallback.
+    /// `channels_for` is what the event gets after all three.
+    ///
+    /// A panel rendered from `channels_for` would show four ticks for an event
+    /// nobody has touched, because a missing entry defaults to every channel,
+    /// and a braille tick nobody set, because the fallback adds one where only
+    /// a sound was picked. That is a screen telling somebody they chose
+    /// something they did not, which is what this method exists to prevent.
+    pub fn what_was_chosen_for(&self, event: Event) -> Option<BTreeSet<Channel>> {
+        self.per_event
+            .iter()
+            .find(|(e, _)| *e == event)
+            .map(|(_, channels)| channels.clone())
+    }
+
+    /// Put one event back to the default, which is not the same as switching
+    /// every channel off for it.
+    ///
+    /// Named for what the button on the settings screen says rather than for
+    /// what happens to the data, because a name reading as "clear" invites
+    /// being used for "switch everything off", and those mean opposite things:
+    /// the entry is removed here so the default comes back, where an empty set
+    /// stored through [`FeedbackSettings::set_event_channels`] round trips and
+    /// means silence, which `test_an_event_with_no_channels_at_all_signals_nothing`
+    /// holds. An event with no override is left alone rather than treated as an
+    /// error.
+    pub fn use_the_default_for(&mut self, event: Event) {
+        self.per_event.retain(|(e, _)| *e != event);
     }
 
     /// The channels an event actually reaches.
@@ -1480,5 +1541,133 @@ mod tests {
         let mut settings = FeedbackSettings::default();
         settings.set_event_channels(Event::EdgeOfList, BTreeSet::new());
         assert!(settings.channels_for(Event::EdgeOfList).is_empty());
+    }
+
+    #[test]
+    fn test_what_somebody_chose_and_what_they_get_are_different_answers() {
+        // The two questions asked about one event in one place, because a
+        // settings screen that asks the wrong one shows somebody four ticks
+        // they never put there. `channels_for` defaults a missing entry to
+        // every channel; nobody has touched this event at all.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[
+                Channel::Speech,
+                Channel::Braille,
+                Channel::Earcon,
+                Channel::Visual
+            ])
+        );
+    }
+
+    #[test]
+    fn test_choosing_nothing_and_choosing_no_channels_are_told_apart() {
+        // An empty override means silence and round trips as one, which
+        // `test_an_event_with_no_channels_at_all_signals_nothing` holds. No
+        // override means the default. A reader that answered the same for
+        // both would offer a button that puts an event back to the default
+        // and silence it instead.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::EdgeOfList, BTreeSet::new());
+        assert_eq!(
+            settings.what_was_chosen_for(Event::EdgeOfList),
+            Some(BTreeSet::new())
+        );
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+    }
+
+    #[test]
+    fn test_what_somebody_chose_is_not_bent_by_the_rules_that_bend_what_they_get() {
+        // Neither the globally switched-off set nor the never-sound-alone
+        // fallback touches this answer. Earcon alone is what was ticked, and
+        // the braille the rule adds on the way out was never chosen by
+        // anybody.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Earcon]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::NewMail),
+            Some(set(&[Channel::Earcon]))
+        );
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Earcon, Channel::Braille])
+        );
+
+        // And a channel switched off everywhere is still a channel somebody
+        // ticked for this event.
+        settings.set_channel_enabled(Channel::Speech, false);
+        settings.set_event_channels(Event::SendFailed, set(&[Channel::Speech]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::SendFailed),
+            Some(set(&[Channel::Speech]))
+        );
+        assert!(
+            !settings
+                .channels_for(Event::SendFailed)
+                .contains(&Channel::Speech)
+        );
+    }
+
+    #[test]
+    fn test_putting_an_event_back_to_the_default_removes_the_override() {
+        // Removing the entry is what makes the default come back. Replacing
+        // it with an empty set would leave the event silent while the screen
+        // said it was back to normal.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Visual]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::NewMail),
+            Some(set(&[Channel::Visual]))
+        );
+
+        settings.use_the_default_for(Event::NewMail);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[
+                Channel::Speech,
+                Channel::Braille,
+                Channel::Earcon,
+                Channel::Visual
+            ])
+        );
+    }
+
+    #[test]
+    fn test_putting_an_event_with_no_override_back_to_the_default_changes_nothing() {
+        // A settings screen offers the button whether or not there is
+        // anything to undo, so this has to be a no-op rather than an error or
+        // a new empty entry.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::SendFailed, set(&[Channel::Braille]));
+        let before = settings.clone();
+        settings.use_the_default_for(Event::NewMail);
+        assert_eq!(settings, before);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+    }
+
+    #[test]
+    fn test_an_override_survives_a_round_trip_and_so_does_taking_it_away() {
+        // Written from outside through the now-public writer, which is the
+        // route 06-02's panel takes. An override put back to the default has
+        // to store as nothing at all: stored as an empty entry it would come
+        // back as silence.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Braille, Channel::Visual]));
+        let stored = settings.to_stored();
+        assert!(stored.contains("new_mail=braille+visual"), "{}", stored);
+        assert_eq!(FeedbackSettings::from_stored(&stored), settings);
+
+        settings.use_the_default_for(Event::NewMail);
+        let stored = settings.to_stored();
+        assert!(!stored.contains("new_mail"), "{}", stored);
+        let restored = FeedbackSettings::from_stored(&stored);
+        assert_eq!(restored, settings);
+        assert_eq!(restored.what_was_chosen_for(Event::NewMail), None);
     }
 }

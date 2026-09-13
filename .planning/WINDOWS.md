@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 320
+open_count: 322
 waived_count: 0
 fixed_count: 22
-total_count: 342
-last_updated: 2026-09-12T22:38:02.066Z
+total_count: 344
+last_updated: 2026-09-13T00:35:32.541Z
 ---
 
 # Broken Windows Ledger
@@ -357,6 +357,8 @@ last_updated: 2026-09-12T22:38:02.066Z
 | 340 | 07 | unmet-truth | src/service/update_download.rs |  | the handover cannot remove the mutex race: an installer reaching its own AppMutex check before this process has finished closing will say Wixen Mail is still open | open |  | 2026-09-12T22:38:00.451Z |  |
 | 341 | 07 | deviation | guards/guards.toml |  | plan 07-09 required the ten guard records reading the outward census to be re-measured by hand; CLAUDE.md took guard sweeps off the critical path on 2026-09-03, so they were not run and are owed to the phase sweep | open |  | 2026-09-12T22:38:01.262Z |  |
 | 342 | 07 | unrun-verify | src/service/update_download.rs |  | the revocation policy is not checked against a revoked certificate, because none exists to check against | open |  | 2026-09-12T22:38:02.066Z |  |
+| 343 | 06 | todo | src/presentation/accessibility/feedback.rs | 348 | Channel::ALL is still a hand-written [Channel; 4] and carries the same hole 06-01 closed for Event::ALL: nothing forces a fifth channel into it. Out of scope deliberately, four is a much smaller surface than sixteen and nothing in phase 6 adds a channel | open |  | 2026-09-13T00:24:47.583Z |  |
+| 344 | 06 | unmet-truth | .planning/REQUIREMENTS.md | 1288 | FEEDBACK-01's evidence says set_event_channels is private and that no screen could write an override without changing a visibility. 06-01 made it pub and added a public reader, so that sentence and its four line numbers are now wrong about the tree. Not corrected here because whether REQUIREMENTS.md is corrected in place is decision 7, which 06-07 puts to Pratik | open |  | 2026-09-13T00:35:32.541Z |  |
 
 ````json
 [
@@ -4462,6 +4464,30 @@ last_updated: 2026-09-12T22:38:02.066Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T22:38:02.066Z",
+    "resolved_at": null
+  },
+  {
+    "id": 343,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/accessibility/feedback.rs",
+    "line": 348,
+    "description": "Channel::ALL is still a hand-written [Channel; 4] and carries the same hole 06-01 closed for Event::ALL: nothing forces a fifth channel into it. Out of scope deliberately, four is a much smaller surface than sixteen and nothing in phase 6 adds a channel",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T00:24:47.583Z",
+    "resolved_at": null
+  },
+  {
+    "id": 344,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": ".planning/REQUIREMENTS.md",
+    "line": 1288,
+    "description": "FEEDBACK-01's evidence says set_event_channels is private and that no screen could write an override without changing a visibility. 06-01 made it pub and added a public reader, so that sentence and its four line numbers are now wrong about the tree. Not corrected here because whether REQUIREMENTS.md is corrected in place is decision 7, which 06-07 puts to Pratik",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T00:35:32.541Z",
     "resolved_at": null
   }
 ]
