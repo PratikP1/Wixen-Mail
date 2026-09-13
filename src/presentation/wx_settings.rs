@@ -126,6 +126,7 @@ pub struct SettingsWidgets {
     // controls exist and never that moving between events keeps what was
     // ticked.
     pub feedback_global: Vec<(Switch, CheckBox)>,
+    pub feedback_whose_choice: StaticText,
     pub feedback_event: Choice,
     pub feedback_per_event: PerEventControls,
     // Which sound plays. Read back by re-running the same discovery that
@@ -435,6 +436,7 @@ pub fn build_settings_dialog(
         look_at_message_contents,
         check_links_with_google,
         feedback_global: feedback.global,
+        feedback_whose_choice: feedback.whose_choice,
         feedback_event: feedback.event,
         feedback_per_event: feedback.per_event,
         sound_scheme: feedback.sound_scheme,
@@ -2308,6 +2310,12 @@ impl PerEventControls {
 pub struct FeedbackTabControls {
     /// The three controls that answer for every event at once.
     pub global: Vec<(Switch, CheckBox)>,
+    /// The sentence saying whose decision it is whether words arrive as speech
+    /// or on a braille display. Handed back so a test can read it off the built
+    /// screen: it is the half of the roadmap's first criterion that is a
+    /// sentence rather than a control, and nothing else in the tree would
+    /// notice it going.
+    pub whose_choice: StaticText,
     /// Which event the three controls beneath it are describing.
     pub event: Choice,
     pub per_event: PerEventControls,
@@ -2539,6 +2547,7 @@ fn build_feedback_tab(
     panel.set_sizer(sizer, true);
     FeedbackTabControls {
         global,
+        whose_choice,
         event: event_choice,
         per_event,
         sound_scheme: scheme_choice,

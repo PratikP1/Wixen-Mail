@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 547 records have arrived since and have not been through it.
+# 548 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -10333,6 +10333,34 @@ suite = "every_event_has_a_control"
 before = """    pub fn show(&self, at: usize) {
         self.remember_what_is_on_screen();"""
 after = """    pub fn show(&self, at: usize) {"""
+red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
+tests_last_seen = [
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+]
+
+# The last clause of the roadmap's first criterion is a sentence rather than a
+# control, and a sentence is the easiest thing in a dialog to lose: a static text
+# nobody hands back is invisible to every check in the tree, so deleting it would
+# break the criterion and redden nothing.
+#
+# The break is the realistic near-miss rather than an empty label, because an
+# obviously-absent case is one every version of the check catches, including the
+# broken ones. This is the sentence a competent author would write while failing
+# the rule: accurate, helpful, and silent about whose decision it is.
+#
+# Measured by hand on 2026-09-13: the one test in the suite went red twice over
+# the same sentence, once for not naming the screen reader and once for not
+# saying the choice is not made here.
+[[guard]]
+name = "the screen says whose decision speech or braille is"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """            "Whether something is spoken, shown on a braille display, or both is \\
+             chosen in your screen reader, not here. Wixen Mail sends one \\
+             notification and your screen reader decides what to do with it.","""
+after = """            "Choose whether events are announced, sounded, or shown. Announcing \\
+             covers both speech and braille.","""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
     { file = "tests/every_event_has_a_control.rs", tests = 1 },

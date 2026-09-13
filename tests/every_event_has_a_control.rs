@@ -71,6 +71,7 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
             every_event_is_offered(&widgets, &mut wrong);
             every_control_carries_its_own_label(&widgets, &mut wrong);
             the_global_section_offers_three_answers(&widgets, &mut wrong);
+            the_screen_says_whose_choice_speech_or_braille_is(&widgets, &mut wrong);
             a_tick_survives_moving_away_and_coming_back(&widgets, &mut wrong);
             the_button_puts_one_event_back_to_the_default(&widgets, &mut wrong);
 
@@ -188,6 +189,41 @@ fn the_global_section_offers_three_answers(
                 Switch::ALL.len()
             ),
         ));
+    }
+}
+
+/// The screen says that choosing between speech and braille is done in the
+/// screen reader rather than here.
+///
+/// The last clause of the roadmap's first criterion, and the only part of it
+/// that is a sentence rather than a control. Without this, deleting the
+/// sentence would break the criterion and redden nothing, because a static text
+/// nobody hands back is invisible to every check in the tree.
+///
+/// The two things looked for are written out here rather than compared against
+/// the string the dialog builds, because a test that asks the code under test
+/// for its own expected answer passes whatever that answer is.
+/// `test_each_channel_carries_its_own_wording` in `feedback.rs` says the same
+/// and for the same reason.
+///
+/// What this cannot judge is whether the sentence is understood, or whether
+/// somebody meets it at the moment it would help. Those are listening
+/// questions.
+fn the_screen_says_whose_choice_speech_or_braille_is(
+    widgets: &wx_settings::SettingsWidgets,
+    wrong: &mut Wrong,
+) {
+    let said = widgets.feedback_whose_choice.get_label();
+    for (what, wanted) in [
+        ("name the screen reader", "screen reader"),
+        ("say the choice is not made here", "not here"),
+    ] {
+        if !said.contains(wanted) {
+            wrong.push((
+                "the sentence beside the controls that answer for every event".to_string(),
+                format!("does not {what}. It says {said:?}"),
+            ));
+        }
     }
 }
 
