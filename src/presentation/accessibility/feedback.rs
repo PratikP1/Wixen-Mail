@@ -442,9 +442,20 @@ impl FeedbackSettings {
     }
 
     /// Choose the channels for one event, overriding the global setting.
-    fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
+    pub fn set_event_channels(&mut self, event: Event, channels: BTreeSet<Channel>) {
         self.per_event.retain(|(e, _)| *e != event);
         self.per_event.push((event, channels));
+    }
+
+    // Both written in the green half that follows this commit.
+    pub fn what_was_chosen_for(&self, event: Event) -> Option<BTreeSet<Channel>> {
+        let _ = event;
+        todo!()
+    }
+
+    pub fn use_the_default_for(&mut self, event: Event) {
+        let _ = event;
+        todo!()
     }
 
     /// The channels an event actually reaches.
@@ -1501,5 +1512,133 @@ mod tests {
         let mut settings = FeedbackSettings::default();
         settings.set_event_channels(Event::EdgeOfList, BTreeSet::new());
         assert!(settings.channels_for(Event::EdgeOfList).is_empty());
+    }
+
+    #[test]
+    fn test_what_somebody_chose_and_what_they_get_are_different_answers() {
+        // The two questions asked about one event in one place, because a
+        // settings screen that asks the wrong one shows somebody four ticks
+        // they never put there. `channels_for` defaults a missing entry to
+        // every channel; nobody has touched this event at all.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[
+                Channel::Speech,
+                Channel::Braille,
+                Channel::Earcon,
+                Channel::Visual
+            ])
+        );
+    }
+
+    #[test]
+    fn test_choosing_nothing_and_choosing_no_channels_are_told_apart() {
+        // An empty override means silence and round trips as one, which
+        // `test_an_event_with_no_channels_at_all_signals_nothing` holds. No
+        // override means the default. A reader that answered the same for
+        // both would offer a button that puts an event back to the default
+        // and silence it instead.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::EdgeOfList, BTreeSet::new());
+        assert_eq!(
+            settings.what_was_chosen_for(Event::EdgeOfList),
+            Some(BTreeSet::new())
+        );
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+    }
+
+    #[test]
+    fn test_what_somebody_chose_is_not_bent_by_the_rules_that_bend_what_they_get() {
+        // Neither the globally switched-off set nor the never-sound-alone
+        // fallback touches this answer. Earcon alone is what was ticked, and
+        // the braille the rule adds on the way out was never chosen by
+        // anybody.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Earcon]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::NewMail),
+            Some(set(&[Channel::Earcon]))
+        );
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[Channel::Earcon, Channel::Braille])
+        );
+
+        // And a channel switched off everywhere is still a channel somebody
+        // ticked for this event.
+        settings.set_channel_enabled(Channel::Speech, false);
+        settings.set_event_channels(Event::SendFailed, set(&[Channel::Speech]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::SendFailed),
+            Some(set(&[Channel::Speech]))
+        );
+        assert!(
+            !settings
+                .channels_for(Event::SendFailed)
+                .contains(&Channel::Speech)
+        );
+    }
+
+    #[test]
+    fn test_putting_an_event_back_to_the_default_removes_the_override() {
+        // Removing the entry is what makes the default come back. Replacing
+        // it with an empty set would leave the event silent while the screen
+        // said it was back to normal.
+        let mut settings = FeedbackSettings::default();
+        settings.set_channel_enabled(Channel::Earcon, true);
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Visual]));
+        assert_eq!(
+            settings.what_was_chosen_for(Event::NewMail),
+            Some(set(&[Channel::Visual]))
+        );
+
+        settings.use_the_default_for(Event::NewMail);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+        assert_eq!(
+            settings.channels_for(Event::NewMail),
+            set(&[
+                Channel::Speech,
+                Channel::Braille,
+                Channel::Earcon,
+                Channel::Visual
+            ])
+        );
+    }
+
+    #[test]
+    fn test_putting_an_event_with_no_override_back_to_the_default_changes_nothing() {
+        // A settings screen offers the button whether or not there is
+        // anything to undo, so this has to be a no-op rather than an error or
+        // a new empty entry.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::SendFailed, set(&[Channel::Braille]));
+        let before = settings.clone();
+        settings.use_the_default_for(Event::NewMail);
+        assert_eq!(settings, before);
+        assert_eq!(settings.what_was_chosen_for(Event::NewMail), None);
+    }
+
+    #[test]
+    fn test_an_override_survives_a_round_trip_and_so_does_taking_it_away() {
+        // Written from outside through the now-public writer, which is the
+        // route 06-02's panel takes. An override put back to the default has
+        // to store as nothing at all: stored as an empty entry it would come
+        // back as silence.
+        let mut settings = FeedbackSettings::default();
+        settings.set_event_channels(Event::NewMail, set(&[Channel::Braille, Channel::Visual]));
+        let stored = settings.to_stored();
+        assert!(stored.contains("new_mail=braille+visual"), "{}", stored);
+        assert_eq!(FeedbackSettings::from_stored(&stored), settings);
+
+        settings.use_the_default_for(Event::NewMail);
+        let stored = settings.to_stored();
+        assert!(!stored.contains("new_mail"), "{}", stored);
+        let restored = FeedbackSettings::from_stored(&stored);
+        assert_eq!(restored, settings);
+        assert_eq!(restored.what_was_chosen_for(Event::NewMail), None);
     }
 }
