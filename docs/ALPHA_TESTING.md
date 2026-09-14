@@ -36,10 +36,23 @@ A message that has been sent cannot be recalled, and a message deleted from a
 server may have been the only copy. A task in the wrong place can be moved
 back. That is the whole reason they are separate.
 
-Change them in Settings, under Allow Changes. The answer covers every account
-you have signed in, so there is no way to leave one account read only and
-allow everything on another. To use a real account with nothing at risk, start
-Wixen Mail with `--read-only`, which is next.
+Change them in Settings, under Allow Changes. That answer covers every account
+you have signed in.
+
+One account can be allowed less than that. Open the account from the accounts
+window, go to its connection page, and under "Allow Changes for this account"
+there are three boxes: mail, tasks, contacts and calendar, and fetching the
+text of a message that is not already stored. Untick one and it stops for
+this account only, so a real account can stay read-only while a throwaway one
+is tried against a server. A box here can only ever allow less than Settings
+allows, never more: where Settings has an answer off for every account, the
+box is unavailable and says which heading in Settings to go to. One thing to
+know: when a box here is holding a change back, the sync still says "turn on
+Allow Changes in Settings", because that sentence does not yet know which of
+the two places is holding it. If Settings already has it on, look here.
+
+To use a real account with nothing at risk at all, start Wixen Mail with
+`--read-only`, which is next.
 
 ### Signing in with a browser, and a limit worth knowing before you hit it
 
