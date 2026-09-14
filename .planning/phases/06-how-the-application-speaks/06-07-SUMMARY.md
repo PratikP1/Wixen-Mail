@@ -129,7 +129,7 @@ completed: 2026-09-14
 
 **"Automated scanning covers roughly half of WCAG" is now a list: the scans can produce a finding against three of the fifty-five WCAG 2.2 Level A and AA success criteria, 1.3.1, 2.1.1 and 4.1.2, the MSAA walk judges the Name part of 4.1.2 alone, and `docs/wcag-coverage.md` has a row for every one of the fifty-five saying which channel can say what about it and what is left for a person.** The three live in code, a reading holds the page to them in both directions and has been shown a planted wrong row each way, and the scan's own summary names them. Nothing on the page says a criterion is met, no scan has run on either channel since the workflow was rewritten, and nobody has walked a criterion against this application.
 
-Branch `roughly-half-becomes-a-list-of-fifty-five` from `main` at `a3d71f8e`. Documents `4d415de3`, red `0ee95483`, green `4abe217d`, corrections `93f8c865`, the planning documents in the commit after this file. Merged into `main` at the commit the follow-up commit names, since a summary committed before its own merge cannot name it. Nothing pushed.
+Branch `roughly-half-becomes-a-list-of-fifty-five` from `main` at `a3d71f8e`. Documents `4d415de3`, red `0ee95483`, green `4abe217d`, corrections `93f8c865`, this summary and the planning documents `a35efbca`. `scripts/check.sh all` on the branch at `a35efbca` under rustc 1.98.1: 7,620 passed, 0 failed, 290 seconds, the release build included, not piped. Merged into `main` at `984570b1` with the whole gate green again on the merge, 7,620 passed, written here by the follow-up commit since a summary committed before its own merge cannot name it. Nothing pushed.
 
 ## The checkpoint's two answers, recorded and not re-asked
 
