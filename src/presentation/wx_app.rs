@@ -10638,19 +10638,19 @@ fn raise_what_is_due(
 
     for item in due {
         let looks_waited = said_and_waiting.borrow().get(&item.identity).copied();
-        let spoken = match (moment, looks_waited) {
+        let not_yet_said = match (moment, looks_waited) {
             // Cannot happen while the turn is held. Written out rather than
             // left to a catch-all so that a fourth reason is a compile error
             // here, and the answer is the one the rule's doc gives: nothing
             // at all this look.
             (Moment::SomethingIsAlreadyUp, _) => continue,
-            (Moment::Free, None) => wx_reminder_alert::Spoken::NotYet,
+            (Moment::Free, None) => true,
             (Moment::SomebodyIsTyping, None) => {
                 // Said now, on a channel that does not move focus, and the
                 // window held. Nothing goes into `already`, so the reminder
                 // is re-derived at the next look; only that it was said is
                 // remembered.
-                let _ = wx_reminder_alert::say(&item, now, dates, a11y);
+                let _ = wx_reminder_alert::say(std::slice::from_ref(&item), now, dates, a11y);
                 said_and_waiting
                     .borrow_mut()
                     .insert(item.identity.clone(), 0);
@@ -10666,20 +10666,37 @@ fn raise_what_is_due(
             }
             // The hold is over, or typing stopped. Either way it was said at
             // an earlier look and is not said again.
-            (Moment::Free | Moment::SomebodyIsTyping, Some(_)) => {
-                wx_reminder_alert::Spoken::Already
-            }
+            (Moment::Free | Moment::SomebodyIsTyping, Some(_)) => false,
         };
         said_and_waiting.borrow_mut().remove(&item.identity);
+        // Until task 4 wires the feeds, one row per window and said here
+        // before it, as `raise` used to.
+        if not_yet_said {
+            let _ = wx_reminder_alert::say(std::slice::from_ref(&item), now, dates, a11y);
+        }
 
         // Marked before the window opens, not after. The window is modal and
         // the event loop keeps running inside it, so this tick can happen again
         // while somebody is still looking at the first one.
         already.borrow_mut().insert(item.identity.clone());
 
-        let answer =
-            wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2], spoken);
-        if answer == wx_reminder_alert::Answer::Dismissed {
+        let answer = wx_reminder_alert::raise(
+            frame,
+            vec![item.clone()],
+            now,
+            dates,
+            a11y,
+            due::Snooze::ALL[2],
+            Box::new(wx_reminder_alert::NoEditors),
+        )
+        .into_iter()
+        .map(|(_, answer)| answer)
+        .next()
+        .unwrap_or(wx_reminder_alert::Answer::Dismissed);
+        if matches!(
+            answer,
+            wx_reminder_alert::Answer::Dismissed | wx_reminder_alert::Answer::Edited
+        ) {
             // Nothing to write. It stays due, and it is not raised again this
             // session because it is in `already`.
             continue;
@@ -10696,7 +10713,7 @@ fn raise_what_is_due(
         let (written, moved_to) = match answer {
             // Handled above. Written out rather than left to a catch-all, so
             // that adding an answer is a compile error here.
-            wx_reminder_alert::Answer::Dismissed => continue,
+            wx_reminder_alert::Answer::Dismissed | wx_reminder_alert::Answer::Edited => continue,
             wx_reminder_alert::Answer::Done => {
                 (cache.complete_reminder(&item.identity.id, &stamp), None)
             }
@@ -15241,18 +15258,24 @@ fn open_for_scanning(
             OnReturn::WindowClosed
         }
         ScanTarget::Reminder => {
-            // Said and sounded the way a real one is, then held open. The tone
+            // Said and sounded the way real rows are, then held open. The tone
             // that comes back once a minute is on a timer the window owns, so
             // the scan meets the window as somebody in another application
-            // would.
+            // would. One row of each kind, so the list and every button are
+            // in the tree; no editor behind Details, since the rows are not
+            // stored anywhere an editor could open them from.
+            let now = chrono::Local::now();
+            let dates = date_settings_from_stored_config();
+            let rows = scan_fixtures::due_rows();
+            let _ = wx_reminder_alert::say(&rows, now, dates, a11y);
             let _ = wx_reminder_alert::raise(
                 frame,
-                &scan_fixtures::reminder(),
-                chrono::Local::now(),
-                date_settings_from_stored_config(),
+                rows,
+                now,
+                dates,
                 a11y,
                 crate::application::due::Snooze::ALL[2],
-                wx_reminder_alert::Spoken::NotYet,
+                Box::new(wx_reminder_alert::NoEditors),
             );
             OnReturn::WindowClosed
         }

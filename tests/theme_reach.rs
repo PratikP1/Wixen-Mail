@@ -791,19 +791,31 @@ fn check_item_form(
     }
 }
 
-/// The reminder alert window. No `TextCtrl`, `ListCtrl` or `TreeCtrl`
-/// anywhere in this dialog (`StaticText`, `Choice` and buttons only), so the
-/// dialog itself is the only site.
+/// The window that opens when something comes due. Since 06-09 it holds a
+/// `ListBox` of rows; the theme module paints no `ListBox`, so the list is
+/// left to Windows like every `Choice`, and the dialog itself is the only
+/// site. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in it.
 fn check_reminder_alert(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let (dialog, _snooze_choice) = wx_reminder_alert::build_reminder_alert_dialog(
+    let window = wx_reminder_alert::build_reminder_alert_dialog(
         parent,
-        "Test reminder due now",
+        vec![wixen_mail::application::due::Due {
+            identity: wixen_mail::application::due::Identity {
+                kind: wixen_mail::application::due::Kind::Reminder,
+                id: "theme".to_string(),
+            },
+            title: "Test reminder due now".to_string(),
+            when: "2026-01-01T09:00:00".to_string(),
+            late: true,
+        }],
+        chrono::Local::now(),
+        wixen_mail::presentation::date_display::DateSettings::default(),
         Snooze::ALL[0],
         Some(palette),
+        Box::new(wx_reminder_alert::NoEditors),
     );
     check(
         "reminder alert dialog",
-        &dialog,
+        &window.dialog,
         palette.main_surface(),
         into,
     );
