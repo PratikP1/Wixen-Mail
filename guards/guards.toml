@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 595 records have arrived since and have not been through it.
+# 596 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21501,6 +21501,34 @@ after = """7,698 tests: 7,245 unit tests and 452 integration tests, counted 2026
 red = [
     "test_the_agreement_reading_can_see_a_count_no_row_holds",
     "test_the_three_pages_that_state_the_test_count_quote_one_row",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
+]
+
+# The share of history before red/green is computed on every commit, and no
+# site states it as two absolutes any more. The break puts the two-absolutes
+# form back into scripts/mutants.sh in the shape it really had there, the
+# count at the end of one comment line and the total behind the `#` of the
+# next, which is the shape a line grep never saw. Three go red: the check, and
+# the two companions, each of which asserts the four sites are clean before it
+# plants its own form.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 19 passed
+# and exactly these three failed, each naming `scripts/mutants.sh:9`.
+[[guard]]
+name = "no site states the share of history before red/green as two absolutes"
+file = "scripts/mutants.sh"
+suite = "every_number_carries_its_command_and_its_date"
+before = """# This project needs to know the difference. Red/green started at 18a02454 on
+# 2026-07-26, so most of the tests here were written after the code they cover,"""
+after = """# This project needs to know the difference. Red/green started at commit 182 of
+# 344 on 2026-07-26, so most of the tests here were written after the code they cover,"""
+red = [
+    "test_the_ratio_reading_can_see_the_one_line_form",
+    "test_the_ratio_reading_can_see_the_wrapped_form",
+    "test_the_share_of_history_before_red_green_is_computed_and_printed",
 ]
 tests_last_seen = [
     { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
