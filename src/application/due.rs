@@ -103,7 +103,7 @@ impl Kind {
     /// know, so that a row written by a later version is kept and ignored
     /// rather than dropped.
     pub fn from_key(word: &str) -> Option<Kind> {
-        todo!("{word}")
+        Kind::ALL.into_iter().find(|kind| kind.key() == word)
     }
 
     /// Whether done means something for this kind.
@@ -112,7 +112,10 @@ impl Kind {
     /// somebody went, and marking it done would write a fact its calendar
     /// does not hold.
     pub fn can_be_done(self) -> bool {
-        todo!("{self:?}")
+        match self {
+            Kind::Reminder | Kind::Task => true,
+            Kind::Event => false,
+        }
     }
 }
 
@@ -210,12 +213,16 @@ impl Due {
         now: DateTime<Local>,
         dates: crate::presentation::date_display::DateSettings,
     ) -> String {
+        use crate::presentation::date_display;
+
+        let kind = self.identity.kind;
+        let untitled = format!("Untitled {}", kind.key());
         let title = match self.title.trim() {
-            "" => "Untitled reminder",
+            "" => untitled.as_str(),
             named => named,
         };
-        let when = crate::presentation::date_display::spoken(&self.when, now, dates);
-        match self.identity.kind {
+        let when = date_display::spoken(&self.when, now, dates);
+        match kind {
             Kind::Reminder => {
                 if when.is_empty() {
                     return format!("Reminder: {title}");
@@ -226,8 +233,41 @@ impl Due {
                     format!("Reminder: {title}, due {when}")
                 }
             }
-            Kind::Task => todo!("{title} {when}"),
-            Kind::Event => todo!("{title} {when}"),
+            // A task on time is due today by construction: it is raised at
+            // its day at an hour and is not late while that day is going,
+            // so the day is not said twice.
+            Kind::Task => {
+                if !self.late {
+                    format!("Task due today: {title}")
+                } else if when.is_empty() {
+                    format!("Task overdue: {title}")
+                } else {
+                    format!("Task overdue: {title}, was due {when}")
+                }
+            }
+            // Ahead, now, or started: three sentences, because the useful
+            // fact about an event is where its start is relative to this
+            // minute, and the clock is said beside the name only when there
+            // is one, which an all-day event has not.
+            Kind::Event => {
+                let start = crate::common::moment::read(&self.when).and_then(local_instant);
+                if self.late {
+                    return match start.and_then(|start| date_display::how_long_ago(start, now)) {
+                        Some(ago) => format!("Event started {ago}: {title}"),
+                        None => format!("Event started: {title}, {when}"),
+                    };
+                }
+                let ahead =
+                    start.filter(|start| start.signed_duration_since(now) > Duration::minutes(1));
+                match ahead.and_then(|start| date_display::how_soon(start, now)) {
+                    Some(soon) => match date_display::time_of_day(&self.when, dates).as_str() {
+                        "" => format!("Event {soon}: {title}"),
+                        clock => format!("Event {soon}: {title}, at {clock}"),
+                    },
+                    None if ahead.is_some() => format!("Event: {title}, {when}"),
+                    None => format!("Event now: {title}"),
+                }
+            }
         }
     }
 }
@@ -329,12 +369,12 @@ pub fn what_is_due(
     already: &HashSet<Identity>,
     held: &HashMap<Identity, DateTime<Local>>,
 ) -> Vec<Due> {
-    let _ = held;
-    candidates
+    let mut rows: Vec<(DateTime<Local>, Due)> = candidates
         .into_iter()
         .filter(|candidate| !candidate.done)
         .filter_map(|candidate| {
             let moment = crate::common::moment::read(&candidate.when)?;
+            let about = local_instant(moment)?;
             let at = candidate.raise_at;
             if at > now {
                 return None;
@@ -345,14 +385,32 @@ pub fn what_is_due(
             if already.contains(&candidate.identity) {
                 return None;
             }
-            Some(Due {
+            // Held until exactly now is held no longer: a snooze until five
+            // comes back at five, not at five past.
+            if held
+                .get(&candidate.identity)
+                .is_some_and(|until| *until > now)
+            {
+                return None;
+            }
+            if candidate.ends.is_some_and(|end| end <= now) {
+                return None;
+            }
+            let due = Due {
                 identity: candidate.identity,
                 title: candidate.title,
                 when: candidate.when,
                 late: is_late(moment, now),
-            })
+            };
+            Some((about, due))
         })
-        .collect()
+        .collect();
+    // By the moment each row is about, not by when it was raised: an event
+    // is raised before its start, and the list reads soonest first. The
+    // stored text breaks a tie so two rows this cannot tell apart keep a
+    // stable order rather than an arbitrary one.
+    rows.sort_by(|(one, a), (other, b)| one.cmp(other).then_with(|| a.when.cmp(&b.when)));
+    rows.into_iter().map(|(_, due)| due).collect()
 }
 
 /// Late in the granularity the moment was stored in.
@@ -380,7 +438,9 @@ fn is_late(moment: Moment, now: DateTime<Local>) -> bool {
 /// choice is made once by the feed and this stays pure. `None` for an hour
 /// that is not one.
 pub fn when_a_day_alerts(day: NaiveDate, hour: u32) -> Option<DateTime<Local>> {
-    todo!("{day} {hour}")
+    // Through `common::moment`, so the hour the clocks change is answered
+    // where it is answered for everything else.
+    crate::common::moment::on_this_computer(day.and_hms_opt(hour, 0, 0)?)
 }
 
 /// When an event is raised: its start, less the lead its alert names.
@@ -390,7 +450,7 @@ pub fn when_a_day_alerts(day: NaiveDate, hour: u32) -> Option<DateTime<Local>> {
 /// stored lead on an all-day event means and it is said here because whoever
 /// wires the event feed chooses what to hand this for such an event.
 pub fn when_an_event_alerts(start: Moment, lead_minutes: i64) -> Option<DateTime<Local>> {
-    todo!("{start:?} {lead_minutes}")
+    Some(local_instant(start)? - Duration::minutes(lead_minutes))
 }
 
 /// When a parsed moment arrives on this computer's clock.

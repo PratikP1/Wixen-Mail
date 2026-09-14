@@ -1,10 +1,12 @@
 //! The sentences this program speaks, read out of a translation catalogue.
 //!
-//! Four messages today, the relative wording a date is read with: "just now",
-//! "5 minutes ago", "3 hours ago", "2 days ago". They are the first piece of
-//! version 2, which translates the interface and the screen reader's speech,
-//! and this module is shaped for the five thousand sentences that follow
-//! rather than for the four that are here.
+//! Seven messages today, the relative wording a date is read with: "just
+//! now", "5 minutes ago", "3 hours ago", "2 days ago", and since 2026-09-14
+//! "in 15 minutes", "in 2 hours" and "in 1 day" for a thing that has not
+//! happened yet. They are the first piece of version 2, which translates the
+//! interface and the screen reader's speech, and this module is shaped for
+//! the five thousand sentences that follow rather than for the seven that
+//! are here.
 //!
 //! # Why a catalogue and not a plural function
 //!

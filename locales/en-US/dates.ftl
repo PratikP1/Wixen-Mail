@@ -1,4 +1,5 @@
-### How a date is read out: for now, how long ago it was.
+### How a date is read out: for now, how long ago it was, and since
+### 2026-09-14 how soon it is, for a thing that has not happened yet.
 ###
 ### This file is a translation catalogue, in Project Fluent's syntax
 ### (https://projectfluent.org/fluent/guide/). It is the English one, and it
@@ -61,4 +62,19 @@ dates-hours-ago = { $hours ->
 dates-days-ago = { $days ->
     [one] { $days } day ago
    *[other] { $days } days ago
+}
+
+dates-in-minutes = { $minutes ->
+    [one] in { $minutes } minute
+   *[other] in { $minutes } minutes
+}
+
+dates-in-hours = { $hours ->
+    [one] in { $hours } hour
+   *[other] in { $hours } hours
+}
+
+dates-in-days = { $days ->
+    [one] in { $days } day
+   *[other] in { $days } days
 }

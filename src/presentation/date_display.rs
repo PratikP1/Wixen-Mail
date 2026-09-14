@@ -603,6 +603,21 @@ fn relative_to_asking(
     now: DateTime<Local>,
 ) -> Option<String> {
     let (message, count) = which_relative_message(when, now)?;
+    said_by_the_catalogue(which, message, count)
+}
+
+/// One message with its count, in the catalogue's words, or nothing.
+///
+/// Shared by the two directions so the fallback and the one-time warning are
+/// written once. A catalogue that cannot say the sentence, which shipping
+/// never reaches and a test in `catalogue` holds, is `None`, so the caller
+/// falls through to whatever it says without the words, and the log gets the
+/// message id once.
+fn said_by_the_catalogue(
+    which: WhichLocale<'_>,
+    message: Message,
+    count: Option<i64>,
+) -> Option<String> {
     let said = catalogue::for_this(which).and_then(|catalogue| match count {
         None => catalogue.say(message),
         Some(count) => catalogue.say_how_many(message, count),
@@ -663,8 +678,7 @@ fn which_relative_message(
 /// its date, so the wording is reachable here without the style. The same
 /// boundaries: `None` beyond a week and for anything ahead of now.
 pub fn how_long_ago(when: DateTime<Local>, now: DateTime<Local>) -> Option<String> {
-    let _ = (when, now);
-    todo!()
+    relative_to_asking(WhichLocale::ThisComputer, when, now)
 }
 
 /// How soon, if that is within the week ahead, in the words of the catalogue
@@ -687,8 +701,7 @@ fn how_soon_asking(
     now: DateTime<Local>,
 ) -> Option<String> {
     let (message, count) = which_future_message(when, now)?;
-    let _ = which;
-    todo!("{message:?} {count:?}")
+    said_by_the_catalogue(which, message, count)
 }
 
 /// Which sentence a moment ahead gets, and the count that goes in it.
@@ -701,8 +714,29 @@ fn which_future_message(
     when: DateTime<Local>,
     now: DateTime<Local>,
 ) -> Option<(Message, Option<i64>)> {
-    let _ = (when, now);
-    todo!()
+    let ahead = when.signed_duration_since(now);
+    if ahead.num_seconds() < 0 {
+        return None;
+    }
+
+    let minutes = ahead.num_minutes();
+    if minutes < 1 {
+        return Some((Message::JustNow, None));
+    }
+    if minutes < 60 {
+        return Some((Message::InMinutes, Some(minutes)));
+    }
+
+    let hours = ahead.num_hours();
+    if hours < 24 {
+        return Some((Message::InHours, Some(hours)));
+    }
+
+    let days = ahead.num_days();
+    if days <= 7 {
+        return Some((Message::InDays, Some(days)));
+    }
+    None
 }
 
 /// The clock reading of a stored moment and nothing else: "3:00 PM".
@@ -711,8 +745,14 @@ fn which_future_message(
 /// and wants the hour beside the name. Empty for a whole day, which names no
 /// hour, and for anything this cannot read, so nothing is invented.
 pub fn time_of_day(stored: &str, settings: DateSettings) -> String {
-    let _ = (stored, settings);
-    todo!()
+    use crate::common::moment::Moment;
+
+    match crate::common::moment::read(stored) {
+        None | Some(Moment::WholeDay(_)) => String::new(),
+        Some(names_an_hour) => local_instant(names_an_hour)
+            .map(|when| clock(when, settings))
+            .unwrap_or_default(),
+    }
 }
 
 /// Read a stored timestamp.
@@ -1326,7 +1366,11 @@ mod tests {
             which_future_message(at("2026-08-02 12:00"), now),
             Some((Message::InDays, Some(7)))
         );
-        assert_eq!(which_future_message(at("2026-08-02 12:00:01"), now), None);
+        // The eighth day is nothing, as it is behind: the past twin counts
+        // whole days and answers seven for anything short of eight, and this
+        // was first written with a second past the seventh day, which the
+        // past reading would call seven too. Same boundary, both ways.
+        assert_eq!(which_future_message(at("2026-08-03 12:00"), now), None);
         assert_eq!(which_future_message(at("2026-07-26 11:59"), now), None);
     }
 

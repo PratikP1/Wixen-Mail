@@ -2274,12 +2274,12 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/due.rs", tests = 23 },
+    { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 47 },
     { file = "src/common/moment.rs", tests = 10 },
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/service/caldav.rs", tests = 163 },
@@ -2879,8 +2879,8 @@ red = [
     "presentation::read_aloud::tests::test_an_event_on_a_bare_date_is_a_date_not_an_hour_count_under_the_shipped_default",
 ]
 tests_last_seen = [
-    { file = "src/application/due.rs", tests = 23 },
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/application/due.rs", tests = 46 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
@@ -2911,7 +2911,7 @@ red = [
     "presentation::pim_rows::tests::test_garbage_in_a_start_time_earns_no_working_day_note",
 ]
 tests_last_seen = [
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
 ]
 
@@ -2923,7 +2923,9 @@ tests_last_seen = [
 # The rule moved out of what_is_due into is_late on 2026-09-14, when a due
 # thing stopped being only a reminder and the moment a row is late from
 # stopped being the moment it was raised at: an event is raised at its start
-# less a lead and is late from its start. Same break, new lines.
+# less a lead and is late from its start. Same break, new lines, measured
+# again that day: the task test the same rule now carries went red beside
+# the reminder's, and nothing else did.
 
 [[guard]]
 name = "a reminder for a day is not called overdue during that day"
@@ -2937,9 +2939,10 @@ after = """        Moment::WholeDay(day) => match local_instant(Moment::WholeDay
         names_an_hour => match local_instant(names_an_hour) {"""
 red = [
     "application::due::tests::test_a_reminder_for_a_day_is_not_called_overdue_during_that_day",
+    "application::due::tests::test_a_task_is_late_once_the_day_it_names_has_passed_and_not_before",
 ]
 tests_last_seen = [
-    { file = "src/application/due.rs", tests = 23 },
+    { file = "src/application/due.rs", tests = 46 },
 ]
 
 # ── A task change no setting let out ────────────────────────────────────────
@@ -20517,6 +20520,7 @@ after = """            Shape::DayMonthYear(_) => "d MMMM yyyy",
 red = [
     "application::due::tests::test_an_alert_for_a_day_reminder_says_the_day_not_an_hour_count",
     "application::due::tests::test_an_alert_says_what_it_is_and_when_it_was_due",
+    "application::due::tests::test_an_overdue_task_says_so_and_names_the_day",
     "application::sending_later::tests::test_a_scheduled_message_says_when_it_will_go",
     "application::sending_later::tests::test_every_row_in_the_outbox_says_what_it_is_doing",
     "common::how_the_machine_writes_dates::tests::test_a_birthday_on_the_twenty_ninth_of_february_is_written_rather_than_refused",
@@ -20565,10 +20569,10 @@ red = [
     "presentation::ui_types::tests::test_the_heading_for_a_week_names_the_week_even_when_nothing_is_in_it",
 ]
 tests_last_seen = [
-    { file = "src/application/due.rs", tests = 23 },
+    { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
@@ -20596,6 +20600,9 @@ file = "src/common/catalogue.rs"
 before = """    bundle.set_use_isolating(false);"""
 after = """    bundle.set_use_isolating(true);"""
 red = [
+    "application::due::tests::test_an_all_day_event_ahead_has_no_clock_to_say",
+    "application::due::tests::test_an_event_ahead_says_how_soon_then_its_name_then_its_time",
+    "application::due::tests::test_an_event_that_has_started_says_how_long_ago",
     "common::catalogue::tests::test_a_count_of_one_takes_the_singular_form",
     "common::catalogue::tests::test_a_locale_nobody_has_rules_for_takes_english_plurals_silently",
     "common::catalogue::tests::test_a_machine_with_no_catalogue_in_its_language_gets_english",
@@ -20604,13 +20611,17 @@ red = [
     "common::catalogue::tests::test_a_russian_resource_produces_the_four_russian_forms",
     "common::catalogue::tests::test_no_sentence_out_of_the_catalogue_carries_an_isolation_mark",
     "common::catalogue::tests::test_the_four_english_sentences_are_the_ones_this_program_always_said",
+    "common::catalogue::tests::test_the_three_future_sentences_say_in",
     "presentation::date_display::tests::test_a_computer_whose_language_has_no_catalogue_hears_english",
+    "presentation::date_display::tests::test_how_long_ago_is_reachable_without_the_relative_style",
+    "presentation::date_display::tests::test_how_soon_is_said_in_the_catalogues_words",
     "presentation::date_display::tests::test_relative_wording_within_the_week",
     "presentation::read_aloud::tests::test_a_note_updated_hours_ago_still_reads_relatively_under_the_shipped_default",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/application/due.rs", tests = 46 },
+    { file = "src/common/catalogue.rs", tests = 15 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
 ]
 
@@ -20630,12 +20641,14 @@ red = [
     "common::catalogue::tests::test_a_polish_resource_produces_the_polish_forms",
     "common::catalogue::tests::test_a_russian_resource_produces_the_four_russian_forms",
     "common::catalogue::tests::test_the_four_english_sentences_are_the_ones_this_program_always_said",
+    "common::catalogue::tests::test_the_three_future_sentences_say_in",
     "presentation::date_display::tests::test_a_computer_whose_language_has_no_catalogue_hears_english",
+    "presentation::date_display::tests::test_how_soon_is_said_in_the_catalogues_words",
     "presentation::date_display::tests::test_relative_wording_within_the_week",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
-    { file = "src/presentation/date_display.rs", tests = 42 },
+    { file = "src/common/catalogue.rs", tests = 15 },
+    { file = "src/presentation/date_display.rs", tests = 47 },
 ]
 
 # Without the formatter Fluent writes every number as `f64` writes it, "1234"
@@ -20650,7 +20663,7 @@ red = [
     "common::catalogue::tests::test_a_number_inside_a_sentence_is_written_the_way_the_language_writes_it",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/common/catalogue.rs", tests = 15 },
 ]
 
 # The error list `format_pattern` fills is the only place a missing argument
@@ -20671,7 +20684,7 @@ red = [
     "common::catalogue::tests::test_a_missing_argument_is_an_error_and_not_a_sentence_with_a_brace_in_it",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/common/catalogue.rs", tests = 15 },
 ]
 
 # `LanguageIdentifier::default()` is `und`, and today negotiation turns `und`
@@ -20689,7 +20702,7 @@ red = [
     "common::catalogue::tests::test_a_locale_this_computer_could_not_name_asks_for_english",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/common/catalogue.rs", tests = 15 },
 ]
 
 # A message the code can ask for that the catalogue does not hold. The break
@@ -20719,7 +20732,7 @@ red = [
     "common::catalogue::tests::test_the_english_catalogue_is_complete_in_both_directions",
 ]
 tests_last_seen = [
-    { file = "src/common/catalogue.rs", tests = 14 },
+    { file = "src/common/catalogue.rs", tests = 15 },
 ]
 
 # ── Day names and the signing date, 06-03 task 4 ─────────────────────────────
