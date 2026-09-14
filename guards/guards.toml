@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 563 records have arrived since and have not been through it.
+# 565 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -12872,7 +12872,7 @@ red = [
     "presentation::one_question_at_a_time::tests::test_two_accounts_syncing_at_the_same_time_produce_one_question",
 ]
 tests_last_seen = [
-    { file = "src/presentation/one_question_at_a_time.rs", tests = 19 },
+    { file = "src/presentation/one_question_at_a_time.rs", tests = 21 },
 ]
 [[guard]]
 # D-02, and the mechanism rather than the wording. A conversation row's value
@@ -20797,4 +20797,49 @@ red = [
 tests_last_seen = [
     { file = "src/application/occurrences.rs", tests = 63 },
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
+]
+
+# 06-05. One rule says whether this is a moment to open something modal, and
+# both the folders question and the reminder ask it. The break makes it answer
+# Free while somebody is typing, which is the state the reminder was in before
+# this plan: a window over somebody in the middle of a word.
+#
+# Measured by hand on 2026-09-14 against the whole library: two tests, one
+# asking the rule directly and one asking `what_to_raise`, which now goes
+# through it. The reading in `tests/wired.rs` stays green, because it reads
+# the call site and not the rule.
+[[guard]]
+name = "the rule about opening a modal does not answer free while somebody is typing"
+file = "src/presentation/one_question_at_a_time.rs"
+before = """        (false, true) => Moment::SomebodyIsTyping,"""
+after = """        (false, true) => Moment::Free,"""
+red = [
+    "presentation::one_question_at_a_time::tests::test_nothing_is_raised_while_an_editor_has_focus_and_it_is_raised_once_focus_leaves",
+    "presentation::one_question_at_a_time::tests::test_the_rule_tells_somebody_typing_apart_from_something_already_up",
+]
+tests_last_seen = [
+    { file = "src/presentation/one_question_at_a_time.rs", tests = 21 },
+]
+
+# 06-05, guardrail 5. The reminder window's tone comes back once a minute
+# until focus reaches the window, and stops for good the first time it does.
+# The break turns the latch into a reading, so focus leaving the window again
+# starts the tone again: a person who heard it and went back to what they
+# were doing is nagged for it.
+#
+# Measured by hand on 2026-09-14 against the whole library: two tests, the
+# one about focus leaving and the one about a window that opens with focus,
+# because with the latch gone the second ask of that test finds no focus and
+# sounds.
+[[guard]]
+name = "the reminder tone does not come back once focus has reached the window"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """        self.focus_has_arrived |= window_has_focus;"""
+after = """        self.focus_has_arrived = window_has_focus;"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_a_window_that_opens_with_focus_never_sounds_again",
+    "presentation::wx_reminder_alert::tests::test_the_tone_stops_for_good_once_focus_has_arrived_even_if_it_leaves",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 6 },
 ]

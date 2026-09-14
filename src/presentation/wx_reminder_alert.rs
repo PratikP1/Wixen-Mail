@@ -69,8 +69,18 @@ pub fn say(
     dates: crate::presentation::date_display::DateSettings,
     a11y: &Accessibility,
 ) -> Said {
-    let _ = (item, now, dates, a11y);
-    todo!("task 1 of 06-05, red")
+    // One sentence, said here and later shown and put on the window's own
+    // name, so the three channels cannot say different things.
+    let sentence = item.spoken(now, dates);
+    let tone_sounded = a11y.earcon(ALERT_EVENT).unwrap_or(false);
+    let _ = a11y.announce(
+        &sentence,
+        crate::presentation::accessibility::announcements::Priority::Urgent,
+    );
+    Said {
+        sentence,
+        tone_sounded,
+    }
 }
 
 /// Whether `say` has already happened for the reminder `raise` is opening.
@@ -136,36 +146,59 @@ impl RepeatingTone {
 
     /// Whether the tone sounds now, waits, or is finished for good.
     pub fn asked(&mut self, now: std::time::Instant, window_has_focus: bool) -> ToneNow {
-        let _ = (now, window_has_focus);
-        todo!("task 1 of 06-05, red")
+        // Latched, not read: focus leaving again does not unlatch it.
+        self.focus_has_arrived |= window_has_focus;
+        if self.focus_has_arrived || self.sounded >= MOST_TONES {
+            return ToneNow::Finished;
+        }
+        if now.duration_since(self.last_sounded) < BETWEEN_TONES {
+            return ToneNow::Wait;
+        }
+        self.last_sounded = now;
+        self.sounded += 1;
+        ToneNow::Sound
     }
 }
+
+/// How often the window asks the repeat rule, in milliseconds.
+///
+/// Once a second rather than once a minute, and the rule owns the spacing: a
+/// timer set to the minute and a rule wanting a full minute would miss each
+/// other by a few milliseconds every other tick and sound every two minutes
+/// instead. Asking often costs nothing and the rule still answers Wait.
+const HOW_OFTEN_TO_ASK_THE_TONE: i32 = 1000;
 
 /// Raise one reminder and wait for an answer.
 ///
 /// Modal on purpose. A reminder that can be left sitting behind the window it
 /// interrupted is one somebody will find tomorrow, and the whole point of
 /// asking to be told is being told at the time.
+///
+/// `spoken` says whether [`say`] already happened at an earlier look, while
+/// the window was held back; if so it is not said again. Either way the
+/// sentence on the window is the one `say` produces, so the channels agree.
+///
+/// While the window is open, its tone comes back once a minute until focus
+/// reaches it, on the rule in [`RepeatingTone`]. That is for somebody in
+/// another application when the reminder was due: the sentence may have gone
+/// unheard there, and the tone is what reaches across. The tone alone; its
+/// written equivalent is the window on screen.
 pub fn raise(
     parent: &Frame,
     item: &Due,
     now: chrono::DateTime<chrono::Local>,
     dates: crate::presentation::date_display::DateSettings,
-    a11y: &Accessibility,
+    a11y: &std::sync::Arc<Accessibility>,
     default_snooze: Snooze,
+    spoken: Spoken,
 ) -> Answer {
-    // One sentence, said, shown and put on the window's own name, so the three
-    // channels cannot say different things.
-    let said = item.spoken(now, dates);
-    let said = said.as_str();
-
     // Before the window, so it arrives with the window rather than after
     // somebody has already started reading it.
-    let _ = a11y.earcon(ALERT_EVENT);
-    let _ = a11y.announce(
-        said,
-        crate::presentation::accessibility::announcements::Priority::Urgent,
-    );
+    let said = match spoken {
+        Spoken::NotYet => say(item, now, dates, a11y).sentence,
+        Spoken::Already => item.spoken(now, dates),
+    };
+    let said = said.as_str();
 
     let (dialog, snooze_choice) = build_reminder_alert_dialog(
         parent,
@@ -174,7 +207,43 @@ pub fn raise(
         theme::current_from_stored_config(),
     );
 
+    // Held until after `show_modal` returns: dropping a timer stops it, so one
+    // that fell out of scope here would never tick. Dropped before `destroy`,
+    // because its owner is the dialog. Focus is asked of the four controls
+    // rather than the dialog, because on Windows a dialog has focus only when
+    // none of its children does, which is never while somebody is in it.
+    //
+    // The tick does not stop the timer once the rule says Finished. Stopping
+    // it from inside its own handler means the handler owning the timer,
+    // which is a cycle across the toolkit boundary; a tick that asks and is
+    // told Finished costs nothing, and the drop below ends it.
+    let watching = Timer::new(&dialog);
+    watching.on_tick({
+        let a11y = a11y.clone();
+        let mut tone = RepeatingTone::from_the_window_opening(std::time::Instant::now());
+        move |_| {
+            let focus_is_here = snooze_choice.has_focus()
+                || [ID_SNOOZE, ID_DONE, ID_DISMISS].iter().any(|id| {
+                    dialog
+                        .find_window_by_id(*id)
+                        .is_some_and(|button| button.has_focus())
+                });
+            match tone.asked(std::time::Instant::now(), focus_is_here) {
+                ToneNow::Sound => {
+                    let _ = a11y.earcon(ALERT_EVENT);
+                }
+                ToneNow::Wait | ToneNow::Finished => (),
+            }
+        }
+    });
+    if !watching.start(HOW_OFTEN_TO_ASK_THE_TONE, false) {
+        // The window still opens and the reminder is still on it. What is
+        // lost is the tone coming back, which is said rather than swallowed.
+        tracing::warn!("The reminder window's timer refused to start; its tone will not repeat");
+    }
+
     let answer = dialog.show_modal();
+    drop(watching);
     let chosen = Snooze::ALL
         .get(snooze_choice.get_selection().unwrap_or(0) as usize)
         .copied()
@@ -321,7 +390,18 @@ mod tests {
         // Proves the words reached the bridge and the player played, not that
         // anybody heard either. Under `WIXEN_NO_AUDIO` the tone goes to a
         // mixer nothing listens to and is still reported as sounded.
+        //
+        // Sounds are off by default, so the first half switches them on. The
+        // fixture as first written assumed the default was on and was red
+        // against working code for that reason; the second half is what that
+        // taught, that the sentence goes out whatever the sound setting says.
         let a11y = Accessibility::new().expect("accessibility");
+        let mut settings = a11y.feedback_settings();
+        settings.set_channel_enabled(
+            crate::presentation::accessibility::feedback::Channel::Earcon,
+            true,
+        );
+        a11y.set_feedback_settings(settings);
         let item = Due {
             id: "r1".to_string(),
             title: "Ring the bank".to_string(),
@@ -343,7 +423,22 @@ mod tests {
             Some(said.sentence.as_str()),
             "the sentence never reached the screen reader bridge"
         );
-        assert!(said.tone_sounded, "the tone did not sound");
+        assert!(said.tone_sounded, "the tone did not sound with sounds on");
+
+        // Sounds off: the tone is reported as not sounded rather than
+        // assumed, and the sentence still goes out, because the sentence is
+        // the written half and a sound switched off does not switch it off.
+        let quiet = Accessibility::new().expect("accessibility");
+        let said_quietly = say(&item, now, dates, &quiet);
+        assert!(
+            !said_quietly.tone_sounded,
+            "a tone was reported with the sound channel off"
+        );
+        assert_eq!(
+            quiet.last_announcement().as_deref(),
+            Some(said_quietly.sentence.as_str()),
+            "the sentence was held back because the sound was off"
+        );
     }
 
     fn minutes(n: u64) -> std::time::Duration {

@@ -10534,7 +10534,15 @@ fn raise_what_is_due(
         // while somebody is still looking at the first one.
         already.borrow_mut().insert(item.id.clone());
 
-        let answer = wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2]);
+        let answer = wx_reminder_alert::raise(
+            frame,
+            &item,
+            now,
+            dates,
+            a11y,
+            due::Snooze::ALL[2],
+            wx_reminder_alert::Spoken::NotYet,
+        );
         if answer == wx_reminder_alert::Answer::Dismissed {
             // Nothing to write. It stays due, and it is not raised again this
             // session because it is in `already`.

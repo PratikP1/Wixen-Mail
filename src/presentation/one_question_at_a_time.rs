@@ -155,8 +155,11 @@ pub fn whether_a_window_may_open(
     somebody_is_typing: bool,
     something_is_already_up: bool,
 ) -> Moment {
-    let _ = (somebody_is_typing, something_is_already_up);
-    todo!("task 1 of 06-05, red")
+    match (something_is_already_up, somebody_is_typing) {
+        (true, _) => Moment::SomethingIsAlreadyUp,
+        (false, true) => Moment::SomebodyIsTyping,
+        (false, false) => Moment::Free,
+    }
 }
 
 /// The question to raise now, if this is a moment to raise one.
@@ -164,7 +167,9 @@ pub fn whether_a_window_may_open(
 /// `None` three ways, and they are three different reasons rather than one:
 /// nothing is waiting, somebody is typing, or a question is already on screen.
 /// The last two are arguments rather than something read from a window, which
-/// is what lets every rule here be tested.
+/// is what lets every rule here be tested, and they are put to
+/// [`whether_a_window_may_open`] rather than judged here, so the reminder and
+/// this question cannot come to disagree about what a free moment is.
 pub fn what_to_raise(
     pending: &Pending,
     an_editor_has_focus: bool,
@@ -172,8 +177,11 @@ pub fn what_to_raise(
 ) -> Option<Question> {
     // Every one of these is a reason to raise nothing now rather than a reason
     // to drop anything: the folders stay waiting and the next moment that is
-    // free asks about them.
-    if pending.waiting.is_empty() || an_editor_has_focus || already_asking {
+    // free asks about them. This question has no use for which reason it was,
+    // so the two that are not Free fold together here.
+    if pending.waiting.is_empty()
+        || whether_a_window_may_open(an_editor_has_focus, already_asking) != Moment::Free
+    {
         return None;
     }
 
