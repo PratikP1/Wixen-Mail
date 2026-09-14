@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 420
+open_count: 421
 waived_count: 0
 fixed_count: 24
-total_count: 444
-last_updated: 2026-09-14T21:45:39.956Z
+total_count: 445
+last_updated: 2026-09-14T22:05:28.433Z
 ---
 
 # Broken Windows Ledger
@@ -459,6 +459,7 @@ last_updated: 2026-09-14T21:45:39.956Z
 | 442 | 08 | deviation | scripts/check.sh |  | plan 08-01 task 1 required check.sh --suites-for guards/guards.toml docs/development/measurements.md to print the new target once its guard record existed; it prints nothing, because the coupling function drops a candidate already in guards_that_read_the_whole_tree on purpose, since every scoped run ends with that list. The record couples: a copy of the script with the target taken out of the list answers with it. The criterion asked for output the tool suppresses by design, and a target in both lists is answered by the whole-tree list first | open |  | 2026-09-14T20:41:00.106Z |  |
 | 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | open |  | 2026-09-14T20:41:09.046Z |  |
 | 444 | 08 | todo | docs/privacy.md | 417 | the privacy page's update download size is a target of about 12 MB and not a measurement, because no release has been published to measure; once one exists, measure the installer, write the size on the page with its date, and add a row to docs/development/measurements.md | open |  | 2026-09-14T21:45:39.956Z |  |
+| 445 | 08 | deviation | docs/integration-guide.md | 5 | the agreement reading holds every figure shaped N tests on the three test-count pages to a row on the measurements page and cannot tell a past count from a present one, so the guide's historical 'counted 64 tests' was reworded to 'put the count of tests at 64' and the convention (a past count on those three pages is not written as N tests) lives in the reading's section comment rather than anywhere a page author would meet it first | open |  | 2026-09-14T22:05:28.433Z |  |
 
 ````json
 [
@@ -5788,6 +5789,18 @@ last_updated: 2026-09-14T21:45:39.956Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T21:45:39.956Z",
+    "resolved_at": null
+  },
+  {
+    "id": 445,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "docs/integration-guide.md",
+    "line": 5,
+    "description": "the agreement reading holds every figure shaped N tests on the three test-count pages to a row on the measurements page and cannot tell a past count from a present one, so the guide's historical 'counted 64 tests' was reworded to 'put the count of tests at 64' and the convention (a past count on those three pages is not written as N tests) lives in the reading's section comment rather than anywhere a page author would meet it first",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T22:05:28.433Z",
     "resolved_at": null
   }
 ]
