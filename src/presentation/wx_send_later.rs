@@ -70,8 +70,13 @@ pub const ASKING: &str = "When should this message go?";
 /// `None` when nothing was set: Cancel, Escape, and the close box are one
 /// answer, and it is the safe one. The message stays in the composer exactly
 /// as it was and Send goes on meaning what it always meant.
-pub fn ask_when_to_send(
-    parent: &Dialog,
+///
+/// `parent` is generic rather than fixed to the composer's dialog, the way
+/// `wx_item_form::ask_for` is, so the accessibility scan can open this on the
+/// main window: the composer is a scan target of its own and one scan is one
+/// window.
+pub fn ask_when_to_send<W: WxWidget>(
+    parent: &W,
     now: DateTime<Local>,
     dates: DateSettings,
     a11y: &Arc<Accessibility>,
@@ -103,8 +108,8 @@ pub fn ask_when_to_send(
 /// by the Set handler rather than returned, because a handler cannot return
 /// anything to the modal loop that called it and reading the controls again
 /// afterwards would be reading them a second time.
-fn build_the_asking_dialog(
-    parent: &Dialog,
+fn build_the_asking_dialog<W: WxWidget>(
+    parent: &W,
     now: DateTime<Local>,
     dates: DateSettings,
     a11y: &Arc<Accessibility>,

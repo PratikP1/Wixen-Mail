@@ -75,12 +75,42 @@ jobs:
       run: |
         $ErrorActionPreference = 'Stop'
         New-Item -ItemType Directory -Force tools/axe-windows | Out-Null
-        $release = Invoke-RestMethod 'https://api.github.com/repos/microsoft/axe-windows/releases/latest'
-        $asset = $release.assets | Where-Object { $_.name -like 'AxeWindowsCLI*.zip' } | Select-Object -First 1
-        if (-not $asset) { throw 'No AxeWindowsCLI zip in the latest axe-windows release' }
-        Invoke-WebRequest $asset.browser_download_url -OutFile axe-cli.zip
+
+        # Pinned, on Pratik's answer of 2026-09-14. This fetched
+        # releases/latest, so the rule set the scan ran was whatever Microsoft
+        # had published most recently, and it could move without a commit
+        # here; the rule table read twice five days apart did not agree, and
+        # nobody could say how much was upstream moving. A coverage document
+        # saying which WCAG criteria this scan can judge is a claim about a
+        # rule set, so the rule set has to be one a document can name.
+        #
+        # The tag alone is not enough: whoever owns the repository can move a
+        # tag. The hash is of the zip itself, so what runs is one binary and
+        # not a name. Both read on 2026-09-14 from
+        # https://api.github.com/repos/microsoft/axe-windows/releases, where
+        # v2.4.2 was the newest release, published 2024-11-01, and the zip was
+        # hashed with sha256sum and Get-FileHash, which agreed. The release
+        # also ships axe-windows-rules-2.4.2.md, the rule list for exactly
+        # this version, which is what a coverage list should be read against.
+        #
+        # To move the pin: pick a tag from that endpoint, download its
+        # AxeWindowsCLI zip, hash it, and write both here with the date.
+        $tag = 'v2.4.2'
+        $zip = "AxeWindowsCLI-$($tag.TrimStart('v')).zip"
+        $expected = 'aeca43f41c89b3ffb1db84011539e609ecd7cb3badd6e78fada2ada327d10a64'
+        Invoke-WebRequest "https://github.com/microsoft/axe-windows/releases/download/$tag/$zip" -OutFile axe-cli.zip
+        $actual = (Get-FileHash -Algorithm SHA256 axe-cli.zip).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) {
+          # Not expanded and not run. A binary that is not the one this file
+          # names is not a scanner whose findings mean anything, whatever
+          # else it might be.
+          throw "$zip does not match the pinned hash: expected $expected, got $actual"
+        }
         Expand-Archive axe-cli.zip -DestinationPath tools/axe-windows -Force
-        Write-Host "Installed $($asset.name)"
+        if (-not (Test-Path tools/axe-windows/AxeWindowsCLI.exe)) {
+          throw "$zip did not contain AxeWindowsCLI.exe at its root, so the scan step would find nothing to run"
+        }
+        Write-Host "Installed $zip, SHA-256 $actual"
 
     - name: Scan the running application
       id: scan
@@ -97,7 +127,21 @@ jobs:
         # it refuses one it does not know rather than starting normally, so a
         # typo here fails loudly instead of scanning the main window twice and
         # calling it a pass.
-        $targets = @('main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders')
+        #
+        # Every window a fresh profile can reach, on Pratik's answer of
+        # 2026-09-14, rather than the eleven that happened to be here. The
+        # six *-module names are the main window with one module showing and
+        # nothing over it. 'main' is not that: with no target the first-run
+        # question opens over the frame on a fresh profile, so 'main' has
+        # always been the frame under a modal, and neither the bare window
+        # nor the other five panels had been scanned by anything. Two tests
+        # in scan_target.rs hold this list and ScanTarget::ALL together.
+        $targets = @(
+          'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
+          'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
+          'which-days', 'send-later', 'add-address-book', 'about',
+          'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module'
+        )
 
         # Point the app at a throwaway profile so the scan never touches real
         # user data and always starts from the same first-run state.
@@ -129,17 +173,33 @@ jobs:
             # wxWidgets needs a moment to realise the frame and publish its
             # UI Automation tree. Poll rather than guess at a fixed sleep.
             $deadline = (Get-Date).AddSeconds(60)
-            while ((Get-Date) -lt $deadline -and $app.MainWindowHandle -eq 0) {
+            while ((Get-Date) -lt $deadline -and $app.MainWindowHandle -eq 0 -and -not $app.HasExited) {
               Start-Sleep -Milliseconds 500
               $app.Refresh()
+            }
+            # The dialog opens after the main frame is shown, so give it a
+            # moment to exist before walking the tree.
+            if ($target -ne 'main' -and -not $app.HasExited) { Start-Sleep -Seconds 3 }
+
+            # Asked before the scan, not after. A dialog that fails to open
+            # leaves the main window up, and the application leaves with
+            # code 3 rather than let the scan walk that window and report a
+            # pass for a dialog nobody looked at. The two ways of having
+            # exited are different failures with different fixes, so the
+            # message says which.
+            $app.Refresh()
+            if ($app.HasExited) {
+              if ($app.ExitCode -eq 3) {
+                $broken += "$target : the application said the window was not open and left, so there was nothing to scan"
+              } else {
+                $broken += "$target : the application exited with code $($app.ExitCode) before the scan"
+              }
+              continue
             }
             if ($app.MainWindowHandle -eq 0) {
               $broken += "$target : no window appeared within 60s"
               continue
             }
-            # The dialog opens after the main frame is shown, so give it a
-            # moment to exist before walking the tree.
-            if ($target -ne 'main') { Start-Sleep -Seconds 3 }
 
             # Axe exits non-zero both when it finds violations and when it
             # fails to scan at all, so the exit code alone cannot tell those
@@ -147,10 +207,19 @@ jobs:
             # and that check has to be per window: one window failing to scan
             # while the others succeed would otherwise be invisible, because
             # the directory would still have files in it.
+            #
+            # --alwayssavetestfile, because by its own --help the CLI writes
+            # a file only when it found errors. Without it a clean window
+            # wrote nothing and was reported below as "the scan itself
+            # failed": the run of 2026-09-10 said that of seven of eleven
+            # windows, each of which had printed "0 errors were found" a
+            # line earlier. With it, no file means exactly what the message
+            # says.
             $PSNativeCommandUseErrorActionPreference = $false
             $output = & tools/axe-windows/AxeWindowsCLI.exe `
               --processid $app.Id `
               --outputdirectory $outDir `
+              --alwayssavetestfile `
               --verbosity verbose 2>&1
             Write-Host "--- $target ---"
             $output | Out-String | Write-Host
@@ -169,18 +238,21 @@ jobs:
             $perWindow += "$target : $count"
             Write-Host "$target scanned with $count violation(s)."
 
-            # The other channel, on the same running window. Exit 2 means the
-            # walk itself failed, which is not a window with nothing wrong with
-            # it and is recorded as broken rather than as a pass.
+            # The other channel, on the same running window. Exit 0 is every
+            # operated control named and 1 is one that is not. Anything else
+            # is a walk that did not happen, recorded as broken rather than
+            # as a pass: 2 is the script saying so, and any other code is
+            # the script dying before it could say anything, which read as a
+            # clean walk until 2026-09-14 because only 2 was asked about.
             $PSNativeCommandUseErrorActionPreference = $false
             & pwsh -NoProfile -File scripts/msaa-names.ps1 `
               -ProcessId $app.Id `
               -Json (Join-Path $outDir 'msaa-names.json')
             $msaaExit = $LASTEXITCODE
-            if ($msaaExit -eq 2) {
-              $broken += "$target : the MSAA walk failed, so its names were never read"
-            } elseif ($msaaExit -eq 1) {
+            if ($msaaExit -eq 1) {
               $unnamed += $target
+            } elseif ($msaaExit -ne 0) {
+              $broken += "$target : the MSAA walk failed (exit $msaaExit), so its names were never read"
             }
           }
           finally {

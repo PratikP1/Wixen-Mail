@@ -29,6 +29,7 @@ pub mod panes;
 pub mod pim_rows;
 pub mod read_aloud;
 pub mod reader_text;
+pub mod scan_fixtures;
 pub mod scan_target;
 pub mod status_line;
 pub mod theme;

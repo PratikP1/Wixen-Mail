@@ -32,7 +32,11 @@ every name came from this codebase. It means every operated control has one.
 
 And this only sees the windows that exist while it runs. A dialog that is not
 open is not a dialog with nothing wrong with it, which is why the workflow
-starts the application once per window with `--scan-target`.
+starts the application once per window with `--scan-target`. Every visible
+top-level window the process owns is walked, the dialog and the frame behind
+it, and each finding's path starts with the title of the window it is in.
+Until 2026-09-14 only the window .NET calls the main one was walked, which is
+never a dialog, so no dialog had been read on this channel by anything.
 
 Proved by removing one `set_accessible_name` call and watching this report the
 control it belonged to. Do that again before believing a clean run.
@@ -82,6 +86,22 @@ public static class Msaa {
     new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
 
   public const uint OBJID_CLIENT = 0xFFFFFFFC;
+
+  // For finding every top-level window the process owns, rather than the
+  // one .NET calls its main window. See the comment where they are used.
+  public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+  [DllImport("user32.dll")]
+  public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hwnd);
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int max);
 }
 "@
 
@@ -180,37 +200,86 @@ function Walk($acc, $depth, $path) {
   }
 }
 
+# A walk that did not happen, said on stderr and left with the code that
+# means so. Not Write-Error: under the Stop preference set above, Write-Error
+# terminates the script before the `exit 2` after it runs, and PowerShell
+# leaves with 1, which is the code for "an operated control has no name". So
+# every failed walk this script has ever had was reported to the workflow as
+# an unnamed control, and never as a walk that failed. Measured 2026-09-14 by
+# asking for a process that does not exist: exit 1, where the header says 2.
+function Fail-Walk($why) {
+  [Console]::Error.WriteLine($why)
+  exit 2
+}
+
+# Every visible top-level window the process owns, in the order Windows
+# enumerates them, which is front to back.
+#
+# Not $process.MainWindowHandle. .NET's main window is the first visible
+# top-level window that has no owner, and a wxWidgets dialog is owned by the
+# frame it opened from, so for every dialog the workflow opens this walked
+# the frame behind it and never the dialog. The run of 2026-09-10 shows it:
+# 1797 elements, 1058 operated, for accounts, compose and filters alike,
+# which is the main window three times over. The channel NVDA reads had
+# never been asked about a single dialog.
+#
+# The callback reads and writes script-scoped variables on purpose. Windows
+# calls it from native code, where a function's own parameters and locals are
+# out of reach, and under strict mode an unreachable variable is an error the
+# native caller has nowhere to report: the script simply stops, with no
+# message and no exit code of its own.
+$script:windowsOf = 0
+$script:windowsFound = New-Object System.Collections.ArrayList
+$script:collectWindow = [Msaa+EnumWindowsProc]{
+  param($hwnd, $lParam)
+  [uint32]$owner = 0
+  [void][Msaa]::GetWindowThreadProcessId($hwnd, [ref]$owner)
+  if ($owner -eq $script:windowsOf -and [Msaa]::IsWindowVisible($hwnd)) {
+    $text = New-Object System.Text.StringBuilder 512
+    [void][Msaa]::GetWindowText($hwnd, $text, 512)
+    $null = $script:windowsFound.Add([pscustomobject]@{ hwnd = $hwnd; title = $text.ToString() })
+  }
+  return $true
+}
+function Get-TopLevelWindows([int]$owningProcess) {
+  $script:windowsOf = $owningProcess
+  $script:windowsFound.Clear()
+  [void][Msaa]::EnumWindows($script:collectWindow, [IntPtr]::Zero)
+  return $script:windowsFound
+}
+
 $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
 if (-not $process) {
-  Write-Error "No process $ProcessId. Nothing was walked, which is not the same as nothing being wrong."
-  exit 2
+  Fail-Walk "No process $ProcessId. Nothing was walked, which is not the same as nothing being wrong."
 }
-$hwnd = $process.MainWindowHandle
-if ($hwnd -eq [IntPtr]::Zero) {
-  Write-Error "Process $ProcessId has no window yet. Nothing was walked."
-  exit 2
-}
-
-$iid = [Msaa]::IID_IAccessible
-$root = $null
-$hr = [Msaa]::AccessibleObjectFromWindow($hwnd, [Msaa]::OBJID_CLIENT, [ref]$iid, [ref]$root)
-if ($hr -ne 0 -or $null -eq $root) {
-  Write-Error ("Could not get an IAccessible for the window (hr=0x{0:X}). Nothing was walked." -f $hr)
-  exit 2
+# Wrapped in @(): a function's return unrolls a list, so one window would
+# come back as a bare object with no Count, and strict mode stops there.
+$windows = @(Get-TopLevelWindows $ProcessId)
+if ($windows.Count -eq 0) {
+  Fail-Walk "Process $ProcessId has no window yet. Nothing was walked."
 }
 
-Walk $root 0 (Get-Name $root 0)
+foreach ($window in $windows) {
+  $iid = [Msaa]::IID_IAccessible
+  $root = $null
+  $hr = [Msaa]::AccessibleObjectFromWindow($window.hwnd, [Msaa]::OBJID_CLIENT, [ref]$iid, [ref]$root)
+  if ($hr -ne 0 -or $null -eq $root) {
+    Fail-Walk ("Could not get an IAccessible for the window '{0}' (hr=0x{1:X}). Nothing was walked." -f $window.title, $hr)
+  }
+  # The window's title leads the path, so a finding says which window it is
+  # in now that there can be more than one.
+  Walk $root 0 ("[" + $window.title + "] " + (Get-Name $root 0))
+}
+Write-Host ("Walked {0} window(s): {1}" -f $windows.Count, (($windows | ForEach-Object { "'" + $_.title + "'" }) -join ', '))
 
 if ($found.Count -eq 0) {
-  Write-Error "The walk reached no controls at all. A tree with nothing in it is a broken walk, not a clean one."
-  exit 2
+  Fail-Walk "The walk reached no controls at all. A tree with nothing in it is a broken walk, not a clean one."
 }
 
 # Two properties are asked of each element, so this is the ceiling.
 $asked = $found.Count * 2
 if ($script:unreadable -ge $asked) {
-  Write-Error ("Not one of {0} elements answered. The walk ran and read nothing, which is a broken walk and not a clean result." -f $found.Count)
-  exit 2
+  Fail-Walk ("Not one of {0} elements answered. The walk ran and read nothing, which is a broken walk and not a clean result." -f $found.Count)
 }
 if ($script:unreadable -gt 0) {
   # Said out loud rather than folded into the total. An element that could not

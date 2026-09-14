@@ -1,345 +1,298 @@
 ---
 phase: 06-how-the-application-speaks
 plan: 06
-status: partial
+status: complete
 subsystem: infra
-tags: [commit-gate, which-checks, accessibility-scan, workflow, axe-windows, msaa, checkpoint]
+tags: [commit-gate, which-checks, accessibility-scan, workflow, axe-windows, msaa, scan-target, checkpoint]
 
 requires:
   - phase: 07-installing-updating-and-what-is-stored
-    provides: "07-02's `*.iss` rule in `scripts/which-checks.sh`, the shape this rule copies and the reason it sits below the version-bump exception; 07-06's measurement that a workflow file selects no scoped target"
+    provides: "07-02's `*.iss` rule in `scripts/which-checks.sh`, the shape task 1's rule copies; 07-07's two records naming `release.yml`, the shape task 2's two records copy"
 provides:
-  - "`scripts/which-checks.sh`: any path under `.github/workflows/` answers `all` on a branch, below the manifest block, keyed on the folder rather than the extension"
-  - "`scripts/which-checks.test.sh`: five cases, three the rule makes true and two that hold its shape, each a name a commit can carry"
-  - "The checkpoint's two questions, set out with options, costs and a recommendation, unanswered"
+  - "`scripts/which-checks.sh`: any path under `.github/workflows/` answers `all` on a branch, below the manifest block, keyed on the folder"
+  - "`.github/workflows/accessibility.yml`: Axe.Windows v2.4.2 pinned by tag and by the zip's SHA-256, thirty-one windows in the target array, a check that the application is still running before each scan, `--alwayssavetestfile`, and any MSAA exit other than 0 or 1 recorded as a walk that failed"
+  - "`src/presentation/scan_target.rs`: thirty targets, `WINDOW_NOT_OPEN`, `OnReturn`, and five tests that read the workflow or the names"
+  - "`src/presentation/scan_fixtures.rs`: the made-up data six windows open on, each with a test for the property that decides whether the window opens"
+  - "`scripts/msaa-names.ps1`: every visible top-level window the process owns is walked, and a failed walk exits 2"
+  - "Both checkpoint answers, recorded with the date and Pratik's words"
 affects: [06-07, 06-08, gate, ci]
 
 actuals:
-  tokens: 1400
-  tasks: 1
-  commits: 2
+  tokens: 14468
+  tasks: 2
+  commits: 5
 
 tech-stack:
   added: []
   patterns:
-    - "A gate rule for a data file keys on what makes the file that kind of file: the extension for a setup script, the folder for a workflow, and the suite carries one allow case per wrong spelling of the rule"
-    - "A selection hole is measured by staging the data file's change alone and running the gate the way the hook does, not by breaking the code that reads it"
+    - "A modal target's call returning during a scan means the window is not open, and the program leaves with a code the workflow reads as not scanned rather than let the scan walk the main window"
+    - "A window that refuses to open on nothing opens on a fixture in `scan_fixtures`, and the fixture's test asserts the one property the window refuses without"
+    - "A third-party binary in CI is pinned by tag and by the hash of the file, with the endpoint, the date and the reason beside it"
 
 key-files:
-  created: []
+  created:
+    - src/presentation/scan_fixtures.rs
   modified:
     - scripts/which-checks.sh
     - scripts/which-checks.test.sh
+    - .github/workflows/accessibility.yml
+    - src/presentation/scan_target.rs
+    - src/presentation/wx_app.rs
+    - src/presentation/wx_send_later.rs
+    - scripts/msaa-names.ps1
+    - guards/guards.toml
 
 key-decisions:
-  - "The rule matches `.github/workflows/*`, not `*.yml`: an `.iss` anywhere is a setup script, a `.yml` anywhere is not a workflow, so here the directory decides where the installer rule's extension does"
-  - "The plan's plain-markdown and plain-Rust allow cases were not added, because the suite already holds each three times over; the two allow cases written are the ones that redden under the wrong spellings of the rule"
-  - "The hole was measured by taking a window out of the workflow's array with the code left alone, not by breaking `ScanTarget::ALL`, because the code file maps to a scoped target and would have run the reading test"
-  - "No guard record: the rule reads no file, the suite's own red run is the violation shown to the reading, and no record has ever named a shell suite"
+  - "Pin by tag and by SHA-256, both read in this session: `v2.4.2` from `https://api.github.com/repos/microsoft/axe-windows/releases`, hash `aeca43f41c89b3ffb1db84011539e609ecd7cb3badd6e78fada2ada327d10a64` from sha256sum and Get-FileHash agreeing"
+  - "Thirty targets, not the nine or fourteen the plan and its checkpoint counted: fourteen top-level dialogs read from the tree, the bare main window, and its five other module panels; every one opened on a fresh profile here and none is ledgered as unreachable"
+  - "`main` is left as the frame under the first-run question, because that is what a fresh profile meets; `mail-module` is the bare window"
+  - "The MSAA script walks every top-level window rather than .NET's main window, because the CI log showed three dialogs with the same census and the main window is the one window a dialog can never be"
+  - "`--alwayssavetestfile`, because the CLI's own help says the file is written only when errors are found and the workflow's no-file check had reported seven clean windows as failed scans"
 
 patterns-established:
-  - "Red commit naming shell cases as `which-checks::<description>`, three of them, accepted by `red-commit.sh` and held to exactly those three"
+  - "A red test that reads a file matches the file's commands and not its comments, or the comment explaining the fix reddens it"
 
 requirements-completed: []
 
 coverage:
   - id: D1
-    description: "A commit touching any file under .github/workflows/ answers all on a branch, beside a document and beside a version bump"
+    description: "A commit touching any file under .github/workflows/ answers all on a branch"
     requirement: FEEDBACK-03
     verification:
       - kind: unit
         ref: "scripts/which-checks.test.sh::a workflow file on a branch"
         status: pass
-      - kind: unit
-        ref: "scripts/which-checks.test.sh::a workflow file beside a document"
-        status: pass
-      - kind: unit
-        ref: "scripts/which-checks.test.sh::a workflow file beside a version bump"
-        status: pass
     human_judgment: false
   - id: D2
-    description: "The rule catches what it is for and nothing else: a document inside .github is still docs_only and a yml outside the workflows folder is still affected"
+    description: "The scanner is one named release and one hashed binary"
     requirement: FEEDBACK-03
     verification:
       - kind: unit
-        ref: "scripts/which-checks.test.sh::a document inside the .github folder"
+        ref: "presentation::scan_target::tests::test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum"
         status: pass
-      - kind: unit
-        ref: "scripts/which-checks.test.sh::a yml file outside the workflows folder"
+      - kind: other
+        ref: "guards.toml: the scanner's checksum is compared with a number written down and not with itself, measured red on the whole library"
         status: pass
     human_judgment: false
   - id: D3
-    description: "The gate goes red on a workflow that disagrees with ScanTarget::ALL when the workflow alone is staged, which before this rule it did not"
+    description: "Every window a fresh profile can reach has a target, and the workflow asks for every target"
     requirement: FEEDBACK-03
     verification:
+      - kind: unit
+        ref: "presentation::scan_target::tests::test_every_window_a_fresh_profile_can_reach_has_a_name"
+        status: pass
+      - kind: unit
+        ref: "presentation::scan_target::tests::test_the_workflow_asks_for_every_target"
+        status: pass
       - kind: other
-        ref: "bash scripts/check.sh with .github/workflows/accessibility.yml staged minus one window: exit 0 in 64s before the rule, exit 101 in 206s after, naming blocked-senders"
+        ref: "thirty targets each started on a throwaway profile on this machine, the process's visible top-level windows listed, the named window present for every one"
         status: pass
     human_judgment: false
   - id: D4
-    description: "Whether to pin the Axe.Windows release and how many windows the scan looks at"
-    verification: []
+    description: "A target whose window is not open is reported as not scanned rather than scanned"
+    requirement: FEEDBACK-03
+    verification:
+      - kind: unit
+        ref: "presentation::scan_target::tests::test_the_workflow_asks_whether_the_application_is_still_running_before_it_scans"
+        status: pass
+      - kind: other
+        ref: "About window closed from outside with WM_CLOSE while the app waited on it: HasExited true, ExitCode 3"
+        status: pass
+    human_judgment: false
+  - id: D5
+    description: "Both channels read each target in CI"
+    requirement: FEEDBACK-03
+    verification:
+      - kind: other
+        ref: "no CI run since 2026-09-10; nothing pushed; 06-08 reads the first artifact"
+        status: unrun
     human_judgment: true
-    rationale: "Both are Pratik's, per the plan's blocking checkpoint. Set out below with options, costs and a recommendation; not answered, not built"
+    rationale: "A target can only be seen to work by a CI run this phase cannot read, and the MSAA walk cannot be run against this application on this machine while NVDA is running"
 
-duration: 35min to the green commit, about 1h with the documents
+duration: task 1 about 1h; task 2 about 2h45m to the green commit, about 3h30m with the documents
 completed: 2026-09-14
 ---
 
 # Phase 06 Plan 06: The scan is reproducible, and a change to it earns its checks Summary
 
-**A commit that changes a file under `.github/workflows/` now runs the whole gate on a branch, so the two tests that read the accessibility workflow run on the commits that could break them. Before this, a workflow with one window taken out of its scan list passed the gate in 64 seconds; after, the same staged break fails in 206 seconds naming the window. Task 2, pinning the scanner and settling the window list, is behind a checkpoint that is Pratik's and is not attempted.**
+**The accessibility scan now runs one named, hashed Axe.Windows binary over thirty windows where it ran whatever was newest over eleven, a change to the workflow earns the whole gate on a branch, and three defects in the scan itself that the plan did not know about were measured from the last CI log and the running program and fixed: the scanner wrote no file for a clean window and the workflow called that a failed scan, the MSAA channel had never read a dialog, and a dialog that failed to open was scanned as the main window and passed.** None of the thirty has been scanned by CI, because nothing has been pushed since 2026-09-10; every one has been opened on a fresh profile on this machine and its window seen.
 
-Branch `a-workflow-change-earns-the-checks-that-read-it`, one red commit, one green commit and one docs commit, `scripts/check.sh all` green on the branch under rustc 1.98.1 in 253 seconds with 7,603 tests passed and 0 failed. Merged into `main` at `9f86ba6f` with the whole gate green again on the merge, 281 seconds. The hash is written here by the follow-up commit, since a summary committed before its own merge cannot name it. Nothing pushed.
+Task 1 on branch `a-workflow-change-earns-the-checks-that-read-it`, merged into `main` at `9f86ba6f`. Task 2 on branch `a-pinned-scanner-and-every-window-it-can-reach`: red `741d2b36`, green `fd661401`, the whole gate green on the green commit in 281 seconds under rustc 1.98.1 with 7,612 tests passed and 0 failed, the release build included. The merge commit is named by the follow-up commit, since a summary committed before its own merge cannot name it. Nothing pushed.
+
+## The checkpoint's two answers, recorded and not re-asked
+
+Both answered by Pratik on 2026-09-14.
+
+**Pin the scanner: yes, with the hash.** Pin the Axe.Windows release tag and record the zip's SHA-256 beside it, so the coverage list is a claim about a binary rather than about a name somebody can move. The task-1 executor proposed the hash and it was adopted.
+
+**How many windows: all of them.** He was first told nine and chose all nine. Told the corrected count of at least fourteen and that some might not be reachable from a fresh profile, he said: **"Yes, all of them, and record any that can't be reached."**
 
 ## Which clauses of criteria 3 and 4 this closes
 
-Read from `ROADMAP.md` rather than from the plan. Criterion 3 has two clauses: the scan output names which WCAG 2.2 AA criteria it can and cannot judge, and "roughly half" becomes a list. Criterion 4 has two: the interactions only a human pass can cover are a scoped list, and each of the five WebView2 findings is fixed or recorded upstream with the upstream named. **Task 1 closes none of the four.** It is what makes 06-07's list a claim about something a commit cannot silently change under it, which the plan calls "the half that is not prose", and the roadmap's wording does not have a clause for that. Nothing user-visible changed, so no version bump and no changelog entry; a CI workflow is met by nobody using the program.
+Read from `ROADMAP.md`. Criterion 3: the scan output names which WCAG 2.2 AA criteria it can and cannot judge, and "roughly half" becomes a list. Criterion 4: the interactions only a human pass can cover are a scoped list, and each of the five WebView2 findings is fixed or recorded upstream with the upstream named. **This plan closes none of the four clauses.** It is the ground under 06-07's list: the list can now name the rule set it was read against, `v2.4.2` and its `axe-windows-rules-2.4.2.md`, and say which thirty windows the scan looks at and which seventeen nested dialogs it does not. Criterion 4's five findings need an artifact, and the first artifact from this scan is 06-08's.
 
-## What landed
+## Task 2: what landed
 
-### Task 1: a workflow change earns the checks that could catch it
+### The pin
 
-Red `05ec26a4`, green `dd4934fe`.
+`https://api.github.com/repos/microsoft/axe-windows/releases?per_page=5` was called on 2026-09-14 and answered `v2.4.2` (2024-11-01), `v2.4.1`, `v2.4.0`, `v2.3.1`, `v2.3.0`; `releases/latest` answered `v2.4.2`. Each release ships `AxeWindowsCLI-<version>.zip`, `.msi`, and `axe-windows-rules-<version>.md`, the rule list for exactly that version, which is what 06-07 should read against rather than `main`'s `RulesDescription.md`. The zip is 34,751,526 bytes and hashes to `aeca43f41c89b3ffb1db84011539e609ecd7cb3badd6e78fada2ada327d10a64` by `sha256sum` and by `Get-FileHash -Algorithm SHA256`, which agreed. `AxeWindowsCLI.exe` sits at the zip's root, where the existing `Expand-Archive` puts it.
 
-**The rule**, at `scripts/which-checks.sh:324-370`, below the installer rule and above the final markdown rule:
+What pinning with a hash took: eleven lines of PowerShell replacing four. The tag, the zip name derived from it, the expected hash, `Invoke-WebRequest` of the release's download URL, `Get-FileHash`, a `throw` naming both hashes when they differ before anything is expanded, and a `throw` if the exe is not at the root after expansion. The comment beside it names the endpoint, the date, the reason, and how to move the pin. The last CI run had installed `AxeWindowsCLI-2.4.2.zip` from `releases/latest`, so the pinned binary is the one that ran on 2026-09-10.
 
-```sh
-for path in "$@"; do
-    case "$path" in
-        .github/workflows/*)
-            echo all
-            exit 0
-            ;;
-    esac
-done
-```
+### The count, from the tree
 
-Its comment names the two tests in `src/presentation/scan_target.rs` that read `.github/workflows/accessibility.yml`, `test_the_command_line_and_the_workflow_use_the_same_flag` and `test_the_workflow_asks_for_every_target`, says they are unit tests in `src/` so `affected` chose no scoped target for them and they ran on every commit except the ones that could break them, records the measurement below with its date, and says why the folder decides here where the extension decides for `.iss`: an `.iss` anywhere in this tree is a setup script, and a `.yml` anywhere is not necessarily a workflow, so a dependabot file or a tool's own configuration would be charged the whole gate for a test that reads none of them.
+`ls src/presentation/wx_*.rs` is 27 modules. Not all build a window: `wx_app` is the frame, `wx_context_menu` and `wx_tray` are menus, five `wx_*_module` files are panels inside the frame. Counting `Dialog::builder(` sites with a word boundary, so `MessageDialog`, `FileDialog`, `DirDialog` and `TextEntryDialog` are excluded, gives **38 sites**. One site, `wx_managers.rs:414` `make_shell`, serves the filter, tag and signature managers, so 38 sites are **40 dialog windows**. They split three ways:
 
-**Below the manifest block on purpose.** The version-bump exception hands the softer answer to a commit whose whole manifest diff is this package's own version line, and a rule written inside that branch would let a workflow change that also bumps the version answer `affected`. The suite's version-bump case, using the fixture diff the file already holds, is what would notice; it was red before the rule and is green after.
+- **9 scanned before this plan**: Account Manager, Add a calendar, Search Messages, Blocked Senders, Calendar, Compose, Before you start, Settings, Filter Manager. With the main frame and the reader frame, the eleven targets.
+- **14 top-level windows not scanned**, each with an entry point of its own: Columns, Which copy do you want to keep, the destination picker, Folders to keep up to date, the item form, Contact Manager, Reminder, Conversation, This event repeats, When should this message go, Add an address book, Tag Manager, Signature Manager, About Wixen Mail.
+- **17 nested**, opened only from inside one of the above: the account edit dialog, Confirm Delete in the Calendar window, Check Spelling, Insert Table and Preview Before Send in the composer, the contact edit dialog and its Add Email Address, Add Phone Number, Add Address and Add Custom Field, the rule, filter, tag and signature edit dialogs, wait-for-an-answer, choose-from-list, and ask-for-a-name.
 
-**The five cases**, quoted, with what each answered before and after:
+9 + 14 + 17 = 40. The task-1 summary's "at least fourteen" was 9 + 2 + 3 and double-counted the contact manager, which is both `wx_managers` in the nine and `manage_contacts` in the three; its thirteen distinct windows plus About, which is in `wx_app.rs` and no list had, is the fourteen here. Beyond the dialogs, the main frame has six module panels and `main` shows one of them.
 
-| description | file list | before | after |
-|---|---|---|---|
-| `a workflow file on a branch` | `.github/workflows/accessibility.yml` | `affected` | `all` |
-| `a workflow file beside a document` | the workflow and `docs/changelog.md` | `affected` | `all` |
-| `a workflow file beside a version bump` | the workflow, `Cargo.toml`, `Cargo.lock`, version-only diff | `affected` | `all` |
-| `a document inside the .github folder` | `.github/PULL_REQUEST_TEMPLATE.md` | `docs_only` | `docs_only` |
-| `a yml file outside the workflows folder` | `.github/dependabot.yml` | `affected` | `affected` |
+**So thirty targets: 10 that existed, 14 top-level dialogs, and 6 module panels.** With `main`, thirty-one entries in the workflow's array. `ScanTarget::ALL` is `[ScanTarget; 30]` and the array holds those thirty names plus `'main'`; `test_the_workflow_asks_for_every_target` holds them together.
 
-The last two are the allow half and they earn their place by naming a wrong rule each refuses: `.github/*` would take the pull request template with it, and `*.yml` would take a dependabot file with it. No `.yml` exists outside the workflows folder today; `which-checks.sh` never touches the filesystem, so the answer depends only on the path handed to it, and the case is about the rule's shape rather than a file's existence.
+### Every one opened, and none is ledgered as unreachable
 
-**Every description is a name a commit can carry, and `shell-suite.sh` judged that rather than my eyes.** It exits 70 on an empty description, one holding ` ... ` or one holding a comma, and reports a case of its own for two cases sharing a name. The suite reached `suite_verdict` on both the red run and the green run, which is the condition of its having accepted all five; nothing was eyeballed.
+Each target was started on a throwaway profile on this machine with the debug binary, the way the workflow starts it, and after five seconds the process's visible top-level windows were listed with `EnumWindows` and `GetWindowText`. Every dialog target showed its dialog, owned, above `Wixen Mail`; every module target retitled the frame and showed no dialog.
 
-## The hole, measured before it was closed
-
-The plan said to break `ScanTarget::ALL` and watch the gate pass. That would have measured nothing: the constant lives in `src/presentation/scan_target.rs`, which the gate maps to `--lib presentation::scan_target::`, so the reading test would have run and gone red. The defect is that a change to the *workflow* selects no target, so the break has to be on the workflow's side with the code left alone. Recorded as ledger 387.
-
-**Before the rule**, on the branch, with `blocked-senders` removed from the workflow's `$targets` array and that file alone staged:
-
-```
-$ bash scripts/which-checks.sh a-workflow-change-earns-the-checks-that-read-it .github/workflows/accessibility.yml
-affected
-$ cargo test --lib -- presentation::scan_target::
-test presentation::scan_target::tests::test_the_workflow_asks_for_every_target ... FAILED
-blocked-senders is not in the workflow's target list, so it is never scanned
-test result: FAILED. 5 passed; 1 failed
-$ bash scripts/check.sh            # no argument, so it reads the index the way the hook does
-== rustfmt ==
-== clippy ==
-== the scripts that decide what runs ==
--- audit
--- check
--- red-commit
--- which-checks
-== the tests that reach what changed ==
--- the guards that read the whole tree
-tree-reading guards passed. The rest of the suite and the release
-build did not run. Run 'scripts/check.sh all' before merging.
-check.sh exit 0 in 64s
-```
-
-The scoped run chose no target. The test that names the missing window was red on the same tree, and the gate never asked it.
-
-**After the rule**, the same break, the same staging, the same invocation:
-
-```
-$ bash scripts/which-checks.sh a-workflow-change-earns-the-checks-that-read-it .github/workflows/accessibility.yml
-all
-$ bash scripts/check.sh
-== rustfmt ==
-== clippy ==
-== the scripts that decide what runs ==
-== security advisories ==
-== tests ==
-test presentation::scan_target::tests::test_the_workflow_asks_for_every_target ... FAILED
-blocked-senders is not in the workflow's target list, so it is never scanned
-test result: FAILED. 7174 passed; 1 failed; 1 ignored
-check.sh exit 101 in 206s
-```
-
-Both breaks were reverted with `git restore --staged` and a per-file `git checkout --` before anything was committed. The workflow is byte-identical to `main`'s; neither accessibility channel was touched and no trigger changed, because the file was never part of a commit.
-
-A hook-shaped run rather than `scripts/check.sh affected` by hand, because the brief and observation log both record that a bare `affected` supplies no changed-file list and runs only the tree-reading guards. With no mode argument, `check.sh` reads `git diff --cached --name-only` and asks `which-checks.sh` itself, which is the hook's path minus the message file.
-
-## What the gate selects for each file type, before and after
-
-Taken on the branch with `bash scripts/which-checks.sh <branch> <files>`; `main` answers `all` for every non-document regardless and is unchanged.
-
-| file list | before | after |
+| target | window seen | opened on |
 |---|---|---|
-| `.github/workflows/accessibility.yml` | `affected`, selecting no scoped target | `all` |
-| `.github/workflows/other-platforms.yml` | `affected` | `all` |
-| the workflow and `docs/changelog.md` | `affected` | `all` |
-| `.github/PULL_REQUEST_TEMPLATE.md` | `docs_only` | `docs_only` |
-| `.github/dependabot.yml` | `affected` | `affected` |
-| `scripts/msaa-names.ps1` | `affected`, selecting no scoped target | `affected`, selecting no scoped target |
-| `scripts/which-checks.sh` | `affected` | `affected` |
-| `src/lib.rs` | `affected` | `affected` |
-| `docs/changelog.md` | `docs_only` | `docs_only` |
+| `columns` | Columns | the inbox's default layout |
+| `which-copy` | Which copy do you want to keep? | two copies of one contact that disagree on one field, with one field only the provider names |
+| `destination` | Move the message to | two accounts with an Inbox and an Archive each |
+| `folder-choice` | Folders to keep up to date: work@example.com | three folders, one holding every message |
+| `new-event` | Edit Event | the real path: `new_pim_item(ItemKind::Event)`, filed on this computer since a fresh profile has no account |
+| `contacts`, `tags`, `signatures` | Contact Manager, Tag Manager, Signature Manager | the real managers, the same shape as `filters` |
+| `reminder` | Reminder | a reminder half an hour late, said and sounded first as a real one is |
+| `conversation` | Conversation | three messages, a reply under the first and a reply under that |
+| `which-days` | This event repeats | an event repeating every week, kept on this computer |
+| `send-later` | When should this message go? | the main frame as parent; the function became generic over `WxWidget` the way `wx_item_form::ask_for` is |
+| `add-address-book` | Add an address book by its address | nothing, as `add-calendar` |
+| `about` | About Wixen Mail | nothing |
+| `mail-module`, `calendar-module`, `contacts-module`, `reminders-module`, `tasks-module`, `notes-module` | Wixen Mail, Calendar - Wixen Mail, Contacts - Wixen Mail, Reminders - Wixen Mail, Tasks - Wixen Mail, Notes - Wixen Mail, no dialog | the frame's own module switch, handed into `open_for_scanning` as a closure |
 
-Two things the table says beyond the rule.
+The eleven that existed were run the same way and each showed its window too, with one thing to say about `main`: on a fresh profile with no target it shows **Before you start**, the first-run question, over the frame, because that question is skipped only when a target is given. So `main` has always been the frame under a modal, and the bare main window had never been scanned. `mail-module` is the bare window. That is the one target beyond the count Pratik answered, ledger 393.
 
-**`scripts/msaa-names.ps1` is the MSAA half of the scan, the channel NVDA reads, and it is held by nothing.** `grep -rln msaa-names.ps1 src tests` finds no file. A change to it answers `affected`, selects no scoped target, and runs formatting, clippy, the shell suites and the four tree guards. The workflow depends on its exit-code contract at lines 180 to 184, 0 for every operated control named, 1 for one unnamed, 2 for the walk failing, and no test reads that contract. The rule this plan added does not cover it, correctly: there is no test for a rule to select. Ledger 385, a test to write rather than a rule.
+Fixtures live in `src/presentation/scan_fixtures.rs`, six functions, each with a test for the one property its window refuses to open without: a conversation with a reply, copies that disagree, two branches with places filed under the right account, a folder that holds every message, a late reminder, an event that repeats. In the red commit each returned the data its window refuses, an empty list or an event with no repeat, so each test failed for the reason it exists.
 
-**`release.yml` was already covered by a different path**, and `accessibility.yml` was not. `bash scripts/check.sh --suites-for guards/guards.toml .github/workflows/release.yml` answers `installer`, because 07-07 wrote two guard records naming that file and the suite that reads it, and `check.sh`'s coupling scan follows records to `--test` targets. The same command for `accessibility.yml` answers nothing: `grep -c accessibility.yml guards/guards.toml` is 0, and the two tests that read it are `--lib` tests no record could route to anyway. So the two workflows had two different holes, and this rule closes both the way 07-02's rule closed the installer's, by answering `all` rather than by routing.
+### The window that is not open is reported, not scanned
 
-## What the suite costs, before and after
+Nearly every target is modal, so `open_for_scanning` does not return until the window closes, and the workflow kills the process while it is up. The call returning therefore means the window is not on screen, and the process used to sit there with the main window up while the scan walked it and reported a pass for a dialog nobody looked at. Now `open_for_scanning` answers `OnReturn::WindowClosed` or `WindowStillUp`, the call site leaves with `WINDOW_NOT_OPEN`, exit code 3, on the first, and the workflow asks `$app.HasExited` before it scans and says which of two things happened: code 3, "the application said the window was not open and left, so there was nothing to scan", or any other code, "exited with code N before the scan". Proved by starting `--scan-target about`, posting `WM_CLOSE` to the About window from another process, and reading the process back: `HasExited=True ExitCode=3`.
 
-`bash scripts/which-checks.test.sh` on its own, 2026-09-14, this machine, 24 logical cores, Git Bash, nothing else building, two runs each way:
+Six of the new arms can refuse without a window: the four managers and the item form through `manager_account` and `new_item::destination`, the destination picker on empty branches, the which-days question on an event that does not repeat. Each was opened here and none refused; the exit code is what says so in CI if one ever does.
 
-| | run 1 | run 2 | case lines |
+### Three defects the last CI run showed, fixed and measured
+
+`gh run view 34467657771 --log`, the accessibility run of 2026-09-10 at `1aba3a5b`, conclusion "success" because the job is `continue-on-error`.
+
+**1. Seven of eleven windows were "not scanned" because they were clean.** The log reads `main : no result file, so the scan itself failed (exit 0)` and the same for settings, search, calendar, first-run, add-calendar and blocked-senders, each a line after the CLI printed `0 errors were found`. `AxeWindowsCLI.exe --help` for v2.4.2 says: "By default, the test file is saved only if errors are found." The workflow's check keyed on the file's presence, so it was inverted for exactly the clean case. `--alwayssavetestfile` is now passed, and no file means what the message says. Ledger 391.
+
+**2. The MSAA channel had never read a dialog.** The same log reads `MSAA walk: 1797 elements, 1058 of them operated, 0 without a name` for accounts, compose and filters alike. Three windows with different controls cannot have one census. `scripts/msaa-names.ps1` walked `$process.MainWindowHandle`, which .NET defines as the first visible top-level window with no owner, and a wxWidgets dialog is owned by the frame it opened from. Listed here with Settings open: `Settings` owned, `Wixen Mail` not, and `MainWindowHandle` is the second. So the channel NVDA reads, the only one `set_accessible_name` writes to, had walked the frame for every dialog target since 2026-07-31. The script now enumerates every visible top-level window the process owns and walks each, with the window's title leading every path. And a failed walk now exits 2: under the script's own `$ErrorActionPreference = 'Stop'`, `Write-Error` terminated the script before the `exit 2` after it, and PowerShell left with 1, the code for an unnamed control, measured by asking for a process that does not exist. Proved against `notepad.exe`: "Walked 1 window(s): 'Untitled - Notepad'", 299 elements, one unnamed, exit 1; and against process 1: exit 2. The workflow now records any MSAA exit other than 0 or 1 as a walk that failed, naming the code, where before only 2 was asked about and everything else read as clean. Ledger 392.
+
+**3. Not proved against this application here.** Walking any Wixen Mail window over MSAA on this machine crashes PowerShell with `STATUS_STACK_BUFFER_OVERRUN`, exit `-1073740791`, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone, and before the enumeration change. NVDA is running on this machine; CI has no screen reader and walked 1797 elements without crashing. Not diagnosed, and NVDA was not stopped to find out. Ledger 389 and 390. If CI meets it, the workflow now names it rather than passing.
+
+## Both channels, per target
+
+UI Automation: `AxeWindowsCLI --processid` scans every window the process owns, which is why the eleven dialogs were ever scanned on that channel at all; the thirty are the same shape. MSAA: every visible top-level window, after this plan, and never before it. No target has been read by either channel in CI since this plan, and the MSAA half could not be run against this application here. The gap is named, not closed: 06-08's first artifact is the first evidence for either channel on any of the thirty.
+
+## Red and green, honestly
+
+Red `741d2b36`, ten tests named in `Fails-until-green:` trailers, each ran and failed with nothing else failing, and the gate said so in `red` mode. Green `fd661401`.
+
+Two red fixtures were changed at green, both re-read once the code existed, and both re-run against the old workflow afterwards to show they were still red for the old reason:
+
+- `test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum` read the whole file, and the comment explaining why `releases/latest` was wrong reddened it. It now reads lines that are not comments, and asks for `$tag = 'v` rather than a literal tag in a URL, since the URL is built from the tag. Against `9f86ba6f`'s workflow, swapped in whole with `git show` and back with `cp`, byte-identical on restore: red.
+- `test_every_window_a_fresh_profile_can_reach_has_a_name` gained `mail-module`, found while running the targets rather than reading them.
+
+The source-reading test in `wx_app.rs` reads an arm to its end rather than its first line, because rustfmt wraps a seven-argument call and `NewEvent`'s `cache` is two lines down. It names four new arms.
+
+## Guard records: two, measured, census 759
+
+Both records break `.github/workflows/accessibility.yml` and name a `--lib` test, on the shape of 07-07's two records for `release.yml`. Each measured by applying the break by hand and running `cargo test --lib --no-fail-fast` at eight threads on the whole library:
+
+| record | break | red | run |
 |---|---|---|---|
-| before | 6.46 s | 6.57 s | 45 |
-| after | 6.99 s | 7.00 s | 50 |
+| a window the program can open for the scan is one the workflow asks for | `'which-days'` out of the array, variant left | `test_the_workflow_asks_for_every_target` | 7,183 passed, 1 failed, 54 s |
+| the scanner's checksum is compared with a number written down and not with itself | `$expected` set to the download's own hash | `test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum` | 7,183 passed, 1 failed, 53 s |
 
-About half a second for five cases, roughly a tenth of a second each, which is one process start per case on this machine. The whole family of `scripts/*.test.sh` was 108 seconds on 2026-09-10; this suite alone was 34.4 seconds on 2026-09-09 by `CLAUDE.md`'s account and is 7 seconds today, so either the machine state differs a great deal between the two days or the earlier figure was taken under load. Read today's pair as the pair it is, taken twice within a minute, and not as a correction of the earlier one.
+`guards/guards.toml` holds **759** records by a TOML reader, 757 before; the census at lines 79 and 80 reads 192 + 567. The count check did not fire: `wx_app.rs` holds 196 tests before and after, `scan_target.rs` is named by no earlier record, and the two new records name it at 9.
 
-The gate cost the rule buys: a workflow-only commit on a branch goes from about 64 seconds to about 206 seconds warm, the difference being the library run, the advisory check and the release build. Paid only by a commit that changes a workflow, and the last such commit before this branch was 07-06's on 2026-09-12.
+## What the gate selects for each file, on this branch
 
-## Why no guard record, and the census unchanged
+| file | `which-checks.sh` | what runs |
+|---|---|---|
+| `src/presentation/scan_target.rs`, `scan_fixtures.rs`, `wx_app.rs`, `wx_send_later.rs`, `mod.rs` | `affected` | `--lib presentation::<module>::` each, `presentation::` for `mod.rs`, and seven suites coupled through `guards.toml` to `wx_app.rs`: a_whole_folder_moves_both_bounds, one_sign_in_per_piece_of_work, nothing_leaves_the_outbox_unasked, the_conflict_choice_can_be_heard, nothing_sends_a_flag_change_unasked, the_list_warning_reads_the_message, columns_belong_to_the_folder_they_were_arranged_in |
+| `.github/workflows/accessibility.yml` | `all` | the whole gate, task 1's rule working |
+| `scripts/msaa-names.ps1` | `affected`, selecting nothing | ledger 385, unchanged by this plan |
+| `guards/guards.toml` | `affected`, selecting nothing | the six record checks in `house_style` ran under `all` |
 
-`guards/guards.toml` holds 757 records by a TOML reader and holds 757 after this plan; the census at its lines 79 and 80 is untouched. No record was written, for three reasons that are each enough. The rule reads no file, so there is no reading for a break to blind: it is a `case` on a path string. The suite's red run is the violation shown to the reading, which is what a companion guard proves for a file-reading check; here the reading is the suite itself and it was red at `05ec26a4` for exactly the three cases named. And no record has ever named a shell suite: `grep -c 'test\.sh' guards/guards.toml` is 0, `guards.py` applies breaks to source and reads cargo's FAILED lines, and inventing that coupling is not this plan's work. 07-02 reasoned the same way for the `.iss` rule.
+The red commit answered `affected` and ran the scoped set above in 214 seconds of a refused first attempt and then in the run that took it. The green commit answered `all`, as the plan said it would.
+
+**The gate refused the green commit once.** `test_nothing_says_a_new_installation_changes_nothing_while_it_changes_contacts` in `house_style` read the workflow's new comment, "whatever Microsoft shipped most recently and could change with no commit here", as a claim that a new installation changes nothing, on "shipped" beside "no" and "change". Reworded to "had published most recently, and it could move without a commit here"; the reading was right to ask and wrong about this sentence, and it is the same shape as the pin test reddening on its own explanation.
 
 ## Deviations from plan
 
-**1. [Rule 1] The hole was measured on the workflow's side, not by breaking `ScanTarget::ALL`.** The plan's break lands in a file the gate maps to a scoped target, so it would have shown the gate working rather than the hole. Reasoned above. Ledger 387.
+**1. [Rule 1] `--alwayssavetestfile`.** The plan named no such flag; the CI log and the CLI's help did. Ledger 391.
 
-**2. The plan's plain-markdown and plain-Rust allow cases were not added.** `one planning file`, `several docs` and `a readme` at lines 95 to 98 already assert `docs_only` for a markdown-only change, and `one rust file`, `rust beside a doc` and `an integration test` at 101 to 103 assert `affected` for Rust. A fourth copy of each proves nothing the file does not prove. The two allow cases written instead are the ones that go red under the wrong spellings of the rule. 07-02 made the same substitution and recorded it; the plan asked for the generic negatives again. Ledger 386.
+**2. [Rule 2] `scripts/msaa-names.ps1` walks every top-level window and exits 2 on failure.** Not in the plan's files. The channel NVDA reads had never seen a dialog, measured from three identical censuses in the CI log. Ledger 392.
 
-**3. Five cases rather than four.** The plan's four plus the version-bump combination, which is the case that decides where the rule may sit and was red before the rule. 07-02 wrote the same fifth for the same reason.
+**3. `mail-module`, a thirty-first entry.** Found by running `main` and seeing Before you start over it. Ledger 393.
 
-**4. Task 2 not attempted and the checkpoint not answered**, by instruction. The workflow is untouched, so `test_ci_and_this_machine_are_told_to_use_the_same_compiler` had nothing to say and neither accessibility channel could have been dropped.
+**4. `wx_send_later::ask_when_to_send` is generic over its parent.** The composer's dialog was the only parent it took, and one scan is one window; two signatures changed, nothing else in the file.
 
-**5. No `docs/changelog.md` entry and no version bump.** The plan says so and it is right: a commit gate is met by nobody using the program.
+**5. Two guard records rather than the plan's one**, because the checksum is the change guardrail 4 is about and its plausible regression, comparing the download with itself, leaves every visible token in place.
 
-Nothing in `scripts/check.sh` or `scripts/which-checks.sh` conflicted with phase 7's edits; the plan's `read_first` line numbers for `which-checks.sh` were exact at `436cdeec`, and `run_the_tests_that_reach_what_changed` is at `check.sh:387` as 07-02 left it.
+**6. The plan's fixture stubs at red returned the wrong data rather than nothing**, so each fixture test failed for its own reason and clippy saw no dead code; the module's functions are `pub`, read by `open_for_scanning`.
 
-## The plan's premises, checked against the tree
+**7. Two whole-file swaps of the workflow**, `git show HEAD:... >` and `cp` back, to show the refined tests red against the old file. Not scripted line edits; restored byte-identical and checked with `cmp`. Every other change to a tracked file was Read then Edit or Write. Exception set for scripted rewrites: zero. Carriage returns in every touched file: 0 by `tr -cd '\r' | wc -c`.
 
-Premises 1 to 3 and 5 to 7 held exactly. Premise 8's figure for this suite is discussed above. Premise 4 held: eleven in the workflow, ten in `ScanTarget::ALL`, `main` being the eleventh. The checkpoint's context, though, undercounts the windows outside the scan, and that correction is in the next section because it changes one of the answers' costs.
+**8. No `docs/changelog.md` entry and no version bump.** A scan target is met by nobody using the program, and so is a workflow.
 
-## CHECKPOINT REACHED
+Nothing in `scripts/check.sh` or `scripts/which-checks.sh` was touched by task 2, so nothing conflicted with phase 7.
 
-**Type:** decision
-**Gate:** blocking-human
-**Plan:** 06-06
-**Progress:** 1/2 tasks complete
+## What 06-07 inherits
 
-### Completed Tasks
+- The rule set is `v2.4.2`, and its own rule list is `axe-windows-rules-2.4.2.md` on the release; read that, not `main`'s table.
+- Thirty-one windows in the scan: the thirty targets and `main`, which is the frame under the first-run question. Seventeen nested dialogs are outside it, listed above and in ledger 394. Say both.
+- `scripts/msaa-names.ps1`'s header still says what the two channels can and cannot judge, and now says it walks every window.
 
-| Task | Name | Commit | Files |
-|---|---|---|---|
-| 1 | a workflow change earns the checks that could catch it | `05ec26a4` red, `dd4934fe` green | `scripts/which-checks.sh`, `scripts/which-checks.test.sh` |
+## What 06-08 inherits
 
-### Current Task
-
-**Checkpoint:** pin the scanner, and how many windows should it look at
-**Status:** awaiting decision
-**Blocked by:** two questions that are Pratik's, per the plan's `gate="blocking-human"`; not auto-selected
-
-### The two questions, so they can be answered from here
-
-Both are about `.github/workflows/accessibility.yml`, which runs on every push to `main`, scans the running program window by window on both channels, Axe.Windows over UI Automation for what Narrator reads and `scripts/msaa-names.ps1` over MSAA for what NVDA reads, and uploads what it found. 06-07 writes the list of which WCAG 2.2 AA criteria that scan can and cannot judge, fifty-five criteria against Axe.Windows's 155 rules across three of them. Both answers change what that list can honestly say.
-
-#### Question 1: pin the scanner, or leave it fetching the latest release?
-
-Today, line 78 of the workflow asks GitHub for `microsoft/axe-windows`'s latest release on every run and downloads whatever zip that is. The rule set the scan runs is therefore whatever Microsoft shipped most recently, and it can change with no commit here.
-
-| option | what it gives | what it costs |
-|---|---|---|
-| **A. Pin the release tag** | 06-07's list is a claim about a named rule set anybody can re-run. One fewer binary downloaded and executed in CI whose contents nobody chose, which is a supply-chain matter as well as a reproducibility one. The tag, the date and the reason sit in a comment beside the line | Somebody has to move it, and a newer rule set arrives only when they do. A pin nobody moves is a scanner going quietly stale, and nothing in the tree would say so |
-| **B. Leave it unpinned, and date the list** | New rules arrive free. Two lines of the workflow stay as they are | 06-07's list has to carry the version it was read against and the date, and will drift from what the scan really runs. The research read the rule table twice, five days apart, and got 144 and 155; nobody can now say how much of that was upstream moving and how much was a bad parse, which is exactly what an unpinned dependency makes unanswerable. A ledger entry records that the list describes something that can change with no commit here |
-
-**Recommendation: A, and go one step further than the plan: pin the tag and record the zip's SHA-256 beside it.** A tag can be moved by whoever owns the repository; a checksum cannot, and `Get-FileHash` is one line of the same PowerShell step. That makes the scan a claim about a specific binary, not about a name. The staleness cost is real and is answered by writing the date beside the pin and by 06-08 reading the findings: a scanner is bumped when somebody wants to know what a newer one finds, and the date tells them how long it has been. Task 2's instruction to read the tag from the GitHub releases API in the session that writes it, and to quote the endpoint, still holds.
-
-If B is chosen, task 2's disposition for T-06-21 becomes accept, 06-07's list must carry version and date, and ledger 384 already records the drift.
-
-#### Question 2: how many windows should the scan look at?
-
-Today the scan looks at eleven: the main window and ten dialogs, `settings`, `accounts`, `compose`, `reader`, `search`, `filters`, `calendar`, `first-run`, `add-calendar` and `blocked-senders`. Each is a `ScanTarget` variant, a command-line name, an entry in the workflow's array, and a window `wx_app.rs` can open from a fresh profile. Two tests hold the code's list and the workflow's array together, and after task 1 they run on the commits that could break them.
-
-**The plan says nine dialogs are outside the scan. The tree says more.** The research counted 24 `wx_*` modules on 2026-09-12; `git ls-tree` at its own commit shows 27, and today shows 27. Outside the scan today:
-
-- The nine the plan names: `wx_columns`, `wx_conflict_choice`, `wx_destination`, `wx_folder_choice`, `wx_item_form`, `wx_managers`, `wx_reminder_alert`, `wx_thread_view`, `wx_which_days`.
-- Two more that build a `Dialog` and existed when the research was written: `wx_send_later`, added 2026-09-06, where somebody chooses when a message goes, and `wx_add_address_book`, added 2026-09-11, the second window that asks for a password to send somewhere other than a mail server, which the `add-calendar` target's own doc comment gives as the reason that one is scanned.
-- Three of the five managers in `managers.rs`: `manage_tags`, `manage_signatures` and `manage_contacts`. `filters` and `calendar` are scanned; the other three are the same shape and are not.
-- Possibly the five module panels, `wx_calendar_module`, `wx_contacts_module`, `wx_notes_module`, `wx_reminders_module`, `wx_tasks_module`, which live inside the main window and are shown when their module is selected. Whether the `main` scan on a fresh profile sees anything but the mail module was not measured here and would need a scan artifact to answer. Named so 06-07 does not list the main window as covered without asking.
-
-So the plan's "eleven scanned, nine outside" is "eleven scanned, at least fourteen outside" by today's tree, before the five panels are counted either way. The honest floor for any answer is that 06-07's document lists what is outside by name.
-
-| option | what it gives | what it costs |
-|---|---|---|
-| **A. Leave it at eleven, and name what is outside** | The coverage document says which windows it does not speak for, which is the honest minimum under every option. Task 2 is then the pin alone, and 06-08 judges findings from windows that already scan | Everything above stays unscanned for longer, including the item form, which is where events, contacts, tasks and notes are entered and the one dialog `tests/checkbox_labels.rs` covers |
-| **B. Add `wx_which_days` only** | The plan's suggested combination. One variant, one name, one workflow entry, and the dialog the one skipped NVDA test names gets a target | The dialog opens only from deep inside the calendar's edit and delete flow on a real, selected, repeating event, so the target needs a made-up repeating event built at startup the way `reader` opens on a made-up message; that is `wx_app.rs` work, and reachability from a fresh profile is proved only by the scan running, which this phase cannot see until 06-08 reads a CI artifact. It does not un-skip the NVDA test, which needs a real NVDA run either way and which the plan says not to touch |
-| **C. Add some** | A stronger list. `wx_item_form`, `wx_send_later` and `wx_add_address_book` are the three with the most controls somebody operates and the most to say about themselves | Each is a variant, a name, a workflow entry and a fixture that opens it; more scan time; more findings for 06-08 to judge one at a time |
-| **D. Add all of them** | Most complete | All of C several times over, and some may not be reachable from a fresh profile at all, which is what the skipped NVDA test found for `wx_which_days` |
-
-**Recommendation: A for this phase, with the list of what is outside written into 06-07's document by name, and `wx_item_form`, `wx_send_later` and `wx_add_address_book` named there as the first three to add.** The plan recommends A plus `wx_which_days`, and I would not add that one first: it needs a fixture repeating event nothing else needs, it buys a scan of a small dialog whose findings 06-08 then has to judge, and it does not unblock the skipped test, which needs a real NVDA run. A target added this phase can only be shown to work by a CI run this phase cannot read, so every target added here is one nobody has seen scan. The three I name instead are the ones with the most controls a person operates and, for two of them, a password field. Widening is good work and a plan of its own, after 06-08 has shown what the scan finds on the eleven it already has.
-
-**The combination the plan expects Pratik to give:** most likely A on the scanner with the checksum, A on the windows with the three named for later. If a target is added, name which; each is a variant with a command-line name, a workflow entry and a way of opening it from a fresh profile, and 06-08 is where it is seen to work.
-
-### Awaiting
-
-Say whether to pin, and how many windows. If any target is added, name which.
-
-## What task 2 will need to know, left here so it need not re-derive it
-
-- `ScanTarget::ALL` is `[ScanTarget; 10]` at `scan_target.rs:72`; the workflow's `$targets` at line 100 holds those ten plus `main`. Adding a variant reddens `test_the_workflow_asks_for_every_target` until the array gains it, which is a genuine red half; the pin alone is a configuration change with no test to write first, and the summary should say which happened.
-- The commit that touches the workflow answers `all` after this plan. Expect the full gate through the hook, about 206 seconds warm on this machine plus whatever the release build costs cold, and run it rather than working around it.
-- `test_ci_and_this_machine_are_told_to_use_the_same_compiler` in `tests/house_style.rs` holds every workflow to 1.98.1, so a workflow edit that touches the toolchain line has something to answer.
-- The Axe.Windows tag must be read from `https://api.github.com/repos/microsoft/axe-windows/releases` in the session that writes it, and the endpoint and tag quoted.
-- Keep the `throw` at line 80 when the asset is missing, and keep both channels: Axe.Windows over UI Automation and `scripts/msaa-names.ps1` over MSAA. A name that fails on either is a name somebody does not hear.
+- The first CI run of this workflow is the first scan of any of the thirty on either channel, and the first honest run of the clean-window case on UIA. Expect more findings than five, and expect the per-window "not scanned" list to be empty for the first time or to name a real failure.
+- If the MSAA walk crashes in CI as it does here, the workflow names the window and the code. Ledger 390 holds the local measurement.
+- `wx_which_days` has a target. The skipped NVDA test at `nvda-tests/tests/which-days-focus-and-tick.test.js` said the skip existed because there was no target; the skip is untouched, because the test needs a real NVDA run either way and an un-skipped test that has never passed is a check nobody reads.
 
 ## Ledger
 
-`.planning/WINDOWS.md` 384 to 387, both halves matching at 387 entries, written through `gsd-tools windows append` with no backslash in any description.
+`.planning/WINDOWS.md` 388 to 394 written through `gsd-tools windows append`, both halves at 394, no backslash in any description; 384 marked fixed through `windows fixed`, both halves moved together.
 
 | id | kind | what |
 |---|---|---|
-| 384 | unmet-truth | the scan still fetches `releases/latest`, so the rule set 06-07 describes can change with no commit here; pinning is task 2 behind the checkpoint |
-| 385 | todo | `scripts/msaa-names.ps1` is read by no test and maps to no gate target; its exit-code contract, which the workflow depends on, is unheld |
-| 386 | deviation | the plan's generic allow cases replaced by the two that redden under the wrong spellings of the rule |
-| 387 | deviation | the hole measured on the workflow's side rather than by breaking `ScanTarget::ALL` |
+| 384 | unmet-truth, **fixed** | the scan fetched `releases/latest`; pinned |
+| 388 | unrun-verify | thirty targets opened here, none scanned by CI |
+| 389 | unrun-verify | the MSAA enumeration proved on notepad and on a missing process, not on this application here |
+| 390 | todo | the MSAA walk crashes PowerShell on this machine with NVDA running |
+| 391 | deviation | `--alwayssavetestfile` |
+| 392 | deviation | `msaa-names.ps1` walks every window and exits 2 |
+| 393 | deviation | `mail-module` beyond the count answered |
+| 394 | todo | seventeen nested dialogs outside the scan, one entry for the layer, with why |
 
 ## Known Stubs
 
-None. The rule is wired: the hook runs `check.sh`, which asks `which-checks.sh`, which now answers `all` for the path, measured on a staged break rather than read.
+None. Every target is wired end to end: a variant, a name the parser accepts, an arm that opens the window, and an entry in the workflow's array, and each was seen open.
 
 ## Threat Flags
 
-None new. T-06-22 is mitigated by task 1 as the register planned. T-06-21 and T-06-23 stay open until the checkpoint is answered and task 2 runs; ledger 384 carries them.
+None new. T-06-21 and T-06-23 are mitigated by the pin with its hash and the record that guards it. T-06-24 is mitigated further than the register planned: the program itself leaves when the window is not open. No package was added.
 
 ## What was not done, said plainly
 
-- Task 2: not started. The workflow is byte-identical to `main`'s.
-- The scanner is not pinned. What the scan runs today is whatever Microsoft shipped most recently.
-- No window was added to the scan.
-- No scripted edit touched a tracked file. Every change to `scripts/which-checks.sh` and `scripts/which-checks.test.sh` was Read then Edit; the two temporary edits to the workflow were Edit and a per-file `git checkout --`. Exception set: zero. Carriage returns in each edited file measured with `tr -cd '\r' | wc -c`: 0.
-- `roadmap update-plan-progress` was not run; `ROADMAP.md` and `STATE.md` were edited by hand and the diff read. The first docs commit was refused because `STATE.md` holds the plan number twice and I had moved one copy; both now say 6.
+- No CI run. Nothing pushed. Every "works" above is a window seen open on this machine, not a scan read.
+- The MSAA channel was not run against this application here, because it crashes PowerShell with NVDA running.
+- Seventeen nested dialogs are outside the scan.
+- The skipped NVDA test is still skipped.
+- `roadmap update-plan-progress` was not run; `ROADMAP.md`, `STATE.md` and the phase README were edited by hand and the diff read.
 
 ## Self-Check: PASSED
 
-`scripts/which-checks.sh`, `scripts/which-checks.test.sh` and this file exist on disk; commits `05ec26a4`, `dd4934fe`, `2b220b66` and `9f86ba6f` are in `git log --all`; `.github/workflows/accessibility.yml` is byte-identical to `436cdeec`'s.
+`src/presentation/scan_fixtures.rs`, `src/presentation/scan_target.rs`, `.github/workflows/accessibility.yml`, `scripts/msaa-names.ps1`, `guards/guards.toml` and this file exist on disk; commits `05ec26a4`, `dd4934fe`, `9f86ba6f`, `741d2b36` and `fd661401` are in `git log --all`.
