@@ -1092,6 +1092,184 @@ fn the_events_that_could_block(
         .unwrap_or_default()
 }
 
+/// Why an edit to an opened event was not carried out.
+pub(crate) enum NotChanged {
+    /// The calendar it is in does not allow what was meant, said in the
+    /// sentence the calendar window would give.
+    Refused(String),
+    /// The write failed, named rather than numbered, because this is read out.
+    Failed(String),
+}
+
+/// Carry out an edit to an event somebody opened, and say what was done.
+///
+/// One place, because two windows open an event to change it: the calendar
+/// window's Edit Event button, and since 2026-09-14 the due window's
+/// Details button. What a change to one day of a series means, and what a
+/// calendar server allows, is one rule, and two copies of it are how one
+/// window came to promise what the other refused.
+///
+/// Written onto the event as it stands rather than onto a fresh one built
+/// from the editor: the editor asks about nine things and an event carries
+/// more than nine.
+pub(crate) fn change_an_opened_event(
+    cache: &MessageCache,
+    account: &str,
+    opened: &CalendarEventItem,
+    means: EditMeans,
+    data: &wx_calendar::CalendarEventData,
+) -> std::result::Result<String, NotChanged> {
+    let stored = cache.get_event_by_id(&opened.id).ok().flatten();
+    // Before anything is written. A change meant for one day of a series
+    // would otherwise rewrite every day of it, and the other days' own
+    // values cannot be got back.
+    crate::application::calendar::can_be_honoured(
+        crate::application::calendar::WhatIsBeingDone::Changing,
+        means,
+        &what_this_rows_calendar_allows(cache, opened),
+    )
+    .map_err(NotChanged::Refused)?;
+    let written = match (stored, means) {
+        (Some(series), EditMeans::OneDay) => {
+            let that_day = the_day_kept_on_its_own(&series, data);
+            // Before either half is written, and asked of the day that will
+            // really be stored. The half that takes the day off the series
+            // cannot be undone, and where the other half would be refused by
+            // a calendar server for ever the day would leave that server for
+            // good.
+            let goes = the_calendar_it_is_in(cache, opened);
+            if let Some(refused) = why_that_day_cannot_be_kept(goes, &that_day) {
+                return Err(NotChanged::Refused(refused));
+            }
+            one_day_of_a_series_changed(cache, &series, opened, that_day)
+        }
+        // A row a calendar server has already split into its own VEVENT,
+        // still sharing that VEVENT's resource with the series it came from.
+        // `can_be_honoured` above only lets this arm run at all once the
+        // series is known here, and the dedicated merge is what keeps the row
+        // able to tell itself apart from that series on every edit after this
+        // one, not only this one: `event_with_edits` would zero both fields.
+        (Some(stored), EditMeans::WholeSeries) if stored.provider_recurrence_id.is_some() => {
+            cache.save_calendar_event(&occurrence_exception_with_edits(stored, opened, data))
+        }
+        (Some(stored), EditMeans::WholeSeries) => {
+            cache.save_calendar_event(&event_with_edits(stored, opened, data))
+        }
+        (None, _) => cache.save_calendar_event(&event_entry(opened.id.clone(), account, data)),
+    };
+    match written {
+        Ok(()) => Ok(crate::application::calendar::what_was_done(
+            match means {
+                EditMeans::OneDay => crate::application::calendar::WrittenDown::OneDayChanged,
+                EditMeans::WholeSeries => {
+                    crate::application::calendar::WrittenDown::WholeSeriesChanged
+                }
+            },
+            &data.summary,
+        )),
+        Err(e) => Err(NotChanged::Failed(format!("{}: {}", data.summary, e))),
+    }
+}
+
+/// The event editor: the item form opened on an event, nested under whatever
+/// window asked, answering with what was filled in or nothing for Cancel.
+///
+/// Owned rather than borrowed, because `show_calendar_dialog` wires this
+/// straight to a button's own `on_click`, which wxdragon requires to outlive
+/// the caller's stack frame. Built once an event is open rather than once
+/// for the window, because which event is being changed is part of the
+/// question: its own hour must not come back as a time the organiser is
+/// busy.
+pub(crate) fn an_event_editor(
+    cache: &Arc<MessageCache>,
+    account: &str,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+    frame: &Frame,
+    rt: &Arc<Runtime>,
+) -> impl Fn(&Dialog, Option<&CalendarEventItem>) -> Option<wx_calendar::CalendarEventData> + 'static
+{
+    let cache = Arc::clone(cache);
+    let account = account.to_string();
+    let a11y = Arc::clone(a11y);
+    let frame = *frame;
+    let rt = Arc::clone(rt);
+    move |dialog: &Dialog, existing: Option<&CalendarEventItem>| {
+        let (containers, known_categories) = item_form_ingredients(
+            &cache,
+            crate::application::new_item::ItemKind::Event,
+            &account,
+        );
+        let existing_filled = existing.map(filled_from_calendar_item);
+        let existing_container = existing.and_then(|item| item.calendar_id.clone());
+        let prefill =
+            existing_filled
+                .as_ref()
+                .map(|filled| crate::presentation::wx_item_form::Prefill {
+                    filled,
+                    container: existing_container.as_deref(),
+                });
+        crate::presentation::wx_item_form::ask_for(
+            dialog,
+            crate::application::new_item::ItemKind::Event,
+            &containers,
+            &known_categories,
+            prefill,
+            &a11y,
+            Some(asking_when_people_are_free(
+                &frame,
+                &cache,
+                &account,
+                &rt,
+                existing.map(|item| item.id.clone()),
+            )),
+        )
+        .map(|(filled, container_id)| {
+            wx_calendar::CalendarEventData::from_filled(&filled, container_id)
+        })
+    }
+}
+
+/// Open an event from a row somewhere other than the calendar window, and
+/// change it the way that window would: ask which days are meant, refuse
+/// what the calendar does not allow, open the editor, write the answer.
+///
+/// The sentence to say, or nothing for Cancel. What the due window's
+/// Details button does.
+pub(crate) fn change_an_event_from_a_row(
+    parent: &Dialog,
+    cache: &Arc<MessageCache>,
+    account: &str,
+    opened: &CalendarEventItem,
+    frame: &Frame,
+    rt: &Arc<Runtime>,
+    a11y: &Arc<crate::presentation::accessibility::Accessibility>,
+) -> Option<String> {
+    use crate::application::calendar::{WhatIsBeingDone, can_be_honoured};
+
+    let allows = what_this_rows_calendar_allows(cache, opened);
+    // Both asked before the editor opens, so somebody who meant one day is
+    // not made to fill a form in first and then told it cannot be done.
+    let means = crate::presentation::wx_which_days::which_days_are_meant(
+        parent,
+        &opened.summary,
+        &opened.repeats,
+        WhatIsBeingDone::Changing,
+        &allows,
+        crate::presentation::theme::current_from_stored_config(),
+    )?;
+    if let Err(refused) = can_be_honoured(WhatIsBeingDone::Changing, means, &allows) {
+        return Some(refused);
+    }
+    let data = an_event_editor(cache, account, a11y, frame, rt)(parent, Some(opened))?;
+    Some(
+        match change_an_opened_event(cache, account, opened, means, &data) {
+            Ok(what_was_done) => what_was_done,
+            Err(NotChanged::Refused(refused)) => refused,
+            Err(NotChanged::Failed(failed)) => format!("The event could not be saved: {failed}"),
+        },
+    )
+}
+
 /// The calendar dialog, which returns a list of actions rather than a set.
 pub fn manage_calendar(
     state: &Arc<StdMutex<WxUIState>>,
@@ -1111,51 +1289,8 @@ pub fn manage_calendar(
 
     // New and Edit Event both open the same item form dialog `new_pim_item`
     // does, nested under the Calendar window's own dialog rather than the
-    // main frame. Owned rather than borrowed: `show_calendar_dialog` wires
-    // this straight to a button's own `on_click`, which wxdragon requires to
-    // outlive this function's stack frame.
-    let open_event_editor_cache = Arc::clone(&cache);
-    let open_event_editor_account = account.clone();
-    let open_event_editor_a11y = Arc::clone(a11y);
-    // Built once an event is open rather than once for the window, because
-    // which event is being changed is part of the question: its own hour must
-    // not come back as a time the organiser is busy.
-    let open_event_editor_frame = *frame;
-    let open_event_editor_runtime = Arc::clone(rt);
-    let open_event_editor = move |dialog: &Dialog, existing: Option<&CalendarEventItem>| {
-        let (containers, known_categories) = item_form_ingredients(
-            &open_event_editor_cache,
-            crate::application::new_item::ItemKind::Event,
-            &open_event_editor_account,
-        );
-        let existing_filled = existing.map(filled_from_calendar_item);
-        let existing_container = existing.and_then(|item| item.calendar_id.clone());
-        let prefill =
-            existing_filled
-                .as_ref()
-                .map(|filled| crate::presentation::wx_item_form::Prefill {
-                    filled,
-                    container: existing_container.as_deref(),
-                });
-        crate::presentation::wx_item_form::ask_for(
-            dialog,
-            crate::application::new_item::ItemKind::Event,
-            &containers,
-            &known_categories,
-            prefill,
-            &open_event_editor_a11y,
-            Some(asking_when_people_are_free(
-                &open_event_editor_frame,
-                &open_event_editor_cache,
-                &open_event_editor_account,
-                &open_event_editor_runtime,
-                existing.map(|item| item.id.clone()),
-            )),
-        )
-        .map(|(filled, container_id)| {
-            wx_calendar::CalendarEventData::from_filled(&filled, container_id)
-        })
-    };
+    // main frame. The same editor the due window's Details button opens.
+    let open_event_editor = an_event_editor(&cache, &account, a11y, frame, rt);
 
     let actions = wx_calendar::show_calendar_dialog(
         frame,
@@ -1191,76 +1326,13 @@ pub fn manage_calendar(
                 }
             }
             wx_calendar::CalendarAction::UpdateEvent(opened, means, data) => {
-                // Onto the event as it stands, rather than a fresh one built
-                // from the editor: the editor asks about nine things and an
-                // event carries more than nine.
-                let stored = cache.get_event_by_id(&opened.id).ok().flatten();
-                // Before anything is written. A change meant for one day of a
-                // series would otherwise rewrite every day of it, and the other
-                // days' own values cannot be got back.
-                if let Err(refused) = crate::application::calendar::can_be_honoured(
-                    crate::application::calendar::WhatIsBeingDone::Changing,
-                    means,
-                    &what_this_rows_calendar_allows(&cache, &opened),
-                ) {
-                    send_refusal(tx, rt, &refused);
-                    continue;
-                }
-                let written = match (stored, means) {
-                    (Some(series), EditMeans::OneDay) => {
-                        let that_day = the_day_kept_on_its_own(&series, &data);
-                        // Before either half is written, and asked of the day
-                        // that will really be stored. The half that takes the
-                        // day off the series cannot be undone, and where the
-                        // other half would be refused by a calendar server for
-                        // ever the day would leave that server for good.
-                        if let Some(refused) = why_that_day_cannot_be_kept(
-                            the_calendar_it_is_in(&cache, &opened),
-                            &that_day,
-                        ) {
-                            send_refusal(tx, rt, &refused);
-                            continue;
-                        }
-                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)
-                    }
-                    // A row a calendar server has already split into its own
-                    // VEVENT, still sharing that VEVENT's resource with the
-                    // series it came from. `can_be_honoured` above only lets
-                    // this arm run at all once the series is known here, and
-                    // the dedicated merge is what keeps the row able to tell
-                    // itself apart from that series on every edit after this
-                    // one, not only this one: `event_with_edits` would zero
-                    // both fields.
-                    (Some(stored), EditMeans::WholeSeries)
-                        if stored.provider_recurrence_id.is_some() =>
-                    {
-                        cache.save_calendar_event(&occurrence_exception_with_edits(
-                            stored, &opened, &data,
-                        ))
-                    }
-                    (Some(stored), EditMeans::WholeSeries) => {
-                        cache.save_calendar_event(&event_with_edits(stored, &opened, &data))
-                    }
-                    (None, _) => {
-                        cache.save_calendar_event(&event_entry(opened.id.clone(), &account, &data))
-                    }
-                };
-                match written {
-                    Ok(()) => {
+                match change_an_opened_event(&cache, &account, &opened, means, &data) {
+                    Ok(what_was_done) => {
                         changed = true;
-                        done.push(crate::application::calendar::what_was_done(
-                            match means {
-                                EditMeans::OneDay => {
-                                    crate::application::calendar::WrittenDown::OneDayChanged
-                                }
-                                EditMeans::WholeSeries => {
-                                    crate::application::calendar::WrittenDown::WholeSeriesChanged
-                                }
-                            },
-                            &data.summary,
-                        ));
+                        done.push(what_was_done);
                     }
-                    Err(e) => failures.push(format!("{}: {}", data.summary, e)),
+                    Err(NotChanged::Refused(refused)) => send_refusal(tx, rt, &refused),
+                    Err(NotChanged::Failed(failed)) => failures.push(failed),
                 }
             }
             wx_calendar::CalendarAction::DeleteEvent(opened, means) => {
@@ -9988,9 +10060,15 @@ mod changing_one_day_of_a_series {
         // What this cannot see: whether anything reaches this answer at all.
         // The calendar window could stop sending it and every assertion below
         // would still hold.
+        //
+        // Since 06-09 the answer lives in `change_an_opened_event`, which
+        // both the calendar window and the due window call, so the arm is
+        // found in that function's body and the refusal stops the write by
+        // returning rather than by `continue`.
         let source = std::fs::read_to_string("src/presentation/managers.rs")
             .expect("this file to be readable");
-        let body = source
+        let body = the_body_of(&source, "pub(crate) fn change_an_opened_event(");
+        let body = body
             .split_once("(Some(series), EditMeans::OneDay) => {")
             .expect("the answer that changes one day")
             .1;
@@ -10019,7 +10097,7 @@ mod changing_one_day_of_a_series {
             refusal.len()
         );
         assert!(
-            refusal.contains("continue;"),
+            refusal.contains("return Err(NotChanged::Refused("),
             "the day is refused out loud and then taken off the series anyway, \
              and the calendar server keeps the removal"
         );
@@ -10455,9 +10533,12 @@ one_day_of_a_series_changed(&cache, &series, &opened, that_day)
 
     #[test]
     fn test_updating_an_occurrence_exception_in_the_calendar_window_uses_the_dedicated_merge() {
+        // The arm moved out of `manage_calendar` into `change_an_opened_event`
+        // on 2026-09-14, which both the calendar window and the due window
+        // call, so that is the body read.
         let source = std::fs::read_to_string("src/presentation/managers.rs")
             .expect("this file to be readable");
-        let body = the_body_of(&source, "pub fn manage_calendar(");
+        let body = the_body_of(&source, "pub(crate) fn change_an_opened_event(");
         let wrong = what_updating_an_occurrence_exception_gets_wrong(&body);
         assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
     }

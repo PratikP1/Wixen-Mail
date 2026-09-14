@@ -567,6 +567,10 @@ pub enum UIUpdate {
     /// the calendar rows read the hours from shared state and repainting the
     /// list may only happen on the thread that owns it.
     WorkingDayChanged(crate::application::reading_habits::WorkingDay),
+    /// The default alert lead, in minutes before an event, was saved in
+    /// Settings. Carried the same way as the working day and for the same
+    /// reason: the due window's look reads it from shared state.
+    DefaultEventAlertLeadChanged(i64),
     /// Calendar sync completed
     CalendarSyncComplete {
         created: usize,

@@ -237,6 +237,60 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Tasks and calendar events now come due, in the same window as reminders,
+  and every row says what it is first.** Until now only a reminder ever went
+  off; a task with a due date and an event with an alert were listed and
+  never mentioned. Now one window, called Due now, holds everything that has
+  come due at a look, earliest first, one row each, and each row starts with
+  its kind: "Task due today: File the report", "Reminder: Call the bank, due
+  at 9:00 AM", "Event in 15 minutes: Standup, at 3:00 PM". The list has the
+  focus when the window opens, so the first row is read to you on arrival,
+  and its name says how many there are. Each row can be snoozed for a length
+  you choose, dismissed for the session, or marked done where done means
+  something: a task or a reminder, never an event, and on an event the Mark
+  Done button is unavailable and its label says so. Snooze all and Dismiss
+  all answer every row at once. A Details button opens an event in its own
+  editor, nested under the window, so you can move its time from here; when
+  the editor closes the row is looked at again and drops if it is no longer
+  due. The keys are in [the shortcuts page](KEYBOARD_SHORTCUTS.md). What is
+  said when several things come due at once is a count first, then the first
+  three rows, then how many more.
+
+  A task with a due date is due at the hour your working day starts, the
+  setting on the Calendar and PIM tab, nine by default; that is what "due
+  today" means here, because a task's due date is a date and never a time.
+  An all-day event's alert is counted back from that same hour rather than
+  from midnight, so a fifteen-minute alert on an all-day event arrives at a
+  quarter to nine on the day and not the night before. An event alerts at
+  the time its own alert says; an event whose alert was switched off, at
+  Outlook or here, is left in silence; and an event nobody said anything
+  about is given the default alert lead from Settings. A snoozed task or
+  event is held back here, on this computer, until the time you chose, and
+  survives closing and reopening the program; its own date is not changed
+  and nothing is sent anywhere. A snoozed reminder moves its own time, as it
+  always did. Marking a task done here is the same as ticking it off in the
+  Tasks panel, and reaches the provider the same way.
+
+  **Known limitations.** Nobody has heard any of this yet. "Task due today"
+  and "Event in 15 minutes" have never been spoken to a person, and whether
+  three rows read as a list or as a wall is a listening pass nobody has
+  done. Two kinds of event are silent that you may expect to alert: an event
+  on a Google calendar that uses the calendar's own default alert is given
+  this program's default lead instead, because this program never reads the
+  calendar's default; and an event from a CalDAV server is given the
+  default lead too, whatever its own alarm says, because CalDAV alarms are
+  not read at all, so a CalDAV event whose alarm was switched off will
+  alert here. An alert you switch off here is not sent to Google as off, so
+  Google keeps whatever it held. The Details button opens only an event:
+  nothing in this program edits an existing task or reminder yet, and on
+  those rows the button is unavailable and says so. A reminder set for a day
+  with no time is still due at midnight, not at the working-day hour, so the
+  two day-shaped things disagree until somebody decides they should not. A
+  second thing coming due while the window is open arrives in a window of
+  its own up to a minute after the first closes. Whether a screen reader
+  tells you why a disabled button is disabled as you tab past it has not
+  been checked.
+
 - **The accessibility scan's findings are twenty-nine, listed one by one, not
   "five, all WebView2's".** The count of five below in this file was read on
   2026-07-26 from a scan of one window on one channel. On 2026-09-14 the scan
