@@ -1191,3 +1191,256 @@ fn test_the_agreement_reading_can_see_a_count_no_row_holds() {
          reading did not answer with exactly that figure"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The share of the history before red/green is computed, never written
+// ---------------------------------------------------------------------------
+//
+// "Red/green started at commit 182 of 344" was true when it was written, on
+// 2026-07-29, and it is still true: the practice did start at the 182nd
+// commit, and the repository did hold 344 before that one. What the sentence
+// was written to support, that most of the history predates the practice,
+// was 53% then and is under 9% now, and neither number moved. A ratio written
+// as two absolutes is the worst kind of figure this tree has held, because
+// nothing about it can go stale and the conclusion drawn from it inverts.
+//
+// So the share is computed here, on every commit, and printed with the day.
+// No value of it is asserted, because it moves with every commit, which is
+// the whole reason it is computed rather than written. What is asserted is
+// that git could answer, that the pinned commit is in the history, that the
+// count before it is smaller than the count in all, and that none of the
+// four sites which used to state two absolutes states them again.
+//
+// The commit is pinned by hash and not by position. `rev-list` order is a
+// property of the history's shape and a merge could move the 182nd commit;
+// the hash was found by counting at the commit that wrote the sentence and
+// is `18a02454`, which added `CLAUDE.md` with the red/green rule as its first
+// rule. That is a better reason to call it the start than its position.
+
+/// The commit red/green started at: the one that added `CLAUDE.md`, on
+/// 2026-07-26, found by `git rev-list --reverse 3f7ebd09 | sed -n '182p'`
+/// where `3f7ebd09` is the commit that first wrote the sentence.
+const THE_COMMIT_RED_GREEN_STARTED_AT: &str = "18a02454";
+
+/// The four places in the tree that used to state the ratio as two absolutes.
+/// The two planning validation records that also carry it are records of
+/// what was believed on their day and are left as written.
+const THE_SITES_THAT_STATED_THE_RATIO: [&str; 4] = [
+    "CLAUDE.md",
+    "docs/IMPLEMENTATION_STATUS.md",
+    ".cargo/mutants.toml",
+    "scripts/mutants.sh",
+];
+
+/// What `git` answers, or why it could not.
+fn git(args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| format!("git could not be run, so the history is unread: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`git {}` refused: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn commits_counted_to(revision: &str) -> Result<u64, String> {
+    let answer = git(&["rev-list", "--count", revision])?;
+    answer
+        .parse()
+        .map_err(|_| format!("`git rev-list --count {revision}` answered `{answer}`, not a count"))
+}
+
+/// How many commits predate red/green, and how many there are in all.
+fn the_share_of_history_before_red_green() -> Result<(u64, u64), String> {
+    git(&[
+        "merge-base",
+        "--is-ancestor",
+        THE_COMMIT_RED_GREEN_STARTED_AT,
+        "HEAD",
+    ])
+    .map_err(|why| {
+        format!(
+            "{THE_COMMIT_RED_GREEN_STARTED_AT} is not in this history, so there is nothing to \
+                 compute a share of: {why}"
+        )
+    })?;
+    let before = commits_counted_to(&format!("{THE_COMMIT_RED_GREEN_STARTED_AT}^"))?;
+    let in_all = commits_counted_to("HEAD")?;
+    if before >= in_all {
+        return Err(format!(
+            "{before} commits predate {THE_COMMIT_RED_GREEN_STARTED_AT} and the history holds \
+             {in_all}, which cannot be"
+        ));
+    }
+    Ok((before, in_all))
+}
+
+/// A line with its indentation and its comment marker taken off, so the
+/// sentence in a script or a configuration reads as the sentence.
+fn unwrapped(line: &str) -> &str {
+    let bare = line.trim_start();
+    ["#", "//"]
+        .iter()
+        .find_map(|marker| bare.strip_prefix(marker))
+        .unwrap_or(bare)
+        .trim()
+}
+
+fn the_two_absolutes_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || r"\bcommit \d+ of \d+\b".to_string())
+}
+
+/// Where a file states the ratio as two absolutes, if it does: the line the
+/// match starts on and the words.
+fn the_two_absolutes_in(text: &str) -> Option<(usize, String)> {
+    text.lines().enumerate().find_map(|(index, line)| {
+        the_two_absolutes_pattern()
+            .find(unwrapped(line))
+            .map(|hit| (index + 1, hit.as_str().to_string()))
+    })
+}
+
+/// The complaints across the four sites, one per site that states the ratio.
+fn sites_that_state_the_ratio(sites: &[(String, String)]) -> Vec<String> {
+    sites
+        .iter()
+        .filter_map(|(name, text)| {
+            the_two_absolutes_in(text).map(|(line, words)| {
+                format!(
+                    "{name}:{line}: states the share of history before red/green as two \
+                     absolutes, \"{words}\"; the share is computed by \
+                     the_share_of_history_before_red_green and printed by the check, so name \
+                     the check and give the share as of a date"
+                )
+            })
+        })
+        .collect()
+}
+
+fn read_the_sites() -> Vec<(String, String)> {
+    THE_SITES_THAT_STATED_THE_RATIO
+        .iter()
+        .map(|name| {
+            let text = fs::read_to_string(name)
+                .unwrap_or_else(|e| panic!("{name} is a site the ratio lived at and it {e}"));
+            ((*name).to_string(), text)
+        })
+        .collect()
+}
+
+#[test]
+fn test_the_share_of_history_before_red_green_is_computed_and_printed() {
+    let (before, in_all) =
+        the_share_of_history_before_red_green().unwrap_or_else(|why| panic!("{why}"));
+    let share = before as f64 * 100.0 / in_all as f64;
+    let today = chrono::Local::now().format("%Y-%m-%d");
+    println!("{before} of {in_all} commits, {share:.1}%, predate red/green as of {today}");
+
+    let wrong = sites_that_state_the_ratio(&read_the_sites());
+    assert!(
+        wrong.is_empty(),
+        "the share of history before red/green is {before} of {in_all} today and moves with \
+         every commit, so no page states it as two absolutes:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+fn the_sites_are_clean_today(sites: &[(String, String)]) {
+    assert_eq!(
+        sites_that_state_the_ratio(sites),
+        Vec::<String>::new(),
+        "a site already states the ratio, so what this splices in is not the only thing the \
+         reading has to find"
+    );
+}
+
+/// The real sites with one site's text swapped, and the line the splice sits on.
+fn with_the_site_replaced(
+    sites: &[(String, String)],
+    name: &str,
+    matching: impl Fn(&str) -> bool,
+    replacement: impl Fn(&str) -> String,
+) -> (Vec<(String, String)>, usize) {
+    let text = &sites
+        .iter()
+        .find(|(site, _)| site == name)
+        .unwrap_or_else(|| panic!("{name} is not a site the reading walks"))
+        .1;
+    let line = text
+        .lines()
+        .position(&matching)
+        .expect("the line to splice at to be there")
+        + 1;
+    let original = text.lines().nth(line - 1).expect("the line was just found");
+    let spliced = with_one_line_replaced(text, &matching, &replacement(original));
+    let mut swapped = sites.to_vec();
+    let at = swapped
+        .iter()
+        .position(|(site, _)| site == name)
+        .expect("found above");
+    swapped[at].1 = spliced;
+    (swapped, line)
+}
+
+#[test]
+fn test_the_ratio_reading_can_see_the_one_line_form() {
+    let sites = read_the_sites();
+    the_sites_are_clean_today(&sites);
+    // Into CLAUDE.md's own text, on the line that opens the paragraph the
+    // sentence used to live in.
+    let opener = "A green suite says the code does what the tests say.";
+    let (spliced, line) = with_the_site_replaced(
+        &sites,
+        "CLAUDE.md",
+        |l| l.starts_with(opener),
+        |l| format!("{l} It started at commit 182 of 344."),
+    );
+    let wrong = sites_that_state_the_ratio(&spliced);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "one site was planted and the reading named {wrong:?}"
+    );
+    assert!(
+        wrong[0].starts_with(&format!("CLAUDE.md:{line}: "))
+            && wrong[0].contains("\"commit 182 of 344\""),
+        "the one-line form was planted in CLAUDE.md at line {line} and the reading answered {}",
+        wrong[0]
+    );
+}
+
+#[test]
+fn test_the_ratio_reading_can_see_the_wrapped_form() {
+    let sites = read_the_sites();
+    the_sites_are_clean_today(&sites);
+    // Into scripts/mutants.sh's own comment, wrapped the way the real sentence
+    // was: the count at the end of one comment line and the total at the
+    // start of the next, behind its own `#`. A line grep was blind to this
+    // shape and this plan's first draft had the same blind spot.
+    let opener = "# This project needs to know the difference.";
+    let (spliced, line) = with_the_site_replaced(
+        &sites,
+        "scripts/mutants.sh",
+        |l| l.starts_with(opener),
+        |l| format!("{l} Red/green started at commit 182 of\n# 344, so most of the tests"),
+    );
+    let wrong = sites_that_state_the_ratio(&spliced);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "one site was planted and the reading named {wrong:?}"
+    );
+    assert!(
+        wrong[0].starts_with(&format!("scripts/mutants.sh:{line}: "))
+            && wrong[0].contains("\"commit 182 of 344\""),
+        "the wrapped form was planted in scripts/mutants.sh at line {line} and the reading \
+         answered {}",
+        wrong[0]
+    );
+}
