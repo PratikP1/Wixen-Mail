@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 405
+open_count: 406
 waived_count: 0
 fixed_count: 24
-total_count: 429
-last_updated: 2026-09-14T15:29:28.465Z
+total_count: 430
+last_updated: 2026-09-14T15:36:13.798Z
 ---
 
 # Broken Windows Ledger
@@ -444,6 +444,7 @@ last_updated: 2026-09-14T15:29:28.465Z
 | 427 | 06 | todo | scripts/msaa-names.ps1 |  | Scan-level finding 3: the six module targets are one scan repeated. Each walked one window of 1797 elements on MSAA and each msaa-names.json holds the same 91 distinct names, All Calendars, All Contacts, All Notes and Body in Markdown among them in all six. Every module panel is in the window whichever is showing and the walk reads no state, so it cannot tell a hidden panel from the shown one; a nameless control in a hidden panel would be reported six times and a module target proves nothing about its module. What it takes: read accState per element and skip a subtree whose state has STATE_SYSTEM_INVISIBLE, printing how many were skipped so a hidden panel stays visible in the log; the ps1 maps to no gate target, so the change wants a case in a shell suite first | open |  | 2026-09-14T15:29:17.438Z |  |
 | 428 | 06 | unrun-verify | src/presentation/html_renderer.rs |  | The scan reached no rendered message. The preview in the main window is a WebView2 control and no target's tree held its document: a fresh profile has no message and the reader target opens a rich edit window. The rendered message is where a sender's headings and links have to survive, and it is the page with the same shape as the editor's, a document with no title loaded from its own address, so its name is likely its own source too. Nothing about it was judged; a target that opens the preview on a made-up message would put it in the next run | open |  | 2026-09-14T15:29:17.882Z |  |
 | 429 | 06 | todo | .github/workflows/accessibility.yml |  | Scan-level finding 1: the run summary of 2026-09-14 said 26 findings where the scan log held 29, because the counting pattern matched errors were found and Axe prints 1 error was found; filters, tags and signatures each printed one and were recorded as clean. Fixed the same day, the pattern reads all three sentences and a test in scan_target.rs reads it from the workflow and holds it to them | fixed |  | 2026-09-14T15:29:28.029Z | 2026-09-14T15:29:28.465Z |
+| 430 | 06 | unrun-verify | docs/manual-accessibility-pass.md |  | The manual accessibility pass is written and has not been walked. Seventy-six items across six categories, each naming its source and the technology it needs, planned for after phase 8. Until a person has dated every item, nothing in the program has had the pass, and the page says so at the top | open |  | 2026-09-14T15:36:13.798Z |  |
 
 ````json
 [
@@ -5594,6 +5595,18 @@ last_updated: 2026-09-14T15:29:28.465Z
     "reason": "",
     "recorded_at": "2026-09-14T15:29:28.029Z",
     "resolved_at": "2026-09-14T15:29:28.465Z"
+  },
+  {
+    "id": 430,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "docs/manual-accessibility-pass.md",
+    "line": null,
+    "description": "The manual accessibility pass is written and has not been walked. Seventy-six items across six categories, each naming its source and the technology it needs, planned for after phase 8. Until a person has dated every item, nothing in the program has had the pass, and the page says so at the top",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:36:13.798Z",
+    "resolved_at": null
   }
 ]
 ````

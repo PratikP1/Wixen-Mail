@@ -12,7 +12,9 @@ they have found.** A "yes" in the table means the scanner has rules that can
 fail on that criterion. It does not mean the criterion is met, in any window,
 by this application. Whether a criterion is met is a separate question, and
 for most of the fifty-five the only thing that can answer it is a person using
-a screen reader. Nothing on this page says any criterion is met.
+a screen reader. Nothing on this page says any criterion is met. How a person
+checks what is left is [the manual accessibility
+pass](manual-accessibility-pass.md), which is written and has not been walked.
 
 ## The two numbers, and when they were taken
 
@@ -408,7 +410,10 @@ two of them would be.
   table is a reading of each criterion against what a mail client does.
 - Most of the application has not had a manual pass with a screen reader.
   Three sentences in three windows have been heard by the NVDA suite. Nothing
-  else on any row of the table has been heard.
+  else on any row of the table has been heard. The pass a person would make
+  is written down, and unwalked, in [the manual accessibility
+  pass](manual-accessibility-pass.md): seventy-six items, each naming the
+  row or ledger entry it came from and the technology it needs.
 - No Section 508 or EN 301 549 conformance claim is made.
 - The rule list can change with a new Axe.Windows release. The pin means it
   cannot change without a commit here, and that commit is the moment to read

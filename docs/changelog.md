@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A page listing what only a person can check**, [the manual accessibility
+  pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
+  of disability the project's rules name, each saying which screen reader or
+  tool it needs and where it came from: a criterion the scans cannot judge, a
+  ledger entry recording something built and never heard, or a rule with no
+  check behind it. It says at the top that none of it has happened, and it
+  names the three NVDA tests that already listen so it does not ask for them
+  again. It is the other half of [what the scans can judge](wcag-coverage.md),
+  and the two pages point at each other.
+
 - **One account can be allowed less than the others.** The account window's
   connection page has three new boxes under "Allow Changes for this account":
   whether this account may send and delete mail, whether it may change your
