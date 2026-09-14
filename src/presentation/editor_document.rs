@@ -1787,6 +1787,20 @@ mod tests {
     }
 
     #[test]
+    fn test_the_editor_document_has_a_title_so_its_name_is_not_its_own_source() {
+        // The browser engine names the host window and the root of the page
+        // after the document's title, and a document with no title is named
+        // after its address instead. This page is loaded as a data: address,
+        // so without a title both names were the whole page, base64 and all:
+        // the accessibility scan of 2026-09-14 reported two names over 512
+        // characters on the composer, and both were this document.
+        let page = editor_document(&blank(), "en-GB", true);
+
+        let head = between(&page, "<head>", "</head>");
+        assert!(head.contains("<title>Message body</title>"), "{head}");
+    }
+
+    #[test]
     fn test_the_language_reaches_the_engine() {
         // The engine picks its dictionary from lang. Getting this wrong does
         // not fail loudly, it marks the wrong words, which is worse.
