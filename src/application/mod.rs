@@ -37,6 +37,7 @@ pub mod due;
 pub mod editing;
 pub mod emptying;
 pub mod encrypted_mail;
+pub mod event_alerts;
 pub mod export_tree;
 pub mod favourites;
 pub mod filing;

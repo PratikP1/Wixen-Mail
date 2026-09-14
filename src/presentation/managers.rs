@@ -5557,12 +5557,22 @@ mod tests {
     }
 
     #[test]
-    fn test_clearing_the_only_alert_leaves_nothing_rather_than_an_empty_list() {
+    fn test_clearing_the_only_alert_stores_off_rather_than_nothing() {
+        // Off has a stored form since 2026-09-14, an empty list, and the
+        // editor is one of the writers that knows the alert is off: a person
+        // took the last alert away. Stored as nothing, the due window would
+        // read "nobody said" and give the event the default lead, which is
+        // the one mistake worse than a missed alert.
         let stored = event_entry("e1".to_string(), "acct", &data(false));
         let mut none = data(false);
         none.reminder_minutes = 0;
 
-        assert_eq!(edited_from_its_own_row(stored, &none).reminders_json, None);
+        assert_eq!(
+            edited_from_its_own_row(stored, &none)
+                .reminders_json
+                .as_deref(),
+            Some(crate::application::event_alerts::NO_ALERT)
+        );
     }
 
     #[test]
@@ -6392,12 +6402,18 @@ mod tests {
     }
 
     #[test]
-    fn test_no_reminder_stores_nothing_rather_than_an_empty_list() {
+    fn test_no_alert_on_a_new_event_is_stored_as_off() {
+        // The box opens filled with the alert chosen in Settings, so nought
+        // in it on a new event is a person taking the alert away, and off
+        // has a stored form since 2026-09-14: an empty list, which the due
+        // window reads as silence and never fills with the default.
         let mut d = data(false);
         d.reminder_minutes = 0;
         assert_eq!(
-            event_entry("e1".to_string(), "acct", &d).reminders_json,
-            None
+            event_entry("e1".to_string(), "acct", &d)
+                .reminders_json
+                .as_deref(),
+            Some(crate::application::event_alerts::NO_ALERT)
         );
     }
 

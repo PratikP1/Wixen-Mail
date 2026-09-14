@@ -1452,6 +1452,20 @@ impl CalendarContainerItem {
 }
 
 impl CalendarEventItem {
+    /// Which due thing this row is, for the window that raises what has come
+    /// due.
+    ///
+    /// The id and the start together, because every day of a series carries
+    /// the series' id ([`Self::shown_days`]) and an identity made from the id
+    /// alone would make dismissing today's standup dismiss every standup for
+    /// the session. Composed here, by the kind's own feed, and taken apart by
+    /// nothing: whoever needs the row back keeps the row beside the identity
+    /// rather than reading the string.
+    pub fn due_identity(&self) -> crate::application::due::Identity {
+        let _ = &self.id;
+        todo!("task 4 green")
+    }
+
     /// Build a display item from a stored event.
     pub fn from_entry(entry: &crate::data::message_cache::CalendarEventEntry) -> Self {
         // An all-day event keeps its dates in separate columns. Reading the
@@ -2677,6 +2691,39 @@ mod tests {
         assert_eq!(rows.len(), 30, "June has thirty days");
         assert_eq!(rows[0].start, "2026-06-01T09:00:00Z");
         assert_eq!(rows[29].start, "2026-06-30T09:00:00Z");
+    }
+
+    #[test]
+    fn test_two_days_of_one_series_are_two_due_identities_and_one_day_is_one() {
+        // The trap 06-09's plan names: every shown day of a series carries
+        // the series' id, so an identity made from the id alone would make
+        // dismissing today's standup dismiss every standup for the session.
+        let daily = CalendarEventEntry {
+            recurrence_rule: Some("FREQ=DAILY".into()),
+            start_datetime: "2026-06-01T09:00:00Z".into(),
+            end_datetime: "2026-06-01T09:15:00Z".into(),
+            ..calendar_event()
+        };
+        let (from, to) = month_of("2026-06-15").window();
+        let rows = CalendarEventItem::shown_days(&daily, from, to);
+
+        let today = rows[0].due_identity();
+        let tomorrow = rows[1].due_identity();
+
+        assert_eq!(today.kind, crate::application::due::Kind::Event);
+        assert_ne!(
+            today, tomorrow,
+            "two days of one series are one identity: {today:?}"
+        );
+        assert_eq!(
+            today,
+            rows[0].due_identity(),
+            "the same day asked twice is two identities"
+        );
+        assert_eq!(
+            rows[0].id, rows[1].id,
+            "the fixture no longer shows the trap"
+        );
     }
 
     #[test]
