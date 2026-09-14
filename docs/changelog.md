@@ -227,6 +227,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **The accessibility scan's findings are twenty-nine, listed one by one, not
+  "five, all WebView2's".** The count of five below in this file was read on
+  2026-07-26 from a scan of one window on one channel. On 2026-09-14 the scan
+  ran for the first time against thirty-one windows on two channels, and
+  found twenty-nine on the UI Automation channel and twelve unnamed controls
+  on the MSAA channel. The number is larger because the scan looks at thirty
+  times as much, not because more went wrong. [What the scans can
+  judge](wcag-coverage.md) now has a row for every one: its window, its
+  channel, the rule, and whether it is fixed, this program's and recorded, or
+  WebView2's own with the place a report would go. Nine are fixed in this
+  version and wait for the next run to say so. The same run found that its
+  own summary undercounted by three, which is fixed and held by a test.
+
 - **The accessibility page no longer says automated scanning catches roughly
   half of what WCAG asks for.** It says what the number is: the scans can
   produce a finding against three of the fifty-five WCAG 2.2 Level A and AA
