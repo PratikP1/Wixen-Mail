@@ -866,6 +866,29 @@ def measure(
     )
 
 
+def the_timing_line(rebuild_seconds: float, run_seconds: float) -> str:
+    """One line per run saying what its two terms cost, so a sweep's log is
+    also its own rate series.
+
+    The cost of a record is a rebuild plus a run, and the two move for
+    different reasons: the rebuild with how much of the crate a one-file
+    change invalidates, the run with how many tests the suite holds and how
+    many threads it gets. `THE_COST_OF_ASKING_PROPERLY` below quotes both,
+    and until this line existed the only way to re-take it was a stopwatch
+    around a run nobody was watching. Now every log carries the figure.
+
+    Each term is rounded on its own and the total is the sum of the rounded
+    terms, so the arithmetic on the line checks by eye:
+
+    >>> the_timing_line(29.4, 66.2)
+    '   timed: rebuild 29 s, run 66 s, 95 s in all'
+    >>> the_timing_line(0.6, 3.2)
+    '   timed: rebuild 1 s, run 3 s, 4 s in all'
+    >>> the_timing_line(0.0, 51.0)
+    '   timed: rebuild 0 s, run 51 s, 51 s in all'
+    """
+
+
 def how_many(count: int, thing: str) -> str:
     """A count with the thing it counts, so a line reads as a sentence.
 
