@@ -97,6 +97,7 @@ by grepping a file name:
 | 06-06 | `src/presentation/scan_target.rs`, `scripts/which-checks.test.sh` | 0 and 0 | 6 and n/a |
 | 06-07, as landed 2026-09-14 | `src/presentation/what_the_scans_can_judge.rs`, a new module; `tests/house_style.rs` untouched | 0, then 1 | 8 |
 | 06-08 | `.planning/WINDOWS.md`, documents | 0 | n/a |
+| 06-08, as landed 2026-09-14 | `src/presentation/editor_document.rs`, `wx_managers.rs`, `wx_account_manager.rs`, `scan_target.rs`; `tests/no_label_is_only_a_space.rs`, a new target | 1, 6 then 7, 6, 2; 0, then 1 | 82, 44, 14, 11; 4 |
 | 06-09 | `src/application/due.rs`, `src/common/catalogue.rs`, `src/presentation/date_display.rs`, `src/data/message_cache/tasks.rs`, `src/data/message_cache/held_alerts.rs` (new), `src/presentation/wx_reminder_alert.rs`, a new file under `tests/` | 4, 6, 6, 4, 0, whatever 06-05 wrote, 0 | 23, 14, 42, 21, 0, 1 plus 06-05's, 0 |
 
 The 2026-09-14 rows were counted at `562b4b90` with a TOML reader, not with

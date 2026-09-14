@@ -1483,7 +1483,7 @@ write path added by this milestone passes through that gate.
   - [D] The existing tests over `date_display` keep passing under a forced English locale, so
     the change is testable without a machine set to another language.
 
-- [ ] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
+- [x] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
   - Evidence: re-checked 2026-09-04 and still accurate, every anchor.
     `.github/workflows/accessibility.yml` runs Axe.Windows over UI Automation and
     `scripts/msaa-names.ps1` over MSAA, per window; `.github/workflows/nvda.yml` drives a real
@@ -2167,7 +2167,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-05 | Phase 5 | Complete |
 | FEEDBACK-01 | Phase 6 | Pending |
 | FEEDBACK-02 | Phase 6 | Complete |
-| FEEDBACK-03 | Phase 6 | Pending |
+| FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
 | SHIP-02 | Phase 7 | Pending |
 | SHIP-03 | Phase 7 | Complete |
