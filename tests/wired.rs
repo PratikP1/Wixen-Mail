@@ -3618,8 +3618,32 @@ fn where_it_comes_from(body: &str, argument: &str) -> String {
     }
 }
 
-/// Read one body of the vanished-folders question.
-fn what_the_vanished_folders_question_asks(body: &str) -> WhatTheQuestionAsks {
+/// The helper both call sites put the typing question to.
+const THE_TYPING_HELPER: &str = "fn whether_somebody_is_typing(";
+
+/// Whether a typing answer reads both ways somebody can be typing.
+///
+/// Both ways live in one helper since 06-05, so the answer has to come from
+/// that helper's call, and the helper's body has to read both: a window
+/// somebody types in open on this thread, and an editable box in this window
+/// with focus. Read from the whole source rather than from the caller's body,
+/// because that is where the helper is. A caller that works the check out
+/// inline is refused, because two copies of that check is two things to keep
+/// in step, which is the reason the helper exists.
+fn the_typing_answer_reads_both_ways(source: &str, argument: &str) -> bool {
+    if !argument.contains("whether_somebody_is_typing(") || !source.contains(THE_TYPING_HELPER) {
+        return false;
+    }
+    let helper = body_of(source, THE_TYPING_HELPER);
+    helper.contains("somebody_is_typing()")
+        && helper.contains("has_focus()")
+        && helper.contains("is_editable()")
+}
+
+/// Read the vanished-folders question out of a source that holds it and the
+/// typing helper.
+fn what_the_vanished_folders_question_asks(source: &str) -> WhatTheQuestionAsks {
+    let body = &body_of(source, "fn ask_about_the_folders_that_have_gone(");
     let handed = arguments_to(body, "what_to_raise(");
     let arguments = handed
         .as_ref()
@@ -3641,9 +3665,7 @@ fn what_the_vanished_folders_question_asks(body: &str) -> WhatTheQuestionAsks {
 
     WhatTheQuestionAsks {
         whether_one_is_already_up: gate.contains(".take()") && gate.contains("is_none()"),
-        whether_somebody_is_typing: typing.contains("somebody_is_typing()")
-            && typing.contains("has_focus()")
-            && typing.contains("is_editable()"),
+        whether_somebody_is_typing: the_typing_answer_reads_both_ways(source, &typing),
         nothing_opens_when_there_is_nothing_to_raise: when_there_is_nothing.contains("else")
             && when_there_is_nothing.contains("return"),
         raised_before_the_window: match (body.find(".raised("), body.find("show_modal(")) {
@@ -3689,7 +3711,7 @@ fn test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free() {
          measuring nothing"
     );
 
-    let asks = what_the_vanished_folders_question_asks(&body);
+    let asks = what_the_vanished_folders_question_asks(&ship);
 
     assert!(
         asks.whether_one_is_already_up,
@@ -3698,8 +3720,9 @@ fn test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free() {
     );
     assert!(
         asks.whether_somebody_is_typing,
-        "the typing answer does not read both ways somebody can be typing, so a question \
-         interrupts either a composer on this thread or an editable box in this window"
+        "the typing answer does not come from the shared helper reading both ways somebody \
+         can be typing, so a question interrupts either a composer on this thread or an \
+         editable box in this window, or the check is written twice and the copies drift"
     );
     assert!(
         asks.nothing_opens_when_there_is_nothing_to_raise,
@@ -3721,24 +3744,23 @@ fn test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free() {
 /// string and saying so to nobody.
 #[test]
 fn test_the_reading_of_the_vanished_folders_question_can_see_a_missing_argument() {
-    let written_correctly = "\
-fn ask_about_the_folders_that_have_gone(frame: &Frame) {
+    let written_correctly = format!(
+        "\
+fn ask_about_the_folders_that_have_gone(frame: &Frame) {{
     let turn = one_question_on_screen.take();
-    let an_editor_has_focus = one_question_at_a_time::somebody_is_typing()
-        || somewhere_to_type
-            .iter()
-            .any(|box_| box_.has_focus() && box_.is_editable());
+    let an_editor_has_focus = whether_somebody_is_typing(somewhere_to_type);
     let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, turn.is_none())
-    else {
+    else {{
         return;
-    };
+    }};
     waiting.borrow_mut().raised(&question);
     let asked = MessageDialog::builder(frame, &question.words, &question.title).show_modal();
-}
-";
+}}
+{THE_TYPING_HELPER_WRITTEN_CORRECTLY}"
+    );
 
     assert_eq!(
-        what_the_vanished_folders_question_asks(written_correctly),
+        what_the_vanished_folders_question_asks(&written_correctly),
         WhatTheQuestionAsks {
             whether_one_is_already_up: true,
             whether_somebody_is_typing: true,
@@ -3770,8 +3792,30 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {
         written_correctly.replace("box_.has_focus() && box_.is_editable()", "false");
     assert!(
         !what_the_vanished_folders_question_asks(&half_the_typing).whether_somebody_is_typing,
-        "only one of the two ways somebody can be typing is read and the reading still said \
-         both were"
+        "only one of the two ways somebody can be typing is read in the helper and the \
+         reading still said both were"
+    );
+
+    // The check worked out inline, the way it was written before the helper
+    // existed. Refused on purpose: a second copy of that check is two things
+    // to keep in step, and a reading that accepted either form could not see
+    // the copies drift.
+    let worked_out_inline = written_correctly.replace(
+        "whether_somebody_is_typing(somewhere_to_type)",
+        "one_question_at_a_time::somebody_is_typing() || somewhere_to_type.iter().any(|box_| \
+         box_.has_focus() && box_.is_editable())",
+    );
+    assert!(
+        !what_the_vanished_folders_question_asks(&worked_out_inline).whether_somebody_is_typing,
+        "the typing check was written inline rather than through the shared helper and the \
+         reading accepted it"
+    );
+
+    let helper_gone = written_correctly.replace(THE_TYPING_HELPER_WRITTEN_CORRECTLY, "");
+    assert!(
+        !what_the_vanished_folders_question_asks(&helper_gone).whether_somebody_is_typing,
+        "the helper the argument names is not in the source and the reading still said the \
+         answer reads both ways"
     );
 
     let opens_anyway = written_correctly.replace("        return;\n", "        ();\n");
@@ -3791,6 +3835,169 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {
     assert!(
         !what_the_vanished_folders_question_asks(written_down_late).raised_before_the_window,
         "the question is written down after the window opens and the reading still said it was \
+         written down first"
+    );
+}
+
+/// The typing helper as it is really written, for the fixtures above and below
+/// to share, so a fixture cannot describe a helper the other one does not.
+const THE_TYPING_HELPER_WRITTEN_CORRECTLY: &str = "\
+fn whether_somebody_is_typing(somewhere_to_type: &[TextCtrl]) -> bool {
+    one_question_at_a_time::somebody_is_typing()
+        || somewhere_to_type
+            .iter()
+            .any(|box_| box_.has_focus() && box_.is_editable())
+}
+";
+
+/// One reading of the reminder look, for the real body and for the fixtures.
+#[derive(Debug, PartialEq, Eq)]
+struct WhatTheReminderLookAsks {
+    /// The rule about opening a modal is handed the shared typing helper's
+    /// answer, the same one the folders question hands its decision.
+    whether_somebody_is_typing: bool,
+    /// The one-at-a-time turn is taken before the loop over what is due, so
+    /// a reminder cannot open over the folders question or over another
+    /// reminder.
+    the_turn_is_taken_before_the_loop: bool,
+    /// The reminder is written into `already` before its window is reached,
+    /// because `show_modal` is inside `raise` and the tick runs inside it.
+    written_down_before_the_window: bool,
+}
+
+/// Read the reminder look out of a source that holds it and the typing helper.
+fn what_the_reminder_look_asks(source: &str) -> WhatTheReminderLookAsks {
+    let body = &body_of(source, "fn raise_what_is_due(");
+    let typing = arguments_to(body, "whether_a_window_may_open(")
+        .map(|(list, _)| each_argument(&list))
+        .and_then(|arguments| arguments.first().cloned())
+        .map(|argument| where_it_comes_from(body, &argument))
+        .unwrap_or_default();
+    let before = |first: &str, second: &str| match (body.find(first), body.find(second)) {
+        (Some(one), Some(two)) => one < two,
+        _ => false,
+    };
+
+    WhatTheReminderLookAsks {
+        whether_somebody_is_typing: the_typing_answer_reads_both_ways(source, &typing),
+        the_turn_is_taken_before_the_loop: before(".take()", "for item in"),
+        written_down_before_the_window: before(
+            "already.borrow_mut().insert(",
+            "wx_reminder_alert::raise(",
+        ),
+    }
+}
+
+/// The reminder look asks the same typing question the folders question asks,
+/// through the same helper, and keeps its two orderings.
+///
+/// The rule in `one_question_at_a_time::whether_a_window_may_open` and the
+/// hold in `raise_what_is_due` are what stop a reminder taking the keyboard
+/// from somebody in the middle of a word without warning. The rule is tested
+/// without a window; this reads that `raise_what_is_due` puts the question to
+/// it from the helper both call sites share, rather than from a constant or
+/// from a copy of the check. Until 06-05 nothing in this file read the
+/// reminder's call site at all.
+///
+/// What this cannot see: whether the window behaves this way when it runs.
+/// Nobody has typed through a reminder coming due, and `.planning/WINDOWS.md`
+/// carries that.
+#[test]
+fn test_the_reminder_look_asks_whether_somebody_is_typing_through_the_shared_helper() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let ship = what_ships(&app);
+
+    let asks = what_the_reminder_look_asks(&ship);
+
+    assert!(
+        asks.whether_somebody_is_typing,
+        "raise_what_is_due does not hand the modal rule the shared typing helper's answer, so \
+         a reminder opens over somebody in the middle of a word, or the check is written \
+         twice and the copies drift"
+    );
+    assert!(
+        asks.the_turn_is_taken_before_the_loop,
+        "the one-at-a-time turn is not taken before the loop over what is due, so a second \
+         reminder opens on top of the first"
+    );
+    assert!(
+        asks.written_down_before_the_window,
+        "the reminder is not written into `already` before its window is reached, so the tick \
+         that runs inside the modal raises it a second time"
+    );
+}
+
+/// The reading above can see each of those three things missing.
+#[test]
+fn test_the_reading_of_the_reminder_look_can_see_a_missing_argument() {
+    let written_correctly = format!(
+        "\
+fn raise_what_is_due(frame: &Frame) {{
+    let Some(_turn) = one_at_a_time.take() else {{
+        return;
+    }};
+    let moment = one_question_at_a_time::whether_a_window_may_open(
+        whether_somebody_is_typing(somewhere_to_type),
+        false,
+    );
+    for item in due {{
+        already.borrow_mut().insert(item.id.clone());
+        let answer = wx_reminder_alert::raise(frame, &item, spoken);
+    }}
+}}
+{THE_TYPING_HELPER_WRITTEN_CORRECTLY}"
+    );
+
+    assert_eq!(
+        what_the_reminder_look_asks(&written_correctly),
+        WhatTheReminderLookAsks {
+            whether_somebody_is_typing: true,
+            the_turn_is_taken_before_the_loop: true,
+            written_down_before_the_window: true,
+        },
+        "the reading cannot see a body that does all three things, so what it says about the \
+         real body means nothing"
+    );
+
+    let typing_gone = written_correctly.replace(
+        "        whether_somebody_is_typing(somewhere_to_type),\n",
+        "        false,\n",
+    );
+    assert!(
+        !what_the_reminder_look_asks(&typing_gone).whether_somebody_is_typing,
+        "the typing answer was replaced by a constant and the reading still said the rule was \
+         handed it"
+    );
+
+    let helper_gone = written_correctly.replace(THE_TYPING_HELPER_WRITTEN_CORRECTLY, "");
+    assert!(
+        !what_the_reminder_look_asks(&helper_gone).whether_somebody_is_typing,
+        "the helper the argument names is not in the source and the reading still said the \
+         answer reads both ways"
+    );
+
+    let turn_taken_late = written_correctly.replace(
+        "    let Some(_turn) = one_at_a_time.take() else {\n        return;\n    };\n",
+        "",
+    );
+    assert!(
+        !what_the_reminder_look_asks(&turn_taken_late).the_turn_is_taken_before_the_loop,
+        "the turn is never taken and the reading still said it was taken before the loop"
+    );
+
+    let written_down_late = written_correctly
+        .replace(
+            "        already.borrow_mut().insert(item.id.clone());\n",
+            "",
+        )
+        .replace(
+            "        let answer = wx_reminder_alert::raise(frame, &item, spoken);\n",
+            "        let answer = wx_reminder_alert::raise(frame, &item, spoken);\n        \
+             already.borrow_mut().insert(item.id.clone());\n",
+        );
+    assert!(
+        !what_the_reminder_look_asks(&written_down_late).written_down_before_the_window,
+        "the reminder is written down after its window and the reading still said it was \
          written down first"
     );
 }
