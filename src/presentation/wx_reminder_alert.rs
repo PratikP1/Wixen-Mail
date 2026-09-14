@@ -38,6 +38,109 @@ const ID_SNOOZE: Id = ID_HIGHEST + 401;
 const ID_DONE: Id = ID_HIGHEST + 402;
 const ID_DISMISS: Id = ID_HIGHEST + 403;
 
+/// What `say` produced: the sentence, and whether the tone really sounded.
+///
+/// The tone is reported rather than assumed, for the reason `earcon` gives:
+/// a caller that assumes is a caller that reports a sound nobody made. The
+/// sentence is returned so the window that follows can carry the same words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Said {
+    pub sentence: String,
+    pub tone_sounded: bool,
+}
+
+/// Say a reminder and sound its tone, without its window.
+///
+/// This exists because the window is this event's written equivalent, so a
+/// reminder whose window is held back has to say something or the event goes
+/// out as nothing at all: no tone, no sentence, no window. Pulled out of
+/// `raise` so a reminder found due while somebody is typing can be said at
+/// that look and have its window a look later.
+///
+/// Said once. A reminder is said here at the moment it is found due, whether
+/// or not its window can open then. When the window opens after a hold it is
+/// not said again: the sentence is the window's own text and accessible name,
+/// and a dialog's text is what a screen reader reads when focus arrives in it.
+/// Two announcements a minute apart would be the same fact twice to somebody
+/// who cannot skim.
+pub fn say(
+    item: &Due,
+    now: chrono::DateTime<chrono::Local>,
+    dates: crate::presentation::date_display::DateSettings,
+    a11y: &Accessibility,
+) -> Said {
+    let _ = (item, now, dates, a11y);
+    todo!("task 1 of 06-05, red")
+}
+
+/// Whether `say` has already happened for the reminder `raise` is opening.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spoken {
+    /// Not yet. `raise` says it before the window, as it always did.
+    NotYet,
+    /// Said at an earlier look, while the window was held. Not said again.
+    Already,
+}
+
+/// How long between one tone and the next while the window waits for focus.
+///
+/// A minute, because that is the unit the whole feature counts in: a reminder
+/// is set to the minute and the look that finds one runs once a minute.
+pub const BETWEEN_TONES: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How many tones the window sounds before it falls silent with the window
+/// still on screen.
+///
+/// Feedback must be bounded. A tone every minute until somebody comes back
+/// from lunch is a flood in an empty room. Ten minutes is long enough to come
+/// back from the kettle and short enough that a machine left running does not
+/// sound all afternoon; after the tenth the window is still there with its
+/// sentence on it, and the reminder is not lost.
+pub const MOST_TONES: u32 = 10;
+
+/// What the repeat rule answers when asked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToneNow {
+    /// Sound the tone now.
+    Sound,
+    /// Not yet; ask again later.
+    Wait,
+    /// Never again for this window: focus has reached it, or the ceiling has.
+    Finished,
+}
+
+/// The tone that comes back until focus reaches the reminder window.
+///
+/// Pure: it is handed instants and the focus answer rather than reading a
+/// clock or a window, so the ceiling and the latch can be asserted exactly.
+/// The first time focus reaches the window the tone stops for good, and it
+/// does not resume if focus leaves again, because somebody who has heard it
+/// and gone back to what they were doing has chosen to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepeatingTone {
+    last_sounded: std::time::Instant,
+    sounded: u32,
+    focus_has_arrived: bool,
+}
+
+impl RepeatingTone {
+    /// Start counting from the moment the window opened. The first tone was
+    /// the reminder's own, sounded by `say`; these are the ones after it.
+    pub fn from_the_window_opening(at: std::time::Instant) -> Self {
+        Self {
+            last_sounded: at,
+            sounded: 0,
+            focus_has_arrived: false,
+        }
+    }
+
+    /// Whether the tone sounds now, waits, or is finished for good.
+    pub fn asked(&mut self, now: std::time::Instant, window_has_focus: bool) -> ToneNow {
+        let _ = (now, window_has_focus);
+        todo!("task 1 of 06-05, red")
+    }
+}
+
 /// Raise one reminder and wait for an answer.
 ///
 /// Modal on purpose. A reminder that can be left sitting behind the window it
@@ -206,5 +309,121 @@ mod tests {
         // so nothing inside it is reachable from here.
         assert_eq!(ALERT_EVENT, Event::Reminder);
         assert_ne!(ALERT_EVENT.tone(), Event::NewMail.tone());
+    }
+
+    #[test]
+    fn test_a_reminder_can_be_said_and_sounded_without_its_window() {
+        // No display, no dialog, no `raise`. The sentence reaches the bridge
+        // and the tone is reported as sounded, which is what a reminder held
+        // back while somebody types needs: the event must not go out as
+        // nothing at all while its window waits.
+        //
+        // Proves the words reached the bridge and the player played, not that
+        // anybody heard either. Under `WIXEN_NO_AUDIO` the tone goes to a
+        // mixer nothing listens to and is still reported as sounded.
+        let a11y = Accessibility::new().expect("accessibility");
+        let item = Due {
+            id: "r1".to_string(),
+            title: "Ring the bank".to_string(),
+            when: "2026-09-14T10:00:00".to_string(),
+            late: false,
+        };
+        let now = chrono::Local::now();
+        let dates = crate::presentation::date_display::DateSettings::default();
+
+        let said = say(&item, now, dates, &a11y);
+
+        assert_eq!(
+            said.sentence,
+            item.spoken(now, dates),
+            "the sentence said is not the one the window will show"
+        );
+        assert_eq!(
+            a11y.last_announcement().as_deref(),
+            Some(said.sentence.as_str()),
+            "the sentence never reached the screen reader bridge"
+        );
+        assert!(said.tone_sounded, "the tone did not sound");
+    }
+
+    fn minutes(n: u64) -> std::time::Duration {
+        std::time::Duration::from_secs(60 * n)
+    }
+
+    #[test]
+    fn test_the_tone_comes_back_once_a_minute_while_focus_has_not_arrived() {
+        let opened = std::time::Instant::now();
+        let mut tone = RepeatingTone::from_the_window_opening(opened);
+
+        assert_eq!(tone.asked(opened, false), ToneNow::Wait, "sounded at once");
+        assert_eq!(
+            tone.asked(
+                opened + minutes(1) - std::time::Duration::from_secs(1),
+                false
+            ),
+            ToneNow::Wait,
+            "sounded before a minute had passed"
+        );
+        assert_eq!(tone.asked(opened + minutes(1), false), ToneNow::Sound);
+        assert_eq!(
+            tone.asked(
+                opened + minutes(1) + std::time::Duration::from_secs(1),
+                false
+            ),
+            ToneNow::Wait,
+            "sounded twice in one minute"
+        );
+        assert_eq!(tone.asked(opened + minutes(2), false), ToneNow::Sound);
+    }
+
+    #[test]
+    fn test_the_tone_stops_for_good_once_focus_has_arrived_even_if_it_leaves() {
+        let opened = std::time::Instant::now();
+        let mut tone = RepeatingTone::from_the_window_opening(opened);
+        assert_eq!(tone.asked(opened + minutes(1), false), ToneNow::Sound);
+
+        // Focus arrives between tones, then leaves again. Somebody who has
+        // heard it and gone back to what they were doing has chosen to.
+        assert_eq!(
+            tone.asked(opened + minutes(1) + minutes(0), true),
+            ToneNow::Finished
+        );
+        assert_eq!(
+            tone.asked(opened + minutes(2), false),
+            ToneNow::Finished,
+            "the tone came back after focus had reached the window and left"
+        );
+        assert_eq!(tone.asked(opened + minutes(30), false), ToneNow::Finished);
+    }
+
+    #[test]
+    fn test_a_window_that_opens_with_focus_never_sounds_again() {
+        // The ordinary case: the dialog is modal and takes focus as it opens,
+        // so the first ask finds focus and nothing repeats.
+        let opened = std::time::Instant::now();
+        let mut tone = RepeatingTone::from_the_window_opening(opened);
+        assert_eq!(tone.asked(opened, true), ToneNow::Finished);
+        assert_eq!(tone.asked(opened + minutes(1), false), ToneNow::Finished);
+    }
+
+    #[test]
+    fn test_the_tone_stops_after_the_ceiling_whatever_focus_does() {
+        // Guardrail 5: bounded. Ten, then silence with the window still on
+        // screen, and a machine left running does not sound all afternoon.
+        let opened = std::time::Instant::now();
+        let mut tone = RepeatingTone::from_the_window_opening(opened);
+
+        let mut sounded = 0;
+        for minute in 1..=60u64 {
+            if tone.asked(opened + minutes(minute), false) == ToneNow::Sound {
+                sounded += 1;
+            }
+        }
+        assert_eq!(sounded, MOST_TONES, "the ceiling is not the ceiling");
+        assert_eq!(
+            tone.asked(opened + minutes(61), false),
+            ToneNow::Finished,
+            "past the ceiling the rule still asks to be asked again"
+        );
     }
 }
