@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 378
+open_count: 383
 waived_count: 0
 fixed_count: 23
-total_count: 401
-last_updated: 2026-09-14T12:38:37.877Z
+total_count: 406
+last_updated: 2026-09-14T14:19:31.989Z
 ---
 
 # Broken Windows Ledger
@@ -416,6 +416,11 @@ last_updated: 2026-09-14T12:38:37.877Z
 | 399 | 06 | todo | tests/house_style.rs | 3348 | 06-07 found: test_no_status_page_names_a_version_the_code_does_not_ship reads a WCAG criterion number such as 1.3.1 on docs/IMPLEMENTATION_STATUS.md as a version the code does not ship. The status page names the three criteria by name to stay clear of it. A reading that cannot tell a criterion number from a version is a limitation to know about, not yet a defect worth widening the reading for; if a criterion number has to appear on a status page, that is the moment. | open |  | 2026-09-14T12:38:37.079Z |  |
 | 400 | 06 | deviation | scripts/check.sh |  | 06-07: one line added to check.sh's docs_only path, cargo test --lib presentation::what_the_scans_can_judge::, on the help_page precedent. Not in the plan's file list. Without it a commit editing only docs/wcag-coverage.md answered docs_only and ran everything except the reading that holds that page to the code, which is a guard running on every commit except the ones that could break it. Shown working by the docs commit 93f8c865, which ran the eight tests under docs_only. | open |  | 2026-09-14T12:38:37.478Z |  |
 | 401 | 06 | deviation | CLAUDE.md |  | 06-07: CLAUDE.md had two copies of the half figure where the plan counted one and said to leave it. Guardrail 2 said covers about half of WCAG across a line break, which the plan's single-line grep could not see, and was wrong the same way the four product copies were; corrected with the date and the old wording. The accessibility section's half of accessibility defects is about defects and was left standing with the qualification added, as the orchestrator asked, rather than left untouched as the plan said. | open |  | 2026-09-14T12:38:37.877Z |  |
+| 402 | 06 | unrun-verify | src/application/due.rs |  | 06-09 task 1: the kind-first sentences have not been heard. Task due today: file the report; Task overdue: file the report, was due July 25, 2026; Event in 15 minutes: standup, at 3:00 PM; Event now: standup; Event started 10 minutes ago: standup; and Untitled task or Untitled event for a row with no title. Tests prove the word comes first and the forms are exact; whether the comma before at 3:00 PM reads as a pause or a list, and whether due today is help or nagging, only a listening pass under NVDA can settle. | open |  | 2026-09-14T14:19:15.569Z |  |
+| 403 | 06 | deviation | src/application/due.rs |  | 06-09 task 1: an overdue task says its day as a date, Task overdue: file the report, was due July 25, 2026, where the plan's example said was due yesterday. A whole day is read as a date under every style on purpose, the birthday rule in date_display, and a yesterday would be a new relative message for whole days through the catalogue. Not written here; if wanted it is one message and one arm, and the listening pass above will say whether the date form is enough. | open |  | 2026-09-14T14:19:30.620Z |  |
+| 404 | 06 | deviation | src/application/due.rs |  | 06-09 task 1: the identity trap's guard record is in two halves and only one is here. The same id under two kinds is two identities is measured, two red. A day of a series carrying its series' id is composed by the event feed, which task 4 writes in wx_app.rs, so there is no code in task 1 for a break to edit; the test dismisses one day and finds the next still due against a fixture that composes id and start the way the feed must. Task 4 owes the record that breaks the feed's composition. | open |  | 2026-09-14T14:19:31.090Z |  |
+| 405 | 06 | deviation | src/presentation/wx_app.rs |  | 06-09 task 1: BetweenLooks.already and said_and_waiting are keyed by due::Identity instead of a reminder id string, and the reminder feed builds due::Candidate rows, in the red commit c189a361, because the crate would not build otherwise. wx_app.rs is not in task 1's file list. No test was added to wx_app.rs and its 48 records were not disturbed; the reading in tests/wired.rs still sees the insert into already before the window. Task 4 rewrites this region. | open |  | 2026-09-14T14:19:31.536Z |  |
+| 406 | 06 | unrun-verify | src/presentation/date_display.rs |  | 06-09 task 1: how_soon, how_long_ago and time_of_day are public readings with no caller outside due::spoken, and due::spoken has no caller that hands it a task or an event yet: raise_what_is_due still feeds reminders only. Everything task 1 added is reachable by tests and by nothing a person can run until task 4 wires the feeds. Said here so the model is not read as shipped. | open |  | 2026-09-14T14:19:31.989Z |  |
 
 ````json
 [
@@ -5229,6 +5234,66 @@ last_updated: 2026-09-14T12:38:37.877Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T12:38:37.877Z",
+    "resolved_at": null
+  },
+  {
+    "id": 402,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/application/due.rs",
+    "line": null,
+    "description": "06-09 task 1: the kind-first sentences have not been heard. Task due today: file the report; Task overdue: file the report, was due July 25, 2026; Event in 15 minutes: standup, at 3:00 PM; Event now: standup; Event started 10 minutes ago: standup; and Untitled task or Untitled event for a row with no title. Tests prove the word comes first and the forms are exact; whether the comma before at 3:00 PM reads as a pause or a list, and whether due today is help or nagging, only a listening pass under NVDA can settle.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T14:19:15.569Z",
+    "resolved_at": null
+  },
+  {
+    "id": 403,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/application/due.rs",
+    "line": null,
+    "description": "06-09 task 1: an overdue task says its day as a date, Task overdue: file the report, was due July 25, 2026, where the plan's example said was due yesterday. A whole day is read as a date under every style on purpose, the birthday rule in date_display, and a yesterday would be a new relative message for whole days through the catalogue. Not written here; if wanted it is one message and one arm, and the listening pass above will say whether the date form is enough.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T14:19:30.620Z",
+    "resolved_at": null
+  },
+  {
+    "id": 404,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/application/due.rs",
+    "line": null,
+    "description": "06-09 task 1: the identity trap's guard record is in two halves and only one is here. The same id under two kinds is two identities is measured, two red. A day of a series carrying its series' id is composed by the event feed, which task 4 writes in wx_app.rs, so there is no code in task 1 for a break to edit; the test dismisses one day and finds the next still due against a fixture that composes id and start the way the feed must. Task 4 owes the record that breaks the feed's composition.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T14:19:31.090Z",
+    "resolved_at": null
+  },
+  {
+    "id": 405,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "06-09 task 1: BetweenLooks.already and said_and_waiting are keyed by due::Identity instead of a reminder id string, and the reminder feed builds due::Candidate rows, in the red commit c189a361, because the crate would not build otherwise. wx_app.rs is not in task 1's file list. No test was added to wx_app.rs and its 48 records were not disturbed; the reading in tests/wired.rs still sees the insert into already before the window. Task 4 rewrites this region.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T14:19:31.536Z",
+    "resolved_at": null
+  },
+  {
+    "id": 406,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/date_display.rs",
+    "line": null,
+    "description": "06-09 task 1: how_soon, how_long_ago and time_of_day are public readings with no caller outside due::spoken, and due::spoken has no caller that hands it a task or an event yet: raise_what_is_due still feeds reminders only. Everything task 1 added is reachable by tests and by nothing a person can run until task 4 wires the feeds. Said here so the model is not read as shipped.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T14:19:31.989Z",
     "resolved_at": null
   }
 ]
