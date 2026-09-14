@@ -117,7 +117,7 @@ completed: 2026-09-14
 
 **The accessibility scan now runs one named, hashed Axe.Windows binary over thirty windows where it ran whatever was newest over eleven, a change to the workflow earns the whole gate on a branch, and three defects in the scan itself that the plan did not know about were measured from the last CI log and the running program and fixed: the scanner wrote no file for a clean window and the workflow called that a failed scan, the MSAA channel had never read a dialog, and a dialog that failed to open was scanned as the main window and passed.** None of the thirty has been scanned by CI, because nothing has been pushed since 2026-09-10; every one has been opened on a fresh profile on this machine and its window seen.
 
-Task 1 on branch `a-workflow-change-earns-the-checks-that-read-it`, merged into `main` at `9f86ba6f`. Task 2 on branch `a-pinned-scanner-and-every-window-it-can-reach`: red `741d2b36`, green `fd661401`, the whole gate green on the green commit in 281 seconds under rustc 1.98.1 with 7,612 tests passed and 0 failed, the release build included. The merge commit is named by the follow-up commit, since a summary committed before its own merge cannot name it. Nothing pushed.
+Task 1 on branch `a-workflow-change-earns-the-checks-that-read-it`, merged into `main` at `9f86ba6f`. Task 2 on branch `a-pinned-scanner-and-every-window-it-can-reach`: red `741d2b36`, green `fd661401`, the whole gate green on the green commit in 281 seconds under rustc 1.98.1 with 7,612 tests passed and 0 failed, the release build included; `scripts/check.sh all` run again on the branch after the documents commit, 7,612 passed in 295 seconds. Merged into `main` at `ca88d833` with the whole gate green again on the merge, 302 seconds, written here by the follow-up commit since a summary committed before its own merge cannot name it. Nothing pushed.
 
 ## The checkpoint's two answers, recorded and not re-asked
 
@@ -295,4 +295,4 @@ None new. T-06-21 and T-06-23 are mitigated by the pin with its hash and the rec
 
 ## Self-Check: PASSED
 
-`src/presentation/scan_fixtures.rs`, `src/presentation/scan_target.rs`, `.github/workflows/accessibility.yml`, `scripts/msaa-names.ps1`, `guards/guards.toml` and this file exist on disk; commits `05ec26a4`, `dd4934fe`, `9f86ba6f`, `741d2b36` and `fd661401` are in `git log --all`.
+`src/presentation/scan_fixtures.rs`, `src/presentation/scan_target.rs`, `.github/workflows/accessibility.yml`, `scripts/msaa-names.ps1`, `guards/guards.toml` and this file exist on disk; commits `05ec26a4`, `dd4934fe`, `9f86ba6f`, `741d2b36`, `fd661401`, `ba18ca51` and `ca88d833` are in `git log --all`.
