@@ -168,10 +168,13 @@ reported the system's name for those controls and never the one the code set,
 and every `set_accessible_name` call in the tree could have been deleted without
 it noticing.
 
-5,430 tests pass: 5,269 unit and 161 integration, counted 2026-08-29 with
-`cargo test --all-targets -- --list`. The previous figure here, 3,362 from
-2026-08-09, is what a number without its command and its date turns into.
-Several are fuzz tests over generated hostile
+7,697 tests: 7,245 unit tests and 452 integration tests, counted 2026-09-14 at
+`a42331bb` with `cargo test --all-targets -- --list`, three rows on
+`docs/development/measurements.md`, which is the page every count here is
+quoted from. This paragraph said 5,430 (5,269 unit, 161 integration, counted
+2026-08-29 the same way) until 2026-09-14, and before that the figure here was
+3,362 from 2026-08-09, which is what a number without its command and its date
+turns into. Several are fuzz tests over generated hostile
 input, covering the HTML renderer, the calendar-document parsers, OAuth token
 expiry, and account validation.
 
@@ -233,10 +236,12 @@ two dead-code passes.
 
 A later sweep, on 2026-08-01, took the message filters, due dates, tagging and
 signatures modules through the same measurement: 157 mutants, 141 caught, 16
-that would not compile, and none missed.
+that would not compile, and none missed. The run is the first row of the
+progress table in `docs/plans/20260801-mutation-sweep.md`.
 
-On 2026-08-12, at commit 0bc0614, the four modules that decide what becomes of
-somebody's copy of a message were measured for the first time: where a deleted
+On 2026-08-12, at commit `0bc0614`, the four modules that decide what becomes of
+somebody's copy of a message went through `scripts/mutants.sh` for the first
+time: where a deleted
 message may go, the copy of a draft kept at the server, the copy of a sent
 message, and what the list does once the server has answered a delete. 66
 mutants, 53 caught, 1 missed, 12 that would not compile, none timed out. The

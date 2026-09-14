@@ -44,6 +44,7 @@ use regex::Regex;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 const PAGE: &str = "docs/development/measurements.md";
 const HEADING: &str = "## The figures";
@@ -674,25 +675,50 @@ struct Figure {
 /// character before the digit is matched and dropped.
 const NOT_PART_OF_A_WORD: &str = r"(?:^|[^-\w])";
 
-fn the_count_pattern() -> Regex {
-    Regex::new(&format!(
-        r"{NOT_PART_OF_A_WORD}(\d[\d,]*\s+(?:tests|test functions|guard records|records|mutants|lines))\b"
-    ))
-    .expect("the count pattern is a literal")
+/// A pattern compiled once for the process. Compiling one costs milliseconds
+/// and the walk reads thousands of paragraphs, so compiling per paragraph put
+/// each companion past a minute.
+fn compiled_once(
+    cell: &'static OnceLock<Regex>,
+    pattern: impl FnOnce() -> String,
+) -> &'static Regex {
+    cell.get_or_init(|| Regex::new(&pattern()).expect("every pattern here is a literal"))
 }
 
-fn the_coverage_pattern() -> Regex {
-    Regex::new(r"(\d+(?:\.\d+)?\s?%\s*(?:line )?coverage)|(coverage[^.]{0,40}?\d+(?:\.\d+)?\s?%)")
-        .expect("the coverage pattern is a literal")
+fn the_count_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || {
+        format!(
+            r"{NOT_PART_OF_A_WORD}(\d[\d,]*\s+(?:tests|test functions|guard records|records|mutants|lines))\b"
+        )
+    })
 }
 
-fn the_duration_pattern() -> Regex {
-    let jobs = r"(?:gate|sweep|suite|build|run|library run|whole gate|full gate|mutation run|whole-tree run)";
-    let span = r"\d+\s+(?:seconds|minutes|hours|days)";
-    Regex::new(&format!(
-        r"(\b{jobs}\b[^.]{{0,80}}?\b{span}\b)|(\b{span}\b[^.]{{0,60}}?\b{jobs}\b)"
-    ))
-    .expect("the duration pattern is a literal")
+fn the_coverage_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || {
+        r"(\d+(?:\.\d+)?\s?%\s*(?:line )?coverage)|(coverage[^.]{0,40}?\d+(?:\.\d+)?\s?%)"
+            .to_string()
+    })
+}
+
+fn the_duration_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || {
+        let jobs = r"(?:gate|sweep|suite|build|run|library run|whole gate|full gate|mutation run|whole-tree run)";
+        let span = r"\d+\s+(?:seconds|minutes|hours|days)";
+        format!(r"(\b{jobs}\b[^.]{{0,80}}?\b{span}\b)|(\b{span}\b[^.]{{0,60}}?\b{jobs}\b)")
+    })
+}
+
+fn the_date_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || r"\b20\d\d-\d\d-\d\d\b".to_string())
+}
+
+fn the_test_name_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || r"\btest_[a-z_]+".to_string())
 }
 
 /// The figures of the five kinds in a paragraph, each with the line it sits on.
@@ -722,18 +748,14 @@ fn figures_in(paragraph: &str) -> Vec<Figure> {
 }
 
 fn holds_a_date(paragraph: &str) -> bool {
-    Regex::new(r"\b20\d\d-\d\d-\d\d\b")
-        .expect("the date pattern is a literal")
-        .is_match(paragraph)
+    the_date_pattern().is_match(paragraph)
 }
 
 /// A backticked token, the measurements page by name, or a test by name.
 fn holds_a_source(paragraph: &str) -> bool {
     holds_a_backticked_token(paragraph)
         || paragraph.contains(PAGE)
-        || Regex::new(r"\btest_[a-z_]+")
-            .expect("the test-name pattern is a literal")
-            .is_match(paragraph)
+        || the_test_name_pattern().is_match(paragraph)
 }
 
 /// A line that says `target` is stating an aim, not a measurement, and an aim
@@ -1028,11 +1050,11 @@ const THE_PAGES_THAT_STATE_THE_TEST_COUNT: [&str; 3] = [
     "README.md",
 ];
 
-fn the_test_count_pattern() -> Regex {
-    Regex::new(&format!(
-        r"{NOT_PART_OF_A_WORD}(\d[\d,]*) (?:(?:unit|integration) )?tests\b"
-    ))
-    .expect("the test count pattern is a literal")
+fn the_test_count_pattern() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    compiled_once(&CELL, || {
+        format!(r"{NOT_PART_OF_A_WORD}(\d[\d,]*) (?:(?:unit|integration) )?tests\b")
+    })
 }
 
 /// A cell that is nothing but a count, commas dropped: `7,245` is one and `104

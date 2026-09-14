@@ -21426,5 +21426,5 @@ red = [
     "test_the_reading_can_see_a_row_whose_date_is_missing",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 10 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 19 },
 ]

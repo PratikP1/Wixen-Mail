@@ -25,6 +25,20 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   value, because a check that said a written count equals today's count would
   be false the next time somebody added a test.
 
+- **A figure on any page says when it was taken and by what.** A count of
+  tests, records, mutants or lines, a coverage percentage, or a duration of
+  the gate, the suite or the sweep, on any page under `docs/`, in `README.md`
+  or in `CLAUDE.md`, now sits beside a date and a command or a named source,
+  or says it is a target. A check reads every such page on every commit and
+  names the figure that lacks either. Its first run named thirteen figures on
+  three pages, and each was corrected by adding the date of the run it
+  describes, never by changing the figure. The test count on the status page
+  and the integration guide is now the value of a row on the measurements
+  page, 7,697 tests on 2026-09-14 (7,245 in the library, 452 under `tests/`),
+  and a second check holds those pages to that page rather than to each
+  other. The changelog and `docs/plans/` are not read: their figures are dated
+  by their headings and file names.
+
 - **A page listing what only a person can check**, [the manual accessibility
   pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
   of disability the project's rules name, each saying which screen reader or
