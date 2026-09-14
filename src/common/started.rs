@@ -24,7 +24,7 @@
 //! cannot drift apart without a test going red.
 
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// A start that is marked once and reports once.
@@ -51,14 +51,12 @@ impl Start {
     /// A second call is ignored, not refused: the first instant is the start
     /// and nothing later can move it. `false` says the mark was already there.
     pub fn mark(&self) -> bool {
-        let _ = (&self.at, &self.said_usable);
-        false
+        self.at.set(Instant::now()).is_ok()
     }
 
     /// How long since the mark, or `None` when nothing has marked it.
     pub fn elapsed(&self) -> Option<Duration> {
-        let _ = self;
-        None
+        self.at.get().map(Instant::elapsed)
     }
 
     /// The usable line, the first time the list holds a row, and `None` ever
@@ -69,8 +67,16 @@ impl Start {
     /// its line. `None` too when nothing marked the start, because a duration
     /// from nowhere is not a measurement.
     pub fn say_usable_once(&self, rows: usize) -> Option<String> {
-        let _ = (self, rows);
-        None
+        if rows == 0 {
+            return None;
+        }
+        let since_start = self.elapsed()?;
+        // Swapped rather than read then written, so two loads racing to be
+        // first cannot both find it unsaid.
+        if self.said_usable.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        Some(usable_line(rows, since_start))
     }
 }
 
@@ -103,8 +109,10 @@ pub fn say_usable_once(rows: usize) -> Option<String> {
 /// Plain digits and no separators in either number, because the harness
 /// parses them and a thousands separator is locale.
 pub fn usable_line(rows: usize, since_start: Duration) -> String {
-    let _ = (rows, since_start);
-    String::new()
+    format!(
+        "the message list is usable: {rows} rows, {} ms after start",
+        since_start.as_millis()
+    )
 }
 
 #[cfg(test)]

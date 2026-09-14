@@ -17093,6 +17093,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // a million native calls to render thirty visible lines.
             tracing::info!("Message list now holds {} rows", messages.len());
             tell_the_list_how_many(state, msg_list);
+            // Once per process, the first time rows reach the list: this is
+            // the moment PERF-02's "usable" means, and the harness in
+            // `tests/the_numbers_the_targets_ask_for.rs` reads this line. The
+            // line above is per load; this one is per start, and a folder
+            // change or a sort after it says nothing.
+            if let Some(usable) = crate::common::started::say_usable_once(messages.len()) {
+                tracing::info!("{usable}");
+            }
             // Bring the chosen row back into view, if it is still there and the
             // setting asks for it. Only the viewport moves: the selection is
             // deliberately not touched, because re-selecting would move focus
