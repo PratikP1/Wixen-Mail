@@ -34,12 +34,35 @@ exclude_re = [
 # A mutant that takes much longer than the baseline is one that hung rather
 # than one that is slow.
 #
-# The suite takes about 46 seconds, measured on 2026-08-06 with nothing else
-# running, and 57 in that same run's own baseline with a build going alongside
-# it. It used to say four seconds here, which was true when it was written and
-# was out by a factor of ten by the time anybody read it again. That number is
-# what these two settings are read against, so it is worth re-measuring rather
-# than trusting: `cargo test --all-targets` prints it.
+# What the two settings are read against. At the start of every run the tool
+# runs the suite once on the unmutated tree and takes that as its baseline;
+# each mutant then gets `timeout_multiplier` times that baseline, floored at
+# `minimum_test_timeout` seconds. So neither value below is a number of
+# seconds on its own, and the figure a reader needs in order to judge them is
+# what the suite takes on this machine on the day.
+#
+# Taken 2026-09-14 at `9399a1e2`, twice each, with nothing else building and
+# every target already built, timed with `date +%s` around the command in
+# bash:
+#
+#   `cargo test --all-targets`, the harness's default thread count, which is
+#   what the tool runs per mutant unless told otherwise: 104 s and 103 s,
+#   7,687 tests passed, summed over the 55 result lines the run prints.
+#
+#   `cargo test --lib -- --test-threads=8`, the library alone, which is what
+#   a run may be told to use instead by passing it after `--`: 52 s and 52 s,
+#   7,244 passed and 1 ignored.
+#
+# Which of the two applies is decided by what follows `--` on the run's
+# command line, and the baseline the tool takes will be whichever one it was
+# told to run. With the multiplier at 5, a mutant is called hung after about
+# 520 s under the first shape and about 260 s under the second; the floor of
+# 60 s is below both, so it only ever bites when the baseline is short.
+#
+# The row on docs/development/measurements.md carries the same two figures.
+# This paragraph said "about 46 seconds, measured on 2026-08-06" until
+# 2026-09-14, and before that it said four seconds, which was true when it was
+# written and was out by a factor of ten by the time anybody read it again.
 #
 # The whole-tree run of 2026-08-05 reported 81 timeouts, all in one file,
 # including pure string builders with no loop in them at all. Those were the
