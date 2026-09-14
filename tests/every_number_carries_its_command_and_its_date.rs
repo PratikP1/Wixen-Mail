@@ -39,6 +39,20 @@
 //! row. The page is clean today, so from outside the reading is
 //! indistinguishable from one that read nothing; the companions tell the two
 //! apart, on the precedent of `tests/the_planning_files_agree_with_themselves.rs`.
+//!
+//! # The other readings in this file
+//!
+//! Three more readings follow the same shape, each with its own section
+//! comment and companions. One walks every page a person believes and
+//! requires a count, a percentage or a duration to sit beside a date and a
+//! source. One holds a test count stated on the three pages that state one
+//! to a row on the measurements page, so pages agree by quoting one
+//! measurement and never each other. One computes how much of the history
+//! predates red/green, prints it, and refuses the two-absolutes form that
+//! used to state it. And one holds twelve figures in prose to the constants
+//! they restate, which is the one kind of number both halves of which are in
+//! the repository. None of them compares a written figure with what a tool
+//! reports today, for the reason above.
 
 use regex::Regex;
 use std::collections::BTreeSet;
@@ -1612,7 +1626,7 @@ const THE_FIGURES_THAT_RESTATE_A_CONSTANT: [Restated; 12] = [
     },
     Restated {
         page: "docs/roadmap.md",
-        before: "Attachment size warnings (>",
+        before: "once encoded for sending, come to more than ",
         unit: Unit::Mebibytes,
         constant: LIMIT_BYTES,
         name: "attaching::LIMIT_BYTES",

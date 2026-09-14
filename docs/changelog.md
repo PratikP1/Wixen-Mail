@@ -50,6 +50,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   as of the day it was corrected. The two planning records that also carry
   the sentence are records of their day and are left as written.
 
+  Twelve figures in prose that restate a limit the code holds are now held
+  to it on every commit: the six cache sizes on the privacy page, the
+  picture size on the shortcuts page, the four sound-scheme caps in the
+  earcon plan, and the attachment limit on the roadmap. One disagreed. The
+  roadmap ticked "Attachment size warnings (>10MB)", and there was never a
+  warning at 10 MB: the compose window says, as each file is added, when the
+  attachments once encoded come to more than 25 MB, which is the limit most
+  providers refuse past. The line now says that. The privacy page said the
+  update download "is roughly 12 MB today"; no release has been published,
+  so nothing has measured it, and the page now says the size is a target
+  until a release exists to measure.
+
 - **A page listing what only a person can check**, [the manual accessibility
   pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
   of disability the project's rules name, each saying which screen reader or

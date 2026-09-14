@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 419
+open_count: 420
 waived_count: 0
 fixed_count: 24
-total_count: 443
-last_updated: 2026-09-14T20:41:09.046Z
+total_count: 444
+last_updated: 2026-09-14T21:45:39.956Z
 ---
 
 # Broken Windows Ledger
@@ -458,6 +458,7 @@ last_updated: 2026-09-14T20:41:09.046Z
 | 441 | 06 | todo | src/application/event_alerts.rs |  | Two small holes in what off means, said rather than widened. Microsoft's isReminderOn true with reminderMinutesBeforeStart 0 is stored as nothing, as before, so an Outlook alert at the start of the event gets this program's default lead instead of a lead of nought. And alerts_with_the_first_at with nothing stored and nought in the box keeps nothing stored, which is right, and has no test of its own because managers.rs has 50 records and one more test there is hours of remeasure; the two flipped tests pin the other branches | open |  | 2026-09-14T17:46:24.026Z |  |
 | 442 | 08 | deviation | scripts/check.sh |  | plan 08-01 task 1 required check.sh --suites-for guards/guards.toml docs/development/measurements.md to print the new target once its guard record existed; it prints nothing, because the coupling function drops a candidate already in guards_that_read_the_whole_tree on purpose, since every scoped run ends with that list. The record couples: a copy of the script with the target taken out of the list answers with it. The criterion asked for output the tool suppresses by design, and a target in both lists is answered by the whole-tree list first | open |  | 2026-09-14T20:41:00.106Z |  |
 | 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | open |  | 2026-09-14T20:41:09.046Z |  |
+| 444 | 08 | todo | docs/privacy.md | 417 | the privacy page's update download size is a target of about 12 MB and not a measurement, because no release has been published to measure; once one exists, measure the installer, write the size on the page with its date, and add a row to docs/development/measurements.md | open |  | 2026-09-14T21:45:39.956Z |  |
 
 ````json
 [
@@ -5775,6 +5776,18 @@ last_updated: 2026-09-14T20:41:09.046Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T20:41:09.046Z",
+    "resolved_at": null
+  },
+  {
+    "id": 444,
+    "kind": "todo",
+    "phase": "08",
+    "file": "docs/privacy.md",
+    "line": 417,
+    "description": "the privacy page's update download size is a target of about 12 MB and not a measurement, because no release has been published to measure; once one exists, measure the installer, write the size on the page with its date, and add a row to docs/development/measurements.md",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T21:45:39.956Z",
     "resolved_at": null
   }
 ]
