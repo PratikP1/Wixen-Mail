@@ -26,7 +26,7 @@ documents is both aspirational and undated.
 
 | Plan | Wave | Criterion | Depends on | Human | What it does |
 |---|---|---|---|---|---|
-| 08-01 | 1 | 3, 4, 5 | none | no | Every count and rate the phase depends on, taken today: the mutant count, the guard record count, the sweep rate from one record timed, the suite figures for the mutation timeouts. One page, `docs/measurements.md`, holds them, and a reading refuses a row without its command, date and commit |
+| 08-01 | 1 | 3, 4, 5 | none | no | Every count and rate the phase depends on, taken today: the mutant count, the guard record count, the sweep rate from one record timed, the suite figures for the mutation timeouts. One page, `docs/development/measurements.md`, holds them, and a reading refuses a row without its command, date and commit |
 | 08-02 | 2 | 3 | 08-01 | no | The checks: a count on a product page carries a date and a source; the three test-count pages quote one row; the red/green ratio is computed and printed instead of written; twelve prose figures are held to the constants they restate |
 | 08-03 | 3 | 1 | 08-01 | no | The instrument for memory and cold start: a usable line the application writes once, a profile of exactly 1,000 messages of a defined shape, a harness that starts the release binary and reads the working set of the process and its WebView2 tree; the three numbers taken |
 | 08-04 | 4 | 2 | 08-01 | no | The list over 200,000 rows: sort, filter and scroll each timed by a harness that stays in the tree; the virtual text callback's body pulled into a function over slices, with a reading that holds it to naming no database |
@@ -52,7 +52,7 @@ person starts it, and a reading after the log is complete, because neither can
 be sat through by an agent and both have already produced wrong conclusions
 here when read early.
 
-One per wave because eight of the nine write `docs/measurements.md` and six
+One per wave because eight of the nine write `docs/development/measurements.md` and six
 write `guards/guards.toml`, and a wave is a set of plans sharing no file. The
 order is also real: the page comes first so every later plan has somewhere to
 put a row and a reading that refuses a bare one; the checks come second so the
@@ -77,9 +77,11 @@ to answer with a combination.
 first, test-first; the sweep runs in a worktree at a fixed commit, unattended,
 started and stopped by Pratik, with the log as the record; the reading of what
 it finds is its own task after the log is complete. Touches 08-01 (the rate
-timed and the product written), 08-07 (all three tasks). A different answer
-changes 08-07's task 1 and its checkpoint; the rate row and the reading task
-stay.
+timed and the product written), 08-07 (all three tasks), and 08-08's
+launcher, which takes the same shape: a run a person starts in a worktree,
+resumed at shard granularity, waiting for a quiet machine. A different
+answer changes 08-07's task 1 and its checkpoint and the launcher half of
+08-08's task 1; the rate rows and the reading tasks stay.
 
 **Assumption 2, what counts as documentation for criterion 3.** `docs/`,
 `CLAUDE.md` and `README.md` are read by a check; `.planning/REQUIREMENTS.md`,
@@ -102,18 +104,40 @@ red, and 08-04 says so where the record would have been. The planner found
 that a companion source reading adds something the type does not: a function
 whose inputs hold no connection can still open one from a path, and the
 reading holds the module and the closure to naming no database. That half is
-recordable and is recorded. Touches 08-04 task 1 only.
+recordable and is recorded. There are two virtual text callbacks in
+`wx_app.rs`, the message list's at `:1222` and the five PIM lists' one
+closure at `:1572`; PERF-03 is about the message list, the reading anchors
+on it and counts both, and the PIM closure is held to naming no database
+only, because that costs one line. Touches 08-04 task 1 only.
 
 **Assumption 5, "red/green started at commit 182 of 344".** A check computes
 the share of the history before the commit that sentence called number 182,
-prints it with the date, and the five sites name the check. The commit is
+prints it with the date, and the four tree sites name the check, while the
+two planning records that carry the sentence stay as written: six sites,
+four replaced and two kept. One of the four wraps across two comment lines
+in `scripts/mutants.sh:9-10`, so the check joins lines before it matches
+and a line grep is not used to prove it gone. The commit is
 `18a02454` of 2026-07-26, found by counting at the commit that first wrote the
 sentence (`3f7ebd09`, 2026-07-29, when the repository held 345 commits), and it
 is the commit that added `CLAUDE.md` with the red/green rule, which is a
 better reason to call it the start than its position. 8.9% of the history
 predates it today; 53% did when the sentence was written. Touches 08-02
-task 2 only. The two `.planning` validation records that carry the sentence
-are records and stay.
+task 2 only.
+
+**The research's five open questions, and where each stands.** Question 1,
+why two published one-file counts were wrong at two commits, is open and
+nothing here depends on it; the figure becomes a check in 08-02 and the
+history of the wrong ones stays in the research. Question 2, whether the
+2026-08-05 mutation run was whole-tree, is open and matters only for what
+shape of failure to expect; 08-08 measures the rate before scheduling so
+it does not need the answer. Question 3, how many of the records are
+stale, is open and is what 08-07's sweep answers; nothing before the sweep
+depends on it. Question 4, what "1,000 cached messages" and "idle with a
+cache present" mean, is answered by the definitions below, pinned in
+08-03. Question 5, whether the `cargo audit` failure was an eighth
+advisory, is answered: it was `rsa` RUSTSEC-2023-0071, accepted with its
+reasoning in `.cargo/audit.toml` on 2026-09-13, and 08-06 dates the four
+accepted exit conditions.
 
 **Decision 6, whether phase 8 owns the CI problem, is settled outside the
 phase.** The toolchain was pinned at `1.98.1` in `rust-toolchain.toml` on
@@ -128,21 +152,27 @@ the one thing the research's reading of that problem left for this phase.
 ## What the tree now contradicts in the research
 
 Every figure was re-taken 2026-09-14 at `b14d6379`. The command is the one the
-research used unless it says otherwise.
+research used unless it says otherwise. "The reader" in the table is this
+one, run over `guards/guards.toml`, with the sum changed per row:
+
+```
+python -c "import tomllib;g=tomllib.load(open('guards/guards.toml','rb'))['guard'];print(len(g), sum(1 for r in g if len(r.get('tests_last_seen',[]))==1), len({e['file'] for r in g for e in r.get('tests_last_seen',[])}))"
+-> 783 568 200
+```
 
 | Figure | Research, 2026-09-12 | Today | Command |
 |---|---|---|---|
-| Guard records | 734 | 783 | `python -c "import tomllib;..."` over `guards/guards.toml` |
-| Records naming one file | 537 | 568 | the same reader |
+| Guard records | 734 | 783 | the reader, `len(g)` |
+| Records naming one file | 537 | 568 | the reader, the second sum |
 | Records spelled as inline tables | 4 | 4 | `grep -c 'tests_last_seen = \[{'` |
-| Distinct files named by records | 190 | 200 | the same reader |
+| Distinct files named by records | 190 | 200 | the reader, the set's size |
 | Mutants the config allows | unknown | 12,335 over 247 files | `cargo mutants --list \| wc -l`, 3 seconds |
 | Commits | 1,911 | 2,023 | `git rev-list --count HEAD` |
 | Commits since the coverage reading | 1,679 | 1,824 | `git rev-list --count --since=2026-07-26 HEAD` |
 | Lines under `src/` | 352,680 over 280 files | 360,792 over 286 | `find src -name '*.rs' \| xargs wc -l` |
 | Test attribute lines in `src/` and `tests/` | 7,544 | 7,679 | `grep -rhE '^\s*#\[(test\|tokio::test)\]\s*$'` |
 | Test functions in `tests/house_style.rs` | 69 | 70 | the same grep on one file |
-| Records naming `tests/house_style.rs` | not taken | 21 | the reader |
+| Records naming `tests/house_style.rs` | not taken | 21 | the reader, counting records with that file in `tests_last_seen` |
 | `.planning/WINDOWS.md` entries | 342 | 441 | its frontmatter |
 | Accepted advisories in `.cargo/audit.toml` | 7 | 4 | `grep '"RUSTSEC'` |
 | CI | red since 2026-09-10 | green, 2026-09-14 | `gh run list` |
@@ -212,27 +242,45 @@ its own output, so no shell redirection is needed), `--resume` (reads the log's
 own `-- name` and verdict lines, skips what has a verdict, measures the rest,
 and re-measures a name with no verdict, which is what a kill mid-record
 leaves), `--stop-after N`, and `--wait-until-quiet` (polls for `cargo.exe` and
-`rustc.exe` before each record). Before a resume starts it runs `git status
---porcelain` over every guarded file and refuses, naming the file, if a kill
-left a break behind. Pratik starts it from PowerShell with `Start-Process
--WindowStyle Hidden` in a worktree at the commit 08-06 merged, closes the
-window, kills it when he needs the machine, and restarts it with `--resume`.
-The runner's tests are its worked examples, run and counted by
-`tests/house_style.rs`, which is in the tree-reading list and so runs on a
-commit that touches the script. The cost on the day is 08-01's rate row times
-the record count, both dated; the log's timestamps give the real figure
-afterwards.
+`rustc.exe` before each record, and again after it, marking a record whose
+run overlapped a foreign cargo as unmeasured so a resume takes it again).
+Before a resume starts it runs `git status --porcelain` over every guarded
+file and refuses, naming the file, if a kill left a break behind. Pratik
+starts it from PowerShell with `Start-Process -WindowStyle Hidden` in a
+worktree at `main` as it stands after 08-07's task 1 has merged, which is
+the first commit holding those flags; the executor writes that hash into
+the checkpoint, task 1 merges alone before it, and the sweep judges `main`
+so that task 3's corrections land on the tree it measured. He closes the
+window, kills it when he needs the machine, restarts it with `--resume`,
+and does not commit on `main` while it runs, because `main`'s hook would
+run the suite beside it. The runner's tests are its worked examples, run
+and counted by `tests/house_style.rs`, which is in the tree-reading list and
+so runs on a commit that touches the script. The cost on the day is 08-01's
+rate row times the record count, both dated; the log's timestamps give the
+real figure afterwards.
 
 **The mutation run (08-08).** `scripts/mutants.sh` gains `--shard k/n`, each
-shard to its own directory with the commit written beside it before it starts,
-and `--shards n`, which runs shards in turn, skips complete ones, waits for a
-quiet machine before each, and so resumes at shard granularity when restarted.
-`scripts/mutants_report.py --shards DIR N` merges every shard's own record and
-refuses a missing, partial, or differently-committed shard through the same
-four refusals a single run gets. The run lives in a worktree at one commit for
-its whole length, however long, because shards divide the list of the tree
-they run in and two commits are two lists. The rate is measured on one shard
-of about twenty-five mutants under both suite shapes before the decision.
+shard to its own directory with the commit, the arguments and the copy
+setting written beside it before it starts, `--out DIR` so two measurements
+of one shard do not overwrite each other, `--in-place` passed through, and
+`--shards n`, which runs shards in turn, skips complete ones, waits for a
+quiet machine before each, and so resumes at shard granularity when
+restarted. `scripts/mutants_report.py --shards DIR N` merges every shard's
+own record and refuses a missing, partial, or differently-committed shard
+through the same four refusals a single run gets. The run lives in a
+worktree at `main` after 08-08's task 1 has merged, at one commit for its
+whole length, however long, because shards divide the list of the tree they
+run in and two commits are two lists. Every product is two terms: the
+per-mutant rate times the count, plus a per-shard fixed cost, the copy and
+build from nothing that each `cargo mutants` invocation pays before its
+first mutant, which at `n` near 500 is up to about 40 hours over the run;
+`--in-place` in the dedicated worktree turns that copy-and-build into a
+build, and `--baseline skip` on later shards removes a suite run each but
+also the check that the tree is green, which the frozen worktree keeps
+true. The rate is measured on one shard of about twenty-five mutants
+under both suite shapes, and with and without `--in-place`, before the
+decision, and each row says its shard count, copy setting and baseline
+setting.
 
 ## What cannot be measured on this machine
 
@@ -328,7 +376,7 @@ hours or weeks of machine time that no token estimate measures.
 2. **`.planning/STATE.md`.** Done by the planner in the same commit: phase 8
    current, `Total Plans in Phase: 9`, `progress.total_plans` counted from the
    disk.
-3. **`docs/measurements.md`.** 08-01 creates it; every later plan adds rows
+3. **`docs/development/measurements.md`.** 08-01 creates it; every later plan adds rows
    and nothing else in the tree restates them.
 4. **The requirement evidence lines and the ticks.** 08-06 corrects the
    evidence by hand; 08-09 ticks clause by clause. No earlier plan ticks a
