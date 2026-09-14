@@ -1303,6 +1303,12 @@ write path added by this milestone passes through that gate.
     screen offers it. That one already has its guard,
     `test_nothing_offers_a_setting_per_account_that_no_screen_writes`
     (`tests/house_style.rs:152`). This one does not.
+    **Corrected 2026-09-14 by 06-04.** The second setting of this shape is no longer one: the
+    account edit dialog writes `allowed_per_account` through `AppConfig::set_allowed_for`,
+    three boxes, one per answer, each able only to narrow, and the guard named above is
+    retired with the control because the sentences it forbade are true now. The first,
+    per-event, half is 06-02's and its listening pass is 06-06's; the box stays unticked for
+    that reason and not for this one.
     **One number outside this requirement, found stale and since corrected.** The grid is 16
     events by 4 channels: `Event::ALL` is `[Event; 16]` at `feedback.rs:114` and all sixteen
     have a non-test call site. `docs/changelog.md:8393` called it "nine events by four channels"

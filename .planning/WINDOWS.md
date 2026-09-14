@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 352
+open_count: 356
 waived_count: 0
 fixed_count: 22
-total_count: 374
-last_updated: 2026-09-13T23:13:22.733Z
+total_count: 378
+last_updated: 2026-09-14T06:25:41.760Z
 ---
 
 # Broken Windows Ledger
@@ -389,6 +389,10 @@ last_updated: 2026-09-13T23:13:22.733Z
 | 372 | 06 | unmet-truth | src/application/repeating.rs |  | Four interface literals still carry English day and month names and are allowed by name in the source-reading guard with a reason beside each: Every weekday, Monday to Friday in repeating.rs and item_fields.rs, and Month first, July 26, Day first, 26 July and A word, July 26, 2026 in wx_settings.rs. They are labels on choices, interface text version 2 translates; a French day inside an English label is not better than an English one. The guard asserts each allowance is still in the tree so the list cannot outlive its subjects. | open |  | 2026-09-13T23:13:20.732Z |  |
 | 373 | 06 | deviation | locales/en-US/dates.ftl |  | locales/ maps to no target in the gate. scripts/check.sh scopes tests by src/*.rs and tests/*.rs, house_style's ours() does not walk locales/ and the plan says not to add it, so a commit touching only the catalogue runs formatting, clippy and the tree-reading guards and never common::catalogue::, whose parse and completeness checks read the file through include_str. The whole gate at the merge and CI are what cover it until a mapping is decided with the rest of version 2's questions. | open |  | 2026-09-13T23:13:21.714Z |  |
 | 374 | 06 | deviation | tests/a_move_says_what_has_not_been_sent.rs |  | Ledger 365's cause, found by keeping the failure text the second time it fired, on the build(06-03) commit: test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent panicked with No default store has been set from keyring. keyring 4.1.5's Entry::new races its own lazy initialisation: the thread that wins a compare_exchange on an AtomicBool sets the default store, and a thread that loses it goes straight to keyring_core::Entry::new before the winner has finished. Ten tests start in parallel on a fresh process, so it fires about one run in three. Not contention, and not this target's fault. A second finding: the in-memory seam in secret_store.rs is cfg(test), which an integration test never sees, so every run of this target reaches the real Windows credential store. Out of 06-03's scope; a Once around the first Entry::new in secret_store, or a seam the integration targets can see, is the fix. | open |  | 2026-09-13T23:13:22.733Z |  |
+| 375 | 06 | unrun-verify | src/presentation/wx_account_manager.rs |  | The three Allow Changes for this account boxes, their section heading and the note beneath have not been heard with a screen reader. Each carries its label on the control itself so the name reaches UI Automation and MSAA both, and the disabled arm's label says why it is unavailable and names the heading in Settings; what only a listening pass can settle is whether a person tabbing through hears why the third box is missing, because Windows skips a disabled control in the tab order and the note beneath is not in it either. Waits for the pass after phase 8. | open |  | 2026-09-14T06:25:29.308Z |  |
+| 376 | 06 | unrun-verify | src/application/allowed.rs |  | None of the sending, deleting and syncing a per-account answer governs has ever run against a real account, so what unticking a box on the account dialog holds back has only ever been held back in tests. allowed_for is unchanged and narrows as it always did; the new writer set_allowed_for is covered by three unit tests and no live server. | open |  | 2026-09-14T06:25:29.729Z |  |
+| 377 | 06 | deviation | src/application/allowed.rs |  | The refusal a sync says when a per-account answer is holding a change still names Settings and not the account: turn_the_setting_on has one owner and no account in hand, so a person whose Settings box is on hears advice that sends them to a box that is already ticked. The account dialog's note and the testing page say so, and the wording is pinned literally in tests across contacts_sync.rs, calendar.rs, pim_command.rs and answering.rs, so naming both places is a plan of its own. The tree already says it both ways: carddav_sync.rs and address_book_source.rs say Allow Changes is off for this account, which pointed at nothing until 06-04. | open |  | 2026-09-14T06:25:41.365Z |  |
+| 378 | 06 | unrun-verify | tests/account_edit_protocol_fields.rs |  | The live-dialog test proves each box is enabled exactly when the stored Settings answer allows it, reading the same profile the dialog reads, so on the machine that ran it, where Settings allows everything, it exercised the offered arm of all three boxes and never the unavailable one. The unavailable arm's wording is proved by a unit test on permission_box_label and by no live box. build_account_edit_dialog reads ConfigManager::load_stored inside itself on the precedent of the directory fields, and there is no seam to hand it a different answer; adding one is the fix. | open |  | 2026-09-14T06:25:41.760Z |  |
 
 ````json
 [
@@ -4878,6 +4882,54 @@ last_updated: 2026-09-13T23:13:22.733Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T23:13:22.733Z",
+    "resolved_at": null
+  },
+  {
+    "id": 375,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "The three Allow Changes for this account boxes, their section heading and the note beneath have not been heard with a screen reader. Each carries its label on the control itself so the name reaches UI Automation and MSAA both, and the disabled arm's label says why it is unavailable and names the heading in Settings; what only a listening pass can settle is whether a person tabbing through hears why the third box is missing, because Windows skips a disabled control in the tab order and the note beneath is not in it either. Waits for the pass after phase 8.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T06:25:29.308Z",
+    "resolved_at": null
+  },
+  {
+    "id": 376,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/application/allowed.rs",
+    "line": null,
+    "description": "None of the sending, deleting and syncing a per-account answer governs has ever run against a real account, so what unticking a box on the account dialog holds back has only ever been held back in tests. allowed_for is unchanged and narrows as it always did; the new writer set_allowed_for is covered by three unit tests and no live server.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T06:25:29.729Z",
+    "resolved_at": null
+  },
+  {
+    "id": 377,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/application/allowed.rs",
+    "line": null,
+    "description": "The refusal a sync says when a per-account answer is holding a change still names Settings and not the account: turn_the_setting_on has one owner and no account in hand, so a person whose Settings box is on hears advice that sends them to a box that is already ticked. The account dialog's note and the testing page say so, and the wording is pinned literally in tests across contacts_sync.rs, calendar.rs, pim_command.rs and answering.rs, so naming both places is a plan of its own. The tree already says it both ways: carddav_sync.rs and address_book_source.rs say Allow Changes is off for this account, which pointed at nothing until 06-04.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T06:25:41.365Z",
+    "resolved_at": null
+  },
+  {
+    "id": 378,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "tests/account_edit_protocol_fields.rs",
+    "line": null,
+    "description": "The live-dialog test proves each box is enabled exactly when the stored Settings answer allows it, reading the same profile the dialog reads, so on the machine that ran it, where Settings allows everything, it exercised the offered arm of all three boxes and never the unavailable one. The unavailable arm's wording is proved by a unit test on permission_box_label and by no live box. build_account_edit_dialog reads ConfigManager::load_stored inside itself on the precedent of the directory fields, and there is no seam to hand it a different answer; adding one is the fix.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T06:25:41.760Z",
     "resolved_at": null
   }
 ]
