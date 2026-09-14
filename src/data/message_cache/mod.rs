@@ -13,6 +13,7 @@ mod contacts;
 mod drafts;
 mod filters;
 mod folders;
+pub mod held_alerts;
 pub mod held_conflicts;
 pub mod how_it_arrived;
 mod messages;
@@ -2274,6 +2275,24 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create reminders table: {}", e)))?;
+
+        // ── Held alerts ─────────────────────────────────────────────────
+        // Where a snoozed task or event waits, since 2026-09-14. A reminder
+        // is not in here: its time is its alert and a snooze moves its own
+        // row. The kind is a word so that a fourth kind is a fourth word and
+        // not a schema change; see `held_alerts.rs`. Additive: nothing
+        // dropped, nothing renamed.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS held_alerts (
+                kind TEXT NOT NULL,
+                id TEXT NOT NULL,
+                until TEXT NOT NULL,
+                PRIMARY KEY (kind, id)
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create held alerts table: {}", e)))?;
 
         // ── Task lists ──────────────────────────────────────────────────
         self.conn

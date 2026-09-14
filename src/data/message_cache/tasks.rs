@@ -631,6 +631,19 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Mark a task done, and say how many rows that changed.
+    ///
+    /// Not the toggle above, on purpose. The due window's answer is "done",
+    /// not "the other way", and a task the phone finished between the look
+    /// and the answer must not be un-finished here and sent back. So this
+    /// sets done, stamps when, marks the row pending so the phone learns,
+    /// and changes nothing on a row that is already done: called twice it
+    /// reports one row and then none, on the shape of `complete_reminder`.
+    pub fn complete_task(&self, task_id: &str, stamp: &str) -> Result<usize> {
+        let _ = (task_id, stamp);
+        todo!("task 2 green")
+    }
+
     /// Search tasks by title.
     pub fn search_tasks(&self, account_id: &str, query: &str) -> Result<Vec<TaskEntry>> {
         let pattern = super::like_pattern(query);
@@ -920,6 +933,46 @@ mod tests {
             "un-ticking a task left its old completed_at stamp in place: {:?}",
             uncompleted.completed_at
         );
+    }
+
+    #[test]
+    fn test_completing_a_task_sets_done_once_and_never_toggles_it_back() {
+        // The due window answers "done". A task the phone finished between
+        // the look and the answer must stay finished: the toggle would
+        // un-finish it and send that, which is the one write worse than none.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        synced_task(&cache, "google:t1", &list.id);
+
+        let first = cache
+            .complete_task("google:t1", "2026-09-14T16:00:00+00:00")
+            .expect("complete");
+        let done = cache.find_task("google:t1").unwrap().expect("still there");
+        assert_eq!(first, 1, "the first answer did not change exactly one row");
+        assert!(done.is_completed, "the task is not done");
+        assert_eq!(
+            done.completed_at.as_deref(),
+            Some("2026-09-14T16:00:00+00:00")
+        );
+        assert_eq!(done.updated_at, "2026-09-14T16:00:00+00:00");
+        assert!(done.pending, "the phone will never learn the task is done");
+
+        let second = cache
+            .complete_task("google:t1", "2026-09-14T16:05:00+00:00")
+            .expect("complete again");
+        let still_done = cache.find_task("google:t1").unwrap().expect("still there");
+        assert_eq!(second, 0, "a task already done was written again");
+        assert!(still_done.is_completed, "done twice came out not done");
+        assert_eq!(
+            still_done.completed_at.as_deref(),
+            Some("2026-09-14T16:00:00+00:00"),
+            "the second answer moved the stamp of the first"
+        );
+
+        let missing = cache
+            .complete_task("google:no-such-task", "2026-09-14T16:05:00+00:00")
+            .expect("a row that has gone is not an error");
+        assert_eq!(missing, 0);
     }
 
     fn synced_task(cache: &MessageCache, id: &str, list_id: &str) -> TaskEntry {
