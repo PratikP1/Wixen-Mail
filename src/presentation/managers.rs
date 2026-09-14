@@ -1665,6 +1665,18 @@ fn an_alert(minutes: i64) -> String {
     format!("[{{\"minutes\":{minutes},\"method\":\"popup\"}}]")
 }
 
+/// What a new event stores for the alert box: one alert, or off for nought,
+/// because the box opened filled with the alert chosen in Settings and
+/// nought in it is somebody taking the alert away. Off has a stored form
+/// since 2026-09-14 so the due window never fills it with the default.
+fn an_alert_or_off(minutes: i32) -> String {
+    if minutes > 0 {
+        an_alert(i64::from(minutes))
+    } else {
+        crate::application::event_alerts::NO_ALERT.to_string()
+    }
+}
+
 /// The alerts already on an event, with the first one set to what the box holds.
 ///
 /// The editor has one box, holding minutes, and it is filled from the first
@@ -1681,13 +1693,31 @@ fn an_alert(minutes: i64) -> String {
 /// An event with no alerts stored, or with something in that column that will
 /// not read as a list, is answered by the box alone. That matches
 /// `ui_types::first_reminder_minutes`, which shows no alert for the same input.
+///
+/// Since 2026-09-14 the column can say off, as an empty list, and this is
+/// one of the three writers that know it: taking the last alert away stores
+/// off, and an event stored as off stays off under nought in the box. What
+/// nought does to an event with nothing stored is different, and said inside.
 fn alerts_with_the_first_at(stored: Option<&str>, minutes: i32) -> Option<String> {
-    let held: Vec<serde_json::Value> = stored
+    let held: Option<Vec<serde_json::Value>> = stored
         .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
-        .and_then(|parsed| parsed.as_array().cloned())
-        .unwrap_or_default();
-    let Some((first, rest)) = held.split_first() else {
+        .and_then(|parsed| parsed.as_array().cloned());
+    let Some(held) = held else {
+        // Nothing stored, or something that will not read as a list: the
+        // box is the whole of what is known. Nought in it says nothing new,
+        // because the box showed nought for want of anything to show, so
+        // nothing stored stays nothing stored rather than becoming off.
         return (minutes > 0).then(|| an_alert(i64::from(minutes)));
+    };
+    let Some((first, rest)) = held.split_first() else {
+        // Stored as off. A lead in the box switches it on; nought keeps it
+        // off, and off has to stay stored as off or the due window would
+        // read the silence as nobody's and fill it with the default.
+        return Some(if minutes > 0 {
+            an_alert(i64::from(minutes))
+        } else {
+            crate::application::event_alerts::NO_ALERT.to_string()
+        });
     };
 
     let mut kept: Vec<serde_json::Value> = Vec::with_capacity(held.len());
@@ -1704,7 +1734,14 @@ fn alerts_with_the_first_at(stored: Option<&str>, minutes: i32) -> Option<String
         kept.push(first);
     }
     kept.extend(rest.iter().cloned());
-    (!kept.is_empty()).then(|| serde_json::Value::Array(kept).to_string())
+    // The last alert taken away is the editor knowing the alert is off, and
+    // saying so: since 2026-09-14 an empty list is off, which the due
+    // window never fills with the default.
+    Some(if kept.is_empty() {
+        crate::application::event_alerts::NO_ALERT.to_string()
+    } else {
+        serde_json::Value::Array(kept).to_string()
+    })
 }
 
 /// The item form's own answer a calendar event, opened to edit, would give
@@ -1894,8 +1931,9 @@ fn event_entry(
         // reminder the user set actually survives a round trip. How somebody is
         // alerted is named as well as when: Google drops an alert that does not
         // say, so leaving it out meant the alert never left this computer.
-        reminders_json: (data.reminder_minutes > 0)
-            .then(|| an_alert(i64::from(data.reminder_minutes))),
+        // Nought is off, stored as off: the box opened filled with the alert
+        // chosen in Settings, so nought in it is somebody taking it away.
+        reminders_json: Some(an_alert_or_off(data.reminder_minutes)),
         created_at: now_stamp(),
         updated_at: now_stamp(),
         // Anything the editor here produces is a change the provider has not
@@ -3258,7 +3296,7 @@ fn store_new_item(
                     &crate::application::who_is_coming::typed_in(filled.text(FieldName::Attendees)),
                     None,
                 ),
-                reminders_json: (alert > 0).then(|| an_alert(i64::from(alert))),
+                reminders_json: Some(an_alert_or_off(alert)),
                 created_at: stamp.clone(),
                 updated_at: stamp,
                 // Made here, so the provider has not been told about it.

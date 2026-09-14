@@ -47,8 +47,20 @@ pub enum StoredAlert {
 
 /// Read the stored alerts.
 pub fn read(stored: Option<&str>) -> StoredAlert {
-    let _ = stored;
-    todo!("task 4 green")
+    let Some(stored) = stored else {
+        return StoredAlert::Unknown;
+    };
+    let Ok(serde_json::Value::Array(alerts)) = serde_json::from_str::<serde_json::Value>(stored)
+    else {
+        return StoredAlert::Unknown;
+    };
+    let Some(first) = alerts.first() else {
+        return StoredAlert::Off;
+    };
+    match first.get("minutes").and_then(serde_json::Value::as_i64) {
+        Some(minutes) => StoredAlert::Lead(minutes),
+        None => StoredAlert::Unknown,
+    }
 }
 
 /// How many minutes before its start an event is raised, or `None` for an
@@ -58,8 +70,11 @@ pub fn read(stored: Option<&str>) -> StoredAlert {
 /// takes the default, because the default fills silence and never overrides
 /// an answer.
 pub fn lead_to_raise_at(stored: Option<&str>, default_lead: i64) -> Option<i64> {
-    let _ = (stored, default_lead);
-    todo!("task 4 green")
+    match read(stored) {
+        StoredAlert::Lead(minutes) => Some(minutes),
+        StoredAlert::Off => None,
+        StoredAlert::Unknown => Some(default_lead),
+    }
 }
 
 /// What Google's pull stores for an event's reminders.
@@ -70,8 +85,16 @@ pub fn lead_to_raise_at(stored: Option<&str>, default_lead: i64) -> Option<i64> 
 /// calendar's default alert, which this program never reads, and is stored
 /// as nothing, so the due window gives it the program's own default.
 pub fn from_google(reminders: Option<&GoogleReminders>) -> Option<String> {
-    let _ = reminders;
-    todo!("task 4 green")
+    let reminders = reminders?;
+    if reminders.overrides.is_empty() {
+        return (!reminders.use_default).then(|| NO_ALERT.to_string());
+    }
+    let own: Vec<_> = reminders
+        .overrides
+        .iter()
+        .map(|o| serde_json::json!({"method": o.method, "minutes": o.minutes}))
+        .collect();
+    serde_json::to_string(&own).ok()
 }
 
 /// What Microsoft's pull stores for an event's reminder.
@@ -80,8 +103,15 @@ pub fn from_google(reminders: Option<&GoogleReminders>) -> Option<String> {
 /// lead, and a reminder Graph said nothing about, are stored as nothing, as
 /// they were before off had a stored form.
 pub fn from_microsoft(is_reminder_on: Option<bool>, lead_minutes: i32) -> Option<String> {
-    let _ = (is_reminder_on, lead_minutes);
-    todo!("task 4 green")
+    match is_reminder_on? {
+        false => Some(NO_ALERT.to_string()),
+        true if lead_minutes > 0 => serde_json::to_string(&vec![serde_json::json!({
+            "method": "popup",
+            "minutes": lead_minutes,
+        })])
+        .ok(),
+        true => None,
+    }
 }
 
 #[cfg(test)]

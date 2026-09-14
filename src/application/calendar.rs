@@ -2577,18 +2577,9 @@ pub fn google_event_to_local(
         serde_json::to_string(&arr).ok()
     };
 
-    let reminders_json = event.reminders.as_ref().and_then(|r| {
-        if r.overrides.is_empty() {
-            None
-        } else {
-            let arr: Vec<_> = r
-                .overrides
-                .iter()
-                .map(|o| serde_json::json!({"method": o.method, "minutes": o.minutes}))
-                .collect();
-            serde_json::to_string(&arr).ok()
-        }
-    });
+    // Own alerts as sent; "never alerts" as off; the calendar's default as
+    // nothing. `event_alerts` says what each means to the due window.
+    let reminders_json = crate::application::event_alerts::from_google(event.reminders.as_ref());
 
     let show_as = if event.transparency.as_deref() == Some("transparent") {
         "free"
@@ -3057,16 +3048,12 @@ pub fn ms_event_to_local(
         serde_json::to_string(&arr).ok()
     };
 
-    let lead = event.reminder_minutes_before_start.unwrap_or(0);
-    let reminders_json = if event.is_reminder_on.unwrap_or(false) && lead > 0 {
-        serde_json::to_string(&vec![serde_json::json!({
-            "method": "popup",
-            "minutes": lead,
-        })])
-        .ok()
-    } else {
-        None
-    };
+    // On with a lead as one alert; off as off, so the due window never gives
+    // a silenced event the default lead. `event_alerts` says what each means.
+    let reminders_json = crate::application::event_alerts::from_microsoft(
+        event.is_reminder_on,
+        event.reminder_minutes_before_start.unwrap_or(0),
+    );
 
     let show_as = match event.show_as.as_deref().unwrap_or_default() {
         "free" => "free",

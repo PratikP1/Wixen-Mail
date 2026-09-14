@@ -1462,8 +1462,10 @@ impl CalendarEventItem {
     /// nothing: whoever needs the row back keeps the row beside the identity
     /// rather than reading the string.
     pub fn due_identity(&self) -> crate::application::due::Identity {
-        let _ = &self.id;
-        todo!("task 4 green")
+        crate::application::due::Identity {
+            kind: crate::application::due::Kind::Event,
+            id: format!("{}|{}", self.id, self.start),
+        }
     }
 
     /// Build a display item from a stored event.
