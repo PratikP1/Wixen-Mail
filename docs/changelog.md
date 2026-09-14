@@ -338,6 +338,18 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **The message editor's page is called "Message body", not its own source.**
+  The composer's editor is a browser engine showing a page this program
+  writes, and the page had no title, so the engine named it after its
+  address. The address was the page itself, every character of it, encoded.
+  A screen reader entering that page could be told the name, which is
+  thousands of characters of encoded text before the first word of yours.
+  The accessibility scan of 2026-09-14 reported both of the engine's own
+  names for the page as longer than 512 characters, and both were this. The
+  page now carries the same title as the editing area's own label. Nobody
+  has yet heard what a screen reader says on entering the editor, before or
+  after; the scan is what found it and the next scan is what confirms it.
+
 - **A page inside the installer promised that signing the setup file would make
   the Windows warning stop appearing.** It will not, and no certificate this
   project can buy changes that. The sentence was corrected by hand on

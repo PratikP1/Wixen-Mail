@@ -16288,7 +16288,7 @@ red = [
     "presentation::editor_page_harness::tests::test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 81 },
+    { file = "src/presentation/editor_document.rs", tests = 82 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
 ]
 

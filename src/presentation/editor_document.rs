@@ -134,9 +134,13 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     let max_rows = MAX_TABLE_ROWS;
     let inline_markers = markdown_inline_table();
 
+    // The title is what the browser engine names its window and the page
+    // root after. Without one it uses the page's address, and this page is
+    // its own address, so the name was the whole document, base64 and all.
+    // The same words as the editable region's label, so the two agree.
     format!(
         r#"<!DOCTYPE html>
-<html lang="{language}"><head><meta charset="utf-8"><style>
+<html lang="{language}"><head><meta charset="utf-8"><title>Message body</title><style>
 html, body {{ height: 100%; margin: 0; }}
 body {{
     font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
