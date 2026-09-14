@@ -181,7 +181,14 @@ application's controls.
 
 ## Known gaps in verification
 
-Automated scanning covers roughly half of WCAG. A separate workflow drives a real
+The automated scans can produce a finding against three of the fifty-five WCAG
+2.2 Level A and AA success criteria, Info and Relationships, Keyboard, and Name,
+Role, Value, and the MSAA walk judges the Name part of the last of those alone;
+`docs/wcag-coverage.md` has the row for every criterion. The criteria are named
+here rather than numbered because a guard reads this page for version numbers
+and a criterion number looks like one. Until 2026-09-14 this line said the
+scanning covers roughly half of WCAG, which was a figure about defects repeated
+as one about criteria. A separate workflow drives a real
 copy of NVDA against specific keystrokes and checks what it actually said aloud,
 which the structural scan cannot do, since the structural scan never presses a
 key. That workflow is narrow, though: it covers only the interactions its own

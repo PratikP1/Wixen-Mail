@@ -227,6 +227,21 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **The accessibility page no longer says automated scanning catches roughly
+  half of what WCAG asks for.** It says what the number is: the scans can
+  produce a finding against three of the fifty-five WCAG 2.2 Level A and AA
+  success criteria, 1.3.1 Info and Relationships, 2.1.1 Keyboard and 4.1.2
+  Name, Role, Value, and the other fifty-two are a person's to judge. A new
+  page, [What the accessibility scans can judge](wcag-coverage.md), has a row
+  for each of the fifty-five saying what each check can and cannot say about
+  it, which windows the scan reaches and which it does not, and that no scan
+  has yet run against them. The entry further down this file that introduced
+  the accessibility scan says "It covers roughly half of WCAG"; that line is
+  left as it was written, and it is wrong. The half figure is a widely quoted
+  estimate of how many accessibility defects an automated tool finds, and it
+  was repeated here as the share of criteria a scan can judge, which is a
+  different thing by about an order of magnitude. Corrected 2026-09-14.
+
 - **A reminder that comes due while you are writing no longer takes the
   keyboard from you without warning.** Until now the reminder window opened
   over whatever you were doing, mid-word, and took the keys. Now, if a

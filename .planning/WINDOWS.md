@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 371
+open_count: 378
 waived_count: 0
 fixed_count: 23
-total_count: 394
-last_updated: 2026-09-14T11:33:50.327Z
+total_count: 401
+last_updated: 2026-09-14T12:38:37.877Z
 ---
 
 # Broken Windows Ledger
@@ -409,6 +409,13 @@ last_updated: 2026-09-14T11:33:50.327Z
 | 392 | 06 | deviation | scripts/msaa-names.ps1 |  | 06-06 task 2 changed scripts/msaa-names.ps1, which the plan did not name: it walks every visible top-level window the process owns instead of .NET's MainWindowHandle, and a failed walk exits 2 instead of terminating at Write-Error under the Stop preference with exit 1, which the workflow read as an unnamed control. Rule 2: the channel NVDA reads had never seen a dialog, measured from the CI log of 2026-09-10 where three dialogs reported the same 1797 elements. | open |  | 2026-09-14T11:33:49.490Z |  |
 | 393 | 06 | deviation | src/presentation/scan_target.rs |  | 06-06 task 2 added mail-module, a thirty-first window beyond the count Pratik answered. With no target given the first-run question opens over the frame on a fresh profile, so main has always been the frame under a modal and the bare main window had never been scanned. Six module targets rather than five, and main left as what it is: the window a fresh profile first meets. | open |  | 2026-09-14T11:33:49.914Z |  |
 | 394 | 06 | todo | src/presentation/wx_app.rs |  | Seventeen dialogs open only from inside another window and are outside the scan after 06-06: the account edit dialog, Confirm Delete in the Calendar window, Check Spelling, Insert Table and Preview Before Send in the composer, the contact edit dialog and its Add Email Address, Add Phone Number, Add Address and Add Custom Field, the rule, filter, tag and signature edit dialogs, the wait-for-an-answer window, choose-from-list, and ask-for-a-name. One entry for the layer rather than one per window because these were not in the count Pratik answered on 2026-09-14, which was of windows with their own entry point; whether they are the next widening is his to say, and 06-07's list should say they are outside. | open |  | 2026-09-14T11:33:50.327Z |  |
+| 395 | 06 | unrun-verify | docs/wcag-coverage.md |  | 06-07: fifty-two of the fifty-five WCAG 2.2 Level A and AA criteria can only be judged by a person, and nobody has walked any of them against this application. The page says what is left for a person on every row; none of it has happened. Three sentences in three windows have been heard by the NVDA suite and nothing else on any row has. | open |  | 2026-09-14T12:38:35.418Z |  |
+| 396 | 06 | todo | docs/wcag-coverage.md |  | 06-07: the applies column of the coverage table is a judgement about applicability to a Windows desktop mail client, made by reading each criterion against what a mail client does, and nobody has checked it against this application. The six no answers are the regulations' and are named; the forty-nine yes answers are one reader's. The row a person disagrees with is the row to correct, with the date. | open |  | 2026-09-14T12:38:35.857Z |  |
+| 397 | 06 | todo | scripts/msaa-names.ps1 |  | 06-07: seventeen nested dialogs are outside both scan channels, named in ledger 394 and on docs/wcag-coverage.md. Every yes on the coverage page is a yes for the thirty-one windows the scan reaches and for no other, and the page says so. Not a new entry for the layer; this one says the coverage page depends on 394. | open |  | 2026-09-14T12:38:36.275Z |  |
+| 398 | 06 | todo | nvda-tests/README.md |  | 06-07 found, out of scope: the NVDA README says the package exists for two places and its What is in here table lists two test files, where four exist, three running and one skipped. Found while reading the suite for the coverage page's NVDA column. The README under-claims and nothing reads it. | open |  | 2026-09-14T12:38:36.671Z |  |
+| 399 | 06 | todo | tests/house_style.rs | 3348 | 06-07 found: test_no_status_page_names_a_version_the_code_does_not_ship reads a WCAG criterion number such as 1.3.1 on docs/IMPLEMENTATION_STATUS.md as a version the code does not ship. The status page names the three criteria by name to stay clear of it. A reading that cannot tell a criterion number from a version is a limitation to know about, not yet a defect worth widening the reading for; if a criterion number has to appear on a status page, that is the moment. | open |  | 2026-09-14T12:38:37.079Z |  |
+| 400 | 06 | deviation | scripts/check.sh |  | 06-07: one line added to check.sh's docs_only path, cargo test --lib presentation::what_the_scans_can_judge::, on the help_page precedent. Not in the plan's file list. Without it a commit editing only docs/wcag-coverage.md answered docs_only and ran everything except the reading that holds that page to the code, which is a guard running on every commit except the ones that could break it. Shown working by the docs commit 93f8c865, which ran the eight tests under docs_only. | open |  | 2026-09-14T12:38:37.478Z |  |
+| 401 | 06 | deviation | CLAUDE.md |  | 06-07: CLAUDE.md had two copies of the half figure where the plan counted one and said to leave it. Guardrail 2 said covers about half of WCAG across a line break, which the plan's single-line grep could not see, and was wrong the same way the four product copies were; corrected with the date and the old wording. The accessibility section's half of accessibility defects is about defects and was left standing with the qualification added, as the orchestrator asked, rather than left untouched as the plan said. | open |  | 2026-09-14T12:38:37.877Z |  |
 
 ````json
 [
@@ -5138,6 +5145,90 @@ last_updated: 2026-09-14T11:33:50.327Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T11:33:50.327Z",
+    "resolved_at": null
+  },
+  {
+    "id": 395,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "docs/wcag-coverage.md",
+    "line": null,
+    "description": "06-07: fifty-two of the fifty-five WCAG 2.2 Level A and AA criteria can only be judged by a person, and nobody has walked any of them against this application. The page says what is left for a person on every row; none of it has happened. Three sentences in three windows have been heard by the NVDA suite and nothing else on any row has.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:35.418Z",
+    "resolved_at": null
+  },
+  {
+    "id": 396,
+    "kind": "todo",
+    "phase": "06",
+    "file": "docs/wcag-coverage.md",
+    "line": null,
+    "description": "06-07: the applies column of the coverage table is a judgement about applicability to a Windows desktop mail client, made by reading each criterion against what a mail client does, and nobody has checked it against this application. The six no answers are the regulations' and are named; the forty-nine yes answers are one reader's. The row a person disagrees with is the row to correct, with the date.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:35.857Z",
+    "resolved_at": null
+  },
+  {
+    "id": 397,
+    "kind": "todo",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "06-07: seventeen nested dialogs are outside both scan channels, named in ledger 394 and on docs/wcag-coverage.md. Every yes on the coverage page is a yes for the thirty-one windows the scan reaches and for no other, and the page says so. Not a new entry for the layer; this one says the coverage page depends on 394.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:36.275Z",
+    "resolved_at": null
+  },
+  {
+    "id": 398,
+    "kind": "todo",
+    "phase": "06",
+    "file": "nvda-tests/README.md",
+    "line": null,
+    "description": "06-07 found, out of scope: the NVDA README says the package exists for two places and its What is in here table lists two test files, where four exist, three running and one skipped. Found while reading the suite for the coverage page's NVDA column. The README under-claims and nothing reads it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:36.671Z",
+    "resolved_at": null
+  },
+  {
+    "id": 399,
+    "kind": "todo",
+    "phase": "06",
+    "file": "tests/house_style.rs",
+    "line": 3348,
+    "description": "06-07 found: test_no_status_page_names_a_version_the_code_does_not_ship reads a WCAG criterion number such as 1.3.1 on docs/IMPLEMENTATION_STATUS.md as a version the code does not ship. The status page names the three criteria by name to stay clear of it. A reading that cannot tell a criterion number from a version is a limitation to know about, not yet a defect worth widening the reading for; if a criterion number has to appear on a status page, that is the moment.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:37.079Z",
+    "resolved_at": null
+  },
+  {
+    "id": 400,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "06-07: one line added to check.sh's docs_only path, cargo test --lib presentation::what_the_scans_can_judge::, on the help_page precedent. Not in the plan's file list. Without it a commit editing only docs/wcag-coverage.md answered docs_only and ran everything except the reading that holds that page to the code, which is a guard running on every commit except the ones that could break it. Shown working by the docs commit 93f8c865, which ran the eight tests under docs_only.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:37.478Z",
+    "resolved_at": null
+  },
+  {
+    "id": 401,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "CLAUDE.md",
+    "line": null,
+    "description": "06-07: CLAUDE.md had two copies of the half figure where the plan counted one and said to leave it. Guardrail 2 said covers about half of WCAG across a line break, which the plan's single-line grep could not see, and was wrong the same way the four product copies were; corrected with the date and the old wording. The accessibility section's half of accessibility defects is about defects and was left standing with the qualification added, as the orchestrator asked, rather than left untouched as the plan said.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T12:38:37.877Z",
     "resolved_at": null
   }
 ]

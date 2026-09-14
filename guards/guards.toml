@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 567 records have arrived since and have not been through it.
+# 568 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -20892,4 +20892,29 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/scan_target.rs", tests = 9 },
+]
+
+# The coverage page, docs/wcag-coverage.md, says which of the fifty-five WCAG
+# 2.2 Level A and AA criteria each scan channel can produce a finding
+# against, and the three the Axe.Windows rules cite live in
+# presentation::what_the_scans_can_judge as code. The break is the page
+# going stale by hand: the 2.1.1 row's Axe.Windows cell changed to "no" with
+# the code untouched, which is the shape the five WebView2 findings went
+# stale in. Two go red rather than one, because the companion that plants a
+# fourth criterion expects exactly one disagreement and finds two.
+#
+# Measured by hand on 2026-09-14 against the whole library at eight threads,
+# `cargo test --lib --no-fail-fast`: 7,190 passed, 1 ignored, and exactly
+# these two failed.
+[[guard]]
+name = "the coverage page cannot say a criterion is unjudged while the code says the scan judges it"
+file = "docs/wcag-coverage.md"
+before = """| 2.1.1 Keyboard | A | yes | yes, 9 rules, all about whether an element reports itself as keyboard focusable given its control type | no | no |"""
+after = """| 2.1.1 Keyboard | A | yes | no | no | no |"""
+red = [
+    "presentation::what_the_scans_can_judge::tests::test_the_page_says_yes_for_exactly_the_criteria_the_code_names",
+    "presentation::what_the_scans_can_judge::tests::test_a_fourth_criterion_marked_yes_on_the_page_is_reported",
+]
+tests_last_seen = [
+    { file = "src/presentation/what_the_scans_can_judge.rs", tests = 8 },
 ]

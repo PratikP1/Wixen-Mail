@@ -27,8 +27,11 @@ Guardrails (each exists because we got it wrong here at least once):
    reachability before claiming completion. (All eight PIM update variants were handled in
    the UI and sent by nothing; five modules rendered empty in every build.)
 2. **Accessibility isn't done until a screen reader confirms it.** Tests prove structure;
-   only a real NVDA or Narrator run proves experience, and the automated scan covers about
-   half of WCAG. Worse, a call can look like accessibility and not be one. (Sixteen widgets
+   only a real NVDA or Narrator run proves experience, and the automated scan can produce a
+   finding against three of the fifty-five WCAG 2.2 AA criteria (`docs/wcag-coverage.md`;
+   this line said "about half of WCAG" until 2026-09-14, and a single-line grep for the
+   phrase missed it because the line wrapped). Worse, a call can look like accessibility
+   and not be one. (Sixteen widgets
    were "named" with `set_name()`, which sets an internal wxWidgets identifier and never
    reaches the accessibility tree. It compiled and passed 324 tests.)
 3. **No stubs presented as complete.** If something cannot be finished, say so and gate it.
@@ -715,8 +718,14 @@ present a stub as complete.
 Target WCAG 2.2 Level AA, applied to a Windows desktop application. This is the product's reason to
 exist, so accessibility work is not a review-time cleanup pass, it is part of building the feature.
 
-Automated checks catch roughly half of accessibility defects. They do not replace testing with real
-assistive technology. Structure present is not experience good.
+Automated checks catch roughly half of accessibility defects. That is a figure about defects, and
+it is not the share of criteria a scan can judge: the scans here can produce a finding against
+three of the fifty-five WCAG 2.2 Level A and AA success criteria, 1.3.1, 2.1.1 and 4.1.2, and the
+MSAA walk judges the Name part of 4.1.2 alone. `docs/wcag-coverage.md` has the row for every
+criterion. Four copies of this sentence in the tree had turned the defect figure into a criteria
+figure, corrected 2026-09-14; the first sentence here was left as it was, and the qualification is
+what was missing. They do not replace testing with real assistive technology. Structure present
+is not experience good.
 
 **Windows has two accessibility channels and this project needs both right.** UI Automation is what
 Narrator reads. MSAA, through `IAccessible`, is what NVDA reads for native controls, and it is the

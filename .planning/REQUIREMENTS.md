@@ -1309,6 +1309,19 @@ write path added by this milestone passes through that gate.
     retired with the control because the sentences it forbade are true now. The first,
     per-event, half is 06-02's and its listening pass is 06-06's; the box stays unticked for
     that reason and not for this one.
+    **Corrected 2026-09-14 by 06-07, on Pratik's answer that this file is corrected in place.**
+    The evidence above is wrong about the code as it stands, not merely out of date. It says
+    "`per_event` (line 392) and `set_event_channels` (line 424) are both **private**, `fn` and
+    not `pub fn`, so no screen could write one without changing a visibility." `per_event` is
+    not a function and never was: it is a struct field, `per_event: Vec<(Event,
+    BTreeSet<Channel>)>` at `src/presentation/accessibility/feedback.rs:497`, so "make it
+    public" was not a coherent instruction for it. `set_event_channels` is `pub fn` at
+    `feedback.rs:533` since 06-01 and is written by the settings screen at
+    `src/presentation/wx_settings.rs:2257`, beside `use_the_default_for` at 2282; the
+    per-event override enters this program from a screen, not only from a hand-edited
+    string. The `[S]` line below saying the overrides exist "with no interface" and the
+    fourth `[D]` line asking for a count of screens that reach `set_event_channels` are both
+    older than 06-02 and are left as they were written, as the record of what was asked.
     **One number outside this requirement, found stale and since corrected.** The grid is 16
     events by 4 channels: `Event::ALL` is `[Event; 16]` at `feedback.rs:114` and all sixteen
     have a non-test call site. `docs/changelog.md:8393` called it "nine events by four channels"
@@ -1439,6 +1452,18 @@ write path added by this milestone passes through that gate.
     (`src/presentation/wx_settings.rs:1251`) and in `docs/accessibility.md`, and the reasoning
     at lines 80 to 92 says why it matters: an English month name inside a French date, read with
     French pronunciation, sounds like the screen reader misbehaving.
+    **Corrected 2026-09-14 by 06-07, on Pratik's answer that this file is corrected in place.**
+    The paragraph above says "what is left is the strings and only the strings" and then names
+    one file for them, `src/presentation/date_display.rs`, with `MONTHS` at line 100 formatted
+    from at 384 and 456 and offered at `wx_item_form.rs:844`. That was one file and a line in a
+    second where there were four files. 06-03 had to change `src/presentation/date_display.rs`
+    and `src/presentation/wx_item_form.rs`, which the paragraph cites, and also
+    `src/service/signed_mail.rs`, where eight signature sentences wrote the month with `%B`, and
+    `src/application/occurrences.rs`, where the repeat-series sentence wrote the seven English
+    day names, neither of which this paragraph mentions at all. The merges are `e98514b0` and
+    `39417f88`, and the source-reading guard that now holds no shipped literal to an English
+    month or day is how a fifth file would be found. The rest of the paragraph, the order and
+    the clock already following the machine, was right.
 
   - [S] `docs/changelog.md:8005`. The previous citation, line 6946, is now a paragraph about
     filter rules that move a message to a folder.
@@ -1470,9 +1495,27 @@ write path added by this milestone passes through that gate.
     One thing to add rather than correct: that "last read" is now five and a half weeks old, and
     the workflow is non-blocking (`docs/IMPLEMENTATION_STATUS.md:112`), so nothing forces a
     re-read. A scan whose result nobody is made to look at is guardrail 4 waiting to happen.
+    **Corrected 2026-09-14 by 06-07, on Pratik's answer that this file is corrected in place.**
+    The evidence above rests on "line 136 records roughly half of WCAG covered", and that
+    figure is what 06-07 disproved: it is a widely quoted estimate of the share of accessibility
+    defects an automated tool finds, and every copy in this tree had made it the share of
+    success criteria a scan can judge. The number, taken from the pinned scanner's own rule
+    list on 2026-09-14, is three of fifty-five: the 155 rules of Axe.Windows v2.4.2 cite 1.3.1,
+    2.1.1 and 4.1.2 and no other WCAG criterion, 61 + 9 + 9 rules, with the other 76 citing
+    Section 508; and the MSAA walk judges the Name part of 4.1.2 alone. Fifty-five rather than
+    56, because 4.1.1 carries no level in WCAG 2.2. "Nothing in the tree names which WCAG 2.2
+    AA criteria the scan can and cannot judge" is no longer true: `docs/wcag-coverage.md` has a
+    row for every criterion, `src/presentation/what_the_scans_can_judge.rs` holds the three as
+    code with a reading that holds the page to them both ways, and the scan's own step summary
+    names them. The five findings have still not been re-read, and there is still no list of
+    interactions for a manual pass; those are 06-08's. The anchors `IMPLEMENTATION_STATUS.md:130`
+    and `:136` had moved to 178 and 184 by the time this was written, and 184 no longer says
+    half.
 
   - [S] Automated checks catch roughly half of accessibility defects and do not replace testing
-    with real assistive technology. Structure present is not experience good.
+    with real assistive technology. Structure present is not experience good. (Left as written
+    on 2026-09-14: this sentence is about defects, and is the one copy of the figure that was
+    never wrong.)
 
   - [D] The scan output names which WCAG 2.2 AA success criteria it can and cannot judge, so
     "roughly half" becomes a list rather than an estimate.
