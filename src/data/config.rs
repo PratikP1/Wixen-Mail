@@ -747,6 +747,16 @@ impl AppConfig {
             .and(self.allowed_changes)
     }
 
+    /// Write down what one account may change, as a screen answered it.
+    pub fn set_allowed_for(
+        &mut self,
+        account_id: &str,
+        answer: crate::application::allowed::Allowed,
+    ) {
+        self.allowed_per_account
+            .insert(account_id.to_string(), answer);
+    }
+
     /// The directory this account looks people up in, if it names one.
     ///
     /// `None` means nothing is ever asked of any server while somebody types a
@@ -1428,6 +1438,84 @@ mod permission_tests {
             .insert("eager".to_string(), Allowed::EVERYTHING);
 
         assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_an_answer_the_same_as_the_applications_writes_no_entry() {
+        // The account edit dialog shows every account three boxes, and most
+        // people will press OK without touching them. That must not fill the
+        // map with a row per account saying "the same as everywhere", because
+        // a row is a decision somebody made and these people made none.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::FOR_TESTING;
+
+        settings.set_allowed_for("work", Allowed::FOR_TESTING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an answer no different from the application-wide one was written down"
+        );
+
+        // And the other way round: an account that was narrower and is set
+        // back to the same as everywhere loses its row rather than keeping one
+        // that happens to agree today and would not after Settings changed.
+        settings.set_allowed_for("work", Allowed::NOTHING);
+        assert_eq!(settings.allowed_for("work"), Allowed::NOTHING);
+        settings.set_allowed_for("work", Allowed::FOR_TESTING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an account set back to the application-wide answer kept its row"
+        );
+    }
+
+    #[test]
+    fn test_a_screens_answer_for_one_account_can_only_ever_narrow() {
+        // `test_an_account_cannot_be_wider_than_the_setting` above proves the
+        // reader narrows. This proves the writer a screen uses cannot even
+        // record a widening: everything off in Settings, everything on for one
+        // account, and the account gets nothing and is written down nowhere.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::NOTHING;
+
+        settings.set_allowed_for("eager", Allowed::EVERYTHING);
+
+        assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an answer that narrows nothing was kept as though it were a decision"
+        );
+    }
+
+    #[test]
+    fn test_a_box_that_was_unavailable_records_no_narrowing() {
+        // Mail is off for every account in Settings, so the mail box on the
+        // account dialog is unavailable and shows off. Somebody unticks the
+        // tasks box. What is written down is that this account narrows tasks
+        // and says nothing about mail, because the person was never asked.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::FOR_TESTING;
+        let narrowed_on_tasks = Allowed {
+            mail: false,
+            personal_information: false,
+            reading: true,
+        };
+
+        settings.set_allowed_for("work", narrowed_on_tasks);
+        assert_eq!(settings.allowed_for("work"), narrowed_on_tasks);
+
+        // Later, mail is turned on for every account. This account follows,
+        // because it never refused mail; it only ever refused tasks. The
+        // alternative is an account that silently stays off after the person
+        // turned the one switch they could see on, with nothing saying why.
+        settings.allowed_changes = Allowed::EVERYTHING;
+        assert_eq!(
+            settings.allowed_for("work"),
+            Allowed {
+                mail: true,
+                personal_information: false,
+                reading: true,
+            },
+            "an unavailable box was written down as a refusal"
+        );
     }
 
     #[test]
@@ -2493,6 +2581,80 @@ mod every_setting_is_acted_on {
             settings_screen.contains("sizer.add_sizer(&notes_sec"),
             "the Notes section is built and never put into the tab, so it is \
              not on the screen at all"
+        );
+    }
+
+    #[test]
+    fn test_what_one_account_may_change_is_offered_by_the_account_manager() {
+        // The fourth hand-named companion, and the first about a screen other
+        // than the settings dialog. `allowed_per_account` was the one entry in
+        // a list of settings stored, read, honoured out to the provider
+        // clients and offered by nothing. The mirror guard below is satisfied
+        // by the name appearing anywhere in a screen, including in a comment,
+        // so it cannot ask whether the control does anything. This asks.
+        //
+        // It reads the account manager rather than the settings screen,
+        // because the answer is per account and belongs on the screen that
+        // lists accounts, beside the directory each account looks people up
+        // in, for the reason `OFFERED_BY_ANOTHER_SCREEN` gives.
+        let account_manager = what_ships_in("src/presentation/wx_account_manager.rs");
+        assert!(
+            !account_manager.is_empty(),
+            "the account manager could not be read, so this proves nothing"
+        );
+
+        // Built, under the heading the sync sentences send somebody to, and
+        // naming the reading heading too, because the third box is about a
+        // read and the Settings box it follows sits under a different heading.
+        for named in ["SETTINGS_SECTION", "READING_SECTION"] {
+            assert!(
+                account_manager.contains(named),
+                "the account manager does not name {named}, so what one account may \
+                 change is honoured all the way out to the provider with no control \
+                 anybody can see or reach"
+            );
+        }
+
+        // Showing the stored answer. Three boxes built from a fixed value would
+        // show every account the same thing and satisfy every line above.
+        assert!(
+            account_manager.contains(".allowed_for("),
+            "the dialog never asks what this account may change, so the boxes show \
+             whatever they were built with"
+        );
+        for shown in ["here.mail", "here.personal_information", "here.reading"] {
+            assert!(
+                account_manager.contains(shown),
+                "the dialog does not show {shown}, so one of the three boxes is not \
+                 built from the answer stored for this account"
+            );
+        }
+
+        // Unavailable rather than offered where it is off for every account,
+        // because a per-account answer can only narrow. A box that looks like
+        // it can widen is a box that lies.
+        assert!(
+            account_manager.contains(".enable(allowed_everywhere)"),
+            "a box for something switched off for every account is offered as \
+             though ticking it could turn it on here"
+        );
+
+        // Read back from the real fields into the one writer, which is the
+        // half a box built, shown and read into nothing would fail.
+        for read_back in [
+            "mail: w.allow_mail_here.get_value()",
+            "personal_information: w.allow_personal_information_here.get_value()",
+            "reading: w.allow_reading_here.get_value()",
+        ] {
+            assert!(
+                account_manager.contains(read_back),
+                "the dialog does not read {read_back}, so ticking that box changes \
+                 nothing"
+            );
+        }
+        assert!(
+            account_manager.contains(".set_allowed_for("),
+            "the three answers are read out of the boxes and written nowhere"
         );
     }
 

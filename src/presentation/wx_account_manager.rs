@@ -916,6 +916,14 @@ struct Page2Shell {
     interval: TextCtrl,
     enabled_label: StaticText,
     enabled: CheckBox,
+    allowed_section_heading: StaticText,
+    allowed_section_spacer: StaticText,
+    allow_mail_here_label: StaticText,
+    allow_mail_here: CheckBox,
+    allow_personal_information_here_label: StaticText,
+    allow_personal_information_here: CheckBox,
+    allow_reading_here_label: StaticText,
+    allow_reading_here: CheckBox,
     directory_section_heading: StaticText,
     directory_section_spacer: StaticText,
     directory_url_label: StaticText,
@@ -950,6 +958,14 @@ impl Page2Shell {
         self.interval.show(visible);
         self.enabled_label.show(visible);
         self.enabled.show(visible);
+        self.allowed_section_heading.show(visible);
+        self.allowed_section_spacer.show(visible);
+        self.allow_mail_here_label.show(visible);
+        self.allow_mail_here.show(visible);
+        self.allow_personal_information_here_label.show(visible);
+        self.allow_personal_information_here.show(visible);
+        self.allow_reading_here_label.show(visible);
+        self.allow_reading_here.show(visible);
         self.directory_section_heading.show(visible);
         self.directory_section_spacer.show(visible);
         self.directory_url_label.show(visible);
@@ -962,6 +978,31 @@ impl Page2Shell {
 /// What the step heading reads on each page.
 const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
 const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
+
+/// What each of the three boxes about this account's permissions is for, in
+/// the words its label opens with.
+///
+/// Three, because `application::allowed::Allowed` holds three answers and a
+/// control that offered fewer would leave a settings file with two of them
+/// narrowed unreachable again, which is the defect these boxes exist to close.
+/// Each says which of the three it is on its own, because somebody moving
+/// through this page by keyboard meets them in order with nothing else on
+/// screen, and "Mail" alone does not say whether it is about sending mail or
+/// reading it.
+///
+/// The Alt keys are M, K and X, chosen against the other boxes on the
+/// connection page: S, T, L, D, C, B, U, W, G, I, A and H are taken there.
+const MAIL_FROM_THIS_ACCOUNT: &str = "Send and delete &mail from this account";
+const PERSONAL_INFORMATION_FROM_THIS_ACCOUNT: &str =
+    "Change tas&ks, contacts and calendar events from this account";
+const MESSAGE_TEXT_FOR_THIS_ACCOUNT: &str =
+    "Fetch message te&xt for this account when it is not already stored";
+
+/// The label on one of the three boxes above.
+fn permission_box_label(what: &str, allowed_everywhere: bool, off_under: &str) -> String {
+    let _ = (allowed_everywhere, off_under);
+    format!("{what}, where Settings allows it")
+}
 
 /// The protocol a live `Choice`'s current selection names.
 ///
@@ -1007,6 +1048,12 @@ pub struct AccountEditWidgets {
     pub pass_f: TextCtrl,
     pub interval_f: TextCtrl,
     pub enabled: CheckBox,
+    /// What this account may change, one box per answer in
+    /// `application::allowed::Allowed`. Each can only narrow what Settings
+    /// allows for every account, and is unavailable where Settings has it off.
+    pub allow_mail_here: CheckBox,
+    pub allow_personal_information_here: CheckBox,
+    pub allow_reading_here: CheckBox,
     /// Where this account's organisation keeps its list of people, or empty.
     pub directory_url_f: TextCtrl,
     /// Which part of that list to search, as the organisation names it.
@@ -1505,6 +1552,42 @@ pub fn build_account_edit_dialog(
     let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
     let (enabled_label, enabled) = cb("Ena&ble this account", true);
 
+    // ── What this account may change ─────────────────────────────────────
+    //
+    // The same three answers the Permissions tab offers for every account,
+    // for this one. The heading comes from the constant the sync sentences
+    // name, for the reason the settings screen gives: a person told to turn
+    // this on should read the words they were told.
+    let (allowed_section_heading, allowed_section_spacer) = section(&format!(
+        "── {} for this account ──",
+        crate::application::allowed::SETTINGS_SECTION
+    ));
+    let everywhere = crate::data::config::AppConfig::default().allowed_changes;
+    let (allow_mail_here_label, allow_mail_here) = cb(
+        &permission_box_label(
+            MAIL_FROM_THIS_ACCOUNT,
+            true,
+            crate::application::allowed::SETTINGS_SECTION,
+        ),
+        everywhere.mail,
+    );
+    let (allow_personal_information_here_label, allow_personal_information_here) = cb(
+        &permission_box_label(
+            PERSONAL_INFORMATION_FROM_THIS_ACCOUNT,
+            true,
+            crate::application::allowed::SETTINGS_SECTION,
+        ),
+        everywhere.personal_information,
+    );
+    let (allow_reading_here_label, allow_reading_here) = cb(
+        &permission_box_label(
+            MESSAGE_TEXT_FOR_THIS_ACCOUNT,
+            true,
+            crate::application::allowed::READING_SECTION,
+        ),
+        everywhere.reading,
+    );
+
     // Where somebody's employer keeps its list of people, so typing part of a
     // colleague's name into a message finds them.
     //
@@ -1553,6 +1636,14 @@ pub fn build_account_edit_dialog(
         interval: interval_f,
         enabled_label,
         enabled,
+        allowed_section_heading,
+        allowed_section_spacer,
+        allow_mail_here_label,
+        allow_mail_here,
+        allow_personal_information_here_label,
+        allow_personal_information_here,
+        allow_reading_here_label,
+        allow_reading_here,
         directory_section_heading,
         directory_section_spacer,
         directory_url_label,
@@ -1616,6 +1707,9 @@ pub fn build_account_edit_dialog(
         pass_f,
         interval_f,
         enabled,
+        allow_mail_here,
+        allow_personal_information_here,
+        allow_reading_here,
         directory_url_f,
         directory_base_f,
         next,
@@ -2235,6 +2329,63 @@ mod tests {
                 window.contains(constant),
                 "{site} does not attach {constant} within reach of where it is built: {window}"
             );
+        }
+    }
+
+    #[test]
+    fn test_a_permission_box_says_which_of_the_three_it_is_and_that_it_can_only_narrow() {
+        // Three boxes met in order by somebody moving through the page with a
+        // screen reader. Each has to say which of the three it is, and that
+        // an account can be allowed less than Settings allows and never more.
+        // Where Settings has it off for every account, the box is not an
+        // offer, and its own name says so and names the heading to go to.
+        use crate::application::allowed::{READING_SECTION, SETTINGS_SECTION};
+
+        let offered = permission_box_label(MAIL_FROM_THIS_ACCOUNT, true, SETTINGS_SECTION);
+        let unavailable = permission_box_label(MAIL_FROM_THIS_ACCOUNT, false, SETTINGS_SECTION);
+        assert!(
+            offered.contains("mail") && offered.contains("this account"),
+            "{offered}"
+        );
+        assert!(
+            offered.contains("Settings"),
+            "the label does not say it can only narrow what Settings allows: {offered}"
+        );
+        assert!(
+            unavailable.contains("cannot be turned on here"),
+            "a box that is off for every account reads as an offer: {unavailable}"
+        );
+        assert!(
+            unavailable.contains(SETTINGS_SECTION),
+            "the box does not name the heading where it is off: {unavailable}"
+        );
+        assert_ne!(offered, unavailable);
+
+        // The reading box names the reading heading, not the one about
+        // changes, for the reason `READING_SECTION`'s own doc gives: a
+        // sentence sending somebody to a heading has to name the heading they
+        // will find.
+        let reading_off =
+            permission_box_label(MESSAGE_TEXT_FOR_THIS_ACCOUNT, false, READING_SECTION);
+        assert!(
+            reading_off.contains(READING_SECTION) && !reading_off.contains(SETTINGS_SECTION),
+            "{reading_off}"
+        );
+
+        // Told apart, and each on its own Alt key.
+        let mut keys = Vec::new();
+        for what in [
+            MAIL_FROM_THIS_ACCOUNT,
+            PERSONAL_INFORMATION_FROM_THIS_ACCOUNT,
+            MESSAGE_TEXT_FOR_THIS_ACCOUNT,
+        ] {
+            let after_ampersand = what.split_once('&').map(|(_, rest)| rest.chars().next());
+            let key = after_ampersand.flatten().expect("each box has an Alt key");
+            assert!(
+                !keys.contains(&key),
+                "two of the three boxes share Alt+{key}"
+            );
+            keys.push(key);
         }
     }
 
