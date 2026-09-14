@@ -434,6 +434,13 @@ pub struct WxUIState {
     /// In state rather than captured by the paint callback, so saving new
     /// hours in Settings changes what the rows say without a restart.
     pub working_day: crate::application::reading_habits::WorkingDay,
+    /// How many minutes before an event the due window raises it when its
+    /// stored alerts say nothing: `default_reminder_minutes` in Settings.
+    ///
+    /// In state for the same reason the working day is: the look runs off
+    /// the state, and a new default saved in Settings has to reach the next
+    /// look without a restart. An event stored as off is never given this.
+    pub default_event_alert_lead: i64,
     /// Which calendar view is on screen and the day it is anchored on.
     ///
     /// In state rather than captured by a handler, because four different
@@ -487,6 +494,9 @@ impl Default for WxUIState {
             calendars: Vec::new(),
             selected_note_id: None,
             working_day: crate::application::reading_habits::WorkingDay::default(),
+            default_event_alert_lead: i64::from(
+                crate::data::config::AppConfig::default().default_reminder_minutes,
+            ),
             calendar_showing: CalendarShowing::agenda_now(),
         }
     }
@@ -1100,6 +1110,13 @@ impl WxMailApp {
                     )
                 })
                 .unwrap_or_default();
+            // The lead the due window gives an event whose stored alerts say
+            // nothing, from the same setting the event editor fills its box
+            // from. Into state for the reason the working day is.
+            if let Some(cfg) = stored_config.as_ref() {
+                lock_state(&state).default_event_alert_lead =
+                    i64::from(cfg.default_reminder_minutes);
+            }
             // The view the calendar opens on, so that choosing Week and coming
             // back tomorrow is still Week. Into state for the same reason the
             // working day is: every path that reads the calendar back asks
@@ -5659,7 +5676,7 @@ impl WxMailApp {
                         looked_at.set(std::time::Instant::now());
                         raise_what_is_due(
                             &frame,
-                            &state,
+                            app,
                             &message_cache,
                             &a11y,
                             &between_looks,
@@ -10553,16 +10570,307 @@ fn whether_somebody_is_typing(somewhere_to_type: &[TextCtrl]) -> bool {
             .any(|box_| box_.has_focus() && box_.is_editable())
 }
 
-/// Look at the reminders and raise what has come due.
+/// The reminder feed: what the reminders list holds, as candidates.
 ///
-/// A reminder found due while somebody is typing is said and sounded at this
-/// look, on a channel that does not move focus, and its window is held for
+/// A reminder's stored time is its alert, so it is raised at its own moment;
+/// one with no time is not a candidate. Read from the state rather than the
+/// cache, because reminders were read into it at startup for exactly this,
+/// and the panel and this look have to agree about what a reminder says.
+fn reminders_that_might_be_due(
+    rows: &[crate::presentation::ui_types::ReminderItem],
+) -> Vec<crate::application::due::Candidate> {
+    use crate::application::due;
+    rows.iter()
+        .filter_map(|r| {
+            due::Candidate::at_its_own_time(
+                due::Identity {
+                    kind: due::Kind::Reminder,
+                    id: r.id.clone(),
+                },
+                &r.title,
+                r.due_datetime.as_deref()?,
+                r.is_completed,
+            )
+        })
+        .collect()
+}
+
+/// The task feed: tasks with a due date on yesterday or today, not done, from
+/// every source including the local account, raised at the hour the working
+/// day starts.
+///
+/// The hour is Pratik's decision of 2026-09-14: "At the beginning of the day
+/// as set in the settings. If 8:00 is the start time, then that is when the
+/// task should be due." A task's due date is a date and never a time, on
+/// purpose, so the hour is this program's, and `working_day_starts` is the
+/// one hour already the person's own. Read from the cache at each look, one
+/// small query per source over the connection this window already holds,
+/// narrowed here to two days because `what_is_due` would refuse the rest.
+fn tasks_that_might_be_due(
+    cache: &MessageCache,
+    sources: &[String],
+    today: chrono::NaiveDate,
+    hour: u32,
+) -> Vec<crate::application::due::Candidate> {
+    use crate::application::due;
+    let yesterday = today.pred_opt().unwrap_or(today);
+    sources
+        .iter()
+        .flat_map(|source| match cache.get_all_tasks_for_account(source) {
+            Ok(tasks) => tasks,
+            // Not swallowed. A task that never comes due because the read
+            // failed looks exactly like one nobody set.
+            Err(why) => {
+                tracing::warn!("Could not read tasks for {source}: {why}");
+                Vec::new()
+            }
+        })
+        .filter(|task| !task.is_completed)
+        .filter_map(|task| {
+            let stored = task.due_date.as_deref()?;
+            let day = crate::common::moment::read(stored)?.the_day();
+            if day < yesterday || day > today {
+                return None;
+            }
+            Some(due::Candidate {
+                identity: due::Identity {
+                    kind: due::Kind::Task,
+                    id: task.id.clone(),
+                },
+                title: task.title.clone(),
+                raise_at: due::when_a_day_alerts(day, hour)?,
+                when: stored.to_string(),
+                ends: None,
+                done: task.is_completed,
+            })
+        })
+        .collect()
+}
+
+/// The event feed: every day of every event that could fall between
+/// yesterday and tomorrow, from every source, hidden calendars left out as
+/// the calendar leaves them out, each day its own row, raised at its start
+/// less its lead.
+///
+/// The lead is `event_alerts::lead_to_raise_at`: a stored alert as stored,
+/// off as no row at all, and nothing stored as the program's default, which
+/// is Pratik's decision of 2026-09-14, "Option C should be used but we must
+/// make sure that the event actually has a reminder". An all-day event's
+/// start is a whole day; its alert base is that day at the hour the working
+/// day starts, the same hour a dated task is due at, so a fifteen-minute lead
+/// on an all-day event fires at a quarter to nine rather than the night
+/// before. An all-day event ends at the end of its last day.
+///
+/// Each row's identity is composed by `CalendarEventItem::due_identity`, id
+/// and start together, and nothing here or anywhere else takes it apart:
+/// the row itself is kept beside the identity for the Details button, which
+/// is why this hands back both.
+fn events_that_might_be_due(
+    cache: &MessageCache,
+    sources: &[String],
+    today: chrono::NaiveDate,
+    hour: u32,
+    default_lead: i64,
+) -> (
+    Vec<crate::application::due::Candidate>,
+    HashMap<crate::application::due::Identity, (String, CalendarEventItem)>,
+) {
+    use crate::application::due;
+    use crate::common::moment::{self, Moment};
+
+    let from = today.pred_opt().unwrap_or(today);
+    let to = today.succ_opt().unwrap_or(today);
+    let at_the_hour = |moment: Moment| match moment {
+        Moment::WholeDay(day) => day.and_hms_opt(hour, 0, 0).map(Moment::ClockFace),
+        names_an_hour => Some(names_an_hour),
+    };
+    let when_it_ends = |stored: &str| match moment::read(stored)? {
+        Moment::WholeDay(day) => moment::on_this_computer(day.succ_opt()?.and_hms_opt(0, 0, 0)?),
+        names_an_hour => names_an_hour.on_this_computer(),
+    };
+
+    let mut candidates = Vec::new();
+    let mut rows = HashMap::new();
+    for source in sources {
+        let hidden = match cache.get_calendars_for_account(source) {
+            Ok(containers) => CalendarContainerItem::hidden_among(
+                &containers
+                    .iter()
+                    .map(CalendarContainerItem::from_entry)
+                    .collect::<Vec<_>>(),
+            ),
+            Err(why) => {
+                tracing::warn!("Could not read calendars for {source}: {why}");
+                continue;
+            }
+        };
+        let entries = match cache.events_that_could_fall_between(
+            source,
+            &from.format("%Y-%m-%dT00:00:00Z").to_string(),
+            &to.format("%Y-%m-%dT23:59:59Z").to_string(),
+        ) {
+            Ok(entries) => entries,
+            Err(why) => {
+                tracing::warn!("Could not read events for {source}: {why}");
+                continue;
+            }
+        };
+        for entry in entries.iter().filter(|entry| {
+            CalendarContainerItem::is_showing(entry.calendar_id.as_deref(), &hidden)
+        }) {
+            let Some(lead) = crate::application::event_alerts::lead_to_raise_at(
+                entry.reminders_json.as_deref(),
+                default_lead,
+            ) else {
+                continue;
+            };
+            for day in CalendarEventItem::shown_days(entry, from, to) {
+                let Some(raise_at) = moment::read(&day.start)
+                    .and_then(at_the_hour)
+                    .and_then(|start| due::when_an_event_alerts(start, lead))
+                else {
+                    continue;
+                };
+                let identity = day.due_identity();
+                candidates.push(due::Candidate {
+                    identity: identity.clone(),
+                    title: day.summary.clone(),
+                    raise_at,
+                    when: day.start.clone(),
+                    ends: when_it_ends(&day.end),
+                    done: false,
+                });
+                rows.insert(identity, (source.clone(), day));
+            }
+        }
+    }
+    (candidates, rows)
+}
+
+/// The holds on tasks and events, read once per look with the expired ones
+/// let go, as the map `what_is_due` takes.
+///
+/// A hold under a kind word this build does not know is left in the table
+/// and not in the map: it is somebody's snooze on a later version's kind,
+/// and nothing here has a row it could hold back.
+fn what_is_held(
+    cache: &MessageCache,
+    now: chrono::DateTime<chrono::Local>,
+) -> HashMap<crate::application::due::Identity, chrono::DateTime<chrono::Local>> {
+    use crate::application::due;
+    if let Err(why) = cache.let_go_of_holds_that_ended_before(&due::stored(now)) {
+        tracing::warn!("Could not let go of the holds that ended: {why}");
+    }
+    match cache.held_alerts() {
+        Ok(held) => held
+            .into_iter()
+            .filter_map(|hold| {
+                let kind = due::Kind::from_key(&hold.kind)?;
+                let until = crate::common::moment::read(&hold.until)?.on_this_computer()?;
+                Some((due::Identity { kind, id: hold.id }, until))
+            })
+            .collect(),
+        Err(why) => {
+            tracing::warn!("Could not read the held alerts: {why}");
+            HashMap::new()
+        }
+    }
+}
+
+/// What the due window's Details button opens: the event editor, for an
+/// event row, and nothing else, because nothing in this program edits an
+/// existing task or reminder.
+///
+/// Holds the rows the event feed produced beside their identities, so the
+/// row an identity names is looked up and its identity string is never taken
+/// apart. When the editor closes, the row is worked out again from the cache
+/// by the same feed, so the window shows it as it now stands or drops it if
+/// it is no longer due.
+struct TheEditors {
+    frame: Frame,
+    cache: Arc<MessageCache>,
+    rt: Arc<Runtime>,
+    a11y: Arc<Accessibility>,
+    sources: Vec<String>,
+    hour: u32,
+    default_lead: i64,
+    held: HashMap<crate::application::due::Identity, chrono::DateTime<chrono::Local>>,
+    event_rows: HashMap<crate::application::due::Identity, (String, CalendarEventItem)>,
+}
+
+impl wx_reminder_alert::Editors for TheEditors {
+    fn has_one_for(&self, kind: crate::application::due::Kind) -> bool {
+        use crate::application::due::Kind;
+        // Written out so a fourth kind is a compile error here.
+        match kind {
+            Kind::Event => true,
+            Kind::Task | Kind::Reminder => false,
+        }
+    }
+
+    fn open(
+        &mut self,
+        parent: &Dialog,
+        row: &crate::application::due::Due,
+    ) -> Option<crate::application::due::Due> {
+        let (account, item) = self.event_rows.get(&row.identity)?;
+        let said = managers::change_an_event_from_a_row(
+            parent,
+            &self.cache,
+            account,
+            item,
+            &self.frame,
+            &self.rt,
+            &self.a11y,
+        );
+        if let Some(said) = said {
+            let _ = self.a11y.announce(
+                &said,
+                crate::presentation::accessibility::announcements::Priority::High,
+            );
+        }
+        // As it now stands, from the cache, by the same feed. `already` is
+        // not consulted: the row is on the window, so it is in `already`
+        // by construction, and the question is only whether it is still due.
+        let now = chrono::Local::now();
+        let (candidates, rows) = events_that_might_be_due(
+            &self.cache,
+            &self.sources,
+            now.date_naive(),
+            self.hour,
+            self.default_lead,
+        );
+        self.event_rows = rows;
+        crate::application::due::what_is_due(
+            candidates,
+            now,
+            &std::collections::HashSet::new(),
+            &self.held,
+        )
+        .into_iter()
+        .find(|fresh| fresh.identity == row.identity)
+    }
+}
+
+/// Look at everything that can come due and raise what has, in one window.
+///
+/// Three feeds, one rule, one window, one writer per kind. Rows found due
+/// while somebody is typing are said and sounded at this look, on a channel
+/// that does not move focus, and the window is held for
 /// `LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES` looks and then
-/// opened whether or not they have stopped, without the sentence being said
-/// again. Nothing is written into `already` until the window really opens.
+/// opened whether or not they have stopped, without the sentences being said
+/// again. The window is held only while every row on it is still within its
+/// hold: a row that arrives while another waits is said and joins the window
+/// when it opens. Nothing is written into `already` until the window really
+/// opens.
+///
+/// The two new feeds read the cache on this poll, once a minute, bounded the
+/// way the calendar's own read is: `events_that_could_fall_between` over
+/// three days and the tasks of each source. One look is timed and the figure
+/// logged, so the cost is a number and not a belief.
 fn raise_what_is_due(
     frame: &Frame,
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     between_looks: &BetweenLooks,
@@ -10572,6 +10880,7 @@ fn raise_what_is_due(
     use crate::application::due;
     use crate::presentation::one_question_at_a_time::{Moment, whether_a_window_may_open};
 
+    let AppHandles { state, tx: _, rt } = app;
     let BetweenLooks {
         already,
         said_and_waiting,
@@ -10588,38 +10897,51 @@ fn raise_what_is_due(
         return;
     };
 
-    let rows: Vec<crate::presentation::ui_types::ReminderItem> = {
+    let now = chrono::Local::now();
+    let (reminders, sources, hour, default_lead) = {
         let s = lock_state(state);
-        s.reminders.clone()
+        let mut sources: Vec<String> = s.accounts.iter().map(|a| a.id.clone()).collect();
+        // Items made on this computer live under the local account, which
+        // is not in the accounts list and is where everything belongs for
+        // anybody who has not added a mail account at all.
+        sources.push(crate::application::new_item::LOCAL_ACCOUNT_ID.to_string());
+        (
+            s.reminders.clone(),
+            sources,
+            u32::from(s.working_day.starts),
+            s.default_event_alert_lead,
+        )
     };
-    if rows.is_empty() {
+
+    let looking = std::time::Instant::now();
+    let mut candidates = reminders_that_might_be_due(&reminders);
+    let mut held = HashMap::new();
+    let mut event_rows = HashMap::new();
+    if let Some(cache) = cache.as_ref() {
+        candidates.extend(tasks_that_might_be_due(
+            cache,
+            &sources,
+            now.date_naive(),
+            hour,
+        ));
+        let (events, rows) =
+            events_that_might_be_due(cache, &sources, now.date_naive(), hour, default_lead);
+        candidates.extend(events);
+        event_rows = rows;
+        held = what_is_held(cache, now);
+    }
+    tracing::debug!(
+        "One look at what is due read {} candidates in {} ms",
+        candidates.len(),
+        looking.elapsed().as_millis()
+    );
+    if candidates.is_empty() {
         return;
     }
 
-    let now = chrono::Local::now();
     let due = {
         let seen = already.borrow();
-        // The reminder feed. A reminder's stored time is its alert, so it is
-        // raised at its own moment; one with no time is not a candidate. The
-        // hold is empty until the table that keeps one arrives: a snoozed
-        // reminder moves its own row, so nothing here needs holding yet.
-        let nothing_held = std::collections::HashMap::new();
-        due::what_is_due(
-            rows.iter().filter_map(|r| {
-                due::Candidate::at_its_own_time(
-                    due::Identity {
-                        kind: due::Kind::Reminder,
-                        id: r.id.clone(),
-                    },
-                    &r.title,
-                    r.due_datetime.as_deref()?,
-                    r.is_completed,
-                )
-            }),
-            now,
-            &seen,
-            &nothing_held,
-        )
+        due::what_is_due(candidates, now, &seen, &held)
     };
 
     // A reminder said and waiting that is no longer due, because somebody
@@ -10636,89 +10958,149 @@ fn raise_what_is_due(
     // so both things the tick can open ask the same rule.
     let moment = whether_a_window_may_open(whether_somebody_is_typing(somewhere_to_type), false);
 
-    for item in due {
-        let looks_waited = said_and_waiting.borrow().get(&item.identity).copied();
-        let spoken = match (moment, looks_waited) {
-            // Cannot happen while the turn is held. Written out rather than
-            // left to a catch-all so that a fourth reason is a compile error
-            // here, and the answer is the one the rule's doc gives: nothing
-            // at all this look.
-            (Moment::SomethingIsAlreadyUp, _) => continue,
-            (Moment::Free, None) => wx_reminder_alert::Spoken::NotYet,
-            (Moment::SomebodyIsTyping, None) => {
-                // Said now, on a channel that does not move focus, and the
-                // window held. Nothing goes into `already`, so the reminder
-                // is re-derived at the next look; only that it was said is
-                // remembered.
-                let _ = wx_reminder_alert::say(&item, now, dates, a11y);
-                said_and_waiting
-                    .borrow_mut()
-                    .insert(item.identity.clone(), 0);
-                continue;
-            }
-            (Moment::SomebodyIsTyping, Some(waited))
-                if waited + 1 < LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES =>
-            {
-                said_and_waiting
-                    .borrow_mut()
-                    .insert(item.identity.clone(), waited + 1);
-                continue;
-            }
-            // The hold is over, or typing stopped. Either way it was said at
-            // an earlier look and is not said again.
-            (Moment::Free | Moment::SomebodyIsTyping, Some(_)) => {
-                wx_reminder_alert::Spoken::Already
-            }
-        };
-        said_and_waiting.borrow_mut().remove(&item.identity);
+    if due.is_empty() {
+        return;
+    }
 
-        // Marked before the window opens, not after. The window is modal and
-        // the event loop keeps running inside it, so this tick can happen again
-        // while somebody is still looking at the first one.
-        already.borrow_mut().insert(item.identity.clone());
-
-        let answer =
-            wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2], spoken);
-        if answer == wx_reminder_alert::Answer::Dismissed {
-            // Nothing to write. It stays due, and it is not raised again this
-            // session because it is in `already`.
-            continue;
+    // The rows not said at an earlier look are said at this one, whatever
+    // the moment: on a channel that does not move focus, so a sentence
+    // reaches somebody typing while the window waits.
+    let unsaid: Vec<due::Due> = due
+        .iter()
+        .filter(|item| !said_and_waiting.borrow().contains_key(&item.identity))
+        .cloned()
+        .collect();
+    let still_within_the_hold = due.iter().any(|item| {
+        said_and_waiting
+            .borrow()
+            .get(&item.identity)
+            .is_none_or(|waited| waited + 1 < LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES)
+    });
+    match moment {
+        // Cannot happen while the turn is held. Written out rather than
+        // left to a catch-all so that a fourth reason is a compile error
+        // here, and the answer is the one the rule's doc gives: nothing
+        // at all this look.
+        Moment::SomethingIsAlreadyUp => return,
+        Moment::SomebodyIsTyping if still_within_the_hold => {
+            // Said now and the window held. Nothing goes into `already`, so
+            // every row is re-derived at the next look; only that each was
+            // said, and how many looks it has waited, is remembered.
+            if !unsaid.is_empty() {
+                let _ = wx_reminder_alert::say(&unsaid, now, dates, a11y);
+            }
+            let mut waiting = said_and_waiting.borrow_mut();
+            for item in &due {
+                waiting
+                    .entry(item.identity.clone())
+                    .and_modify(|waited| *waited += 1)
+                    .or_insert(0);
+            }
+            return;
         }
-        let Some(cache) = cache.as_ref() else {
-            continue;
-        };
+        // The hold is over, or typing stopped. What was said at an earlier
+        // look is not said again; what is new is said before the window.
+        Moment::Free | Moment::SomebodyIsTyping => {
+            if !unsaid.is_empty() {
+                let _ = wx_reminder_alert::say(&unsaid, now, dates, a11y);
+            }
+        }
+    }
 
-        // Written by naming the row rather than by reading the whole reminder
+    // Marked before the window opens, not after. The window is modal and
+    // the event loop keeps running inside it, so this tick can happen again
+    // while somebody is still looking at the first one.
+    for item in &due {
+        said_and_waiting.borrow_mut().remove(&item.identity);
+        already.borrow_mut().insert(item.identity.clone());
+    }
+    let titles: HashMap<due::Identity, String> = due
+        .iter()
+        .map(|item| (item.identity.clone(), item.title.clone()))
+        .collect();
+
+    let editors: Box<dyn wx_reminder_alert::Editors> = match cache.as_ref() {
+        Some(cache) => Box::new(TheEditors {
+            frame: *frame,
+            cache: Arc::clone(cache),
+            rt: Arc::clone(rt),
+            a11y: Arc::clone(a11y),
+            sources: sources.clone(),
+            hour,
+            default_lead,
+            held: held.clone(),
+            event_rows,
+        }),
+        None => Box::new(wx_reminder_alert::NoEditors),
+    };
+    let answers =
+        wx_reminder_alert::raise(frame, due, now, dates, a11y, due::Snooze::ALL[2], editors);
+
+    let Some(cache) = cache.as_ref() else {
+        return;
+    };
+    for (identity, answer) in answers {
+        let title = titles.get(&identity).cloned().unwrap_or_default();
+        // Written by naming the row rather than by reading the whole thing
         // back and saving it out again. The answer somebody has just given is
         // the thing being kept, and a read in between is a step that can find
-        // nothing and drop it without saying so.
+        // nothing and drop it without saying so. One match over the answer
+        // and one over the kind, no wildcard, so a fourth kind is a compile
+        // error here as it is in `due.rs`.
         let stamp = chrono::Local::now().to_rfc3339();
         let (written, moved_to) = match answer {
-            // Handled above. Written out rather than left to a catch-all, so
-            // that adding an answer is a compile error here.
+            // Nothing to write. It stays as it is and is not raised again
+            // this session, because it is in `already`.
             wx_reminder_alert::Answer::Dismissed => continue,
-            wx_reminder_alert::Answer::Done => {
-                (cache.complete_reminder(&item.identity.id, &stamp), None)
+            // The editor wrote whatever it wrote. Out of `already`, so the
+            // thing comes back if its new time arrives this session.
+            wx_reminder_alert::Answer::Edited => {
+                already.borrow_mut().remove(&identity);
+                continue;
             }
+            wx_reminder_alert::Answer::Done => match identity.kind {
+                due::Kind::Reminder => (cache.complete_reminder(&identity.id, &stamp), None),
+                due::Kind::Task => (cache.complete_task(&identity.id, &stamp), None),
+                // The window refuses done for an event, in its bookkeeping
+                // and on its button. Written out rather than left to a
+                // catch-all; nothing is written for it.
+                due::Kind::Event => continue,
+            },
             wx_reminder_alert::Answer::Snoozed(snooze) => {
                 let until = due::stored(snooze.until(chrono::Local::now()));
-                let done = cache.snooze_reminder(&item.identity.id, &until, &stamp);
-                // Out of `already`, because a snoozed reminder is one that is
+                // Out of `already`, because a snoozed thing is one that is
                 // meant to come back.
-                already.borrow_mut().remove(&item.identity);
-                (done, Some(until))
+                already.borrow_mut().remove(&identity);
+                match identity.kind {
+                    // A reminder's time is its alert, so its own row moves.
+                    due::Kind::Reminder => (
+                        cache.snooze_reminder(&identity.id, &until, &stamp),
+                        Some(until),
+                    ),
+                    // A task's date and an event's start are facts the phone
+                    // also holds, so neither row is written: the hold table
+                    // keeps when this program mentions it again, across a
+                    // restart, and the writer's match here has no arm that
+                    // writes either row's time.
+                    due::Kind::Task | due::Kind::Event => (
+                        cache
+                            .hold_alert(identity.kind.key(), &identity.id, &until)
+                            .map(|()| 1),
+                        None,
+                    ),
+                }
             }
         };
 
         match written {
-            // Nothing changed means the reminder is no longer there, which is
+            // Nothing changed means the row is no longer there, which is
             // neither an error nor success. Said, because an answer that went
             // nowhere otherwise looks exactly like one that worked.
             Ok(0) => {
                 let _ = a11y.announce(
                     &crate::application::pim_command::no_longer_there(
-                        crate::application::new_item::ItemKind::Reminder,
-                        &item.title,
+                        crate::application::new_item::ItemKind::from(identity.kind),
+                        &title,
                     ),
                     crate::presentation::accessibility::announcements::Priority::High,
                 );
@@ -10726,7 +11108,7 @@ fn raise_what_is_due(
             }
             Ok(_) => {}
             Err(why) => {
-                let said = format!("The reminder could not be saved: {why}");
+                let said = format!("The {} could not be saved: {why}", identity.kind.key());
                 tracing::error!("{said}");
                 let _ = a11y.announce(
                     &said,
@@ -10736,17 +11118,26 @@ fn raise_what_is_due(
             }
         }
 
-        // The list this reads from is refreshed only when somebody opens the
-        // Reminders panel, so without this the next look would see the old
-        // time, find it still due, and raise it again.
-        {
-            let mut s = lock_state(state);
-            if let Some(row) = s.reminders.iter_mut().find(|r| r.id == item.identity.id) {
-                match &moved_to {
-                    Some(until) => row.due_datetime = Some(until.clone()),
-                    None => row.is_completed = true,
+        // The lists these read from are refreshed only when somebody opens
+        // the panel, so without this the next look would see the old time,
+        // find a reminder still due, and raise it again; and a task marked
+        // done here would still read as not done in an open Tasks panel.
+        let mut s = lock_state(state);
+        match identity.kind {
+            due::Kind::Reminder => {
+                if let Some(row) = s.reminders.iter_mut().find(|r| r.id == identity.id) {
+                    match &moved_to {
+                        Some(until) => row.due_datetime = Some(until.clone()),
+                        None => row.is_completed = true,
+                    }
                 }
             }
+            due::Kind::Task => {
+                if let Some(row) = s.tasks.iter_mut().find(|t| t.id == identity.id) {
+                    row.is_completed = true;
+                }
+            }
+            due::Kind::Event => {}
         }
     }
 }
@@ -15241,18 +15632,24 @@ fn open_for_scanning(
             OnReturn::WindowClosed
         }
         ScanTarget::Reminder => {
-            // Said and sounded the way a real one is, then held open. The tone
+            // Said and sounded the way real rows are, then held open. The tone
             // that comes back once a minute is on a timer the window owns, so
             // the scan meets the window as somebody in another application
-            // would.
+            // would. One row of each kind, so the list and every button are
+            // in the tree; no editor behind Details, since the rows are not
+            // stored anywhere an editor could open them from.
+            let now = chrono::Local::now();
+            let dates = date_settings_from_stored_config();
+            let rows = scan_fixtures::due_rows();
+            let _ = wx_reminder_alert::say(&rows, now, dates, a11y);
             let _ = wx_reminder_alert::raise(
                 frame,
-                &scan_fixtures::reminder(),
-                chrono::Local::now(),
-                date_settings_from_stored_config(),
+                rows,
+                now,
+                dates,
                 a11y,
                 crate::application::due::Snooze::ALL[2],
-                wx_reminder_alert::Spoken::NotYet,
+                Box::new(wx_reminder_alert::NoEditors),
             );
             OnReturn::WindowClosed
         }
@@ -16227,6 +16624,9 @@ fn handle_settings(
                 send_status(tx, rt, &format!("Settings save error: {}", e));
             } else {
                 let _ = tx.try_send(UIUpdate::WorkingDayChanged(working_day));
+                let _ = tx.try_send(UIUpdate::DefaultEventAlertLeadChanged(i64::from(
+                    mgr.app_config().default_reminder_minutes,
+                )));
                 let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
                 send_status(tx, rt, "Settings saved");
             }
@@ -17217,6 +17617,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // every visible cell afresh; nothing here announces anything,
             // because the row text is the announcement.
             pim.cal_event_list.set_item_count(rows as i64);
+        }
+        UIUpdate::DefaultEventAlertLeadChanged(minutes) => {
+            lock_state(state).default_event_alert_lead = *minutes;
         }
         UIUpdate::CalendarViewChanged(view) => {
             // The day is kept, not reset to today. Somebody who was looking at

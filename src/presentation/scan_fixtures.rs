@@ -101,17 +101,29 @@ pub fn folders() -> Vec<FolderRow> {
     ]
 }
 
-/// A reminder that came due half an hour ago.
-pub fn reminder() -> Due {
-    Due {
-        identity: crate::application::due::Identity {
-            kind: crate::application::due::Kind::Reminder,
-            id: "scan-target".to_string(),
+/// One row of each kind that can be due, so the scan meets the list with
+/// three rows and every button the window has: a task due on a day, a
+/// reminder that came due, and an event that has started.
+pub fn due_rows() -> Vec<Due> {
+    use crate::application::due::{Identity, Kind};
+    let row = |kind: Kind, id: &str, when: &str| Due {
+        identity: Identity {
+            kind,
+            id: id.to_string(),
         },
         title: "Scan target".to_string(),
-        when: "2026-01-01T09:00:00".to_string(),
+        when: when.to_string(),
         late: true,
-    }
+    };
+    vec![
+        row(Kind::Task, "scan-task", "2026-01-01"),
+        row(Kind::Reminder, "scan-reminder", "2026-01-01T09:00:00"),
+        row(
+            Kind::Event,
+            "scan-event|2026-01-01T09:30:00",
+            "2026-01-01T09:30:00",
+        ),
+    ]
 }
 
 /// An event that repeats, and what its calendar allows, for the window that
@@ -209,10 +221,18 @@ mod tests {
     #[test]
     fn test_the_reminder_is_late() {
         // Late is said first because it changes what somebody does next, so
-        // the window is scanned in the state with the most to say.
+        // the window is scanned in the state with the most to say. One row
+        // of each kind, so the scan meets the list and every button.
+        let rows = due_rows();
         assert!(
-            reminder().late,
-            "the reminder is on time, so the late wording is never on screen"
+            rows.iter().all(|row| row.late),
+            "a row is on time, so the late wording is never on screen"
+        );
+        let kinds: Vec<_> = rows.iter().map(|row| row.identity.kind).collect();
+        assert_eq!(
+            kinds.len(),
+            crate::application::due::Kind::ALL.len(),
+            "a kind has no row, so its buttons and wording are never scanned"
         );
     }
 

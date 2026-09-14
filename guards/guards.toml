@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 575 records have arrived since and have not been through it.
+# 591 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -1467,7 +1467,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -1482,7 +1482,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 # The other half of keeping that note: it now outlives the list it names, and a
@@ -5698,15 +5698,15 @@ tests_last_seen = [
 [[guard]]
 name = "the calendar window asks about the day before it writes either half"
 file = "src/presentation/managers.rs"
-before = """                        if let Some(refused) = why_that_day_cannot_be_kept(
-                            the_calendar_it_is_in(&cache, &opened),
-                            &that_day,
-                        ) {
-                            send_refusal(tx, rt, &refused);
-                            continue;
-                        }
-                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)"""
-after = """                        one_day_of_a_series_changed(&cache, &series, &opened, that_day)"""
+# Moved on 2026-09-14 from the arm inside `manage_calendar` into
+# `change_an_opened_event`, which the calendar window and the due window
+# both call; re-measured there.
+before = """            let goes = the_calendar_it_is_in(cache, opened);
+            if let Some(refused) = why_that_day_cannot_be_kept(goes, &that_day) {
+                return Err(NotChanged::Refused(refused));
+            }
+            one_day_of_a_series_changed(cache, &series, opened, that_day)"""
+after = """            one_day_of_a_series_changed(cache, &series, opened, that_day)"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
@@ -5723,15 +5723,15 @@ tests_last_seen = [
 [[guard]]
 name = "the refusal about a day that cannot be kept stops the write"
 file = "src/presentation/managers.rs"
-before = """                            &that_day,
-                        ) {
-                            send_refusal(tx, rt, &refused);
-                            continue;
-                        }"""
-after = """                            &that_day,
-                        ) {
-                            send_refusal(tx, rt, &refused);
-                        }"""
+# Moved with the record above on 2026-09-14. The refusal is now a return
+# out of `change_an_opened_event` rather than a `continue`; the break keeps
+# the sentence and drops the return, so the write runs straight afterwards.
+before = """            if let Some(refused) = why_that_day_cannot_be_kept(goes, &that_day) {
+                return Err(NotChanged::Refused(refused));
+            }"""
+after = """            if let Some(refused) = why_that_day_cannot_be_kept(goes, &that_day) {
+                tracing::warn!("{refused}");
+            }"""
 red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
@@ -10183,7 +10183,7 @@ before = """        Ok(removed > 0)"""
 after = """        Ok(removed >= 0)"""
 red = ["data::message_cache::tasks::tests::test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there"]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -17909,7 +17909,7 @@ red = [
     "presentation::ui_types::tests::test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 78 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
 # ── The same fact, known and then not said ──────────────────────────────────
@@ -18017,7 +18017,7 @@ red = [
     "presentation::ui_types::tests::test_the_heading_names_a_different_week_after_a_step",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 78 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
 # The month step made by adding and taking off thirty days, which is the naive
@@ -18048,7 +18048,7 @@ red = [
     "presentation::ui_types::tests::test_stepping_back_from_the_thirty_first_lands_in_the_shorter_month_and_forward_returns",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 78 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
 # December's next month taken as January of the same year, which is the
@@ -18069,7 +18069,7 @@ red = [
     "presentation::ui_types::tests::test_the_month_before_january_is_december_of_the_year_before",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 78 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
 # ── A copy that writes over the row it read ─────────────────────────────────
@@ -18607,7 +18607,7 @@ red = [
     "test_a_move_of_a_task_that_is_no_longer_here_writes_neither_half",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
     { file = "tests/a_half_finished_task_move.rs", tests = 8 },
 ]
 
@@ -20577,7 +20577,7 @@ tests_last_seen = [
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/presentation/reader_text.rs", tests = 120 },
-    { file = "src/presentation/ui_types.rs", tests = 78 },
+    { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
 # ── The catalogue, 06-03 task 3 ──────────────────────────────────────────────
@@ -20860,7 +20860,7 @@ red = [
     "presentation::wx_reminder_alert::tests::test_the_tone_stops_for_good_once_focus_has_arrived_even_if_it_leaves",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reminder_alert.rs", tests = 6 },
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
 ]
 
 # ── 06-06 ─────────────────────────────────────────────────────────────────
@@ -21111,4 +21111,287 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/no_label_is_only_a_space.rs", tests = 4 },
+]
+
+# ── 06-09 task 2: the hold table, and done on a task ────────────────────────
+#
+# A snoozed task or event waits in `held_alerts` until a moment. Holding one
+# that is already held has to replace its moment: the latest snooze is the one
+# somebody meant, and a table that kept the first would bring the thing back
+# at the old time. The break turns the replacement into a no-op.
+[[guard]]
+name = "a hold held again replaces its moment rather than keeping the first"
+file = "src/data/message_cache/held_alerts.rs"
+before = """                 ON CONFLICT(kind, id) DO UPDATE SET until = excluded.until","""
+after = """                 ON CONFLICT(kind, id) DO NOTHING","""
+red = [
+    "data::message_cache::held_alerts::tests::test_holding_an_alert_again_replaces_its_moment",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# A hold ending at exactly the moment is kept for one more look, so the table
+# and `due::what_is_due` agree about the boundary without the table knowing
+# the rule. The break lets go of the row on the boundary.
+[[guard]]
+name = "a hold that ended is let go and one that has not is kept"
+file = "src/data/message_cache/held_alerts.rs"
+before = """                "DELETE FROM held_alerts WHERE until < ?1","""
+after = """                "DELETE FROM held_alerts WHERE until <= ?1","""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_hold_that_ended_is_let_go_and_one_that_has_not_is_kept",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# The kind is a word so that a fourth kind is a fourth word. A read that kept
+# only the words this build knows would drop a hold written by a later version
+# and bring a snoozed message back at somebody who went back to this build.
+# The break narrows the read to the three kinds that exist today.
+[[guard]]
+name = "a hold under a kind word this build does not know survives a read"
+file = "src/data/message_cache/held_alerts.rs"
+before = """            .prepare_cached("SELECT kind, id, until FROM held_alerts ORDER BY until, kind, id")"""
+after = """            .prepare_cached("SELECT kind, id, until FROM held_alerts WHERE kind IN ('reminder', 'task', 'event') ORDER BY until, kind, id")"""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_kind_word_this_build_does_not_know_survives_a_read_and_a_prune",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# A task and a reminder can share a row id. The key is the kind and the id
+# together; keyed by the id alone, the second hold under a shared id would be
+# refused by the conflict clause, which names a key that no longer exists. The
+# break is in the schema, which the test template builds once per process.
+[[guard]]
+name = "the same id under two kinds is two holds in the table"
+file = "src/data/message_cache/mod.rs"
+before = """                PRIMARY KEY (kind, id)"""
+after = """                PRIMARY KEY (id)"""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_hold_read_back_is_the_hold_written",
+    "data::message_cache::held_alerts::tests::test_holding_an_alert_again_replaces_its_moment",
+    "data::message_cache::held_alerts::tests::test_the_same_id_under_two_kinds_is_two_holds",
+    "data::message_cache::held_alerts::tests::test_a_hold_that_ended_is_let_go_and_one_that_has_not_is_kept",
+    "data::message_cache::held_alerts::tests::test_a_kind_word_this_build_does_not_know_survives_a_read_and_a_prune",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+# The due window answers "done", not "the other way". A writer that set done
+# on a row already done would report a change for a task the phone finished
+# in between, and stamp over the moment it was really finished. The break
+# drops the guard on the row's state.
+[[guard]]
+name = "completing a task already done changes nothing"
+file = "src/data/message_cache/tasks.rs"
+before = """                 WHERE id = ?2 AND NOT is_completed","""
+after = """                 WHERE id = ?2","""
+red = [
+    "data::message_cache::tasks::tests::test_completing_a_task_sets_done_once_and_never_toggles_it_back",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+]
+
+# ── 06-09 task 3: one window, every due thing a row ─────────────────────────
+#
+# A row's text is its whole sentence, so the kind is the first word a screen
+# reader says and the three channels agree. The break lists the title alone,
+# which is what the old window showed a braille display off its first line.
+# The suite is the live target that builds the real dialog, which couples that
+# target to this file in `check.sh --suites-for`.
+[[guard]]
+name = "a due row's text is its sentence and not its title"
+file = "src/presentation/wx_reminder_alert.rs"
+suite = "the_due_window_holds_every_kind"
+before = """        list.append(&row.spoken(now, dates));"""
+after = """        list.append(&row.title);"""
+red = [
+    "test_the_due_window_holds_one_row_of_each_kind_and_offers_what_each_can_take",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+    { file = "tests/the_due_window_holds_every_kind.rs", tests = 1 },
+]
+
+# Mark Done on an event would write a fact its calendar does not hold. The
+# label and the state are decided together, and the break makes the button
+# available for every kind with its plain label.
+[[guard]]
+name = "mark done is unavailable on an event row and its label says so"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """    if kind.can_be_done() {
+        ButtonState {
+            label: MARK_DONE.to_string(),"""
+after = """    if true {
+        ButtonState {
+            label: MARK_DONE.to_string(),"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_mark_done_and_details_say_why_they_are_unavailable",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Snooze all answers for every row still listed, not only the selected one.
+# The break answers the first row alone, which is what a handler that read
+# the selection and forgot the rest would do.
+[[guard]]
+name = "snooze all answers for every row still listed and not only one"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """        for row in self.listed.drain(..) {
+            self.answered.push((row.identity, answer));
+        }"""
+after = """        for row in self.listed.drain(..self.listed.len().min(1)) {
+            self.answered.push((row.identity, answer));
+        }"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_snooze_all_answers_for_every_row_still_listed_and_not_only_the_selected_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Closing the window by Escape or the title bar dismisses what is left, as
+# it always did: the rows stay as they are and are not raised again this
+# session. Treating them as edited would take them out of `already` and
+# bring them back at the next look at somebody who had just closed them.
+[[guard]]
+name = "closing the due window dismisses whatever is still listed"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """            self.answered.push((row.identity, Answer::Dismissed));"""
+after = """            self.answered.push((row.identity, Answer::Edited));"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_closing_the_window_dismisses_whatever_is_still_listed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Done on an event is refused by the bookkeeping as well as by the button,
+# because a handler is one line from answering the wrong row. The break
+# takes the refusal out.
+[[guard]]
+name = "done on an event row is refused by the bookkeeping itself"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """        if answer == Answer::Done && !row.identity.kind.can_be_done() {
+            return Answered::NotForThisKind;
+        }"""
+after = """        if false && !row.identity.kind.can_be_done() {
+            return Answered::NotForThisKind;
+        }"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_done_is_refused_on_an_event_row_and_taken_on_a_task_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# ── 06-09 task 4: the feeds, and what an event's stored alert means ────────
+#
+# Every shown day of a series carries the series' id, so an identity made
+# from the id alone would make dismissing today's standup dismiss every
+# standup for the session, and snoozing it hold every one. The break composes
+# the identity from the id alone. Ledger 404's record, deferred from task 1
+# because the composition did not exist until the feed did.
+[[guard]]
+name = "a day of a series is its own due thing and not the series"
+file = "src/presentation/ui_types.rs"
+before = """            id: format!("{}|{}", self.id, self.start),"""
+after = """            id: self.id.clone(),"""
+red = [
+    "presentation::ui_types::tests::test_two_days_of_one_series_are_two_due_identities_and_one_day_is_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 79 },
+]
+
+# The one mistake worse than a missed alert: an event whose owner switched
+# the alert off, interrupted anyway. The break gives an explicit off the
+# default lead, which is what reading the column as two states did.
+[[guard]]
+name = "an event stored as off is never given the default lead"
+file = "src/application/event_alerts.rs"
+before = """        StoredAlert::Off => None,"""
+after = """        StoredAlert::Off => Some(default_lead),"""
+red = [
+    "application::event_alerts::tests::test_the_default_fills_silence_and_never_overrides_an_explicit_off",
+]
+tests_last_seen = [
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Pratik's other half: the default fills silence. The break leaves an event
+# nobody said anything about silent, which is the column-only reading he
+# was offered and did not choose.
+[[guard]]
+name = "an event nobody said anything about is given the default lead"
+file = "src/application/event_alerts.rs"
+before = """        StoredAlert::Unknown => Some(default_lead),"""
+after = """        StoredAlert::Unknown => None,"""
+red = [
+    "application::event_alerts::tests::test_the_default_fills_silence_and_never_overrides_an_explicit_off",
+]
+tests_last_seen = [
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Microsoft's pull knows the alert is off and says so. The break stores
+# nothing for off, as the pull did until 2026-09-14, which the due window
+# would read as nobody's answer and fill with the default. Reddens the
+# module's own test and the pull's test in calendar.rs.
+[[guard]]
+name = "microsofts pull stores off when the reminder is off"
+file = "src/application/event_alerts.rs"
+before = """        false => Some(NO_ALERT.to_string()),"""
+after = """        false => None,"""
+red = [
+    "application::event_alerts::tests::test_microsofts_pull_stores_off_when_the_reminder_is_off",
+    "application::calendar::tests::test_an_alert_is_kept_only_when_microsoft_says_it_is_on_and_gives_a_lead_time",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Google's "useDefault false with no overrides" is the event never alerting.
+# The break stores nothing for it, so the calendar's default and never are
+# the same silence again. Reddens the module's own test and the pull's.
+[[guard]]
+name = "googles pull stores off only when google said the event never alerts"
+file = "src/application/event_alerts.rs"
+before = """        return (!reminders.use_default).then(|| NO_ALERT.to_string());"""
+after = """        return None;"""
+red = [
+    "application::event_alerts::tests::test_googles_pull_stores_off_only_when_google_said_the_event_never_alerts",
+    "application::calendar::tests::test_google_event_to_local",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# The editor is the third writer that knows the alert is off: a person took
+# the last one away. The break stores nothing for an emptied list, as it did
+# until 2026-09-14.
+[[guard]]
+name = "the editor stores off when the last alert is taken away"
+file = "src/presentation/managers.rs"
+before = """    Some(if kept.is_empty() {
+        crate::application::event_alerts::NO_ALERT.to_string()
+    } else {
+        serde_json::Value::Array(kept).to_string()
+    })"""
+after = """    (!kept.is_empty()).then(|| serde_json::Value::Array(kept).to_string())"""
+red = [
+    "presentation::managers::tests::test_clearing_the_only_alert_stores_off_rather_than_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]

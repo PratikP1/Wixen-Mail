@@ -2577,18 +2577,9 @@ pub fn google_event_to_local(
         serde_json::to_string(&arr).ok()
     };
 
-    let reminders_json = event.reminders.as_ref().and_then(|r| {
-        if r.overrides.is_empty() {
-            None
-        } else {
-            let arr: Vec<_> = r
-                .overrides
-                .iter()
-                .map(|o| serde_json::json!({"method": o.method, "minutes": o.minutes}))
-                .collect();
-            serde_json::to_string(&arr).ok()
-        }
-    });
+    // Own alerts as sent; "never alerts" as off; the calendar's default as
+    // nothing. `event_alerts` says what each means to the due window.
+    let reminders_json = crate::application::event_alerts::from_google(event.reminders.as_ref());
 
     let show_as = if event.transparency.as_deref() == Some("transparent") {
         "free"
@@ -3057,16 +3048,12 @@ pub fn ms_event_to_local(
         serde_json::to_string(&arr).ok()
     };
 
-    let lead = event.reminder_minutes_before_start.unwrap_or(0);
-    let reminders_json = if event.is_reminder_on.unwrap_or(false) && lead > 0 {
-        serde_json::to_string(&vec![serde_json::json!({
-            "method": "popup",
-            "minutes": lead,
-        })])
-        .ok()
-    } else {
-        None
-    };
+    // On with a lead as one alert; off as off, so the due window never gives
+    // a silenced event the default lead. `event_alerts` says what each means.
+    let reminders_json = crate::application::event_alerts::from_microsoft(
+        event.is_reminder_on,
+        event.reminder_minutes_before_start.unwrap_or(0),
+    );
 
     let show_as = match event.show_as.as_deref().unwrap_or_default() {
         "free" => "free",
@@ -4727,6 +4714,26 @@ mod tests {
         assert_eq!(local.provider_event_id.as_deref(), Some("evt1"));
         assert!(!local.is_all_day);
         assert_eq!(local.source_provider.as_deref(), Some("gmail"));
+        assert_eq!(
+            local.reminders_json, None,
+            "Google said nothing about alerts, so nothing is stored"
+        );
+
+        // Google's way of saying an event never alerts is stored as off,
+        // since 2026-09-14 an empty list, so the due window never fills that
+        // silence with the default lead.
+        let never_alerts = GoogleEvent {
+            reminders: Some(GoogleReminders {
+                use_default: false,
+                overrides: Vec::new(),
+            }),
+            ..event
+        };
+        let local = google_event_to_local(&never_alerts, "test@gmail.com", "cal-google");
+        assert_eq!(
+            local.reminders_json.as_deref(),
+            Some(crate::application::event_alerts::NO_ALERT)
+        );
     }
 
     #[test]
@@ -5632,23 +5639,40 @@ mod tests {
             "how they are alerted is stored too: {stored}"
         );
 
-        // Switched off, or on with nothing to count down from, is no alert.
-        // Storing one anyway interrupts somebody for a meeting they silenced.
-        for (switched_on, minutes) in [(true, 0), (false, 15), (false, 0)] {
+        // Switched off is stored as off, since 2026-09-14 an empty list, so
+        // the due window can tell it from an event nobody said anything
+        // about and never gives it the default lead: storing an alert
+        // anyway, or storing nothing and filling the silence, both interrupt
+        // somebody for a meeting they silenced.
+        for minutes in [15, 0] {
             let event = MsGraphEvent {
                 id: "ms-2".to_string(),
-                is_reminder_on: Some(switched_on),
+                is_reminder_on: Some(false),
                 reminder_minutes_before_start: Some(minutes),
                 ..Default::default()
             };
 
-            assert!(
+            assert_eq!(
                 ms_event_to_local(&event, "acct", "cal-outlook")
                     .reminders_json
-                    .is_none(),
-                "a reminder switched {switched_on} at {minutes} minutes is not an alert"
+                    .as_deref(),
+                Some(crate::application::event_alerts::NO_ALERT),
+                "a reminder switched off at {minutes} minutes is not stored as off"
             );
         }
+        // On with nothing to count down from is nobody's answer, as before.
+        let on_at_nought = MsGraphEvent {
+            id: "ms-3".to_string(),
+            is_reminder_on: Some(true),
+            reminder_minutes_before_start: Some(0),
+            ..Default::default()
+        };
+        assert!(
+            ms_event_to_local(&on_at_nought, "acct", "cal-outlook")
+                .reminders_json
+                .is_none(),
+            "a reminder on at nought minutes is not an alert"
+        );
     }
 
     #[test]

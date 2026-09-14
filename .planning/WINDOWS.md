@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 406
+open_count: 417
 waived_count: 0
 fixed_count: 24
-total_count: 430
-last_updated: 2026-09-14T15:36:13.798Z
+total_count: 441
+last_updated: 2026-09-14T17:46:24.026Z
 ---
 
 # Broken Windows Ledger
@@ -445,6 +445,17 @@ last_updated: 2026-09-14T15:36:13.798Z
 | 428 | 06 | unrun-verify | src/presentation/html_renderer.rs |  | The scan reached no rendered message. The preview in the main window is a WebView2 control and no target's tree held its document: a fresh profile has no message and the reader target opens a rich edit window. The rendered message is where a sender's headings and links have to survive, and it is the page with the same shape as the editor's, a document with no title loaded from its own address, so its name is likely its own source too. Nothing about it was judged; a target that opens the preview on a made-up message would put it in the next run | open |  | 2026-09-14T15:29:17.882Z |  |
 | 429 | 06 | todo | .github/workflows/accessibility.yml |  | Scan-level finding 1: the run summary of 2026-09-14 said 26 findings where the scan log held 29, because the counting pattern matched errors were found and Axe prints 1 error was found; filters, tags and signatures each printed one and were recorded as clean. Fixed the same day, the pattern reads all three sentences and a test in scan_target.rs reads it from the workflow and holds it to them | fixed |  | 2026-09-14T15:29:28.029Z | 2026-09-14T15:29:28.465Z |
 | 430 | 06 | unrun-verify | docs/manual-accessibility-pass.md |  | The manual accessibility pass is written and has not been walked. Seventy-six items across six categories, each naming its source and the technology it needs, planned for after phase 8. Until a person has dated every item, nothing in the program has had the pass, and the page says so at the top | open |  | 2026-09-14T15:36:13.798Z |  |
+| 431 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | The Due now window has never been heard. Three rows of three kinds in one ListBox, each sentence beginning with its kind's word, the list named by its count, the sentence for several rows as a count then three rows then how many more, and the tone repeating over a list rather than a line: the live test reads the rows and the labels back from the real controls, and no person has listened to any of it with NVDA or Narrator. Whether 'Task due today: File the report' reads well by ear, and whether 'Event now' for an all-day event at the working-day hour is heard as help, is a listening pass | open |  | 2026-09-14T17:45:39.688Z |  |
+| 432 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | Mark Done on an event row and Details on a task or reminder row are disabled with the reason in the label, 'Mark Done: not for an event', 'Details: not for a task yet'. Whether a person tabbing past a disabled button hears why is not known: Windows skips a disabled control in the tab order, so the label may be read only by arrowing or by a screen reader's review mode, the same question ledger 375 asked of the account window | open |  | 2026-09-14T17:45:40.172Z |  |
+| 433 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | The list and the Come back in picker are named through set_accessible_name, which writes MSAA only; on UI Automation both are named by whatever Windows falls back to, the static text beside the picker and nothing beside the list. 06-02 recorded the same for the settings picker and nobody has checked either channel with the scan or with Narrator. The scan target 'reminder' now opens on three rows so the next Accessibility run reaches the list and all six buttons | open |  | 2026-09-14T17:45:40.688Z |  |
+| 434 | 06 | todo | src/application/event_alerts.rs |  | Under decision 2 of 06-09, the default lead fills silence: an event whose stored alerts say nothing is raised default_reminder_minutes before its start. Two kinds of event are therefore given a lead their own calendar may not want. A Google event on the calendar's default alert, which is most of them, gets this program's default rather than the calendar's, because the calendar's default is never read. And every CalDAV event gets the default whatever its VALARM says, because no reader parses a TRIGGER, so a CalDAV event whose alarm was switched off alerts here. The way through is the plan's option 4: the Google pull reads the calendar's default and the CalDAV pull reads TRIGGER, each a sync path with its tests; calendar.rs has 72 records, so that is a plan of its own | open |  | 2026-09-14T17:46:03.202Z |  |
+| 435 | 06 | todo | src/application/calendar.rs |  | An alert switched off here is stored as off, an empty list, and the Google push still sends nothing for it, so Google keeps whatever alert it held. local_to_google_event filters an empty override list to no reminders field on purpose, because an alert it could not read must not become 'never alerts'; an explicit off is not that case and could be sent as useDefault false with no overrides, which is exactly what Google means by off. Not changed in 06-09 because it is a sync path with a test in calendar.rs, 72 records | open |  | 2026-09-14T17:46:03.679Z |  |
+| 436 | 06 | todo | src/application/due.rs |  | Decision 1 of 06-09 puts a date-only task and an all-day event's alert base at working_day_starts. A reminder set for a day with no time is still due at midnight, the whole-day arm of local_instant, as it has been since reminders first went off, so the two day-shaped things disagree about what hour a day is. Left alone in 06-09 because it is a behaviour change to reminders nobody asked for; whoever decides they should agree changes the reminder feed's raise_at to when_a_day_alerts and ledgers nothing | open |  | 2026-09-14T17:46:04.154Z |  |
+| 437 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | The Details button opens only an event. Pratik's answer of 2026-09-14 asked for it on 'the task/event/reminder', and nothing in this program edits an existing task or reminder: PimCommand has no Edit, the item form's Prefill is filled only by filled_from_calendar_item, and no writer takes a Filled onto an existing TaskEntry or ReminderEntry. On those rows the button is disabled with 'not for a task yet' in its label. What it takes: a filled_from_task_item and a task_with_edits on the shape of the event's pair, the same for reminders, and a writer for each; the button then needs only an arm in TheEditors::has_one_for | open |  | 2026-09-14T17:46:04.638Z |  |
+| 438 | 06 | unrun-verify | src/presentation/wx_app.rs |  | One look at what is due was timed on this profile only: four reminders, no accounts, an almost empty calendar, 3 candidates in 1 ms and then 0 ms, on the poll once a minute. The calendar's own read cost 68 ms bounded on a six year calendar; the event feed reads three days through the same two seeking queries per source, so it should be far below that, but no real-sized calendar has been under it. If it is not small against the fifty-millisecond tick, the plan's fallback is a startup read refreshed by TasksLoaded and CalendarEventsLoaded, the way reminders are read | open |  | 2026-09-14T17:46:22.636Z |  |
+| 439 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | The Due now window closing when its last row is answered, and the next row being selected after one goes, live in a button handler and after_a_row_has_gone, which no test can press: wxdragon 0.9.17 raises no widget event from outside. A break there reddens nothing, so no guard record was written for it and the live test does not claim it. The pure bookkeeping in Rows is guarded; the last-row close is a listening pass | open |  | 2026-09-14T17:46:23.098Z |  |
+| 440 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | '1 thing due', '3 things due' and 'And 2 more' are English plurals written in code, the shape 06-03 retired for the date wording by putting it through the catalogue with Fluent's plural rules. Not put through the catalogue in 06-09 because it holds one area, dates.ftl, and its loader and completeness reading are written for one file; a second area, due.ftl, is the catalogue's next step and touches catalogue.rs, six records. When it arrives these three sentences and the window's button labels are the first to move | open |  | 2026-09-14T17:46:23.567Z |  |
+| 441 | 06 | todo | src/application/event_alerts.rs |  | Two small holes in what off means, said rather than widened. Microsoft's isReminderOn true with reminderMinutesBeforeStart 0 is stored as nothing, as before, so an Outlook alert at the start of the event gets this program's default lead instead of a lead of nought. And alerts_with_the_first_at with nothing stored and nought in the box keeps nothing stored, which is right, and has no test of its own because managers.rs has 50 records and one more test there is hours of remeasure; the two flipped tests pin the other branches | open |  | 2026-09-14T17:46:24.026Z |  |
 
 ````json
 [
@@ -5606,6 +5617,138 @@ last_updated: 2026-09-14T15:36:13.798Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T15:36:13.798Z",
+    "resolved_at": null
+  },
+  {
+    "id": 431,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "The Due now window has never been heard. Three rows of three kinds in one ListBox, each sentence beginning with its kind's word, the list named by its count, the sentence for several rows as a count then three rows then how many more, and the tone repeating over a list rather than a line: the live test reads the rows and the labels back from the real controls, and no person has listened to any of it with NVDA or Narrator. Whether 'Task due today: File the report' reads well by ear, and whether 'Event now' for an all-day event at the working-day hour is heard as help, is a listening pass",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:45:39.688Z",
+    "resolved_at": null
+  },
+  {
+    "id": 432,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "Mark Done on an event row and Details on a task or reminder row are disabled with the reason in the label, 'Mark Done: not for an event', 'Details: not for a task yet'. Whether a person tabbing past a disabled button hears why is not known: Windows skips a disabled control in the tab order, so the label may be read only by arrowing or by a screen reader's review mode, the same question ledger 375 asked of the account window",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:45:40.172Z",
+    "resolved_at": null
+  },
+  {
+    "id": 433,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "The list and the Come back in picker are named through set_accessible_name, which writes MSAA only; on UI Automation both are named by whatever Windows falls back to, the static text beside the picker and nothing beside the list. 06-02 recorded the same for the settings picker and nobody has checked either channel with the scan or with Narrator. The scan target 'reminder' now opens on three rows so the next Accessibility run reaches the list and all six buttons",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:45:40.688Z",
+    "resolved_at": null
+  },
+  {
+    "id": 434,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/application/event_alerts.rs",
+    "line": null,
+    "description": "Under decision 2 of 06-09, the default lead fills silence: an event whose stored alerts say nothing is raised default_reminder_minutes before its start. Two kinds of event are therefore given a lead their own calendar may not want. A Google event on the calendar's default alert, which is most of them, gets this program's default rather than the calendar's, because the calendar's default is never read. And every CalDAV event gets the default whatever its VALARM says, because no reader parses a TRIGGER, so a CalDAV event whose alarm was switched off alerts here. The way through is the plan's option 4: the Google pull reads the calendar's default and the CalDAV pull reads TRIGGER, each a sync path with its tests; calendar.rs has 72 records, so that is a plan of its own",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:03.202Z",
+    "resolved_at": null
+  },
+  {
+    "id": 435,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/application/calendar.rs",
+    "line": null,
+    "description": "An alert switched off here is stored as off, an empty list, and the Google push still sends nothing for it, so Google keeps whatever alert it held. local_to_google_event filters an empty override list to no reminders field on purpose, because an alert it could not read must not become 'never alerts'; an explicit off is not that case and could be sent as useDefault false with no overrides, which is exactly what Google means by off. Not changed in 06-09 because it is a sync path with a test in calendar.rs, 72 records",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:03.679Z",
+    "resolved_at": null
+  },
+  {
+    "id": 436,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/application/due.rs",
+    "line": null,
+    "description": "Decision 1 of 06-09 puts a date-only task and an all-day event's alert base at working_day_starts. A reminder set for a day with no time is still due at midnight, the whole-day arm of local_instant, as it has been since reminders first went off, so the two day-shaped things disagree about what hour a day is. Left alone in 06-09 because it is a behaviour change to reminders nobody asked for; whoever decides they should agree changes the reminder feed's raise_at to when_a_day_alerts and ledgers nothing",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:04.154Z",
+    "resolved_at": null
+  },
+  {
+    "id": 437,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "The Details button opens only an event. Pratik's answer of 2026-09-14 asked for it on 'the task/event/reminder', and nothing in this program edits an existing task or reminder: PimCommand has no Edit, the item form's Prefill is filled only by filled_from_calendar_item, and no writer takes a Filled onto an existing TaskEntry or ReminderEntry. On those rows the button is disabled with 'not for a task yet' in its label. What it takes: a filled_from_task_item and a task_with_edits on the shape of the event's pair, the same for reminders, and a writer for each; the button then needs only an arm in TheEditors::has_one_for",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:04.638Z",
+    "resolved_at": null
+  },
+  {
+    "id": 438,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "One look at what is due was timed on this profile only: four reminders, no accounts, an almost empty calendar, 3 candidates in 1 ms and then 0 ms, on the poll once a minute. The calendar's own read cost 68 ms bounded on a six year calendar; the event feed reads three days through the same two seeking queries per source, so it should be far below that, but no real-sized calendar has been under it. If it is not small against the fifty-millisecond tick, the plan's fallback is a startup read refreshed by TasksLoaded and CalendarEventsLoaded, the way reminders are read",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:22.636Z",
+    "resolved_at": null
+  },
+  {
+    "id": 439,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "The Due now window closing when its last row is answered, and the next row being selected after one goes, live in a button handler and after_a_row_has_gone, which no test can press: wxdragon 0.9.17 raises no widget event from outside. A break there reddens nothing, so no guard record was written for it and the live test does not claim it. The pure bookkeeping in Rows is guarded; the last-row close is a listening pass",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:23.098Z",
+    "resolved_at": null
+  },
+  {
+    "id": 440,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "'1 thing due', '3 things due' and 'And 2 more' are English plurals written in code, the shape 06-03 retired for the date wording by putting it through the catalogue with Fluent's plural rules. Not put through the catalogue in 06-09 because it holds one area, dates.ftl, and its loader and completeness reading are written for one file; a second area, due.ftl, is the catalogue's next step and touches catalogue.rs, six records. When it arrives these three sentences and the window's button labels are the first to move",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:23.567Z",
+    "resolved_at": null
+  },
+  {
+    "id": 441,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/application/event_alerts.rs",
+    "line": null,
+    "description": "Two small holes in what off means, said rather than widened. Microsoft's isReminderOn true with reminderMinutesBeforeStart 0 is stored as nothing, as before, so an Outlook alert at the start of the event gets this program's default lead instead of a lead of nought. And alerts_with_the_first_at with nothing stored and nought in the box keeps nothing stored, which is right, and has no test of its own because managers.rs has 50 records and one more test there is hours of remeasure; the two flipped tests pin the other branches",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T17:46:24.026Z",
     "resolved_at": null
   }
 ]

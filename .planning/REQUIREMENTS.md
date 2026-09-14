@@ -2121,6 +2121,7 @@ section and is real work; none is declined.
 | JMAP | `docs/development/requirements-backlog.md`, future, priority Low. |
 | Plugin and extension system | `docs/development/requirements-backlog.md`, future, priority Low. |
 | Setting Wixen Mail as the actual Windows default mail client | Windows does not allow a program to make itself default. `src/service/default_apps_registration.rs` registers what it can and the product already says plainly that it cannot set the default. |
+| A mail message somebody asked to be told about later joins the due window as a fourth kind of row, "Mail:" first | Deferred out of version 1 on 2026-09-14, Pratik's words: "plan for future expansion of this functionality (post version 1) which will enable us to set notifications for mail that will let the user decide to tackle individual mail later on." The model is shaped for it by 06-09: `due::Kind` with three variants and a doc comment that is the seam, an `Identity` a feed composes, a hold table keyed by the kind's word so a fourth kind is a fourth word. See "Version 2's second seam" in `.planning/phases/06-how-the-application-speaks/README.md` and the doc comment on `Kind` in `src/application/due.rs`. No requirement id, because none of FEEDBACK-01 to 03 is about it. |
 
 ## Out of Scope
 

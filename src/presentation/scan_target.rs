@@ -121,8 +121,10 @@ pub enum ScanTarget {
     Tags,
     /// The signature manager.
     Signatures,
-    /// The window a reminder opens when it comes due, on a reminder that is
-    /// late, which is the wording said first.
+    /// The window that opens when something comes due, with one row of each
+    /// kind, a task, a reminder and an event, all late, which is the wording
+    /// said first. Named for the reminder because it was one reminder as a
+    /// line of text until 06-09 and the name is fingerprinted.
     Reminder,
     /// The conversation tree, on a conversation with a reply in it so the
     /// tree has a second level to announce.
