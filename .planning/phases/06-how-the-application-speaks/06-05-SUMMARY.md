@@ -106,7 +106,7 @@ completed: 2026-09-14
 
 **A reminder that comes due while somebody is typing is said and sounded at the look that finds it, on a channel that does not move focus; its window opens at the next look whether or not they have stopped; and once open, its tone comes back once a minute until focus reaches it, ten times at most, stopping for good the first time it does. Version 0.123.0. Nobody has heard any of it.**
 
-Branch `said-at-once-and-the-window-a-look-later`, four commits, merged into `main`. Nothing pushed.
+Branch `said-at-once-and-the-window-a-look-later`, four code commits and one docs commit, merged into `main` at `7aad8722` with the whole gate green on the merge, 7,603 tests. Nothing pushed.
 
 ## The checkpoint, answered 2026-09-14
 
