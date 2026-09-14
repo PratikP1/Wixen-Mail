@@ -36,23 +36,50 @@ impl MessageCache {
     /// Hold an alert until a moment. Holding one that is already held
     /// replaces its moment: the latest snooze is the one somebody meant.
     pub fn hold_alert(&self, kind: &str, id: &str, until: &str) -> Result<()> {
-        let _ = (kind, id, until, Error::Other(String::new()));
-        todo!("task 2 green")
+        self.conn
+            .execute(
+                "INSERT INTO held_alerts (kind, id, until) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(kind, id) DO UPDATE SET until = excluded.until",
+                rusqlite::params![kind, id, until],
+            )
+            .map(|_| ())
+            .map_err(|e| Error::Other(format!("Failed to hold an alert: {}", e)))
     }
 
-    /// Every hold, as written. The kind is a word here and is not read.
+    /// Every hold, as written, soonest ending first. The kind is a word here
+    /// and is not read.
     pub fn held_alerts(&self) -> Result<Vec<HeldAlert>> {
-        todo!("task 2 green")
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT kind, id, until FROM held_alerts ORDER BY until, kind, id")
+            .map_err(|e| Error::Other(format!("Failed to read the held alerts: {}", e)))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(HeldAlert {
+                    kind: row.get(0)?,
+                    id: row.get(1)?,
+                    until: row.get(2)?,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to read the held alerts: {}", e)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to read a held alert: {}", e)))
     }
 
     /// Let go of every hold that ended before a moment, and say how many.
     ///
     /// `moment` is in the same form the holds were written in, so the
     /// comparison is the text's own order, which for that fixed-width form
-    /// is time order.
+    /// is time order. A hold ending at exactly the moment is kept: the rule
+    /// in `due::what_is_due` already treats it as held no longer, and it is
+    /// let go at the next look, when it is behind the moment.
     pub fn let_go_of_holds_that_ended_before(&self, moment: &str) -> Result<usize> {
-        let _ = moment;
-        todo!("task 2 green")
+        self.conn
+            .execute(
+                "DELETE FROM held_alerts WHERE until < ?1",
+                rusqlite::params![moment],
+            )
+            .map_err(|e| Error::Other(format!("Failed to let go of held alerts: {}", e)))
     }
 }
 

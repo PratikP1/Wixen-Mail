@@ -1467,7 +1467,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -1482,7 +1482,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 # The other half of keeping that note: it now outlives the list it names, and a
@@ -10183,7 +10183,7 @@ before = """        Ok(removed > 0)"""
 after = """        Ok(removed >= 0)"""
 red = ["data::message_cache::tasks::tests::test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there"]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -18607,7 +18607,7 @@ red = [
     "test_a_move_of_a_task_that_is_no_longer_here_writes_neither_half",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 21 },
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
     { file = "tests/a_half_finished_task_move.rs", tests = 8 },
 ]
 

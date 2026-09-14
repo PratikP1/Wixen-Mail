@@ -640,8 +640,17 @@ impl MessageCache {
     /// and changes nothing on a row that is already done: called twice it
     /// reports one row and then none, on the shape of `complete_reminder`.
     pub fn complete_task(&self, task_id: &str, stamp: &str) -> Result<usize> {
-        let _ = (task_id, stamp);
-        todo!("task 2 green")
+        self.conn
+            .execute(
+                "UPDATE tasks SET
+                    is_completed = 1,
+                    completed_at = ?1,
+                    updated_at = ?1,
+                    pending = 1
+                 WHERE id = ?2 AND NOT is_completed",
+                rusqlite::params![stamp, task_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to complete task: {}", e)))
     }
 
     /// Search tasks by title.
