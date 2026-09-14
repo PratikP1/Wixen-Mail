@@ -141,8 +141,24 @@ pub fn sentence_for(
     now: chrono::DateTime<chrono::Local>,
     dates: crate::presentation::date_display::DateSettings,
 ) -> String {
-    let _ = (rows, now, dates);
-    todo!("task 3 green")
+    let each = |row: &Due| row.spoken(now, dates);
+    match rows {
+        [] => String::new(),
+        [one] => each(one),
+        several => {
+            let mut said = format!("{} things due.", several.len());
+            for row in several.iter().take(MOST_ROWS_SAID) {
+                said.push(' ');
+                said.push_str(&each(row));
+                said.push('.');
+            }
+            let more = several.len().saturating_sub(MOST_ROWS_SAID);
+            if more > 0 {
+                said.push_str(&format!(" And {more} more."));
+            }
+            said
+        }
+    }
 }
 
 /// What `say` produced: the sentence, and whether the tone really sounded.
@@ -311,31 +327,55 @@ impl Rows {
     /// Answer the row at a place and take it off the window. Done is refused
     /// for a kind that cannot be done and the row stays.
     pub fn answer(&mut self, index: usize, answer: Answer) -> Answered {
-        let _ = (index, answer);
-        todo!("task 3 green")
+        let Some(row) = self.listed.get(index) else {
+            return Answered::NoSuchRow;
+        };
+        if answer == Answer::Done && !row.identity.kind.can_be_done() {
+            return Answered::NotForThisKind;
+        }
+        let row = self.listed.remove(index);
+        self.answered.push((row.identity, answer));
+        Answered::Taken
     }
 
     /// Answer every row still listed the same way: snooze all, dismiss all.
     /// Done is not an answer for all of them, because one of them may be an
     /// event, and is refused with nothing changed.
     pub fn answer_every_row(&mut self, answer: Answer) -> Answered {
-        let _ = answer;
-        todo!("task 3 green")
+        if answer == Answer::Done {
+            return Answered::NotForThisKind;
+        }
+        for row in self.listed.drain(..) {
+            self.answered.push((row.identity, answer));
+        }
+        Answered::Taken
     }
 
     /// The row at a place as it stands after its editor closed: replaced when
     /// it is still due, answered [`Answer::Edited`] and taken off when it is
     /// not.
     pub fn now_stands(&mut self, index: usize, row: Option<Due>) -> Answered {
-        let _ = (index, row);
-        todo!("task 3 green")
+        let Some(listed) = self.listed.get_mut(index) else {
+            return Answered::NoSuchRow;
+        };
+        match row {
+            Some(fresh) => *listed = fresh,
+            None => {
+                let gone = self.listed.remove(index);
+                self.answered.push((gone.identity, Answer::Edited));
+            }
+        }
+        Answered::Taken
     }
 
     /// The window is closing. Whatever is still listed is dismissed, as
     /// closing the old window with Escape or the title bar always was: the
     /// rows are left as they are and not raised again this session.
-    pub fn closing(self) -> Vec<(Identity, Answer)> {
-        todo!("task 3 green")
+    pub fn closing(mut self) -> Vec<(Identity, Answer)> {
+        for row in self.listed.drain(..) {
+            self.answered.push((row.identity, Answer::Dismissed));
+        }
+        self.answered
     }
 }
 
@@ -352,21 +392,56 @@ pub struct ButtonState {
 /// says it is not for an event, rather than the same label greyed: a
 /// greyed button says "unavailable" on every channel and "why" on none.
 pub fn what_mark_done_says(kind: Kind) -> ButtonState {
-    let _ = kind;
-    todo!("task 3 green")
+    if kind.can_be_done() {
+        ButtonState {
+            label: MARK_DONE.to_string(),
+            enabled: true,
+        }
+    } else {
+        ButtonState {
+            label: format!("{MARK_DONE}: not for {}", with_its_article(kind)),
+            enabled: false,
+        }
+    }
 }
 
 /// What Details says for a row of this kind, given which kinds have an
 /// editor to open.
+///
+/// "Yet", because the reason is that nothing in this program edits an
+/// existing one, which is a gap and not a rule about the kind.
 pub fn what_details_says(kind: Kind, has_an_editor: bool) -> ButtonState {
-    let _ = (kind, has_an_editor);
-    todo!("task 3 green")
+    if has_an_editor {
+        ButtonState {
+            label: DETAILS.to_string(),
+            enabled: true,
+        }
+    } else {
+        ButtonState {
+            label: format!("{DETAILS}: not for {} yet", with_its_article(kind)),
+            enabled: false,
+        }
+    }
+}
+
+/// "a task", "a reminder", "an event": the kind as a sentence names one.
+fn with_its_article(kind: Kind) -> String {
+    let word = kind.key();
+    let article = if word.starts_with(['a', 'e', 'i', 'o', 'u']) {
+        "an"
+    } else {
+        "a"
+    };
+    format!("{article} {word}")
 }
 
 /// The accessible name of the list: how many, before anything else.
 pub fn what_the_list_is_called(rows: usize) -> String {
-    let _ = rows;
-    todo!("task 3 green")
+    if rows == 1 {
+        "1 thing due".to_string()
+    } else {
+        format!("{rows} things due")
+    }
 }
 
 /// The window, built and not shown, with what a caller reads back.
@@ -376,6 +451,11 @@ pub struct DueWindow {
     pub snooze_choice: Choice,
     /// The rows and answers the handlers push into, shared with them.
     pub rows: Rc<RefCell<Rows>>,
+    /// The six buttons by id, in tab order.
+    buttons: Vec<(Id, Button)>,
+    /// Which kinds have an editor behind Details, asked once of the editors
+    /// when the window is built, so relabelling never borrows them.
+    kinds_with_an_editor: Vec<Kind>,
 }
 
 impl DueWindow {
@@ -383,14 +463,23 @@ impl DueWindow {
     /// handler does. Here so a test can drive the real controls through the
     /// same function, since the toolkit offers no way to raise the event.
     pub fn select(&self, index: u32) {
-        let _ = index;
-        todo!("task 3 green")
+        self.list.set_selection(index, true);
+        let rows = self.rows.borrow();
+        show_what_the_selected_row_can_take(
+            &rows,
+            &self.list,
+            self.button(ID_DONE).as_ref(),
+            self.button(ID_DETAILS).as_ref(),
+            &self.kinds_with_an_editor,
+        );
     }
 
     /// The button with this id, for a test or the timer to read.
     pub fn button(&self, id: Id) -> Option<Button> {
-        let _ = id;
-        todo!("task 3 green")
+        self.buttons
+            .iter()
+            .find(|(this, _)| *this == id)
+            .map(|(_, button)| *button)
     }
 
     /// The six buttons' ids, in tab order.
@@ -430,17 +519,111 @@ pub fn raise(
     default_snooze: Snooze,
     editors: Box<dyn Editors>,
 ) -> Vec<(Identity, Answer)> {
-    let _ = (
+    let window = build_reminder_alert_dialog(
         parent,
         rows,
         now,
         dates,
-        a11y,
         default_snooze,
+        theme::current_from_stored_config(),
         editors,
-        HOW_OFTEN_TO_ASK_THE_TONE,
     );
-    todo!("task 3 green")
+
+    // Held until after `show_modal` returns: dropping a timer stops it, so one
+    // that fell out of scope here would never tick. Dropped before `destroy`,
+    // because its owner is the dialog. Focus is asked of the controls rather
+    // than the dialog, because on Windows a dialog has focus only when none
+    // of its children does, which is never while somebody is in it.
+    //
+    // The tick does not stop the timer once the rule says Finished. Stopping
+    // it from inside its own handler means the handler owning the timer,
+    // which is a cycle across the toolkit boundary; a tick that asks and is
+    // told Finished costs nothing, and the drop below ends it.
+    let watching = Timer::new(&window.dialog);
+    watching.on_tick({
+        let a11y = a11y.clone();
+        let list = window.list;
+        let snooze_choice = window.snooze_choice;
+        let buttons: Vec<Button> = window.buttons.iter().map(|(_, button)| *button).collect();
+        let mut tone = RepeatingTone::from_the_window_opening(std::time::Instant::now());
+        move |_| {
+            let focus_is_here = list.has_focus()
+                || snooze_choice.has_focus()
+                || buttons.iter().any(|button| button.has_focus());
+            match tone.asked(std::time::Instant::now(), focus_is_here) {
+                ToneNow::Sound => {
+                    let _ = a11y.earcon(ALERT_EVENT);
+                }
+                ToneNow::Wait | ToneNow::Finished => (),
+            }
+        }
+    });
+    if !watching.start(HOW_OFTEN_TO_ASK_THE_TONE, false) {
+        // The window still opens and the rows are still on it. What is lost
+        // is the tone coming back, which is said rather than swallowed.
+        tracing::warn!("The due window's timer refused to start; its tone will not repeat");
+    }
+
+    // However it ends: the last row answered, or Escape or the title bar,
+    // which dismiss what is left. Treating a closed window as a snooze would
+    // bring the rows back at somebody who had just decided they were finished
+    // with them.
+    let _ended_with = window.dialog.show_modal();
+    drop(watching);
+    let rows = window.rows.borrow().clone();
+    window.dialog.destroy();
+    rows.closing()
+}
+
+/// Relabel Mark Done and Details for the selected row's kind, and enable or
+/// disable them together, so the label and the state cannot disagree.
+fn show_what_the_selected_row_can_take(
+    rows: &Rows,
+    list: &ListBox,
+    done: Option<&Button>,
+    details: Option<&Button>,
+    kinds_with_an_editor: &[Kind],
+) {
+    let Some(kind) = list
+        .get_selection()
+        .and_then(|at| rows.listed().get(at as usize))
+        .map(|row| row.identity.kind)
+    else {
+        return;
+    };
+    let show = |button: Option<&Button>, state: ButtonState| {
+        if let Some(button) = button {
+            button.set_label(&state.label);
+            button.enable(state.enabled);
+        }
+    };
+    show(done, what_mark_done_says(kind));
+    show(
+        details,
+        what_details_says(kind, kinds_with_an_editor.contains(&kind)),
+    );
+}
+
+/// The list after a row has gone: the next row selected and the buttons
+/// relabelled for it, or the window closed when it was the last.
+fn after_a_row_has_gone(
+    dialog: &Dialog,
+    rows: &Rows,
+    list: &ListBox,
+    was_at: u32,
+    done: Option<&Button>,
+    details: Option<&Button>,
+    kinds_with_an_editor: &[Kind],
+) {
+    list.delete(was_at);
+    let left = list.get_count();
+    if left == 0 {
+        dialog.end_modal(ID_EVERY_ROW_ANSWERED);
+        return;
+    }
+    set_accessible_name(list, &what_the_list_is_called(left as usize));
+    list.set_selection(was_at.min(left - 1), true);
+    show_what_the_selected_row_can_take(rows, list, done, details, kinds_with_an_editor);
 }
 
 /// Build the window without showing it.
@@ -464,20 +647,207 @@ pub fn build_reminder_alert_dialog(
     palette: Option<theme::Palette>,
     editors: Box<dyn Editors>,
 ) -> DueWindow {
-    let _ = (
-        parent,
-        rows,
-        now,
-        dates,
-        default_snooze,
-        palette,
-        editors,
-        ID_LIST,
-        ID_EVERY_ROW_ANSWERED,
-        TITLE,
+    let dialog = Dialog::builder(parent, TITLE).with_size(560, 340).build();
+
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // The list of rows, each its whole sentence and not just its title. It
+    // is what the window is for, it is what a braille display shows off the
+    // first line, and its name says how many before anything else.
+    let list = ListBox::builder(&dialog).with_id(ID_LIST).build();
+    for row in &rows {
+        list.append(&row.spoken(now, dates));
+    }
+    set_accessible_name(&list, &what_the_list_is_called(rows.len()));
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 12);
+
+    let snooze_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let snooze_label = StaticText::builder(&dialog)
+        .with_label("Come back in:")
+        .build();
+    let snooze_choice = Choice::builder(&dialog)
+        .with_choices(Snooze::ALL.iter().map(|s| s.label()).collect())
+        .with_selection(Some(
+            Snooze::ALL
+                .iter()
+                .position(|s| *s == default_snooze)
+                .unwrap_or(0) as u32,
+        ))
+        .build();
+    set_accessible_name(&snooze_choice, "Come back in");
+    snooze_row.add(
+        &snooze_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
     );
-    let _ = |what: &StaticText, name: &str| set_accessible_name(what, name);
-    todo!("task 3 green")
+    snooze_row.add(&snooze_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+    sizer.add_sizer(&snooze_row, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // Snooze first and the default, because it is the answer that keeps the
+    // row. Dismiss is the one that loses it, and a destructive default is
+    // how somebody dismisses by reflex what they meant to keep. Every label
+    // carries its Alt key, so each button is named on both channels by the
+    // label itself.
+    let button_row = BoxSizer::builder(Orientation::Horizontal).build();
+    let a_button = |label: &str| Button::builder(&dialog).with_label(label);
+    // Each id named at its own `with_id`, because `tests/wired.rs` reads
+    // that call to know something raises the id its handler answers.
+    let buttons: Vec<(Id, Button)> = vec![
+        (ID_SNOOZE, a_button(SNOOZE).with_id(ID_SNOOZE).build()),
+        (
+            ID_SNOOZE_ALL,
+            a_button(SNOOZE_ALL).with_id(ID_SNOOZE_ALL).build(),
+        ),
+        (ID_DONE, a_button(MARK_DONE).with_id(ID_DONE).build()),
+        (ID_DISMISS, a_button(DISMISS).with_id(ID_DISMISS).build()),
+        (
+            ID_DISMISS_ALL,
+            a_button(DISMISS_ALL).with_id(ID_DISMISS_ALL).build(),
+        ),
+        (ID_DETAILS, a_button(DETAILS).with_id(ID_DETAILS).build()),
+    ];
+    for (_, button) in &buttons {
+        button_row.add(button, 0, SizerFlag::All, 4);
+    }
+    sizer.add_sizer(&button_row, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
+
+    dialog.set_sizer(sizer, true);
+
+    let kinds_with_an_editor: Vec<Kind> = Kind::ALL
+        .into_iter()
+        .filter(|kind| editors.has_one_for(*kind))
+        .collect();
+    let rows = Rc::new(RefCell::new(Rows::new(rows)));
+    let editors = Rc::new(RefCell::new(editors));
+    let find = |id: Id| {
+        buttons
+            .iter()
+            .find(|(this, _)| *this == id)
+            .map(|(_, button)| *button)
+    };
+    let done_button = find(ID_DONE);
+    let details_button = find(ID_DETAILS);
+
+    // How long a snooze is, read when the button is pressed rather than
+    // when the window closes, so two rows can be snoozed for two lengths.
+    let chosen_snooze = move || {
+        Snooze::ALL
+            .get(snooze_choice.get_selection().unwrap_or(0) as usize)
+            .copied()
+            .unwrap_or(default_snooze)
+    };
+
+    // One handler shape for six buttons. Snooze, Mark Done and Dismiss
+    // answer the selected row and take it off the list; Snooze all and
+    // Dismiss all answer every row and close; Details opens the row's editor
+    // and takes the row off only if it is no longer due. The window closes
+    // with the last row. Done on an event is refused by the bookkeeping, and
+    // the button is disabled for it anyway.
+    for (id, button) in &buttons {
+        let rows = Rc::clone(&rows);
+        let kinds = kinds_with_an_editor.clone();
+        let editors = Rc::clone(&editors);
+        let id = *id;
+        button.on_click(move |_| {
+            let Some(at) = list.get_selection() else {
+                return;
+            };
+            let taken = match id {
+                id if id == ID_SNOOZE => rows
+                    .borrow_mut()
+                    .answer(at as usize, Answer::Snoozed(chosen_snooze())),
+                id if id == ID_DONE => rows.borrow_mut().answer(at as usize, Answer::Done),
+                id if id == ID_DISMISS => rows.borrow_mut().answer(at as usize, Answer::Dismissed),
+                id if id == ID_SNOOZE_ALL => rows
+                    .borrow_mut()
+                    .answer_every_row(Answer::Snoozed(chosen_snooze())),
+                id if id == ID_DISMISS_ALL => rows.borrow_mut().answer_every_row(Answer::Dismissed),
+                id if id == ID_DETAILS => {
+                    // The row's editor, nested under this window. The borrow
+                    // of the rows is over before the editor opens, because
+                    // the editor runs the event loop inside itself.
+                    let row = rows.borrow().listed().get(at as usize).cloned();
+                    let Some(row) = row else {
+                        return;
+                    };
+                    let stands = editors.borrow_mut().open(&dialog, &row);
+                    if let Some(fresh) = &stands {
+                        list.set_string(at, &fresh.spoken(now, dates));
+                    }
+                    let still_listed = stands.is_some();
+                    let taken = rows.borrow_mut().now_stands(at as usize, stands);
+                    if still_listed {
+                        return;
+                    }
+                    taken
+                }
+                _ => return,
+            };
+            if taken != Answered::Taken {
+                return;
+            }
+            if id == ID_SNOOZE_ALL || id == ID_DISMISS_ALL {
+                dialog.end_modal(ID_EVERY_ROW_ANSWERED);
+                return;
+            }
+            after_a_row_has_gone(
+                &dialog,
+                &rows.borrow(),
+                &list,
+                at,
+                done_button.as_ref(),
+                details_button.as_ref(),
+                &kinds,
+            );
+        });
+    }
+
+    // The buttons say what the selected row can take, on every selection
+    // change and once now for the first row.
+    list.on_selection_changed({
+        let rows = Rc::clone(&rows);
+        let kinds = kinds_with_an_editor.clone();
+        move |_| {
+            show_what_the_selected_row_can_take(
+                &rows.borrow(),
+                &list,
+                done_button.as_ref(),
+                details_button.as_ref(),
+                &kinds,
+            );
+        }
+    });
+
+    let window = DueWindow {
+        dialog,
+        list,
+        snooze_choice,
+        rows,
+        buttons,
+        kinds_with_an_editor,
+    };
+    if list.get_count() > 0 {
+        window.select(0);
+    }
+    if let Some(snooze) = window.button(ID_SNOOZE) {
+        snooze.set_default();
+    }
+    // The list has focus when the window opens, so a screen reader reads the
+    // first row on arrival; Enter is Snooze, the answer that keeps the row.
+    list.set_focus();
+
+    // Painted last. The theme module paints no `ListBox`, so the list, like
+    // the snooze `Choice` and every other `Choice` this round paints around,
+    // is left to Windows, and the dialog itself is the only site. `None`
+    // means high contrast is on, or the system is set up in a way this
+    // application should not paint over, so nothing is set here and Windows
+    // decides.
+    if let Some(palette) = palette {
+        theme::paint(&window.dialog, palette.main_surface());
+    }
+
+    window
 }
 
 #[cfg(test)]

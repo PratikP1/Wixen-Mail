@@ -129,6 +129,31 @@ no period before or after, so both buttons are unavailable and your screen
 reader says so. Which view the calendar opens on is on the Calendar section of
 the Calendar and PIM tab in Settings.
 
+### The Due Now Window
+
+Opens on its own when a reminder comes due, a task reaches its due date, or a
+calendar event's alert time arrives, and holds everything that has come due at
+that moment as one list, earliest first. Each row starts with what it is:
+"Task due today", "Reminder", "Event in 15 minutes". The list has focus when
+the window opens, so the first row is read to you on arrival; arrow through
+the rest. Every button is reached by holding `Alt` and pressing its letter.
+
+| Key | What it does |
+|-----|--------------|
+| `Enter` | Snooze the row you are on, for the length in the Come back in box |
+| `Alt+S` | Snooze the row you are on |
+| `Alt+A` | Snooze every row still listed, and close |
+| `Alt+D` | Mark the row you are on done. Tasks and reminders only: on an event the button is unavailable and its label says so |
+| `Alt+I` | Dismiss the row you are on. It stays as it is and is not raised again until the program is next started |
+| `Alt+L` | Dismiss every row still listed, and close |
+| `Alt+T` | Open the row you are on in its own window, to move its date or time. Events only for now: on a task or a reminder the button is unavailable and its label says so |
+| `Escape` | Close the window; every row still listed is dismissed |
+
+The Come back in box is the same for every row; choose a length, then press
+Snooze. Two rows can be snoozed for two different lengths by choosing again
+between them. A snoozed reminder moves its own time. A snoozed task or event
+is held back here until the time you chose, and its own date is not changed.
+
 ### The Event Window
 
 Everything in the event window is reached with `Tab`, or by holding `Alt` and

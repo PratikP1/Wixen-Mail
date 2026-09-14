@@ -20860,7 +20860,7 @@ red = [
     "presentation::wx_reminder_alert::tests::test_the_tone_stops_for_good_once_focus_has_arrived_even_if_it_leaves",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_reminder_alert.rs", tests = 6 },
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
 ]
 
 # ── 06-06 ─────────────────────────────────────────────────────────────────
