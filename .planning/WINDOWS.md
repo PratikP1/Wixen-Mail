@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 417
+open_count: 419
 waived_count: 0
 fixed_count: 24
-total_count: 441
-last_updated: 2026-09-14T17:46:24.026Z
+total_count: 443
+last_updated: 2026-09-14T20:41:09.046Z
 ---
 
 # Broken Windows Ledger
@@ -456,6 +456,8 @@ last_updated: 2026-09-14T17:46:24.026Z
 | 439 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | The Due now window closing when its last row is answered, and the next row being selected after one goes, live in a button handler and after_a_row_has_gone, which no test can press: wxdragon 0.9.17 raises no widget event from outside. A break there reddens nothing, so no guard record was written for it and the live test does not claim it. The pure bookkeeping in Rows is guarded; the last-row close is a listening pass | open |  | 2026-09-14T17:46:23.098Z |  |
 | 440 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | '1 thing due', '3 things due' and 'And 2 more' are English plurals written in code, the shape 06-03 retired for the date wording by putting it through the catalogue with Fluent's plural rules. Not put through the catalogue in 06-09 because it holds one area, dates.ftl, and its loader and completeness reading are written for one file; a second area, due.ftl, is the catalogue's next step and touches catalogue.rs, six records. When it arrives these three sentences and the window's button labels are the first to move | open |  | 2026-09-14T17:46:23.567Z |  |
 | 441 | 06 | todo | src/application/event_alerts.rs |  | Two small holes in what off means, said rather than widened. Microsoft's isReminderOn true with reminderMinutesBeforeStart 0 is stored as nothing, as before, so an Outlook alert at the start of the event gets this program's default lead instead of a lead of nought. And alerts_with_the_first_at with nothing stored and nought in the box keeps nothing stored, which is right, and has no test of its own because managers.rs has 50 records and one more test there is hours of remeasure; the two flipped tests pin the other branches | open |  | 2026-09-14T17:46:24.026Z |  |
+| 442 | 08 | deviation | scripts/check.sh |  | plan 08-01 task 1 required check.sh --suites-for guards/guards.toml docs/development/measurements.md to print the new target once its guard record existed; it prints nothing, because the coupling function drops a candidate already in guards_that_read_the_whole_tree on purpose, since every scoped run ends with that list. The record couples: a copy of the script with the target taken out of the list answers with it. The criterion asked for output the tool suppresses by design, and a target in both lists is answered by the whole-tree list first | open |  | 2026-09-14T20:41:00.106Z |  |
+| 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | open |  | 2026-09-14T20:41:09.046Z |  |
 
 ````json
 [
@@ -5749,6 +5751,30 @@ last_updated: 2026-09-14T17:46:24.026Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T17:46:24.026Z",
+    "resolved_at": null
+  },
+  {
+    "id": 442,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "plan 08-01 task 1 required check.sh --suites-for guards/guards.toml docs/development/measurements.md to print the new target once its guard record existed; it prints nothing, because the coupling function drops a candidate already in guards_that_read_the_whole_tree on purpose, since every scoped run ends with that list. The record couples: a copy of the script with the target taken out of the list answers with it. The criterion asked for output the tool suppresses by design, and a target in both lists is answered by the whole-tree list first",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T20:41:00.106Z",
+    "resolved_at": null
+  },
+  {
+    "id": 443,
+    "kind": "todo",
+    "phase": "08",
+    "file": "scripts/guards.py",
+    "line": null,
+    "description": "the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T20:41:09.046Z",
     "resolved_at": null
   }
 ]
