@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,16 +66,21 @@ TEST_THREADS = os.environ.get("WIXEN_TEST_THREADS", "8")
 # What one record really costs, said once so the two places that quote it cannot
 # drift apart.
 #
-# Measured 2026-09-10 at `eda2719`, 8 threads: 29s to rebuild after a one-line
-# source change, 66s for the library run. So an unfiltered record is 95s, and a
-# `--named-only` one is the same rebuild plus a scoped run of a few seconds.
+# Measured 2026-09-14 at `bb61e88e`, 8 threads, the library holding 7,245
+# tests by `cargo test --lib -- --list`, nothing else building, the build warm:
+# one record through `--remeasure` twice, the timing line below reporting
+# rebuild 46 s and run 47 s, then rebuild 44 s and run 47 s, so 93 s and 91 s.
+# A `--named-only` run of the same record was rebuild 44 s and run 3 s, 47 s.
+# The row on docs/development/measurements.md carries the same figures.
 #
-# This replaces "about 112 seconds a record against 24", which was taken before
-# the library suite was halved on 2026-09-09 by building the schema once a
-# process instead of once a test. Every sweep estimate divides by this number,
-# so it is the one figure in this file worth re-taking rather than inheriting:
-# time a rebuild and a library run, add them, and correct this line.
-THE_COST_OF_ASKING_PROPERLY = "about 95 seconds a record against 35."
+# This replaces "about 95 seconds a record against 35", measured 2026-09-10 at
+# `eda2719` as 29 s to rebuild and 66 s to run. The run fell to 47 s and the
+# rebuild rose to 44 s, neither for a reason anybody has established, so the
+# sum barely moved while both terms did; that is why the line prints them
+# apart rather than only their sum. Every sweep estimate
+# divides by this number, so it is the one figure in this file worth re-taking
+# rather than inheriting: run one record and read the timing line.
+THE_COST_OF_ASKING_PROPERLY = "about 92 seconds a record against 47."
 
 # `test <name> ... ok` or `... FAILED`, as the test harness writes it.
 VERDICT = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)$", re.M)
@@ -738,8 +744,32 @@ def run_the_whole_suite(
     # like. The first spelling failed with cargo's own usage message, which
     # reads like a bad flag rather than like one filter too many.
     filtered = list(filters or [])
+    # Two invocations rather than one, so the two terms of a record's cost are
+    # timed apart: `cargo test --no-run` is the rebuild, and the run that
+    # follows finds nothing to build and is the run. The split costs one
+    # fingerprint check, under a second, and the alternative was reading
+    # cargo's stderr as it streamed for its `Running` line, which needs a
+    # thread per pipe and a second way for the capture to come back empty.
+    started = time.monotonic()
+    built = cargo("test", *suite, "--no-run")
+    rebuilt_at = time.monotonic()
+    if built.returncode != 0:
+        raise Wrong(why_no_test_was_named(built.returncode, built.stdout + built.stderr))
+    finished = cargo("test", *suite, "--", f"--test-threads={TEST_THREADS}", *filtered)
+    ran_at = time.monotonic()
+    print(the_timing_line(rebuilt_at - started, ran_at - rebuilt_at), flush=True)
+
+    said = finished.stdout + finished.stderr
+    verdicts = {name: verdict for name, verdict in VERDICT.findall(said)}
+    if not verdicts:
+        raise Wrong(why_no_test_was_named(finished.returncode, said))
+    return verdicts
+
+
+def cargo(*arguments: str) -> subprocess.CompletedProcess[str]:
+    """cargo with these arguments, its output captured and never missing."""
     finished = subprocess.run(
-        ["cargo", "test", *suite, "--", f"--test-threads={TEST_THREADS}", *filtered],
+        ["cargo", *arguments],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -775,12 +805,7 @@ def run_the_whole_suite(
             f"cargo exited {finished.returncode}.\nThis guard was not measured. "
             "Run it again on its own before believing anything about it."
         )
-
-    said = finished.stdout + finished.stderr
-    verdicts = {name: verdict for name, verdict in VERDICT.findall(said)}
-    if not verdicts:
-        raise Wrong(why_no_test_was_named(finished.returncode, said))
-    return verdicts
+    return finished
 
 
 def what_is_already_failing(suite: tuple[str, ...]) -> set[str]:
@@ -864,6 +889,32 @@ def measure(
         stayed_green=[name for name in guard.red if name not in went_red],
         also_went_red=sorted(went_red - named),
     )
+
+
+def the_timing_line(rebuild_seconds: float, run_seconds: float) -> str:
+    """One line per run saying what its two terms cost, so a sweep's log is
+    also its own rate series.
+
+    The cost of a record is a rebuild plus a run, and the two move for
+    different reasons: the rebuild with how much of the crate a one-file
+    change invalidates, the run with how many tests the suite holds and how
+    many threads it gets. `THE_COST_OF_ASKING_PROPERLY` below quotes both,
+    and until this line existed the only way to re-take it was a stopwatch
+    around a run nobody was watching. Now every log carries the figure.
+
+    Each term is rounded on its own and the total is the sum of the rounded
+    terms, so the arithmetic on the line checks by eye:
+
+    >>> the_timing_line(29.4, 66.2)
+    '   timed: rebuild 29 s, run 66 s, 95 s in all'
+    >>> the_timing_line(0.6, 3.2)
+    '   timed: rebuild 1 s, run 3 s, 4 s in all'
+    >>> the_timing_line(0.0, 51.0)
+    '   timed: rebuild 0 s, run 51 s, 51 s in all'
+    """
+    rebuild = round(rebuild_seconds)
+    run = round(run_seconds)
+    return f"   timed: rebuild {rebuild} s, run {run} s, {rebuild + run} s in all"
 
 
 def how_many(count: int, thing: str) -> str:

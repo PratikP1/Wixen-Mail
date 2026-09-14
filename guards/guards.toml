@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 591 records have arrived since and have not been through it.
+# 592 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21394,4 +21394,37 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# ── Every number carries its command and its date, 08-01 task 1 ─────────────
+#
+# docs/development/measurements.md is the one page a figure about this tree
+# is written on, and every row must say how and when it was taken. The break
+# is a row losing its date: the commits row's date cell emptied by hand, with
+# the rest of the row intact. Five go red rather than one, because each of
+# the four companions reads the real page and asserts it is clean before
+# splicing its own omission in, so a page that already disagrees fails them
+# all. That is the companion refusing to prove something other than what it
+# says, not a record to narrow.
+#
+# Measured by hand on 2026-09-14 against the target itself,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 5
+# passed and exactly these five failed. The suite is the target rather than
+# the library because the reading lives under tests/, which `--lib` never
+# builds.
+[[guard]]
+name = "a figure on the measurements page cannot lose its date"
+file = "docs/development/measurements.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """| Commits on `main` | 2,025 | `git rev-list --count HEAD` | 2026-09-14 | 7b2482b1 |"""
+after = """| Commits on `main` | 2,025 | `git rev-list --count HEAD` |  | 7b2482b1 |"""
+red = [
+    "test_every_row_on_the_measurements_page_carries_its_command_its_date_and_its_commit",
+    "test_the_reading_can_see_a_row_that_appears_twice",
+    "test_the_reading_can_see_a_row_whose_command_is_missing",
+    "test_the_reading_can_see_a_row_whose_commit_is_missing",
+    "test_the_reading_can_see_a_row_whose_date_is_missing",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 10 },
 ]

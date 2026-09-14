@@ -32,7 +32,13 @@ set -euo pipefail
 # which is a name that says nothing on both accessibility channels. It is a
 # shape somebody copies from the line above, in whichever file they are in, so
 # no changed file predicts it either.
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space)
+#
+# The sixth reads `docs/development/measurements.md`, the one page a figure
+# about this tree is written on, and refuses a row without its command, its
+# date or its commit. It is here for the third one's reason: a row lands on
+# that page beside the code it measures, which answers `affected`, so without
+# this it would run on every commit except the ones that add a row.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date)
 
 # Which integration targets guard a changed source file.
 #
@@ -382,8 +388,15 @@ if [ "$mode" = "docs_only" ]; then
     # `CLAUDE.md` says about a guard under `tests/`, happening to a `--lib`
     # test instead. Added 2026-09-14 with the module.
     cargo test --lib presentation::what_the_scans_can_judge::
-    # --no-fail-fast because this names six targets, and without it a red
-    # `house_style` meant the other five never started. Found on 2026-09-03 by
+    # `every_number_carries_its_command_and_its_date` is the ninth, and its
+    # case is `the_planning_files_agree_with_themselves`'s exactly: it reads
+    # `docs/development/measurements.md` and refuses a row without its command,
+    # its date or its commit. A commit that adds a row and nothing else
+    # touches one page under `docs/` and so earns this list and nothing else.
+    # Added 2026-09-14 with the page.
+    #
+    # --no-fail-fast because this names eight targets, and without it a red
+    # `house_style` meant the others never started. Found on 2026-09-03 by
     # `test_one_failing_target_does_not_hide_the_rest`, the moment its exemption
     # was narrowed from "the line names a target" to "the line names exactly
     # one". This is the same defect that was fixed in the scoped run below, in
@@ -391,7 +404,8 @@ if [ "$mode" = "docs_only" ]; then
     cargo test --no-fail-fast --test house_style --test docs_links --test wired \
         --test checkbox_labels --test manager_delete_stays_open \
         --test the_planning_files_agree_with_themselves \
-        --test the_words_that_say_nothing
+        --test the_words_that_say_nothing \
+        --test every_number_carries_its_command_and_its_date
     echo
     echo "Formatting, clippy and the document-reading tests passed. The rest of"
     echo "the suite and the release build did not run: nothing outside a document"

@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **One page for every figure about this tree**,
+  `docs/development/measurements.md`. How many guard records there are, how
+  many mutants the configuration allows, how many tests the library builds,
+  how long the whole gate takes: each is one row, with the command that
+  produced it, the date, the commit and the settings that move it. Other pages
+  used to state these figures themselves, in four different totals for one job
+  and none for another, and each went stale on its own; from now on they point
+  at this page. A check reads the page on every commit and refuses a row
+  without its command, its date or its commit, and a companion proves the
+  check can see such a row when one is planted. It is a note to the people
+  building this and is not shipped with the installer.
+
+  **Known limitations.** The page holds what has been taken and nothing on it
+  is promised to be current. The check holds the shape of a row and never its
+  value, because a check that said a written count equals today's count would
+  be false the next time somebody added a test.
+
 - **A page listing what only a person can check**, [the manual accessibility
   pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
   of disability the project's rules name, each saying which screen reader or
