@@ -45,6 +45,20 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use wixen_mail::application::attaching::LIMIT_BYTES;
+use wixen_mail::application::pictures::MOST_ONE_PICTURE_MAY_BE;
+use wixen_mail::data::message_cache::attachment_content::{
+    ATTACHMENT_CACHE_BUDGET_BYTES, LARGEST_ATTACHMENT_KEPT_BYTES,
+};
+use wixen_mail::data::message_cache::moves_in_flight::{
+    LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES, MOVES_IN_FLIGHT_BUDGET_BYTES,
+};
+use wixen_mail::data::message_cache::signed_original::{
+    LARGEST_SIGNED_MESSAGE_KEPT_BYTES, SIGNED_ORIGINAL_BUDGET_BYTES,
+};
+use wixen_mail::presentation::accessibility::sound_scheme_import::{
+    MAX_FILE_BYTES, MAX_SOUND_DURATION, MAX_TOTAL_BYTES, MAX_ZIP_BYTES,
+};
 
 const PAGE: &str = "docs/development/measurements.md";
 const HEADING: &str = "## The figures";
@@ -1457,5 +1471,321 @@ fn test_the_ratio_reading_can_see_the_wrapped_form() {
         "the wrapped form was planted in scripts/mutants.sh at line {line} and the reading \
          answered {}",
         wrong[0]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A figure in prose that restates a constant agrees with the constant
+// ---------------------------------------------------------------------------
+//
+// The one kind of number a check can hold outright: both halves are in the
+// repository. "A single file is kept up to 25 MB" on the privacy page
+// restates `LARGEST_ATTACHMENT_KEPT_BYTES`, and if either moves without the
+// other the page is lying to the person who reads it to decide whether to
+// carry the computer around. Nothing read a single one of these before this
+// reading existed, and one of the twelve disagreed: the roadmap ticked an
+// attachment warning at 10 MB where the code warns at 25.
+//
+// Each pair is a page, the words before the figure, the unit after it, and
+// the constant, imported from the library so a renamed constant fails to
+// compile rather than silently unpairing. A pair whose words are not on the
+// page is a failure, not a skip: a page reworded out from under the reading
+// is the way this goes quiet.
+
+/// The unit a page states a constant in, and how many of the constant's own
+/// units that is.
+#[derive(Clone, Copy)]
+enum Unit {
+    Mebibytes,
+    Seconds,
+}
+
+impl Unit {
+    fn word(self) -> &'static str {
+        match self {
+            Unit::Mebibytes => "MB",
+            Unit::Seconds => "seconds",
+        }
+    }
+
+    fn scale(self) -> u64 {
+        match self {
+            Unit::Mebibytes => 1024 * 1024,
+            Unit::Seconds => 1,
+        }
+    }
+}
+
+/// A figure on a page that restates a constant the code holds.
+struct Restated {
+    page: &'static str,
+    /// The words on the page right before the figure, unique on the page.
+    before: &'static str,
+    unit: Unit,
+    /// The constant's value in its own units, bytes or seconds.
+    constant: u64,
+    /// The constant's name, for the complaint.
+    name: &'static str,
+}
+
+const THE_PRIVACY_PAGE: &str = "docs/privacy.md";
+const THE_EARCON_PLAN: &str = "docs/plans/20260823-earcon-sound-schemes.md";
+
+/// Every figure on a page that restates a constant, twelve on 2026-09-14.
+const THE_FIGURES_THAT_RESTATE_A_CONSTANT: [Restated; 12] = [
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "A single file is kept up to ",
+        unit: Unit::Mebibytes,
+        constant: LARGEST_ATTACHMENT_KEPT_BYTES as u64,
+        name: "LARGEST_ATTACHMENT_KEPT_BYTES",
+    },
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "all of them together up to ",
+        unit: Unit::Mebibytes,
+        constant: ATTACHMENT_CACHE_BUDGET_BYTES as u64,
+        name: "ATTACHMENT_CACHE_BUDGET_BYTES",
+    },
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "dropped when a signed message is larger than ",
+        unit: Unit::Mebibytes,
+        constant: LARGEST_SIGNED_MESSAGE_KEPT_BYTES as u64,
+        name: "LARGEST_SIGNED_MESSAGE_KEPT_BYTES",
+    },
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "when the space these copies use passes ",
+        unit: Unit::Mebibytes,
+        constant: SIGNED_ORIGINAL_BUDGET_BYTES as u64,
+        name: "SIGNED_ORIGINAL_BUDGET_BYTES",
+    },
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "A message larger than ",
+        unit: Unit::Mebibytes,
+        constant: LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES as u64,
+        name: "LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES",
+    },
+    Restated {
+        page: THE_PRIVACY_PAGE,
+        before: "interrupted moves add up to more than ",
+        unit: Unit::Mebibytes,
+        constant: MOVES_IN_FLIGHT_BUDGET_BYTES as u64,
+        name: "MOVES_IN_FLIGHT_BUDGET_BYTES",
+    },
+    Restated {
+        page: "docs/KEYBOARD_SHORTCUTS.md",
+        before: "PNG, JPEG, GIF and WebP up to ",
+        unit: Unit::Mebibytes,
+        constant: MOST_ONE_PICTURE_MAY_BE as u64,
+        name: "MOST_ONE_PICTURE_MAY_BE",
+    },
+    Restated {
+        page: THE_EARCON_PLAN,
+        before: "a working number to start from: ",
+        unit: Unit::Mebibytes,
+        constant: MAX_ZIP_BYTES,
+        name: "MAX_ZIP_BYTES",
+    },
+    Restated {
+        page: THE_EARCON_PLAN,
+        before: "extracted-size cap (a working number: ",
+        unit: Unit::Mebibytes,
+        constant: MAX_FILE_BYTES,
+        name: "MAX_FILE_BYTES",
+    },
+    Restated {
+        page: THE_EARCON_PLAN,
+        before: "a total cap across the whole pack (",
+        unit: Unit::Mebibytes,
+        constant: MAX_TOTAL_BYTES,
+        name: "MAX_TOTAL_BYTES",
+    },
+    Restated {
+        page: THE_EARCON_PLAN,
+        before: "a rule and not a suggestion.** A working number: ",
+        unit: Unit::Seconds,
+        constant: MAX_SOUND_DURATION.as_secs(),
+        name: "MAX_SOUND_DURATION",
+    },
+    Restated {
+        page: "docs/roadmap.md",
+        before: "Attachment size warnings (>",
+        unit: Unit::Mebibytes,
+        constant: LIMIT_BYTES,
+        name: "attaching::LIMIT_BYTES",
+    },
+];
+
+/// A page as one line, so a phrase wrapped by the page's own line breaks is
+/// one phrase.
+fn as_one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The figure the page states after `before`, in the pair's unit, or why it
+/// could not be read: the words are absent, or no figure in that unit follows.
+fn the_figure_stated(page: &str, pair: &Restated) -> Result<u64, String> {
+    let one_line = as_one_line(page);
+    let Some(at) = one_line.find(pair.before) else {
+        return Err(format!(
+            "{}: the words \"{}\" are not on the page, so {} is no longer held to anything; \
+             the page was reworded, so reword the pair",
+            pair.page, pair.before, pair.name
+        ));
+    };
+    let rest = &one_line[at + pair.before.len()..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let after = rest[digits.len()..].trim_start();
+    if digits.is_empty() || !after.starts_with(pair.unit.word()) {
+        return Err(format!(
+            "{}: after \"{}\" the page says \"{}\", not a figure in {}",
+            pair.page,
+            pair.before,
+            rest.chars().take(20).collect::<String>(),
+            pair.unit.word()
+        ));
+    }
+    digits
+        .parse::<u64>()
+        .map(|figure| figure * pair.unit.scale())
+        .map_err(|_| format!("{}: \"{digits}\" is too large to be a figure", pair.page))
+}
+
+/// Every pair whose page disagrees with its constant, or cannot be read.
+fn figures_that_disagree_with_their_constant(pages: &[Page]) -> Vec<String> {
+    let mut wrong = Vec::new();
+    for pair in &THE_FIGURES_THAT_RESTATE_A_CONSTANT {
+        let text = &pages
+            .iter()
+            .find(|(name, _)| name == pair.page)
+            .unwrap_or_else(|| panic!("{} restates a constant and was not read", pair.page))
+            .1;
+        match the_figure_stated(text, pair) {
+            Err(why) => wrong.push(why),
+            Ok(stated) if stated != pair.constant => wrong.push(format!(
+                "{}: \"{}{} {}\" restates {}, which is {} {}",
+                pair.page,
+                pair.before,
+                stated / pair.unit.scale(),
+                pair.unit.word(),
+                pair.name,
+                pair.constant / pair.unit.scale(),
+                pair.unit.word()
+            )),
+            Ok(_) => {}
+        }
+    }
+    wrong
+}
+
+/// The pages the pairs name, read once. The earcon plan is under
+/// `docs/plans/`, which the provenance walk leaves out, so it is read here
+/// by name rather than taken from that walk.
+fn read_the_pages_that_restate_a_constant() -> Vec<Page> {
+    let mut names: Vec<&str> = THE_FIGURES_THAT_RESTATE_A_CONSTANT
+        .iter()
+        .map(|pair| pair.page)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+        .into_iter()
+        .map(|name| {
+            let text = fs::read_to_string(name)
+                .unwrap_or_else(|e| panic!("{name} restates a constant and it {e}"));
+            (name.to_string(), text)
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_figure_that_restates_a_constant_agrees_with_it() {
+    let wrong =
+        figures_that_disagree_with_their_constant(&read_the_pages_that_restate_a_constant());
+    assert!(
+        wrong.is_empty(),
+        "a figure on a page that restates a constant the code holds must equal it, and \
+         these do not:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+fn the_pairs_agree_today(pages: &[Page]) {
+    assert_eq!(
+        figures_that_disagree_with_their_constant(pages),
+        Vec::<String>::new(),
+        "a page already disagrees with a constant, so what this changes is not the only \
+         thing the reading has to find"
+    );
+}
+
+#[test]
+fn test_the_constants_reading_can_see_a_figure_that_moved() {
+    let pages = read_the_pages_that_restate_a_constant();
+    the_pairs_agree_today(&pages);
+    // The privacy page's own line, its figure moved by one.
+    let pair = &THE_FIGURES_THAT_RESTATE_A_CONSTANT[0];
+    let stated = pair.constant / pair.unit.scale();
+    let words = format!("{}{stated} {}", pair.before, pair.unit.word());
+    let text = &pages
+        .iter()
+        .find(|(name, _)| name == pair.page)
+        .expect("the page")
+        .1;
+    let moved = with_one_line_replaced(
+        text,
+        |line| line.contains(&words),
+        &text
+            .lines()
+            .find(|line| line.contains(&words))
+            .expect("the line")
+            .replace(
+                &words,
+                &format!("{}{} {}", pair.before, stated + 1, pair.unit.word()),
+            ),
+    );
+    assert_eq!(
+        figures_that_disagree_with_their_constant(&with_the_page_replaced(
+            &pages, pair.page, moved
+        )),
+        vec![format!(
+            "{}: \"{}{} {}\" restates {}, which is {stated} {}",
+            pair.page,
+            pair.before,
+            stated + 1,
+            pair.unit.word(),
+            pair.name,
+            pair.unit.word()
+        )],
+        "the figure was moved by one on the page's own line and the reading did not answer \
+         with exactly that pair"
+    );
+}
+
+#[test]
+fn test_the_constants_reading_refuses_a_phrase_that_has_gone() {
+    let pages = read_the_pages_that_restate_a_constant();
+    the_pairs_agree_today(&pages);
+    let pair = &THE_FIGURES_THAT_RESTATE_A_CONSTANT[0];
+    let text = &pages
+        .iter()
+        .find(|(name, _)| name == pair.page)
+        .expect("the page")
+        .1;
+    let reworded = text.replace(pair.before, "One file is kept up to ");
+    assert_ne!(reworded, *text, "the phrase to remove was not on the page");
+    assert_eq!(
+        figures_that_disagree_with_their_constant(&with_the_page_replaced(
+            &pages, pair.page, reworded
+        )),
+        vec![format!(
+            "{}: the words \"{}\" are not on the page, so {} is no longer held to anything; \
+             the page was reworded, so reword the pair",
+            pair.page, pair.before, pair.name
+        )],
+        "the phrase was reworded out from under the pair and the reading did not say so"
     );
 }
