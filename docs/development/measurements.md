@@ -44,6 +44,59 @@ keeps the series. Two rows with the same `what` and the same date are refused.
 
 Pipes inside a command are written `\|` so the table stays a table.
 
+## The definitions the start and memory rows were taken under
+
+Three of the project's targets use words they do not define: memory under
+150 MB with 1,000 cached messages, cold start under 2 seconds to a usable
+list, and idle memory under 100 MB. The rows below were taken under these
+meanings, which are the same words the harness's header states in
+`tests/the_numbers_the_targets_ask_for.rs`, so the next person re-taking a
+number takes the same one.
+
+**1,000 cached messages** means 1,000 rows in `messages` for one IMAP
+account's `INBOX`, written through the same call the sync uses, with a
+plain-text body of about 2 KB each through the body store, no attachment
+content and no signed originals. Because that is what the list reads at
+startup and what the target was written about; the attachment and
+signed-original budgets are constants with their own rows and their own
+limits, and mixing them in would measure the budgets rather than the
+messages.
+
+**Cold start** means a fresh process of the release binary against the
+1,000-message profile, from the first instruction of `main` to the usable
+line. The first start after the binary is built is reported on its own as
+the file-cache-cold figure; the next five starts are the series and their
+median is the number. The requirement says "cold" and does not say cold
+for what; both readings are given so nobody has to guess which was meant.
+
+**Usable** means the first `MessagesLoaded` after startup whose rows
+reached the list control's count and were at least one, which is the line
+`wixen_mail::common::started` writes once per process.
+
+**Idle** means no input after the usable line, the window left where the
+start put it, and memory read at 60 s and at 120 s; the 120 s reading is
+the number, the 60 s reading sits beside it, and the difference is
+reported as idle growth.
+
+**Memory with 1,000 cached messages** is the peak working set of the
+application process between start and the 60 s reading, plus the WebView2
+tree's working set at 60 s, on the 1,000-message profile, because "with
+1,000 cached messages" is about what loading them costs and the peak is
+when it cost most. The empty profile's 120 s reading is the floor and is
+reported beside both.
+
+Two things the first taking found that the definitions did not say. The
+list the usable line reports holds 500 rows and not 1,000, because the
+window opens on All Inboxes and that view lists its first page,
+`ALL_INBOXES_LIMIT` in `src/presentation/wx_app.rs`; the other 500 are in
+the cache and are read when somebody asks for older mail. And the WebView2
+tree is not the application's own memory in any sense the targets were
+written about: it is six `msedgewebview2.exe` processes Windows starts for
+the preview pane, and it weighs the same on an empty profile as on the
+1,000-message one, so every memory row gives the application process and
+the tree separately as well as summed. Whether a target is met against
+the sum or against the process is 08-09's judgement, not this page's.
+
 ## The figures
 
 | What | Value | Command | Date | Commit | Conditions |
@@ -70,3 +123,7 @@ Pipes inside a command are written `\|` so the table stays a table.
 | The whole guard sweep, every record once | 784 x 92 s = 72,128 s, about 20 hours | the record count, `python -c "import tomllib;g=tomllib.load(open('guards/guards.toml','rb'))['guard'];print(len(g))"`, times the rate from `scripts/guards.sh --remeasure` in the row above | 2026-09-14 | bb61e88e | A product of two dated terms and not a promise. Since 2026-09-10 at `eda27192`, when the rate was 29 s to rebuild plus 66 s to run over 683 records, the rebuild has risen to 44 s, the run has fallen to 47 s, and the count has risen to 784. Both terms go on moving and the sweep's own log carries a timing line per record, so the real figure is read from the log afterwards. Triage of what the sweep finds is on top. |
 | Every target, `cargo test --all-targets`, wall time | 104 s and 103 s | `s=$(date +%s); cargo test --all-targets --no-fail-fast; e=$(date +%s); echo $((e-s))` | 2026-09-14 | 9399a1e2 | The harness's default thread count, which is what `cargo mutants` runs per mutant unless told otherwise. Every target built beforehand with `--no-run`, so this is the run and not the build. Nothing else building, checked with `tasklist` before each take. 7,687 tests passed, summed over 55 result lines. This is the figure the timeout settings in `.cargo/mutants.toml` are read against, and the figure `CLAUDE.md`'s gate paragraphs call the test suite's term. Moves with the test count, the thread count, and what else the machine is doing. |
 | The library alone at eight threads, `cargo test --lib`, wall time | 52 s and 52 s | `s=$(date +%s); cargo test --lib -- --test-threads=8; e=$(date +%s); echo $((e-s))` | 2026-09-14 | 9399a1e2 | `--test-threads=8`, the same setting `scripts/guards.py` uses. The library already built. Nothing else building, checked with `tasklist` before each take. 7,244 passed and 1 ignored; the harness's own line said 51.06 s and 51.60 s. This is the shape a mutation run may be told to use by passing `--lib` after `--`, and the run term the guard runner reported as 47 s in the rate row was the same suite at the same setting. Moves with the test count and the thread count. |
+| Cold start to a usable list, 1,000 cached messages | 476 ms, the median of five | `cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture test_cold_start_and_memory_with_a_thousand_cached_messages`, reading the `usable:` line it prints | 2026-09-14 | 9d5f15c5 | Under the definitions above. The release binary at version 0.124.0, built from this commit after `cargo clean --release -p wixen-mail`, on an AMD Ryzen AI 9 HX PRO 370 with 24 logical processors and 92 GB, as `Get-CimInstance Win32_Processor` and `Win32_ComputerSystem` report it. The five: 721, 476, 474, 483 and 468 ms. The first start after the build, on its own: 520 ms. A sixth start after the series, taken to read the log: 472 ms. Every start was checked with `tasklist` for `cargo.exe` and `rustc.exe` first and found none but the one running the test; the test binary runs one ignored test, so no thread setting is in play. The usable line said 500 rows each time, the first page of All Inboxes. The profile's account points at `127.0.0.1` on a closed port and was never dialled: nothing checks mail on a schedule, so a start attempts no connection and the log holds no WARN or ERROR line. Moves with the machine, with what else it is doing, with the page size and with anything added to the startup path. |
+| Memory with 1,000 cached messages: the application's peak working set to 60 s plus its WebView2 tree at 60 s | 390 MB, the median of five: the application 57 MB peak plus the tree 333 MB | `cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture test_cold_start_and_memory_with_a_thousand_cached_messages`, reading the `at 60 s:` line | 2026-09-14 | 9d5f15c5 | Under the definitions above, the same runs, binary and machine as the cold-start row. The five: 397, 390, 390, 393 and 390 MB. The application process alone peaked at 57 MB in every run, with a working set of 56 to 57 MB and 18 to 19 MB private. The tree was six `msedgewebview2.exe` processes every time, 333 to 340 MB at 60 s; in the sixth run they were 122, 73, 56, 41, 22 and 17 MB. The after-build run read 396 MB. Whole megabytes of 1,048,576 bytes, read through `Get-Process` as `PeakWorkingSet64` and `WorkingSet64`. Moves with WebView2's version, with what the preview shows, and with the machine. |
+| Idle memory at 120 s, 1,000 cached messages: the application's working set plus its WebView2 tree | 391 MB, the median of five: the application 56 MB plus the tree 334 MB | `cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture test_cold_start_and_memory_with_a_thousand_cached_messages`, reading the `at 120 s:` line | 2026-09-14 | 9d5f15c5 | Under the definitions above, the same runs, binary and machine as the cold-start row. The five at 120 s: 398, 391, 390, 393 and 391 MB; at 60 s: 397, 389, 389, 392 and 390 MB, median 390 MB, so idle growth between the two readings is about 1 MB and all of it in the tree. The application process alone sat at 56 to 57 MB working set and 18 to 19 MB private at both readings, unchanged. No input after the usable line and the window left where the start put it. Moves with whatever runs on a timer and with WebView2. |
+| The empty-profile floor: idle memory at 120 s with no account and no mail | 390 MB, the median of three: the application 54 MB plus the tree 335 MB | `cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture test_the_empty_profile_floor`, reading the `at 120 s:` line | 2026-09-14 | 9d5f15c5 | The same binary and machine as the rows above, a profile holding the settings and nothing else, no usable line to wait for, the three readings taken at the same moments from the start. The three at 120 s: 389, 390 and 391 MB; the application alone 54 MB working set, 55 MB peak, 17 MB private in every run; the tree six `msedgewebview2.exe` processes at 334 to 336 MB. So 1,000 cached messages cost the application process about 3 MB over an empty profile and cost the tree nothing measurable. Moves with WebView2 and with the machine. |
