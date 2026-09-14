@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 565 records have arrived since and have not been through it.
+# 567 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -20842,4 +20842,54 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reminder_alert.rs", tests = 6 },
+]
+
+# ── 06-06 ─────────────────────────────────────────────────────────────────
+#
+# Task 2. The scan looks at every window a fresh profile can reach, thirty
+# targets where there were ten, and the workflow's own list is what says
+# which of them the scan is asked for. The break takes one of the new
+# windows out of that list and leaves its variant in the code, which is the
+# exact shape of forgetting the workflow: the window has a name, the program
+# opens it on request, and nothing ever requests it. The test that reads the
+# workflow is a unit test in src/, so before 06-06's first task a commit
+# touching only the workflow never ran it; now the folder answers `all`.
+#
+# Measured by hand on 2026-09-14 against the whole library at eight threads,
+# `cargo test --lib --no-fail-fast`: 7,183 passed, 1 ignored, and exactly
+# this one test failed, naming which-days.
+[[guard]]
+name = "a window the program can open for the scan is one the workflow asks for"
+file = ".github/workflows/accessibility.yml"
+before = """          'which-days', 'send-later', 'add-address-book', 'about',"""
+after = """          'send-later', 'add-address-book', 'about',"""
+red = [
+    "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
+]
+tests_last_seen = [
+    { file = "src/presentation/scan_target.rs", tests = 9 },
+]
+
+# Guardrail 4, on the scanner itself. The workflow downloads one named
+# release and refuses to run it unless the zip's SHA-256 is the one written
+# beside the tag, so the coverage list 06-07 writes is a claim about one
+# binary rather than about a name somebody can move. The break is the fix
+# somebody reaches for when the hash stops matching: compare the download
+# with itself. The line still says Get-FileHash and SHA256, the check still
+# runs, and it can no longer refuse anything.
+#
+# Measured by hand on 2026-09-14 against the whole library at eight threads,
+# `cargo test --lib --no-fail-fast`: 7,183 passed, 1 ignored, and exactly
+# this one test failed, saying the workflow never says what the hash has to
+# be.
+[[guard]]
+name = "the scanner's checksum is compared with a number written down and not with itself"
+file = ".github/workflows/accessibility.yml"
+before = """        $expected = 'aeca43f41c89b3ffb1db84011539e609ecd7cb3badd6e78fada2ada327d10a64'"""
+after = """        $expected = (Get-FileHash -Algorithm SHA256 axe-cli.zip).Hash.ToLowerInvariant()"""
+red = [
+    "presentation::scan_target::tests::test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum",
+]
+tests_last_seen = [
+    { file = "src/presentation/scan_target.rs", tests = 9 },
 ]

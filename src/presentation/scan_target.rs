@@ -46,6 +46,22 @@ pub const FLAG: &str = "--scan-target";
 /// different fix.
 pub const WINDOW_NOT_OPEN: i32 = 3;
 
+/// What the call that opened a target's window reports once it returns.
+///
+/// A modal window holds the call until it closes, so the call returning means
+/// the window has gone; a frame or a module panel is shown and left, so the
+/// call returns with the window still up. The two need telling apart at the
+/// one place that decides whether returning is a failure, and a `bool` there
+/// would read as "did it work", which is the opposite of what a modal
+/// returning means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnReturn {
+    /// A modal window was up and is no longer, or never opened at all.
+    WindowClosed,
+    /// A window or panel that does not block was shown and is still there.
+    WindowStillUp,
+}
+
 /// A window the scan can be pointed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanTarget {
@@ -77,12 +93,78 @@ pub enum ScanTarget {
     /// window in its empty state, which is the state that has to sound
     /// deliberate rather than broken.
     BlockedSenders,
+    // The nineteen below arrived together on 2026-09-14, on Pratik's answer
+    // that the scan should look at every window a fresh profile can reach
+    // rather than the eleven that happened to be there. Each opens the way a
+    // person opens it where a fresh profile allows that, and on made-up data
+    // from `scan_fixtures` where the window refuses to open on nothing.
+    /// The column chooser, on the inbox's default layout.
+    Columns,
+    /// The window asking which copy of a contact to keep, over two copies
+    /// that disagree.
+    WhichCopy,
+    /// The window asking where a message goes, over two accounts that both
+    /// have an Archive, which is the window's own reason for being a tree.
+    Destination,
+    /// The checked list of folders an account keeps up to date, with one
+    /// row that holds a copy of every message.
+    FolderChoice,
+    /// The item form, opened as a new event: the one shape with date and time
+    /// fields, a repeat notebook and the guest list. Reached the way File,
+    /// New, Event reaches it, filed on this computer since a fresh profile
+    /// has no account.
+    NewEvent,
+    /// The contact manager, the same shape as the filter manager and scanned
+    /// for the same reason.
+    Contacts,
+    /// The tag manager.
+    Tags,
+    /// The signature manager.
+    Signatures,
+    /// The window a reminder opens when it comes due, on a reminder that is
+    /// late, which is the wording said first.
+    Reminder,
+    /// The conversation tree, on a conversation with a reply in it so the
+    /// tree has a second level to announce.
+    Conversation,
+    /// The window asking whether a change is meant for one day or all of
+    /// them, on an event that repeats. The one skipped NVDA test names this
+    /// dialog and says the skip exists because there was no target for it.
+    WhichDays,
+    /// The window asking when a message should go, which is the composer's
+    /// and is opened here on the main window instead, since the composer is
+    /// its own target and one scan is one window.
+    SendLater,
+    /// The window that adds an address book by its address, the second in
+    /// the application that asks for a password to send somewhere other
+    /// than a mail server.
+    AddAddressBook,
+    /// The About window.
+    About,
+    /// The main window on its own, showing mail. `main` is not that: with no
+    /// target given the first-run question opens over the frame on a fresh
+    /// profile, so `main` has always been the frame with a modal on top of
+    /// it, and the bare window had never been scanned. This asks for a
+    /// target, which is what skips that question.
+    MailModule,
+    /// The main window with the calendar module showing. A fresh profile
+    /// opens on mail, so the other five module panels had never been scanned
+    /// at all.
+    CalendarModule,
+    /// The main window with the contacts module showing.
+    ContactsModule,
+    /// The main window with the reminders module showing.
+    RemindersModule,
+    /// The main window with the tasks module showing.
+    TasksModule,
+    /// The main window with the notes module showing.
+    NotesModule,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 10] = [
+    pub const ALL: [ScanTarget; 30] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -93,6 +175,26 @@ impl ScanTarget {
         ScanTarget::FirstRun,
         ScanTarget::AddCalendar,
         ScanTarget::BlockedSenders,
+        ScanTarget::Columns,
+        ScanTarget::WhichCopy,
+        ScanTarget::Destination,
+        ScanTarget::FolderChoice,
+        ScanTarget::NewEvent,
+        ScanTarget::Contacts,
+        ScanTarget::Tags,
+        ScanTarget::Signatures,
+        ScanTarget::Reminder,
+        ScanTarget::Conversation,
+        ScanTarget::WhichDays,
+        ScanTarget::SendLater,
+        ScanTarget::AddAddressBook,
+        ScanTarget::About,
+        ScanTarget::MailModule,
+        ScanTarget::CalendarModule,
+        ScanTarget::ContactsModule,
+        ScanTarget::RemindersModule,
+        ScanTarget::TasksModule,
+        ScanTarget::NotesModule,
     ];
 
     /// The name used on the command line.
@@ -108,6 +210,26 @@ impl ScanTarget {
             Self::FirstRun => "first-run",
             Self::AddCalendar => "add-calendar",
             Self::BlockedSenders => "blocked-senders",
+            Self::Columns => "columns",
+            Self::WhichCopy => "which-copy",
+            Self::Destination => "destination",
+            Self::FolderChoice => "folder-choice",
+            Self::NewEvent => "new-event",
+            Self::Contacts => "contacts",
+            Self::Tags => "tags",
+            Self::Signatures => "signatures",
+            Self::Reminder => "reminder",
+            Self::Conversation => "conversation",
+            Self::WhichDays => "which-days",
+            Self::SendLater => "send-later",
+            Self::AddAddressBook => "add-address-book",
+            Self::About => "about",
+            Self::MailModule => "mail-module",
+            Self::CalendarModule => "calendar-module",
+            Self::ContactsModule => "contacts-module",
+            Self::RemindersModule => "reminders-module",
+            Self::TasksModule => "tasks-module",
+            Self::NotesModule => "notes-module",
         }
     }
 
@@ -238,6 +360,7 @@ mod tests {
             "send-later",
             "add-address-book",
             "about",
+            "mail-module",
             "calendar-module",
             "contacts-module",
             "reminders-module",
@@ -259,21 +382,27 @@ mod tests {
         // list 06-07 writes is a claim about one binary rather than a name.
         let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
             .expect("the accessibility workflow");
+        // What the workflow does, not what its comments say about what it
+        // used to do.
+        let commands: Vec<&str> = workflow
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .collect();
 
         assert!(
-            !workflow.contains("releases/latest"),
+            !commands.iter().any(|line| line.contains("releases/latest")),
             "the workflow still fetches whatever release is newest, so the rule set can \
              change with no commit here"
         );
         assert!(
-            workflow.contains("/releases/download/v"),
-            "the workflow does not download a named release"
+            commands.iter().any(|line| line.contains("$tag = 'v")),
+            "the workflow does not name a release tag"
         );
-        let has_a_sha256 = workflow
-            .lines()
+        let has_a_sha256 = commands
+            .iter()
             .any(|line| line.contains("Get-FileHash") && line.contains("SHA256"));
         assert!(has_a_sha256, "the workflow never hashes what it downloaded");
-        let names_the_expected_hash = workflow.lines().any(|line| {
+        let names_the_expected_hash = commands.iter().any(|line| {
             line.split_whitespace().any(|word| {
                 let word = word.trim_matches(|c| c == '\'' || c == '"');
                 word.len() == 64 && word.chars().all(|c| c.is_ascii_hexdigit())

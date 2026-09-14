@@ -14,45 +14,100 @@
 //! failure `scan_target.rs`'s own doc comment names, and it is the one a
 //! fixture can cause without anything failing.
 
-use crate::application::calendar::WhatTheCalendarAllows;
-use crate::application::conflict_choice::BothCopies;
-use crate::application::destinations::Branch;
+use crate::application::calendar::{WhatTheCalendarAllows, WhereAChangeGoes};
+use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
+use crate::application::destinations::{Branch, Destination};
 use crate::application::due::Due;
 use crate::presentation::wx_folder_choice::FolderRow;
 use crate::presentation::wx_thread_view::ThreadNode;
 
 /// A conversation with a reply in it, so the tree has a second level.
 pub fn conversation() -> Vec<ThreadNode> {
-    Vec::new()
+    let message = |message_id: i64, sender: &str, depth: usize, parent: Option<usize>| ThreadNode {
+        message_id,
+        uid: u32::try_from(message_id).unwrap_or(0),
+        sender: sender.to_string(),
+        subject: "Scan target".to_string(),
+        date: "2026-01-01T00:00:00+00:00".to_string(),
+        read: depth == 0,
+        depth,
+        parent,
+    };
+    vec![
+        message(1, "Somebody <somebody@example.com>", 0, None),
+        message(2, "Me <me@example.com>", 1, Some(0)),
+        message(3, "Somebody <somebody@example.com>", 2, Some(1)),
+    ]
 }
 
 /// Two copies of one contact that disagree, so the window has a row to show.
+///
+/// One field both name differently and one only the provider names, because
+/// those are the two shapes of disagreement the window reads out and the
+/// second is the one that hid a telephone number once.
 pub fn both_copies() -> BothCopies {
     BothCopies {
-        what_it_is_called: String::new(),
-        other_copy: crate::application::conflict_choice::TheOtherCopy::AnAddressBook,
-        here: Vec::new(),
-        theirs: Vec::new(),
+        what_it_is_called: "Scan target".to_string(),
+        other_copy: TheOtherCopy::AnAddressBook,
+        here: vec![
+            AField::new("Name", "Scan Target"),
+            AField::new("Email", "scan-target@example.com"),
+        ],
+        theirs: vec![
+            AField::new("Name", "Scan Target"),
+            AField::new("Email", "somebody@example.com"),
+            AField::new("Telephone", "+1 555 0100"),
+        ],
     }
 }
 
-/// Two accounts with a folder each, so the tree has branches to build from.
+/// Two accounts with an Archive each, so the tree has branches to build from
+/// and two rows that would read alike in a flat list.
 pub fn branches() -> Vec<Branch> {
-    Vec::new()
+    let account = |account_id: &str, account_name: &str| Branch {
+        account_id: account_id.to_string(),
+        account_name: account_name.to_string(),
+        places: ["Inbox", "Archive"]
+            .into_iter()
+            .map(|name| Destination {
+                name: name.to_string(),
+                id: name.to_string(),
+                account_id: account_id.to_string(),
+                depth: 0,
+            })
+            .collect(),
+    };
+    vec![
+        account("scan-work", "work@example.com"),
+        account("scan-home", "home@example.com"),
+    ]
 }
 
-/// A server's folder list, so the checked list has rows.
+/// A server's folder list, so the checked list has rows, with the one row
+/// that holds a copy of every message.
 pub fn folders() -> Vec<FolderRow> {
-    Vec::new()
+    let folder = |path: &str, syncing: bool, holds_all_mail: bool, total: usize| FolderRow {
+        path: path.to_string(),
+        name: path.to_string(),
+        syncing,
+        subscribed: syncing,
+        holds_all_mail,
+        total,
+    };
+    vec![
+        folder("INBOX", true, false, 12),
+        folder("Archive", true, false, 340),
+        folder("[Gmail]/All Mail", false, true, 352),
+    ]
 }
 
-/// A reminder that has come due.
+/// A reminder that came due half an hour ago.
 pub fn reminder() -> Due {
     Due {
-        id: String::new(),
-        title: String::new(),
-        when: String::new(),
-        late: false,
+        id: "scan-target".to_string(),
+        title: "Scan target".to_string(),
+        when: "2026-01-01T09:00:00".to_string(),
+        late: true,
     }
 }
 
@@ -65,13 +120,14 @@ pub struct RepeatingEvent {
 }
 
 /// The repeating event the "which days" question is asked about.
+///
+/// Kept on this computer, since a fresh profile has no calendar server, which
+/// is the calendar every arm of the question is offered for.
 pub fn repeating_event() -> RepeatingEvent {
     RepeatingEvent {
-        summary: String::new(),
-        repeats: String::new(),
-        allows: WhatTheCalendarAllows::just(
-            crate::application::calendar::WhereAChangeGoes::KeptHere,
-        ),
+        summary: "Scan target".to_string(),
+        repeats: "every week".to_string(),
+        allows: WhatTheCalendarAllows::just(WhereAChangeGoes::KeptHere),
     }
 }
 

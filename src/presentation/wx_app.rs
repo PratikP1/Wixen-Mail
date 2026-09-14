@@ -5858,8 +5858,17 @@ impl WxMailApp {
             //
             // After show, because a dialog parented to a frame that is not on
             // screen yet has nowhere to be modal to.
+            //
+            // A modal window holds this call until it closes, and the workflow
+            // kills the process while the window is up. So the call returning
+            // with the window closed means it never opened, or opened on
+            // nothing and shut itself: the process owns one window, the main
+            // one, and a scan now would be a pass for a dialog nobody looked
+            // at. Leaving with a code the workflow reads as "not scanned" is
+            // what makes that a failure somebody sees.
             if let Some(target) = scan_target {
-                open_for_scanning(
+                use crate::presentation::scan_target::{OnReturn, WINDOW_NOT_OPEN};
+                let on_return = open_for_scanning(
                     target,
                     AppHandles {
                         state: &state,
@@ -5869,7 +5878,16 @@ impl WxMailApp {
                     &frame,
                     &message_cache,
                     &a11y,
+                    &do_switch_module,
                 );
+                if on_return == OnReturn::WindowClosed {
+                    tracing::error!(
+                        "{} is not open, so the scan would walk the main window and call \
+                         it a pass; leaving with code {WINDOW_NOT_OPEN} instead",
+                        target.as_name()
+                    );
+                    std::process::exit(WINDOW_NOT_OPEN);
+                }
             }
         });
 
@@ -14967,25 +14985,35 @@ fn queue_for_sending(
 
 /// Open one window so the accessibility scan has something to look at.
 ///
-/// Every one of these is modal, which means this does not return until the
-/// window closes. That is exactly what is wanted: the scan walks the process
-/// while the dialog is up, and the workflow kills the process when it is done.
-/// The event loop keeps running inside the modal loop, so UI Automation sees
-/// the dialog and everything under it.
+/// Nearly every one of these is modal, which means this does not return until
+/// the window closes. That is exactly what is wanted: the scan walks the
+/// process while the dialog is up, and the workflow kills the process when it
+/// is done. The event loop keeps running inside the modal loop, so UI
+/// Automation sees the dialog and everything under it. The answer says which
+/// kind this was, because for a modal window returning at all means the window
+/// is not on screen, and the caller leaves rather than let the scan walk the
+/// main window and call it a pass for a dialog nobody looked at.
 ///
 /// The windows open on whatever state a fresh profile has, which for the scan
 /// is right. What is being measured is whether every control has a name, a
 /// role and a keyboard route, and none of that depends on there being real mail
-/// behind it.
+/// behind it. Where a window refuses to open on nothing, it opens on the
+/// made-up data in `scan_fixtures`, the way the reader opens on a made-up
+/// message.
+///
+/// `switch_module` is the main window's own module switch, handed in because
+/// it is a closure over the panels and lives where the window is built.
 fn open_for_scanning(
     target: crate::presentation::scan_target::ScanTarget,
     app: AppHandles<'_>,
     frame: &Frame,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
-) {
+    switch_module: &dyn Fn(PimModule),
+) -> crate::presentation::scan_target::OnReturn {
     let AppHandles { state, tx, rt } = app;
-    use crate::presentation::scan_target::ScanTarget;
+    use crate::presentation::scan_fixtures;
+    use crate::presentation::scan_target::{OnReturn, ScanTarget};
 
     tracing::info!("Opening {} for the accessibility scan", target.as_name());
     match target {
@@ -14998,6 +15026,7 @@ fn open_for_scanning(
             // none, so the Notes section says so rather than naming one.
             let accounts = lock_state(state).accounts.clone();
             handle_settings(frame, tx, rt, &accounts, cache, a11y);
+            OnReturn::WindowClosed
         }
         ScanTarget::Accounts => {
             // A fresh profile has no accounts, so nothing here is old enough
@@ -15016,12 +15045,14 @@ fn open_for_scanning(
                 None,
                 a11y,
             );
+            OnReturn::WindowClosed
         }
         ScanTarget::FirstRun => {
             // The answer is thrown away. On a fresh profile this screen shows
             // itself once and never again, so the only way to look at it more
             // than once, by hand or from the scan, is to ask for it.
             let _ = crate::presentation::wx_first_run::ask_what_is_allowed(frame);
+            OnReturn::WindowClosed
         }
         ScanTarget::AddCalendar => {
             // The answer is thrown away, as with the screen above. Nothing is
@@ -15029,9 +15060,29 @@ fn open_for_scanning(
             // its controls can be walked, which is the only way a dialog in
             // this application ever gets scanned at all.
             let _ = crate::presentation::wx_add_calendar::ask_for_a_calendar(frame);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::AddAddressBook => {
+            // The same shape as the calendar above, and the second window in
+            // the application that asks for a password to send somewhere other
+            // than a mail server.
+            let _ = crate::presentation::wx_add_address_book::ask_for_an_address_book(frame);
+            OnReturn::WindowClosed
         }
         ScanTarget::Compose => {
             open_compose(app, frame, &None, a11y, ComposeMode::New);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::SendLater => {
+            // The composer's window, opened on the main frame instead: the
+            // composer is a target of its own, and one scan is one window.
+            let _ = crate::presentation::wx_send_later::ask_when_to_send(
+                frame,
+                chrono::Local::now(),
+                date_settings_from_stored_config(),
+                a11y,
+            );
+            OnReturn::WindowClosed
         }
         ScanTarget::Reader => {
             // Not a dialog: the reader is a frame of its own, so it does not
@@ -15089,15 +15140,50 @@ fn open_for_scanning(
             // closes before the scan reaches it, and the process is about to be
             // killed anyway.
             std::mem::forget(reader);
+            OnReturn::WindowStillUp
         }
         ScanTarget::Search => {
             // With a folder open, so the "In" list is offered with every one of
             // its answers on it and the scan meets the box somebody using mail
             // meets rather than the shorter one.
             let _ = show_search_dialog(frame, &what_the_in_box_offers(Some(1)));
+            OnReturn::WindowClosed
         }
-        ScanTarget::Filters => managers::manage_filters(state, cache, frame, tx, rt, a11y),
-        ScanTarget::Calendar => managers::manage_calendar(state, cache, frame, tx, rt, a11y),
+        ScanTarget::Filters => {
+            managers::manage_filters(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Calendar => {
+            managers::manage_calendar(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Tags => {
+            managers::manage_tags(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Signatures => {
+            managers::manage_signatures(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Contacts => {
+            let _ = managers::manage_contacts(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::NewEvent => {
+            // The way File, New, Event reaches it. A fresh profile has no
+            // account, so the form is filed on this computer, which is the
+            // real answer for somebody who has not signed in anywhere.
+            managers::new_pim_item(
+                crate::application::new_item::ItemKind::Event,
+                state,
+                cache,
+                frame,
+                tx,
+                rt,
+                a11y,
+            );
+            OnReturn::WindowClosed
+        }
         ScanTarget::BlockedSenders => {
             // A fresh profile has nothing blocked, so the scan meets this
             // window empty. That is the state worth scanning: the sentence
@@ -15105,6 +15191,110 @@ fn open_for_scanning(
             // rather than into a list with no rows, are what stop an empty
             // window sounding like one that failed to load.
             show_who_is_blocked(state, cache, frame, tx, rt, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Columns => {
+            let inbox = ColumnLayout::defaults_for(message_columns::FolderKind::Inbox);
+            let _ = wx_columns::show_column_dialog(frame, &inbox, a11y);
+            OnReturn::WindowClosed
+        }
+        ScanTarget::WhichCopy => {
+            let _ = crate::presentation::wx_conflict_choice::ask_which_copy_to_keep(
+                frame,
+                &scan_fixtures::both_copies(),
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Destination => {
+            use crate::application::destinations::{Filing, Moving};
+            let _ = crate::presentation::wx_destination::ask(
+                frame,
+                Moving::Message,
+                Filing::Moving,
+                &scan_fixtures::branches(),
+                None,
+                None,
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::FolderChoice => {
+            let _ = crate::presentation::wx_folder_choice::ask(
+                frame,
+                "work@example.com",
+                &scan_fixtures::folders(),
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Reminder => {
+            // Said and sounded the way a real one is, then held open. The tone
+            // that comes back once a minute is on a timer the window owns, so
+            // the scan meets the window as somebody in another application
+            // would.
+            let _ = wx_reminder_alert::raise(
+                frame,
+                &scan_fixtures::reminder(),
+                chrono::Local::now(),
+                date_settings_from_stored_config(),
+                a11y,
+                crate::application::due::Snooze::ALL[2],
+                wx_reminder_alert::Spoken::NotYet,
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::Conversation => {
+            let _ = wx_thread_view::show_thread_dialog(
+                frame,
+                "Scan target",
+                &scan_fixtures::conversation(),
+                a11y,
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::WhichDays => {
+            let event = scan_fixtures::repeating_event();
+            let _ = crate::presentation::wx_which_days::which_days_are_meant(
+                frame,
+                &event.summary,
+                &event.repeats,
+                crate::application::calendar::WhatIsBeingDone::Changing,
+                &event.allows,
+                theme::current_from_stored_config(),
+            );
+            OnReturn::WindowClosed
+        }
+        ScanTarget::About => {
+            show_about_dialog(frame);
+            OnReturn::WindowClosed
+        }
+        // The main window with a module showing and nothing over it. `main`
+        // is the frame with the first-run question on top, because that
+        // question opens whenever no target is given, so the bare window and
+        // the five other panels had never been scanned at all. Asking for
+        // mail on a window already showing mail says "Already on Mail" and
+        // leaves it there, which is the window wanted.
+        ScanTarget::MailModule => {
+            switch_module(PimModule::Mail);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::CalendarModule => {
+            switch_module(PimModule::Calendar);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::ContactsModule => {
+            switch_module(PimModule::Contacts);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::RemindersModule => {
+            switch_module(PimModule::Reminders);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::TasksModule => {
+            switch_module(PimModule::Tasks);
+            OnReturn::WindowStillUp
+        }
+        ScanTarget::NotesModule => {
+            switch_module(PimModule::Notes);
+            OnReturn::WindowStillUp
         }
     }
 }
