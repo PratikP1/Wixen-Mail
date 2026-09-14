@@ -545,6 +545,46 @@ struct ARun {
     after_usable: AReading,
     at_sixty: AReading,
     at_one_twenty: AReading,
+    /// Every WARN and ERROR line the application wrote, so the summary can
+    /// say what it did with the refused connection rather than guess.
+    complaints: Vec<String>,
+}
+
+/// The WARN and ERROR lines of a log, without their timestamps.
+fn complaints_in(log: &str) -> Vec<String> {
+    log.lines()
+        .filter(|line| line.contains(" WARN ") || line.contains(" ERROR "))
+        .map(|line| {
+            line.split_once(" ")
+                .map_or(line, |(_, rest)| rest)
+                .trim()
+                .to_string()
+        })
+        .collect()
+}
+
+/// Read memory at the three moments after the usable line, then take the
+/// log's complaints, refusing a process that went before the last reading.
+fn the_three_readings(
+    started: &mut Started,
+    profile: &Path,
+) -> Result<(AReading, AReading, AReading, Vec<String>), String> {
+    started.wait_until(started.began.elapsed() + AFTER_USABLE);
+    if let Some(gone) = started.has_exited() {
+        return Err(format!("this run produced nothing: {gone}"));
+    }
+    let after_usable = read_the_application_and_its_tree(started.id())?;
+    started.wait_until(THE_FIRST_IDLE_READING);
+    let at_sixty = read_the_application_and_its_tree(started.id())?;
+    started.wait_until(THE_SECOND_IDLE_READING);
+    let at_one_twenty = read_the_application_and_its_tree(started.id())?;
+    if let Some(gone) = started.has_exited() {
+        return Err(format!(
+            "this run produced nothing: {gone} before the last reading"
+        ));
+    }
+    let complaints = complaints_in(&the_newest_log(profile).unwrap_or_default());
+    Ok((after_usable, at_sixty, at_one_twenty, complaints))
 }
 
 /// Start the binary against a profile, wait for the usable line, read memory
@@ -552,25 +592,15 @@ struct ARun {
 fn one_run(profile: &Path) -> Result<ARun, String> {
     let mut started = Started::against(profile)?;
     let (rows_in_the_list, usable_after_ms) = wait_for_usable(&mut started, profile)?;
-
-    std::thread::sleep(AFTER_USABLE);
-    let after_usable = read_the_application_and_its_tree(started.id())?;
-    started.wait_until(THE_FIRST_IDLE_READING);
-    let at_sixty = read_the_application_and_its_tree(started.id())?;
-    started.wait_until(THE_SECOND_IDLE_READING);
-    let at_one_twenty = read_the_application_and_its_tree(started.id())?;
-
-    if let Some(gone) = started.has_exited() {
-        return Err(format!(
-            "this run produced nothing: {gone} before the last reading"
-        ));
-    }
+    let (after_usable, at_sixty, at_one_twenty, complaints) =
+        the_three_readings(&mut started, profile)?;
     Ok(ARun {
         rows_in_the_list,
         usable_after_ms,
         after_usable,
         at_sixty,
         at_one_twenty,
+        complaints,
     })
 }
 
@@ -624,6 +654,12 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
     println!("at usable + 5 s: {}", describe(&run.after_usable));
     println!("at 60 s: {}", describe(&run.at_sixty));
     println!("at 120 s: {}", describe(&run.at_one_twenty));
+    if run.complaints.is_empty() {
+        println!("the log holds no WARN or ERROR line");
+    }
+    for complaint in &run.complaints {
+        println!("the log complained: {complaint}");
+    }
 
     let with_the_messages = format!(
         "{} MB",
@@ -662,9 +698,10 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
     }
 }
 
-/// The command the rows carry.
+/// The command the rows carry, backticked because the page's reading refuses
+/// a row whose command cell holds no backticked token.
 const THE_COMMAND: &str =
-    "cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture";
+    "`cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture`";
 
 // ── The measurements, behind #[ignore] ──────────────────────────────────────
 
@@ -690,18 +727,8 @@ fn test_the_empty_profile_floor() {
     // to wait for: the floor is the application on nothing, read at the same
     // moments from the start.
     let mut started = Started::against(home.path()).expect("the application starts");
-    started.wait_until(AFTER_USABLE);
-    if let Some(gone) = started.has_exited() {
-        panic!("this run produced nothing: {gone}");
-    }
-    let after_usable = read_the_application_and_its_tree(started.id()).expect("a reading");
-    started.wait_until(THE_FIRST_IDLE_READING);
-    let at_sixty = read_the_application_and_its_tree(started.id()).expect("a reading");
-    started.wait_until(THE_SECOND_IDLE_READING);
-    let at_one_twenty = read_the_application_and_its_tree(started.id()).expect("a reading");
-    if let Some(gone) = started.has_exited() {
-        panic!("this run produced nothing: {gone} before the last reading");
-    }
+    let (after_usable, at_sixty, at_one_twenty, complaints) =
+        the_three_readings(&mut started, home.path()).expect("a run that produced a number");
     drop(started);
 
     let run = ARun {
@@ -710,6 +737,7 @@ fn test_the_empty_profile_floor() {
         after_usable,
         at_sixty,
         at_one_twenty,
+        complaints,
     };
     print_the_run("empty profile", THE_COMMAND, &run);
 }
@@ -885,6 +913,22 @@ fn test_a_log_without_the_usable_line_parses_to_nothing() {
                2026-09-14T21:00:00.000000Z  INFO wixen_mail::presentation::wx_app: Message list now holds 500 rows\n";
 
     assert_eq!(parse_usable_line(log), None);
+}
+
+#[test]
+fn test_the_complaints_in_a_log_are_its_warn_and_error_lines_without_their_timestamps() {
+    let log = "2026-09-14T21:00:00.000000Z  INFO wixen_mail: Starting Wixen Mail v0.124.0\n\
+               2026-09-14T21:00:01.000000Z  WARN wixen_mail::application::mail_sync: The server refused the connection\n\
+               2026-09-14T21:00:02.000000Z ERROR wixen_mail::presentation::wx_app: Failed to read folder 1: gone\n";
+
+    assert_eq!(
+        complaints_in(log),
+        vec![
+            "WARN wixen_mail::application::mail_sync: The server refused the connection",
+            "ERROR wixen_mail::presentation::wx_app: Failed to read folder 1: gone",
+        ]
+    );
+    assert!(complaints_in("").is_empty(), "no log, no complaints");
 }
 
 #[test]
