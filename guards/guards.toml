@@ -20886,7 +20886,7 @@ red = [
     "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
 ]
 tests_last_seen = [
-    { file = "src/presentation/scan_target.rs", tests = 9 },
+    { file = "src/presentation/scan_target.rs", tests = 11 },
 ]
 
 # Guardrail 4, on the scanner itself. The workflow downloads one named
@@ -20910,7 +20910,7 @@ red = [
     "presentation::scan_target::tests::test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum",
 ]
 tests_last_seen = [
-    { file = "src/presentation/scan_target.rs", tests = 9 },
+    { file = "src/presentation/scan_target.rs", tests = 11 },
 ]
 
 # The coverage page, docs/wcag-coverage.md, says which of the fifty-five WCAG

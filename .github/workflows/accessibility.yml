@@ -233,8 +233,18 @@ jobs:
               continue
             }
 
-            # "8 errors were found" / "No errors were found"
-            $summary = ($output | Select-String -Pattern '(\d+) errors? were found|No errors were found' | Select-Object -First 1)
+            # "8 errors were found" / "1 error was found" / "No errors were found".
+            # The singular is real and was not matched until 2026-09-14: three
+            # windows that each printed one error were recorded as clean, and
+            # the run's total said 26 where the log held 29. A test in
+            # scan_target.rs reads this pattern and holds it to all three.
+            #
+            # -First 1 is a hole that is still open: a window that writes two
+            # result files prints two of these lines, and only the first is
+            # counted. The reader window wrote two on 2026-09-14, both clean,
+            # so nothing was lost that day. Ledgered rather than fixed here,
+            # because nothing in the tree can run this block to prove a sum.
+            $summary = ($output | Select-String -Pattern '(\d+) errors? (?:was|were) found|No errors were found' | Select-Object -First 1)
             $count = if ($summary -and $summary.Matches[0].Groups[1].Success) {
               [int]$summary.Matches[0].Groups[1].Value
             } else { 0 }
