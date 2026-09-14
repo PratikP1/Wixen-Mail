@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 361
+open_count: 365
 waived_count: 0
 fixed_count: 22
-total_count: 383
-last_updated: 2026-09-14T09:31:08.544Z
+total_count: 387
+last_updated: 2026-09-14T10:10:12.940Z
 ---
 
 # Broken Windows Ledger
@@ -398,6 +398,10 @@ last_updated: 2026-09-14T09:31:08.544Z
 | 381 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | The reminder window's tone comes back once a minute until focus reaches it, ten times at most, on RepeatingTone, which is tested against handed-in instants. Nobody has heard it come back, nobody has judged whether ten tones a minute apart reads as being looked after or as being nagged, and the timer's reading of has_focus on the three buttons and the snooze Choice has never been watched in a running build; on Windows it should be false while another application is in front and true the moment somebody comes to the dialog, and that is a claim about the toolkit rather than a measurement. | open |  | 2026-09-14T09:31:07.724Z |  |
 | 382 | 06 | unrun-verify | src/presentation/accessibility/screen_reader.rs |  | Whether a screen reader speaks the reminder sentence while another application is in front is unchecked. UiaRaiseNotificationEvent does not move focus, and NVDA speaks notifications from the foreground process, so a person in Word when a reminder is due may hear only the tone; that is why the tone repeats, and nobody has confirmed either half by ear. | open |  | 2026-09-14T09:31:08.142Z |  |
 | 383 | 06 | deviation | src/presentation/wx_reminder_alert.rs |  | After a hold, the gap between the reminder's own tone and the window's first repeat is two minutes rather than one: say sounds at the look that finds the reminder, the window opens a look later, and RepeatingTone counts its minute from the window opening because raise is told only that the sentence was already said, not when. A window that opens at once has the one-minute gap the plan describes. Handing raise the instant of the say would close it and was not built, because 06-09 replaces this window and its opening. | open |  | 2026-09-14T09:31:08.544Z |  |
+| 384 | 06 | unmet-truth | .github/workflows/accessibility.yml |  | The scan still fetches releases/latest of Axe.Windows on every run, so the rule set a coverage list describes is whatever Microsoft shipped that morning and can change with no commit here. Pinning is 06-06 task 2, behind a checkpoint Pratik has not answered; until then 06-07's list must carry the version it was read against and the date. | open |  | 2026-09-14T10:10:11.730Z |  |
+| 385 | 06 | todo | scripts/msaa-names.ps1 |  | The MSAA half of the scan, the channel NVDA reads, is read by no test and maps to no gate target: a change to it answers affected on a branch and runs formatting, clippy and the tree guards only. The which-checks rule 06-06 added covers .github/workflows/ and not this script, because there is nothing for a workflow-shaped rule to run for it. A test reading its exit-code contract (0 named, 1 unnamed, 2 walk failed), which the workflow depends on at lines 180 to 184, is the missing half. | open |  | 2026-09-14T10:10:12.157Z |  |
+| 386 | 06 | deviation | scripts/which-checks.test.sh |  | 06-06 task 1 asked for a plain-markdown docs_only case and a plain-Rust affected case as the allow half; both already existed three times over at lines 95 to 103 and a fourth copy proves nothing. Written instead: a .yml outside the workflows folder answers affected and a document inside .github answers docs_only, the two cases that redden under the wrong spellings of the rule, *.yml and .github/*. Same substitution 07-02 made for the .iss rule. | open |  | 2026-09-14T10:10:12.554Z |  |
+| 387 | 06 | deviation | .github/workflows/accessibility.yml |  | 06-06 task 1 said to prove the gate hole by breaking ScanTarget::ALL and watching check.sh pass. That break lives in src/presentation/scan_target.rs, which the gate maps to a scoped target, so it would have run the reading test and gone red: the wrong side of the hole. Measured instead by taking one window out of the workflow's array with the code left alone, which is the change the hole is about. Before the rule: affected, exit 0 in 64s. After: all, exit 101 in 206s, naming blocked-senders. | open |  | 2026-09-14T10:10:12.940Z |  |
 
 ````json
 [
@@ -4995,6 +4999,54 @@ last_updated: 2026-09-14T09:31:08.544Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T09:31:08.544Z",
+    "resolved_at": null
+  },
+  {
+    "id": 384,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "The scan still fetches releases/latest of Axe.Windows on every run, so the rule set a coverage list describes is whatever Microsoft shipped that morning and can change with no commit here. Pinning is 06-06 task 2, behind a checkpoint Pratik has not answered; until then 06-07's list must carry the version it was read against and the date.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T10:10:11.730Z",
+    "resolved_at": null
+  },
+  {
+    "id": 385,
+    "kind": "todo",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "The MSAA half of the scan, the channel NVDA reads, is read by no test and maps to no gate target: a change to it answers affected on a branch and runs formatting, clippy and the tree guards only. The which-checks rule 06-06 added covers .github/workflows/ and not this script, because there is nothing for a workflow-shaped rule to run for it. A test reading its exit-code contract (0 named, 1 unnamed, 2 walk failed), which the workflow depends on at lines 180 to 184, is the missing half.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T10:10:12.157Z",
+    "resolved_at": null
+  },
+  {
+    "id": 386,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "scripts/which-checks.test.sh",
+    "line": null,
+    "description": "06-06 task 1 asked for a plain-markdown docs_only case and a plain-Rust affected case as the allow half; both already existed three times over at lines 95 to 103 and a fourth copy proves nothing. Written instead: a .yml outside the workflows folder answers affected and a document inside .github answers docs_only, the two cases that redden under the wrong spellings of the rule, *.yml and .github/*. Same substitution 07-02 made for the .iss rule.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T10:10:12.554Z",
+    "resolved_at": null
+  },
+  {
+    "id": 387,
+    "kind": "deviation",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "06-06 task 1 said to prove the gate hole by breaking ScanTarget::ALL and watching check.sh pass. That break lives in src/presentation/scan_target.rs, which the gate maps to a scoped target, so it would have run the reading test and gone red: the wrong side of the hole. Measured instead by taking one window out of the workflow's array with the code left alone, which is the change the hole is about. Before the rule: affected, exit 0 in 64s. After: all, exit 101 in 206s, naming blocked-senders.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T10:10:12.940Z",
     "resolved_at": null
   }
 ]

@@ -300,6 +300,33 @@ expect all "an installer script on main" main installer/Wixen-Mail-Setup.iss
 # other case in this file would notice.
 expect docs_only "a document inside the installer folder" gsd/x installer/README.md
 
+# ── What changed: a workflow ────────────────────────────────────────────────
+# The installer rule one layer along. Two tests in
+# `src/presentation/scan_target.rs` read `.github/workflows/accessibility.yml`
+# as data, one for the flag it passes and one for the windows it asks for, and
+# until this rule existed a workflow change ran neither: a `.yml` is not
+# `src/*.rs` and not `tests/*.rs`, so the scoped run chose no target for it,
+# and both tests sit in `src/`. Measured 2026-09-14 on a branch: a workflow
+# with one window taken out of its list answered `affected`, the gate passed in
+# 64 seconds, and the test that names the missing window was red when run by
+# hand on the same tree.
+expect all "a workflow file on a branch" gsd/x .github/workflows/accessibility.yml
+expect all "a workflow file beside a document" \
+    gsd/x .github/workflows/accessibility.yml docs/changelog.md
+
+# Below the version-bump exception, for the reason the installer case above
+# gives: a rule written where that exception can skip past it lets a workflow
+# change that also bumps the version answer `affected`.
+expect all "a workflow file beside a version bump" \
+    --manifest-diff-file="$version_bump" gsd/x .github/workflows/accessibility.yml Cargo.toml Cargo.lock
+
+# The rule keys on the folder and not on the extension, which is the opposite
+# of the installer rule, and these two cases are what hold it to that. An
+# `.iss` anywhere is a setup script; a `.yml` anywhere is not a workflow, and a
+# document beside the workflows is still a document.
+expect docs_only "a document inside the .github folder" gsd/x .github/PULL_REQUEST_TEMPLATE.md
+expect affected "a yml file outside the workflows folder" gsd/x .github/dependabot.yml
+
 # ── No file list means we cannot tell, so defer only what the branch allows ──
 expect all_but_slow "a branch with nothing said about the change" gsd/x
 
