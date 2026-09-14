@@ -63,12 +63,28 @@
 //! settings say the alpha notice has been shown, or every start would stop at
 //! that dialog, and that the window opens on All Inboxes, because a fresh
 //! profile otherwise opens with no folder chosen and no list ever loads.
+//!
+//! # Running the measurement
+//!
+//! ```text
+//! cargo build --release
+//! cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture
+//! ```
+//!
+//! On a machine doing nothing else. The tests refuse a debug build, because
+//! a debug figure is a figure about a binary nobody ships.
 
-use std::path::Path;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
+use wixen_mail::common::paths::AppPaths;
 use wixen_mail::common::started;
-use wixen_mail::data::message_cache::MessageCache;
+use wixen_mail::common::types::FolderType;
+use wixen_mail::data::account::Account;
+use wixen_mail::data::config::AppConfig;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
+use wixen_mail::service::safety::Verdict;
 
 // ── The profiles ────────────────────────────────────────────────────────────
 
@@ -84,27 +100,153 @@ const A_THOUSAND: usize = 1_000;
 /// How many rows the profile the gate builds on every commit holds.
 const A_FEW: usize = 10;
 
+/// A port nothing listens on, so the startup connection is refused at once.
+const A_CLOSED_PORT: &str = "1";
+
+/// About how many bytes each plain-text body holds.
+const ABOUT_TWO_KILOBYTES: usize = 2_048;
+
 /// Write a profile holding `how_many` cached messages, as the definition
 /// above says: settings that open on the list, one refusable IMAP account,
 /// one `INBOX`, the rows, and a plain-text body for each.
 fn a_profile_with(into: &Path, how_many: usize) -> Result<(), String> {
-    let _ = (into, how_many);
+    let paths = AppPaths::under(into);
+    paths.create().map_err(|e| e.to_string())?;
+    write_the_settings(&paths)?;
+
+    let cache = MessageCache::new(paths.cache_dir(), None).map_err(|e| e.to_string())?;
+    cache
+        .save_account(&the_refusable_account())
+        .map_err(|e| e.to_string())?;
+    let folder_id = cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: THE_MEASUREMENT_ACCOUNT.to_string(),
+            name: THE_FOLDER.to_string(),
+            path: THE_FOLDER.to_string(),
+            folder_type: FolderType::Inbox.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let arriving: Vec<IncomingMessage> = (0..how_many).map(|n| a_message(folder_id, n)).collect();
+    let row_ids = cache
+        .upsert_messages(&arriving)
+        .map_err(|e| e.to_string())?;
+    for (n, row_id) in row_ids.into_iter().enumerate() {
+        cache
+            .save_message_body(row_id, Some(&a_body(n)), None)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 /// Write a profile holding the settings and nothing else.
 fn an_empty_profile(into: &Path) -> Result<(), String> {
-    let _ = into;
-    Ok(())
+    let paths = AppPaths::under(into);
+    paths.create().map_err(|e| e.to_string())?;
+    write_the_settings(&paths)
+}
+
+/// The settings file the application reads, saying the alpha notice has been
+/// shown and the window opens on All Inboxes.
+///
+/// Written as the file rather than through `ConfigManager`, which resolves
+/// its folder from the environment and would write into whoever's profile
+/// the environment names.
+fn write_the_settings(paths: &AppPaths) -> Result<(), String> {
+    let settings = AppConfig {
+        told_about_the_alpha: true,
+        start_in_all_inboxes: true,
+        ..AppConfig::default()
+    };
+    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(paths.config_dir().join("app_config.json"), json).map_err(|e| e.to_string())
+}
+
+/// One IMAP account whose server refuses at once and whose password is empty,
+/// so nothing is written to the credential store and nothing waits on a
+/// timeout.
+fn the_refusable_account() -> Account {
+    Account {
+        id: THE_MEASUREMENT_ACCOUNT.to_string(),
+        name: "The measurement account".to_string(),
+        email: "measurement@127.0.0.1".to_string(),
+        imap_server: "127.0.0.1".to_string(),
+        imap_port: A_CLOSED_PORT.to_string(),
+        imap_use_tls: false,
+        smtp_server: "127.0.0.1".to_string(),
+        smtp_port: A_CLOSED_PORT.to_string(),
+        smtp_use_tls: false,
+        username: "measurement".to_string(),
+        password: String::new(),
+        ..Account::default()
+    }
+}
+
+/// The `n`th message: dated in descending order, a quarter unread, one in
+/// seven with an attachment flag, and the envelope fields the sync fills.
+fn a_message(folder_id: i64, n: usize) -> IncomingMessage {
+    let uid = u32::try_from(n + 1).unwrap_or(u32::MAX);
+    let minutes_ago = n as i64;
+    let date = chrono::DateTime::parse_from_rfc3339("2026-09-14T12:00:00+00:00")
+        .expect("a fixed date")
+        - chrono::Duration::minutes(minutes_ago);
+    IncomingMessage {
+        folder_id,
+        uid,
+        message_id: format!("<measurement-{uid}@127.0.0.1>"),
+        subject: format!("Measurement message {uid}"),
+        from_addr: format!("Sender {} <sender{}@example.com>", n % 50, n % 50),
+        to_addr: "measurement@127.0.0.1".to_string(),
+        cc: None,
+        reply_to: None,
+        date: date.to_rfc3339(),
+        internal_date: Some(date.to_rfc3339()),
+        size_bytes: Some(ABOUT_TWO_KILOBYTES as i64 + 600),
+        refs_header: None,
+        read: !n.is_multiple_of(4),
+        starred: false,
+        answered: false,
+        draft: false,
+        deleted: false,
+        has_attachments: n.is_multiple_of(7),
+        safety: Verdict::ordinary(),
+        gmail_message_id: None,
+        labels: None,
+        receipt_to: None,
+        list_unsubscribe: None,
+        pop_uidl: None,
+    }
+}
+
+/// A plain-text body of about 2 KB, different for each message so the store
+/// cannot share them.
+fn a_body(n: usize) -> String {
+    let sentence = format!("This is measurement message {n} and it says nothing of interest. ");
+    let mut body = String::with_capacity(ABOUT_TWO_KILOBYTES + sentence.len());
+    while body.len() < ABOUT_TWO_KILOBYTES {
+        body.push_str(&sentence);
+    }
+    body
 }
 
 // ── The parsers ─────────────────────────────────────────────────────────────
 
+/// What the usable line starts with, after the log's own prefix.
+const THE_USABLE_LINE_BEGINS: &str = "the message list is usable: ";
+
 /// The rows and the milliseconds out of the usable line, wherever it sits
 /// in a log.
 fn parse_usable_line(log: &str) -> Option<(usize, u64)> {
-    let _ = log;
-    None
+    let line = log.lines().find_map(|line| {
+        line.split_once(THE_USABLE_LINE_BEGINS)
+            .map(|(_, rest)| rest)
+    })?;
+    let (rows, rest) = line.split_once(" rows, ")?;
+    let (millis, _) = rest.split_once(" ms after start")?;
+    Some((rows.parse().ok()?, millis.parse().ok()?))
 }
 
 /// One process's memory, as `Get-Process` reports it.
@@ -115,23 +257,54 @@ struct Memory {
     private_bytes: u64,
 }
 
+impl Memory {
+    /// Bytes as the page writes them: whole megabytes, `1 MB = 1,048,576`.
+    fn megabytes(bytes: u64) -> u64 {
+        bytes / (1024 * 1024)
+    }
+}
+
 /// Read one process's memory out of
 /// `Get-Process -Id N | Select-Object WorkingSet64,PeakWorkingSet64,PrivateMemorySize64 | Format-List`.
 fn parse_memory(powershell_output: &str) -> Result<Memory, String> {
-    let _ = powershell_output;
-    Err(String::from("not read"))
+    let field = |name: &str| -> Result<u64, String> {
+        powershell_output
+            .lines()
+            .find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                (key.trim() == name).then(|| value.trim().parse::<u64>().ok())?
+            })
+            .ok_or_else(|| format!("no {name} in {powershell_output:?}"))
+    };
+    Ok(Memory {
+        working_set: field("WorkingSet64")?,
+        peak_working_set: field("PeakWorkingSet64")?,
+        private_bytes: field("PrivateMemorySize64")?,
+    })
 }
 
 /// The memory of a tree of processes, summed.
 fn sum_tree(rows: &[Memory]) -> Memory {
-    let _ = rows;
-    Memory::default()
+    rows.iter().fold(Memory::default(), |sum, row| Memory {
+        working_set: sum.working_set + row.working_set,
+        peak_working_set: sum.peak_working_set + row.peak_working_set,
+        private_bytes: sum.private_bytes + row.private_bytes,
+    })
 }
 
 /// The processes under `root`, to any depth, out of `(id, parent, name)` rows.
 fn descendants_of(root: u32, processes: &[(u32, u32, String)]) -> Vec<u32> {
-    let _ = (root, processes);
-    Vec::new()
+    let mut found = Vec::new();
+    let mut frontier = vec![root];
+    while let Some(parent) = frontier.pop() {
+        for (id, parent_of, _) in processes {
+            if *parent_of == parent && *id != root && !found.contains(id) {
+                found.push(*id);
+                frontier.push(*id);
+            }
+        }
+    }
+    found
 }
 
 // ── The row ─────────────────────────────────────────────────────────────────
@@ -146,22 +319,384 @@ struct Row<'a> {
     conditions: &'a str,
 }
 
-/// Word a row the page will accept.
+/// Word a row the page will accept: a pipe inside a cell is written `\|` so
+/// the table stays a table.
 fn the_row(row: &Row<'_>) -> String {
-    let _ = (
-        row.what,
-        row.value,
-        row.command,
-        row.date,
-        row.commit,
-        row.conditions,
-    );
-    String::new()
+    let cell = |text: &str| text.replace('|', "\\|");
+    format!(
+        "| {} | {} | {} | {} | {} | {} |",
+        cell(row.what),
+        cell(row.value),
+        cell(row.command),
+        cell(row.date),
+        cell(row.commit),
+        cell(row.conditions)
+    )
 }
 
 /// Refuse to measure a debug build.
 fn refuse_a_debug_build() -> Result<(), String> {
+    if cfg!(debug_assertions) {
+        return Err(String::from(
+            "this is a debug build and a debug figure is a figure about a binary nobody ships; \
+             run with --release: cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture",
+        ));
+    }
     Ok(())
+}
+
+// ── The harness ─────────────────────────────────────────────────────────────
+
+/// How long to wait for the usable line before a run is reported as having
+/// produced nothing.
+const THE_LONGEST_WAIT_FOR_USABLE: Duration = Duration::from_secs(60);
+
+/// The three moments memory is read at, after the usable line and from the
+/// start.
+const AFTER_USABLE: Duration = Duration::from_secs(5);
+const THE_FIRST_IDLE_READING: Duration = Duration::from_secs(60);
+const THE_SECOND_IDLE_READING: Duration = Duration::from_secs(120);
+
+/// A started application, and the whole tree under it stopped when this is
+/// dropped, on the failure path too.
+struct Started {
+    child: Child,
+    began: Instant,
+}
+
+impl Started {
+    /// Start the release binary against a profile, changing nothing anywhere.
+    fn against(profile: &Path) -> Result<Self, String> {
+        let child = Command::new(env!("CARGO_BIN_EXE_wixen-mail"))
+            .arg("--read-only")
+            .env("WIXEN_MAIL_DATA", profile)
+            // The application's own filter, not whatever the shell had.
+            .env_remove("RUST_LOG")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("the application did not start: {e}"))?;
+        Ok(Self {
+            child,
+            began: Instant::now(),
+        })
+    }
+
+    fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Whether the process has already gone, which is a run that produced
+    /// nothing.
+    fn has_exited(&mut self) -> Option<String> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Some(format!("the application exited with {status}")),
+            Ok(None) => None,
+            Err(e) => Some(format!("could not ask whether the application is up: {e}")),
+        }
+    }
+
+    /// Sleep until `since_start` has passed since the process was started.
+    fn wait_until(&self, since_start: Duration) {
+        if let Some(left) = since_start.checked_sub(self.began.elapsed()) {
+            std::thread::sleep(left);
+        }
+    }
+}
+
+impl Drop for Started {
+    fn drop(&mut self) {
+        // The whole tree, because WebView2's processes are not this one's
+        // children in any sense `Child::kill` knows about.
+        let _ = Command::new("taskkill")
+            .args(["/PID", &self.child.id().to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = self.child.wait();
+    }
+}
+
+/// Run a PowerShell command and hand back what it printed.
+fn powershell(command: &str) -> Result<String, String> {
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", command])
+        .output()
+        .map_err(|e| format!("powershell did not run: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "powershell refused `{command}`: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// One process's memory, read now.
+fn memory_of(id: u32) -> Result<Memory, String> {
+    parse_memory(&powershell(&format!(
+        "Get-Process -Id {id} | Select-Object WorkingSet64,PeakWorkingSet64,PrivateMemorySize64 | Format-List"
+    ))?)
+}
+
+/// Every process on the machine as `(id, parent, name)`.
+fn every_process() -> Result<Vec<(u32, u32, String)>, String> {
+    let listed = powershell(
+        "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, $_.Name }",
+    )?;
+    Ok(listed
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let id = parts.next()?.parse().ok()?;
+            let parent = parts.next()?.parse().ok()?;
+            let name = parts.collect::<Vec<_>>().join(" ");
+            Some((id, parent, name))
+        })
+        .collect())
+}
+
+/// The application and its tree, read at one moment.
+#[derive(Debug, Clone, Copy)]
+struct AReading {
+    application: Memory,
+    /// Every process under the application, summed; WebView2's, in practice.
+    tree: Memory,
+    processes_in_the_tree: usize,
+}
+
+fn read_the_application_and_its_tree(id: u32) -> Result<AReading, String> {
+    let application = memory_of(id)?;
+    let processes = every_process()?;
+    let under = descendants_of(id, &processes);
+    let mut rows = Vec::with_capacity(under.len());
+    for child in &under {
+        // A process that went between the listing and the reading is a
+        // process that weighs nothing now, which is the true answer.
+        if let Ok(memory) = memory_of(*child) {
+            rows.push(memory);
+        }
+    }
+    Ok(AReading {
+        application,
+        tree: sum_tree(&rows),
+        processes_in_the_tree: rows.len(),
+    })
+}
+
+/// The newest log file under the profile, read whole.
+fn the_newest_log(profile: &Path) -> Option<String> {
+    let logs = AppPaths::under(profile).logs_dir();
+    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(logs).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "log")
+            && let Ok(modified) = entry.metadata().and_then(|m| m.modified())
+            && newest.as_ref().is_none_or(|(when, _)| modified > *when)
+        {
+            newest = Some((modified, path));
+        }
+    }
+    std::fs::read_to_string(newest?.1).ok()
+}
+
+/// Wait for the usable line, or say what happened instead.
+fn wait_for_usable(started: &mut Started, profile: &Path) -> Result<(usize, u64), String> {
+    let deadline = Instant::now() + THE_LONGEST_WAIT_FOR_USABLE;
+    while Instant::now() < deadline {
+        if let Some(gone) = started.has_exited() {
+            return Err(format!("this run produced nothing: {gone}"));
+        }
+        if let Some(found) = the_newest_log(profile)
+            .as_deref()
+            .and_then(parse_usable_line)
+        {
+            return Ok(found);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err(format!(
+        "this run produced nothing: no usable line within {} s; the log held:\n{}",
+        THE_LONGEST_WAIT_FOR_USABLE.as_secs(),
+        the_newest_log(profile).unwrap_or_default()
+    ))
+}
+
+/// What one run of the harness measured.
+struct ARun {
+    rows_in_the_list: usize,
+    usable_after_ms: u64,
+    after_usable: AReading,
+    at_sixty: AReading,
+    at_one_twenty: AReading,
+}
+
+/// Start the binary against a profile, wait for the usable line, read memory
+/// at the three moments, and stop it.
+fn one_run(profile: &Path) -> Result<ARun, String> {
+    let mut started = Started::against(profile)?;
+    let (rows_in_the_list, usable_after_ms) = wait_for_usable(&mut started, profile)?;
+
+    std::thread::sleep(AFTER_USABLE);
+    let after_usable = read_the_application_and_its_tree(started.id())?;
+    started.wait_until(THE_FIRST_IDLE_READING);
+    let at_sixty = read_the_application_and_its_tree(started.id())?;
+    started.wait_until(THE_SECOND_IDLE_READING);
+    let at_one_twenty = read_the_application_and_its_tree(started.id())?;
+
+    if let Some(gone) = started.has_exited() {
+        return Err(format!(
+            "this run produced nothing: {gone} before the last reading"
+        ));
+    }
+    Ok(ARun {
+        rows_in_the_list,
+        usable_after_ms,
+        after_usable,
+        at_sixty,
+        at_one_twenty,
+    })
+}
+
+/// The date, the commit and the version, for the rows.
+fn today_commit_and_version() -> (String, String, String) {
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let commit = Command::new("git")
+        .args(["rev-parse", "--short=8", "HEAD"])
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    (date, commit, env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// The processor, its logical core count and the memory, as Windows reports
+/// them.
+fn the_machine() -> String {
+    powershell(
+        "$p = Get-CimInstance Win32_Processor | Select-Object -First 1; \
+         $c = Get-CimInstance Win32_ComputerSystem; \
+         '{0}, {1} logical processors, {2} GB' -f $p.Name.Trim(), $p.NumberOfLogicalProcessors, [math]::Round($c.TotalPhysicalMemory / 1GB)",
+    )
+    .map(|line| line.trim().to_string())
+    .unwrap_or_else(|why| format!("machine not read: {why}"))
+}
+
+/// Say what one reading held, in megabytes.
+fn describe(reading: &AReading) -> String {
+    format!(
+        "application working set {} MB, peak {} MB, private {} MB; tree of {} processes working set {} MB; together {} MB",
+        Memory::megabytes(reading.application.working_set),
+        Memory::megabytes(reading.application.peak_working_set),
+        Memory::megabytes(reading.application.private_bytes),
+        reading.processes_in_the_tree,
+        Memory::megabytes(reading.tree.working_set),
+        Memory::megabytes(reading.application.working_set + reading.tree.working_set),
+    )
+}
+
+/// Print one run's readings and the rows the page takes.
+fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
+    let (date, commit, version) = today_commit_and_version();
+    let machine = the_machine();
+    println!();
+    println!("== {profile_name}: {version} at {commit} on {date}, {machine}");
+    println!(
+        "usable: {} rows in the list, {} ms after start",
+        run.rows_in_the_list, run.usable_after_ms
+    );
+    println!("at usable + 5 s: {}", describe(&run.after_usable));
+    println!("at 60 s: {}", describe(&run.at_sixty));
+    println!("at 120 s: {}", describe(&run.at_one_twenty));
+
+    let with_the_messages = format!(
+        "{} MB",
+        Memory::megabytes(
+            run.at_sixty.application.peak_working_set + run.at_sixty.tree.working_set
+        )
+    );
+    let idle = format!(
+        "{} MB",
+        Memory::megabytes(
+            run.at_one_twenty.application.working_set + run.at_one_twenty.tree.working_set
+        )
+    );
+    let cold = format!("{} ms", run.usable_after_ms);
+    for (what, value) in [
+        (format!("Cold start to a usable list, {profile_name}"), cold),
+        (
+            format!("Memory with the list loaded, {profile_name}"),
+            with_the_messages,
+        ),
+        (format!("Idle memory at 120 s, {profile_name}"), idle),
+    ] {
+        println!(
+            "{}",
+            the_row(&Row {
+                what: &what,
+                value: &value,
+                command,
+                date: &date,
+                commit: &commit,
+                conditions: &format!(
+                    "{version} on {machine}; fill in the run, the thread setting and the machine state"
+                ),
+            })
+        );
+    }
+}
+
+/// The command the rows carry.
+const THE_COMMAND: &str =
+    "cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture";
+
+// ── The measurements, behind #[ignore] ──────────────────────────────────────
+
+#[test]
+#[ignore = "starts the release binary and waits two minutes; run by hand on a quiet machine"]
+fn test_cold_start_and_memory_with_a_thousand_cached_messages() {
+    refuse_a_debug_build().expect("a release build");
+    let home = tempfile::tempdir().expect("a temporary folder");
+    a_profile_with(home.path(), A_THOUSAND).expect("the profile writes");
+
+    let run = one_run(home.path()).expect("a run that produced a number");
+    print_the_run("1,000 cached messages", THE_COMMAND, &run);
+}
+
+#[test]
+#[ignore = "starts the release binary and waits two minutes; run by hand on a quiet machine"]
+fn test_the_empty_profile_floor() {
+    refuse_a_debug_build().expect("a release build");
+    let home = tempfile::tempdir().expect("a temporary folder");
+    an_empty_profile(home.path()).expect("the profile writes");
+
+    // No account and no mail, so nothing loads and there is no usable line
+    // to wait for: the floor is the application on nothing, read at the same
+    // moments from the start.
+    let mut started = Started::against(home.path()).expect("the application starts");
+    started.wait_until(AFTER_USABLE);
+    if let Some(gone) = started.has_exited() {
+        panic!("this run produced nothing: {gone}");
+    }
+    let after_usable = read_the_application_and_its_tree(started.id()).expect("a reading");
+    started.wait_until(THE_FIRST_IDLE_READING);
+    let at_sixty = read_the_application_and_its_tree(started.id()).expect("a reading");
+    started.wait_until(THE_SECOND_IDLE_READING);
+    let at_one_twenty = read_the_application_and_its_tree(started.id()).expect("a reading");
+    if let Some(gone) = started.has_exited() {
+        panic!("this run produced nothing: {gone} before the last reading");
+    }
+    drop(started);
+
+    let run = ARun {
+        rows_in_the_list: 0,
+        usable_after_ms: 0,
+        after_usable,
+        at_sixty,
+        at_one_twenty,
+    };
+    print_the_run("empty profile", THE_COMMAND, &run);
 }
 
 // ── The tests that run on every commit ──────────────────────────────────────
@@ -171,7 +706,7 @@ fn test_a_ten_row_profile_reads_back_ten_messages_and_ten_bodies() {
     let home = tempfile::tempdir().expect("a temporary folder");
     a_profile_with(home.path(), A_FEW).expect("the profile writes");
 
-    let paths = wixen_mail::common::paths::AppPaths::under(home.path());
+    let paths = AppPaths::under(home.path());
     let cache = MessageCache::new(paths.cache_dir(), None).expect("the cache opens");
     let folders = cache
         .get_folders_for_account(THE_MEASUREMENT_ACCOUNT)
@@ -205,7 +740,7 @@ fn test_the_profile_has_the_shape_the_definition_gives() {
     let home = tempfile::tempdir().expect("a temporary folder");
     a_profile_with(home.path(), A_FEW).expect("the profile writes");
 
-    let paths = wixen_mail::common::paths::AppPaths::under(home.path());
+    let paths = AppPaths::under(home.path());
     let cache = MessageCache::new(paths.cache_dir(), None).expect("the cache opens");
     let accounts = cache.load_accounts().expect("the accounts read");
     assert_eq!(accounts.len(), 1, "one account");
@@ -246,7 +781,7 @@ fn test_the_settings_open_on_the_list_and_skip_the_alpha_question() {
     let home = tempfile::tempdir().expect("a temporary folder");
     a_profile_with(home.path(), A_FEW).expect("the profile writes");
 
-    let paths = wixen_mail::common::paths::AppPaths::under(home.path());
+    let paths = AppPaths::under(home.path());
     let settings = std::fs::read_to_string(paths.config_dir().join("app_config.json"))
         .expect("the settings file the application reads");
     let settings: serde_json::Value = serde_json::from_str(&settings).expect("json");
@@ -267,7 +802,7 @@ fn test_an_empty_profile_has_the_settings_and_no_mail() {
     let home = tempfile::tempdir().expect("a temporary folder");
     an_empty_profile(home.path()).expect("the profile writes");
 
-    let paths = wixen_mail::common::paths::AppPaths::under(home.path());
+    let paths = AppPaths::under(home.path());
     assert!(
         paths.config_dir().join("app_config.json").is_file(),
         "the settings are there"
@@ -387,7 +922,14 @@ fn test_the_row_has_the_pages_columns_in_the_pages_order() {
         commit: "abcdef01",
         conditions: "conditions",
     });
-    let cells: Vec<&str> = row.trim_matches('|').split('|').map(str::trim).collect();
+    // Split the way the page's reader splits: an escaped pipe is not a
+    // cell boundary.
+    let cells: Vec<String> = row
+        .replace("\\|", "\u{1}")
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().replace('\u{1}', "\\|"))
+        .collect();
 
     assert_eq!(
         columns,
