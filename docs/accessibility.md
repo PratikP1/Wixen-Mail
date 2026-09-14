@@ -9,10 +9,18 @@ that is written down too.
 ## Standards
 
 Wixen Mail targets **WCAG 2.2 Level AA**, applied to a Windows desktop
-application rather than a web page. Automated scanning catches roughly half
-of what WCAG asks for. The rest needs a real person using real assistive
-technology, which is why this page distinguishes what has been checked by a
-scanner from what has been confirmed by a listening pass.
+application rather than a web page. The automated scans can produce a
+finding against three of the fifty-five Level A and AA success criteria:
+1.3.1 Info and Relationships, 2.1.1 Keyboard and 4.1.2 Name, Role, Value.
+The other fifty-two need a real person using real assistive technology,
+which is why this page distinguishes what has been checked by a scanner from
+what has been confirmed by a listening pass. [What the accessibility scans
+can judge](wcag-coverage.md) has a row for every criterion, says which
+windows the scan reaches, and says that no scan has yet run against them.
+Until 2026-09-14 this paragraph said automated scanning catches roughly half
+of what WCAG asks for. That half is a widely quoted estimate of how many
+accessibility defects an automated tool finds, and it is not the share of
+criteria a scan can judge, which is what this sentence had made it.
 
 There is no Section 508 conformance claim here, because nobody has done the
 work of checking against it.

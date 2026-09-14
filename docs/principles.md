@@ -64,8 +64,12 @@ caught it. An accessibility change is not done because it looks done.
 **Structure present, experience good.** Native widgets hand you a tree for free, and
 a tree is not an experience. Focus that jumps when a folder reloads, a message list
 that re-announces itself, a detail pane that updates silently: each passes automated
-checks. Automated scanning covers roughly half of WCAG. Only a real NVDA run proves
-the rest.
+checks. The automated scans can produce a finding against three of the fifty-five
+WCAG 2.2 Level A and AA success criteria, and `docs/wcag-coverage.md` says which
+three and what is left on each of the other fifty-two. Only a real NVDA run
+proves the rest. This sentence said "roughly half of WCAG" until 2026-09-14,
+which was the figure for defects an automated tool finds, mistaken for the
+share of criteria it can judge, and off by about an order of magnitude.
 
 **Implemented but never wired.** All eight PIM update variants were handled in the UI
 and sent by nothing. Calendar, contacts, tasks, notes, and reminders each had
