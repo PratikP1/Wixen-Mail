@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 596 records have arrived since and have not been through it.
+# 598 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21531,5 +21531,61 @@ red = [
     "test_the_share_of_history_before_red_green_is_computed_and_printed",
 ]
 tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# A figure in prose that restates a constant the code holds is held to it.
+# The break moves the privacy page's largest-attachment figure by one
+# megabyte, so the page says 26 where LARGEST_ATTACHMENT_KEPT_BYTES says 25.
+# Three go red: the reading and its two companions, each of which asserts the
+# twelve pairs agree before it moves a figure or removes a phrase.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 22 passed
+# and exactly these three failed.
+[[guard]]
+name = "a page cannot restate a constant with a figure the code does not hold"
+file = "docs/privacy.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """share the computer or carry it around. A single file is kept up to 25 MB, and all of them"""
+after = """share the computer or carry it around. A single file is kept up to 26 MB, and all of them"""
+red = [
+    "test_every_figure_that_restates_a_constant_agrees_with_it",
+    "test_the_constants_reading_can_see_a_figure_that_moved",
+    "test_the_constants_reading_refuses_a_phrase_that_has_gone",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# The same rule from the other side: the constant moves and the page does not.
+# The break lands on source, which is the point of the record: it couples
+# src/data/message_cache/attachment_content.rs to this target, so a commit
+# that changes the constant runs the reading that holds the page to it. The
+# same three go red.
+#
+# What the whole library said under the same break is worth writing down.
+# `cargo test --lib -- --test-threads=8` on 2026-09-14: 7,244 passed, none
+# failed, 73 s. No unit test pins the constant's value; the tests beside it
+# are written relative to it, `LARGEST_ATTACHMENT_KEPT_BYTES + 1`, and stay
+# green at any size. So this target's reading is the only thing in the tree
+# that holds the number, and there is no library-suite record to write
+# beside this one because a record whose red list is empty measures nothing.
+#
+# Measured by hand on 2026-09-14 against the target: 22 passed and exactly
+# these three failed.
+[[guard]]
+name = "a constant cannot move away from the page that restates it"
+file = "src/data/message_cache/attachment_content.rs"
+suite = "every_number_carries_its_command_and_its_date"
+before = """pub const LARGEST_ATTACHMENT_KEPT_BYTES: i64 = 25 * 1024 * 1024;"""
+after = """pub const LARGEST_ATTACHMENT_KEPT_BYTES: i64 = 26 * 1024 * 1024;"""
+red = [
+    "test_every_figure_that_restates_a_constant_agrees_with_it",
+    "test_the_constants_reading_can_see_a_figure_that_moved",
+    "test_the_constants_reading_refuses_a_phrase_that_has_gone",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/attachment_content.rs", tests = 22 },
     { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
 ]
