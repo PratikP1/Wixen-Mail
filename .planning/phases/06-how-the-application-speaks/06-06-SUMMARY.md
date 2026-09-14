@@ -90,7 +90,7 @@ completed: 2026-09-14
 
 **A commit that changes a file under `.github/workflows/` now runs the whole gate on a branch, so the two tests that read the accessibility workflow run on the commits that could break them. Before this, a workflow with one window taken out of its scan list passed the gate in 64 seconds; after, the same staged break fails in 206 seconds naming the window. Task 2, pinning the scanner and settling the window list, is behind a checkpoint that is Pratik's and is not attempted.**
 
-Branch `a-workflow-change-earns-the-checks-that-read-it`, one red commit and one green commit, `scripts/check.sh all` green on the branch under rustc 1.98.1 in 253 seconds with 7,603 tests passed and 0 failed. The merge commit is named by the follow-up docs commit, since a summary committed before its own merge cannot name it. Nothing pushed.
+Branch `a-workflow-change-earns-the-checks-that-read-it`, one red commit, one green commit and one docs commit, `scripts/check.sh all` green on the branch under rustc 1.98.1 in 253 seconds with 7,603 tests passed and 0 failed. Merged into `main` at `9f86ba6f` with the whole gate green again on the merge, 281 seconds. The hash is written here by the follow-up commit, since a summary committed before its own merge cannot name it. Nothing pushed.
 
 ## Which clauses of criteria 3 and 4 this closes
 
@@ -338,4 +338,8 @@ None new. T-06-22 is mitigated by task 1 as the register planned. T-06-21 and T-
 - The scanner is not pinned. What the scan runs today is whatever Microsoft shipped most recently.
 - No window was added to the scan.
 - No scripted edit touched a tracked file. Every change to `scripts/which-checks.sh` and `scripts/which-checks.test.sh` was Read then Edit; the two temporary edits to the workflow were Edit and a per-file `git checkout --`. Exception set: zero. Carriage returns in each edited file measured with `tr -cd '\r' | wc -c`: 0.
-- `roadmap update-plan-progress` was not run; `ROADMAP.md` and `STATE.md` were edited by hand and the diff read.
+- `roadmap update-plan-progress` was not run; `ROADMAP.md` and `STATE.md` were edited by hand and the diff read. The first docs commit was refused because `STATE.md` holds the plan number twice and I had moved one copy; both now say 6.
+
+## Self-Check: PASSED
+
+`scripts/which-checks.sh`, `scripts/which-checks.test.sh` and this file exist on disk; commits `05ec26a4`, `dd4934fe`, `2b220b66` and `9f86ba6f` are in `git log --all`; `.github/workflows/accessibility.yml` is byte-identical to `436cdeec`'s.
