@@ -321,6 +321,54 @@ for path in "$@"; do
     esac
 done
 
+# A workflow earns every check, which is the installer rule one layer along:
+# something reads it as data, and the softer answer reached none of it.
+#
+# Two tests read `.github/workflows/accessibility.yml`:
+#
+#     presentation::scan_target::tests::test_the_command_line_and_the_workflow_use_the_same_flag
+#     presentation::scan_target::tests::test_the_workflow_asks_for_every_target
+#
+# The first holds the workflow and the parser to one spelling of the flag that
+# names a window, because the bug it was written for was silent and total: the
+# workflow asked for windows by a name the parser did not know, every dialog
+# scan quietly became a second scan of the main window, and the workflow
+# reported a pass. The second holds the workflow's list of windows to
+# `ScanTarget::ALL`, so a window added to the code and not to the list is not
+# silently never scanned. Both are unit tests in `src/`, and `affected` maps a
+# changed file to a target by its path, knowing `src/*.rs` and `tests/*.rs`. A
+# `.yml` is neither, so it chose no scoped target at all, and both tests ran on
+# every commit except the ones that could break them. Measured 2026-09-14 on a
+# branch: a workflow with one window taken out of its list answered `affected`,
+# the gate passed in 64 seconds, and the second test was red on the same tree
+# when run by hand. `house_style` did read the file on that run, because
+# `ours()` collects `.github/**/*.yml`, so a prose rule over it was checked;
+# what was never checked is anything the workflow has to say.
+#
+# `.github/workflows/*` rather than `*.yml`, which is the installer rule's
+# choice made the other way, and the difference is what the two files are. An
+# `.iss` anywhere in this tree is a setup script, so there the extension
+# decides. A `.yml` anywhere is not necessarily a workflow: a dependabot file
+# or a tool's own configuration is a `.yml` nothing runs, and the wider pattern
+# would charge each of them the whole gate for a test that reads none of them.
+# What makes a file a workflow is where it sits, so here the directory decides,
+# and the suite's case for a `.yml` outside the folder holds this to it.
+#
+# Below the manifest block for the reason the installer rule gives. The
+# version-bump exception above hands the softer answer to a commit whose whole
+# manifest diff is this package's own version line, and a rule written inside
+# that branch would let a workflow change that also bumps the version answer
+# `affected`. The suite's case for a workflow beside a version bump is the one
+# that would notice.
+for path in "$@"; do
+    case "$path" in
+        .github/workflows/*)
+            echo all
+            exit 0
+            ;;
+    esac
+done
+
 # A document is a file whose content only a document-reading test can judge.
 # Everything else is a build input, however much it reads like prose:
 # `guards/guards.toml` names breaks the runner applies to source, `Cargo.toml`
