@@ -63,7 +63,7 @@ requirements-completed: []
 
 `Due` has a `Kind` of its own and an opaque `Identity`, its sentence begins with the kind's word for all three kinds, `what_is_due` obeys a hold by identity and refuses an ended event and hands rows back earliest first, the two alert instants are pure, and the future relative wording is three catalogue messages behind a twin of the past reading. Nothing a person can reach changed: the reminder feed builds the same rows it did and no task or event is fed yet. Tasks 2 to 4 were not attempted; the checkpoint's three questions are Pratik's and are put below with options, costs and a recommendation each.
 
-Branch `a-due-thing-says-what-it-is-first` from `main` at `db98094c`. Red `c189a361`, green `0ca6099d`, records `a993d9d5`, this summary and the ledger in the commit after, merged into `main` with the merge commit named in the docs commit that follows it, as 06-06 and 06-07 did. Version stays `0.123.0`. Nothing pushed.
+Branch `a-due-thing-says-what-it-is-first` from `main` at `db98094c`. Red `c189a361`, green `0ca6099d`, records `a993d9d5`, this summary and the ledger at `20e3dcc4`, merged into `main` at `6d57a49b` with the whole gate green on the merge: 52 targets, 7,649 tests, the release build and the advisory check. This hash was written by the docs commit after the merge, as 06-06 and 06-07 did. Version stays `0.123.0`. Nothing pushed.
 
 ## What landed, task 1
 
