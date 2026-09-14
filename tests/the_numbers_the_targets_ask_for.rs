@@ -106,6 +106,9 @@ const A_CLOSED_PORT: &str = "1";
 /// About how many bytes each plain-text body holds.
 const ABOUT_TWO_KILOBYTES: usize = 2_048;
 
+/// See `a_profile_with`: the credential store is reached one thread at a time.
+static ONE_ACCOUNT_WRITE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Write a profile holding `how_many` cached messages, as the definition
 /// above says: settings that open on the list, one refusable IMAP account,
 /// one `INBOX`, the rows, and a plain-text body for each.
@@ -115,9 +118,21 @@ fn a_profile_with(into: &Path, how_many: usize) -> Result<(), String> {
     write_the_settings(&paths)?;
 
     let cache = MessageCache::new(paths.cache_dir(), None).map_err(|e| e.to_string())?;
-    cache
-        .save_account(&the_refusable_account())
-        .map_err(|e| e.to_string())?;
+    {
+        // One at a time. Saving an account reaches the Windows credential
+        // store even with an empty password, because an empty password is a
+        // request to forget, and keyring 4.1.5's `Entry::new` races its own
+        // lazy initialisation when several threads reach it together
+        // (ledger 374: "No default store has been set", about one run in
+        // three). The seam that would keep an integration test out of the
+        // real store is `cfg(test)` and this target cannot see it.
+        let _one_at_a_time = ONE_ACCOUNT_WRITE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache
+            .save_account(&the_refusable_account())
+            .map_err(|e| e.to_string())?;
+    }
     let folder_id = cache
         .save_folder(&CachedFolder {
             id: 0,
@@ -700,6 +715,46 @@ fn test_the_empty_profile_floor() {
 }
 
 // ── The tests that run on every commit ──────────────────────────────────────
+
+/// The window fills the module it opens on, at startup.
+///
+/// Found by running the harness rather than by reading: the first release
+/// run against the thousand-message profile waited 60 s for a usable line
+/// that never came, and the log showed why. Every fill of a module comes
+/// from a switch, and a switch to the module already on screen is refused,
+/// so the mail module the window opens on was filled by nothing. The folder
+/// tree came up empty and cached mail was not listed until a sync finished
+/// or somebody switched modules away and back, on every profile.
+///
+/// This reads the startup section of `run`, from the frame being shown to
+/// the event loop returning, and requires a fill of the active module in
+/// it. What it cannot see: whether the fill reaches the list. The
+/// measurement tests behind `#[ignore]` see that, because without it there
+/// is no usable line to read.
+#[test]
+fn test_the_module_the_window_opens_on_is_filled_at_startup() {
+    let app = std::fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let from = app
+        .find("Main frame shown, entering event loop")
+        .expect("the line logged when the frame is shown");
+    let to = app
+        .find("wxdragon::main blocks until the window is closed")
+        .expect("the comment before the event loop's result is read");
+    assert!(
+        from < to,
+        "the startup section runs from the frame being shown"
+    );
+    let startup = &app[from..to];
+
+    assert!(
+        startup.contains("load_module_data(")
+            && startup.contains("active_module")
+            && startup.contains("account_id"),
+        "nothing fills the module the window opens on at startup, so the \
+         folder tree comes up empty and cached mail is not listed until a \
+         sync finishes or somebody switches modules away and back"
+    );
+}
 
 #[test]
 fn test_a_ten_row_profile_reads_back_ten_messages_and_ten_bodies() {
