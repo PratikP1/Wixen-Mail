@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 585 records have arrived since and have not been through it.
+# 591 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21291,4 +21291,107 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# ── 06-09 task 4: the feeds, and what an event's stored alert means ────────
+#
+# Every shown day of a series carries the series' id, so an identity made
+# from the id alone would make dismissing today's standup dismiss every
+# standup for the session, and snoozing it hold every one. The break composes
+# the identity from the id alone. Ledger 404's record, deferred from task 1
+# because the composition did not exist until the feed did.
+[[guard]]
+name = "a day of a series is its own due thing and not the series"
+file = "src/presentation/ui_types.rs"
+before = """            id: format!("{}|{}", self.id, self.start),"""
+after = """            id: self.id.clone(),"""
+red = [
+    "presentation::ui_types::tests::test_two_days_of_one_series_are_two_due_identities_and_one_day_is_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/ui_types.rs", tests = 79 },
+]
+
+# The one mistake worse than a missed alert: an event whose owner switched
+# the alert off, interrupted anyway. The break gives an explicit off the
+# default lead, which is what reading the column as two states did.
+[[guard]]
+name = "an event stored as off is never given the default lead"
+file = "src/application/event_alerts.rs"
+before = """        StoredAlert::Off => None,"""
+after = """        StoredAlert::Off => Some(default_lead),"""
+red = [
+    "application::event_alerts::tests::test_the_default_fills_silence_and_never_overrides_an_explicit_off",
+]
+tests_last_seen = [
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Pratik's other half: the default fills silence. The break leaves an event
+# nobody said anything about silent, which is the column-only reading he
+# was offered and did not choose.
+[[guard]]
+name = "an event nobody said anything about is given the default lead"
+file = "src/application/event_alerts.rs"
+before = """        StoredAlert::Unknown => Some(default_lead),"""
+after = """        StoredAlert::Unknown => None,"""
+red = [
+    "application::event_alerts::tests::test_the_default_fills_silence_and_never_overrides_an_explicit_off",
+]
+tests_last_seen = [
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Microsoft's pull knows the alert is off and says so. The break stores
+# nothing for off, as the pull did until 2026-09-14, which the due window
+# would read as nobody's answer and fill with the default. Reddens the
+# module's own test and the pull's test in calendar.rs.
+[[guard]]
+name = "microsofts pull stores off when the reminder is off"
+file = "src/application/event_alerts.rs"
+before = """        false => Some(NO_ALERT.to_string()),"""
+after = """        false => None,"""
+red = [
+    "application::event_alerts::tests::test_microsofts_pull_stores_off_when_the_reminder_is_off",
+    "application::calendar::tests::test_an_alert_is_kept_only_when_microsoft_says_it_is_on_and_gives_a_lead_time",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# Google's "useDefault false with no overrides" is the event never alerting.
+# The break stores nothing for it, so the calendar's default and never are
+# the same silence again. Reddens the module's own test and the pull's.
+[[guard]]
+name = "googles pull stores off only when google said the event never alerts"
+file = "src/application/event_alerts.rs"
+before = """        return (!reminders.use_default).then(|| NO_ALERT.to_string());"""
+after = """        return None;"""
+red = [
+    "application::event_alerts::tests::test_googles_pull_stores_off_only_when_google_said_the_event_never_alerts",
+    "application::calendar::tests::test_google_event_to_local",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/event_alerts.rs", tests = 4 },
+]
+
+# The editor is the third writer that knows the alert is off: a person took
+# the last one away. The break stores nothing for an emptied list, as it did
+# until 2026-09-14.
+[[guard]]
+name = "the editor stores off when the last alert is taken away"
+file = "src/presentation/managers.rs"
+before = """    Some(if kept.is_empty() {
+        crate::application::event_alerts::NO_ALERT.to_string()
+    } else {
+        serde_json::Value::Array(kept).to_string()
+    })"""
+after = """    (!kept.is_empty()).then(|| serde_json::Value::Array(kept).to_string())"""
+red = [
+    "presentation::managers::tests::test_clearing_the_only_alert_stores_off_rather_than_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 137 },
 ]
