@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 568 records have arrived since and have not been through it.
+# 574 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -20936,4 +20936,152 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/what_the_scans_can_judge.rs", tests = 8 },
+]
+
+# ── One window for every due thing, 06-09 task 1 ─────────────────────────────
+#
+# Six records, one per rule the model gained on 2026-09-14 when a Due stopped
+# being only a reminder. Each was measured by hand that day against the whole
+# library at eight threads, `cargo test --lib --no-fail-fast`, 7,221 tests
+# with one ignored, and each reddened exactly what it names and nothing else.
+# The counts are quoted per record, because a "nothing else" that was not
+# measured is the claim this file exists to refuse.
+
+# A row is heard one word at a time, and in a list of reminders, tasks and
+# events the word that sorts them is the one to hear first. The break drops
+# the word from the task's on-time sentence, which is the sentence a person
+# meets most: "Due today: file the report" says what and not which. Two go
+# red: the task's own sentence, and the sweep over every kind on time and
+# late. Measured 2026-09-14: 7,219 passed, exactly these two failed.
+[[guard]]
+name = "a due row says its kind before its title"
+file = "src/application/due.rs"
+before = """                    format!("Task due today: {title}")"""
+after = """                    format!("Due today: {title}")"""
+red = [
+    "application::due::tests::test_a_task_says_task_before_anything_else",
+    "application::due::tests::test_every_kind_says_its_word_first_on_time_and_late",
+]
+tests_last_seen = [
+    { file = "src/application/due.rs", tests = 46 },
+]
+
+# A task and a reminder can share a row id, and `already` and the hold are
+# both keyed by identity. The break is the plausible shortcut: equality and
+# hashing on the id alone, which is what the session set was keyed by until
+# this plan. Both tests that were green on arrival in the red commit, because
+# the derive carried them, go red here, which is what earns them their place.
+# Measured 2026-09-14: 7,219 passed, exactly these two failed. The other half
+# of the identity trap, a day of a series carrying its series' id, is composed
+# by the event feed and not here; its record belongs to the commit that writes
+# that feed.
+[[guard]]
+name = "the same id under two kinds is two identities"
+file = "src/application/due.rs"
+before = """#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identity {
+    pub kind: Kind,
+    pub id: String,
+}"""
+after = """#[derive(Debug, Clone, Eq)]
+pub struct Identity {
+    pub kind: Kind,
+    pub id: String,
+}
+
+impl PartialEq for Identity {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl std::hash::Hash for Identity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}"""
+red = [
+    "application::due::tests::test_a_hold_on_one_kind_does_not_hold_the_same_id_under_another",
+    "application::due::tests::test_the_same_id_under_two_kinds_is_two_things",
+]
+tests_last_seen = [
+    { file = "src/application/due.rs", tests = 46 },
+]
+
+# "Event started three hours ago" about a meeting that finished two hours ago
+# is noise, and a machine asleep through the morning would say it about every
+# meeting it missed. The break compares the end with the alert instant instead
+# of with now, which is never true for an event that ends after its alert, so
+# nothing is ever refused for having ended. Measured 2026-09-14: 7,220 passed,
+# exactly this one failed.
+[[guard]]
+name = "an event whose end has passed is not raised"
+file = "src/application/due.rs"
+before = """            if candidate.ends.is_some_and(|end| end <= now) {"""
+after = """            if candidate.ends.is_some_and(|end| end <= at) {"""
+red = [
+    "application::due::tests::test_an_event_whose_end_has_passed_is_not_raised",
+]
+tests_last_seen = [
+    { file = "src/application/due.rs", tests = 46 },
+]
+
+# A task snoozed until five is not mentioned at four and is mentioned at
+# five, and its own row is never written; the hold is a rule here so that it
+# is tested without a table. The break flips the comparison, so a hold that
+# has not run out is ignored and one that has is obeyed. Measured 2026-09-14:
+# 7,220 passed, exactly this one failed.
+[[guard]]
+name = "a held thing is not due until its hold runs out"
+file = "src/application/due.rs"
+before = """                .is_some_and(|until| *until > now)"""
+after = """                .is_some_and(|until| *until < now)"""
+red = [
+    "application::due::tests::test_a_held_thing_is_not_due_until_its_hold_runs_out",
+]
+tests_last_seen = [
+    { file = "src/application/due.rs", tests = 46 },
+]
+
+# An event happens whether or not somebody went, and marking it done would
+# write a fact its calendar does not hold, so the window never offers it. The
+# break answers yes for every kind. One test today; the window that reads
+# this answer to enable or disable its button is task 3's, and its records
+# will name this rule again. Measured 2026-09-14: 7,220 passed, exactly this
+# one failed.
+[[guard]]
+name = "an event cannot be done"
+file = "src/application/due.rs"
+before = """            Kind::Reminder | Kind::Task => true,
+            Kind::Event => false,"""
+after = """            Kind::Reminder | Kind::Task => true,
+            Kind::Event => true,"""
+red = [
+    "application::due::tests::test_an_event_cannot_be_done_and_the_other_two_can",
+]
+tests_last_seen = [
+    { file = "src/application/due.rs", tests = 46 },
+]
+
+# The future twin chooses its unit the way the past reading does, so "in 90
+# minutes" is never said where "90 minutes ago" would have been "1 hour ago".
+# The break widens the minutes band to two hours in the future twin only. Two
+# go red: the boundary test that asks for the unit and the count, and the
+# English wording through the catalogue, which asks for "in 1 hour" at sixty
+# minutes. Measured 2026-09-14: 7,219 passed, exactly these two failed.
+[[guard]]
+name = "the future wording chooses hours where the past one would"
+file = "src/presentation/date_display.rs"
+before = """    if minutes < 60 {
+        return Some((Message::InMinutes, Some(minutes)));
+    }"""
+after = """    if minutes < 120 {
+        return Some((Message::InMinutes, Some(minutes)));
+    }"""
+red = [
+    "presentation::date_display::tests::test_how_soon_is_said_in_the_catalogues_words",
+    "presentation::date_display::tests::test_which_sentence_a_moment_ahead_gets_and_the_count_that_goes_in_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/date_display.rs", tests = 47 },
 ]
