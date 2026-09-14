@@ -386,6 +386,14 @@ run; no allowance was added.
 
 **8. `roadmap update-plan-progress` was not run**, on the standing note that it
 is broken; `ROADMAP.md` and `STATE.md` were edited by hand and the diff read.
+Reading the diff was not enough: the progress table's row for phase 6 still
+said 3/8, and `test_the_roadmap_counts_the_files_that_are_on_disk` refused the
+docs commit until it said 4/8. A guard nobody had to remember caught what
+reading had missed, which is the argument this project keeps making for them.
+
+**9. The docs commit went through plain `git commit`**, not the SDK's commit
+wrapper, because the wrapper's own timeout has twice killed this project's
+hook mid-run and left an index lock, and the docs-only gate takes minutes.
 
 ## Threat register
 
