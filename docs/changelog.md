@@ -25,6 +25,43 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   value, because a check that said a written count equals today's count would
   be false the next time somebody added a test.
 
+- **A figure on any page says when it was taken and by what.** A count of
+  tests, records, mutants or lines, a coverage percentage, or a duration of
+  the gate, the suite or the sweep, on any page under `docs/`, in `README.md`
+  or in `CLAUDE.md`, now sits beside a date and a command or a named source,
+  or says it is a target. A check reads every such page on every commit and
+  names the figure that lacks either. Its first run named thirteen figures on
+  three pages, and each was corrected by adding the date of the run it
+  describes, never by changing the figure. The test count on the status page
+  and the integration guide is now the value of a row on the measurements
+  page, 7,697 tests on 2026-09-14 (7,245 in the library, 452 under `tests/`),
+  and a second check holds those pages to that page rather than to each
+  other. The changelog and `docs/plans/` are not read: their figures are dated
+  by their headings and file names.
+
+  The sentence that gave the start of red/green as two absolutes, the
+  commit's position and how many commits there were on the day it was
+  written, which the status page, `CLAUDE.md`, the mutation configuration
+  and the mutation script all carried, is gone from all four. Both numbers were true when
+  written and are still true; the share they implied was 53% then and is
+  under 9% now, and nothing could have failed because neither number moved.
+  A check now computes the share from the history on every commit and prints
+  it with the day, and each of the four places names the check and the share
+  as of the day it was corrected. The two planning records that also carry
+  the sentence are records of their day and are left as written.
+
+  Twelve figures in prose that restate a limit the code holds are now held
+  to it on every commit: the six cache sizes on the privacy page, the
+  picture size on the shortcuts page, the four sound-scheme caps in the
+  earcon plan, and the attachment limit on the roadmap. One disagreed. The
+  roadmap ticked "Attachment size warnings (>10MB)", and there was never a
+  warning at 10 MB: the compose window says, as each file is added, when the
+  attachments once encoded come to more than 25 MB, which is the limit most
+  providers refuse past. The line now says that. The privacy page said the
+  update download "is roughly 12 MB today"; no release has been published,
+  so nothing has measured it, and the page now says the size is a target
+  until a release exists to measure.
+
 - **A page listing what only a person can check**, [the manual accessibility
   pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
   of disability the project's rules name, each saying which screen reader or

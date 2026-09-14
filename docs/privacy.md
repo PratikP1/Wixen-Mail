@@ -414,7 +414,10 @@ somebody at your address downloaded this version of Wixen Mail.
 what is sent, it is a plain fact about what turns up, and it deserves saying on its own.
 If you have chosen a kind of version under "Tell me about new versions", then when a newer
 one is published Wixen Mail downloads its installer on its own, without asking you at that
-moment. It is roughly 12 MB today. It goes in `%LOCALAPPDATA%\wixen-mail\updates`. It is
+moment. How large that download is has not been measured, because no release has been
+published yet; the target is about 12 MB, and this sentence will give the measured size
+with its date once there is a release to measure. It goes in
+`%LOCALAPPDATA%\wixen-mail\updates`. It is
 removed when the update is installed, removed straight away if it turns out not to be signed
 by this project, and removed again the next time Wixen Mail starts. If the setting is left on
 "Do not look for new versions", none of this ever happens.

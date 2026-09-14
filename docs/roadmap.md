@@ -135,7 +135,7 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Attachments
 - [x] Add/remove attachments with file picker
-- [x] Attachment size warnings (>10MB)
+- [x] A warning when the attachments, once encoded for sending, come to more than 25 MB, spoken as each file is added. The limit is `LIMIT_BYTES` in `src/application/attaching.rs`, and a check holds this line to it. This line said "Attachment size warnings (>10MB)" until 2026-09-14; there was never a warning at 10 MB.
 - [x] MIME type detection
 - [ ] Drag-and-drop insertion
 - [ ] Inline image insertion

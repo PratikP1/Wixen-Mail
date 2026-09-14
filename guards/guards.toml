@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 592 records have arrived since and have not been through it.
+# 598 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21426,5 +21426,166 @@ red = [
     "test_the_reading_can_see_a_row_whose_date_is_missing",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 10 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# ── Phase 8, plan 02: a figure on any page carries its date and its source ──
+#
+# The provenance reading walks docs/, README.md and CLAUDE.md, less the
+# changelog and docs/plans/, and requires a count, a percentage or a duration
+# to sit in a paragraph with a date and a command or named source. The break
+# is the date taken off a narrative in CLAUDE.md: the day 01-02's writer
+# record was written, which is the only date in its paragraph. Five go red
+# for the reason the record above gives: the four companions that splice a
+# figure into the README assert the real walk is clean first.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 14
+# passed and exactly these five failed.
+[[guard]]
+name = "a figure on a page cannot lose the date it was taken"
+file = "CLAUDE.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """it was written on 2026-08-30, 17 a day later, 21 the day after, and 31 by the"""
+after = """it was written, 17 a day later, 21 the day after, and 31 by the"""
+red = [
+    "test_every_figure_on_a_page_carries_its_date_and_its_source",
+    "test_the_provenance_reading_can_see_a_count_without_a_date",
+    "test_the_provenance_reading_can_see_a_duration_without_a_source",
+    "test_the_provenance_reading_can_see_a_percentage_without_a_date",
+    "test_the_provenance_reading_excuses_a_line_that_names_a_target",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# A line that says `target` is stating an aim and is excused from the date. The
+# break takes the word off the one such line in the tree, the coverage aim in
+# docs/architecture.md, so the reading sees a bare percentage. The same five
+# as the record above, for the same reason.
+#
+# Measured by hand on 2026-09-14 against the target: 14 passed and exactly
+# these five failed, each naming `docs/architecture.md:400`.
+[[guard]]
+name = "the word target is the only thing excusing a figure from its date"
+file = "docs/architecture.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """- High code coverage (target: 80%+)"""
+after = """- High code coverage (aim: 80%+)"""
+red = [
+    "test_every_figure_on_a_page_carries_its_date_and_its_source",
+    "test_the_provenance_reading_can_see_a_count_without_a_date",
+    "test_the_provenance_reading_can_see_a_duration_without_a_source",
+    "test_the_provenance_reading_can_see_a_percentage_without_a_date",
+    "test_the_provenance_reading_excuses_a_line_that_names_a_target",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# The agreement reading holds a test count on the three pages that state one
+# to a row on the measurements page. The break moves the status page's count
+# one off the row's value. Two go red: the reading, and the companion that
+# asserts the pages agree before it plants a count no row holds. The
+# provenance companions stay green because the paragraph keeps its date and
+# its command.
+#
+# Measured by hand on 2026-09-14 against the target: 17 passed and exactly
+# these two failed.
+[[guard]]
+name = "a test count on a page is the value of a row on the measurements page"
+file = "docs/IMPLEMENTATION_STATUS.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """7,697 tests: 7,245 unit tests and 452 integration tests, counted 2026-09-14 at"""
+after = """7,698 tests: 7,245 unit tests and 452 integration tests, counted 2026-09-14 at"""
+red = [
+    "test_the_agreement_reading_can_see_a_count_no_row_holds",
+    "test_the_three_pages_that_state_the_test_count_quote_one_row",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# The share of history before red/green is computed on every commit, and no
+# site states it as two absolutes any more. The break puts the two-absolutes
+# form back into scripts/mutants.sh in the shape it really had there, the
+# count at the end of one comment line and the total behind the `#` of the
+# next, which is the shape a line grep never saw. Three go red: the check, and
+# the two companions, each of which asserts the four sites are clean before it
+# plants its own form.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 19 passed
+# and exactly these three failed, each naming `scripts/mutants.sh:9`.
+[[guard]]
+name = "no site states the share of history before red/green as two absolutes"
+file = "scripts/mutants.sh"
+suite = "every_number_carries_its_command_and_its_date"
+before = """# This project needs to know the difference. Red/green started at 18a02454 on
+# 2026-07-26, so most of the tests here were written after the code they cover,"""
+after = """# This project needs to know the difference. Red/green started at commit 182 of
+# 344 on 2026-07-26, so most of the tests here were written after the code they cover,"""
+red = [
+    "test_the_ratio_reading_can_see_the_one_line_form",
+    "test_the_ratio_reading_can_see_the_wrapped_form",
+    "test_the_share_of_history_before_red_green_is_computed_and_printed",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# A figure in prose that restates a constant the code holds is held to it.
+# The break moves the privacy page's largest-attachment figure by one
+# megabyte, so the page says 26 where LARGEST_ATTACHMENT_KEPT_BYTES says 25.
+# Three go red: the reading and its two companions, each of which asserts the
+# twelve pairs agree before it moves a figure or removes a phrase.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test every_number_carries_its_command_and_its_date`: 22 passed
+# and exactly these three failed.
+[[guard]]
+name = "a page cannot restate a constant with a figure the code does not hold"
+file = "docs/privacy.md"
+suite = "every_number_carries_its_command_and_its_date"
+before = """share the computer or carry it around. A single file is kept up to 25 MB, and all of them"""
+after = """share the computer or carry it around. A single file is kept up to 26 MB, and all of them"""
+red = [
+    "test_every_figure_that_restates_a_constant_agrees_with_it",
+    "test_the_constants_reading_can_see_a_figure_that_moved",
+    "test_the_constants_reading_refuses_a_phrase_that_has_gone",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# The same rule from the other side: the constant moves and the page does not.
+# The break lands on source, which is the point of the record: it couples
+# src/data/message_cache/attachment_content.rs to this target, so a commit
+# that changes the constant runs the reading that holds the page to it. The
+# same three go red.
+#
+# What the whole library said under the same break is worth writing down.
+# `cargo test --lib -- --test-threads=8` on 2026-09-14: 7,244 passed, none
+# failed, 73 s. No unit test pins the constant's value; the tests beside it
+# are written relative to it, `LARGEST_ATTACHMENT_KEPT_BYTES + 1`, and stay
+# green at any size. So this target's reading is the only thing in the tree
+# that holds the number, and there is no library-suite record to write
+# beside this one because a record whose red list is empty measures nothing.
+#
+# Measured by hand on 2026-09-14 against the target: 22 passed and exactly
+# these three failed.
+[[guard]]
+name = "a constant cannot move away from the page that restates it"
+file = "src/data/message_cache/attachment_content.rs"
+suite = "every_number_carries_its_command_and_its_date"
+before = """pub const LARGEST_ATTACHMENT_KEPT_BYTES: i64 = 25 * 1024 * 1024;"""
+after = """pub const LARGEST_ATTACHMENT_KEPT_BYTES: i64 = 26 * 1024 * 1024;"""
+red = [
+    "test_every_figure_that_restates_a_constant_agrees_with_it",
+    "test_the_constants_reading_can_see_a_figure_that_moved",
+    "test_the_constants_reading_refuses_a_phrase_that_has_gone",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/attachment_content.rs", tests = 22 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
 ]

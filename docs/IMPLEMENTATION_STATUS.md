@@ -168,10 +168,13 @@ reported the system's name for those controls and never the one the code set,
 and every `set_accessible_name` call in the tree could have been deleted without
 it noticing.
 
-5,430 tests pass: 5,269 unit and 161 integration, counted 2026-08-29 with
-`cargo test --all-targets -- --list`. The previous figure here, 3,362 from
-2026-08-09, is what a number without its command and its date turns into.
-Several are fuzz tests over generated hostile
+7,697 tests: 7,245 unit tests and 452 integration tests, counted 2026-09-14 at
+`a42331bb` with `cargo test --all-targets -- --list`, three rows on
+`docs/development/measurements.md`, which is the page every count here is
+quoted from. This paragraph said 5,430 (5,269 unit, 161 integration, counted
+2026-08-29 the same way) until 2026-09-14, and before that the figure here was
+3,362 from 2026-08-09, which is what a number without its command and its date
+turns into. Several are fuzz tests over generated hostile
 input, covering the HTML renderer, the calendar-document parsers, OAuth token
 expiry, and account validation.
 
@@ -211,8 +214,13 @@ CalDAV accounts.
 
 ## Which tests would fail if the code were wrong
 
-Red/green started at commit 182 of 344, so many of the older tests here were
-written after the code they cover. A test written that way describes what the
+Red/green started at commit `18a02454` on 2026-07-26, so many of the older
+tests here were written after the code they cover. How much of the history
+predates that commit is computed and printed on every commit by
+`test_the_share_of_history_before_red_green_is_computed_and_printed` in
+`tests/every_number_carries_its_command_and_its_date.rs`: 8.9% on 2026-09-14,
+where this line gave two absolutes that came to 53% when it was written on
+2026-07-29. A test written that way describes what the
 code does rather than specifying what it should do, and cannot fail for the bug
 it was written alongside. Mutation testing measures the difference: it alters
 the code and reruns the suite, and reports anything nothing caught.
@@ -233,10 +241,12 @@ two dead-code passes.
 
 A later sweep, on 2026-08-01, took the message filters, due dates, tagging and
 signatures modules through the same measurement: 157 mutants, 141 caught, 16
-that would not compile, and none missed.
+that would not compile, and none missed. The run is the first row of the
+progress table in `docs/plans/20260801-mutation-sweep.md`.
 
-On 2026-08-12, at commit 0bc0614, the four modules that decide what becomes of
-somebody's copy of a message were measured for the first time: where a deleted
+On 2026-08-12, at commit `0bc0614`, the four modules that decide what becomes of
+somebody's copy of a message went through `scripts/mutants.sh` for the first
+time: where a deleted
 message may go, the copy of a draft kept at the server, the copy of a sent
 message, and what the list does once the server has answered a delete. 66
 mutants, 53 caught, 1 missed, 12 that would not compile, none timed out. The

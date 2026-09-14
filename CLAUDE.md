@@ -362,10 +362,19 @@ genuinely wrong for this case, add the allow with a comment saying why.
 
 A green suite says the code does what the tests say. It does not say the tests
 would notice if it stopped, and those are different claims. Red/green is what
-keeps them together, and it started at commit 182 of 344, so most of the tests
-here were written after the code they cover and describe it rather than specify
-it. Three tests written in one session to catch a named bug passed against that
-bug.
+keeps them together, and it started at `18a02454` on 2026-07-26, the commit
+that added this file. How much of the history predates that commit is
+computed on every commit by
+`test_the_share_of_history_before_red_green_is_computed_and_printed` in
+`tests/every_number_carries_its_command_and_its_date.rs`, which prints it
+with the day: 8.9% on 2026-09-14. This sentence used to give the share as two
+absolutes, the commit's position and the count on the day it was written,
+which was 53% on 2026-07-29 and stayed word for word true while the share
+fell. Most tests here were still written after the code they cover, because
+red/green began after most of the early work, and they describe it rather
+than specify it; that is a claim about tests, which no commit count settles
+either way. Three tests written in one session to catch a named bug passed
+against that bug.
 
 ```bash
 scripts/mutants.sh src/service        # one directory, slow
@@ -413,8 +422,8 @@ stale records, one that had fallen behind within the same day and one within the
 same session. The cause is always the same and never announces itself: a later
 change adds tests that reach a rule an existing record is about, so the record
 now names too few, and nothing fails. `01-02`'s writer record named 5 tests when
-it was written, 17 a day later, 21 the day after, and 31 by the end of the
-phase. So: **any change that adds tests near a rule re-measures that rule's
+it was written on 2026-08-30, 17 a day later, 21 the day after, and 31 by the
+end of the phase. So: **any change that adds tests near a rule re-measures that rule's
 record.** The filter you would naturally pick for your own subject is not
 enough. One record turned out to redden nine tests, two of them in a module
 nobody working on that feature would have filtered for.
@@ -449,8 +458,8 @@ rather than to lower the check.
 **Count records, not mentions, and do not use a ratio to convert between them.**
 This file used to say a grep for a file name overcounts by roughly two, and ten
 plans were misled by quoting a grep. The ratio is not two and it is not stable: on
-the same tree, `grep -c contacts_sync guards/guards.toml` answers 363 against the
-77 records that really name it in a `tests_last_seen` block, which is nearly five
+the same tree, on 2026-09-06, `grep -c contacts_sync guards/guards.toml` answered
+363 against the 77 records that really named it in a `tests_last_seen` block, which is nearly five
 to one, because a file appears in a record's `file`, its `before`, its `after`,
 its `red` list and its prose comment as well. Parse the `tests_last_seen` blocks:
 
@@ -499,8 +508,9 @@ not have to be caught before a merge.
 So: the executor does not run guards, the merge does not run guards, and neither
 does anything after a merge. **One sweep, once every phase is complete.** That is
 a decision of 2026-09-03 and not a measurement. Nothing about a sweep gets
-cheaper by happening sooner, and a sweep per merge spent about 90 minutes of
-every branch to find, across the last 220 records measured, one problem.
+cheaper by happening sooner, and a sweep per merge, `scripts/guards.sh` scoped
+to the branch, spent about 90 minutes of every branch to find, across the last
+220 records measured by then, one problem.
 
 What holds the line in between is not the sweep, and saying which checks do the
 work matters more than the rule itself. On every commit,
@@ -533,11 +543,12 @@ and 536, none of them dated, in a file whose whole argument is that a measuremen
 without a date perishes. Phase 6 and phase 8 research both went to count and found
 617, on 2026-09-06 against `main` at `485030f`.
 
-At that size the sweep is about **20 hours**, not the 15 this used to say. The
-figure moved for two reasons at once: 52 more records, and a library that grew to
-roughly 6,000 test functions, which puts the per-record cost nearer 119 seconds
-than the 112 the old number assumed. Both terms go on moving, so multiply the
-count you take today by a rate you measure today.
+At that size, on 2026-09-06, the sweep was about **20 hours**, not the 15 this
+used to say. The figure moved for two reasons at once: 52 more records, and a
+library that had grown to roughly 6,000 test functions, which put the per-record
+cost nearer 119 seconds than the 112 the old number assumed. Both terms go on
+moving, so multiply the count you take today by a rate you measure today; the
+product row on `docs/development/measurements.md` is where the latest pair is.
 
 **The rate halved on 2026-09-09 and the twenty hours above now overstates it.**
 A record costs one rebuild plus one whole-library run, and the library run
@@ -553,7 +564,9 @@ artefact is the flushed log. A job of that size that cannot be stopped and picke
 up is a scheduling question before it is a technical one.
 
 Scoped to a single branch it was 63 records of the 536 that
-existed then, about 90 minutes, for plan 02-01. Narrowing that to modules which
+existed then, about 90 minutes, for plan 02-01 on 2026-08-31, counting the
+records in `guards/guards.toml` that named a test in a module the plan
+changed. Narrowing that to modules which
 actually gained a test only reached 52, because one large shared file gained
 tests and many records name a test in it, so there is no clever selection that
 makes a scoped run quick either.
@@ -566,8 +579,9 @@ is contended rather than compute-bound, which is unchanged; where the contention
 bites is not.
 
 The figures this paragraph used to give were taken on 2026-08-30 over 5,837
-tests: 2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, one per
-core 196s. They put the best at four. **The suite grew past that and the default
+tests, `cargo test --lib` with `WIXEN_TEST_THREADS` set to each value in turn:
+2 threads 131s, 4 threads 88s, 8 threads 106s, 16 threads 164s, one per core
+196s. They put the best at four. **The suite grew past that and the default
 went on costing about 13% of every guard run, for an unknown number of weeks,
 with nothing failing.** That is this file's own rule about dated measurements
 arriving as a bill: read the numbers above as a snapshot of one machine and one
@@ -591,7 +605,7 @@ than the gap between eight and sixteen.
 
 **One setting is not enough, and that was measured too.** A *scoped* run is
 contended harder than a whole-library one, because there is less work to spread
-against the same contention. Measured the same day against
+against the same contention. Measured the same day, 2026-09-09, against
 `application::tasks_sync::`, 111 tests: 14s at the harness default, 4s at four
 threads, 6s at eight. So `scripts/check.sh` pins the scoped `--lib` run to four
 while the guard runs use eight.
@@ -623,7 +637,7 @@ no test here covered anyway.
 
 Two things this cost before it existed, both worth remembering because they are
 the same shape as the CRLF break above. **A crash is not a failing test.** The
-run died partway and about 3,500 tests after it never ran, while the summary
+run, on 2026-09-03, died partway and about 3,500 tests after it never ran, while the summary
 named two, so the number that mattered was the one nothing reported. And
 **fixing the tests a grep finds is not fixing the class**: four in
 `feedback.rs` were corrected, the next run crashed on one in

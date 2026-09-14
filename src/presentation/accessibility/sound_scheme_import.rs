@@ -23,22 +23,26 @@ use std::time::Duration;
 /// Refused above this size, before the zip is even opened.
 ///
 /// Generous enough for dozens of short clips; a working number from the
-/// plan, not a measured one.
-const MAX_ZIP_BYTES: u64 = 20 * 1024 * 1024;
+/// plan, not a measured one. Public so that the reading in
+/// `tests/every_number_carries_its_command_and_its_date.rs` can hold the
+/// figure the plan document states to this one.
+pub const MAX_ZIP_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Refused above this size for any one file the import reads out of the
 /// zip, manifest included. A short earcon, or a manifest naming one, has no
-/// legitimate reason to be anywhere near this large.
-const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+/// legitimate reason to be anywhere near this large. Public for the same
+/// reading as [`MAX_ZIP_BYTES`].
+pub const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 
 /// Refused above this size summed across every file the import reads out
 /// of the zip. Guards a pack built from many files that each individually
-/// pass [`MAX_FILE_BYTES`].
-const MAX_TOTAL_BYTES: u64 = 50 * 1024 * 1024;
+/// pass [`MAX_FILE_BYTES`]. Public for the same reading as [`MAX_ZIP_BYTES`].
+pub const MAX_TOTAL_BYTES: u64 = 50 * 1024 * 1024;
 
 /// Refused above this length. Earcons are short by definition; a "sound"
-/// that runs longer than this is not one.
-const MAX_SOUND_DURATION: Duration = Duration::from_secs(2);
+/// that runs longer than this is not one. Public for the same reading as
+/// [`MAX_ZIP_BYTES`].
+pub const MAX_SOUND_DURATION: Duration = Duration::from_secs(2);
 
 /// Import a sound-scheme pack from the zip at `zip_path`, writing it into
 /// `schemes_dir/<id>/` on success.

@@ -2,9 +2,11 @@
 
 _Rewritten 2026-08-29. The previous version was a three-phase build plan from
 early in the project. All three phases finished, but the document went on
-describing Phase 1 as in progress, counted 64 tests against the 5,430 that run
-today, and ticked a 95% coverage target that was never met. It is kept as a
-record of how the layers were joined, not as a plan._
+describing Phase 1 as in progress, put the count of tests at 64 when 5,430 ran
+on the day it was rewritten (7,697 tests on 2026-09-14, the row on
+`docs/development/measurements.md`, which is where the count is kept), and
+ticked a 95% coverage target that was never met. It is kept as a record of how
+the layers were joined, not as a plan._
 
 This is not a guide to integrating anything with Wixen Mail. Wixen Mail is a
 desktop application, not a library, and nothing here is a public interface. If
