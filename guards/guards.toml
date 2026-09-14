@@ -5173,7 +5173,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/status_line.rs", tests = 2 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
@@ -5212,7 +5212,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── What the tag, signature, filter and contact windows answer ──────────────
@@ -7834,7 +7834,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── One owner for what a manager window says about a changed row ────────────
@@ -7901,7 +7901,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── A changed day of a CalDAV series has to be marked seen before it can be
@@ -8308,7 +8308,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 [[guard]]
@@ -8324,7 +8324,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── A server that never answers is waited for off the window's thread, but ──
@@ -11121,7 +11121,7 @@ red = [
     "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -12460,7 +12460,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 [[guard]]
@@ -13312,7 +13312,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -17535,7 +17535,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18870,7 +18870,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -20219,7 +20219,7 @@ red = [
     "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 # Nothing published reading as up to date, which is T-07-19 in one line. The

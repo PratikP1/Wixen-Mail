@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 use wixen_mail::common::types::Protocol;
 use wixen_mail::data::account::Account;
+use wixen_mail::data::config::ConfigManager;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_account_manager::{
     AccountEditWidgets, advance_to_connection_page, build_account_edit_dialog,
@@ -83,6 +84,12 @@ fn expect_no_connection_field_shown(name: &'static str, w: &AccountEditWidgets, 
         ("password", &w.pass_f),
         ("check interval", &w.interval_f),
         ("enabled", &w.enabled),
+        ("send and delete mail from this account", &w.allow_mail_here),
+        (
+            "change tasks, contacts and calendar from this account",
+            &w.allow_personal_information_here,
+        ),
+        ("fetch message text for this account", &w.allow_reading_here),
         ("directory address", &w.directory_url_f),
         ("where in the directory to look", &w.directory_base_f),
     ] {
@@ -186,6 +193,56 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 true,
                 &mut wrong,
             );
+            // What this account may change: three boxes on the connection
+            // page, one per answer in `Allowed`, each carrying its own label
+            // on the control rather than on a StaticText beside it, so the
+            // name reaches UI Automation and MSAA both. A box is unavailable
+            // exactly where Settings has that answer off for every account,
+            // because a per-account answer can only narrow. What Settings
+            // says is read the same way the dialog reads it, so this holds
+            // whatever the machine running it has stored.
+            let everywhere = ConfigManager::load_stored()
+                .expect("the stored settings")
+                .app_config()
+                .allowed_changes;
+            for (name, field, allowed_everywhere) in [
+                (
+                    "connection page: send and delete mail from this account",
+                    &w.allow_mail_here,
+                    everywhere.mail,
+                ),
+                (
+                    "connection page: change tasks, contacts and calendar from this account",
+                    &w.allow_personal_information_here,
+                    everywhere.personal_information,
+                ),
+                (
+                    "connection page: fetch message text for this account",
+                    &w.allow_reading_here,
+                    everywhere.reading,
+                ),
+            ] {
+                expect_shown(name, field, true, &mut wrong);
+                let label = field.get_label().unwrap_or_default();
+                if !label.contains("this account") || !label.contains('&') {
+                    wrong.push((
+                        name,
+                        format!("label does not name the account or carry an Alt key: {label:?}"),
+                    ));
+                }
+                if field.is_enabled() != allowed_everywhere {
+                    wrong.push((
+                        name,
+                        format!(
+                            "enabled: {}, and Settings allows it for every account: {allowed_everywhere}",
+                            field.is_enabled()
+                        ),
+                    ));
+                }
+                if !allowed_everywhere && !label.contains("cannot be turned on here") {
+                    wrong.push((name, format!("unavailable and does not say so: {label:?}")));
+                }
+            }
             expect_shown("connection page: Next hidden", &w.next, false, &mut wrong);
             expect_shown("connection page: Back shown", &w.back, true, &mut wrong);
             expect_shown("connection page: OK shown", &w.ok, true, &mut wrong);

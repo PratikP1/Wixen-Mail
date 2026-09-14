@@ -243,12 +243,14 @@ pub const MESSAGE_TEXT_NOTE: &str = "This is on unless you turn it off. Mail alr
 /// separately, and only one of them was ever corrected: the calendar read out
 /// "1 changes are waiting here ... to send them".
 ///
-/// It names Settings and not the account. There is one answer for the whole
-/// application and the settings screen is the only thing that writes it:
-/// `AppConfig::allowed_per_account` is read and honoured, and nothing outside
-/// its own tests has ever written one. Saying "for this account" sent somebody
-/// looking for a control that is not there, and hid the part that matters,
-/// which is that turning it on turns it on for every account they have.
+/// It names Settings and not the account. When this was written nothing wrote
+/// `AppConfig::allowed_per_account`, and saying "for this account" sent
+/// somebody looking for a control that was not there. The account edit dialog
+/// writes one now, and the sentence still names Settings only, because it has
+/// one owner and no account in hand, so it cannot say which of the two held
+/// the change. The dialog says so beneath its boxes. Naming both places here
+/// is a change to every test that pins these words, and is its own piece of
+/// work.
 ///
 /// Both numbers are written out whole rather than built from a stem and an
 /// "s". Three words have to agree, and a sentence assembled from fragments
@@ -606,12 +608,11 @@ mod tests {
 
     #[test]
     fn test_a_waiting_change_names_the_one_place_that_can_send_it() {
-        // Allow Changes is one answer for the whole application: the settings
-        // screen writes that one, and nothing writes an answer for a single
-        // account. The sentence said to turn it on "for this account", which
-        // sent somebody looking for a control that is not there and hid the
-        // part that matters, which is that turning it on turns it on for every
-        // account they have.
+        // The sentence once said to turn it on "for this account", when no
+        // screen wrote an answer for one, and sent somebody looking for a
+        // control that was not there. The account dialog writes one now; the
+        // sentence still names Settings alone, for the reason on
+        // `changes_waiting_here`, and this pins that it does.
         assert_eq!(
             changes_waiting_here(1),
             "1 change is waiting here: turn on Allow Changes in Settings to send it"

@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **One account can be allowed less than the others.** The account window's
+  connection page has three new boxes under "Allow Changes for this account":
+  whether this account may send and delete mail, whether it may change your
+  tasks, contacts and calendar, and whether it may fetch the text of a message
+  that is not already stored. Each starts as whatever Settings allows for every
+  account. Untick one and it stops for this account only, so you can keep a
+  real account read-only while another one is tried against a server. A box
+  can only ever allow less than Settings does, never more: where Settings has
+  an answer off for every account, the box here is unavailable and says so,
+  and names the heading in Settings to go to. Wixen Mail has honoured a
+  per-account answer for some time; this is the first screen that lets you
+  give one.
+
+  **Known limitations.** Nobody has heard these boxes with a screen reader
+  yet. None of the sending, deleting and syncing this permission governs has
+  ever run against a real account, so what unticking a box holds back has only
+  ever been held back in tests. When one of these boxes is holding a change,
+  the sentence the sync says still tells you to turn on Allow Changes in
+  Settings, and does not say "for this account": that sentence has one owner
+  and does not yet know which of the two held it. The note beneath the boxes
+  says so.
+
 - **The day names in a repeating appointment, and the date in a message about
   a signature, now follow your computer too.** "Every week on Tuesday and
   Thursday" names the days the way your computer does, and "A timestamp says
