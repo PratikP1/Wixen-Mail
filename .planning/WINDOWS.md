@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 365
+open_count: 371
 waived_count: 0
-fixed_count: 22
-total_count: 387
-last_updated: 2026-09-14T10:10:12.940Z
+fixed_count: 23
+total_count: 394
+last_updated: 2026-09-14T11:33:50.327Z
 ---
 
 # Broken Windows Ledger
@@ -398,10 +398,17 @@ last_updated: 2026-09-14T10:10:12.940Z
 | 381 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | The reminder window's tone comes back once a minute until focus reaches it, ten times at most, on RepeatingTone, which is tested against handed-in instants. Nobody has heard it come back, nobody has judged whether ten tones a minute apart reads as being looked after or as being nagged, and the timer's reading of has_focus on the three buttons and the snooze Choice has never been watched in a running build; on Windows it should be false while another application is in front and true the moment somebody comes to the dialog, and that is a claim about the toolkit rather than a measurement. | open |  | 2026-09-14T09:31:07.724Z |  |
 | 382 | 06 | unrun-verify | src/presentation/accessibility/screen_reader.rs |  | Whether a screen reader speaks the reminder sentence while another application is in front is unchecked. UiaRaiseNotificationEvent does not move focus, and NVDA speaks notifications from the foreground process, so a person in Word when a reminder is due may hear only the tone; that is why the tone repeats, and nobody has confirmed either half by ear. | open |  | 2026-09-14T09:31:08.142Z |  |
 | 383 | 06 | deviation | src/presentation/wx_reminder_alert.rs |  | After a hold, the gap between the reminder's own tone and the window's first repeat is two minutes rather than one: say sounds at the look that finds the reminder, the window opens a look later, and RepeatingTone counts its minute from the window opening because raise is told only that the sentence was already said, not when. A window that opens at once has the one-minute gap the plan describes. Handing raise the instant of the say would close it and was not built, because 06-09 replaces this window and its opening. | open |  | 2026-09-14T09:31:08.544Z |  |
-| 384 | 06 | unmet-truth | .github/workflows/accessibility.yml |  | The scan still fetches releases/latest of Axe.Windows on every run, so the rule set a coverage list describes is whatever Microsoft shipped that morning and can change with no commit here. Pinning is 06-06 task 2, behind a checkpoint Pratik has not answered; until then 06-07's list must carry the version it was read against and the date. | open |  | 2026-09-14T10:10:11.730Z |  |
+| 384 | 06 | unmet-truth | .github/workflows/accessibility.yml |  | The scan still fetches releases/latest of Axe.Windows on every run, so the rule set a coverage list describes is whatever Microsoft shipped that morning and can change with no commit here. Pinning is 06-06 task 2, behind a checkpoint Pratik has not answered; until then 06-07's list must carry the version it was read against and the date. | fixed |  | 2026-09-14T10:10:11.730Z | 2026-09-14T11:33:18.715Z |
 | 385 | 06 | todo | scripts/msaa-names.ps1 |  | The MSAA half of the scan, the channel NVDA reads, is read by no test and maps to no gate target: a change to it answers affected on a branch and runs formatting, clippy and the tree guards only. The which-checks rule 06-06 added covers .github/workflows/ and not this script, because there is nothing for a workflow-shaped rule to run for it. A test reading its exit-code contract (0 named, 1 unnamed, 2 walk failed), which the workflow depends on at lines 180 to 184, is the missing half. | open |  | 2026-09-14T10:10:12.157Z |  |
 | 386 | 06 | deviation | scripts/which-checks.test.sh |  | 06-06 task 1 asked for a plain-markdown docs_only case and a plain-Rust affected case as the allow half; both already existed three times over at lines 95 to 103 and a fourth copy proves nothing. Written instead: a .yml outside the workflows folder answers affected and a document inside .github answers docs_only, the two cases that redden under the wrong spellings of the rule, *.yml and .github/*. Same substitution 07-02 made for the .iss rule. | open |  | 2026-09-14T10:10:12.554Z |  |
 | 387 | 06 | deviation | .github/workflows/accessibility.yml |  | 06-06 task 1 said to prove the gate hole by breaking ScanTarget::ALL and watching check.sh pass. That break lives in src/presentation/scan_target.rs, which the gate maps to a scoped target, so it would have run the reading test and gone red: the wrong side of the hole. Measured instead by taking one window out of the workflow's array with the code left alone, which is the change the hole is about. Before the rule: affected, exit 0 in 64s. After: all, exit 101 in 206s, naming blocked-senders. | open |  | 2026-09-14T10:10:12.940Z |  |
+| 388 | 06 | unrun-verify | .github/workflows/accessibility.yml |  | 06-06 task 2 wired thirty scan targets where there were ten and every one opened the window it names on a throwaway profile on this machine, as a listing of the process's top-level windows shows. No CI scan has run on any of them: nothing has been pushed since 2026-09-10, so on both channels each new target is a window somebody has opened and nobody has scanned, until 06-08 reads an artifact. | open |  | 2026-09-14T11:33:47.755Z |  |
+| 389 | 06 | unrun-verify | scripts/msaa-names.ps1 |  | The MSAA walk now enumerates every visible top-level window the process owns rather than .NET's main window, which is never a dialog. Proved against notepad.exe, one window walked with its title leading each path, and against a process that does not exist, exit 2 where the old script exited 1. Not proved against this application on this machine: the walk of any Wixen Mail window crashes pwsh here, see the next entry, so the first dialog this channel reads is the one CI reads. | open |  | 2026-09-14T11:33:48.209Z |  |
+| 390 | 06 | todo | scripts/msaa-names.ps1 |  | Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass. | open |  | 2026-09-14T11:33:48.643Z |  |
+| 391 | 06 | deviation | .github/workflows/accessibility.yml |  | 06-06 task 2 added --alwayssavetestfile to the Axe.Windows call, which the plan did not name. The CLI's own --help says the test file is saved only if errors are found, so the workflow's no-file-means-broken check reported seven of eleven clean windows as scans that failed on 2026-09-10, each a line after the CLI printed 0 errors were found. Rule 1: the distinction the workflow exists to make was inverted for the clean case. | open |  | 2026-09-14T11:33:49.055Z |  |
+| 392 | 06 | deviation | scripts/msaa-names.ps1 |  | 06-06 task 2 changed scripts/msaa-names.ps1, which the plan did not name: it walks every visible top-level window the process owns instead of .NET's MainWindowHandle, and a failed walk exits 2 instead of terminating at Write-Error under the Stop preference with exit 1, which the workflow read as an unnamed control. Rule 2: the channel NVDA reads had never seen a dialog, measured from the CI log of 2026-09-10 where three dialogs reported the same 1797 elements. | open |  | 2026-09-14T11:33:49.490Z |  |
+| 393 | 06 | deviation | src/presentation/scan_target.rs |  | 06-06 task 2 added mail-module, a thirty-first window beyond the count Pratik answered. With no target given the first-run question opens over the frame on a fresh profile, so main has always been the frame under a modal and the bare main window had never been scanned. Six module targets rather than five, and main left as what it is: the window a fresh profile first meets. | open |  | 2026-09-14T11:33:49.914Z |  |
+| 394 | 06 | todo | src/presentation/wx_app.rs |  | Seventeen dialogs open only from inside another window and are outside the scan after 06-06: the account edit dialog, Confirm Delete in the Calendar window, Check Spelling, Insert Table and Preview Before Send in the composer, the contact edit dialog and its Add Email Address, Add Phone Number, Add Address and Add Custom Field, the rule, filter, tag and signature edit dialogs, the wait-for-an-answer window, choose-from-list, and ask-for-a-name. One entry for the layer rather than one per window because these were not in the count Pratik answered on 2026-09-14, which was of windows with their own entry point; whether they are the next widening is his to say, and 06-07's list should say they are outside. | open |  | 2026-09-14T11:33:50.327Z |  |
 
 ````json
 [
@@ -5008,10 +5015,10 @@ last_updated: 2026-09-14T10:10:12.940Z
     "file": ".github/workflows/accessibility.yml",
     "line": null,
     "description": "The scan still fetches releases/latest of Axe.Windows on every run, so the rule set a coverage list describes is whatever Microsoft shipped that morning and can change with no commit here. Pinning is 06-06 task 2, behind a checkpoint Pratik has not answered; until then 06-07's list must carry the version it was read against and the date.",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-14T10:10:11.730Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-14T11:33:18.715Z"
   },
   {
     "id": 385,
@@ -5047,6 +5054,90 @@ last_updated: 2026-09-14T10:10:12.940Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T10:10:12.940Z",
+    "resolved_at": null
+  },
+  {
+    "id": 388,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "06-06 task 2 wired thirty scan targets where there were ten and every one opened the window it names on a throwaway profile on this machine, as a listing of the process's top-level windows shows. No CI scan has run on any of them: nothing has been pushed since 2026-09-10, so on both channels each new target is a window somebody has opened and nobody has scanned, until 06-08 reads an artifact.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:47.755Z",
+    "resolved_at": null
+  },
+  {
+    "id": 389,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "The MSAA walk now enumerates every visible top-level window the process owns rather than .NET's main window, which is never a dialog. Proved against notepad.exe, one window walked with its title leading each path, and against a process that does not exist, exit 2 where the old script exited 1. Not proved against this application on this machine: the walk of any Wixen Mail window crashes pwsh here, see the next entry, so the first dialog this channel reads is the one CI reads.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:48.209Z",
+    "resolved_at": null
+  },
+  {
+    "id": 390,
+    "kind": "todo",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:48.643Z",
+    "resolved_at": null
+  },
+  {
+    "id": 391,
+    "kind": "deviation",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "06-06 task 2 added --alwayssavetestfile to the Axe.Windows call, which the plan did not name. The CLI's own --help says the test file is saved only if errors are found, so the workflow's no-file-means-broken check reported seven of eleven clean windows as scans that failed on 2026-09-10, each a line after the CLI printed 0 errors were found. Rule 1: the distinction the workflow exists to make was inverted for the clean case.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:49.055Z",
+    "resolved_at": null
+  },
+  {
+    "id": 392,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "06-06 task 2 changed scripts/msaa-names.ps1, which the plan did not name: it walks every visible top-level window the process owns instead of .NET's MainWindowHandle, and a failed walk exits 2 instead of terminating at Write-Error under the Stop preference with exit 1, which the workflow read as an unnamed control. Rule 2: the channel NVDA reads had never seen a dialog, measured from the CI log of 2026-09-10 where three dialogs reported the same 1797 elements.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:49.490Z",
+    "resolved_at": null
+  },
+  {
+    "id": 393,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/presentation/scan_target.rs",
+    "line": null,
+    "description": "06-06 task 2 added mail-module, a thirty-first window beyond the count Pratik answered. With no target given the first-run question opens over the frame on a fresh profile, so main has always been the frame under a modal and the bare main window had never been scanned. Six module targets rather than five, and main left as what it is: the window a fresh profile first meets.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:49.914Z",
+    "resolved_at": null
+  },
+  {
+    "id": 394,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Seventeen dialogs open only from inside another window and are outside the scan after 06-06: the account edit dialog, Confirm Delete in the Calendar window, Check Spelling, Insert Table and Preview Before Send in the composer, the contact edit dialog and its Add Email Address, Add Phone Number, Add Address and Add Custom Field, the rule, filter, tag and signature edit dialogs, the wait-for-an-answer window, choose-from-list, and ask-for-a-name. One entry for the layer rather than one per window because these were not in the count Pratik answered on 2026-09-14, which was of windows with their own entry point; whether they are the next widening is his to say, and 06-07's list should say they are outside.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T11:33:50.327Z",
     "resolved_at": null
   }
 ]
