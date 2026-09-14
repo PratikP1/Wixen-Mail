@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 421
+open_count: 424
 waived_count: 0
 fixed_count: 24
-total_count: 445
-last_updated: 2026-09-14T22:05:28.433Z
+total_count: 448
+last_updated: 2026-09-14T23:50:38.786Z
 ---
 
 # Broken Windows Ledger
@@ -460,6 +460,9 @@ last_updated: 2026-09-14T22:05:28.433Z
 | 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | open |  | 2026-09-14T20:41:09.046Z |  |
 | 444 | 08 | todo | docs/privacy.md | 417 | the privacy page's update download size is a target of about 12 MB and not a measurement, because no release has been published to measure; once one exists, measure the installer, write the size on the page with its date, and add a row to docs/development/measurements.md | open |  | 2026-09-14T21:45:39.956Z |  |
 | 445 | 08 | deviation | docs/integration-guide.md | 5 | the agreement reading holds every figure shaped N tests on the three test-count pages to a row on the measurements page and cannot tell a past count from a present one, so the guide's historical 'counted 64 tests' was reworded to 'put the count of tests at 64' and the convention (a past count on those three pages is not written as N tests) lives in the reading's section comment rather than anywhere a page author would meet it first | open |  | 2026-09-14T22:05:28.433Z |  |
+| 446 | 08 | unrun-verify | tests/the_numbers_the_targets_ask_for.rs |  | The measurement profile's account points at 127.0.0.1 on a closed port so a startup connection would be refused at once, and the connection was never attempted: nothing in the program checks mail on a schedule, so a start dials nothing and the log of every measured run held no WARN or ERROR line. What the application says or shows when a connection is refused was therefore read by nobody in 08-03, and the cold-start and idle figures are for a start that never touches a server. | open |  | 2026-09-14T23:50:37.822Z |  |
+| 447 | 08 | unrun-verify | docs/development/measurements.md |  | Idle memory on the measurements page is idle with a refusable account that was never dialled. Idle on a machine with a real account and a live connection is a different idle: a folder watch, a sync on new mail and a live WebView2 preview all run then and none ran here. The 120 s reading of 391 MB, of which the application process is 56 MB, says nothing about that case, and no real account has ever been used with this program to take it. | open |  | 2026-09-14T23:50:38.308Z |  |
+| 448 | 08 | deviation | docs/development/measurements.md |  | The cold-start row reports the first start after the binary was built on its own as the file-cache-cold figure, 520 ms against the series median of 476 ms. That figure depends on what else the machine had read: the linker had just written the binary so much of it was in the file cache already, and WebView2's own binaries were warm from the earlier runs. A start after a reboot with the disk cold was not taken and would be a different number; the definition says what was measured and this entry says what it does not cover. | open |  | 2026-09-14T23:50:38.786Z |  |
 
 ````json
 [
@@ -5801,6 +5804,42 @@ last_updated: 2026-09-14T22:05:28.433Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T22:05:28.433Z",
+    "resolved_at": null
+  },
+  {
+    "id": 446,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "tests/the_numbers_the_targets_ask_for.rs",
+    "line": null,
+    "description": "The measurement profile's account points at 127.0.0.1 on a closed port so a startup connection would be refused at once, and the connection was never attempted: nothing in the program checks mail on a schedule, so a start dials nothing and the log of every measured run held no WARN or ERROR line. What the application says or shows when a connection is refused was therefore read by nobody in 08-03, and the cold-start and idle figures are for a start that never touches a server.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T23:50:37.822Z",
+    "resolved_at": null
+  },
+  {
+    "id": 447,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "docs/development/measurements.md",
+    "line": null,
+    "description": "Idle memory on the measurements page is idle with a refusable account that was never dialled. Idle on a machine with a real account and a live connection is a different idle: a folder watch, a sync on new mail and a live WebView2 preview all run then and none ran here. The 120 s reading of 391 MB, of which the application process is 56 MB, says nothing about that case, and no real account has ever been used with this program to take it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T23:50:38.308Z",
+    "resolved_at": null
+  },
+  {
+    "id": 448,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "docs/development/measurements.md",
+    "line": null,
+    "description": "The cold-start row reports the first start after the binary was built on its own as the file-cache-cold figure, 520 ms against the series median of 476 ms. That figure depends on what else the machine had read: the linker had just written the binary so much of it was in the file cache already, and WebView2's own binaries were warm from the earlier runs. A start after a reboot with the disk cold was not taken and would be a different number; the definition says what was measured and this entry says what it does not cover.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T23:50:38.786Z",
     "resolved_at": null
   }
 ]

@@ -5727,6 +5727,30 @@ impl WxMailApp {
             frame.show(true);
             tracing::info!("Main frame shown, entering event loop");
 
+            // Fill the module the window opens on. Every other fill comes from
+            // a switch, and a switch to the module already on screen is
+            // refused, so nothing filled this one: the folder tree came up
+            // empty and cached mail was not listed until a sync finished or
+            // somebody switched modules away and back. Found on 2026-09-14 by
+            // a harness waiting for a list that never loaded, on every profile.
+            //
+            // Through the update channel like every other fill, so the tree
+            // and the list are drawn by the handlers that own them. With All
+            // Inboxes chosen as the start, landing the cursor there is what
+            // loads the list; otherwise the tree fills and nothing is chosen,
+            // which is what the setting's own doc comment promises.
+            {
+                let (module, account_id, showing) = {
+                    let s = lock_state(&state);
+                    (
+                        s.active_module,
+                        s.active_account_id.clone(),
+                        s.calendar_showing,
+                    )
+                };
+                load_module_data(module, &message_cache, account_id, &scan_tx, showing);
+            }
+
             // Once, on a fresh installation or an upgrade from before this
             // existed. Somebody already using it still gets told that writing
             // is on and has never been tried against a real account.
@@ -17093,6 +17117,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // a million native calls to render thirty visible lines.
             tracing::info!("Message list now holds {} rows", messages.len());
             tell_the_list_how_many(state, msg_list);
+            // Once per process, the first time rows reach the list: this is
+            // the moment PERF-02's "usable" means, and the harness in
+            // `tests/the_numbers_the_targets_ask_for.rs` reads this line. The
+            // line above is per load; this one is per start, and a folder
+            // change or a sort after it says nothing.
+            if let Some(usable) = crate::common::started::say_usable_once(messages.len()) {
+                tracing::info!("{usable}");
+            }
             // Bring the chosen row back into view, if it is still there and the
             // setting asks for it. Only the viewport moves: the selection is
             // deliberately not touched, because re-selecting would move focus

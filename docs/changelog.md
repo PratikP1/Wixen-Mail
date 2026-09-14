@@ -8,6 +8,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The program says when its message list became usable, once per start.**
+  One line in the log, `the message list is usable: N rows, M ms after
+  start`, written the first time rows reach the list after startup and never
+  again in that process, with the milliseconds counted from the first
+  instruction of `main`. It exists so that "cold start to a usable list" can
+  be measured rather than estimated: a harness in
+  `tests/the_numbers_the_targets_ask_for.rs` builds a profile of exactly 1,000
+  cached messages, starts the release binary against it, reads that line,
+  and reads the memory of the process and of the WebView2 processes under
+  it. The three numbers the roadmap's performance targets asked for, cold
+  start, memory with 1,000 cached messages and idle memory, now have rows on
+  `docs/development/measurements.md`, each with the date, the commit, the
+  version, the machine, the command, and the definition it was taken under.
+  Nothing here says whether a target is met; that judgement is made where
+  the targets are, with the numbers in front of it.
+
+  **Known limitations.** The numbers were taken on one machine on one day
+  and the page says which; another machine gives other numbers. The
+  WebView2 tree, six `msedgewebview2.exe` processes Windows starts for the
+  preview pane, is counted separately and summed, because it is separate: it
+  weighs about 335 MB whether the profile holds 1,000 messages or none, and
+  the application's own process weighs 54 to 57 MB. The usable line reports
+  the first page of the list, 500 rows, because that is what the window
+  opens on; the other 500 are in the cache. The profile's account was never
+  dialled, because nothing checks mail on a schedule, so what a start costs
+  with a live connection is not measured here.
+
 - **One page for every figure about this tree**,
   `docs/development/measurements.md`. How many guard records there are, how
   many mutants the configuration allows, how many tests the library builds,
@@ -468,6 +495,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with no icon at all and Windows drew the generic one everywhere.
 
 ### Fixed
+
+- **The folder tree and the message list are filled at startup.** They were
+  not: every fill of a module came from switching to it, and switching to the
+  module the window already shows is refused, so the mail module the window
+  opens on was filled by nothing. The folder tree came up empty and cached
+  mail was not listed until a mail check finished or somebody switched to
+  another module and back, on every profile since 2026-07-26. Found on
+  2026-09-14 by a harness that waited a minute for a list that never loaded,
+  and confirmed against a real profile's own log. The window now fills the
+  module it opens on once the frame is shown; with "start in All Inboxes"
+  on, that also lands the cursor there and lists the mail, and with it off
+  the tree fills and nothing is chosen, which is what that setting always
+  promised.
 
 - **The message editor's page is called "Message body", not its own source.**
   The composer's editor is a browser engine showing a page this program

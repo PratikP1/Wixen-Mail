@@ -22,6 +22,8 @@ pub mod logging;
 /// every module that reads one.
 pub mod moment;
 pub mod paths;
+/// When this process started, and the line it writes once its list is usable.
+pub mod started;
 /// A value and the temporary folder it lives in, removed together.
 #[cfg(test)]
 pub mod temp_home;

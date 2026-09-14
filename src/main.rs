@@ -4,15 +4,21 @@ use wixen_mail::application::handover::{HowToStart, how_to_start};
 use wixen_mail::application::running::Claim;
 use wixen_mail::common::logging::{LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
-use wixen_mail::common::version;
+use wixen_mail::common::{started, version};
 use wixen_mail::presentation::WxMailApp;
 use wixen_mail::presentation::accessibility::platform_bridge;
 use wixen_mail::presentation::command_line::{self, Command};
 use wixen_mail::presentation::scan_target;
 
 fn main() {
-    // Install a panic hook FIRST so crashes are always captured to a file,
-    // even when running as a GUI app with no console.
+    // The first instruction, before the panic hook, because the cold-start
+    // figure is measured from here and a start measured after the hook leaves
+    // the hook out. Taking an instant cannot panic, so nothing is lost by
+    // putting it ahead of the one thing that catches panics.
+    started::mark();
+
+    // The first thing that can fail, so crashes are always captured to a
+    // file, even when running as a GUI app with no console.
     install_panic_hook();
 
     let asked = command_line::parse(std::env::args().skip(1));
