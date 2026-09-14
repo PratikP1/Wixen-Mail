@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 580 records have arrived since and have not been through it.
+# 585 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21197,4 +21197,98 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/tasks.rs", tests = 22 },
+]
+
+# ── 06-09 task 3: one window, every due thing a row ─────────────────────────
+#
+# A row's text is its whole sentence, so the kind is the first word a screen
+# reader says and the three channels agree. The break lists the title alone,
+# which is what the old window showed a braille display off its first line.
+# The suite is the live target that builds the real dialog, which couples that
+# target to this file in `check.sh --suites-for`.
+[[guard]]
+name = "a due row's text is its sentence and not its title"
+file = "src/presentation/wx_reminder_alert.rs"
+suite = "the_due_window_holds_every_kind"
+before = """        list.append(&row.spoken(now, dates));"""
+after = """        list.append(&row.title);"""
+red = [
+    "test_the_due_window_holds_one_row_of_each_kind_and_offers_what_each_can_take",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+    { file = "tests/the_due_window_holds_every_kind.rs", tests = 1 },
+]
+
+# Mark Done on an event would write a fact its calendar does not hold. The
+# label and the state are decided together, and the break makes the button
+# available for every kind with its plain label.
+[[guard]]
+name = "mark done is unavailable on an event row and its label says so"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """    if kind.can_be_done() {
+        ButtonState {
+            label: MARK_DONE.to_string(),"""
+after = """    if true {
+        ButtonState {
+            label: MARK_DONE.to_string(),"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_mark_done_and_details_say_why_they_are_unavailable",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Snooze all answers for every row still listed, not only the selected one.
+# The break answers the first row alone, which is what a handler that read
+# the selection and forgot the rest would do.
+[[guard]]
+name = "snooze all answers for every row still listed and not only one"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """        for row in self.listed.drain(..) {
+            self.answered.push((row.identity, answer));
+        }"""
+after = """        for row in self.listed.drain(..self.listed.len().min(1)) {
+            self.answered.push((row.identity, answer));
+        }"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_snooze_all_answers_for_every_row_still_listed_and_not_only_the_selected_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Closing the window by Escape or the title bar dismisses what is left, as
+# it always did: the rows stay as they are and are not raised again this
+# session. Treating them as edited would take them out of `already` and
+# bring them back at the next look at somebody who had just closed them.
+[[guard]]
+name = "closing the due window dismisses whatever is still listed"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """            self.answered.push((row.identity, Answer::Dismissed));"""
+after = """            self.answered.push((row.identity, Answer::Edited));"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_closing_the_window_dismisses_whatever_is_still_listed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
+]
+
+# Done on an event is refused by the bookkeeping as well as by the button,
+# because a handler is one line from answering the wrong row. The break
+# takes the refusal out.
+[[guard]]
+name = "done on an event row is refused by the bookkeeping itself"
+file = "src/presentation/wx_reminder_alert.rs"
+before = """        if answer == Answer::Done && !row.identity.kind.can_be_done() {
+            return Answered::NotForThisKind;
+        }"""
+after = """        if false && !row.identity.kind.can_be_done() {
+            return Answered::NotForThisKind;
+        }"""
+red = [
+    "presentation::wx_reminder_alert::tests::test_done_is_refused_on_an_event_row_and_taken_on_a_task_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
 ]
