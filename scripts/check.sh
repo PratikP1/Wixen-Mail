@@ -27,7 +27,12 @@ set -euo pipefail
 # the third one's reason exactly: a document lands beside the code it describes,
 # which answers `affected`, so without this it would run on every commit except
 # the ones that write prose.
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing)
+#
+# The fifth reads `src` for a control built with a label that is only a space,
+# which is a name that says nothing on both accessibility channels. It is a
+# shape somebody copies from the line above, in whichever file they are in, so
+# no changed file predicts it either.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space)
 
 # Which integration targets guard a changed source file.
 #

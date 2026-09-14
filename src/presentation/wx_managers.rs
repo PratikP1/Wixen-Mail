@@ -420,7 +420,11 @@ pub fn make_shell(
         .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::HRules)
         .build();
     set_accessible_name(&list, holds);
-    let status = StaticText::builder(&dialog).with_label(" ").build();
+    // Empty until there is something to say, not a space: an empty label is
+    // one line tall and reaches the accessibility tree with no name, where a
+    // space reached it as a name that says nothing, and named the sizing grip
+    // after it the same way.
+    let status = StaticText::builder(&dialog).with_label("").build();
 
     if let Some(palette) = palette {
         theme::paint(&dialog, palette.main_surface());
@@ -858,7 +862,8 @@ pub fn build_contact_manager_dialog(
     btn_sizer.add(&close_btn, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btn_sizer, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
 
-    let status = StaticText::builder(&dialog).with_label(" ").build();
+    // Empty, not a space, for the reason `make_shell` gives.
+    let status = StaticText::builder(&dialog).with_label("").build();
     sizer.add(&status, 0, SizerFlag::Expand | SizerFlag::All, 4);
     dialog.set_sizer(sizer, true);
 

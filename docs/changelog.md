@@ -350,6 +350,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   has yet heard what a screen reader says on entering the editor, before or
   after; the scan is what found it and the next scan is what confirms it.
 
+- **The status line under the account, contact, filter, tag and signature
+  windows no longer has a name that is one space.** It was built with a
+  space to hold its line open until it had something to say, and that space
+  was what Windows called it on both accessibility channels, and what it
+  called the resize grip beside it too. The line is now empty until it has
+  a sentence, and is one line tall either way. The scan of 2026-09-14
+  reported the seven names; a check now refuses a label that is only
+  whitespace anywhere in the program.
+
 - **A page inside the installer promised that signing the setup file would make
   the Windows warning stop appearing.** It will not, and no certificate this
   project can buy changes that. The sentence was corrected by hand on

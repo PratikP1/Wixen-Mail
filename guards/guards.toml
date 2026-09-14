@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 574 records have arrived since and have not been through it.
+# 575 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21084,4 +21084,31 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/date_display.rs", tests = 47 },
+]
+
+# A status line built with a label of one space is a control whose name is a
+# space on both accessibility channels, and the sizing grip after it takes the
+# same name. The scan of 2026-09-14 reported seven such across five windows,
+# all from three lines of code. The break puts the space back on the manager
+# shell's status line, which is the line the other two were copied from. The
+# guard is its own target, `tests/no_label_is_only_a_space.rs`, so the suite is
+# what is measured rather than the library.
+[[guard]]
+name = "no status line is built with a label that is only a space"
+file = "src/presentation/wx_managers.rs"
+suite = "no_label_is_only_a_space"
+before = """    set_accessible_name(&list, holds);
+    // Empty until there is something to say, not a space: an empty label is
+    // one line tall and reaches the accessibility tree with no name, where a
+    // space reached it as a name that says nothing, and named the sizing grip
+    // after it the same way.
+    let status = StaticText::builder(&dialog).with_label("").build();"""
+after = """    set_accessible_name(&list, holds);
+    let status = StaticText::builder(&dialog).with_label(" ").build();"""
+red = [
+    "test_no_control_is_built_with_a_label_that_is_only_a_space",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/no_label_is_only_a_space.rs", tests = 4 },
 ]
