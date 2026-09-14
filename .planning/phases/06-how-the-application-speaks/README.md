@@ -99,6 +99,7 @@ by grepping a file name:
 | 06-08 | `.planning/WINDOWS.md`, documents | 0 | n/a |
 | 06-08, as landed 2026-09-14 | `src/presentation/editor_document.rs`, `wx_managers.rs`, `wx_account_manager.rs`, `scan_target.rs`; `tests/no_label_is_only_a_space.rs`, a new target | 1, 6 then 7, 6, 2; 0, then 1 | 82, 44, 14, 11; 4 |
 | 06-09 | `src/application/due.rs`, `src/common/catalogue.rs`, `src/presentation/date_display.rs`, `src/data/message_cache/tasks.rs`, `src/data/message_cache/held_alerts.rs` (new), `src/presentation/wx_reminder_alert.rs`, a new file under `tests/` | 4, 6, 6, 4, 0, whatever 06-05 wrote, 0 | 23, 14, 42, 21, 0, 1 plus 06-05's, 0 |
+| 06-09, as landed 2026-09-14 | the above, plus `src/presentation/ui_types.rs`, `src/application/event_alerts.rs` (new), `src/application/calendar.rs` and `src/presentation/managers.rs`, the last two touched without a new test because a test in either is hours of remeasure | 10, 6, 6, 4 then 5, 0 then 4, 1 then 6, 0 then 1; 5 then 6, 0 then 5, 72, 50 | 46, 15, 47, 22, 5, 15, 1; 79, 4, 194 and 137 by the count check's rule |
 
 The 2026-09-14 rows were counted at `562b4b90` with a TOML reader, not with
 the `awk` below, because that `awk` reads only the multi-line
