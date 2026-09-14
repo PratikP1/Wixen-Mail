@@ -652,7 +652,10 @@ fn test_the_reading_of_what_the_gate_runs_can_see_this_target_missing() {
         "the documents-only reading still finds {ME} after it was taken out of \
          the script, so it is not reading the script"
     );
-    let without = script.replace(&format!(" {ME})"), ")");
+    // Taken out wherever it sits in the list. This used to take out ` {ME})`,
+    // which is the name only while it is the last one, and it stopped being
+    // the last one when a fifth target was added after it on 2026-09-14.
+    let without = script.replace(&format!(" {ME}"), "");
     assert!(
         !the_whole_tree_targets(&without)
             .iter()

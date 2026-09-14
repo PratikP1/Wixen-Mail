@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 383
+open_count: 406
 waived_count: 0
-fixed_count: 23
-total_count: 406
-last_updated: 2026-09-14T14:19:31.989Z
+fixed_count: 24
+total_count: 430
+last_updated: 2026-09-14T15:36:13.798Z
 ---
 
 # Broken Windows Ledger
@@ -421,6 +421,30 @@ last_updated: 2026-09-14T14:19:31.989Z
 | 404 | 06 | deviation | src/application/due.rs |  | 06-09 task 1: the identity trap's guard record is in two halves and only one is here. The same id under two kinds is two identities is measured, two red. A day of a series carrying its series' id is composed by the event feed, which task 4 writes in wx_app.rs, so there is no code in task 1 for a break to edit; the test dismisses one day and finds the next still due against a fixture that composes id and start the way the feed must. Task 4 owes the record that breaks the feed's composition. | open |  | 2026-09-14T14:19:31.090Z |  |
 | 405 | 06 | deviation | src/presentation/wx_app.rs |  | 06-09 task 1: BetweenLooks.already and said_and_waiting are keyed by due::Identity instead of a reminder id string, and the reminder feed builds due::Candidate rows, in the red commit c189a361, because the crate would not build otherwise. wx_app.rs is not in task 1's file list. No test was added to wx_app.rs and its 48 records were not disturbed; the reading in tests/wired.rs still sees the insert into already before the window. Task 4 rewrites this region. | open |  | 2026-09-14T14:19:31.536Z |  |
 | 406 | 06 | unrun-verify | src/presentation/date_display.rs |  | 06-09 task 1: how_soon, how_long_ago and time_of_day are public readings with no caller outside due::spoken, and due::spoken has no caller that hands it a task or an event yet: raise_what_is_due still feeds reminders only. Everything task 1 added is reachable by tests and by nothing a person can run until task 4 wires the feeds. Said here so the model is not read as shipped. | open |  | 2026-09-14T14:19:31.989Z |  |
+| 407 | 06 | todo | src/presentation/scan_fixtures.rs |  | Scan finding, Account Manager row 7: the IMAP Server cell of the made-up account is empty, a focusable list cell with no name on UI Automation. Either the fixture account names a server or the cell says none rather than nothing; decide which, because naming a server hides the shape a real account with no server would have | open |  | 2026-09-14T15:28:39.547Z |  |
+| 408 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 15: the text field of the Starts Day spinner has no name on either channel. set_accessible_name names the up-down arrows, and a Windows spinner is two windows; the field a person types in is the other one. What it takes: get the buddy through UDM_GETBUDDY on the spinner handle from get_handle, then IAccPropServices::SetHwndPropStr with PROPID_ACC_NAME, which the Annotation proxy carries to both channels; needs the Win32_UI_Accessibility, Win32_UI_Controls and Win32_UI_WindowsAndMessaging features. Or a visible static label before each field, which Windows gives the field on both channels and which sighted people would see too. Verified only by the next scan, since nothing here can read a live tree | open |  | 2026-09-14T15:28:39.988Z |  |
+| 409 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 16: the text field of the Starts Year spinner has no name on either channel; same cause and same fix as 408 | open |  | 2026-09-14T15:28:40.409Z |  |
+| 410 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 17: the text field of the Start time Minute spinner has no name on either channel; same cause and same fix as 408 | open |  | 2026-09-14T15:28:40.839Z |  |
+| 411 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 18: the element showing the current value of the Start time AM or PM list has no name on UI Automation. The list carries the name through the MSAA proxy; the value element is the platform's child of it and gets nothing. SetHwndProp on the list handle with the child id, or a visible label before the list, as 408 | open |  | 2026-09-14T15:28:41.287Z |  |
+| 412 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 19: the text field of the Ends Day spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:28:41.723Z |  |
+| 413 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 20: the text field of the Ends Year spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:28:42.170Z |  |
+| 414 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 21: the text field of the End time Minute spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:28:42.628Z |  |
+| 415 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 22: the element showing the current value of the End time AM or PM list has no name on UI Automation; as 411 | open |  | 2026-09-14T15:28:43.082Z |  |
+| 416 | 06 | todo | src/presentation/wx_item_form.rs |  | Scan finding, Edit Event row 23, unjudged: the Category combo box is reported as not supporting ExpandCollapse. Every combo box in the window is exposed through the MSAA proxy because each carries an accessible object of ours, and the proxy offers ExpandCollapse to none of them, yet only this one was flagged. The one difference in the tree is that it has no child showing a value. To judge it: read the scanner's condition for ControlShouldSupportExpandCollapsePattern in the v2.4.2 source, or open the window on a taller screen and scan again | open |  | 2026-09-14T15:29:12.669Z |  |
+| 417 | 06 | todo | src/presentation/wx_item_form.rs |  | Found in the scan's tree, not a scan finding: Edit Event is 720 pixels tall on the runner's 768-pixel screen and its content runs past the bottom. Show as, Status, Category and Times offered are six pixels tall at the bottom edge; the panel inside the tab is 562 tall and the form is taller. On a small screen or at 200 percent text size the last four fields are cut off and the form does not scroll. WCAG 1.4.10 Reflow and 1.4.4 Resize Text, and a keyboard user reaches a field nobody can see | open |  | 2026-09-14T15:29:13.123Z |  |
+| 418 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 24: the element showing the current value of the Send on Month list has no name on UI Automation. No static label precedes any control in this window, so nothing is given to it by the platform either. As 411 | open |  | 2026-09-14T15:29:13.548Z |  |
+| 419 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 25: the text field of the Send on Day spinner has no name on either channel. The name Send on Day is on the arrows; as 408 | open |  | 2026-09-14T15:29:13.982Z |  |
+| 420 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 26: the text field of the Send on Year spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:29:14.419Z |  |
+| 421 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 27: the text field of the Send at Hour spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:29:14.853Z |  |
+| 422 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 28: the text field of the Send at Minute spinner has no name on either channel; as 408 | open |  | 2026-09-14T15:29:15.269Z |  |
+| 423 | 06 | todo | src/presentation/wx_send_later.rs |  | Scan finding, send-later row 29: the element showing the current value of the Send at AM or PM list has no name on UI Automation; as 411 | open |  | 2026-09-14T15:29:15.699Z |  |
+| 424 | 06 | todo | src/presentation/wx_item_form.rs |  | Found in the scan's tree, no rule fired: the text field of the Start time Hour spinner is named Start time on UI Automation, the text of the static label before it, which the platform gives to an unnamed edit; the arrows beside it say Start time Hour. On MSAA it has no name and the walk reported it. A name that is present and wrong is one no scanner rule sees; only a person hears it. Fix as 408 | open |  | 2026-09-14T15:29:16.128Z |  |
+| 425 | 06 | todo | src/presentation/wx_item_form.rs |  | Found in the scan's tree, no rule fired: the text field of the End time Hour spinner is named End time on UI Automation and nothing on MSAA; as 424 | open |  | 2026-09-14T15:29:16.558Z |  |
+| 426 | 06 | todo | .github/workflows/accessibility.yml |  | Scan-level finding 2: the count takes only the first summary a window prints, Select-Object -First 1, so a window that writes two result files has its second count dropped. The reader window wrote two on 2026-09-14, both clean, so nothing was lost that day. Not fixed because nothing in the tree can run that block to prove a sum; a test would need the counting moved into a script under scripts with a suite of its own, run through pwsh, before the line is changed | open |  | 2026-09-14T15:29:16.999Z |  |
+| 427 | 06 | todo | scripts/msaa-names.ps1 |  | Scan-level finding 3: the six module targets are one scan repeated. Each walked one window of 1797 elements on MSAA and each msaa-names.json holds the same 91 distinct names, All Calendars, All Contacts, All Notes and Body in Markdown among them in all six. Every module panel is in the window whichever is showing and the walk reads no state, so it cannot tell a hidden panel from the shown one; a nameless control in a hidden panel would be reported six times and a module target proves nothing about its module. What it takes: read accState per element and skip a subtree whose state has STATE_SYSTEM_INVISIBLE, printing how many were skipped so a hidden panel stays visible in the log; the ps1 maps to no gate target, so the change wants a case in a shell suite first | open |  | 2026-09-14T15:29:17.438Z |  |
+| 428 | 06 | unrun-verify | src/presentation/html_renderer.rs |  | The scan reached no rendered message. The preview in the main window is a WebView2 control and no target's tree held its document: a fresh profile has no message and the reader target opens a rich edit window. The rendered message is where a sender's headings and links have to survive, and it is the page with the same shape as the editor's, a document with no title loaded from its own address, so its name is likely its own source too. Nothing about it was judged; a target that opens the preview on a made-up message would put it in the next run | open |  | 2026-09-14T15:29:17.882Z |  |
+| 429 | 06 | todo | .github/workflows/accessibility.yml |  | Scan-level finding 1: the run summary of 2026-09-14 said 26 findings where the scan log held 29, because the counting pattern matched errors were found and Axe prints 1 error was found; filters, tags and signatures each printed one and were recorded as clean. Fixed the same day, the pattern reads all three sentences and a test in scan_target.rs reads it from the workflow and holds it to them | fixed |  | 2026-09-14T15:29:28.029Z | 2026-09-14T15:29:28.465Z |
+| 430 | 06 | unrun-verify | docs/manual-accessibility-pass.md |  | The manual accessibility pass is written and has not been walked. Seventy-six items across six categories, each naming its source and the technology it needs, planned for after phase 8. Until a person has dated every item, nothing in the program has had the pass, and the page says so at the top | open |  | 2026-09-14T15:36:13.798Z |  |
 
 ````json
 [
@@ -5294,6 +5318,294 @@ last_updated: 2026-09-14T14:19:31.989Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T14:19:31.989Z",
+    "resolved_at": null
+  },
+  {
+    "id": 407,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/scan_fixtures.rs",
+    "line": null,
+    "description": "Scan finding, Account Manager row 7: the IMAP Server cell of the made-up account is empty, a focusable list cell with no name on UI Automation. Either the fixture account names a server or the cell says none rather than nothing; decide which, because naming a server hides the shape a real account with no server would have",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:39.547Z",
+    "resolved_at": null
+  },
+  {
+    "id": 408,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 15: the text field of the Starts Day spinner has no name on either channel. set_accessible_name names the up-down arrows, and a Windows spinner is two windows; the field a person types in is the other one. What it takes: get the buddy through UDM_GETBUDDY on the spinner handle from get_handle, then IAccPropServices::SetHwndPropStr with PROPID_ACC_NAME, which the Annotation proxy carries to both channels; needs the Win32_UI_Accessibility, Win32_UI_Controls and Win32_UI_WindowsAndMessaging features. Or a visible static label before each field, which Windows gives the field on both channels and which sighted people would see too. Verified only by the next scan, since nothing here can read a live tree",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:39.988Z",
+    "resolved_at": null
+  },
+  {
+    "id": 409,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 16: the text field of the Starts Year spinner has no name on either channel; same cause and same fix as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:40.409Z",
+    "resolved_at": null
+  },
+  {
+    "id": 410,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 17: the text field of the Start time Minute spinner has no name on either channel; same cause and same fix as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:40.839Z",
+    "resolved_at": null
+  },
+  {
+    "id": 411,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 18: the element showing the current value of the Start time AM or PM list has no name on UI Automation. The list carries the name through the MSAA proxy; the value element is the platform's child of it and gets nothing. SetHwndProp on the list handle with the child id, or a visible label before the list, as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:41.287Z",
+    "resolved_at": null
+  },
+  {
+    "id": 412,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 19: the text field of the Ends Day spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:41.723Z",
+    "resolved_at": null
+  },
+  {
+    "id": 413,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 20: the text field of the Ends Year spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:42.170Z",
+    "resolved_at": null
+  },
+  {
+    "id": 414,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 21: the text field of the End time Minute spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:42.628Z",
+    "resolved_at": null
+  },
+  {
+    "id": 415,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 22: the element showing the current value of the End time AM or PM list has no name on UI Automation; as 411",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:28:43.082Z",
+    "resolved_at": null
+  },
+  {
+    "id": 416,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Scan finding, Edit Event row 23, unjudged: the Category combo box is reported as not supporting ExpandCollapse. Every combo box in the window is exposed through the MSAA proxy because each carries an accessible object of ours, and the proxy offers ExpandCollapse to none of them, yet only this one was flagged. The one difference in the tree is that it has no child showing a value. To judge it: read the scanner's condition for ControlShouldSupportExpandCollapsePattern in the v2.4.2 source, or open the window on a taller screen and scan again",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:12.669Z",
+    "resolved_at": null
+  },
+  {
+    "id": 417,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Found in the scan's tree, not a scan finding: Edit Event is 720 pixels tall on the runner's 768-pixel screen and its content runs past the bottom. Show as, Status, Category and Times offered are six pixels tall at the bottom edge; the panel inside the tab is 562 tall and the form is taller. On a small screen or at 200 percent text size the last four fields are cut off and the form does not scroll. WCAG 1.4.10 Reflow and 1.4.4 Resize Text, and a keyboard user reaches a field nobody can see",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:13.123Z",
+    "resolved_at": null
+  },
+  {
+    "id": 418,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 24: the element showing the current value of the Send on Month list has no name on UI Automation. No static label precedes any control in this window, so nothing is given to it by the platform either. As 411",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:13.548Z",
+    "resolved_at": null
+  },
+  {
+    "id": 419,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 25: the text field of the Send on Day spinner has no name on either channel. The name Send on Day is on the arrows; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:13.982Z",
+    "resolved_at": null
+  },
+  {
+    "id": 420,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 26: the text field of the Send on Year spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:14.419Z",
+    "resolved_at": null
+  },
+  {
+    "id": 421,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 27: the text field of the Send at Hour spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:14.853Z",
+    "resolved_at": null
+  },
+  {
+    "id": 422,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 28: the text field of the Send at Minute spinner has no name on either channel; as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:15.269Z",
+    "resolved_at": null
+  },
+  {
+    "id": 423,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_send_later.rs",
+    "line": null,
+    "description": "Scan finding, send-later row 29: the element showing the current value of the Send at AM or PM list has no name on UI Automation; as 411",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:15.699Z",
+    "resolved_at": null
+  },
+  {
+    "id": 424,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Found in the scan's tree, no rule fired: the text field of the Start time Hour spinner is named Start time on UI Automation, the text of the static label before it, which the platform gives to an unnamed edit; the arrows beside it say Start time Hour. On MSAA it has no name and the walk reported it. A name that is present and wrong is one no scanner rule sees; only a person hears it. Fix as 408",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:16.128Z",
+    "resolved_at": null
+  },
+  {
+    "id": 425,
+    "kind": "todo",
+    "phase": "06",
+    "file": "src/presentation/wx_item_form.rs",
+    "line": null,
+    "description": "Found in the scan's tree, no rule fired: the text field of the End time Hour spinner is named End time on UI Automation and nothing on MSAA; as 424",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:16.558Z",
+    "resolved_at": null
+  },
+  {
+    "id": 426,
+    "kind": "todo",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "Scan-level finding 2: the count takes only the first summary a window prints, Select-Object -First 1, so a window that writes two result files has its second count dropped. The reader window wrote two on 2026-09-14, both clean, so nothing was lost that day. Not fixed because nothing in the tree can run that block to prove a sum; a test would need the counting moved into a script under scripts with a suite of its own, run through pwsh, before the line is changed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:16.999Z",
+    "resolved_at": null
+  },
+  {
+    "id": 427,
+    "kind": "todo",
+    "phase": "06",
+    "file": "scripts/msaa-names.ps1",
+    "line": null,
+    "description": "Scan-level finding 3: the six module targets are one scan repeated. Each walked one window of 1797 elements on MSAA and each msaa-names.json holds the same 91 distinct names, All Calendars, All Contacts, All Notes and Body in Markdown among them in all six. Every module panel is in the window whichever is showing and the walk reads no state, so it cannot tell a hidden panel from the shown one; a nameless control in a hidden panel would be reported six times and a module target proves nothing about its module. What it takes: read accState per element and skip a subtree whose state has STATE_SYSTEM_INVISIBLE, printing how many were skipped so a hidden panel stays visible in the log; the ps1 maps to no gate target, so the change wants a case in a shell suite first",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:17.438Z",
+    "resolved_at": null
+  },
+  {
+    "id": 428,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/html_renderer.rs",
+    "line": null,
+    "description": "The scan reached no rendered message. The preview in the main window is a WebView2 control and no target's tree held its document: a fresh profile has no message and the reader target opens a rich edit window. The rendered message is where a sender's headings and links have to survive, and it is the page with the same shape as the editor's, a document with no title loaded from its own address, so its name is likely its own source too. Nothing about it was judged; a target that opens the preview on a made-up message would put it in the next run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:17.882Z",
+    "resolved_at": null
+  },
+  {
+    "id": 429,
+    "kind": "todo",
+    "phase": "06",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "Scan-level finding 1: the run summary of 2026-09-14 said 26 findings where the scan log held 29, because the counting pattern matched errors were found and Axe prints 1 error was found; filters, tags and signatures each printed one and were recorded as clean. Fixed the same day, the pattern reads all three sentences and a test in scan_target.rs reads it from the workflow and holds it to them",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:29:28.029Z",
+    "resolved_at": "2026-09-14T15:29:28.465Z"
+  },
+  {
+    "id": 430,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "docs/manual-accessibility-pass.md",
+    "line": null,
+    "description": "The manual accessibility pass is written and has not been walked. Seventy-six items across six categories, each naming its source and the technology it needs, planned for after phase 8. Until a person has dated every item, nothing in the program has had the pass, and the page says so at the top",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T15:36:13.798Z",
     "resolved_at": null
   }
 ]

@@ -225,7 +225,10 @@ pub fn build_account_manager_dialog(
     btns.add(&close, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btns, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
 
-    let status = StaticText::builder(&dlg).with_label(" ").build();
+    // Empty until there is something to say, not a space: an empty label is
+    // one line tall and reaches the accessibility tree with no name, where a
+    // space reached it as a name that says nothing.
+    let status = StaticText::builder(&dlg).with_label("").build();
     sizer.add(
         &status,
         0,

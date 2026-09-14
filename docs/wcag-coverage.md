@@ -12,7 +12,9 @@ they have found.** A "yes" in the table means the scanner has rules that can
 fail on that criterion. It does not mean the criterion is met, in any window,
 by this application. Whether a criterion is met is a separate question, and
 for most of the fifty-five the only thing that can answer it is a person using
-a screen reader. Nothing on this page says any criterion is met.
+a screen reader. Nothing on this page says any criterion is met. How a person
+checks what is left is [the manual accessibility
+pass](manual-accessibility-pass.md), which is written and has not been walked.
 
 ## The two numbers, and when they were taken
 
@@ -169,13 +171,134 @@ the application asks, wait-for-an-answer, choose-from-list and ask-for-a-name.
 A "yes" in the table is a yes for the thirty-one windows the scan reaches and
 for no other.
 
-**No scan has yet run against any of the thirty-one on either channel.** The
-workflow that asks for them was written on 2026-09-14 and nothing has been
-pushed since 2026-09-10. Before that, the scan reached eleven windows on the
-UI Automation channel, and on the MSAA channel it had read only the main
-window, every time, because the script walked the window .NET calls the main
-one and a dialog is never that window. So this page describes what the scans
-can judge. What they have judged, for any of the thirty-one, is nothing yet.
+**The first run against the thirty-one was on 2026-09-14**, and the section
+below is what it found. Before the workflow that asks for them was written,
+the scan reached eleven windows on the UI Automation channel, and on the MSAA
+channel it had read only the main window, every time, because the script
+walked the window .NET calls the main one and a dialog is never that window.
+This page describes what the scans can judge; the next section is what they
+have judged, once, for the thirty-one.
+
+## What the run of 2026-09-14 found
+
+Run 34849526207 of the Accessibility workflow, on `main` at `db98094c`. It ran
+because `main` was pushed to the repository that day, which is one of the
+workflow's own triggers; nobody dispatched it. Axe.Windows printed
+`version 2.4.2` on every target and the downloaded file's SHA-256 matched
+the pin. All thirty-one targets wrote a result file and completed their MSAA
+walk; none was reported as not scanned.
+
+**Twenty-nine findings on the UI Automation channel, in eight windows. Twelve
+controls without a name on the MSAA channel, in two windows.** The run's own
+summary said 26, because the step that counted them did not match the sentence
+Axe prints for exactly one error; the three windows with one each were
+recorded as clean. That is corrected in the workflow and held by a test, and
+the 29 is the count from the scan step's log, where each finding is printed
+with its element.
+
+The earlier count of five, quoted since 2026-07-26 in the changelog and on
+the status page, was taken from one window on one channel. Twenty-nine from
+thirty-one windows on two channels is not five findings becoming twenty-nine;
+it is a scan looking at thirty times as much. The five were the composer's
+WebView2 findings, and they are the first six rows below.
+
+One row per finding. The channel says which check found it, the rule is the
+scanner's own wording, and the disposition is either fixed here, ours and
+recorded, or somebody else's with the upstream named.
+
+| # | Window | Element | Channel | Rule | Disposition |
+|---|---|---|---|---|---|
+| 1 | Compose | Pane `Chrome_WidgetWin_1`, the WebView2 host window | UI Automation | Name must not be longer than 512 characters | Ours. The name was the editor page's own address, because the page had no title and WebView2 names the host after the address when there is none. The page now has the title "Message body". Fixed 2026-09-14, version 0.123.1; confirmed only when the next run on `main` reads the name. |
+| 2 | Compose | Region `BrowserRootView`, the root of the page | UI Automation | Name must not be longer than 512 characters | Ours, the same address with " - Web content" after it. Fixed with row 1. |
+| 3 | Compose | Region `EmbeddedBrowserTabRootView`, provider `msedge.dll` | UI Automation | An on-screen element must not have a null BoundingRectangle | WebView2's own. A Chromium view of size 0 by 0 inside the host, with no automation id and no wx class on it or above it until the host. Upstream: `MicrosoftEdge/WebView2Feedback`. Not filed. Whether an existing issue covers zero-size views was not checked, because the session that wrote this could not read the tracker; issue 2330 there is about screen readers and WebView2 broadly and is not about this. |
+| 4 | Compose | Region `TopContainerView`, provider `msedge.dll` | UI Automation | An on-screen element must not have a null BoundingRectangle | As row 3. |
+| 5 | Compose | Region `View` under `MultiContentsView`, provider `msedge.dll` | UI Automation | An on-screen element must not have a null BoundingRectangle | As row 3. |
+| 6 | Compose | Region `EmbeddedBrowserDownloadView`, provider `msedge.dll` | UI Automation | An on-screen element must not have a null BoundingRectangle | As row 3. |
+| 7 | Account Manager | Text, the IMAP Server cell of the one account in the list | UI Automation | Name of a focusable element must not be null | Ours, recorded. The scan's made-up account has no IMAP server, so the cell is empty, and an empty cell in a report list is a focusable element that says nothing. The list is Windows' own; what goes in the cell is this program's. Ledger 407. |
+| 8 | Account Manager | Text `Static`, the status line under the buttons | UI Automation | Name must not contain only whitespace | Ours. Built with a label of one space to hold its line open; now built empty, which is one line tall and has no name until it has a sentence. Fixed 2026-09-14. |
+| 9 | Account Manager | Thumb `ScrollBar`, the resize grip in the corner | UI Automation | Name must not contain only whitespace | Windows names a grip after the static before it, which was row 8. Fixed with row 8. |
+| 10 | Filter Manager | Text `Static`, the status line | UI Automation | Name must not contain only whitespace | As row 8; the same line of code builds this window's status line. Fixed. |
+| 11 | Tag Manager | Text `Static`, the status line | UI Automation | Name must not contain only whitespace | As row 10. Fixed. |
+| 12 | Signature Manager | Text `Static`, the status line | UI Automation | Name must not contain only whitespace | As row 10. Fixed. |
+| 13 | Contact Manager | Text `Static`, the status line | UI Automation | Name must not contain only whitespace | As row 8, a third copy of the line. Fixed. |
+| 14 | Contact Manager | Thumb `ScrollBar`, the resize grip | UI Automation | Name must not contain only whitespace | As row 9. Fixed with row 13. |
+| 15 | Edit Event | Edit, the text of the Starts Day spinner, showing 14 | Both | Name of a focusable element must not be null | Ours, recorded. `set_accessible_name` names the spinner, and a Windows spinner is two windows: the up-down arrows carry the name "Starts Day" and the text field a person types in is a separate window with none. Ledger 408, with what it takes. |
+| 16 | Edit Event | Edit, the text of the Starts Year spinner, showing 2026 | Both | Name of a focusable element must not be null | As row 15. Ledger 409. |
+| 17 | Edit Event | Edit, the text of the Start time Minute spinner, showing 52 | Both | Name of a focusable element must not be null | As row 15. Ledger 410. |
+| 18 | Edit Event | Text, the shown value of the Start time AM or PM list, showing PM | UI Automation | Name of a focusable element must not be null | Ours, recorded. The list carries the name; the element showing its current value is Windows' own child of it and has none. Ledger 411. |
+| 19 | Edit Event | Edit, the text of the Ends Day spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 412. |
+| 20 | Edit Event | Edit, the text of the Ends Year spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 413. |
+| 21 | Edit Event | Edit, the text of the End time Minute spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 414. |
+| 22 | Edit Event | Text, the shown value of the End time AM or PM list | UI Automation | Name of a focusable element must not be null | As row 18. Ledger 415. |
+| 23 | Edit Event | Combo box "Category", 480 by 6 pixels | UI Automation | An element of the given ControlType must support the ExpandCollapse pattern | Unjudged. Every combo box in this window is exposed through the MSAA proxy, because each carries an accessible object of ours, and the proxy offers no ExpandCollapse to any of them; the scanner flagged this one and not the other five. The one difference in the tree is that this box has no child showing a value, and it is six pixels tall because the form runs off the bottom of the runner's 768-pixel screen. Ledger 416 for the rule, 417 for the form being cut off. |
+| 24 | When should this message go? | Text, the shown value of the Send on Month list, showing September | UI Automation | Name of a focusable element must not be null | As row 18. Ledger 418. |
+| 25 | When should this message go? | Edit, the text of the Send on Day spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 419. |
+| 26 | When should this message go? | Edit, the text of the Send on Year spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 420. |
+| 27 | When should this message go? | Edit, the text of the Send at Hour spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 421. |
+| 28 | When should this message go? | Edit, the text of the Send at Minute spinner | Both | Name of a focusable element must not be null | As row 15. Ledger 422. |
+| 29 | When should this message go? | Text, the shown value of the Send at AM or PM list | UI Automation | Name of a focusable element must not be null | As row 18. Ledger 423. |
+
+Twelve rows say "Both": the MSAA walk reported the same text fields as
+"editable text" with no name, eight in Edit Event and four in the send-later
+window. Two of the MSAA twelve are not in the table: the Start time Hour and
+End time Hour text fields. On the UI Automation channel Windows gave each the
+text of the static label before it, "Start time" and "End time", which is a
+name, so no rule fired, and it is the wrong name: the arrows beside each say
+"Start time Hour". No scanner rule can see a name that is present and wrong.
+Ledger 424 and 425.
+
+**How the WebView2 rows were attributed.** Not from the class names. In the
+artifact's tree, the six elements sit under the pane `Chrome_WidgetWin_1`,
+whose parent is a pane of class `wxWindowNR` with automation id `-31900` and
+the name "Message body": the wxWebView wrapper, this program's window.
+Everything from `Chrome_WidgetWin_1` down reports its provider as
+`Unidentified Provider (unmanaged:msedge.dll)`, has no automation id, and has
+a framework id of `Chrome` for the views. A search of `src/`, `scripts/` and
+the workflows for the six class names finds none of them. So the four
+rectangles are objects the Edge runtime builds and this program never touches.
+The two names were different: the value was this program's page address, and
+the address is what the engine falls back to when the page has no title. That
+is why rows 1 and 2 are fixed here and rows 3 to 6 are not.
+
+**What would be filed, and where.** One report at
+`MicrosoftEdge/WebView2Feedback`: four Views inside an embedded WebView2
+(`EmbeddedBrowserTabRootView`, `TopContainerView`, a `View` under
+`MultiContentsView`, `EmbeddedBrowserDownloadView`) report `IsOffscreen =
+false` and a null `BoundingRectangle`, which Axe.Windows 2.4.2 reports as an
+error on every scan of any application that embeds the control; the run,
+the scanner version and the six element dumps from the scan log are the
+evidence. Nobody has filed it. Filing is reaching outward and is a person's.
+
+**Three findings about the scan itself.**
+
+1. The run's summary said 26 findings and the log held 29. The counting
+   pattern matched "errors were found" and Axe prints "1 error was found",
+   so three windows with one finding each were recorded as clean. Fixed in
+   the workflow on 2026-09-14 and held by a test that reads the pattern from
+   the workflow and holds it to all three sentences the scanner prints.
+   Ledger 429, closed.
+2. The count takes only the first summary a window prints. A window that
+   writes two result files prints two, and the reader window wrote two that
+   day, both clean, so nothing was lost this time. Not fixed, because nothing
+   in the tree can run that block to prove a sum. Ledger 426.
+3. The six module targets are one scan repeated six times. Each walked one
+   window of 1,797 elements on the MSAA channel, and each of the six
+   `msaa-names.json` files holds the same 91 distinct names, "All Calendars",
+   "All Contacts", "All Notes" and "Body, in Markdown" among them in every
+   one. Every module's panel is in the window whichever is showing, and the
+   walk reads no visibility state, so it cannot tell a hidden panel from the
+   one on screen. A nameless control in a hidden panel would be reported six
+   times, and a module target proves nothing about its module that
+   `mail-module` does not already prove. Ledger 427.
+
+**What the scan did not reach.** The message preview in the main window is a
+WebView2 control, and no target's tree held its document: on a fresh profile
+there is no message, and the reading window the `reader` target opens is a
+rich edit control, not a web view. So nothing about the rendered message,
+which is the one place a sender's structure has to survive, was judged by
+this run. Ledger 428. The made-up data the targets open on is all
+`example.com` addresses and named fixtures; the artifact carries nothing of
+anybody's.
 
 ## The fifty-five criteria
 
@@ -280,12 +403,17 @@ two of them would be.
 
 ## What has not happened
 
-- No scan has run against any of the thirty-one windows on either channel.
+- One scan has run against the thirty-one windows on both channels, on
+  2026-09-14. The nine fixes in the table above have not been confirmed by a
+  run since; the next push to `main` is what confirms them.
 - Nobody has walked the fifty-five criteria against this application. The
   table is a reading of each criterion against what a mail client does.
 - Most of the application has not had a manual pass with a screen reader.
   Three sentences in three windows have been heard by the NVDA suite. Nothing
-  else on any row of the table has been heard.
+  else on any row of the table has been heard. The pass a person would make
+  is written down, and unwalked, in [the manual accessibility
+  pass](manual-accessibility-pass.md): seventy-six items, each naming the
+  row or ledger entry it came from and the technology it needs.
 - No Section 508 or EN 301 549 conformance claim is made.
 - The rule list can change with a new Axe.Windows release. The pin means it
   cannot change without a commit here, and that commit is the moment to read

@@ -134,9 +134,13 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     let max_rows = MAX_TABLE_ROWS;
     let inline_markers = markdown_inline_table();
 
+    // The title is what the browser engine names its window and the page
+    // root after. Without one it uses the page's address, and this page is
+    // its own address, so the name was the whole document, base64 and all.
+    // The same words as the editable region's label, so the two agree.
     format!(
         r#"<!DOCTYPE html>
-<html lang="{language}"><head><meta charset="utf-8"><style>
+<html lang="{language}"><head><meta charset="utf-8"><title>Message body</title><style>
 html, body {{ height: 100%; margin: 0; }}
 body {{
     font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
@@ -1784,6 +1788,20 @@ mod tests {
         let page = editor_document(&blank(), "en-GB", true);
 
         assert!(page.contains(r#"spellcheck="true""#), "{page}");
+    }
+
+    #[test]
+    fn test_the_editor_document_has_a_title_so_its_name_is_not_its_own_source() {
+        // The browser engine names the host window and the root of the page
+        // after the document's title, and a document with no title is named
+        // after its address instead. This page is loaded as a data: address,
+        // so without a title both names were the whole page, base64 and all:
+        // the accessibility scan of 2026-09-14 reported two names over 512
+        // characters on the composer, and both were this document.
+        let page = editor_document(&blank(), "en-GB", true);
+
+        let head = between(&page, "<head>", "</head>");
+        assert!(head.contains("<title>Message body</title>"), "{head}");
     }
 
     #[test]

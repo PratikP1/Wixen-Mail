@@ -175,9 +175,18 @@ Several are fuzz tests over generated hostile
 input, covering the HTML renderer, the calendar-document parsers, OAuth token
 expiry, and account validation.
 
-When the accessibility scan was last read, on 2026-07-26, it reported five
-findings, all inside WebView2's own accessibility tree rather than this
-application's controls.
+When the accessibility scan was last read, on 2026-09-14, it reported
+twenty-nine findings on the UI Automation channel across eight of thirty-one
+windows, and twelve controls with no name on the MSAA channel in two of them.
+The number this paragraph gave before was five, read on 2026-07-26 from a scan
+of one window on one channel; twenty-nine is from thirty-one windows on two,
+so it is a larger number because the scan looks at far more, not because more
+went wrong. Nine of the twenty-nine are fixed and wait for the next run to
+confirm it, four are WebView2's own, fourteen are this program's date and time
+spinners and lists whose text fields carry no name, one is an empty cell in
+the account list, and one is not yet judged.
+Every one has a row in [what the scans can judge](wcag-coverage.md), with its
+window, its channel and what was decided.
 
 ## Known gaps in verification
 

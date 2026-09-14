@@ -8,6 +8,16 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A page listing what only a person can check**, [the manual accessibility
+  pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
+  of disability the project's rules name, each saying which screen reader or
+  tool it needs and where it came from: a criterion the scans cannot judge, a
+  ledger entry recording something built and never heard, or a rule with no
+  check behind it. It says at the top that none of it has happened, and it
+  names the three NVDA tests that already listen so it does not ask for them
+  again. It is the other half of [what the scans can judge](wcag-coverage.md),
+  and the two pages point at each other.
+
 - **One account can be allowed less than the others.** The account window's
   connection page has three new boxes under "Allow Changes for this account":
   whether this account may send and delete mail, whether it may change your
@@ -227,6 +237,19 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **The accessibility scan's findings are twenty-nine, listed one by one, not
+  "five, all WebView2's".** The count of five below in this file was read on
+  2026-07-26 from a scan of one window on one channel. On 2026-09-14 the scan
+  ran for the first time against thirty-one windows on two channels, and
+  found twenty-nine on the UI Automation channel and twelve unnamed controls
+  on the MSAA channel. The number is larger because the scan looks at thirty
+  times as much, not because more went wrong. [What the scans can
+  judge](wcag-coverage.md) now has a row for every one: its window, its
+  channel, the rule, and whether it is fixed, this program's and recorded, or
+  WebView2's own with the place a report would go. Nine are fixed in this
+  version and wait for the next run to say so. The same run found that its
+  own summary undercounted by three, which is fixed and held by a test.
+
 - **The accessibility page no longer says automated scanning catches roughly
   half of what WCAG asks for.** It says what the number is: the scans can
   produce a finding against three of the fifty-five WCAG 2.2 Level A and AA
@@ -337,6 +360,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with no icon at all and Windows drew the generic one everywhere.
 
 ### Fixed
+
+- **The message editor's page is called "Message body", not its own source.**
+  The composer's editor is a browser engine showing a page this program
+  writes, and the page had no title, so the engine named it after its
+  address. The address was the page itself, every character of it, encoded.
+  A screen reader entering that page could be told the name, which is
+  thousands of characters of encoded text before the first word of yours.
+  The accessibility scan of 2026-09-14 reported both of the engine's own
+  names for the page as longer than 512 characters, and both were this. The
+  page now carries the same title as the editing area's own label. Nobody
+  has yet heard what a screen reader says on entering the editor, before or
+  after; the scan is what found it and the next scan is what confirms it.
+
+- **The status line under the account, contact, filter, tag and signature
+  windows no longer has a name that is one space.** It was built with a
+  space to hold its line open until it had something to say, and that space
+  was what Windows called it on both accessibility channels, and what it
+  called the resize grip beside it too. The line is now empty until it has
+  a sentence, and is one line tall either way. The scan of 2026-09-14
+  reported the seven names; a check now refuses a label that is only
+  whitespace anywhere in the program.
 
 - **A page inside the installer promised that signing the setup file would make
   the Windows warning stop appearing.** It will not, and no certificate this

@@ -454,4 +454,75 @@ mod tests {
 
         assert_eq!(names.len(), count, "two targets share a name");
     }
+
+    /// The three sentences Axe.Windows prints under a scan, and the count
+    /// each one carries. The singular is real: the CLI writes `1 error was
+    /// found`, not `1 errors were found`.
+    const WHAT_AXE_PRINTS: [(&str, Option<u32>); 3] = [
+        ("1 error was found", Some(1)),
+        ("3 errors were found", Some(3)),
+        ("No errors were found", None),
+    ];
+
+    /// The pattern the workflow counts findings with, read from the line that
+    /// applies it, so the test is about the pattern the run really uses.
+    fn the_counting_pattern(workflow: &str) -> String {
+        let line = workflow
+            .lines()
+            .find(|line| line.contains("Select-String -Pattern '") && line.contains("were found"))
+            .expect("the workflow counts findings with a Select-String pattern");
+        let after =
+            &line[line.find("-Pattern '").expect("the pattern opens") + "-Pattern '".len()..];
+        after
+            .split('\'')
+            .next()
+            .expect("the pattern closes")
+            .to_string()
+    }
+
+    /// Which of Axe's three sentences `pattern` either misses or counts
+    /// wrongly. Empty when it reads all three the way the CLI writes them.
+    fn what_the_pattern_gets_wrong(pattern: &str) -> Vec<String> {
+        let pattern = regex::Regex::new(pattern).expect("the workflow's pattern is a regex");
+        WHAT_AXE_PRINTS
+            .iter()
+            .filter_map(|(printed, count)| {
+                let read = pattern
+                    .captures(printed)
+                    .map(|found| found.get(1).map(|n| n.as_str().parse::<u32>().ok()));
+                match (read, count) {
+                    (None, _) => Some(format!("{printed:?} is not matched at all")),
+                    (Some(read), count) if read.flatten() != *count => {
+                        Some(format!("{printed:?} is read as {read:?}, not {count:?}"))
+                    }
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_the_workflow_counts_one_error_as_one_and_not_as_none() {
+        // Axe prints the singular as `1 error was found`. The pattern that
+        // counted findings matched `errors? were found`, which reads the
+        // plural and the clean case and nothing else, so on 2026-09-14 three
+        // windows that each printed one error were recorded as clean and the
+        // run's total was 26 where the log held 29. A check that reports a
+        // finding as no finding is guardrail 4 in the check itself.
+        let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
+            .expect("the accessibility workflow");
+
+        let wrong = what_the_pattern_gets_wrong(&the_counting_pattern(&workflow));
+
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_pattern_that_misses_the_singular() {
+        // The pattern that was in the workflow until 2026-09-14, so the check
+        // above is known to be able to fail.
+        let wrong = what_the_pattern_gets_wrong(r"(\d+) errors? were found|No errors were found");
+
+        assert_eq!(wrong, vec!["\"1 error was found\" is not matched at all"]);
+    }
 }
