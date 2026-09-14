@@ -2919,18 +2919,22 @@ tests_last_seen = [
 # and the late flag was measured in minutes, so from one past midnight the
 # alert called the whole day overdue. Late is now asked in the granularity the
 # reminder was stored in. The break puts the minute rule back on whole days.
+#
+# The rule moved out of what_is_due into is_late on 2026-09-14, when a due
+# thing stopped being only a reminder and the moment a row is late from
+# stopped being the moment it was raised at: an event is raised at its start
+# less a lead and is late from its start. Same break, new lines.
 
 [[guard]]
 name = "a reminder for a day is not called overdue during that day"
 file = "src/application/due.rs"
-before = """                late: match moment {
-                    Moment::WholeDay(day) => now.date_naive() > day,
-                    _ => now.signed_duration_since(at) > Duration::minutes(1),
-                },"""
-after = """                late: match moment {
-                    Moment::WholeDay(_) => now.signed_duration_since(at) > Duration::minutes(1),
-                    _ => now.signed_duration_since(at) > Duration::minutes(1),
-                },"""
+before = """        Moment::WholeDay(day) => now.date_naive() > day,
+        names_an_hour => match local_instant(names_an_hour) {"""
+after = """        Moment::WholeDay(day) => match local_instant(Moment::WholeDay(day)) {
+            Some(at) => now.signed_duration_since(at) > Duration::minutes(1),
+            None => false,
+        },
+        names_an_hour => match local_instant(names_an_hour) {"""
 red = [
     "application::due::tests::test_a_reminder_for_a_day_is_not_called_overdue_during_that_day",
 ]
@@ -20689,20 +20693,22 @@ tests_last_seen = [
 ]
 
 # A message the code can ask for that the catalogue does not hold. The break
-# declares a fifth rather than deleting one of the four from the `.ftl`,
-# because a record breaks a source file whose tests this file counts, and the
-# catalogue is not one. The check that walks `ALL` reddens, and so do the two
-# tests that walk `ALL` to format every message, because the fifth cannot be
+# declares one more rather than deleting one from the `.ftl`, because a
+# record breaks a source file whose tests this file counts, and the catalogue
+# is not one. The check that walks `ALL` reddens, and so do the two tests
+# that walk `ALL` to format every message, because the extra one cannot be
 # said, and the companion that plants a short resource and expects exactly
-# three missing now finds four.
+# the declared ones missing now finds one more. Four messages when this was
+# written; seven since 2026-09-14, when the three "in" messages joined, and
+# the break moved to the end of the list.
 [[guard]]
 name = "every message the code can ask for is in the English catalogue"
 file = "src/common/catalogue.rs"
-before = """    /// Within the week.
-    DaysAgo = "dates-days-ago" counting "days",
+before = """    /// Within the week ahead.
+    InDays = "dates-in-days" counting "days",
 }"""
-after = """    /// Within the week.
-    DaysAgo = "dates-days-ago" counting "days",
+after = """    /// Within the week ahead.
+    InDays = "dates-in-days" counting "days",
     /// Declared and never written.
     Never = "dates-never",
 }"""

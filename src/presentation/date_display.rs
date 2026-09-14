@@ -654,6 +654,67 @@ fn which_relative_message(
     None
 }
 
+/// How long ago, on its own, for a sentence that says so whatever the date
+/// style is.
+///
+/// The readings above say "10 minutes ago" only under the relative style,
+/// because there it is standing in for the date. An event that has started
+/// says how long ago it started as a fact about now, not as a way of writing
+/// its date, so the wording is reachable here without the style. The same
+/// boundaries: `None` beyond a week and for anything ahead of now.
+pub fn how_long_ago(when: DateTime<Local>, now: DateTime<Local>) -> Option<String> {
+    let _ = (when, now);
+    todo!()
+}
+
+/// How soon, if that is within the week ahead, in the words of the catalogue
+/// for this locale.
+///
+/// The twin of [`how_long_ago`] in the other direction, for a thing that has
+/// not happened yet: "in 15 minutes" before an event. The past reading
+/// refuses the future on purpose, because a message dated ahead of now is a
+/// clock difference or a forgery, and that refusal is pinned by two tests;
+/// this is a second function rather than a widening of the first so that the
+/// pin holds. Under a minute ahead is "just now", the same sentence as under a
+/// minute behind, because the difference is not one anybody can act on.
+pub fn how_soon(when: DateTime<Local>, now: DateTime<Local>) -> Option<String> {
+    how_soon_asking(WhichLocale::ThisComputer, when, now)
+}
+
+fn how_soon_asking(
+    which: WhichLocale<'_>,
+    when: DateTime<Local>,
+    now: DateTime<Local>,
+) -> Option<String> {
+    let (message, count) = which_future_message(when, now)?;
+    let _ = which;
+    todo!("{message:?} {count:?}")
+}
+
+/// Which sentence a moment ahead gets, and the count that goes in it.
+///
+/// The future twin of [`which_relative_message`], choosing the unit the same
+/// way: under a minute is "just now" with no count, under an hour counts
+/// minutes, under a day counts hours, up to and including seven days counts
+/// days, and anything later or in the past is nothing.
+fn which_future_message(
+    when: DateTime<Local>,
+    now: DateTime<Local>,
+) -> Option<(Message, Option<i64>)> {
+    let _ = (when, now);
+    todo!()
+}
+
+/// The clock reading of a stored moment and nothing else: "3:00 PM".
+///
+/// For a sentence that has already said the day another way, "in 15 minutes",
+/// and wants the hour beside the name. Empty for a whole day, which names no
+/// hour, and for anything this cannot read, so nothing is invented.
+pub fn time_of_day(stored: &str, settings: DateSettings) -> String {
+    let _ = (stored, settings);
+    todo!()
+}
+
 /// Read a stored timestamp.
 ///
 /// The shapes are `common::moment`'s rather than a list kept here. This module
@@ -1232,6 +1293,123 @@ mod tests {
             },
         );
         assert_eq!(shown, "July 29, 2026 at 12:00 PM");
+    }
+
+    /// The future twin's boundaries, apart from the words, mirroring the
+    /// past one's: the same units at the same distances, and nothing for a
+    /// moment behind now.
+    #[test]
+    fn test_which_sentence_a_moment_ahead_gets_and_the_count_that_goes_in_it() {
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(
+            which_future_message(at("2026-07-26 12:00:30"), now),
+            Some((Message::JustNow, None))
+        );
+        assert_eq!(
+            which_future_message(at("2026-07-26 12:59"), now),
+            Some((Message::InMinutes, Some(59)))
+        );
+        assert_eq!(
+            which_future_message(at("2026-07-26 13:00"), now),
+            Some((Message::InHours, Some(1)))
+        );
+        assert_eq!(
+            which_future_message(at("2026-07-27 11:59"), now),
+            Some((Message::InHours, Some(23)))
+        );
+        assert_eq!(
+            which_future_message(at("2026-07-27 12:00"), now),
+            Some((Message::InDays, Some(1)))
+        );
+        assert_eq!(
+            which_future_message(at("2026-08-02 12:00"), now),
+            Some((Message::InDays, Some(7)))
+        );
+        assert_eq!(which_future_message(at("2026-08-02 12:00:01"), now), None);
+        assert_eq!(which_future_message(at("2026-07-26 11:59"), now), None);
+    }
+
+    #[test]
+    fn test_how_soon_is_said_in_the_catalogues_words() {
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(
+            how_soon_asking(english(), at("2026-07-26 12:15"), now).as_deref(),
+            Some("in 15 minutes")
+        );
+        assert_eq!(
+            how_soon_asking(english(), at("2026-07-26 13:00"), now).as_deref(),
+            Some("in 1 hour")
+        );
+        assert_eq!(
+            how_soon_asking(english(), at("2026-07-28 12:00"), now).as_deref(),
+            Some("in 2 days")
+        );
+        assert_eq!(
+            how_soon_asking(english(), at("2026-07-26 12:00:10"), now).as_deref(),
+            Some("just now")
+        );
+        assert_eq!(
+            how_soon_asking(english(), at("2026-08-10 12:00"), now),
+            None
+        );
+        assert_eq!(
+            how_soon_asking(english(), at("2026-07-26 11:00"), now),
+            None
+        );
+    }
+
+    #[test]
+    fn test_the_past_reading_still_refuses_the_future_after_its_twin_arrived() {
+        // The pin: the future twin is a second function, not a widening of
+        // the first. A message dated ahead of now stays a date in the list.
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(which_relative_message(at("2026-07-26 12:15"), now), None);
+    }
+
+    #[test]
+    fn test_how_long_ago_is_reachable_without_the_relative_style() {
+        // An event that has started says so as a fact about now, whatever
+        // style somebody reads dates in.
+        //
+        // The words under a forced English, the way every reading here is
+        // asserted; the public door only for whether it answers, because its
+        // words are this machine's.
+        let now = at("2026-07-26 12:00");
+
+        assert_eq!(
+            relative_to_asking(english(), at("2026-07-26 11:50"), now).as_deref(),
+            Some("10 minutes ago")
+        );
+        assert!(how_long_ago(at("2026-07-26 11:50"), now).is_some());
+        assert_eq!(how_long_ago(at("2026-07-26 12:10"), now), None);
+    }
+
+    #[test]
+    fn test_the_time_of_day_is_the_clock_and_nothing_else() {
+        assert_eq!(time_of_day("2026-07-26 15:00", settings()), "3:00 PM");
+        assert_eq!(
+            time_of_day(
+                "2026-07-26 15:00",
+                DateSettings {
+                    clock: Clock::TwentyFourHour,
+                    ..settings()
+                }
+            ),
+            "15:00"
+        );
+        assert_eq!(
+            time_of_day("2026-07-26", settings()),
+            "",
+            "a whole day names no hour"
+        );
+        assert_eq!(
+            time_of_day("soon", settings()),
+            "",
+            "nothing is invented for a reading that fails"
+        );
     }
 
     #[test]
