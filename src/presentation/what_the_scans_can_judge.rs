@@ -200,9 +200,59 @@ impl fmt::Display for Disagreement {
 
 /// The coverage table in a page, read from the header that names the
 /// channels down to the first line that is not a table row.
+///
+/// The page has other tables. The one wanted is the one whose header has a
+/// column for Axe.Windows, and its rows are the lines after that header, up
+/// to the first line that is not a row, that begin with a criterion number.
 pub fn the_coverage_table(page: &str) -> Option<Table> {
-    let _ = page;
-    None
+    let mut lines = page.lines();
+    let headings = lines.find_map(|line| {
+        let cells = cells_of(line)?;
+        cells
+            .iter()
+            .any(|cell| cell.starts_with(Channel::AxeWindows.heading()))
+            .then_some(cells)
+    })?;
+    let rows = lines
+        .map_while(cells_of)
+        .filter(|cells| !is_a_separator(cells))
+        .filter_map(|cells| {
+            let number = criterion_number(cells.first()?)?;
+            Some(Row { number, cells })
+        })
+        .collect();
+    Some(Table { headings, rows })
+}
+
+/// The cells of a table row, or nothing where the line is not one.
+fn cells_of(line: &str) -> Option<Vec<String>> {
+    let inner = line.trim().strip_prefix('|')?;
+    let inner = inner.strip_suffix('|').unwrap_or(inner);
+    Some(
+        inner
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect(),
+    )
+}
+
+/// The row under a header that is only dashes and colons.
+fn is_a_separator(cells: &[String]) -> bool {
+    cells
+        .iter()
+        .all(|cell| !cell.is_empty() && cell.chars().all(|letter| matches!(letter, '-' | ':')))
+}
+
+/// "1.3.1" from "1.3.1 Info and Relationships", or nothing where the cell
+/// does not begin with three numbers joined by dots.
+fn criterion_number(cell: &str) -> Option<String> {
+    let first_word = cell.split_whitespace().next()?;
+    let parts: Vec<&str> = first_word.split('.').collect();
+    let three_numbers = parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()));
+    three_numbers.then(|| first_word.to_string())
 }
 
 /// Where the page and the code disagree about which criteria a channel can
@@ -213,8 +263,39 @@ pub fn where_the_page_disagrees_with(
     channel: Channel,
     the_code_says: &[Criterion],
 ) -> Vec<Disagreement> {
-    let _ = (page, channel, the_code_says);
-    Vec::new()
+    if the_code_says.is_empty() {
+        return vec![Disagreement::TheCodeNamesNothingFor(channel)];
+    }
+    let table = match the_coverage_table(page) {
+        Some(table) if !table.rows.is_empty() && table.column_for(channel).is_some() => table,
+        _ => return vec![Disagreement::ThePageHasNoRowsFor(channel)],
+    };
+    let the_page_says = table.says_yes_under(channel);
+
+    let mut disagreements = Vec::new();
+    for number in &the_page_says {
+        if !the_code_says
+            .iter()
+            .any(|criterion| criterion.number == number)
+        {
+            disagreements.push(Disagreement::ThePageSaysYes {
+                channel,
+                criterion: number.clone(),
+            });
+        }
+    }
+    for criterion in the_code_says {
+        if !the_page_says
+            .iter()
+            .any(|number| number == criterion.number)
+        {
+            disagreements.push(Disagreement::TheCodeSaysYes {
+                channel,
+                criterion: *criterion,
+            });
+        }
+    }
+    disagreements
 }
 
 #[cfg(test)]

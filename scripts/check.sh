@@ -369,6 +369,14 @@ if [ "$mode" = "docs_only" ]; then
     # reads prose for the six words `CLAUDE.md` bans, and a commit that writes
     # prose and nothing else earns exactly this list.
     cargo test --lib help_page::
+    # `what_the_scans_can_judge` is the eighth, and the `help_page` case again:
+    # it reads `docs/wcag-coverage.md` from inside the library and holds the
+    # page's table to the three criteria the code names. A commit that edits
+    # only that page answers this mode, so without this line the reading ran
+    # on every commit except the ones that could break it, which is what
+    # `CLAUDE.md` says about a guard under `tests/`, happening to a `--lib`
+    # test instead. Added 2026-09-14 with the module.
+    cargo test --lib presentation::what_the_scans_can_judge::
     # --no-fail-fast because this names six targets, and without it a red
     # `house_style` meant the other five never started. Found on 2026-09-03 by
     # `test_one_failing_target_does_not_hide_the_rest`, the moment its exemption
