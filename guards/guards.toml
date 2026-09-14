@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 598 records have arrived since and have not been through it.
+# 600 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21588,4 +21588,54 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/attachment_content.rs", tests = 22 },
     { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 25 },
+]
+
+# ── The usable line, and the harness that reads it ──────────────────────────
+#
+# PERF-02's cold-start figure is read off one log line the application writes
+# when its message list first holds a row: `the message list is usable: N rows,
+# M ms after start`. A harness parses it, so its shape is held byte for byte.
+# The break changes one word, which is what a well-meaning rewording of a log
+# line looks like. Two go red: the byte-for-byte test and the once test, which
+# looks for the line's prefix.
+#
+# Measured by hand on 2026-09-14, the whole library at eight threads: 7,248
+# passed and exactly these two failed.
+
+[[guard]]
+name = "the usable line keeps the shape the harness parses"
+file = "src/common/started.rs"
+before = """        "the message list is usable: {rows} rows, {} ms after start","""
+after = """        "the message list is ready: {rows} rows, {} ms after start","""
+red = [
+    "common::started::tests::test_the_usable_line_is_held_byte_for_byte",
+    "common::started::tests::test_the_usable_line_is_said_once_per_start",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 6 },
+]
+
+# The line is written once per process. The handler that asks for it fires on
+# every load, including a folder change and a sort, and without the once a
+# harness reading the newest line would take a sort for a start. The break
+# spends the flag and ignores what it held, so every load with rows gets a
+# line. One goes red.
+#
+# Measured by hand on 2026-09-14, the whole library at eight threads: 7,249
+# passed and exactly this one failed.
+
+[[guard]]
+name = "the usable line is said once per process"
+file = "src/common/started.rs"
+before = """        if self.said_usable.swap(true, Ordering::SeqCst) {
+            return None;
+        }
+        Some(usable_line(rows, since_start))"""
+after = """        self.said_usable.swap(true, Ordering::SeqCst);
+        Some(usable_line(rows, since_start))"""
+red = [
+    "common::started::tests::test_the_usable_line_is_said_once_per_start",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 6 },
 ]
