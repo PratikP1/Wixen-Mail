@@ -214,8 +214,13 @@ CalDAV accounts.
 
 ## Which tests would fail if the code were wrong
 
-Red/green started at commit 182 of 344, so many of the older tests here were
-written after the code they cover. A test written that way describes what the
+Red/green started at commit `18a02454` on 2026-07-26, so many of the older
+tests here were written after the code they cover. How much of the history
+predates that commit is computed and printed on every commit by
+`test_the_share_of_history_before_red_green_is_computed_and_printed` in
+`tests/every_number_carries_its_command_and_its_date.rs`: 8.9% on 2026-09-14,
+where this line gave two absolutes that came to 53% when it was written on
+2026-07-29. A test written that way describes what the
 code does rather than specifying what it should do, and cannot fail for the bug
 it was written alongside. Mutation testing measures the difference: it alters
 the code and reruns the suite, and reports anything nothing caught.

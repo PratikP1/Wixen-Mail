@@ -6,9 +6,15 @@
 # tests would notice if it stopped. Those are different claims, and only one of
 # them is what a test is for.
 #
-# This project needs to know the difference. Red/green started at commit 182 of
-# 344, so most of the tests here were written after the code they cover, which
-# makes them a description rather than a specification. In one session three
+# This project needs to know the difference. Red/green started at 18a02454 on
+# 2026-07-26, so most of the tests here were written after the code they cover,
+# which makes them a description rather than a specification. How much of the
+# history predates that commit is computed and printed on every commit by
+# test_the_share_of_history_before_red_green_is_computed_and_printed in
+# tests/every_number_carries_its_command_and_its_date.rs: 8.9% on 2026-09-14.
+# This comment gave the commit's position and the count on the day it was
+# written, wrapped across two lines so that a line grep never saw it, and the
+# two numbers stayed true while the share fell from 53%. In one session three
 # tests written on purpose to catch a specific bug passed against that bug.
 #
 # Mutation testing settles it: change the code in a small way, run the suite,

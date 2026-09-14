@@ -39,6 +39,17 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   other. The changelog and `docs/plans/` are not read: their figures are dated
   by their headings and file names.
 
+  The sentence that gave the start of red/green as two absolutes, the
+  commit's position and how many commits there were on the day it was
+  written, which the status page, `CLAUDE.md`, the mutation configuration
+  and the mutation script all carried, is gone from all four. Both numbers were true when
+  written and are still true; the share they implied was 53% then and is
+  under 9% now, and nothing could have failed because neither number moved.
+  A check now computes the share from the history on every commit and prints
+  it with the day, and each of the four places names the check and the share
+  as of the day it was corrected. The two planning records that also carry
+  the sentence are records of their day and are left as written.
+
 - **A page listing what only a person can check**, [the manual accessibility
   pass](manual-accessibility-pass.md). Seventy-six items across the six kinds
   of disability the project's rules name, each saying which screen reader or

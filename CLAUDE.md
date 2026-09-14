@@ -362,10 +362,19 @@ genuinely wrong for this case, add the allow with a comment saying why.
 
 A green suite says the code does what the tests say. It does not say the tests
 would notice if it stopped, and those are different claims. Red/green is what
-keeps them together, and it started at commit 182 of 344, so most of the tests
-here were written after the code they cover and describe it rather than specify
-it. Three tests written in one session to catch a named bug passed against that
-bug.
+keeps them together, and it started at `18a02454` on 2026-07-26, the commit
+that added this file. How much of the history predates that commit is
+computed on every commit by
+`test_the_share_of_history_before_red_green_is_computed_and_printed` in
+`tests/every_number_carries_its_command_and_its_date.rs`, which prints it
+with the day: 8.9% on 2026-09-14. This sentence used to give the share as two
+absolutes, the commit's position and the count on the day it was written,
+which was 53% on 2026-07-29 and stayed word for word true while the share
+fell. Most tests here were still written after the code they cover, because
+red/green began after most of the early work, and they describe it rather
+than specify it; that is a claim about tests, which no commit count settles
+either way. Three tests written in one session to catch a named bug passed
+against that bug.
 
 ```bash
 scripts/mutants.sh src/service        # one directory, slow

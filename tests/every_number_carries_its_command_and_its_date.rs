@@ -1297,13 +1297,28 @@ fn the_two_absolutes_pattern() -> &'static Regex {
 }
 
 /// Where a file states the ratio as two absolutes, if it does: the line the
-/// match starts on and the words.
+/// match starts on and the words. The lines are joined with a space after
+/// unwrapping, and runs of whitespace collapsed, so a sentence wrapped across
+/// two comment lines is one sentence. Read line by line, this missed
+/// `scripts/mutants.sh`, whose sentence broke between the two numbers, and
+/// the wrapped companion was red until the join was written.
 fn the_two_absolutes_in(text: &str) -> Option<(usize, String)> {
-    text.lines().enumerate().find_map(|(index, line)| {
-        the_two_absolutes_pattern()
-            .find(unwrapped(line))
-            .map(|hit| (index + 1, hit.as_str().to_string()))
-    })
+    let mut joined = String::new();
+    let mut line_starts = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        line_starts.push((joined.len(), index + 1));
+        for word in unwrapped(line).split_whitespace() {
+            joined.push_str(word);
+            joined.push(' ');
+        }
+    }
+    let hit = the_two_absolutes_pattern().find(&joined)?;
+    let line = line_starts
+        .iter()
+        .rev()
+        .find(|(offset, _)| *offset <= hit.start())
+        .map_or(1, |(_, line)| *line);
+    Some((line, hit.as_str().to_string()))
 }
 
 /// The complaints across the four sites, one per site that states the ratio.

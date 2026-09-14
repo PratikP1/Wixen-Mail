@@ -21426,7 +21426,7 @@ red = [
     "test_the_reading_can_see_a_row_whose_date_is_missing",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 19 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
 ]
 
 # ── Phase 8, plan 02: a figure on any page carries its date and its source ──
@@ -21456,7 +21456,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 19 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
 ]
 
 # A line that says `target` is stating an aim and is excused from the date. The
@@ -21480,7 +21480,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 19 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
 ]
 
 # The agreement reading holds a test count on the three pages that state one
@@ -21503,5 +21503,5 @@ red = [
     "test_the_three_pages_that_state_the_test_count_quote_one_row",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 19 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 22 },
 ]

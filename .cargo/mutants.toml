@@ -5,7 +5,13 @@
 # or the code is dead. It is the only thing that answers the question a passing
 # suite cannot: a test written after the code it covers describes what the code
 # does, and this project wrote most of its tests that way. Red/green started at
-# commit 182 of 344.
+# 18a02454 on 2026-07-26. How much of the history predates it is computed and
+# printed on every commit by
+# test_the_share_of_history_before_red_green_is_computed_and_printed in
+# tests/every_number_carries_its_command_and_its_date.rs: 8.9% on 2026-09-14.
+# This comment used to give the commit's position and the count on the day it
+# was written, two absolutes that stayed true while the share they implied
+# fell from 53%.
 
 # The wxWidgets layer is left out, and not because it does not matter.
 #
