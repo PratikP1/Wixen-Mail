@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 575 records have arrived since and have not been through it.
+# 580 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21111,4 +21111,90 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/no_label_is_only_a_space.rs", tests = 4 },
+]
+
+# ── 06-09 task 2: the hold table, and done on a task ────────────────────────
+#
+# A snoozed task or event waits in `held_alerts` until a moment. Holding one
+# that is already held has to replace its moment: the latest snooze is the one
+# somebody meant, and a table that kept the first would bring the thing back
+# at the old time. The break turns the replacement into a no-op.
+[[guard]]
+name = "a hold held again replaces its moment rather than keeping the first"
+file = "src/data/message_cache/held_alerts.rs"
+before = """                 ON CONFLICT(kind, id) DO UPDATE SET until = excluded.until","""
+after = """                 ON CONFLICT(kind, id) DO NOTHING","""
+red = [
+    "data::message_cache::held_alerts::tests::test_holding_an_alert_again_replaces_its_moment",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# A hold ending at exactly the moment is kept for one more look, so the table
+# and `due::what_is_due` agree about the boundary without the table knowing
+# the rule. The break lets go of the row on the boundary.
+[[guard]]
+name = "a hold that ended is let go and one that has not is kept"
+file = "src/data/message_cache/held_alerts.rs"
+before = """                "DELETE FROM held_alerts WHERE until < ?1","""
+after = """                "DELETE FROM held_alerts WHERE until <= ?1","""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_hold_that_ended_is_let_go_and_one_that_has_not_is_kept",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# The kind is a word so that a fourth kind is a fourth word. A read that kept
+# only the words this build knows would drop a hold written by a later version
+# and bring a snoozed message back at somebody who went back to this build.
+# The break narrows the read to the three kinds that exist today.
+[[guard]]
+name = "a hold under a kind word this build does not know survives a read"
+file = "src/data/message_cache/held_alerts.rs"
+before = """            .prepare_cached("SELECT kind, id, until FROM held_alerts ORDER BY until, kind, id")"""
+after = """            .prepare_cached("SELECT kind, id, until FROM held_alerts WHERE kind IN ('reminder', 'task', 'event') ORDER BY until, kind, id")"""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_kind_word_this_build_does_not_know_survives_a_read_and_a_prune",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+]
+
+# A task and a reminder can share a row id. The key is the kind and the id
+# together; keyed by the id alone, the second hold under a shared id would be
+# refused by the conflict clause, which names a key that no longer exists. The
+# break is in the schema, which the test template builds once per process.
+[[guard]]
+name = "the same id under two kinds is two holds in the table"
+file = "src/data/message_cache/mod.rs"
+before = """                PRIMARY KEY (kind, id)"""
+after = """                PRIMARY KEY (id)"""
+red = [
+    "data::message_cache::held_alerts::tests::test_a_hold_read_back_is_the_hold_written",
+    "data::message_cache::held_alerts::tests::test_holding_an_alert_again_replaces_its_moment",
+    "data::message_cache::held_alerts::tests::test_the_same_id_under_two_kinds_is_two_holds",
+    "data::message_cache::held_alerts::tests::test_a_hold_that_ended_is_let_go_and_one_that_has_not_is_kept",
+    "data::message_cache::held_alerts::tests::test_a_kind_word_this_build_does_not_know_survives_a_read_and_a_prune",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+]
+
+# The due window answers "done", not "the other way". A writer that set done
+# on a row already done would report a change for a task the phone finished
+# in between, and stamp over the moment it was really finished. The break
+# drops the guard on the row's state.
+[[guard]]
+name = "completing a task already done changes nothing"
+file = "src/data/message_cache/tasks.rs"
+before = """                 WHERE id = ?2 AND NOT is_completed","""
+after = """                 WHERE id = ?2","""
+red = [
+    "data::message_cache::tasks::tests::test_completing_a_task_sets_done_once_and_never_toggles_it_back",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tasks.rs", tests = 22 },
 ]
