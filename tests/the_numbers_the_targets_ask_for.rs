@@ -473,30 +473,38 @@ fn every_process() -> Result<Vec<(u32, u32, String)>, String> {
 }
 
 /// The application and its tree, read at one moment.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct AReading {
     application: Memory,
     /// Every process under the application, summed; WebView2's, in practice.
     tree: Memory,
-    processes_in_the_tree: usize,
+    /// Each process in the tree by name, with its working set, so a reading
+    /// says what the tree is made of and not only what it weighs.
+    members: Vec<(String, Memory)>,
 }
 
 fn read_the_application_and_its_tree(id: u32) -> Result<AReading, String> {
     let application = memory_of(id)?;
     let processes = every_process()?;
     let under = descendants_of(id, &processes);
-    let mut rows = Vec::with_capacity(under.len());
+    let mut members = Vec::with_capacity(under.len());
     for child in &under {
+        let name = processes
+            .iter()
+            .find(|(each, _, _)| each == child)
+            .map_or("unnamed", |(_, _, name)| name.as_str())
+            .to_string();
         // A process that went between the listing and the reading is a
         // process that weighs nothing now, which is the true answer.
         if let Ok(memory) = memory_of(*child) {
-            rows.push(memory);
+            members.push((name, memory));
         }
     }
+    let rows: Vec<Memory> = members.iter().map(|(_, memory)| *memory).collect();
     Ok(AReading {
         application,
         tree: sum_tree(&rows),
-        processes_in_the_tree: rows.len(),
+        members,
     })
 }
 
@@ -583,9 +591,20 @@ fn the_three_readings(
             "this run produced nothing: {gone} before the last reading"
         ));
     }
-    let complaints = complaints_in(&the_newest_log(profile).unwrap_or_default());
-    Ok((after_usable, at_sixty, at_one_twenty, complaints))
+    let log = the_newest_log(profile).unwrap_or_default();
+    // The whole log, when asked for, so a reading can say what the
+    // application did at startup and not only that it did not complain.
+    if std::env::var_os(SHOW_THE_LOG).is_some() {
+        println!("the log, whole:");
+        for line in log.lines() {
+            println!("  {line}");
+        }
+    }
+    Ok((after_usable, at_sixty, at_one_twenty, complaints_in(&log)))
 }
+
+/// Set this to have a run print the application's whole log.
+const SHOW_THE_LOG: &str = "WIXEN_MEASUREMENT_SHOW_LOG";
 
 /// Start the binary against a profile, wait for the usable line, read memory
 /// at the three moments, and stop it.
@@ -635,10 +654,20 @@ fn describe(reading: &AReading) -> String {
         Memory::megabytes(reading.application.working_set),
         Memory::megabytes(reading.application.peak_working_set),
         Memory::megabytes(reading.application.private_bytes),
-        reading.processes_in_the_tree,
+        reading.members.len(),
         Memory::megabytes(reading.tree.working_set),
         Memory::megabytes(reading.application.working_set + reading.tree.working_set),
     )
+}
+
+/// Each process in the tree, by name and working set.
+fn describe_the_tree(reading: &AReading) -> String {
+    reading
+        .members
+        .iter()
+        .map(|(name, memory)| format!("{name} {} MB", Memory::megabytes(memory.working_set)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Print one run's readings and the rows the page takes.
@@ -653,6 +682,7 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
     );
     println!("at usable + 5 s: {}", describe(&run.after_usable));
     println!("at 60 s: {}", describe(&run.at_sixty));
+    println!("the tree at 60 s: {}", describe_the_tree(&run.at_sixty));
     println!("at 120 s: {}", describe(&run.at_one_twenty));
     if run.complaints.is_empty() {
         println!("the log holds no WARN or ERROR line");
