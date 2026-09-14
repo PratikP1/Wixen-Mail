@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 600 records have arrived since and have not been through it.
+# 603 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21638,4 +21638,87 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/started.rs", tests = 6 },
+]
+
+# ── The harness that takes the three numbers ────────────────────────────────
+#
+# The profile the measurement runs against is defined in the target's header:
+# a plain-text body of about 2 KB per message, among other things. The break
+# halves the body, which is what a well-meaning "make the fixture smaller" edit
+# looks like, and the profile stops being the profile the page's numbers were
+# taken under. One goes red: the test that opens a ten-row profile and holds
+# it to the definition.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test the_numbers_the_targets_ask_for`: 13 passed and exactly
+# this one failed.
+
+[[guard]]
+name = "the measurement profile keeps the body size its definition gives"
+file = "tests/the_numbers_the_targets_ask_for.rs"
+suite = "the_numbers_the_targets_ask_for"
+before = """const ABOUT_TWO_KILOBYTES: usize = 2_048;"""
+after = """const ABOUT_TWO_KILOBYTES: usize = 1_024;"""
+red = [
+    "test_the_profile_has_the_shape_the_definition_gives",
+]
+tests_last_seen = [
+    { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
+]
+
+# The parser in the harness and the line the application writes are two
+# halves of one shape. The break is the same reworded line as the library
+# record above, and the point of a second record is where it lands: on
+# `src/common/started.rs` with this target as its suite, so a commit that
+# changes the line runs the harness's parser against it. One goes red: the
+# test that builds the line with the library function and parses it back.
+#
+# Measured by hand on 2026-09-14 against the target: 13 passed and exactly
+# this one failed. The library's own answer to this break is the record
+# above, two red.
+
+[[guard]]
+name = "the harness can still parse the line the application writes"
+file = "src/common/started.rs"
+suite = "the_numbers_the_targets_ask_for"
+before = """        "the message list is usable: {rows} rows, {} ms after start","""
+after = """        "the message list is ready: {rows} rows, {} ms after start","""
+red = [
+    "test_the_usable_line_the_library_writes_parses_back",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 6 },
+    { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
+]
+
+# The window fills the module it opens on at startup. Found on 2026-09-14 by
+# the harness waiting 60 s for a usable line that never came: every fill came
+# from a module switch, a switch to the module already on screen is refused,
+# so the folder tree came up empty and cached mail was not listed until a
+# sync finished or somebody switched away and back. The break takes the one
+# startup fill out and leaves its inputs bound, which is what a tidy-up that
+# thought the switch handled it would look like. One goes red: the reading of
+# the startup section of `run`.
+#
+# The library under the same break: `cargo test --lib -- --test-threads=8`
+# on 2026-09-14, 7,250 passed and none failed, 71 s. No unit test reaches the
+# startup closure, which is why the reading lives in the target and why this
+# record couples `wx_app.rs` to it; the commit that made the fix ran the
+# window's 199 tests and not this target, because no record said to.
+#
+# Measured by hand on 2026-09-14 against the target: 13 passed and exactly
+# this one failed.
+
+[[guard]]
+name = "the module the window opens on is filled at startup"
+file = "src/presentation/wx_app.rs"
+suite = "the_numbers_the_targets_ask_for"
+before = """                load_module_data(module, &message_cache, account_id, &scan_tx, showing);"""
+after = """                let _ = (module, account_id, showing);"""
+red = [
+    "test_the_module_the_window_opens_on_is_filled_at_startup",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
 ]
