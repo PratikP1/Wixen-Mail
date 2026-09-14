@@ -22091,14 +22091,27 @@ mod scan_only_account_tests {
         for (target, needle) in [
             ("ScanTarget::Filters", "        ScanTarget::Filters => "),
             ("ScanTarget::Calendar", "        ScanTarget::Calendar => "),
+            ("ScanTarget::Tags", "        ScanTarget::Tags => "),
+            (
+                "ScanTarget::Signatures",
+                "        ScanTarget::Signatures => ",
+            ),
+            ("ScanTarget::Contacts", "        ScanTarget::Contacts => "),
+            ("ScanTarget::NewEvent", "        ScanTarget::NewEvent => "),
         ] {
             let start = source
                 .find(needle)
                 .unwrap_or_else(|| panic!("no arm for {target} in open_for_scanning"));
-            let line_end = source[start..]
-                .find('\n')
-                .map_or(source.len(), |i| start + i);
-            let arm = &source[start..line_end];
+            // The whole arm, not its first line: rustfmt wraps a call with
+            // seven arguments, and an arm reading only its first line would
+            // find no `cache` on a call that forwards one two lines down.
+            let rest = &source[start + needle.len()..];
+            let arm_end = ["\n        ScanTarget::", "\n    }\n"]
+                .iter()
+                .filter_map(|ends_it| rest.find(ends_it))
+                .min()
+                .map_or(source.len(), |i| start + needle.len() + i);
+            let arm = &source[start..arm_end];
 
             assert!(
                 arm.contains("cache"),

@@ -33,6 +33,19 @@ use crate::common::{Error, Result};
 /// reported as a pass. A test below pins the flag to the workflow.
 pub const FLAG: &str = "--scan-target";
 
+/// The exit code when the window the scan asked for is not open.
+///
+/// Every dialog target is modal, so the call that opens it does not return
+/// until the window closes, and the workflow kills the process while the
+/// window is still up. The call returning at all therefore means the window
+/// is not on screen: it refused to open, or it opened on nothing and closed
+/// itself. Either way the process owns one window, the main one, and a scan
+/// of it now would be reported as a pass for a dialog nobody looked at. So
+/// the process leaves with this code instead, and the workflow reads it as
+/// "not scanned" rather than as a crash, which is a different failure with a
+/// different fix.
+pub const WINDOW_NOT_OPEN: i32 = 3;
+
 /// A window the scan can be pointed at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanTarget {
@@ -201,6 +214,104 @@ mod tests {
                 target.as_name()
             );
         }
+    }
+
+    #[test]
+    fn test_every_window_a_fresh_profile_can_reach_has_a_name() {
+        // The list Pratik answered on 2026-09-14: every window a fresh
+        // profile can open, not the eleven that happened to be there. Each
+        // name here is a window somebody meets, counted from the tree rather
+        // than from the plan, and a name missing from this list is a window
+        // the scan has never looked at.
+        for name in [
+            "columns",
+            "which-copy",
+            "destination",
+            "folder-choice",
+            "new-event",
+            "contacts",
+            "tags",
+            "signatures",
+            "reminder",
+            "conversation",
+            "which-days",
+            "send-later",
+            "add-address-book",
+            "about",
+            "calendar-module",
+            "contacts-module",
+            "reminders-module",
+            "tasks-module",
+            "notes-module",
+        ] {
+            named(name)
+                .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));
+        }
+    }
+
+    #[test]
+    fn test_the_workflow_pins_the_scanner_to_a_release_and_its_checksum() {
+        // The rule set the scan runs has to be one a document can name. With
+        // `releases/latest` it was whatever Microsoft shipped most recently,
+        // and the rule table read twice five days apart did not agree, with
+        // nobody able to say how much was upstream moving. A tag can be moved
+        // by whoever owns the repository; a checksum cannot, so the coverage
+        // list 06-07 writes is a claim about one binary rather than a name.
+        let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
+            .expect("the accessibility workflow");
+
+        assert!(
+            !workflow.contains("releases/latest"),
+            "the workflow still fetches whatever release is newest, so the rule set can \
+             change with no commit here"
+        );
+        assert!(
+            workflow.contains("/releases/download/v"),
+            "the workflow does not download a named release"
+        );
+        let has_a_sha256 = workflow
+            .lines()
+            .any(|line| line.contains("Get-FileHash") && line.contains("SHA256"));
+        assert!(has_a_sha256, "the workflow never hashes what it downloaded");
+        let names_the_expected_hash = workflow.lines().any(|line| {
+            line.split_whitespace().any(|word| {
+                let word = word.trim_matches(|c| c == '\'' || c == '"');
+                word.len() == 64 && word.chars().all(|c| c.is_ascii_hexdigit())
+            })
+        });
+        assert!(
+            names_the_expected_hash,
+            "the workflow hashes the download but never says what the hash has to be"
+        );
+    }
+
+    #[test]
+    fn test_the_workflow_asks_whether_the_application_is_still_running_before_it_scans() {
+        // A dialog that fails to open leaves the main window up and the
+        // process alive, so a scan of it is a second scan of the main window
+        // reported as a pass for a dialog nobody looked at. The program now
+        // exits when the window it was asked for is not open, and the
+        // workflow has to notice that before it scans, or the exit is a
+        // sentence in a log nobody reads.
+        let workflow = std::fs::read_to_string(".github/workflows/accessibility.yml")
+            .expect("the accessibility workflow");
+
+        let scans_at = workflow
+            .find("AxeWindowsCLI.exe `")
+            .expect("the workflow runs the scanner");
+        let asks_at = workflow
+            .find("$app.HasExited")
+            .expect("the workflow never asks whether the application is still running");
+        assert!(
+            asks_at < scans_at,
+            "the workflow asks whether the application is still running only after the \
+             scan, so a window that never opened is scanned as the main window"
+        );
+        assert!(
+            workflow.contains(&format!("-eq {WINDOW_NOT_OPEN}")),
+            "the workflow does not tell the exit code that means the window was not \
+             open from a crash"
+        );
     }
 
     #[test]
