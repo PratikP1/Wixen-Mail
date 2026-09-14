@@ -1,10 +1,21 @@
 # Phase 6: How the application speaks
 
-Eight plans, one per wave. Assembled 2026-09-12 against `main` at `b8857bc8`,
-version `0.116.0`, `guards/guards.toml` holding 729 records, the library holding
-7,075 tests, `.planning/WINDOWS.md` at entry 324 with 302 open. Nothing in the
-repository was changed while these were written, except that one `cargo test`
-was run to check a command these plans use, which wrote only to `target/`.
+Nine plans, one per wave. Eight were assembled 2026-09-12 against `main` at
+`b8857bc8`, version `0.116.0`, `guards/guards.toml` holding 729 records, the
+library holding 7,075 tests, `.planning/WINDOWS.md` at entry 324 with 302 open.
+Nothing in the repository was changed while these were written, except that
+one `cargo test` was run to check a command these plans use, which wrote only
+to `target/`.
+
+**The ninth arrived on 2026-09-14**, against `main` at `562b4b90`, version
+`0.122.0`, 755 records by a TOML reader, `.planning/WINDOWS.md` at entry 378.
+Pratik answered 06-05's checkpoint that day with option 3 and widened it: a
+tone every minute until the reminder window has focus, and then one window for
+every due thing, reminders, tasks and calendar events, each row saying which it
+is, shaped so a mail message somebody asks to be told about later can join
+after version 1. 06-05 was rewritten around the first half and 06-09 written
+for the second. See "Version 2's second seam" below for what the widening
+leaves for the next milestone.
 
 **Read against `06-RESEARCH.md`, written the same day against `febe8e4`.** That
 document is the primary source and most of it survived being used. Where a claim
@@ -30,16 +41,21 @@ inherited from phase 1.
 | 06-01 | 1 | 1 | none | no | **Done.** The model can say what somebody chose, separately from what they get, and a seventeenth event cannot exist without a control |
 | 06-02 | 2 | 1 | 06-01 | decision, answered | **Done.** Sixteen events, three answers each, on the Feedback tab, and the two global boxes that cannot mean what they say are one that can. Criterion 1 has five clauses, four close structurally, none is heard |
 | 06-03 | 3 | 2 | none | decision, answered | **Tasks 1 and 2 done.** Month and day names come from Windows, through `GetDateFormatEx`, at all four shipping sites. Since 2026-09-13, four tasks: task 3 puts the relative wording through Project Fluent as the first piece of version 2, and task 4 is the day names and the signature sentence |
-| 06-04 | 4 | inherited A | none | decision | A permission for one account gets a screen, and the list that recorded it as unreachable empties without disarming its own guard |
-| 06-05 | 5 | inherited B | none | decision | A reminder and somebody who is typing |
+| 06-04 | 4 | inherited A | none | decision, answered | **Done.** A permission for one account has a screen, three boxes that can only narrow, and the list that recorded it as unreachable is empty with its guard retired rather than left green over nothing |
+| 06-05 | 5 | inherited B | none | decision, answered | A reminder due while somebody is typing is said and sounded at once, its window is held for one look and then opened anyway, and the tone comes back once a minute until focus reaches the window, ten times at most. Rewritten 2026-09-14 around Pratik's answer |
 | 06-06 | 6 | 3 | none | decision | The scan is reproducible, and a change to it earns the checks that could catch it |
 | 06-07 | 7 | 3 | 06-06 | decision | "Roughly half of WCAG" becomes a list of fifty-five, and the reading that checks the list is shown a planted violation |
 | 06-08 | 8 | 4 | 06-06, 06-07 | action | The findings the scan really produces, judged one at a time, and the list only a person can walk |
+| 06-09 | 9 | inherited B, widened | 06-05 | decision | One window for every due thing: reminders, tasks with a due date and events with an alert, one row each in time order, each row saying its kind first, with snooze, dismiss and done per row and snooze all and dismiss all. `Due` gains a kind and an identity shaped so a fourth kind, a mail message somebody asked to be told about later, joins after version 1 without a migration. Three decisions at its checkpoint |
 
-Requirement coverage: FEEDBACK-01 by 06-01, 06-02 and 06-04. FEEDBACK-02 by
-06-03. FEEDBACK-03 by 06-06, 06-07 and 06-08.
+Requirement coverage: FEEDBACK-01 by 06-01, 06-02 and 06-04, and 06-05 and
+06-09 carry it in their frontmatter because it is the nearest, while what they
+really close is the second item inherited from phase 1 and Pratik's widening
+of it; neither FEEDBACK-01 nor any other requirement is about a due window, and
+"Version 2's second seam" below says where that belongs. FEEDBACK-02 by 06-03.
+FEEDBACK-03 by 06-06, 06-07 and 06-08.
 
-## Why eight plans, and why one per wave
+## Why nine plans, and why one per wave
 
 **Eight because the phase is eight nearly independent pieces**, and because each
 fits in two or three tasks without a task touching more than five files. The
@@ -48,10 +64,22 @@ separated from the criteria they attach to, the per-event model is separated
 from the panel that uses it, and criterion 3's workflow half is separated from
 its document half.
 
+**Nine because Pratik widened the eighth piece on 2026-09-14** into something
+06-05 could not hold at the size it was planned: a list of every kind rather
+than one reminder, a model with a kind on it, two feeds that have never
+existed, a table for a hold, and two decisions underneath the feeds. 06-09 is
+that, and it is over the two-or-three-task guideline at four tasks and a
+checkpoint, on 06-03's precedent, which ran four tasks with a checkpoint in
+the middle and was executed in two sittings. The checkpoint is the seam if it
+is ever split: the model before it, the feeds, window and wiring after.
+
 **One per wave because every plan here writes `guards/guards.toml`.** That is
 the same reason phase 5.1 ran six plans in six waves, and the arithmetic is the
-same. Seven of the eight also write `docs/changelog.md`. A wave is a set of
-plans sharing no file, and no two plans here can satisfy that.
+same. Eight of the nine also write `docs/changelog.md`. A wave is a set of
+plans sharing no file, and no two plans here can satisfy that. 06-09 also
+depends on 06-05 for real, not only by the file rule: it reads the split
+sentence function, the repeat rule and the shared typing helper by the names
+06-05's summary records.
 
 Why every plan writes the guard records, stated per plan rather than asserted,
 counted 2026-09-12 at `b8857bc8` by parsing `tests_last_seen` blocks rather than
@@ -65,9 +93,28 @@ by grepping a file name:
 | 06-03 | `src/presentation/date_display.rs` | 3 | 37 |
 | 06-04 | `src/data/config.rs`, `tests/house_style.rs` | 5 and 19 | 63 and 69 |
 | 06-05 | `src/presentation/one_question_at_a_time.rs` | 1 | 19 |
+| 06-05, as rewritten 2026-09-14 | `one_question_at_a_time.rs`, `src/presentation/wx_reminder_alert.rs`, `tests/wired.rs` | 1, 0 and **14** | 19, 1 and 69 |
 | 06-06 | `src/presentation/scan_target.rs`, `scripts/which-checks.test.sh` | 0 and 0 | 6 and n/a |
 | 06-07 | wherever the coverage reading is homed | to be decided in the plan | varies |
 | 06-08 | `.planning/WINDOWS.md`, documents | 0 | n/a |
+| 06-09 | `src/application/due.rs`, `src/common/catalogue.rs`, `src/presentation/date_display.rs`, `src/data/message_cache/tasks.rs`, `src/data/message_cache/held_alerts.rs` (new), `src/presentation/wx_reminder_alert.rs`, a new file under `tests/` | 4, 6, 6, 4, 0, whatever 06-05 wrote, 0 | 23, 14, 42, 21, 0, 1 plus 06-05's, 0 |
+
+The 2026-09-14 rows were counted at `562b4b90` with a TOML reader, not with
+the `awk` below, because that `awk` reads only the multi-line
+`tests_last_seen` shape and misses a record written with an inline table; on
+that day the two agreed for every file above, and they need not next time.
+
+**Where 06-05's fourteen come from.** `tests/wired.rs:3622-3652` reads the
+body of the folders question and pins the three tokens of its typing check
+inside it. 06-05 hoists that check into a helper both call sites use, which
+moves the tokens out of the body, so the reading has to be taught the helper
+and a sibling reading written for `raise_what_is_due`. One `#[test]` in a file
+fourteen records name. The alternative, copying the check into both
+functions, was refused by the plan as written on 2026-09-12 for a reason that
+still holds. **The plan as first written did not know this file existed in
+its path**, and its acceptance line "`cargo test --test wired` passes, which is
+what proves the call site is really there" was false, because nothing in that
+file read the reminder's call site. It reads it once 06-05 has run.
 
 Take the command from `CLAUDE.md` rather than a grep. A grep for `config.rs`
 across `guards/guards.toml` answers far more than five, because a file name
@@ -197,20 +244,25 @@ larger than the research says by one task.
 
 ## What Pratik is asked, and where
 
-Nine decisions, one checkpoint each, each in front of the evidence at the moment
-it is needed. None is answered here and none is answered in a plan.
+Twelve decisions, one checkpoint each, each in front of the evidence at the
+moment it is needed. None is answered here and none is answered in a plan;
+the five struck through were answered by Pratik, or dissolved, and the plan
+records his words.
 
 | Decision | Plan | What it changes |
 |---|---|---|
 | ~~1. What relative wording does in a non-English locale~~ | 06-03 | **Answered 2026-09-13: option 3, widened.** Real plural rules through Project Fluent, as the first piece of version 2, in Pratik's words "3 + the start of real internationalization". The audit the answer was gated on is in 06-03's `<package_legitimacy_audit>`, and the package was confirmed the same day. See "Version 2 starts here" below |
 | ~~2. The panel's shape, against the comment that argues for no panel~~ | 06-02 | **Answered 2026-09-12: option 1, a Choice with three controls and a reset button beneath it.** Not option 4's extra row setting one answer for everything, whose state is ambiguous when the sixteen disagree; it costs one row to add later if a listening pass says the sixteen trips are the real problem |
-| 3. Whether a per-account Allow Changes answer is three or one | 06-04 | `Allowed` has three fields and `allowed_for` can only narrow |
-| 4. Whether a reminder waits for typing to stop | 06-05 | Wait, raise without focus, or hold briefly and raise anyway |
+| ~~3. Whether a per-account Allow Changes answer is three or one~~ | 06-04 | **Answered 2026-09-13: all three**, the recommended option, one box per answer in `Allowed`, each able only to narrow |
+| ~~4. Whether a reminder waits for typing to stop~~ | 06-05 | **Answered 2026-09-14: option 3, widened.** "3 + reminder tones every minute until the user focuses on the reminder window which should allow for snooze, snooze all, dismiss, and dismiss all, keeping in mind that there may be multiple reminders in the window. Similar considerations should occur for Calendar and task reminders." The hold, the tone and the sentence stay in 06-05; the window with every kind in it is 06-09 |
+| 10. What time of day a date-only task, or an all-day event's alert, is due | 06-09 | A task's due date is a date on purpose. Start of the day, the stored working-day start, a fixed hour, or a new setting. Recommended: the working-day start, already the person's own |
+| 11. Whose alert an event follows | 06-09 | Not two stores but one column whose absence means three things: Google's calendar default, Microsoft's off, CalDAV's never read. The column only, the program's default for everything, the column else the default, or make the absence say which. Recommended: the column only, with the last as the way the silent ones arrive |
+| 12. Where a snoozed task or event goes | 06-09 | Added by the planner. Its row cannot move, so the hold lives for the session or in a small additive table. Recommended: the table |
 | 5. Whether to widen the scan's target list | 06-06 | Eleven windows are scanned and at least nine more dialogs exist |
 | 6. Whether to pin the Axe.Windows CLI | 06-06 | Whether the coverage list is a claim about something reproducible |
 | 7. Whether `REQUIREMENTS.md` is corrected in place | 06-07 | Three of its evidence lines are wrong and this phase disproves one of its figures |
 | 8. Whether the coverage list is a document or a check | 06-07 | A document goes stale the way the five findings did; a check costs records and needs a companion |
-| 9. How phases 6 and 7 share the tree | 06-04 | Narrowed by measurement to `wx_app.rs` and `tests/house_style.rs` |
+| ~~9. How phases 6 and 7 share the tree~~ | 06-04 | **Dissolved 2026-09-13**: phase 7 finished on 2026-09-12 with all nine plans merged before 06-04 started, so there was nothing to share with. Recorded by 06-04 as the question going away rather than as an answer chosen |
 
 Each checkpoint carries a recommendation rather than a menu, and says what each
 option costs. A decision put without a recommendation is a list, not a question.
@@ -300,6 +352,62 @@ tests included.
    same locale. The day a machine's locale and its catalogue's differ for a
    number over 999 is the day this is revisited.
 
+## Version 2's second seam: a message somebody asked to be told about later
+
+Written 2026-09-14 for the planner of the next milestone, the way the Fluent
+section above was written the day before. This is the direction and the
+shape, not a plan, and nothing in version 1 builds any of it.
+
+**What Pratik asked for.** "We also need to plan for future expansion of this
+functionality (post version 1) which will enable us to set notifications for
+mail that will let the user decide to tackle individual mail later on." A
+mail message, chosen by the person, with a moment attached, arriving in the
+same window as a reminder, a task and an event, as a row that says "Mail:"
+first.
+
+**What 06-09 shapes for it, and where the shaping is.** `Due` in
+`src/application/due.rs` gains a `Kind` with three variants and an `Identity`
+of a kind and an opaque id string composed by the kind's own feed. The fourth
+kind is an addition: a variant, and then the compile errors it produces, which
+are exactly the places a mail row has to answer for. `Kind`'s doc comment
+names the three places 06-09 knows it assumed the three kinds that exist,
+which is the same table the notes seam keeps at
+`docs/development/the-notes-seam.md:689-702`, one level down. `ItemKind::Mail`
+already exists at `src/application/new_item.rs:39-46`, so the word is in the
+tree. The hold table `held_alerts` stores the kind as a word, so a fourth
+kind is a fourth word and not a schema change, and a word this build does not
+know is kept and ignored on `AddressBook::Other`'s reasoning. If 06-09's
+checkpoint chose the session map instead, this paragraph is wrong about the
+table and the summary says so.
+
+**What the mail kind has to answer, in the order the compiler asks.** The
+sentence: what a row says, with "Mail" first, and what "late" means for a
+message somebody meant to come back to. Whether done means something: it
+does, and it is clearing whatever marked the message, which is a writer the
+mail kind brings with it. The alert instant: the moment the person chose,
+which needs a stored row of its own, message identity and moment, and that
+row is the mail kind's own table rather than a column on `messages`. The
+identity: whatever the mail feed composes, and the notes seam's rule holds,
+nothing outside the feed and the writer takes it apart; the message cache's
+row id is one candidate and the account, folder and uid are another, and
+which survives a folder move is the first thing the version 2 planner has to
+find out. The snooze: through `held_alerts` like a task, or by moving its
+own row like a reminder, and the choice is the same one 06-09's premise 8
+makes for the three kinds by asking what the time means.
+
+**What is decided and does not need re-deciding.** One window, every kind a
+row, the kind said first: Pratik's. The tone until focus and its ceiling:
+06-05's. The identity is opaque and composed by the feed: 06-09's, on the
+notes seam's precedent. Nothing here builds a switch, a setting, a menu item
+or a table for mail; PIM-08's third criterion applies word for word, "a
+switch that does nothing is the failure this project has fixed repeatedly".
+
+**Where it is recorded besides here.** 06-09's task 4 adds a row to the `## v2
+Requirements` table in `.planning/REQUIREMENTS.md` pointing at this section
+and at `Kind`'s doc comment, because none of FEEDBACK-01 to 03 is about a due
+window and inventing a requirement id is not a plan's to do. No requirement
+id is owed until the next milestone's requirements are written.
+
 ## What no plan in this phase can close
 
 Ten things. Each becomes one `unrun-verify` entry in `.planning/WINDOWS.md`,
@@ -340,6 +448,24 @@ read its last row rather than that number.
     the fifty-five.** The coverage list 06-07 writes is the record that this is
     so. Writing it down is not testing it.
 
+Added 2026-09-14 with the rewrite of 06-05 and the arrival of 06-09:
+
+11. **Whether a reminder said at once and its window a minute later reads as
+    help or as the same thing twice**, and whether a tone once a minute for ten
+    minutes reads as being looked after or as being nagged. 06-05 builds it;
+    only a listening pass judges it.
+12. **Whether a screen reader speaks the reminder's sentence while another
+    application is in front.** `UiaRaiseNotificationEvent` does not move
+    focus, and NVDA speaks notifications from the foreground process, so
+    somebody in Word may hear only the tone. That is why the tone repeats, and
+    nothing here can confirm it.
+13. **Whether "Task due today" at the working-day start reads as help**, and
+    whether a person with a Google calendar notices that events on the
+    calendar's default alert do not alert here, under 06-09's decisions 10 and
+    11 as recommended.
+14. **Whether a person tabbing past a disabled Mark Done learns why**, on an
+    event row, the same question 06-04 ledgered for its disabled boxes.
+
 **Pratik does the manual and screen reader testing after phase 8.** So these are
 planned to be recorded rather than performed. Criterion 4's second clause, "each
 of the five WebView2 findings is either fixed or recorded as upstream with the
@@ -349,15 +475,25 @@ rather than pretending an executor can do it.
 
 ## Costs every plan is written around
 
-**Guard records: 729 on 2026-09-12 at `b8857bc8`.** This was 720 on the same day
-at `febe8e4`, and 632 when phase 5.1 was planned. Re-take the count rather than
-quoting it, and count records rather than mentions.
+**Guard records: 729 on 2026-09-12 at `b8857bc8`, and 755 on 2026-09-14 at
+`562b4b90`.** This was 720 on 2026-09-12 at `febe8e4`, and 632 when phase 5.1
+was planned. Re-take the count rather than quoting it, and count records
+rather than mentions, with a TOML reader rather than the `awk` above where a
+record might be written as an inline table.
 
-**The per-file figures, taken the same way on the same day.**
+**The per-file figures, taken the same way on the same day.** The rows dated
+2026-09-14 were taken at `562b4b90` for 06-05's rewrite and 06-09.
 
 | file | records | `#[test]` today |
 |---|---|---|
-| `src/presentation/wx_app.rs` | 48 | not counted, see below |
+| `src/presentation/wx_app.rs` | 48 | not counted, see below; 199 on 2026-09-14 |
+| `tests/wired.rs`, 2026-09-14 | 14 | 69 |
+| `src/data/message_cache/mod.rs`, 2026-09-14 | 11 | 23 |
+| `src/common/catalogue.rs`, 2026-09-14 | 6 | 14 |
+| `src/presentation/date_display.rs`, 2026-09-14 | 6 | 42 |
+| `src/application/due.rs`, 2026-09-14 | 4 | 23 |
+| `src/data/message_cache/tasks.rs`, 2026-09-14 | 4 | 21 |
+| `src/presentation/wx_reminder_alert.rs`, 2026-09-14 | 0 | 1 |
 | `tests/house_style.rs` | 19 | 69 |
 | `src/presentation/wx_account_manager.rs` | 6 | 13 |
 | `src/data/config.rs` | 5 | 63 |
@@ -501,6 +637,18 @@ correct for the minute it was written. `0/8` is the answer once these eight file
 are final. Nothing in this phase edits `.planning/ROADMAP.md`, by instruction,
 so it belongs to whoever commits these.
 
+**The same gate, on 2026-09-14, for the ninth file.** The row reads `4/8`
+today and has to read `4/9` in the commit that adds `06-09-PLAN.md`, or
+`test_the_roadmap_counts_the_files_that_are_on_disk` refuses it. And a second
+check in the same target reads `.planning/STATE.md`:
+`test_the_state_file_counts_the_plans_that_are_on_disk` at
+`tests/the_planning_files_agree_with_themselves.rs:813` compares `Total Plans
+in Phase`, which says 8 at `STATE.md:686`, against the phase directory. Both
+move in the same commit, and `progress.total_plans` at `STATE.md:14` says 97
+against 97 `*-PLAN.md` files on disk before the ninth and 98 after; nothing
+checks that field, so it is owed rather than blocking. Neither file is edited
+by the planner, by instruction.
+
 ## Estimates, and why the numbers are small
 
 `raw_tokens` is 30,000 per work task, which is the projection shape phase 7's
@@ -521,6 +669,16 @@ block that waits rather than a block that works.
 Re-derive the factor once this phase has actuals of its own. Five samples from
 one phase is a thin basis and the plans say so.
 
+**Re-derived 2026-09-14 for 06-05's rewrite and 06-09, from nine samples.**
+Phase 6's four landed plans give `actuals.tokens / estimate.raw_tokens` of
+0.063, 0.239, 0.351 and 0.124; with phase 7's five the mean over nine is
+**0.17**, and the spread is 5.6 times, so `low` still. The one four-task plan
+in the sample, 06-03, ran at 0.351, and 06-09 is four tasks with a checkpoint
+in the middle on the same shape, so read its 20,000 as the mean and 42,000 as
+what the nearest precedent cost. `gsd-tools estimate-calibration` reports no
+samples, because it reads a field these summaries do not write; the figures
+above were read from each summary's `actuals` block by hand.
+
 ## What is owed to documents, and belongs to whoever lands these
 
 1. **The roadmap's progress row for phase 6 has to say `0/8`, and the gate is red
@@ -528,7 +686,10 @@ one phase is a thin basis and the plans say so.
    measurement and for the correction to what this README first said about it.
    Not written here on purpose: `.planning/ROADMAP.md` and `.planning/STATE.md`
    are being edited by phase 7's executors in parallel and were moving during
-   this work.
+   this work. **On 2026-09-14 the same row has to move from `4/8` to `4/9`,
+   `STATE.md`'s `Total Plans in Phase` from 8 to 9, and its
+   `progress.total_plans` from 97 to 98, in the commit that adds 06-09**, and
+   the roadmap's phase 6 plan list wants a ninth line.
 2. **The roadmap's phase 6 entry**, which today says `**Plans**: TBD`. It wants
    the count and the eight-line plan list, in the shape phase 7's entry uses.
    Nothing checks that line, so it is owed rather than blocking.

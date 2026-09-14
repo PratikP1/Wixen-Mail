@@ -11,7 +11,7 @@ state_head: 06aa8765
 progress:
   total_phases: 13
   completed_phases: 0
-  total_plans: 97
+  total_plans: 98
   completed_plans: 93
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
@@ -683,7 +683,7 @@ counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
 Current Plan: 4
-Total Plans in Phase: 8
+Total Plans in Phase: 9
 
 ---
 
