@@ -4277,7 +4277,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -4299,7 +4299,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11604,7 +11604,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -11620,7 +11620,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -11650,7 +11650,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -11664,7 +11664,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -13836,7 +13836,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -14365,7 +14365,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -16680,7 +16680,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -16709,7 +16709,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -16773,7 +16773,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -16800,7 +16800,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -17270,7 +17270,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -17507,7 +17507,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 69 },
+    { file = "tests/wired.rs", tests = 71 },
 ]
 
 [[guard]]

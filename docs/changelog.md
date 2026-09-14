@@ -227,6 +227,33 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **A reminder that comes due while you are writing no longer takes the
+  keyboard from you without warning.** Until now the reminder window opened
+  over whatever you were doing, mid-word, and took the keys. Now, if a
+  reminder comes due while you are typing, in the message composer, an item
+  editor, a note or the contacts search, the tone sounds and the reminder is
+  spoken at once, on a channel that does not move focus, and the window
+  waits. It opens a minute later, whether or not you have stopped typing:
+  you have already been told what is due, so the window's job is to take
+  your answer. Its sentence is not spoken a second time when it opens.
+  Once the window is open, its tone sounds again once a minute until the
+  window has your focus, ten times at most, and then it falls silent with
+  the window still on screen. The first time you reach the window the tone
+  stops for good, even if you go back to something else. Nothing is lost: a
+  reminder held back is not marked as raised, and snooze and dismiss work as
+  before. When nobody is typing, nothing changes: the window opens at once,
+  as it always did.
+
+  **Known limitations.** Nobody has heard any of this yet: not the sentence
+  arriving while typing, not the window arriving a minute after it, not the
+  tone coming back, and not whether ten tones a minute apart reads as being
+  looked after or as being nagged. Nobody has checked whether a screen
+  reader speaks the sentence while another application is in front; if it
+  does not, the repeating tone is what reaches you there. The window still
+  opens over you eventually, after the minute: that is the decision, and it
+  buys a warning and a minute rather than never interrupting. A minute is
+  the whole hold, because it is how often the reminders are looked at.
+
 - **Month names in dates now come from your computer instead of always being
   English.** If Windows is set to French, a date reads "26 juillet 2026". If it
   is set to Russian, it reads "26 июля 2026". The order of the day and the
