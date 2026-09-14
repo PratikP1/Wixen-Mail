@@ -1,10 +1,12 @@
 //! The sentences this program speaks, read out of a translation catalogue.
 //!
-//! Four messages today, the relative wording a date is read with: "just now",
-//! "5 minutes ago", "3 hours ago", "2 days ago". They are the first piece of
-//! version 2, which translates the interface and the screen reader's speech,
-//! and this module is shaped for the five thousand sentences that follow
-//! rather than for the four that are here.
+//! Seven messages today, the relative wording a date is read with: "just
+//! now", "5 minutes ago", "3 hours ago", "2 days ago", and since 2026-09-14
+//! "in 15 minutes", "in 2 hours" and "in 1 day" for a thing that has not
+//! happened yet. They are the first piece of version 2, which translates the
+//! interface and the screen reader's speech, and this module is shaped for
+//! the five thousand sentences that follow rather than for the seven that
+//! are here.
 //!
 //! # Why a catalogue and not a plural function
 //!
@@ -128,6 +130,12 @@ messages! {
     HoursAgo = "dates-hours-ago" counting "hours",
     /// Within the week.
     DaysAgo = "dates-days-ago" counting "days",
+    /// Within the hour ahead.
+    InMinutes = "dates-in-minutes" counting "minutes",
+    /// Within the day ahead.
+    InHours = "dates-in-hours" counting "hours",
+    /// Within the week ahead.
+    InDays = "dates-in-days" counting "days",
 }
 
 /// A catalogue compiled into this program, and the bundle built from it once.
@@ -395,7 +403,14 @@ mod tests {
         let short = "dates-just-now = just now\n";
         assert_eq!(
             missing_from(short),
-            vec!["dates-minutes-ago", "dates-hours-ago", "dates-days-ago"]
+            vec![
+                "dates-minutes-ago",
+                "dates-hours-ago",
+                "dates-days-ago",
+                "dates-in-minutes",
+                "dates-in-hours",
+                "dates-in-days"
+            ]
         );
 
         let orphaned = format!("{}\ndates-nobody-asks = orphaned\n", SHIPPED[0].dates);
@@ -430,6 +445,38 @@ mod tests {
         assert_eq!(
             catalogue.say_how_many(Message::DaysAgo, 2).unwrap(),
             "2 days ago"
+        );
+    }
+
+    /// The three in the other direction, for a thing that has not happened
+    /// yet, on the same plural rule as the three behind.
+    #[test]
+    fn test_the_three_future_sentences_say_in() {
+        let catalogue = english();
+
+        assert_eq!(
+            catalogue.say_how_many(Message::InMinutes, 1).unwrap(),
+            "in 1 minute"
+        );
+        assert_eq!(
+            catalogue.say_how_many(Message::InMinutes, 15).unwrap(),
+            "in 15 minutes"
+        );
+        assert_eq!(
+            catalogue.say_how_many(Message::InHours, 1).unwrap(),
+            "in 1 hour"
+        );
+        assert_eq!(
+            catalogue.say_how_many(Message::InHours, 2).unwrap(),
+            "in 2 hours"
+        );
+        assert_eq!(
+            catalogue.say_how_many(Message::InDays, 1).unwrap(),
+            "in 1 day"
+        );
+        assert_eq!(
+            catalogue.say_how_many(Message::InDays, 3).unwrap(),
+            "in 3 days"
         );
     }
 

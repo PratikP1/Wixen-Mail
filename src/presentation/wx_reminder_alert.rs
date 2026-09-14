@@ -403,7 +403,10 @@ mod tests {
         );
         a11y.set_feedback_settings(settings);
         let item = Due {
-            id: "r1".to_string(),
+            identity: crate::application::due::Identity {
+                kind: crate::application::due::Kind::Reminder,
+                id: "r1".to_string(),
+            },
             title: "Ring the bank".to_string(),
             when: "2026-09-14T10:00:00".to_string(),
             late: false,

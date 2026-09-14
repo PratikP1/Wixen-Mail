@@ -108,12 +108,15 @@ events!(
     /// because it names the word in place. What the sound adds is the moment:
     /// knowing at the end of the word rather than on the way back past it.
     MisspelledWord,
-    /// A reminder came due.
+    /// Something came due: a reminder, and since 2026-09-14 a task with a
+    /// due date or a calendar event with an alert, which `application::due`
+    /// tells apart by their `Kind` and which share this one event because
+    /// they share the one window.
     ///
     /// The second event whose written equivalent is not this module's. The
     /// reminder window says what is due and when, in the same sentence it
-    /// announces, and that names the reminder where "Reminder" alone would
-    /// not. So this goes out through `earcon` rather than `signal`, and the
+    /// announces, and that names the thing where "Reminder" alone would not.
+    /// So this goes out through `earcon` rather than `signal`, and the
     /// window is the visible equivalent the sound needs.
     ///
     /// It has its own tone because it is its own fact. It used to borrow the

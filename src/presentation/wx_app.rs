@@ -10112,15 +10112,17 @@ const LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES: u32 = 1;
 #[derive(Debug, Default)]
 struct BetweenLooks {
     /// What has already gone off, so an alert closed at nine does not come
-    /// back at nine oh one.
-    already: RefCell<std::collections::HashSet<String>>,
-    /// What has been said and is waiting for its window, by reminder id, with
+    /// back at nine oh one. By identity and not by id, because a task and a
+    /// reminder can share a row id, and because a day of a repeating event
+    /// carries its series' id and is its own row here.
+    already: RefCell<std::collections::HashSet<crate::application::due::Identity>>,
+    /// What has been said and is waiting for its window, by identity, with
     /// how many looks it has waited. A reminder found due while somebody is
     /// typing is said at that look and its window opens at a later one.
     /// Nothing goes into `already` until the window really opens, so a held
     /// reminder is re-derived at the next look with no bookkeeping to get
     /// wrong; this only remembers that it was said.
-    said_and_waiting: RefCell<std::collections::HashMap<String, u32>>,
+    said_and_waiting: RefCell<std::collections::HashMap<crate::application::due::Identity, u32>>,
     /// Whether a question is on screen right now, which is a different
     /// question from what has already gone off.
     ///
@@ -10597,17 +10599,26 @@ fn raise_what_is_due(
     let now = chrono::Local::now();
     let due = {
         let seen = already.borrow();
+        // The reminder feed. A reminder's stored time is its alert, so it is
+        // raised at its own moment; one with no time is not a candidate. The
+        // hold is empty until the table that keeps one arrives: a snoozed
+        // reminder moves its own row, so nothing here needs holding yet.
+        let nothing_held = std::collections::HashMap::new();
         due::what_is_due(
-            rows.iter().map(|r| {
-                (
-                    r.id.as_str(),
-                    r.title.as_str(),
-                    r.due_datetime.as_deref(),
+            rows.iter().filter_map(|r| {
+                due::Candidate::at_its_own_time(
+                    due::Identity {
+                        kind: due::Kind::Reminder,
+                        id: r.id.clone(),
+                    },
+                    &r.title,
+                    r.due_datetime.as_deref()?,
                     r.is_completed,
                 )
             }),
             now,
             &seen,
+            &nothing_held,
         )
     };
 
@@ -10616,7 +10627,7 @@ fn raise_what_is_due(
     // Left in, it would open without its sentence if it ever came due again.
     said_and_waiting
         .borrow_mut()
-        .retain(|id, _| due.iter().any(|item| item.id == *id));
+        .retain(|identity, _| due.iter().any(|item| item.identity == *identity));
 
     // Asked once per look rather than once per item, because the answer is
     // about this moment and every item found at this look is at the same
@@ -10626,7 +10637,7 @@ fn raise_what_is_due(
     let moment = whether_a_window_may_open(whether_somebody_is_typing(somewhere_to_type), false);
 
     for item in due {
-        let looks_waited = said_and_waiting.borrow().get(&item.id).copied();
+        let looks_waited = said_and_waiting.borrow().get(&item.identity).copied();
         let spoken = match (moment, looks_waited) {
             // Cannot happen while the turn is held. Written out rather than
             // left to a catch-all so that a fourth reason is a compile error
@@ -10640,7 +10651,9 @@ fn raise_what_is_due(
                 // is re-derived at the next look; only that it was said is
                 // remembered.
                 let _ = wx_reminder_alert::say(&item, now, dates, a11y);
-                said_and_waiting.borrow_mut().insert(item.id.clone(), 0);
+                said_and_waiting
+                    .borrow_mut()
+                    .insert(item.identity.clone(), 0);
                 continue;
             }
             (Moment::SomebodyIsTyping, Some(waited))
@@ -10648,7 +10661,7 @@ fn raise_what_is_due(
             {
                 said_and_waiting
                     .borrow_mut()
-                    .insert(item.id.clone(), waited + 1);
+                    .insert(item.identity.clone(), waited + 1);
                 continue;
             }
             // The hold is over, or typing stopped. Either way it was said at
@@ -10657,12 +10670,12 @@ fn raise_what_is_due(
                 wx_reminder_alert::Spoken::Already
             }
         };
-        said_and_waiting.borrow_mut().remove(&item.id);
+        said_and_waiting.borrow_mut().remove(&item.identity);
 
         // Marked before the window opens, not after. The window is modal and
         // the event loop keeps running inside it, so this tick can happen again
         // while somebody is still looking at the first one.
-        already.borrow_mut().insert(item.id.clone());
+        already.borrow_mut().insert(item.identity.clone());
 
         let answer =
             wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2], spoken);
@@ -10684,13 +10697,15 @@ fn raise_what_is_due(
             // Handled above. Written out rather than left to a catch-all, so
             // that adding an answer is a compile error here.
             wx_reminder_alert::Answer::Dismissed => continue,
-            wx_reminder_alert::Answer::Done => (cache.complete_reminder(&item.id, &stamp), None),
+            wx_reminder_alert::Answer::Done => {
+                (cache.complete_reminder(&item.identity.id, &stamp), None)
+            }
             wx_reminder_alert::Answer::Snoozed(snooze) => {
                 let until = due::stored(snooze.until(chrono::Local::now()));
-                let done = cache.snooze_reminder(&item.id, &until, &stamp);
+                let done = cache.snooze_reminder(&item.identity.id, &until, &stamp);
                 // Out of `already`, because a snoozed reminder is one that is
                 // meant to come back.
-                already.borrow_mut().remove(&item.id);
+                already.borrow_mut().remove(&item.identity);
                 (done, Some(until))
             }
         };
@@ -10726,7 +10741,7 @@ fn raise_what_is_due(
         // time, find it still due, and raise it again.
         {
             let mut s = lock_state(state);
-            if let Some(row) = s.reminders.iter_mut().find(|r| r.id == item.id) {
+            if let Some(row) = s.reminders.iter_mut().find(|r| r.id == item.identity.id) {
                 match &moved_to {
                     Some(until) => row.due_datetime = Some(until.clone()),
                     None => row.is_completed = true,

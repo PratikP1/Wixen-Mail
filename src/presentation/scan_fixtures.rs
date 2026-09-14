@@ -104,7 +104,10 @@ pub fn folders() -> Vec<FolderRow> {
 /// A reminder that came due half an hour ago.
 pub fn reminder() -> Due {
     Due {
-        id: "scan-target".to_string(),
+        identity: crate::application::due::Identity {
+            kind: crate::application::due::Kind::Reminder,
+            id: "scan-target".to_string(),
+        },
         title: "Scan target".to_string(),
         when: "2026-01-01T09:00:00".to_string(),
         late: true,

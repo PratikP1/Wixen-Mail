@@ -7,8 +7,18 @@
 //! What is here is the part that can be decided without a window: which items
 //! have come due since the last look, what is said about them, and how snoozing
 //! moves them. The window and the sound are elsewhere and use this.
+//!
+//! Since 2026-09-14 a due thing is not only a reminder. A task with a due date
+//! and a calendar event with an alert come through the same rule and the same
+//! window, each row saying its kind before anything else, and [`Kind`] is
+//! where a fourth kind is added.
 
-use chrono::{DateTime, Duration, Local};
+use std::collections::{HashMap, HashSet};
+
+use chrono::{DateTime, Duration, Local, NaiveDate};
+
+use crate::application::new_item::ItemKind;
+use crate::common::moment::Moment;
 
 /// How long after a reminder is due it is still worth raising.
 ///
@@ -19,13 +29,173 @@ use chrono::{DateTime, Duration, Local};
 /// what arrives is still worth acting on.
 pub const STILL_WORTH_RAISING: Duration = Duration::hours(24);
 
+/// What kind of thing has come due.
+///
+/// Its own enum rather than [`ItemKind`], whose `Contact` and `Note` would
+/// make a contact representable as due, and every exhaustive match here would
+/// carry two arms answering "cannot happen", which is the shape this project
+/// has watched turn from a comment into a bug report. These three are the
+/// kinds that can be due today. A total [`From`] gives the rest of the program
+/// the [`ItemKind`] it takes.
+///
+/// # The seam: what a fourth kind has to answer
+///
+/// A mail message somebody asked to be told about later is the fourth kind,
+/// after version 1. It arrives by adding a variant here and answering the
+/// compile errors, which come in this order:
+///
+/// 1. [`Kind::word`], the word said first in its row, and [`Kind::key`], the
+///    word it is stored under, which [`Kind::from_key`] reads back. A stored
+///    word this build does not know is nobody's kind and is kept rather than
+///    dropped, on `AddressBook::Other`'s reasoning.
+/// 2. [`Kind::can_be_done`], whether done means something for it.
+/// 3. [`Due::spoken`], its sentence, with the word first.
+/// 4. The [`From`] into [`ItemKind`], for the announcement that a row has gone.
+/// 5. An alert-instant function of its own beside [`when_a_day_alerts`] and
+///    [`when_an_event_alerts`], if the moment it is raised at is not the
+///    moment it is about.
+///
+/// The identity string on a [`Due`] is composed by the kind's own feed and
+/// read back by the kind's own writers, and nothing else takes it apart.
+///
+/// # Where this module knows it has assumed three kinds
+///
+/// Written down rather than left to be found, on the precedent of
+/// `docs/development/the-notes-seam.md`, whose table of this shape found four
+/// assumptions when a second backend arrived.
+///
+/// | Assumption | Where | What a fourth kind does |
+/// |---|---|---|
+/// | The sentence forms: a reminder is "due", a task is "due today", an event is "in", "now" or "started" | [`Due::spoken`] | Adds an arm; the signature does not change |
+/// | Done means something for a reminder and a task and nothing for an event | [`Kind::can_be_done`] | Adds an arm |
+/// | A thing is raised at its own moment, or at its day at an hour, or at its start less a lead | [`when_a_day_alerts`], [`when_an_event_alerts`] | Adds a function; neither existing one changes |
+/// | Whether a row is late is read from the shape its moment was stored in, a day or a clock face, and no kind asks otherwise | [`what_is_due`] | Holds unless its moment means something a day or a clock face does not |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Kind {
+    Reminder,
+    Task,
+    Event,
+}
+
+impl Kind {
+    /// Every kind, so a check can walk the whole set.
+    pub const ALL: [Kind; 3] = [Kind::Reminder, Kind::Task, Kind::Event];
+
+    /// The word said first in a row of this kind.
+    pub fn word(self) -> &'static str {
+        match self {
+            Kind::Reminder => "Reminder",
+            Kind::Task => "Task",
+            Kind::Event => "Event",
+        }
+    }
+
+    /// The word this kind is stored under, for a hold that outlives a session.
+    pub fn key(self) -> &'static str {
+        match self {
+            Kind::Reminder => "reminder",
+            Kind::Task => "task",
+            Kind::Event => "event",
+        }
+    }
+
+    /// The kind a stored word names, or `None` for a word this build does not
+    /// know, so that a row written by a later version is kept and ignored
+    /// rather than dropped.
+    pub fn from_key(word: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.key() == word)
+    }
+
+    /// Whether done means something for this kind.
+    ///
+    /// A reminder and a task can be done. An event happens whether or not
+    /// somebody went, and marking it done would write a fact its calendar
+    /// does not hold.
+    pub fn can_be_done(self) -> bool {
+        match self {
+            Kind::Reminder | Kind::Task => true,
+            Kind::Event => false,
+        }
+    }
+}
+
+impl From<Kind> for ItemKind {
+    fn from(kind: Kind) -> Self {
+        match kind {
+            Kind::Reminder => ItemKind::Reminder,
+            Kind::Task => ItemKind::Task,
+            Kind::Event => ItemKind::Event,
+        }
+    }
+}
+
+/// Which due thing a row is.
+///
+/// A kind and an opaque string. Two identities with the same kind and id are
+/// the same thing; the same id under two kinds is two things, because a task
+/// and a reminder can share a row id and nothing about either says so.
+///
+/// The string is composed by the kind's own feed and read back by the kind's
+/// own writers, and nothing else takes it apart. That matters for an event: a
+/// day of a repeating event carries the series' id, so an identity made from
+/// the id alone would make dismissing today's standup dismiss every standup
+/// for the session. The event feed composes its identity from the id and the
+/// start together, and this module never asks which.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identity {
+    pub kind: Kind,
+    pub id: String,
+}
+
+/// Something that might be due: what a feed hands to [`what_is_due`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    pub identity: Identity,
+    pub title: String,
+    /// The moment it is raised at, compared against now. A reminder's own
+    /// time; a task's day at an hour; an event's start less its lead.
+    pub raise_at: DateTime<Local>,
+    /// The moment the row is about, as it was stored: said by the sentence,
+    /// and what the rows are sorted by.
+    pub when: String,
+    /// When it is over, for a thing that has an end. An event that has ended
+    /// is not raised; a reminder and a task have no end.
+    pub ends: Option<DateTime<Local>>,
+    /// Already done, so never raised. Always false for a kind that cannot be.
+    pub done: bool,
+}
+
+impl Candidate {
+    /// A thing whose stored time is its alert: a reminder.
+    ///
+    /// `None` when the stored time cannot be read, which is not the same as
+    /// an error: a time this cannot read is a time that never arrives, and
+    /// the feed has nothing to say about it either.
+    pub fn at_its_own_time(
+        identity: Identity,
+        title: &str,
+        when: &str,
+        done: bool,
+    ) -> Option<Self> {
+        let raise_at = crate::common::moment::read(when)?.on_this_computer()?;
+        Some(Self {
+            identity,
+            title: title.to_string(),
+            raise_at,
+            when: when.to_string(),
+            ends: None,
+            done,
+        })
+    }
+}
+
 /// Something with a time on it that has arrived.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Due {
-    /// The row it came from, so it can be marked done or snoozed.
-    pub id: String,
+    /// Which thing it is, so it can be marked done, snoozed or held.
+    pub identity: Identity,
     pub title: String,
-    /// When it was due, as it was stored.
+    /// The moment the row is about, as it was stored.
     pub when: String,
     /// Whether this is late rather than just arrived.
     pub late: bool,
@@ -34,26 +204,70 @@ pub struct Due {
 impl Due {
     /// The sentence said when the alert opens.
     ///
-    /// Late is said first, because it changes what somebody does next, and
-    /// "half an hour ago" is the difference between an alert to act on and one
-    /// to acknowledge.
+    /// The kind is said first, because a list of rows is heard one word at a
+    /// time and the word that sorts them is the one to hear first. Late comes
+    /// next, because it changes what somebody does: "half an hour ago" is the
+    /// difference between an alert to act on and one to acknowledge.
     pub fn spoken(
         &self,
         now: DateTime<Local>,
         dates: crate::presentation::date_display::DateSettings,
     ) -> String {
+        use crate::presentation::date_display;
+
+        let kind = self.identity.kind;
+        let untitled = format!("Untitled {}", kind.key());
         let title = match self.title.trim() {
-            "" => "Untitled reminder",
+            "" => untitled.as_str(),
             named => named,
         };
-        let when = crate::presentation::date_display::spoken(&self.when, now, dates);
-        if when.is_empty() {
-            return format!("Reminder: {title}");
-        }
-        if self.late {
-            format!("Reminder, overdue: {title}, was due {when}")
-        } else {
-            format!("Reminder: {title}, due {when}")
+        let when = date_display::spoken(&self.when, now, dates);
+        match kind {
+            Kind::Reminder => {
+                if when.is_empty() {
+                    return format!("Reminder: {title}");
+                }
+                if self.late {
+                    format!("Reminder, overdue: {title}, was due {when}")
+                } else {
+                    format!("Reminder: {title}, due {when}")
+                }
+            }
+            // A task on time is due today by construction: it is raised at
+            // its day at an hour and is not late while that day is going,
+            // so the day is not said twice.
+            Kind::Task => {
+                if !self.late {
+                    format!("Task due today: {title}")
+                } else if when.is_empty() {
+                    format!("Task overdue: {title}")
+                } else {
+                    format!("Task overdue: {title}, was due {when}")
+                }
+            }
+            // Ahead, now, or started: three sentences, because the useful
+            // fact about an event is where its start is relative to this
+            // minute, and the clock is said beside the name only when there
+            // is one, which an all-day event has not.
+            Kind::Event => {
+                let start = crate::common::moment::read(&self.when).and_then(local_instant);
+                if self.late {
+                    return match start.and_then(|start| date_display::how_long_ago(start, now)) {
+                        Some(ago) => format!("Event started {ago}: {title}"),
+                        None => format!("Event started: {title}, {when}"),
+                    };
+                }
+                let ahead =
+                    start.filter(|start| start.signed_duration_since(now) > Duration::minutes(1));
+                match ahead.and_then(|start| date_display::how_soon(start, now)) {
+                    Some(soon) => match date_display::time_of_day(&self.when, dates).as_str() {
+                        "" => format!("Event {soon}: {title}"),
+                        clock => format!("Event {soon}: {title}, at {clock}"),
+                    },
+                    None if ahead.is_some() => format!("Event: {title}, {when}"),
+                    None => format!("Event now: {title}"),
+                }
+            }
         }
     }
 }
@@ -99,12 +313,6 @@ impl Snooze {
     }
 }
 
-/// What has come due and has not been raised yet.
-///
-/// `already` is what has been raised in this session, so an alert closed at
-/// nine does not come back at nine oh one. Snoozing works by moving the stored
-/// time, which is why it is not in here: a snoozed reminder is one that is not
-/// due yet.
 /// One alert on screen at a time.
 ///
 /// The alert window is modal, and a modal window in this toolkit runs the event
@@ -142,46 +350,107 @@ impl Drop for Turn<'_> {
     }
 }
 
-pub fn what_is_due<'a>(
-    reminders: impl Iterator<Item = (&'a str, &'a str, Option<&'a str>, bool)>,
+/// What has come due and has not been raised yet, earliest first.
+///
+/// `already` is what has been raised in this session, so an alert closed at
+/// nine does not come back at nine oh one. `held` is what has been snoozed
+/// without its own row moving, by identity, with the moment each hold ends: a
+/// reminder's snooze moves its stored time, so a snoozed reminder is simply
+/// not due yet, but a task's date and an event's start are facts the phone
+/// also holds, so what moves for them is when this program mentions them
+/// again, and that is decided here rather than in a table.
+///
+/// An event whose end has passed is not raised, whatever its alert said:
+/// "started three hours ago" about a meeting that finished two hours ago is
+/// noise.
+pub fn what_is_due(
+    candidates: impl IntoIterator<Item = Candidate>,
     now: DateTime<Local>,
-    already: &std::collections::HashSet<String>,
+    already: &HashSet<Identity>,
+    held: &HashMap<Identity, DateTime<Local>>,
 ) -> Vec<Due> {
-    use crate::common::moment::Moment;
-
-    reminders
-        .filter(|(_, _, _, completed)| !completed)
-        .filter_map(|(id, title, when, _)| {
-            let when = when?;
-            let moment = crate::common::moment::read(when)?;
-            let at = local_instant(moment)?;
+    let mut rows: Vec<(DateTime<Local>, Due)> = candidates
+        .into_iter()
+        .filter(|candidate| !candidate.done)
+        .filter_map(|candidate| {
+            let moment = crate::common::moment::read(&candidate.when)?;
+            let about = local_instant(moment)?;
+            let at = candidate.raise_at;
             if at > now {
                 return None;
             }
             if now.signed_duration_since(at) > STILL_WORTH_RAISING {
                 return None;
             }
-            if already.contains(id) {
+            if already.contains(&candidate.identity) {
                 return None;
             }
-            Some(Due {
-                id: id.to_string(),
-                title: title.to_string(),
-                when: when.to_string(),
-                // Late in the granularity the reminder was stored in. A
-                // reminder set for a day goes off at that day's start and is
-                // not overdue while the day is still going; measured in
-                // minutes it would be called overdue from one past midnight.
-                // For anything with a time, more than a minute past is late:
-                // a reminder raised in the same minute it was due is on time,
-                // and calling that overdue would make every one sound urgent.
-                late: match moment {
-                    Moment::WholeDay(day) => now.date_naive() > day,
-                    _ => now.signed_duration_since(at) > Duration::minutes(1),
-                },
-            })
+            // Held until exactly now is held no longer: a snooze until five
+            // comes back at five, not at five past.
+            if held
+                .get(&candidate.identity)
+                .is_some_and(|until| *until > now)
+            {
+                return None;
+            }
+            if candidate.ends.is_some_and(|end| end <= now) {
+                return None;
+            }
+            let due = Due {
+                identity: candidate.identity,
+                title: candidate.title,
+                when: candidate.when,
+                late: is_late(moment, now),
+            };
+            Some((about, due))
         })
-        .collect()
+        .collect();
+    // By the moment each row is about, not by when it was raised: an event
+    // is raised before its start, and the list reads soonest first. The
+    // stored text breaks a tie so two rows this cannot tell apart keep a
+    // stable order rather than an arbitrary one.
+    rows.sort_by(|(one, a), (other, b)| one.cmp(other).then_with(|| a.when.cmp(&b.when)));
+    rows.into_iter().map(|(_, due)| due).collect()
+}
+
+/// Late in the granularity the moment was stored in.
+///
+/// A thing set for a day goes off at that day's start and is not overdue
+/// while the day is still going; measured in minutes it would be called
+/// overdue from one past midnight. For anything with a time, more than a
+/// minute past is late: one raised in the same minute it was due is on time,
+/// and calling that overdue would make every one sound urgent.
+fn is_late(moment: Moment, now: DateTime<Local>) -> bool {
+    match moment {
+        Moment::WholeDay(day) => now.date_naive() > day,
+        names_an_hour => match local_instant(names_an_hour) {
+            Some(at) => now.signed_duration_since(at) > Duration::minutes(1),
+            None => false,
+        },
+    }
+}
+
+/// When a thing due on a day is raised: that day, at the hour given.
+///
+/// A task's due date is a date and never a time, on purpose, because both
+/// providers send a time and neither means one. So the hour is this program's
+/// to choose, and it is an argument here rather than a constant so that the
+/// choice is made once by the feed and this stays pure. `None` for an hour
+/// that is not one.
+pub fn when_a_day_alerts(day: NaiveDate, hour: u32) -> Option<DateTime<Local>> {
+    // Through `common::moment`, so the hour the clocks change is answered
+    // where it is answered for everything else.
+    crate::common::moment::on_this_computer(day.and_hms_opt(hour, 0, 0)?)
+}
+
+/// When an event is raised: its start, less the lead its alert names.
+///
+/// An all-day event's start is a whole day, so its alert instant is that
+/// day's midnight less the lead, which is the night before. That is what a
+/// stored lead on an all-day event means and it is said here because whoever
+/// wires the event feed chooses what to hand this for such an event.
+pub fn when_an_event_alerts(start: Moment, lead_minutes: i64) -> Option<DateTime<Local>> {
+    Some(local_instant(start)? - Duration::minutes(lead_minutes))
 }
 
 /// When a parsed moment arrives on this computer's clock.
@@ -189,7 +458,7 @@ pub fn what_is_due<'a>(
 /// The shapes it is read from are `common::moment`'s. The list kept here knew
 /// two of them and neither had a `T` in it, so a reminder whose time came from
 /// Outlook or from the event editor was read as nothing and never went off.
-fn local_instant(moment: crate::common::moment::Moment) -> Option<DateTime<Local>> {
+fn local_instant(moment: Moment) -> Option<DateTime<Local>> {
     // One answer, in `common::moment`, so this and the reading module and the
     // calendar's own ordering cannot drift apart about what a stored time
     // means. A date with no time is due at the start of that day, which is
@@ -206,7 +475,6 @@ pub fn stored(at: DateTime<Local>) -> String {
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use std::collections::HashSet;
 
     fn at(text: &str) -> DateTime<Local> {
         crate::common::moment::read(text)
@@ -214,34 +482,80 @@ mod tests {
             .expect("a real moment")
     }
 
-    fn nothing_raised() -> HashSet<String> {
+    fn nothing_raised() -> HashSet<Identity> {
         HashSet::new()
     }
 
-    fn one(id: &str, when: &str) -> Vec<(String, String, Option<String>, bool)> {
-        vec![(
-            id.to_string(),
-            "Call the bank".to_string(),
-            Some(when.to_string()),
-            false,
-        )]
+    fn nothing_held() -> HashMap<Identity, DateTime<Local>> {
+        HashMap::new()
     }
 
-    fn borrowed(
-        rows: &[(String, String, Option<String>, bool)],
-    ) -> impl Iterator<Item = (&str, &str, Option<&str>, bool)> {
-        rows.iter()
-            .map(|(id, title, when, done)| (id.as_str(), title.as_str(), when.as_deref(), *done))
+    fn reminder(id: &str) -> Identity {
+        Identity {
+            kind: Kind::Reminder,
+            id: id.to_string(),
+        }
+    }
+
+    fn task(id: &str) -> Identity {
+        Identity {
+            kind: Kind::Task,
+            id: id.to_string(),
+        }
+    }
+
+    fn event(id: &str) -> Identity {
+        Identity {
+            kind: Kind::Event,
+            id: id.to_string(),
+        }
+    }
+
+    /// One reminder, the way the reminder feed hands one in.
+    fn one(id: &str, when: &str) -> Vec<Candidate> {
+        Candidate::at_its_own_time(reminder(id), "Call the bank", when, false)
+            .into_iter()
+            .collect()
+    }
+
+    /// An event, the way the event feed hands one in: its identity composed
+    /// from the id and the start, raised at its start less a lead.
+    fn an_event(id: &str, start: &str, lead: i64, end: &str) -> Candidate {
+        Candidate {
+            identity: event(&format!("{id}@{start}")),
+            title: "Standup".to_string(),
+            raise_at: at(start) - Duration::minutes(lead),
+            when: start.to_string(),
+            ends: Some(at(end)),
+            done: false,
+        }
+    }
+
+    /// A task, the way the task feed hands one in: due on a day, raised at
+    /// that day at nine.
+    fn a_task(id: &str, day: &str) -> Candidate {
+        Candidate {
+            identity: task(id),
+            title: "File the report".to_string(),
+            raise_at: at(&format!("{day} 09:00")),
+            when: day.to_string(),
+            ends: None,
+            done: false,
+        }
+    }
+
+    fn due(candidates: Vec<Candidate>, now: DateTime<Local>) -> Vec<Due> {
+        what_is_due(candidates, now, &nothing_raised(), &nothing_held())
     }
 
     #[test]
     fn test_a_reminder_that_has_come_due_is_raised() {
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+        let due = due(rows, at("2026-07-26 09:00"));
 
         assert_eq!(due.len(), 1);
-        assert_eq!(due[0].id, "r1");
+        assert_eq!(due[0].identity, reminder("r1"));
         assert!(!due[0].late, "due this minute is not overdue");
     }
 
@@ -263,7 +577,7 @@ mod tests {
         ] {
             let rows = one("r1", stored);
 
-            let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+            let due = due(rows, at("2026-07-26 09:00"));
 
             assert_eq!(due.len(), 1, "stored as {stored}");
             assert!(!due[0].late, "stored as {stored}");
@@ -277,7 +591,7 @@ mod tests {
         // and raised at nine oh one is a reminder that is always late.
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+        let due = due(rows, at("2026-07-26 09:00"));
 
         assert_eq!(due.len(), 1, "a reminder due right now was passed over");
         assert!(
@@ -293,7 +607,7 @@ mod tests {
         // edge should arrive rather than being dropped in silence.
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-27 09:00"), &nothing_raised());
+        let due = due(rows, at("2026-07-27 09:00"));
 
         assert_eq!(due.len(), 1, "a reminder exactly a day late was dropped");
         assert!(due[0].late);
@@ -305,11 +619,7 @@ mod tests {
         // alerts nobody reads.
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(
-            borrowed(&rows),
-            at("2026-07-27 09:00:01"),
-            &nothing_raised(),
-        );
+        let due = due(rows, at("2026-07-27 09:00:01"));
 
         assert!(
             due.is_empty(),
@@ -324,7 +634,7 @@ mod tests {
         // urgent.
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:01"), &nothing_raised());
+        let due = due(rows, at("2026-07-26 09:01"));
 
         assert_eq!(due.len(), 1);
         assert!(!due[0].late, "a minute exactly was called overdue");
@@ -337,14 +647,19 @@ mod tests {
         // being measured in minutes about a value stored in days.
         let rows = one("r1", "2026-07-26");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised());
+        let due = due(rows.clone(), at("2026-07-26 09:00"));
 
         assert_eq!(due.len(), 1);
         assert!(!due[0].late, "a reminder was called overdue on its own day");
 
         // The moment the day it names has passed, it is late, and the
         // existing boundary keeps it raised at exactly a day.
-        let next_day = what_is_due(borrowed(&rows), at("2026-07-27 00:00"), &nothing_raised());
+        let next_day = super::what_is_due(
+            rows,
+            at("2026-07-27 00:00"),
+            &nothing_raised(),
+            &nothing_held(),
+        );
         assert_eq!(next_day.len(), 1);
         assert!(
             next_day[0].late,
@@ -356,16 +671,16 @@ mod tests {
     fn test_a_reminder_that_is_not_due_yet_is_left_alone() {
         let rows = one("r1", "2026-07-26 10:00");
 
-        assert!(what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised()).is_empty());
+        assert!(due(rows, at("2026-07-26 09:00")).is_empty());
     }
 
     #[test]
     fn test_something_raised_once_is_not_raised_again() {
         // An alert closed at nine must not come back at nine oh one.
         let rows = one("r1", "2026-07-26 09:00");
-        let already: HashSet<String> = ["r1".to_string()].into_iter().collect();
+        let already: HashSet<Identity> = [reminder("r1")].into_iter().collect();
 
-        assert!(what_is_due(borrowed(&rows), at("2026-07-26 09:05"), &already).is_empty());
+        assert!(what_is_due(rows, at("2026-07-26 09:05"), &already, &nothing_held()).is_empty());
     }
 
     #[test]
@@ -374,14 +689,14 @@ mod tests {
         // nobody reads, which is how somebody learns to close them unread.
         let rows = one("r1", "2026-07-19 09:00");
 
-        assert!(what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised()).is_empty());
+        assert!(due(rows, at("2026-07-26 09:00")).is_empty());
     }
 
     #[test]
     fn test_something_overdue_by_half_an_hour_still_arrives_and_says_so() {
         let rows = one("r1", "2026-07-26 09:00");
 
-        let due = what_is_due(borrowed(&rows), at("2026-07-26 09:30"), &nothing_raised());
+        let due = due(rows, at("2026-07-26 09:30"));
 
         assert_eq!(due.len(), 1);
         assert!(due[0].late);
@@ -389,22 +704,36 @@ mod tests {
 
     #[test]
     fn test_something_already_done_never_goes_off() {
-        let rows = vec![(
-            "r1".to_string(),
-            "Call the bank".to_string(),
-            Some("2026-07-26 09:00".to_string()),
-            true,
-        )];
+        let rows: Vec<Candidate> =
+            Candidate::at_its_own_time(reminder("r1"), "Call the bank", "2026-07-26 09:00", true)
+                .into_iter()
+                .collect();
 
-        assert!(what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised()).is_empty());
+        assert!(due(rows, at("2026-07-26 09:00")).is_empty());
     }
 
     #[test]
     fn test_a_reminder_with_no_time_on_it_never_goes_off() {
-        // Not at midnight, and not now. Nothing was asked for.
-        let rows = vec![("r1".to_string(), "Someday".to_string(), None, false)];
+        // Not at midnight, and not now. Nothing was asked for. The feed hands
+        // in a stored time or nothing, and nothing is not a candidate.
+        let stored: Option<&str> = None;
+        let rows: Vec<Candidate> = stored
+            .and_then(|when| Candidate::at_its_own_time(reminder("r1"), "Someday", when, false))
+            .into_iter()
+            .collect();
 
-        assert!(what_is_due(borrowed(&rows), at("2026-07-26 09:00"), &nothing_raised()).is_empty());
+        assert!(rows.is_empty(), "a thing with no time became a candidate");
+        assert!(due(rows, at("2026-07-26 09:00")).is_empty());
+    }
+
+    #[test]
+    fn test_a_time_that_cannot_be_read_is_not_a_candidate() {
+        // The same answer the old rule gave from inside: an unreadable time is
+        // a time that never arrives, not an error.
+        assert_eq!(
+            Candidate::at_its_own_time(reminder("r1"), "Someday", "next Tuesday-ish", false),
+            None
+        );
     }
 
     fn spoken_settings() -> crate::presentation::date_display::DateSettings {
@@ -422,7 +751,7 @@ mod tests {
     #[test]
     fn test_an_alert_says_what_it_is_and_when_it_was_due() {
         let due = Due {
-            id: "r1".to_string(),
+            identity: reminder("r1"),
             title: "Call the bank".to_string(),
             when: "2026-07-26 09:00".to_string(),
             late: false,
@@ -441,7 +770,7 @@ mod tests {
         // Somebody hearing it needs to know that first: it changes whether
         // they act now or acknowledge and move on.
         let due = Due {
-            id: "r1".to_string(),
+            identity: reminder("r1"),
             title: "Call the bank".to_string(),
             when: "2026-07-26 09:00".to_string(),
             late: true,
@@ -465,7 +794,7 @@ mod tests {
             ..spoken_settings()
         };
         let due = Due {
-            id: "r1".to_string(),
+            identity: reminder("r1"),
             title: "Call the bank".to_string(),
             when: "2026-07-26".to_string(),
             late: true,
@@ -481,7 +810,7 @@ mod tests {
     fn test_a_reminder_with_no_title_still_says_something() {
         // A window that announces nothing cannot be acted on.
         let due = Due {
-            id: "r1".to_string(),
+            identity: reminder("r1"),
             title: "   ".to_string(),
             when: "2026-07-26 09:00".to_string(),
             late: false,
@@ -492,6 +821,391 @@ mod tests {
                 .contains("Untitled reminder")
         );
     }
+
+    // ── The kind, said first ─────────────────────────────────────────────
+
+    #[test]
+    fn test_a_task_says_task_before_anything_else() {
+        // A row is heard one word at a time, and in a list of three kinds the
+        // word that sorts them is the one to hear first. A task on time is by
+        // construction due today: it is raised at its day at an hour, and it
+        // is not late while that day is still going.
+        let due = Due {
+            identity: task("t1"),
+            title: "File the report".to_string(),
+            when: "2026-07-26".to_string(),
+            late: false,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 09:00"), spoken_settings()),
+            "Task due today: File the report"
+        );
+    }
+
+    #[test]
+    fn test_an_overdue_task_says_so_and_names_the_day() {
+        let due = Due {
+            identity: task("t1"),
+            title: "File the report".to_string(),
+            when: "2026-07-25".to_string(),
+            late: true,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 09:00"), spoken_settings()),
+            "Task overdue: File the report, was due July 25, 2026"
+        );
+    }
+
+    #[test]
+    fn test_an_event_ahead_says_how_soon_then_its_name_then_its_time() {
+        let due = Due {
+            identity: event("e1@2026-07-26 15:00"),
+            title: "Standup".to_string(),
+            when: "2026-07-26 15:00".to_string(),
+            late: false,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 14:45"), spoken_settings()),
+            "Event in 15 minutes: Standup, at 3:00 PM"
+        );
+    }
+
+    #[test]
+    fn test_an_event_starting_this_minute_says_now() {
+        let due = Due {
+            identity: event("e1@2026-07-26 15:00"),
+            title: "Standup".to_string(),
+            when: "2026-07-26 15:00".to_string(),
+            late: false,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 15:00"), spoken_settings()),
+            "Event now: Standup"
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_has_started_says_how_long_ago() {
+        let due = Due {
+            identity: event("e1@2026-07-26 15:00"),
+            title: "Standup".to_string(),
+            when: "2026-07-26 15:00".to_string(),
+            late: true,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 15:10"), spoken_settings()),
+            "Event started 10 minutes ago: Standup"
+        );
+    }
+
+    #[test]
+    fn test_an_all_day_event_ahead_has_no_clock_to_say() {
+        // Raised the night before, from a stored lead on a whole day. There
+        // is no hour to name, and "at 12:00 AM" would be a claim the stored
+        // value never made.
+        let due = Due {
+            identity: event("e1@2026-07-27"),
+            title: "Conference".to_string(),
+            when: "2026-07-27".to_string(),
+            late: false,
+        };
+
+        assert_eq!(
+            due.spoken(at("2026-07-26 23:45"), spoken_settings()),
+            "Event in 15 minutes: Conference"
+        );
+    }
+
+    #[test]
+    fn test_every_kind_says_its_word_first_on_time_and_late() {
+        for kind in Kind::ALL {
+            for late in [false, true] {
+                let due = Due {
+                    identity: Identity {
+                        kind,
+                        id: "1".to_string(),
+                    },
+                    title: "Something".to_string(),
+                    when: "2026-07-26 09:00".to_string(),
+                    late,
+                };
+
+                let said = due.spoken(at("2026-07-26 09:30"), spoken_settings());
+
+                assert!(
+                    said.starts_with(kind.word()),
+                    "{kind:?}, late {late}: {said}"
+                );
+            }
+        }
+    }
+
+    // ── The stored word ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_every_kind_reads_its_own_stored_word_back() {
+        for kind in Kind::ALL {
+            assert_eq!(Kind::from_key(kind.key()), Some(kind));
+        }
+    }
+
+    #[test]
+    fn test_a_stored_word_this_build_does_not_know_is_nobodys_kind() {
+        // "mail" is the fourth kind, after version 1, and a hold written
+        // under that word by a later version has to survive being read by
+        // this one. None here means "keep it and ignore it", which is what
+        // `AddressBook::Other` does for the same reason; an error or a
+        // default kind would either drop the row or raise it as the wrong
+        // thing.
+        assert_eq!(Kind::from_key("mail"), None);
+        assert_eq!(Kind::from_key(""), None);
+        assert_eq!(
+            Kind::from_key("Reminder"),
+            None,
+            "the stored word is lower case"
+        );
+    }
+
+    #[test]
+    fn test_an_event_cannot_be_done_and_the_other_two_can() {
+        // An event happens whether or not somebody went. Marking it done
+        // would write a fact its calendar does not hold, so the window never
+        // offers it.
+        assert!(Kind::Reminder.can_be_done());
+        assert!(Kind::Task.can_be_done());
+        assert!(!Kind::Event.can_be_done());
+    }
+
+    #[test]
+    fn test_every_kind_has_a_menu_kind_for_the_announcement_that_a_row_has_gone() {
+        assert_eq!(ItemKind::from(Kind::Reminder), ItemKind::Reminder);
+        assert_eq!(ItemKind::from(Kind::Task), ItemKind::Task);
+        assert_eq!(ItemKind::from(Kind::Event), ItemKind::Event);
+    }
+
+    // ── Identity ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_the_same_id_under_two_kinds_is_two_things() {
+        // A task and a reminder can share a row id, and dismissing the task
+        // must not dismiss the reminder.
+        let rows = vec![
+            Candidate::at_its_own_time(reminder("1"), "Call the bank", "2026-07-26 09:00", false)
+                .expect("a real moment"),
+            a_task("1", "2026-07-26"),
+        ];
+        let already: HashSet<Identity> = [task("1")].into_iter().collect();
+
+        let due = what_is_due(rows, at("2026-07-26 09:05"), &already, &nothing_held());
+
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(due[0].identity, reminder("1"));
+    }
+
+    #[test]
+    fn test_dismissing_one_day_of_a_series_leaves_the_next_day_due() {
+        // A day of a repeating event carries the series' id. Keyed by id
+        // alone, dismissing today's standup would dismiss every standup for
+        // the session. The feed composes the identity from the id and the
+        // start, so this test does what the feed does and asks nothing about
+        // how.
+        //
+        // Two looks, a day apart, with `already` carried between them the way
+        // the session carries it: at the first, today's is raised and
+        // dismissed; at the second, tomorrow's must still arrive.
+        let today = an_event("standup", "2026-07-26 09:00", 15, "2026-07-26 09:15");
+        let tomorrow = an_event("standup", "2026-07-27 09:00", 15, "2026-07-27 09:15");
+
+        let first_look = what_is_due(
+            vec![today.clone(), tomorrow.clone()],
+            at("2026-07-26 08:50"),
+            &nothing_raised(),
+            &nothing_held(),
+        );
+        assert_eq!(first_look.len(), 1, "{first_look:?}");
+        assert_eq!(first_look[0].identity, today.identity);
+        let dismissed: HashSet<Identity> = first_look.into_iter().map(|row| row.identity).collect();
+
+        let second_look = what_is_due(
+            vec![today, tomorrow.clone()],
+            at("2026-07-27 08:50"),
+            &dismissed,
+            &nothing_held(),
+        );
+
+        assert_eq!(second_look.len(), 1, "{second_look:?}");
+        assert_eq!(second_look[0].identity, tomorrow.identity);
+    }
+
+    // ── The hold ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_a_held_thing_is_not_due_until_its_hold_runs_out() {
+        // A task snoozed until five is not mentioned at four, is mentioned at
+        // five, and its own row was never written.
+        let rows = vec![a_task("t1", "2026-07-26")];
+        let held: HashMap<Identity, DateTime<Local>> =
+            [(task("t1"), at("2026-07-26 17:00"))].into_iter().collect();
+
+        let before = what_is_due(
+            rows.clone(),
+            at("2026-07-26 16:00"),
+            &nothing_raised(),
+            &held,
+        );
+        let at_the_moment = what_is_due(
+            rows.clone(),
+            at("2026-07-26 17:00"),
+            &nothing_raised(),
+            &held,
+        );
+        let after = what_is_due(rows, at("2026-07-26 18:00"), &nothing_raised(), &held);
+
+        assert!(
+            before.is_empty(),
+            "held until five, raised at four: {before:?}"
+        );
+        assert_eq!(
+            at_the_moment.len(),
+            1,
+            "held until five, not raised at five"
+        );
+        assert_eq!(after.len(), 1, "held until five, not raised at six");
+    }
+
+    #[test]
+    fn test_a_hold_on_one_kind_does_not_hold_the_same_id_under_another() {
+        let rows = vec![
+            Candidate::at_its_own_time(reminder("1"), "Call the bank", "2026-07-26 09:00", false)
+                .expect("a real moment"),
+        ];
+        let held: HashMap<Identity, DateTime<Local>> =
+            [(task("1"), at("2026-07-26 17:00"))].into_iter().collect();
+
+        let due = what_is_due(rows, at("2026-07-26 09:05"), &nothing_raised(), &held);
+
+        assert_eq!(
+            due.len(),
+            1,
+            "a hold on a task held a reminder with the same id"
+        );
+    }
+
+    // ── Events ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_an_event_whose_end_has_passed_is_not_raised() {
+        // "Event started three hours ago" about a meeting that finished two
+        // hours ago is noise, and a machine asleep through the morning would
+        // say it about every meeting it missed.
+        let standup = an_event("standup", "2026-07-26 09:00", 15, "2026-07-26 09:15");
+
+        let over = due(vec![standup.clone()], at("2026-07-26 09:15"));
+        let still_going = due(vec![standup], at("2026-07-26 09:14"));
+
+        assert!(over.is_empty(), "an event that ended was raised: {over:?}");
+        assert_eq!(still_going.len(), 1, "an event still going was not raised");
+        assert!(
+            still_going[0].late,
+            "started fourteen minutes ago and not called late"
+        );
+    }
+
+    #[test]
+    fn test_an_event_is_raised_at_its_lead_and_is_not_late_before_it_starts() {
+        let standup = an_event("standup", "2026-07-26 09:00", 15, "2026-07-26 09:30");
+
+        let too_early = due(vec![standup.clone()], at("2026-07-26 08:44"));
+        let at_the_lead = due(vec![standup.clone()], at("2026-07-26 08:45"));
+        let just_started = due(vec![standup], at("2026-07-26 09:01"));
+
+        assert!(too_early.is_empty());
+        assert_eq!(at_the_lead.len(), 1);
+        assert!(
+            !at_the_lead[0].late,
+            "fifteen minutes before the start is not late"
+        );
+        assert!(
+            !just_started[0].late,
+            "a minute exactly past the start is not late"
+        );
+    }
+
+    #[test]
+    fn test_a_task_is_late_once_the_day_it_names_has_passed_and_not_before() {
+        let report = a_task("t1", "2026-07-26");
+
+        let that_evening = due(vec![report.clone()], at("2026-07-26 22:00"));
+        let next_morning = due(vec![report], at("2026-07-27 08:00"));
+
+        assert!(!that_evening[0].late, "called late on its own day");
+        assert!(next_morning[0].late, "not called late the morning after");
+    }
+
+    // ── Order ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_rows_come_back_earliest_first_by_the_moment_they_say() {
+        // The window lists them in this order and a screen reader reads the
+        // first row on arrival, so the first row is the one that is soonest.
+        // An event is raised before its start, so the moment it says is not
+        // the moment it was raised at, and the order is by what is said.
+        let rows = vec![
+            an_event("standup", "2026-07-26 09:30", 30, "2026-07-26 09:45"),
+            Candidate::at_its_own_time(reminder("r1"), "Call the bank", "2026-07-26 09:05", false)
+                .expect("a real moment"),
+            a_task("t1", "2026-07-26"),
+        ];
+
+        let due = due(rows, at("2026-07-26 09:10"));
+
+        let order: Vec<Kind> = due.iter().map(|row| row.identity.kind).collect();
+        assert_eq!(order, [Kind::Task, Kind::Reminder, Kind::Event], "{due:?}");
+    }
+
+    // ── Alert instants ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_a_dated_thing_alerts_on_its_day_at_the_hour_given() {
+        let day = NaiveDate::from_ymd_opt(2026, 7, 26).expect("a real day");
+
+        assert_eq!(when_a_day_alerts(day, 9), Some(at("2026-07-26 09:00")));
+        assert_eq!(when_a_day_alerts(day, 0), Some(at("2026-07-26 00:00")));
+        assert_eq!(when_a_day_alerts(day, 23), Some(at("2026-07-26 23:00")));
+        assert_eq!(when_a_day_alerts(day, 24), None, "there is no hour 24");
+    }
+
+    #[test]
+    fn test_an_event_alerts_at_its_start_less_the_lead() {
+        let start = crate::common::moment::read("2026-07-26 15:00").expect("a real moment");
+
+        assert_eq!(
+            when_an_event_alerts(start, 15),
+            Some(at("2026-07-26 14:45"))
+        );
+        assert_eq!(when_an_event_alerts(start, 0), Some(at("2026-07-26 15:00")));
+        assert_eq!(
+            when_an_event_alerts(start, 1440),
+            Some(at("2026-07-25 15:00"))
+        );
+    }
+
+    #[test]
+    fn test_an_all_day_events_alert_is_the_night_before() {
+        // Its start is a whole day, so a lead counts back from that day's
+        // midnight. That is what the stored lead means; whether it is wanted
+        // is the checkpoint's question and not this function's.
+        let day = crate::common::moment::read("2026-07-27").expect("a real day");
+
+        assert_eq!(when_an_event_alerts(day, 15), Some(at("2026-07-26 23:45")));
+    }
+
+    // ── Snooze and the turn ──────────────────────────────────────────────
 
     #[test]
     fn test_the_snooze_choices_read_as_words() {
