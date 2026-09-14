@@ -3381,7 +3381,7 @@ red = [
     "test_the_new_installation_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A path added to the data folder and left off the pages listing it ────────
@@ -3444,7 +3444,7 @@ red = [
     "test_the_signing_check_can_tell_a_promise_from_a_correction",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3457,7 +3457,7 @@ red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── The two questions Windows answers about a withdrawal ────────────────────
@@ -3524,7 +3524,7 @@ red = [
     "test_the_compiler_agreement_check_can_see_a_disagreement",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3538,7 +3538,7 @@ red = [
     "test_the_compiler_agreement_check_can_see_a_disagreement",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A record in this file that had stopped naming one place ─────────────────
@@ -3564,7 +3564,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3582,7 +3582,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A change the mail server refused, reported as one that happened ─────────
@@ -3817,7 +3817,7 @@ red = [
     "test_no_mutation_result_is_read_from_the_lists_written_for_people",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3830,7 +3830,7 @@ red = [
     "test_what_a_change_touched_is_asked_the_same_way_in_both_places",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3843,7 +3843,7 @@ red = [
     "test_no_mutation_run_has_its_failure_swallowed",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3856,7 +3856,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A run the suite never finished against, read as one that found nothing ───
@@ -3893,7 +3893,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3908,7 +3908,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3921,7 +3921,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -3934,7 +3934,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A reason a mail server already punctuated, punctuated again ──────────────
@@ -4054,7 +4054,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 11 },
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────
@@ -5173,7 +5173,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/status_line.rs", tests = 2 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
@@ -5212,7 +5212,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── What the tag, signature, filter and contact windows answer ──────────────
@@ -5649,7 +5649,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -6018,7 +6018,7 @@ red = [
     "test_the_machinery_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── A meeting that repeats, on its way to Google ────────────────────────────
@@ -6306,7 +6306,7 @@ red = [
     "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 suite = "house_style"
 
@@ -7834,7 +7834,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── One owner for what a manager window says about a changed row ────────────
@@ -7901,7 +7901,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── A changed day of a CalDAV series has to be marked seen before it can be
@@ -8308,7 +8308,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 [[guard]]
@@ -8324,7 +8324,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 13 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]
 
 # ── A server that never answers is waited for off the window's thread, but ──
@@ -11121,7 +11121,7 @@ red = [
     "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11636,7 +11636,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 [[guard]]
@@ -12460,7 +12460,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 [[guard]]
@@ -13312,7 +13312,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -13871,7 +13871,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
-    { file = "tests/house_style.rs", tests = 71 },
+    { file = "tests/house_style.rs", tests = 70 },
 ]
 
 # ── The two integration guards that named no source file ────────────────────
@@ -17535,7 +17535,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -18870,7 +18870,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -20219,7 +20219,7 @@ red = [
     "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 63 },
+    { file = "src/data/config.rs", tests = 66 },
 ]
 
 # Nothing published reading as up to date, which is T-07-19 in one line. The

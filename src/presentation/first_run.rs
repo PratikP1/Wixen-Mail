@@ -346,11 +346,13 @@ mod tests {
 
     #[test]
     fn test_the_introduction_offers_only_the_control_that_exists() {
-        // It offered a setting per account. Nothing writes one: the settings
-        // screen writes the application-wide answer and every account gets
-        // that. This screen is read out in full before somebody reaches the
-        // buttons, so a control named here that is not there is a search
-        // somebody makes with a screen reader for nothing.
+        // It offered a setting per account when nothing wrote one. The
+        // account edit dialog writes one now, and this screen still says the
+        // answer covers every account, because it does: what is chosen here
+        // is the answer for every account, and an account can only be
+        // allowed less than it later. This screen is read out in full before
+        // somebody reaches the buttons, so a control named here that is not
+        // there is a search somebody makes with a screen reader for nothing.
         assert!(INTRODUCTION.contains("the answer covers every account"));
     }
 

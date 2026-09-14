@@ -294,15 +294,18 @@ pub struct AppConfig {
     /// application-wide setting for an id it has never seen cannot be got
     /// wrong that way.
     ///
-    /// Nothing writes it. It is read by `allowed_for` below and honoured all
-    /// the way out to the provider clients, and the settings screen writes the
-    /// application-wide answer only, so every account gets that one. The gap is
-    /// written down here rather than left to be rediscovered: the testing page
-    /// and the first-run screen both used to offer this as a control somebody
-    /// could reach, and neither the screen nor the sentence a sync says names
-    /// an account any more. Wiring it means a control per account on the
-    /// settings screen, and the answer it writes can only ever narrow the
-    /// application-wide one.
+    /// Read by `allowed_for` below and honoured all the way out to the
+    /// provider clients. Written by `set_allowed_for`, which the account edit
+    /// dialog calls with its three boxes, and by nothing else: for a long time
+    /// nothing wrote it at all, and the testing page and the first-run screen
+    /// offered a control that was not there. What is stored can only ever
+    /// narrow the application-wide answer, and `set_allowed_for` says how a
+    /// box that was unavailable is kept.
+    ///
+    /// The sentence a sync says when this holds a change still names Settings
+    /// and not the account, because the sentence has one owner and does not
+    /// know which of the two held it. The account dialog says so beside the
+    /// boxes.
     #[serde(default)]
     pub allowed_per_account: HashMap<String, crate::application::allowed::Allowed>,
     /// The directory each account looks people up in, by account id.
@@ -745,6 +748,39 @@ impl AppConfig {
             .copied()
             .unwrap_or(self.allowed_changes)
             .and(self.allowed_changes)
+    }
+
+    /// Write down what one account may change, as a screen answered it.
+    ///
+    /// What is kept is what this account narrows, not the answer as it was
+    /// ticked. Where Settings has something off for every account, the box
+    /// for it was unavailable and the person was never asked, so it is kept
+    /// as "not narrowed here": the account then follows Settings when that is
+    /// turned on later, rather than staying off with nothing saying why. That
+    /// can never widen anything, because [`allowed_for`](Self::allowed_for)
+    /// applies the application-wide answer on top whatever is stored.
+    ///
+    /// An account that narrows nothing has no row. Most people press OK
+    /// without touching these boxes, and a row per account saying "the same
+    /// as everywhere" would be a decision nobody made, kept in a file where
+    /// every row reads as one.
+    pub fn set_allowed_for(
+        &mut self,
+        account_id: &str,
+        answer: crate::application::allowed::Allowed,
+    ) {
+        let everywhere = self.allowed_changes;
+        let narrowed_here = crate::application::allowed::Allowed {
+            mail: answer.mail || !everywhere.mail,
+            personal_information: answer.personal_information || !everywhere.personal_information,
+            reading: answer.reading || !everywhere.reading,
+        };
+        if narrowed_here == crate::application::allowed::Allowed::EVERYTHING {
+            self.allowed_per_account.remove(account_id);
+        } else {
+            self.allowed_per_account
+                .insert(account_id.to_string(), narrowed_here);
+        }
     }
 
     /// The directory this account looks people up in, if it names one.
@@ -1428,6 +1464,84 @@ mod permission_tests {
             .insert("eager".to_string(), Allowed::EVERYTHING);
 
         assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+    }
+
+    #[test]
+    fn test_an_answer_the_same_as_the_applications_writes_no_entry() {
+        // The account edit dialog shows every account three boxes, and most
+        // people will press OK without touching them. That must not fill the
+        // map with a row per account saying "the same as everywhere", because
+        // a row is a decision somebody made and these people made none.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::FOR_TESTING;
+
+        settings.set_allowed_for("work", Allowed::FOR_TESTING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an answer no different from the application-wide one was written down"
+        );
+
+        // And the other way round: an account that was narrower and is set
+        // back to the same as everywhere loses its row rather than keeping one
+        // that happens to agree today and would not after Settings changed.
+        settings.set_allowed_for("work", Allowed::NOTHING);
+        assert_eq!(settings.allowed_for("work"), Allowed::NOTHING);
+        settings.set_allowed_for("work", Allowed::FOR_TESTING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an account set back to the application-wide answer kept its row"
+        );
+    }
+
+    #[test]
+    fn test_a_screens_answer_for_one_account_can_only_ever_narrow() {
+        // `test_an_account_cannot_be_wider_than_the_setting` above proves the
+        // reader narrows. This proves the writer a screen uses cannot even
+        // record a widening: everything off in Settings, everything on for one
+        // account, and the account gets nothing and is written down nowhere.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::NOTHING;
+
+        settings.set_allowed_for("eager", Allowed::EVERYTHING);
+
+        assert_eq!(settings.allowed_for("eager"), Allowed::NOTHING);
+        assert!(
+            settings.allowed_per_account.is_empty(),
+            "an answer that narrows nothing was kept as though it were a decision"
+        );
+    }
+
+    #[test]
+    fn test_a_box_that_was_unavailable_records_no_narrowing() {
+        // Mail is off for every account in Settings, so the mail box on the
+        // account dialog is unavailable and shows off. Somebody unticks the
+        // tasks box. What is written down is that this account narrows tasks
+        // and says nothing about mail, because the person was never asked.
+        let mut settings = config();
+        settings.allowed_changes = Allowed::FOR_TESTING;
+        let narrowed_on_tasks = Allowed {
+            mail: false,
+            personal_information: false,
+            reading: true,
+        };
+
+        settings.set_allowed_for("work", narrowed_on_tasks);
+        assert_eq!(settings.allowed_for("work"), narrowed_on_tasks);
+
+        // Later, mail is turned on for every account. This account follows,
+        // because it never refused mail; it only ever refused tasks. The
+        // alternative is an account that silently stays off after the person
+        // turned the one switch they could see on, with nothing saying why.
+        settings.allowed_changes = Allowed::EVERYTHING;
+        assert_eq!(
+            settings.allowed_for("work"),
+            Allowed {
+                mail: true,
+                personal_information: false,
+                reading: true,
+            },
+            "an unavailable box was written down as a refusal"
+        );
     }
 
     #[test]
@@ -2268,22 +2382,29 @@ mod every_setting_is_acted_on {
     /// The settings screen, the one file the test above deliberately skips.
     const THE_SETTINGS_SCREEN: &str = "src/presentation/wx_settings.rs";
 
-    /// Where a screen's controls live, for the question "does anything offer
-    /// this at all".
-    const EVERY_SCREEN: &str = "src/presentation";
-
     /// Settings something offers, but not the settings screen, and where.
     ///
     /// Each entry names the file whose control offers it, and that claim is
     /// checked rather than believed, so an entry cannot rot into a lie after
     /// somebody takes the control it points at away.
-    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 3] = [
+    const OFFERED_BY_ANOTHER_SCREEN: [(&str, &str); 4] = [
         // The account manager names the directory an account looks people up
         // in, and which account is the default one to send from. Both are per
         // account, so they belong on the screen that lists accounts.
         ("directories", "src/presentation/wx_account_manager.rs"),
         (
             "default_account_id",
+            "src/presentation/wx_account_manager.rs",
+        ),
+        // What one account may change, for the same reason: it is an answer
+        // about one account, and the settings screen holds the answer for
+        // every account. Three boxes on the account edit dialog, each of
+        // which can only narrow the application-wide one. This was the one
+        // entry in `STORED_AND_OFFERED_BY_NOTHING` below, and moved here
+        // rather than being deleted, because the mirror guard reads the
+        // settings screen alone and would otherwise report it unoffered.
+        (
+            "allowed_per_account",
             "src/presentation/wx_account_manager.rs",
         ),
         // Muting what is read aloud is a menu item with a check on it,
@@ -2305,44 +2426,31 @@ mod every_setting_is_acted_on {
 
     /// Stored, read, honoured, and offered by nothing. The defect itself.
     ///
-    /// This is the shape the test below exists to catch, sitting in the tree
-    /// before the test was written, and `AppConfig::allowed_per_account`'s own
-    /// doc comment has said so for some time: the testing page and the
-    /// first-run screen both used to offer it and neither does now. Closing it
-    /// means a control per account on the settings screen, which is a feature
-    /// rather than a line, and it is written up in
-    /// `.planning/phases/01-folders-and-conversations/deferred-items.md`.
+    /// Empty. It held `allowed_per_account` from the day the mirror guard
+    /// found it until the account edit dialog offered it, and that entry is
+    /// in `OFFERED_BY_ANOTHER_SCREEN` now. The list stays so that the next
+    /// setting found in this shape is named here rather than hidden by
+    /// narrowing the mirror guard until it cannot see it.
     ///
-    /// Named here rather than hidden by narrowing the test until it cannot see
-    /// it. An entry is checked to be still true, so wiring the control turns
-    /// this list into a failure asking for the entry to go.
-    const STORED_AND_OFFERED_BY_NOTHING: [&str; 1] = ["allowed_per_account"];
+    /// **The guard that watched this list is retired with its last entry, and
+    /// has to come back with the next one.**
+    /// `test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing`
+    /// read every screen under `src/presentation` and failed the moment one
+    /// of them named an entry, which is how somebody wiring a control was told
+    /// to take the entry out. Over an empty list it iterates nothing and
+    /// passes whatever the tree holds, which is a guard that is green and
+    /// blind, the census-emptying failure `CLAUDE.md` describes. So it went
+    /// with the entry rather than being left to look like a check. Whoever
+    /// adds an entry here writes that test back in the same commit: walk the
+    /// shipping half of every file under `src/presentation`, and fail for any
+    /// entry a screen names. `what_ships_in` above is the reading to use.
+    const STORED_AND_OFFERED_BY_NOTHING: [&str; 0] = [];
 
     /// The shipping half of one file, or an empty string if it cannot be read.
     fn what_ships_in(path: &str) -> String {
         std::fs::read_to_string(path)
             .map(|text| crate::common::what_ships::what_ships(&text))
             .unwrap_or_default()
-    }
-
-    /// Every screen's shipping half, joined.
-    fn what_every_screen_ships() -> String {
-        fn walk(dir: &std::path::Path, into: &mut Vec<String>) {
-            let Ok(entries) = std::fs::read_dir(dir) else {
-                return;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    walk(&path, into);
-                } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                    into.push(what_ships_in(&path.display().to_string()));
-                }
-            }
-        }
-        let mut found = Vec::new();
-        walk(std::path::Path::new(EVERY_SCREEN), &mut found);
-        found.join("\n")
     }
 
     #[test]
@@ -2497,6 +2605,80 @@ mod every_setting_is_acted_on {
     }
 
     #[test]
+    fn test_what_one_account_may_change_is_offered_by_the_account_manager() {
+        // The fourth hand-named companion, and the first about a screen other
+        // than the settings dialog. `allowed_per_account` was the one entry in
+        // a list of settings stored, read, honoured out to the provider
+        // clients and offered by nothing. The mirror guard below is satisfied
+        // by the name appearing anywhere in a screen, including in a comment,
+        // so it cannot ask whether the control does anything. This asks.
+        //
+        // It reads the account manager rather than the settings screen,
+        // because the answer is per account and belongs on the screen that
+        // lists accounts, beside the directory each account looks people up
+        // in, for the reason `OFFERED_BY_ANOTHER_SCREEN` gives.
+        let account_manager = what_ships_in("src/presentation/wx_account_manager.rs");
+        assert!(
+            !account_manager.is_empty(),
+            "the account manager could not be read, so this proves nothing"
+        );
+
+        // Built, under the heading the sync sentences send somebody to, and
+        // naming the reading heading too, because the third box is about a
+        // read and the Settings box it follows sits under a different heading.
+        for named in ["SETTINGS_SECTION", "READING_SECTION"] {
+            assert!(
+                account_manager.contains(named),
+                "the account manager does not name {named}, so what one account may \
+                 change is honoured all the way out to the provider with no control \
+                 anybody can see or reach"
+            );
+        }
+
+        // Showing the stored answer. Three boxes built from a fixed value would
+        // show every account the same thing and satisfy every line above.
+        assert!(
+            account_manager.contains(".allowed_for("),
+            "the dialog never asks what this account may change, so the boxes show \
+             whatever they were built with"
+        );
+        for shown in ["here.mail", "here.personal_information", "here.reading"] {
+            assert!(
+                account_manager.contains(shown),
+                "the dialog does not show {shown}, so one of the three boxes is not \
+                 built from the answer stored for this account"
+            );
+        }
+
+        // Unavailable rather than offered where it is off for every account,
+        // because a per-account answer can only narrow. A box that looks like
+        // it can widen is a box that lies.
+        assert!(
+            account_manager.contains(".enable(allowed_everywhere)"),
+            "a box for something switched off for every account is offered as \
+             though ticking it could turn it on here"
+        );
+
+        // Read back from the real fields into the one writer, which is the
+        // half a box built, shown and read into nothing would fail.
+        for read_back in [
+            "mail: w.allow_mail_here.get_value()",
+            "personal_information: w.allow_personal_information_here.get_value()",
+            "reading: w.allow_reading_here.get_value()",
+        ] {
+            assert!(
+                account_manager.contains(read_back),
+                "the dialog does not read {read_back}, so ticking that box changes \
+                 nothing"
+            );
+        }
+        assert!(
+            account_manager.contains(".set_allowed_for("),
+            "the three answers are read out of the boxes and written nowhere"
+        );
+    }
+
+    #[test]
     fn test_every_setting_somebody_can_change_is_offered_by_a_screen() {
         // The mirror of the test above, and the reason it is needed is that
         // the test above cannot ask this. It skips `config.rs` and
@@ -2560,25 +2742,8 @@ mod every_setting_is_acted_on {
         );
     }
 
-    #[test]
-    fn test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing() {
-        // The other direction. Somebody wiring a control for one of these
-        // should be told to delete the entry, rather than leaving a list that
-        // reads as a live defect after it has been fixed.
-        let screens = what_every_screen_ships();
-
-        let now_offered: Vec<&str> = STORED_AND_OFFERED_BY_NOTHING
-            .into_iter()
-            .filter(|name| screens.contains(name))
-            .collect();
-
-        assert!(
-            now_offered.is_empty(),
-            "{} setting(s) are recorded as offered by nothing and a screen now \
-             offers them, which is good news: take them out of \
-             STORED_AND_OFFERED_BY_NOTHING:\n  {}",
-            now_offered.len(),
-            now_offered.join("\n  ")
-        );
-    }
+    // `test_a_setting_recorded_as_offered_by_nothing_is_still_offered_by_nothing`
+    // stood here and was retired with the last entry in
+    // `STORED_AND_OFFERED_BY_NOTHING`. Its doc says why and what the next
+    // entry owes.
 }

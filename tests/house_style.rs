@@ -161,81 +161,18 @@ fn test_no_dashes_that_should_be_punctuation() {
     );
 }
 
-/// The promises that send somebody looking for a control nothing writes.
-///
-/// Built from two pieces so that these lines are not themselves a match.
-/// Written out whole they would fail on the file that defines them, the same
-/// way the dash characters above are built from their code points.
-///
-/// `AppConfig::allowed_per_account` is read and honoured, and the settings
-/// screen writes the application-wide answer only, so nothing outside that
-/// field's own tests has ever written one. The testing page and the first-run
-/// screen both offered it. The shape they recommended is not one the code can
-/// take either: a per-account entry can only ever narrow what the application
-/// allows, never widen it.
-///
-/// A family rather than one phrase, because the promise came back in different
-/// words: the getting-started page offered the same absent control as "for
-/// each account separately" and walked past a check that knew one wording.
-const A_CONTROL_NO_SCREEN_WRITES: &[&str] = &[
-    concat!("set it ", "per account"),
-    concat!("for each account ", "separately"),
-];
-
-/// Each line of a document with the one after it, as one run of words.
-///
-/// A sentence in a document is wrapped wherever it reaches the margin, so a
-/// phrase to look for is as likely to be split across two lines as to sit on
-/// one. Read a line at a time, this check missed the very page it was written
-/// for.
-fn a_line_and_the_one_after_it(text: &str) -> Vec<(usize, String)> {
-    let lines: Vec<&str> = text.lines().collect();
-    lines
-        .iter()
-        .enumerate()
-        .map(|(at, line)| {
-            let next = lines.get(at + 1).copied().unwrap_or_default();
-            (
-                at + 1,
-                format!("{} {}", line.trim(), next.trim())
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            )
-        })
-        .collect()
-}
-
-#[test]
-fn test_nothing_offers_a_setting_per_account_that_no_screen_writes() {
-    let mut offered = Vec::new();
-
-    // The pages a person believes, not the planning files. A plan that
-    // specifies this very guard quotes the phrases it forbids, and the reason
-    // is on [`the_pages_that_speak_for_the_product`].
-    for path in the_pages_that_speak_for_the_product() {
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
-        };
-        for (number, run) in a_line_and_the_one_after_it(&text) {
-            if A_CONTROL_NO_SCREEN_WRITES
-                .iter()
-                .any(|offered| run.contains(offered))
-            {
-                offered.push(format!("{}:{number}: {run}", path.display()));
-            }
-        }
-    }
-
-    assert!(
-        offered.is_empty(),
-        "Allow Changes is one answer for the whole application, and nothing \
-         writes an answer for one account. An answer for one account could only \
-         ever narrow the application-wide one anyway, so what these offer is a \
-         control that is not there and a shape the code cannot take:\n  {}",
-        offered.join("\n  ")
-    );
-}
+// `test_nothing_offers_a_setting_per_account_that_no_screen_writes` stood
+// here, with `A_CONTROL_NO_SCREEN_WRITES`, the two phrases it forbade a
+// product page from using, and `a_line_and_the_one_after_it`, the reading
+// that saw a phrase wrapped across two lines. It refused any page saying a
+// permission could be set per account, because for a long time no screen
+// wrote one and the testing page and the first-run screen had both promised
+// a control that was not there. The account edit dialog writes one now, so
+// the sentences it forbade are true, and a check that refuses a true sentence
+// is a check that stops the feature being documented. Retired with the
+// control, not worked around. It never had a companion proving its reading
+// could see a planted phrase, unlike most of its neighbours here; the next
+// document-reading guard somebody writes should carry one.
 
 // ── What a new installation allows ──────────────────────────────────────────
 //

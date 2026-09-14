@@ -7,6 +7,7 @@
 //! user adds such an account (press OK), the browser opens immediately
 //! for authorization with no extra steps or checkboxes.
 
+use crate::application::allowed::{Allowed, READING_SECTION, SETTINGS_SECTION};
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
 use crate::application::mail_auth::no_sign_in_credentials;
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
@@ -916,6 +917,16 @@ struct Page2Shell {
     interval: TextCtrl,
     enabled_label: StaticText,
     enabled: CheckBox,
+    allowed_section_heading: StaticText,
+    allowed_section_spacer: StaticText,
+    allow_mail_here_label: StaticText,
+    allow_mail_here: CheckBox,
+    allow_personal_information_here_label: StaticText,
+    allow_personal_information_here: CheckBox,
+    allow_reading_here_label: StaticText,
+    allow_reading_here: CheckBox,
+    allowed_note_label: StaticText,
+    allowed_note: StaticText,
     directory_section_heading: StaticText,
     directory_section_spacer: StaticText,
     directory_url_label: StaticText,
@@ -950,6 +961,16 @@ impl Page2Shell {
         self.interval.show(visible);
         self.enabled_label.show(visible);
         self.enabled.show(visible);
+        self.allowed_section_heading.show(visible);
+        self.allowed_section_spacer.show(visible);
+        self.allow_mail_here_label.show(visible);
+        self.allow_mail_here.show(visible);
+        self.allow_personal_information_here_label.show(visible);
+        self.allow_personal_information_here.show(visible);
+        self.allow_reading_here_label.show(visible);
+        self.allow_reading_here.show(visible);
+        self.allowed_note_label.show(visible);
+        self.allowed_note.show(visible);
         self.directory_section_heading.show(visible);
         self.directory_section_spacer.show(visible);
         self.directory_url_label.show(visible);
@@ -962,6 +983,110 @@ impl Page2Shell {
 /// What the step heading reads on each page.
 const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
 const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
+
+/// What each of the three boxes about this account's permissions is for, in
+/// the words its label opens with.
+///
+/// Three, because `application::allowed::Allowed` holds three answers and a
+/// control that offered fewer would leave a settings file with two of them
+/// narrowed unreachable again, which is the defect these boxes exist to close.
+/// Each says which of the three it is on its own, because somebody moving
+/// through this page by keyboard meets them in order with nothing else on
+/// screen, and "Mail" alone does not say whether it is about sending mail or
+/// reading it.
+///
+/// The Alt keys are M, K and X, chosen against the other boxes on the
+/// connection page: S, T, L, D, C, B, U, W, G, I, A and H are taken there.
+const MAIL_FROM_THIS_ACCOUNT: &str = "Send and delete &mail from this account";
+const PERSONAL_INFORMATION_FROM_THIS_ACCOUNT: &str =
+    "Change tas&ks, contacts and calendar events from this account";
+const MESSAGE_TEXT_FOR_THIS_ACCOUNT: &str =
+    "Fetch message te&xt for this account when it is not already stored";
+
+/// The label on one of the three boxes above.
+///
+/// Two labels rather than one label and a greyed box, because a greyed box
+/// says "unavailable" and not why. Where Settings has the answer on, the
+/// label says the box can only narrow it. Where Settings has it off, the box
+/// is not an offer, and the label names the heading to go to, `off_under`,
+/// which is the heading the sync sentences already send people to.
+fn permission_box_label(what: &str, allowed_everywhere: bool, off_under: &str) -> String {
+    if allowed_everywhere {
+        format!("{what}, where Settings allows it")
+    } else {
+        format!(
+            "{what}: off for every account under {off_under} in Settings, so it cannot be \
+             turned on here"
+        )
+    }
+}
+
+/// What the box beneath the three boxes says.
+///
+/// Two things somebody cannot work out from three check boxes. That the
+/// answer here can only ever be smaller than the one in Settings, which is
+/// what `AppConfig::allowed_for` does and no box can show. And that the
+/// sentence a sync says when one of these holds a change names Settings and
+/// not the account, because that sentence has one owner and does not know
+/// which of the two held it. Said here rather than only in a changelog,
+/// because a warning that exists only where nobody using the program reads
+/// is a warning nobody gets. The heading is named through its constant, so
+/// this sentence and the sync's cannot drift apart.
+fn this_account_can_only_be_allowed_less() -> String {
+    format!(
+        "This account can be allowed less than Settings allows for every account, never more. \
+         If a sync says to turn on {SETTINGS_SECTION} in Settings and it is already on there, a \
+         box here is what is holding it."
+    )
+}
+
+/// What Settings allows for every account, and what it allows for this one.
+///
+/// Read from the stored settings, the same way [`the_directory_this_account_names`]
+/// reads where an account looks people up, and for the same reason: both are
+/// kept in `AppConfig::allowed_per_account` and its neighbour rather than on
+/// the account. A new account has no id yet and gets the application-wide
+/// answer, which is what `allowed_for` answers for an id it has never seen.
+///
+/// A settings file that cannot be read answers with what a fresh
+/// installation allows, and says so in the log. The boxes then show the safe
+/// end rather than nothing, and saving will fail the same way and be said.
+fn what_this_account_may_change(account_id: Option<&str>) -> (Allowed, Allowed) {
+    let settings = match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings.app_config().clone(),
+        Err(why) => {
+            tracing::warn!("What this account may change could not be read: {why}");
+            crate::data::config::AppConfig::default()
+        }
+    };
+    let everywhere = settings.allowed_changes;
+    let here = account_id.map_or(everywhere, |id| settings.allowed_for(id));
+    (everywhere, here)
+}
+
+/// Write down what this account may change, or that it is not narrowed.
+///
+/// Answers what went wrong, or `None` when nothing did, the way
+/// [`remember_where_to_look_people_up`] does and for the reason it gives:
+/// the boxes are part of this account's own page, and somebody who heard
+/// the account was added has been told the whole page was kept.
+fn remember_what_this_account_may_change(account_id: &str, answer: Allowed) -> Option<String> {
+    let mut settings = match crate::data::config::ConfigManager::load_stored() {
+        Ok(settings) => settings,
+        Err(why) => {
+            tracing::warn!("What this account may change could not be saved: {why}");
+            return Some(format!("{why}"));
+        }
+    };
+    settings
+        .app_config_mut()
+        .set_allowed_for(account_id, answer);
+    if let Err(why) = settings.save() {
+        tracing::warn!("What this account may change could not be saved: {why}");
+        return Some(format!("{why}"));
+    }
+    None
+}
 
 /// The protocol a live `Choice`'s current selection names.
 ///
@@ -1007,6 +1132,12 @@ pub struct AccountEditWidgets {
     pub pass_f: TextCtrl,
     pub interval_f: TextCtrl,
     pub enabled: CheckBox,
+    /// What this account may change, one box per answer in
+    /// `application::allowed::Allowed`. Each can only narrow what Settings
+    /// allows for every account, and is unavailable where Settings has it off.
+    pub allow_mail_here: CheckBox,
+    pub allow_personal_information_here: CheckBox,
+    pub allow_reading_here: CheckBox,
     /// Where this account's organisation keeps its list of people, or empty.
     pub directory_url_f: TextCtrl,
     /// Which part of that list to search, as the organisation names it.
@@ -1175,6 +1306,26 @@ fn show_edit(
                     "Where this account looks people up could not be saved, so that box is \
                      empty again the next time you open it. Everything else on this page was \
                      kept. ({why})"
+                ),
+                Priority::High,
+            );
+        }
+        // The three boxes, read into the one writer. A box that was
+        // unavailable reads as unticked, and `set_allowed_for` keeps that as
+        // "not narrowed here" rather than as a refusal, since nobody was asked.
+        if let Some(why) = remember_what_this_account_may_change(
+            &id,
+            Allowed {
+                mail: w.allow_mail_here.get_value(),
+                personal_information: w.allow_personal_information_here.get_value(),
+                reading: w.allow_reading_here.get_value(),
+            },
+        ) {
+            let _ = a11y.announce(
+                &format!(
+                    "What this account may change could not be saved, so it is what it was \
+                     before you opened this page. Everything else on this page was kept. \
+                     ({why})"
                 ),
                 Priority::High,
             );
@@ -1505,6 +1656,64 @@ pub fn build_account_edit_dialog(
     let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
     let (enabled_label, enabled) = cb("Ena&ble this account", true);
 
+    // ── What this account may change ─────────────────────────────────────
+    //
+    // The same three answers the Permissions tab offers for every account,
+    // for this one. The heading comes from the constant the sync sentences
+    // name, for the reason the settings screen gives: a person told to turn
+    // this on should read the words they were told.
+    //
+    // Each box shows what this account may do today, which is what
+    // `allowed_for` answers: the stored answer where there is one, and the
+    // application-wide one where there is not. Where Settings has an answer
+    // off for every account, the box is unavailable rather than offered,
+    // because ticking it could not turn anything on, and its label says so.
+    let (allowed_section_heading, allowed_section_spacer) =
+        section(&format!("── {SETTINGS_SECTION} for this account ──"));
+    let (everywhere, here) = what_this_account_may_change(existing.map(|a| a.id.as_str()));
+    let permission_box = |what: &str,
+                          shown: bool,
+                          allowed_everywhere: bool,
+                          off_under: &str|
+     -> (StaticText, CheckBox) {
+        let (l, c) = cb_with_description(
+            &permission_box_label(what, allowed_everywhere, off_under),
+            shown,
+            "An account can be allowed less than Settings allows for every account, never more.",
+        );
+        c.enable(allowed_everywhere);
+        (l, c)
+    };
+    let (allow_mail_here_label, allow_mail_here) = permission_box(
+        MAIL_FROM_THIS_ACCOUNT,
+        here.mail,
+        everywhere.mail,
+        SETTINGS_SECTION,
+    );
+    let (allow_personal_information_here_label, allow_personal_information_here) = permission_box(
+        PERSONAL_INFORMATION_FROM_THIS_ACCOUNT,
+        here.personal_information,
+        everywhere.personal_information,
+        SETTINGS_SECTION,
+    );
+    let (allow_reading_here_label, allow_reading_here) = permission_box(
+        MESSAGE_TEXT_FOR_THIS_ACCOUNT,
+        here.reading,
+        everywhere.reading,
+        READING_SECTION,
+    );
+    // The sentence three boxes cannot say between them, beneath them, on both
+    // channels like every other sentence on this page.
+    let (allowed_note_label, allowed_note) = {
+        let said = this_account_can_only_be_allowed_less();
+        let l = StaticText::builder(&dlg).with_label("").build();
+        let n = StaticText::builder(&dlg).with_label(&said).build();
+        set_accessible_name(&n, &said);
+        fields.add(&l, 0, SizerFlag::All, 4);
+        fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
+        (l, n)
+    };
+
     // Where somebody's employer keeps its list of people, so typing part of a
     // colleague's name into a message finds them.
     //
@@ -1553,6 +1762,16 @@ pub fn build_account_edit_dialog(
         interval: interval_f,
         enabled_label,
         enabled,
+        allowed_section_heading,
+        allowed_section_spacer,
+        allow_mail_here_label,
+        allow_mail_here,
+        allow_personal_information_here_label,
+        allow_personal_information_here,
+        allow_reading_here_label,
+        allow_reading_here,
+        allowed_note_label,
+        allowed_note,
         directory_section_heading,
         directory_section_spacer,
         directory_url_label,
@@ -1616,6 +1835,9 @@ pub fn build_account_edit_dialog(
         pass_f,
         interval_f,
         enabled,
+        allow_mail_here,
+        allow_personal_information_here,
+        allow_reading_here,
         directory_url_f,
         directory_base_f,
         next,
@@ -2235,6 +2457,63 @@ mod tests {
                 window.contains(constant),
                 "{site} does not attach {constant} within reach of where it is built: {window}"
             );
+        }
+    }
+
+    #[test]
+    fn test_a_permission_box_says_which_of_the_three_it_is_and_that_it_can_only_narrow() {
+        // Three boxes met in order by somebody moving through the page with a
+        // screen reader. Each has to say which of the three it is, and that
+        // an account can be allowed less than Settings allows and never more.
+        // Where Settings has it off for every account, the box is not an
+        // offer, and its own name says so and names the heading to go to.
+        use crate::application::allowed::{READING_SECTION, SETTINGS_SECTION};
+
+        let offered = permission_box_label(MAIL_FROM_THIS_ACCOUNT, true, SETTINGS_SECTION);
+        let unavailable = permission_box_label(MAIL_FROM_THIS_ACCOUNT, false, SETTINGS_SECTION);
+        assert!(
+            offered.contains("mail") && offered.contains("this account"),
+            "{offered}"
+        );
+        assert!(
+            offered.contains("Settings"),
+            "the label does not say it can only narrow what Settings allows: {offered}"
+        );
+        assert!(
+            unavailable.contains("cannot be turned on here"),
+            "a box that is off for every account reads as an offer: {unavailable}"
+        );
+        assert!(
+            unavailable.contains(SETTINGS_SECTION),
+            "the box does not name the heading where it is off: {unavailable}"
+        );
+        assert_ne!(offered, unavailable);
+
+        // The reading box names the reading heading, not the one about
+        // changes, for the reason `READING_SECTION`'s own doc gives: a
+        // sentence sending somebody to a heading has to name the heading they
+        // will find.
+        let reading_off =
+            permission_box_label(MESSAGE_TEXT_FOR_THIS_ACCOUNT, false, READING_SECTION);
+        assert!(
+            reading_off.contains(READING_SECTION) && !reading_off.contains(SETTINGS_SECTION),
+            "{reading_off}"
+        );
+
+        // Told apart, and each on its own Alt key.
+        let mut keys = Vec::new();
+        for what in [
+            MAIL_FROM_THIS_ACCOUNT,
+            PERSONAL_INFORMATION_FROM_THIS_ACCOUNT,
+            MESSAGE_TEXT_FOR_THIS_ACCOUNT,
+        ] {
+            let after_ampersand = what.split_once('&').map(|(_, rest)| rest.chars().next());
+            let key = after_ampersand.flatten().expect("each box has an Alt key");
+            assert!(
+                !keys.contains(&key),
+                "two of the three boxes share Alt+{key}"
+            );
+            keys.push(key);
         }
     }
 
