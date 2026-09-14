@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 356
+open_count: 361
 waived_count: 0
 fixed_count: 22
-total_count: 378
-last_updated: 2026-09-14T06:25:41.760Z
+total_count: 383
+last_updated: 2026-09-14T09:31:08.544Z
 ---
 
 # Broken Windows Ledger
@@ -393,6 +393,11 @@ last_updated: 2026-09-14T06:25:41.760Z
 | 376 | 06 | unrun-verify | src/application/allowed.rs |  | None of the sending, deleting and syncing a per-account answer governs has ever run against a real account, so what unticking a box on the account dialog holds back has only ever been held back in tests. allowed_for is unchanged and narrows as it always did; the new writer set_allowed_for is covered by three unit tests and no live server. | open |  | 2026-09-14T06:25:29.729Z |  |
 | 377 | 06 | deviation | src/application/allowed.rs |  | The refusal a sync says when a per-account answer is holding a change still names Settings and not the account: turn_the_setting_on has one owner and no account in hand, so a person whose Settings box is on hears advice that sends them to a box that is already ticked. The account dialog's note and the testing page say so, and the wording is pinned literally in tests across contacts_sync.rs, calendar.rs, pim_command.rs and answering.rs, so naming both places is a plan of its own. The tree already says it both ways: carddav_sync.rs and address_book_source.rs say Allow Changes is off for this account, which pointed at nothing until 06-04. | open |  | 2026-09-14T06:25:41.365Z |  |
 | 378 | 06 | unrun-verify | tests/account_edit_protocol_fields.rs |  | The live-dialog test proves each box is enabled exactly when the stored Settings answer allows it, reading the same profile the dialog reads, so on the machine that ran it, where Settings allows everything, it exercised the offered arm of all three boxes and never the unavailable one. The unavailable arm's wording is proved by a unit test on permission_box_label and by no live box. build_account_edit_dialog reads ConfigManager::load_stored inside itself on the precedent of the directory fields, and there is no seam to hand it a different answer; adding one is the fix. | open |  | 2026-09-14T06:25:41.760Z |  |
+| 379 | 06 | unrun-verify | src/presentation/wx_app.rs |  | A reminder found due while somebody is typing is now said and sounded at that look with its window held, and nobody has heard it: whether an Urgent announcement arriving mid-word in the composer, a note or the contacts search is heard as a warning or as an interruption is a listening pass, not an assertion. The rule is tested without a window and the call site is read as text by tests/wired.rs. | open |  | 2026-09-14T09:31:06.902Z |  |
+| 380 | 06 | unrun-verify | src/presentation/wx_app.rs |  | The reminder window opens one look, a minute, after the sentence was said, whether or not typing has stopped. That steals focus mid-word eventually, which is the thing being complained about, just later; Pratik accepted that on 2026-09-14 for a warning and a minute. Nobody has heard the window arrive a minute after the sentence, so whether it reads as helpful or as the same thing twice is unsettled. The sentence is not announced again when it opens; the claim that a screen reader reads a dialog's static text when focus arrives in it has not been checked against this dialog. | open |  | 2026-09-14T09:31:07.312Z |  |
+| 381 | 06 | unrun-verify | src/presentation/wx_reminder_alert.rs |  | The reminder window's tone comes back once a minute until focus reaches it, ten times at most, on RepeatingTone, which is tested against handed-in instants. Nobody has heard it come back, nobody has judged whether ten tones a minute apart reads as being looked after or as being nagged, and the timer's reading of has_focus on the three buttons and the snooze Choice has never been watched in a running build; on Windows it should be false while another application is in front and true the moment somebody comes to the dialog, and that is a claim about the toolkit rather than a measurement. | open |  | 2026-09-14T09:31:07.724Z |  |
+| 382 | 06 | unrun-verify | src/presentation/accessibility/screen_reader.rs |  | Whether a screen reader speaks the reminder sentence while another application is in front is unchecked. UiaRaiseNotificationEvent does not move focus, and NVDA speaks notifications from the foreground process, so a person in Word when a reminder is due may hear only the tone; that is why the tone repeats, and nobody has confirmed either half by ear. | open |  | 2026-09-14T09:31:08.142Z |  |
+| 383 | 06 | deviation | src/presentation/wx_reminder_alert.rs |  | After a hold, the gap between the reminder's own tone and the window's first repeat is two minutes rather than one: say sounds at the look that finds the reminder, the window opens a look later, and RepeatingTone counts its minute from the window opening because raise is told only that the sentence was already said, not when. A window that opens at once has the one-minute gap the plan describes. Handing raise the instant of the say would close it and was not built, because 06-09 replaces this window and its opening. | open |  | 2026-09-14T09:31:08.544Z |  |
 
 ````json
 [
@@ -4930,6 +4935,66 @@ last_updated: 2026-09-14T06:25:41.760Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T06:25:41.760Z",
+    "resolved_at": null
+  },
+  {
+    "id": 379,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "A reminder found due while somebody is typing is now said and sounded at that look with its window held, and nobody has heard it: whether an Urgent announcement arriving mid-word in the composer, a note or the contacts search is heard as a warning or as an interruption is a listening pass, not an assertion. The rule is tested without a window and the call site is read as text by tests/wired.rs.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T09:31:06.902Z",
+    "resolved_at": null
+  },
+  {
+    "id": 380,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "The reminder window opens one look, a minute, after the sentence was said, whether or not typing has stopped. That steals focus mid-word eventually, which is the thing being complained about, just later; Pratik accepted that on 2026-09-14 for a warning and a minute. Nobody has heard the window arrive a minute after the sentence, so whether it reads as helpful or as the same thing twice is unsettled. The sentence is not announced again when it opens; the claim that a screen reader reads a dialog's static text when focus arrives in it has not been checked against this dialog.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T09:31:07.312Z",
+    "resolved_at": null
+  },
+  {
+    "id": 381,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "The reminder window's tone comes back once a minute until focus reaches it, ten times at most, on RepeatingTone, which is tested against handed-in instants. Nobody has heard it come back, nobody has judged whether ten tones a minute apart reads as being looked after or as being nagged, and the timer's reading of has_focus on the three buttons and the snooze Choice has never been watched in a running build; on Windows it should be false while another application is in front and true the moment somebody comes to the dialog, and that is a claim about the toolkit rather than a measurement.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T09:31:07.724Z",
+    "resolved_at": null
+  },
+  {
+    "id": 382,
+    "kind": "unrun-verify",
+    "phase": "06",
+    "file": "src/presentation/accessibility/screen_reader.rs",
+    "line": null,
+    "description": "Whether a screen reader speaks the reminder sentence while another application is in front is unchecked. UiaRaiseNotificationEvent does not move focus, and NVDA speaks notifications from the foreground process, so a person in Word when a reminder is due may hear only the tone; that is why the tone repeats, and nobody has confirmed either half by ear.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T09:31:08.142Z",
+    "resolved_at": null
+  },
+  {
+    "id": 383,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/presentation/wx_reminder_alert.rs",
+    "line": null,
+    "description": "After a hold, the gap between the reminder's own tone and the window's first repeat is two minutes rather than one: say sounds at the look that finds the reminder, the window opens a look later, and RepeatingTone counts its minute from the window opening because raise is told only that the sentence was already said, not when. A window that opens at once has the one-minute gap the plan describes. Handing raise the instant of the say would close it and was not built, because 06-09 replaces this window and its opening.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T09:31:08.544Z",
     "resolved_at": null
   }
 ]

@@ -5441,20 +5441,10 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let message_cache = message_cache.clone();
                 let tick_count = std::cell::Cell::new(0u64);
-                // What has already gone off, so an alert closed at nine does
-                // not come back at nine oh one. Held for the session rather
-                // than stored, because dismissing is a decision about now.
-                let already_raised: RefCell<std::collections::HashSet<String>> =
-                    RefCell::new(std::collections::HashSet::new());
-                // Whether a question is on screen right now, which is a
-                // different question from what has already gone off.
-                //
-                // One gate for the reminder alerts and for the folders a server
-                // has stopped listing, deliberately: two gates would let one of
-                // them open over the other, which is the pile-up this type was
-                // written for wearing a different hat. It lives in
-                // `application::due` because reminders needed it first.
-                let one_question_on_screen = crate::application::due::OneAtATime::default();
+                // What one look at the reminders leaves for the next. Held for
+                // the session rather than stored, because what somebody has
+                // already been shown is a fact about now.
+                let between_looks = BetweenLooks::default();
                 // The folders a sync has found the server no longer lists,
                 // waiting to be asked about (D-27). One set for every account,
                 // which is what makes two accounts syncing together one
@@ -5655,6 +5645,16 @@ impl WxMailApp {
                         }
                     }
 
+                    // The editable boxes in this window somebody could be
+                    // typing in. One slice for both modal-raising calls
+                    // below, so they cannot come to disagree about which
+                    // boxes count.
+                    let somewhere_to_type = [
+                        pim_refs.note_title,
+                        pim_refs.note_body,
+                        pim_refs.contacts_search,
+                    ];
+
                     if looked_at.get().elapsed() >= HOW_OFTEN_TO_LOOK {
                         looked_at.set(std::time::Instant::now());
                         raise_what_is_due(
@@ -5662,9 +5662,9 @@ impl WxMailApp {
                             &state,
                             &message_cache,
                             &a11y,
-                            &already_raised,
-                            &one_question_on_screen,
+                            &between_looks,
                             date_settings,
+                            &somewhere_to_type,
                         );
                     }
 
@@ -5678,13 +5678,9 @@ impl WxMailApp {
                         &state,
                         &message_cache,
                         &waiting_to_be_asked_about,
-                        &one_question_on_screen,
+                        &between_looks.one_question_on_screen,
                         &ui_tx,
-                        &[
-                            pim_refs.note_title,
-                            pim_refs.note_body,
-                            pim_refs.contacts_search,
-                        ],
+                        &somewhere_to_type,
                     );
                 }
             });
@@ -10075,6 +10071,49 @@ fn mark_the_open_one_read(
 /// often as the answer can change.
 const HOW_OFTEN_TO_LOOK: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How many looks a reminder's window is held while somebody is typing, once
+/// the reminder itself has been said.
+///
+/// One look, which at `HOW_OFTEN_TO_LOOK` is a minute, and whoever changes
+/// either number meets the other here. The sentence has already told them, so
+/// the window's job is to take an answer rather than to inform, and a minute
+/// is the unit the whole feature counts in: a reminder is set to the minute
+/// and the look runs once a minute. A shorter hold would need the held items
+/// looked at on every fifty-millisecond tick, which is a different shape; a
+/// longer one is a reminder that arrives after it stopped being about now.
+/// After this many looks the window opens whether or not they have stopped,
+/// which is Pratik's decision of 2026-09-14: it steals focus mid-word
+/// eventually, which is the thing being complained about, just later, and
+/// what that buys is a warning and a minute.
+const LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES: u32 = 1;
+
+/// What one look at the reminders leaves for the next.
+///
+/// Held for the session rather than stored, because what somebody has already
+/// been shown is a fact about now, and dismissing is a decision about now.
+#[derive(Debug, Default)]
+struct BetweenLooks {
+    /// What has already gone off, so an alert closed at nine does not come
+    /// back at nine oh one.
+    already: RefCell<std::collections::HashSet<String>>,
+    /// What has been said and is waiting for its window, by reminder id, with
+    /// how many looks it has waited. A reminder found due while somebody is
+    /// typing is said at that look and its window opens at a later one.
+    /// Nothing goes into `already` until the window really opens, so a held
+    /// reminder is re-derived at the next look with no bookkeeping to get
+    /// wrong; this only remembers that it was said.
+    said_and_waiting: RefCell<std::collections::HashMap<String, u32>>,
+    /// Whether a question is on screen right now, which is a different
+    /// question from what has already gone off.
+    ///
+    /// One gate for the reminder alerts and for the folders a server has
+    /// stopped listing, deliberately: two gates would let one of them open
+    /// over the other, which is the pile-up this type was written for wearing
+    /// a different hat. It lives in `application::due` because reminders
+    /// needed it first, and the folders question borrows it from here.
+    one_question_on_screen: crate::application::due::OneAtATime,
+}
+
 /// How often this computer is asked whether it still has a network.
 ///
 /// Ten seconds, and both ends of that are a choice about somebody's attention
@@ -10402,16 +10441,7 @@ fn ask_about_the_folders_that_have_gone(
     // opening over the other.
     let turn = one_question_on_screen.take();
 
-    // Somebody is typing if a window they type in is open anywhere on this
-    // thread, or if one of this window's own editable boxes has focus. The
-    // first covers the composer and the item editors, which are modal and so
-    // run this tick nested inside themselves; the second covers the note
-    // editor and the search box, which are in this window and have no nesting
-    // to read.
-    let an_editor_has_focus = one_question_at_a_time::somebody_is_typing()
-        || somewhere_to_type
-            .iter()
-            .any(|box_| box_.has_focus() && box_.is_editable());
+    let an_editor_has_focus = whether_somebody_is_typing(somewhere_to_type);
 
     let Some(question) = what_to_raise(&waiting.borrow(), an_editor_has_focus, turn.is_none())
     else {
@@ -10484,21 +10514,56 @@ fn ask_about_the_folders_that_have_gone(
     }
 }
 
+/// Whether somebody is typing, read both ways they can be.
+///
+/// Somebody is typing if a window they type in is open anywhere on this
+/// thread, or if one of this window's own editable boxes has focus. The first
+/// covers the composer and the item editors, which are modal and so run the
+/// interface tick nested inside themselves; the second covers the note editor
+/// and the search box, which are in this window and have no nesting to read.
+///
+/// Written once and asked by both things the tick can open, the folders
+/// question and the reminder window, so the two cannot come to disagree about
+/// what typing is. It lives here rather than in `one_question_at_a_time`
+/// because that module is window-free on purpose and this takes a `TextCtrl`.
+fn whether_somebody_is_typing(somewhere_to_type: &[TextCtrl]) -> bool {
+    one_question_at_a_time::somebody_is_typing()
+        || somewhere_to_type
+            .iter()
+            .any(|box_| box_.has_focus() && box_.is_editable())
+}
+
+/// Look at the reminders and raise what has come due.
+///
+/// A reminder found due while somebody is typing is said and sounded at this
+/// look, on a channel that does not move focus, and its window is held for
+/// `LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES` looks and then
+/// opened whether or not they have stopped, without the sentence being said
+/// again. Nothing is written into `already` until the window really opens.
 fn raise_what_is_due(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
-    already: &RefCell<std::collections::HashSet<String>>,
-    one_at_a_time: &crate::application::due::OneAtATime,
+    between_looks: &BetweenLooks,
     dates: date_display::DateSettings,
+    somewhere_to_type: &[TextCtrl],
 ) {
     use crate::application::due;
+    use crate::presentation::one_question_at_a_time::{Moment, whether_a_window_may_open};
+
+    let BetweenLooks {
+        already,
+        said_and_waiting,
+        one_question_on_screen: one_at_a_time,
+    } = between_looks;
 
     // Before anything else. The window below is modal and the event loop keeps
     // running inside it, so this function runs again while somebody is still
     // reading the first alert, and without this the next one due opens on top
-    // of it.
+    // of it. Held to the end of this function: a look that says a sentence
+    // and opens nothing returns, and returning drops the turn, so the folders
+    // question is never blocked by a window that did not open.
     let Some(_turn) = one_at_a_time.take() else {
         return;
     };
@@ -10528,13 +10593,61 @@ fn raise_what_is_due(
         )
     };
 
+    // A reminder said and waiting that is no longer due, because somebody
+    // completed or moved it from the panel in between, is forgotten here.
+    // Left in, it would open without its sentence if it ever came due again.
+    said_and_waiting
+        .borrow_mut()
+        .retain(|id, _| due.iter().any(|item| item.id == *id));
+
+    // Asked once per look rather than once per item, because the answer is
+    // about this moment and every item found at this look is at the same
+    // moment. The turn was taken above, so "already up" is false here by
+    // construction; the rule is still put the question rather than assumed,
+    // so both things the tick can open ask the same rule.
+    let moment = whether_a_window_may_open(whether_somebody_is_typing(somewhere_to_type), false);
+
     for item in due {
+        let looks_waited = said_and_waiting.borrow().get(&item.id).copied();
+        let spoken = match (moment, looks_waited) {
+            // Cannot happen while the turn is held. Written out rather than
+            // left to a catch-all so that a fourth reason is a compile error
+            // here, and the answer is the one the rule's doc gives: nothing
+            // at all this look.
+            (Moment::SomethingIsAlreadyUp, _) => continue,
+            (Moment::Free, None) => wx_reminder_alert::Spoken::NotYet,
+            (Moment::SomebodyIsTyping, None) => {
+                // Said now, on a channel that does not move focus, and the
+                // window held. Nothing goes into `already`, so the reminder
+                // is re-derived at the next look; only that it was said is
+                // remembered.
+                let _ = wx_reminder_alert::say(&item, now, dates, a11y);
+                said_and_waiting.borrow_mut().insert(item.id.clone(), 0);
+                continue;
+            }
+            (Moment::SomebodyIsTyping, Some(waited))
+                if waited + 1 < LOOKS_TO_HOLD_A_REMINDER_WINDOW_WHILE_SOMEBODY_TYPES =>
+            {
+                said_and_waiting
+                    .borrow_mut()
+                    .insert(item.id.clone(), waited + 1);
+                continue;
+            }
+            // The hold is over, or typing stopped. Either way it was said at
+            // an earlier look and is not said again.
+            (Moment::Free | Moment::SomebodyIsTyping, Some(_)) => {
+                wx_reminder_alert::Spoken::Already
+            }
+        };
+        said_and_waiting.borrow_mut().remove(&item.id);
+
         // Marked before the window opens, not after. The window is modal and
         // the event loop keeps running inside it, so this tick can happen again
         // while somebody is still looking at the first one.
         already.borrow_mut().insert(item.id.clone());
 
-        let answer = wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2]);
+        let answer =
+            wx_reminder_alert::raise(frame, &item, now, dates, a11y, due::Snooze::ALL[2], spoken);
         if answer == wx_reminder_alert::Answer::Dismissed {
             // Nothing to write. It stays due, and it is not raised again this
             // session because it is in `already`.

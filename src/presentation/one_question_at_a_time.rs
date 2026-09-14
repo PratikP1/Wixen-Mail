@@ -128,12 +128,48 @@ pub struct Question {
     pub words: String,
 }
 
+/// Whether this is a moment to open something modal, and if not, why not.
+///
+/// Three answers rather than a boolean, because the two reasons for "no" ask
+/// different things of a caller. Somebody typing is a reason to hold the
+/// window and still say what there is to say: the reminder does exactly that.
+/// Something already up is a reason to do nothing at all this look, because
+/// whatever is on screen is the thing being read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Moment {
+    /// Nothing stands in the way of a window.
+    Free,
+    /// A window somebody types in is open, or an editable box has focus.
+    SomebodyIsTyping,
+    /// A modal window is already on screen.
+    SomethingIsAlreadyUp,
+}
+
+/// The one rule about when a modal window may open.
+///
+/// Both conditions arrive as arguments rather than being read from a window,
+/// for the reason in the module header: that is what lets the rule be tested
+/// without a display. Something already up outranks somebody typing, because
+/// it is the stronger answer: a caller that hears it does nothing this look.
+pub fn whether_a_window_may_open(
+    somebody_is_typing: bool,
+    something_is_already_up: bool,
+) -> Moment {
+    match (something_is_already_up, somebody_is_typing) {
+        (true, _) => Moment::SomethingIsAlreadyUp,
+        (false, true) => Moment::SomebodyIsTyping,
+        (false, false) => Moment::Free,
+    }
+}
+
 /// The question to raise now, if this is a moment to raise one.
 ///
 /// `None` three ways, and they are three different reasons rather than one:
 /// nothing is waiting, somebody is typing, or a question is already on screen.
 /// The last two are arguments rather than something read from a window, which
-/// is what lets every rule here be tested.
+/// is what lets every rule here be tested, and they are put to
+/// [`whether_a_window_may_open`] rather than judged here, so the reminder and
+/// this question cannot come to disagree about what a free moment is.
 pub fn what_to_raise(
     pending: &Pending,
     an_editor_has_focus: bool,
@@ -141,8 +177,11 @@ pub fn what_to_raise(
 ) -> Option<Question> {
     // Every one of these is a reason to raise nothing now rather than a reason
     // to drop anything: the folders stay waiting and the next moment that is
-    // free asks about them.
-    if pending.waiting.is_empty() || an_editor_has_focus || already_asking {
+    // free asks about them. This question has no use for which reason it was,
+    // so the two that are not Free fold together here.
+    if pending.waiting.is_empty()
+        || whether_a_window_may_open(an_editor_has_focus, already_asking) != Moment::Free
+    {
         return None;
     }
 
@@ -591,6 +630,38 @@ mod tests {
         assert!(
             !what_keeping_them_did(1).contains("folders"),
             "one folder was read out in the plural"
+        );
+    }
+
+    #[test]
+    fn test_the_rule_tells_somebody_typing_apart_from_something_already_up() {
+        // A boolean would fold the two reasons into one "no", and the reminder
+        // needs them apart: typing means say it now and hold the window,
+        // already up means do nothing at all this look.
+        assert_eq!(whether_a_window_may_open(false, false), Moment::Free);
+        assert_eq!(
+            whether_a_window_may_open(true, false),
+            Moment::SomebodyIsTyping
+        );
+        assert_eq!(
+            whether_a_window_may_open(false, true),
+            Moment::SomethingIsAlreadyUp
+        );
+        assert_ne!(
+            whether_a_window_may_open(true, false),
+            whether_a_window_may_open(false, true),
+            "the two reasons for no came back as the same answer"
+        );
+    }
+
+    #[test]
+    fn test_something_already_up_outranks_somebody_typing() {
+        // Both at once is a tick running inside a modal while an editor in the
+        // main window has focus. The stronger answer wins: nothing this look,
+        // not "say it and hold the window" over a window somebody is reading.
+        assert_eq!(
+            whether_a_window_may_open(true, true),
+            Moment::SomethingIsAlreadyUp
         );
     }
 

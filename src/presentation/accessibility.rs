@@ -425,6 +425,15 @@ impl Accessibility {
     pub fn automation_snapshot(&self) -> Result<Vec<automation::AutomationNode>> {
         self.automation.snapshot()
     }
+
+    /// The last sentence released to the screen reader bridge, for a test in
+    /// another module that has no other way to see what was said.
+    ///
+    /// Proves the words reached the bridge, not that anything spoke them.
+    #[cfg(test)]
+    pub(crate) fn last_announcement(&self) -> Option<String> {
+        self.screen_reader.last_announcement().ok().flatten()
+    }
 }
 
 impl Default for Accessibility {
