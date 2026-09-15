@@ -36,10 +36,31 @@
 #   scripts/mutants.sh                    everything the config allows, slow
 #   scripts/mutants.sh src/service        one directory
 #   scripts/mutants.sh --since v0.19.0    only what changed since a commit
+#   scripts/mutants.sh --shard 0/496 [--out DIR] [--in-place] [-- cargo test args [-- binary args]]
+#                                         one shard of everything, to DIR/shard-0-of-496,
+#                                         with what it ran under written beside it
+#                                         before it starts and its timing after
+#   scripts/mutants.sh --shards 496 [--out DIR] [--in-place] [-- ...]
+#                                         every shard in turn, skipping the ones already
+#                                         complete, waiting for a quiet machine before
+#                                         each; killed and started again with the same
+#                                         command, it picks up at the first incomplete one
 #
 # Name a real commit or tag to compare against. Every commit here lands on
 # `main`, so `--since main` compares `main` with itself and finds nothing, which
 # it now says out loud instead of passing.
+#
+# A whole-tree run is a set of shards on one commit. `--shard k/n` divides the
+# list the tool builds from the tree it runs in, so two shards from two commits
+# are two lists, and a mutant can fall between them or land in both. Run the
+# shards in a worktree that does not move, and read them together with
+# `scripts/mutants_report.py --shards DIR n`, which refuses a shard from a
+# different commit, with different arguments, or that stopped short. Everything
+# after `--` goes to `cargo test`, and after a second `--` to the test binary:
+# `-- --lib -- --test-threads=8` runs the library alone at eight threads, which
+# is the cheaper of the two suite shapes and leaves the targets under tests/
+# out of the judgement. `--in-place` mutates the tree the script runs in rather
+# than a copy, so the build is incremental; only in a worktree nobody is editing.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -73,7 +94,121 @@ python -m doctest scripts/mutants_report.py
 # the exit code: the report is read from what happened to each mutant.
 JOBS="${MUTANTS_JOBS:-1}"
 OUT="target/mutants"
+
+# The shard options, read before the older modes so those still see their own
+# first argument. PASS is everything after `--`, handed to cargo mutants after
+# its own `--`; COPY is what the conditions record says about where the build
+# happened.
+SHARD=""
+SHARDS=""
+COPY="scratch"
+IN_PLACE=()
+PASS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --shard) SHARD="$2"; shift 2 ;;
+        --shards) SHARDS="$2"; shift 2 ;;
+        --out) OUT="$2"; shift 2 ;;
+        --in-place) COPY="in-place"; IN_PLACE=(--in-place); shift ;;
+        --) shift; PASS=("$@"); break ;;
+        *) break ;;
+    esac
+done
 mkdir -p "$OUT"
+
+# The tool refuses `--jobs` beside `--in-place`, even at one: an in-place run
+# has one tree to mutate, so there is nothing for a second job to work in. So
+# a shard run in place is passed no job count, and a MUTANTS_JOBS above one is
+# refused here rather than by the tool after the conditions were written.
+JOBS_ARGS=(-j "$JOBS")
+if [ "$COPY" = "in-place" ]; then
+    if [ "$JOBS" != 1 ]; then
+        echo "--in-place mutates the one tree the script runs in, so MUTANTS_JOBS=$JOBS cannot apply to it."
+        exit 1
+    fi
+    JOBS_ARGS=()
+fi
+
+# One shard: what it ran under written before the run, so a shard killed
+# partway still says what it was; the run; its timing line, printed and kept
+# beside the record so a launcher's overwritten stdout loses nothing; and the
+# report. Sets REPORT_STATUS rather than returning it, because inside --shards
+# a shard with a missed mutant is the usual case and not a reason to stop.
+run_shard() {
+    local shard="$1" dir="$2" baseline="$3"
+    shift 3
+    mkdir -p "$dir"
+    printf 'commit = %s\nshard = %s\narguments = %s\ncopy = %s\nbaseline = %s\n' \
+        "$(git rev-parse HEAD)" "$shard" "${PASS[*]}" "$COPY" "$baseline" \
+        > "$dir/conditions.txt"
+
+    local started finished status=0
+    started=$(date +%s)
+    cargo mutants --shard "$shard" ${JOBS_ARGS[@]+"${JOBS_ARGS[@]}"} --output "$dir" \
+        ${IN_PLACE[@]+"${IN_PLACE[@]}"} "$@" -- ${PASS[@]+"${PASS[@]}"} || status=$?
+    finished=$(date +%s)
+
+    python scripts/mutants_report.py --timing "$dir/mutants.out" "$started" "$finished" \
+        | tee "$dir/timing.txt"
+    echo
+    echo "== what shard $shard really did =="
+    REPORT_STATUS=0
+    python scripts/mutants_report.py --exit-status "$status" "$dir/mutants.out" || REPORT_STATUS=$?
+}
+
+# Every shard in turn. A complete shard is skipped, which is what makes a
+# restart pick up where the kill happened. The machine must be quiet before
+# each, because a build running beside a shard produces timeouts that are the
+# machine and not the code.
+#
+# The baseline is the tree's own tests run on the unmutated tree, and the first
+# complete shard proved they pass at this commit. The worktree does not move
+# between shards, so every shard after that one skips the baseline, which is a
+# suite run fewer per shard. Skipping it also drops the timeout the tool derives
+# from the baseline, and the tool falls back to 300 seconds, which under the
+# every-target shape is less than the config's rule gives and would file a busy
+# minute as a hang; so the launcher passes the timeout the config's rule gives
+# over the first complete shard's baseline.
+run_every_shard() {
+    local n="$1" k dir first_complete=""
+    for ((k = 0; k < n; k++)); do
+        dir="$OUT/shard-$k-of-$n"
+        if python scripts/mutants_report.py --complete "$dir/mutants.out" >/dev/null; then
+            echo "shard $k of $n is complete, skipping"
+            if [ -z "$first_complete" ]; then first_complete="$dir"; fi
+            continue
+        fi
+        echo
+        echo "== shard $k of $n =="
+        python scripts/mutants_report.py --wait-until-quiet
+        local baseline=run extra=()
+        if [ -n "$first_complete" ]; then
+            baseline=skip
+            extra=(--baseline skip --timeout "$(python scripts/mutants_report.py --timeout-after "$first_complete/mutants.out")")
+        fi
+        run_shard "$k/$n" "$dir" "$baseline" ${extra[@]+"${extra[@]}"}
+        if ! python scripts/mutants_report.py --complete "$dir/mutants.out" >/dev/null; then
+            echo
+            echo "Shard $k of $n did not complete, so this stops here rather than meeting the same thing $((n - k - 1)) more times."
+            echo "Read what it says above, then start again with the same command; it picks up at shard $k."
+            return 1
+        fi
+        if [ -z "$first_complete" ]; then first_complete="$dir"; fi
+    done
+    echo
+    echo "Every shard is complete: $n of $n. Read them together with:"
+    echo "    python scripts/mutants_report.py --shards $OUT $n"
+}
+
+if [ -n "$SHARD" ]; then
+    echo "== mutants in shard $SHARD =="
+    run_shard "$SHARD" "$OUT/shard-${SHARD%/*}-of-${SHARD#*/}" run
+    exit "$REPORT_STATUS"
+elif [ -n "$SHARDS" ]; then
+    echo "== mutants everywhere the config allows, in $SHARDS shards =="
+    run_every_shard "$SHARDS"
+    exit 0
+fi
 
 STATUS=0
 if [ "${1:-}" = "--since" ]; then

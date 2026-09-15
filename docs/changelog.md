@@ -8,6 +8,30 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **A whole-tree mutation run is a set of shards on one commit, each one
+  a unit a person can run, stop and read alone.** A developer tool, not a
+  change to the program. `scripts/mutants.sh --shard k/n` runs one shard
+  of every mutant the configuration allows, into its own directory, and
+  writes what it ran under (the commit, the arguments, whether the tree was
+  copied or mutated in place, whether the baseline ran) before it starts,
+  and a timing line after: the seconds before and between the mutants,
+  which is the copy, the build and the baseline and is paid once per
+  shard, apart from the seconds the mutants themselves took, which is paid
+  once per mutant. `--shards n` runs every shard in turn, skips the ones
+  already complete so a kill loses one shard and not the run, waits for a
+  quiet machine before each, and after the first complete shard skips the
+  baseline and passes the timeout the configuration's rule would have
+  given, because the tool otherwise falls back to 300 seconds and files a
+  busy minute as a hang. `scripts/mutants_report.py --shards DIR n` reads
+  every shard as one run and refuses, naming the shard, one that is
+  missing, one that stopped short, and one whose record says a different
+  commit or different arguments from the first; the sum then goes through
+  the same refusals as a single run, so a shard in which a compiler never
+  started refuses the whole. Every rule is a worked example the house
+  style suite runs on each commit that touches the script. The
+  measurements page carries the rate one mutant costs on this machine
+  under each suite shape, taken on one shard before any run is scheduled.
+
 - **The guard sweep can be stopped and picked up from its own log, and it
   waits for a quiet machine.** A developer tool, not a change to the
   program. `scripts/guards.sh` measures every record in `guards/guards.toml`
