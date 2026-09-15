@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 605 records have arrived since and have not been through it.
+# 606 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21835,4 +21835,31 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_list_reads_only_memory.rs", tests = 6 },
+]
+
+# ── The harness over the list at scale ──────────────────────────────────────
+#
+# The measurement behind `#[ignore]` prints rows for the measurements page,
+# and the format-holding test at 2,000 rows runs the same code on every
+# commit and holds each row to the page's six columns. The break merges two
+# cells with a semicolon, which is what a tidy-up of the format string looks
+# like, and a row with five cells is a row the page's reading refuses. One
+# goes red: the format test. The plan's other candidate, halving the batch
+# size, reddens nothing, because chunks of any size write every row.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test the_list_at_two_hundred_thousand_rows`: 4 passed and
+# exactly this one failed.
+
+[[guard]]
+name = "the rows the scale harness prints keep the page's six columns"
+file = "tests/the_list_at_two_hundred_thousand_rows.rs"
+suite = "the_list_at_two_hundred_thousand_rows"
+before = """        "| {} | {} | {} | {} | {} | {} |","""
+after = """        "| {} | {} | {} | {} | {}; {} |","""
+red = [
+    "test_every_row_the_measurement_prints_has_the_pages_shape_and_names_what_it_timed",
+]
+tests_last_seen = [
+    { file = "tests/the_list_at_two_hundred_thousand_rows.rs", tests = 6 },
 ]
