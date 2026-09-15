@@ -573,9 +573,13 @@ fn check_send_preview(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
         answering: None,
         send_at: None,
     };
-    let (dialog, _send_btn, _back_btn) =
-        wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
-    check("send preview dialog", &dialog, palette.main_surface(), into);
+    let widgets = wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
+    check(
+        "send preview dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
 }
 
 /// The Calendar list window. An empty event list is enough: painting the
