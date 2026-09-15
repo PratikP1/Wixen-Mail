@@ -21,9 +21,12 @@ use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::platform_bridge;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
+use crate::presentation::mail_sort::sort_messages;
 use crate::presentation::one_question_at_a_time;
+use crate::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
 use crate::presentation::ui_types::*;
 use crate::presentation::view_state;
+use crate::presentation::virtual_rows;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
@@ -1210,8 +1213,12 @@ impl WxMailApp {
                 lock_state(&state).sort_order = order;
             }
 
-            // The callback runs while wxWidgets paints, so it reads what is
-            // already in memory and never touches the database.
+            // The callback runs while wxWidgets paints. It takes the lock,
+            // borrows the visible columns and calls `virtual_rows::text_for`,
+            // and nothing else: that function's inputs are slices and copies,
+            // which is what keeps the paint out of the database, and
+            // `tests/the_list_reads_only_memory.rs` holds this closure to
+            // calling it and to naming no database.
             //
             // It reads the view out of state rather than being registered
             // again when the view changes. Re-registering on a switch would
@@ -1227,29 +1234,18 @@ impl WxMailApp {
                         return message_rows::PLACEHOLDER.to_string();
                     };
                     let columns = column_layout.borrow().visible();
-                    let Some(c) = columns.get(column as usize).copied() else {
-                        return String::new();
-                    };
-                    let now = chrono::Local::now();
-                    match state.showing {
-                        view_state::Showing::Conversations => {
-                            match state.conversations.get(row as usize) {
-                                Some(conversation) => message_rows::conversation_cell_text(
-                                    conversation,
-                                    c,
-                                    date_settings,
-                                    now,
-                                ),
-                                None => message_rows::PLACEHOLDER.to_string(),
-                            }
-                        }
-                        view_state::Showing::Messages => match state.messages.get(row as usize) {
-                            Some(message) => {
-                                message_rows::cell_text(message, c, date_settings, now)
-                            }
-                            None => message_rows::PLACEHOLDER.to_string(),
+                    virtual_rows::text_for(
+                        virtual_rows::Listed {
+                            showing: state.showing,
+                            messages: &state.messages,
+                            conversations: &state.conversations,
                         },
-                    }
+                        &columns,
+                        row,
+                        column,
+                        date_settings,
+                        chrono::Local::now(),
+                    )
                 }
             });
             if !callback_registered {
@@ -9828,71 +9824,6 @@ const LABEL_IDS: [i32; 9] = [
     ID_LABEL_1, ID_LABEL_2, ID_LABEL_3, ID_LABEL_4, ID_LABEL_5, ID_LABEL_6, ID_LABEL_7, ID_LABEL_8,
     ID_LABEL_9,
 ];
-
-/// How many messages the sample mailbox generates.
-const SAMPLE_MAILBOX_SIZE: usize = 200_000;
-
-/// Build a mailbox large enough to tell whether the list actually scales.
-///
-/// This exists to be tested with a screen reader. Claims about a list holding
-/// two hundred thousand rows are worth nothing until someone arrows through one,
-/// and waiting for a real mailbox that size to sync is not a reasonable way to
-/// find out that it does not work.
-///
-/// Deliberately reachable from the Help menu rather than hidden behind a build
-/// flag, because the people who most need to test it are not the people
-/// compiling it.
-fn sample_mailbox(count: usize) -> Vec<MessageItem> {
-    let senders = [
-        "Ada Lovelace <ada@example.com>",
-        "Grace Hopper <grace@example.com>",
-        "Alan Turing <alan@example.com>",
-        "no-reply@example.com",
-    ];
-    let subjects = [
-        "Quarterly report",
-        "Re: schedule for next week",
-        "Invoice 4021",
-        "Notes from the accessibility review",
-        "",
-    ];
-
-    (0..count)
-        .map(|i| MessageItem {
-            uid: i as u32 + 1,
-            message_id: i as i64 + 1,
-            subject: subjects[i % subjects.len()].to_string(),
-            from: senders[i % senders.len()].to_string(),
-            // Descending so the newest is first, matching the default sort.
-            date: format!("2026-07-26 {:02}:{:02}", (i / 60) % 24, i % 60),
-            read: i % 3 != 0,
-            starred: i % 17 == 0,
-            answered: i % 11 == 0,
-            draft: false,
-            has_attachments: i % 7 == 0,
-            attachments: Vec::new(),
-            thread_depth: i % 5,
-            is_thread_parent: i % 5 == 0,
-            thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
-            snippet: Some(format!(
-                "Sample message {} for testing the list at scale.",
-                i + 1
-            )),
-            size_bytes: Some(((i % 40) as i64 + 1) * 1024),
-            to: "me@example.com".to_string(),
-            cc: String::new(),
-            reply_to: String::new(),
-            header_message_id: String::new(),
-            refs_header: None,
-            safety: crate::service::safety::Safety::Ordinary,
-            safety_reasons: Vec::new(),
-            receipt_to: None,
-            list_unsubscribe: None,
-            account_id: String::new(),
-            labels: Vec::new(),
-        })
-        .collect()
-}
 
 /// Rebuild the list's columns from a layout.
 ///
@@ -22253,23 +22184,6 @@ fn next_unread(messages: &[MessageItem], from: Option<usize>, direction: isize) 
     None
 }
 
-/// Sort messages in-place according to the given sort option.
-fn sort_messages(messages: &mut [MessageItem], order: MailSortOption) {
-    match order {
-        MailSortOption::DateNewestFirst => messages.sort_by(|a, b| b.date.cmp(&a.date)),
-        MailSortOption::DateOldestFirst => messages.sort_by(|a, b| a.date.cmp(&b.date)),
-        MailSortOption::SenderAZ => messages.sort_by_key(|a| a.from.to_lowercase()),
-        MailSortOption::SenderZA => {
-            messages.sort_by_key(|a| std::cmp::Reverse(a.from.to_lowercase()))
-        }
-        MailSortOption::SubjectAZ => messages.sort_by_key(|a| a.subject.to_lowercase()),
-        MailSortOption::SubjectZA => {
-            messages.sort_by_key(|a| std::cmp::Reverse(a.subject.to_lowercase()))
-        }
-        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),
-    }
-}
-
 // ── Standalone Dialogs ──────────────────────────────────────────────────────
 
 fn show_about_dialog(parent: &Frame) {
@@ -28905,12 +28819,28 @@ mod what_the_list_is_told_it_holds {
     fn test_the_paint_callback_asks_for_a_conversation_cell_when_rows_are_conversations() {
         // The callback is registered once and reads the mode from state, so a
         // switch does not re-register it. What that means in the source is that
-        // both cell functions are named inside it.
+        // the callback calls `virtual_rows::text_for`, and that function names
+        // both cell functions. Until 08-04 the dispatch sat inside the callback
+        // and this read for the conversation cell there; the function's own
+        // tests now paint a conversation row and a message row, and this holds
+        // the two halves together by reading.
         let ships = ships();
         assert!(
-            ships.contains("message_rows::conversation_cell_text("),
+            ships.contains("virtual_rows::text_for("),
+            "the paint callback no longer calls the function that paints a row"
+        );
+        let painter = what_ships(
+            &std::fs::read_to_string("src/presentation/virtual_rows.rs")
+                .expect("the function the callback calls"),
+        );
+        assert!(
+            painter.contains("message_rows::conversation_cell_text("),
             "the paint callback never asks for a conversation's cells, so a \
              conversation row would be drawn as a message"
+        );
+        assert!(
+            painter.contains("message_rows::cell_text("),
+            "the paint callback never asks for a message's cells"
         );
     }
 }

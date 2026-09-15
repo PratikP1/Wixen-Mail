@@ -8,6 +8,32 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The message list has numbers over 200,000 rows, and a check that its
+  paint reads memory and never the database.** The sample mailbox on the
+  Help menu has shipped since phase 3 and no number from it existed
+  anywhere. A harness in `tests/the_list_at_two_hundred_thousand_rows.rs`
+  now builds the same rows with no window, times the listing, the search
+  box's query, each of the seven sort orders and the paint of one page, and
+  prints rows for `docs/development/measurements.md`; eighteen of them are
+  on that page with the date, the commit, the machine, the three takes
+  behind each median and what was and was not timed. Every one is under a
+  second on the machine named. The text a row is painted with now comes from
+  `virtual_rows::text_for`, a function whose inputs are slices and copies,
+  so it cannot reach the database, and a reading on every commit holds it
+  and the closure that calls it to naming no database. The generator and
+  the sort moved into modules of their own so tests and the mutation tool
+  can reach them; the Help menu item is unchanged.
+
+  **Known limitations.** The sort runs off the interface thread, and the
+  cost of applying its result to the list control was not timed, because
+  there is no window in the harness. A scroll in the running program is the
+  page paint timed here plus wxWidgets' own painting, which was not timed
+  either. The rows are synthetic, built by the generator on the Help menu,
+  and no provider mailbox was used; a real mailbox's rows carry longer
+  subjects and real dates and would give other numbers. No sort order came
+  near a second, so the sort's lowercase copy per comparison, which would
+  have been the fix, was left as it is.
+
 - **The program says when its message list became usable, once per start.**
   One line in the log, `the message list is usable: N rows, M ms after
   start`, written the first time rows reach the list after startup and never

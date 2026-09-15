@@ -77,7 +77,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 603 records have arrived since and have not been through it.
+# 606 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -6377,25 +6377,27 @@ tests_last_seen = [
 
 [[guard]]
 name = "each way of sorting the message list really puts it in that order"
-file = "src/presentation/wx_app.rs"
+file = "src/presentation/mail_sort.rs"
 before = """        MailSortOption::DateNewestFirst => messages.sort_by(|a, b| b.date.cmp(&a.date)),"""
 after = """        MailSortOption::DateNewestFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_each_way_of_sorting_the_list_puts_it_in_that_order",
 ]
 tests_last_seen = [
+    { file = "src/presentation/mail_sort.rs", tests = 0 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
 [[guard]]
 name = "sorting by unread brings the unread ones to the top"
-file = "src/presentation/wx_app.rs"
+file = "src/presentation/mail_sort.rs"
 before = """        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),"""
 after = """        MailSortOption::UnreadFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
 ]
 tests_last_seen = [
+    { file = "src/presentation/mail_sort.rs", tests = 0 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -21721,4 +21723,143 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
+]
+
+# ── The message list paints from memory ─────────────────────────────────────
+#
+# PERF-03's second line asks for a test that the virtual text callback issues
+# no query. Half of that is the type: `virtual_rows::text_for` takes slices
+# and copies and is handed no connection. That half cannot be a record,
+# because its break is a compile error and this runner measures a break by
+# which tests go red. The other half is a reading in
+# `tests/the_list_reads_only_memory.rs` that refuses the function and the
+# closure naming a database, and it is recordable because its break compiles.
+#
+# The break here is the one line a function with no connection can still
+# write: a call to the cache type's constructor with an empty path, result
+# discarded. Five go red on the target: the reading, which quotes the line,
+# and the four companions that each require the real files to be clean before
+# they break one on purpose. The library was not run under this break, on
+# purpose: the planted call would open a cache at an empty path from inside
+# every test that paints a cell, and where that lands is not worth finding
+# out for a suite the record does not name.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test the_list_reads_only_memory`: 1 passed and exactly these
+# five failed.
+
+[[guard]]
+name = "the function the list paints with cannot open the cache"
+file = "src/presentation/virtual_rows.rs"
+suite = "the_list_reads_only_memory"
+before = """) -> String {
+    let Some(column) = usize::try_from(column)"""
+after = """) -> String {
+    let _ = crate::data::message_cache::MessageCache::new(std::path::PathBuf::new(), None);
+    let Some(column) = usize::try_from(column)"""
+red = [
+    "test_the_message_list_paints_from_memory_and_its_closure_only_calls_the_function",
+    "test_a_function_that_opened_the_cache_would_be_named",
+    "test_a_closure_doing_its_own_work_would_be_named",
+    "test_a_third_registration_would_be_counted",
+    "test_the_comment_naming_the_words_as_forbidden_is_not_a_violation",
+]
+tests_last_seen = [
+    { file = "src/presentation/virtual_rows.rs", tests = 6 },
+    { file = "tests/the_list_reads_only_memory.rs", tests = 6 },
+]
+
+# The closure half. The break puts the old dispatch back inside the message
+# list's closure, which compiles with one unused-import warning, so the
+# closure does its own work and calls nothing in `virtual_rows`. That is what
+# the reading is for: a function nothing calls holds nothing. The same five go
+# red on the target, and the reading's complaint is that the closure does not
+# call `text_for(`. This record is the one that couples `wx_app.rs` to the
+# target, so a commit that touches the closure runs the reading.
+#
+# Measured by hand on 2026-09-14 against the target: 1 passed and exactly
+# these five failed.
+
+[[guard]]
+name = "the message list's closure calls the function rather than painting for itself"
+file = "src/presentation/wx_app.rs"
+suite = "the_list_reads_only_memory"
+before = """                    let columns = column_layout.borrow().visible();
+                    virtual_rows::text_for(
+                        virtual_rows::Listed {
+                            showing: state.showing,
+                            messages: &state.messages,
+                            conversations: &state.conversations,
+                        },
+                        &columns,
+                        row,
+                        column,
+                        date_settings,
+                        chrono::Local::now(),
+                    )
+                }
+            });"""
+after = """                    let columns = column_layout.borrow().visible();
+                    let Some(c) = columns.get(column as usize).copied() else {
+                        return String::new();
+                    };
+                    let now = chrono::Local::now();
+                    match state.showing {
+                        view_state::Showing::Conversations => {
+                            match state.conversations.get(row as usize) {
+                                Some(conversation) => message_rows::conversation_cell_text(
+                                    conversation,
+                                    c,
+                                    date_settings,
+                                    now,
+                                ),
+                                None => message_rows::PLACEHOLDER.to_string(),
+                            }
+                        }
+                        view_state::Showing::Messages => match state.messages.get(row as usize) {
+                            Some(message) => {
+                                message_rows::cell_text(message, c, date_settings, now)
+                            }
+                            None => message_rows::PLACEHOLDER.to_string(),
+                        },
+                    }
+                }
+            });"""
+red = [
+    "test_the_message_list_paints_from_memory_and_its_closure_only_calls_the_function",
+    "test_a_function_that_opened_the_cache_would_be_named",
+    "test_a_closure_doing_its_own_work_would_be_named",
+    "test_a_third_registration_would_be_counted",
+    "test_the_comment_naming_the_words_as_forbidden_is_not_a_violation",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_list_reads_only_memory.rs", tests = 6 },
+]
+
+# ── The harness over the list at scale ──────────────────────────────────────
+#
+# The measurement behind `#[ignore]` prints rows for the measurements page,
+# and the format-holding test at 2,000 rows runs the same code on every
+# commit and holds each row to the page's six columns. The break merges two
+# cells with a semicolon, which is what a tidy-up of the format string looks
+# like, and a row with five cells is a row the page's reading refuses. One
+# goes red: the format test. The plan's other candidate, halving the batch
+# size, reddens nothing, because chunks of any size write every row.
+#
+# Measured by hand on 2026-09-14 against the target,
+# `cargo test --test the_list_at_two_hundred_thousand_rows`: 4 passed and
+# exactly this one failed.
+
+[[guard]]
+name = "the rows the scale harness prints keep the page's six columns"
+file = "tests/the_list_at_two_hundred_thousand_rows.rs"
+suite = "the_list_at_two_hundred_thousand_rows"
+before = """        "| {} | {} | {} | {} | {} | {} |","""
+after = """        "| {} | {} | {} | {} | {}; {} |","""
+red = [
+    "test_every_row_the_measurement_prints_has_the_pages_shape_and_names_what_it_timed",
+]
+tests_last_seen = [
+    { file = "tests/the_list_at_two_hundred_thousand_rows.rs", tests = 6 },
 ]
