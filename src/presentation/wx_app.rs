@@ -24,6 +24,7 @@ use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::one_question_at_a_time;
 use crate::presentation::ui_types::*;
 use crate::presentation::view_state;
+use crate::presentation::virtual_rows;
 use crate::presentation::wx_account_manager::{self, AccountManagerAction};
 use crate::presentation::wx_columns;
 use crate::presentation::wx_compose::{self, ComposeMode, ComposeResult};
@@ -1210,8 +1211,12 @@ impl WxMailApp {
                 lock_state(&state).sort_order = order;
             }
 
-            // The callback runs while wxWidgets paints, so it reads what is
-            // already in memory and never touches the database.
+            // The callback runs while wxWidgets paints. It takes the lock,
+            // borrows the visible columns and calls `virtual_rows::text_for`,
+            // and nothing else: that function's inputs are slices and copies,
+            // which is what keeps the paint out of the database, and
+            // `tests/the_list_reads_only_memory.rs` holds this closure to
+            // calling it and to naming no database.
             //
             // It reads the view out of state rather than being registered
             // again when the view changes. Re-registering on a switch would
@@ -1227,29 +1232,18 @@ impl WxMailApp {
                         return message_rows::PLACEHOLDER.to_string();
                     };
                     let columns = column_layout.borrow().visible();
-                    let Some(c) = columns.get(column as usize).copied() else {
-                        return String::new();
-                    };
-                    let now = chrono::Local::now();
-                    match state.showing {
-                        view_state::Showing::Conversations => {
-                            match state.conversations.get(row as usize) {
-                                Some(conversation) => message_rows::conversation_cell_text(
-                                    conversation,
-                                    c,
-                                    date_settings,
-                                    now,
-                                ),
-                                None => message_rows::PLACEHOLDER.to_string(),
-                            }
-                        }
-                        view_state::Showing::Messages => match state.messages.get(row as usize) {
-                            Some(message) => {
-                                message_rows::cell_text(message, c, date_settings, now)
-                            }
-                            None => message_rows::PLACEHOLDER.to_string(),
+                    virtual_rows::text_for(
+                        virtual_rows::Listed {
+                            showing: state.showing,
+                            messages: &state.messages,
+                            conversations: &state.conversations,
                         },
-                    }
+                        &columns,
+                        row,
+                        column,
+                        date_settings,
+                        chrono::Local::now(),
+                    )
                 }
             });
             if !callback_registered {
@@ -28905,12 +28899,28 @@ mod what_the_list_is_told_it_holds {
     fn test_the_paint_callback_asks_for_a_conversation_cell_when_rows_are_conversations() {
         // The callback is registered once and reads the mode from state, so a
         // switch does not re-register it. What that means in the source is that
-        // both cell functions are named inside it.
+        // the callback calls `virtual_rows::text_for`, and that function names
+        // both cell functions. Until 08-04 the dispatch sat inside the callback
+        // and this read for the conversation cell there; the function's own
+        // tests now paint a conversation row and a message row, and this holds
+        // the two halves together by reading.
         let ships = ships();
         assert!(
-            ships.contains("message_rows::conversation_cell_text("),
+            ships.contains("virtual_rows::text_for("),
+            "the paint callback no longer calls the function that paints a row"
+        );
+        let painter = what_ships(
+            &std::fs::read_to_string("src/presentation/virtual_rows.rs")
+                .expect("the function the callback calls"),
+        );
+        assert!(
+            painter.contains("message_rows::conversation_cell_text("),
             "the paint callback never asks for a conversation's cells, so a \
              conversation row would be drawn as a message"
+        );
+        assert!(
+            painter.contains("message_rows::cell_text("),
+            "the paint callback never asks for a message's cells"
         );
     }
 }

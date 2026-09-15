@@ -56,25 +56,38 @@ pub struct Listed<'a> {
 /// [`PLACEHOLDER`], because the list may ask for a row the moment before the
 /// rows arrive and a blank there would read as an empty message. A column past
 /// the visible ones answers nothing, because there is no cell to paint.
+///
+/// `row` and `column` are the types wxWidgets hands the callback, converted
+/// here rather than in the closure so that a negative index, which `as usize`
+/// would wrap to a row nobody has, reads as past the end.
 pub fn text_for(
     listed: Listed<'_>,
     columns: &[MessageColumn],
-    row: u32,
-    column: u32,
+    row: i64,
+    column: i32,
     dates: DateSettings,
     now: DateTime<Local>,
 ) -> String {
-    let _ = (
-        listed,
-        columns,
-        row,
-        column,
-        dates,
-        now,
-        message_rows::PLACEHOLDER,
-        PLACEHOLDER,
-    );
-    String::new()
+    let Some(column) = usize::try_from(column)
+        .ok()
+        .and_then(|at| columns.get(at))
+        .copied()
+    else {
+        return String::new();
+    };
+    let Ok(row) = usize::try_from(row) else {
+        return PLACEHOLDER.to_string();
+    };
+    match listed.showing {
+        Showing::Messages => listed
+            .messages
+            .get(row)
+            .map(|message| message_rows::cell_text(message, column, dates, now)),
+        Showing::Conversations => listed.conversations.get(row).map(|conversation| {
+            message_rows::conversation_cell_text(conversation, column, dates, now)
+        }),
+    }
+    .unwrap_or_else(|| PLACEHOLDER.to_string())
 }
 
 #[cfg(test)]
@@ -136,7 +149,7 @@ mod tests {
 
     const SUBJECT_ONLY: [MessageColumn; 1] = [MessageColumn::Subject];
 
-    fn painted(listed: Listed<'_>, row: u32, column: u32) -> String {
+    fn painted(listed: Listed<'_>, row: i64, column: i32) -> String {
         text_for(
             listed,
             &SUBJECT_ONLY,
@@ -202,6 +215,22 @@ mod tests {
         };
 
         assert_eq!(painted(listed, 0, 1), "");
+    }
+
+    #[test]
+    fn test_a_negative_index_reads_as_past_the_end_rather_than_wrapping() {
+        // wxWidgets hands the callback signed integers. `as usize` on a
+        // negative one is a row nobody has, which `get` would answer the same
+        // way, but the conversion is the function's and this says so.
+        let messages = [a_message("Water bill")];
+        let listed = Listed {
+            showing: Showing::Messages,
+            messages: &messages,
+            conversations: &[],
+        };
+
+        assert_eq!(painted(listed, -1, 0), PLACEHOLDER);
+        assert_eq!(painted(listed, 0, -1), "");
     }
 
     #[test]
