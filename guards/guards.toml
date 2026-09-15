@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 606 records have arrived since and have not been through it.
+# 607 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21867,4 +21867,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/the_list_at_two_hundred_thousand_rows.rs", tests = 6 },
+]
+
+# ── Shards from two commits, read as one run ─────────────────────────────────
+#
+# `cargo mutants --shard k/n` divides the list the tool builds from the tree
+# it runs in, so two shards taken at two commits are two lists: a mutant can
+# fall between them or land in both, and their sum reads as a whole-tree run
+# with nothing in it saying otherwise. Every shard writes its commit before it
+# starts and the merger compares them. The check is in the reader and not in
+# the shell, because the shell has no test; the break below makes the merger
+# accept the two-commit example in its own docstring.
+#
+# Measured by hand on 2026-09-15 against `house_style` with the break
+# applied: exactly this one test failed.
+
+[[guard]]
+name = "shards from two commits are not read as one run"
+file = "scripts/mutants_report.py"
+suite = "house_style"
+before = """        if said.commit != first.commit:"""
+after = """        if said.commit != said.commit:"""
+red = [
+    "test_the_mutation_report_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 70 },
 ]
