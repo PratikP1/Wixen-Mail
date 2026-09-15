@@ -999,6 +999,250 @@ def say_what_it_found(guard: Guard, measured: Measured) -> None:
         )
 
 
+def verdicts_in(log_text: str) -> dict[str, str]:
+    """What a run's log says about each record it started, read from the
+    lines the loop and `say_what_it_found` print and from nothing else.
+
+    A sweep is hours, and a run that cannot be stopped and picked up is a
+    scheduling problem before it is a technical one. The log already holds
+    what a resume needs: `-- <name>` before each record, flushed, and one of
+    the verdict shapes after it. So a resume is a reading of the log's own
+    lines, and the shapes are held by `say_what_it_found`'s examples; change
+    one there and change it here in the same commit.
+
+    Three verdicts, and a fourth outcome that is not one. `agreed`: the break
+    reddened exactly the named tests. `short`: a named test stayed green, or a
+    test went red that the record does not name. `could not be measured`: the
+    break no longer applies, a named test no longer exists, the break did not
+    build, or the harness captured nothing; that is still a verdict, because
+    measuring it again would find the same thing, and it is corrected by hand.
+    A name with nothing after it, which is what a kill mid-record leaves, has no
+    verdict and is measured again.
+
+    >>> def block(name, *lines):
+    ...     return "\\n".join([f"-- {name}", *lines, ""])
+
+    The five shapes `say_what_it_found` prints:
+
+    >>> verdicts_in(block("alone", "   the one test named went red, and nothing else did"))
+    {'alone': 'agreed'}
+    >>> verdicts_in(block("together", "   all 3 tests named went red, and nothing else did"))
+    {'together': 'agreed'}
+    >>> verdicts_in(block(
+    ...     "stayed green",
+    ...     "   1 of 1 named test stayed green with the guard broken:",
+    ...     "       a::tests::test_b",
+    ...     "",
+    ... ))
+    {'stayed green': 'short'}
+    >>> verdicts_in(block(
+    ...     "two stayed green",
+    ...     "   2 of 3 named tests stayed green with the guard broken:",
+    ...     "       a::tests::test_b",
+    ...     "       a::tests::test_c",
+    ...     "",
+    ... ))
+    {'two stayed green': 'short'}
+    >>> verdicts_in(block(
+    ...     "nobody wrote down",
+    ...     "   1 test went red that this record does not name:",
+    ...     "       a::tests::test_d",
+    ...     "",
+    ... ))
+    {'nobody wrote down': 'short'}
+
+    A `Wrong` the loop printed, in each of the shapes `measure` and the run can
+    raise. The break's text has moved:
+
+    >>> verdicts_in(block(
+    ...     "moved",
+    ...     "   moved: the text this break replaces appears 0 times in src/a.rs, and a break has to be exactly one edit.",
+    ...     "Somebody has moved the code this guard is about. Take the break by hand, see what really goes red now, and write that down here.",
+    ...     "",
+    ... ))
+    {'moved': 'could not be measured'}
+
+    A named test the harness never ran, a break that did not build, a break that
+    built and named no test, and a run that captured nothing:
+
+    >>> verdicts_in(block("gone", "   the test harness never ran a::tests::test_b.", "Either the name is wrong or the test has gone.", ""))
+    {'gone': 'could not be measured'}
+    >>> verdicts_in(block("no build", "   the break did not build, so no test ran. cargo exited 101 and said:", "error[E0308]: mismatched types", ""))
+    {'no build': 'could not be measured'}
+    >>> verdicts_in(block("no test", "   the break built and the run named no test. cargo exited 0 and said:", "running 0 tests", ""))
+    {'no test': 'could not be measured'}
+    >>> verdicts_in(block("nothing captured", "   cargo ran and this captured none of its output, so nothing can be read from it. stdout is missing and stderr is present, and cargo exited 0.", ""))
+    {'nothing captured': 'could not be measured'}
+
+    And the line the loop prints for anything else that broke a record:
+
+    >>> verdicts_in(block("broke", "   this record could not be measured: OSError(28, 'No space left on device')", ""))
+    {'broke': 'could not be measured'}
+
+    The timing line is not a verdict, and a name with only that after it, or
+    with nothing after it at all, is a record a kill interrupted:
+
+    >>> verdicts_in(block("killed after the run", "   timed: rebuild 44 s, run 47 s, 91 s in all"))
+    {}
+    >>> verdicts_in(block("killed at once"))
+    {}
+    >>> verdicts_in(block("timed and judged", "   timed: rebuild 44 s, run 47 s, 91 s in all", "   the one test named went red, and nothing else did"))
+    {'timed and judged': 'agreed'}
+
+    A record another cargo ran beside is unmeasured whatever it printed, so a
+    resume takes it again; and the last block for a name is the one that
+    counts, so the record measured again after that has its verdict:
+
+    >>> contended = "   contended: another cargo ran during this record"
+    >>> verdicts_in(block("beside a hook", "   the one test named went red, and nothing else did", contended))
+    {}
+    >>> verdicts_in(
+    ...     block("beside a hook", "   the one test named went red, and nothing else did", contended)
+    ...     + block("beside a hook", "   the one test named went red, and nothing else did")
+    ... )
+    {'beside a hook': 'agreed'}
+
+    Everything before the first `-- ` line is the run's preamble, which the
+    pre-read writes, and it is not read for verdicts. Line endings are the
+    file's own, since Python writes the log through a text stream on Windows:
+
+    >>> verdicts_in("== 1 guard, one build and one run ==\\r\\n\\r\\n-- one\\r\\n   the one test named went red, and nothing else did\\r\\n")
+    {'one': 'agreed'}
+
+    A line this cannot read is refused with the line, never guessed at. The
+    reading is anchored on the first line in a block that carries the three
+    spaces the loop indents with, so a shape the runner never prints there is a
+    log some other tool wrote or a format that moved without this moving:
+
+    >>> verdicts_in(block("odd", "   something the runner never prints"))
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: under "-- odd", a line this cannot read as a verdict:
+        something the runner never prints
+    The runner prints only the shapes say_what_it_found's examples show. Either this log was not written by it, or the shapes moved and this reading did not.
+    """
+
+
+def foreign_builds_in(tasklist_output: str, own_pids: set[int]) -> list[str]:
+    """Every cargo or rustc alive in a `tasklist /FO CSV /NH` listing that
+    this process did not start, as `name pid`, so a wait can say what it is
+    waiting for.
+
+    >>> idle = (
+    ...     '"System Idle Process","0","Services","0","8 K"\\n'
+    ...     '"bash.exe","4120","Console","1","6,000 K"\\n'
+    ... )
+    >>> foreign_builds_in(idle, set())
+    []
+    >>> busy = idle + (
+    ...     '"cargo.exe","1234","Console","1","40,000 K"\\n'
+    ...     '"rustc.exe","1240","Console","1","900,000 K"\\n'
+    ... )
+    >>> foreign_builds_in(busy, set())
+    ['cargo.exe 1234', 'rustc.exe 1240']
+    >>> foreign_builds_in(busy, {1234, 1240})
+    []
+    >>> foreign_builds_in(busy, {1234})
+    ['rustc.exe 1240']
+
+    What `tasklist` prints when a filter matches nothing, kept for the day
+    somebody passes a filtered listing in:
+
+    >>> foreign_builds_in("INFO: No tasks are running which match the specified criteria.\\n", set())
+    []
+    """
+
+
+def is_quiet(tasklist_output: str, own_pids: set[int]) -> bool:
+    """Whether no cargo or rustc is running that this process did not start.
+
+    The condition `scripts/guards.sh` has stated in a comment since 2026-08-08
+    and nothing checked: a commit hook running the suite in the middle of a
+    sweep reported three guards green that go red on their own.
+
+    >>> is_quiet('"bash.exe","4120","Console","1","6,000 K"\\n', set())
+    True
+    >>> is_quiet('"rustc.exe","1240","Console","1","900,000 K"\\n', set())
+    False
+    >>> is_quiet('"rustc.exe","1240","Console","1","900,000 K"\\n', {1240})
+    True
+    """
+
+
+def why_a_resume_is_refused(porcelain: str) -> str | None:
+    """Why a resume may not start over this working tree, if it may not,
+    read from `git status --porcelain` over the guarded files.
+
+    `measure` puts a broken file back in a `finally`, which a `KeyboardInterrupt`
+    reaches and a process-tree kill, a closed terminal or a power cut may not.
+    A break left behind is a source change nobody made on purpose, and a sweep
+    resumed over it measures every record against somebody else's edit. So a
+    resume reads the tree first and refuses, naming the file and the command
+    that puts it back, rather than measuring over it. This is the second place
+    the script reads git, and it still changes nothing through it: the
+    `checkout` is printed for a person to run.
+
+    >>> why_a_resume_is_refused("") is None
+    True
+    >>> print(why_a_resume_is_refused(" M src/application/allowed.rs\\n"))
+    A guarded file is modified in the working tree, so nothing was measured:
+        src/application/allowed.rs
+    <BLANKLINE>
+    A run killed hard enough to skip its restore leaves its break behind, and a
+    sweep resumed over it would measure every record against that edit. If the
+    change is not yours, put the file back and start again:
+        git checkout -- src/application/allowed.rs
+
+    Every modified file at once, staged or not, so one refusal names them all:
+
+    >>> print(why_a_resume_is_refused("M  src/a.rs\\n M src/b.rs\\n"))
+    A guarded file is modified in the working tree, so nothing was measured:
+        src/a.rs
+        src/b.rs
+    <BLANKLINE>
+    A run killed hard enough to skip its restore leaves its break behind, and a
+    sweep resumed over it would measure every record against that edit. If the
+    change is not yours, put the file back and start again:
+        git checkout -- src/a.rs src/b.rs
+    """
+
+
+def the_resume_command(log: str, wait_until_quiet: bool) -> str:
+    """The command that picks a stopped run up from its log, printed whenever a
+    run stops with records remaining, so a person never has to reconstruct it.
+
+    >>> the_resume_command("sweep.log", wait_until_quiet=True)
+    'scripts/guards.sh --log sweep.log --resume --wait-until-quiet'
+    >>> the_resume_command("target/one-record.log", wait_until_quiet=False)
+    'scripts/guards.sh --log target/one-record.log --resume'
+    """
+
+
+def the_closing_line(
+    total: int, from_log: int, this_run: int, resume: str | None
+) -> str:
+    """The last line a run prints, which is how somebody who has been told not
+    to read the verdicts knows whether the sweep is done.
+
+    Complete, so the count of records with a verdict is the count selected:
+
+    >>> print(the_closing_line(798, 158, 640, None))
+    Every record selected has a verdict: 798 of 798, 158 from the log and 640 from this run.
+
+    Stopped with records remaining, and how to pick it up:
+
+    >>> print(the_closing_line(798, 0, 1, "scripts/guards.sh --log sweep.log --resume"))
+    1 measured this run; 797 of 798 remain. Resume with:
+        scripts/guards.sh --log sweep.log --resume
+
+    Stopped with records remaining and no log to resume from, which is a run
+    whose verdicts are on the screen and nowhere else:
+
+    >>> print(the_closing_line(3, 0, 1, None))
+    1 measured this run; 2 of 3 remain, and no --log was given, so nothing recorded this run for a resume.
+    """
+
+
 def main() -> int:
     parsing = argparse.ArgumentParser(description=__doc__)
     parsing.add_argument(
