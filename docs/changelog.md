@@ -35,6 +35,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   style suite runs on each commit that touches the script. The
   measurements page carries the rate one mutant costs on this machine
   under each suite shape, taken on one shard before any run is scheduled.
+  `--file GLOB` scopes a shard run to one area: the glob goes to the
+  tool, the shards divide what it leaves in, every shard records the glob,
+  and the merger refuses two shards whose globs differ.
+
+- **The mutation workflow can be dispatched from the Actions tab, and it
+  can run shards on GitHub's runners.** A developer tool. `mutants.yml`
+  ran only on a pull request, and this project merges to `main` without
+  pull requests, so its diff check had never once run. A dispatch now runs
+  either the diff against a ref you name, or a range of shards over the
+  whole tree or one area, one runner per shard, every one checked out at
+  the dispatched commit with the whole history, the pinned compiler, and
+  `cargo-mutants` at the version every rate was measured with. Each shard
+  is kept as an artifact named by its number, and the shards are read
+  together on a machine with `gh run download` and
+  `scripts/mutants_report.py --shards`, which refuses one that is missing,
+  stopped short, or was taken at another commit. A matrix is capped at 256
+  jobs, so the whole tree of 496 shards is two dispatches. No shard has
+  yet run on a runner, and what one costs there is unmeasured. A reading
+  in `tests/house_style.rs` holds the shard step to the flags the script
+  accepts, the inputs the workflow declares, the pinned compiler and the
+  audio setting a runner needs.
 
 - **The guard sweep can be stopped and picked up from its own log, and it
   waits for a quiet machine.** A developer tool, not a change to the
@@ -619,6 +640,15 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   with no icon at all and Windows drew the generic one everywhere.
 
 ### Fixed
+
+- **CI's Test Suite job checks out the whole history.** The push of `main`
+  at `0fa393ba` on 2026-09-15 failed that job on one test,
+  `test_the_share_of_history_before_red_green_is_computed_and_printed`,
+  which runs `git merge-base` against the commit red/green started at; the
+  checkout fetched one commit, and that commit was not a valid object name
+  there. Every other test was green. The job now fetches the history, with
+  a comment saying which test needs it, and a reading holds every job that
+  runs `cargo test` to that.
 
 - **The folder tree and the message list are filled at startup.** They were
   not: every fill of a module came from switching to it, and switching to the

@@ -8,16 +8,62 @@ name: Tests that would notice
 # that survives means the new code is not pinned by a test, which is the state
 # red/green exists to prevent and which a green suite cannot tell you about.
 #
-# Only the diff, so it finishes in minutes rather than the two days a whole
-# tree takes. The rest of the tree is checked in scoped runs by hand, with
-# scripts/mutants.sh.
+# Only the diff, so it finishes in minutes rather than the days a whole tree
+# takes. The rest of the tree is checked in scoped runs, with scripts/mutants.sh.
+#
+# Two ways in, since 2026-09-15. A pull request runs the diff against its base.
+# A dispatch from the Actions tab runs either the diff against a ref you name,
+# because this project merges to main without pull requests and the diff job
+# had never once run, or a range of shards over the whole tree or one area,
+# one runner per shard, every one at the same commit. The shards are read
+# together afterwards on a machine: `gh run download <run id>` into one
+# directory, then `python scripts/mutants_report.py --shards <dir> <n>`, which
+# refuses a shard that is missing, stopped short, or was taken at another
+# commit. Every job checks out `github.sha`, so the commit check holds.
+#
+# The whole tree is 496 shards of 25 at the 2026-09-15 count and a matrix is
+# capped at 256 jobs, so the whole tree is two dispatches, `first`/`last` of
+# 0/247 and 248/495. A runner job is capped at six hours; a shard of 25 at
+# this machine's measured rate is about an hour, and the runner's rate is
+# unmeasured until the first dispatch.
 
 on:
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "diff: the lines changed since a ref. shards: a range of shards over the tree or one area"
+        type: choice
+        options: [diff, shards]
+        default: diff
+      since:
+        description: "diff mode: the tag or commit to compare with, for example v0.19.0"
+        type: string
+        default: ""
+      file:
+        description: "shards mode: a glob for one area, for example src/service/protocols/**; empty for the whole tree"
+        type: string
+        default: ""
+      shards:
+        description: "shards mode: how many shards the list is divided into, n; about 25 mutants each"
+        type: string
+        default: "496"
+      first:
+        description: "shards mode: the first shard this dispatch runs, from 0"
+        type: string
+        default: "0"
+      last:
+        description: "shards mode: the last shard this dispatch runs, inclusive, at most first + 255"
+        type: string
+        default: "247"
 
 env:
   CARGO_TERM_COLOR: always
+  # GitHub's Windows runners ship no audio driver. Every sound test still runs
+  # and still asserts; the sound goes to a mixer with nothing listening. See
+  # ci.yml for what a crash there cost.
+  WIXEN_NO_AUDIO: "1"
 
 permissions:
   contents: read
@@ -25,6 +71,7 @@ permissions:
 jobs:
   in-diff:
     name: Mutants in the change
+    if: github.event_name == 'pull_request' || inputs.mode == 'diff'
     runs-on: windows-latest
 
     steps:
@@ -46,8 +93,11 @@ jobs:
           target
         key: ${{ runner.os }}-mutants-${{ hashFiles('**/Cargo.lock') }}
 
+    # The version every rate on docs/development/measurements.md was taken
+    # with. A newer one changes the mutant list and the record's shape, and
+    # both are read by scripts/mutants_report.py.
     - name: Install cargo-mutants
-      run: cargo install cargo-mutants --locked
+      run: cargo install cargo-mutants --version 27.1.0 --locked
 
     # The script, and not the tool directly. "What did this change touch" was
     # answered here and in the script separately, with two different pathspecs,
@@ -60,8 +110,14 @@ jobs:
     # they had not written out, which this job cannot see and a gate must not
     # guess at.
     - name: Would anything notice if it were wrong
+      if: github.event_name == 'pull_request'
       shell: bash
       run: scripts/mutants.sh --since origin/${{ github.base_ref }}
+
+    - name: Would anything notice if it were wrong, since the ref named
+      if: github.event_name == 'workflow_dispatch'
+      shell: bash
+      run: scripts/mutants.sh --since ${{ inputs.since }}
 
     - name: Keep the report
       if: always()
@@ -69,3 +125,86 @@ jobs:
       with:
         name: mutants
         path: target/mutants/mutants.out/
+
+  # A matrix cannot be built from an input directly, so this job turns
+  # `first` and `last` into the list of shard numbers the next job fans out
+  # over, and refuses a range the matrix cap would silently truncate.
+  range:
+    name: Which shards this dispatch runs
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'shards'
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.list.outputs.shards }}
+    steps:
+    - name: List the shards
+      id: list
+      shell: bash
+      run: |
+        first=${{ inputs.first }}
+        last=${{ inputs.last }}
+        n=${{ inputs.shards }}
+        if [ "$last" -lt "$first" ] || [ "$last" -ge "$n" ] || [ $((last - first)) -ge 256 ]; then
+          echo "first=$first last=$last shards=$n: the range must sit inside 0..n-1 and hold at most 256 shards, because a matrix is capped there."
+          exit 1
+        fi
+        echo "shards=[$(seq -s, "$first" "$last")]" >> "$GITHUB_OUTPUT"
+
+  shard:
+    name: Shard ${{ matrix.k }} of ${{ inputs.shards }}
+    needs: range
+    runs-on: windows-latest
+    # The runner's own cap, written so a reader sees it: a shard that has not
+    # finished by then is killed and is not complete, and the merge refuses it.
+    timeout-minutes: 360
+    strategy:
+      # Every shard is its own unit. One that fails says nothing about the
+      # others, and a run that stopped the rest on one failure would have to
+      # be dispatched again for all of them.
+      fail-fast: false
+      matrix:
+        k: ${{ fromJSON(needs.range.outputs.shards) }}
+
+    steps:
+    - name: Checkout code
+      # The whole history at the dispatched commit: the every-target suite
+      # holds a test that reads git for the share of history before red/green,
+      # and a checkout without it fails the baseline before any mutant runs.
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.98.1
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-mutants-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install cargo-mutants
+      run: cargo install cargo-mutants --version 27.1.0 --locked
+
+    # In place, because the runner's checkout is nobody's working tree and a
+    # copy would pay a second build from nothing. Every target, as the gate
+    # runs the suite. `--file` only when an area was named: the expansion
+    # passes nothing at all for an empty input, and the glob stays quoted so
+    # the shell does not expand it against the checkout.
+    - name: One shard, in place, every target
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+      run: scripts/mutants.sh --shard ${{ matrix.k }}/${{ inputs.shards }} --in-place ${FILE:+--file "$FILE"} -- --all-targets
+
+    # The shard's whole directory: conditions.txt, timing.txt and the record,
+    # named so `gh run download` lays 496 of them out for the merger.
+    - name: Keep the shard
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: shard-${{ matrix.k }}-of-${{ inputs.shards }}
+        path: target/mutants/shard-${{ matrix.k }}-of-${{ inputs.shards }}/

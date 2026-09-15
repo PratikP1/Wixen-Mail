@@ -332,24 +332,28 @@ class Conditions:
     arguments: str
     copy: str
     baseline: str
+    files: str
 
 
 def conditions_from(text: str) -> Conditions:
-    """Read the five lines `scripts/mutants.sh` writes before a shard starts.
+    """Read the six lines `scripts/mutants.sh` writes before a shard starts.
 
     >>> conditions_from('''commit = 1837f93b
     ... shard = 0/496
     ... arguments = --lib -- --test-threads=8
     ... copy = in-place
     ... baseline = run
+    ... files = src/service/protocols/**
     ... ''')
-    Conditions(commit='1837f93b', shard='0/496', arguments='--lib -- --test-threads=8', copy='in-place', baseline='run')
+    Conditions(commit='1837f93b', shard='0/496', arguments='--lib -- --test-threads=8', copy='in-place', baseline='run', files='src/service/protocols/**')
 
-    A shard run with nothing after `--` records an empty argument list, which
+    A shard run with nothing after `--`, over every file the configuration
+    allows, records an empty argument list and an empty file filter, which
     is a different thing from a line that is missing:
 
-    >>> conditions_from("commit = a\\nshard = 0/2\\narguments = \\ncopy = scratch\\nbaseline = run\\n").arguments
-    ''
+    >>> whole = conditions_from("commit = a\\nshard = 0/2\\narguments = \\ncopy = scratch\\nbaseline = run\\nfiles = \\n")
+    >>> whole.arguments, whole.files
+    ('', '')
 
     A line that is missing is refused by name, because a merge comparing a
     missing commit with a missing commit would find them equal:
@@ -357,7 +361,7 @@ def conditions_from(text: str) -> Conditions:
     >>> conditions_from("commit = a\\nshard = 0/2\\n")
     Traceback (most recent call last):
     ...
-    mutants_report.Wrong: conditions.txt does not say arguments, copy or baseline, so this shard cannot be placed with the others.
+    mutants_report.Wrong: conditions.txt does not say arguments, copy, baseline or files, so this shard cannot be placed with the others.
     """
     said: dict[str, str] = {}
     for line in text.splitlines():
@@ -374,7 +378,7 @@ def conditions_from(text: str) -> Conditions:
 
 
 # The lines `scripts/mutants.sh` writes, in the order the record holds them.
-CONDITION_KEYS = ("commit", "shard", "arguments", "copy", "baseline")
+CONDITION_KEYS = ("commit", "shard", "arguments", "copy", "baseline", "files")
 
 
 def listed(words: list[str]) -> str:
@@ -407,11 +411,18 @@ def why_these_shards_are_not_one_run(shards: list[Shard]) -> str | None:
     directory its record names, and have reached its last mutant. The list is
     in shard order, so the first shard is the one the others are held to.
 
-    >>> def at(commit, k, arguments="", declared=2, processed=2):
-    ...     return Shard(Conditions(commit, f"{k}/2", arguments, "in-place", "run"),
+    >>> def at(commit, k, arguments="", declared=2, processed=2, files=""):
+    ...     return Shard(Conditions(commit, f"{k}/2", arguments, "in-place", "run", files),
     ...                  Run(declared=declared, caught=["c"] * processed))
     >>> why_these_shards_are_not_one_run([at("1837f93b", 0), at("1837f93b", 1)]) is None
     True
+
+    Two file filters are two lists as surely as two commits are, because
+    `--shard k/n` divides whatever `--file` left in:
+
+    >>> print(why_these_shards_are_not_one_run([at("a", 0, files="src/service/protocols/**"), at("a", 1)]))
+    Shard 1/2 ran over every file the configuration allows and shard 0/2 over `src/service/protocols/**`, so they are two lists and not one run.
+    Every shard of a run is taken over the same files.
 
     Two commits are two lists:
 
@@ -454,6 +465,13 @@ def why_these_shards_are_not_one_run(shards: list[Shard]) -> str | None:
                 f"{first.commit}, so they are two lists and not one run.\n"
                 "Every shard of a run is taken at one commit."
             )
+        if said.files != first.files:
+            return (
+                f"Shard {said.shard} ran over {files_in_words(said.files)} and "
+                f"shard {first.shard} over {files_in_words(first.files)}, "
+                "so they are two lists and not one run.\n"
+                "Every shard of a run is taken over the same files."
+            )
         if said.arguments != first.arguments:
             return (
                 f"Shard {said.shard} ran with {arguments_in_words(said.arguments)} and "
@@ -481,14 +499,25 @@ def arguments_in_words(arguments: str) -> str:
     return f"`{arguments}`" if arguments else "nothing after --"
 
 
+def files_in_words(files: str) -> str:
+    """A file filter as a refusal names it, the empty one included.
+
+    >>> files_in_words("src/service/protocols/**")
+    '`src/service/protocols/**`'
+    >>> files_in_words("")
+    'every file the configuration allows'
+    """
+    return f"`{files}`" if files else "every file the configuration allows"
+
+
 def one_run_from(shards: list[Shard]) -> Run:
     """Every shard's record summed into one run, so the refusals in
     `why_this_is_not_an_answer` and the summary are asked of the whole exactly
     as they are asked of a single run.
 
-    >>> first = Shard(Conditions("a", "0/2", "", "in-place", "run"),
+    >>> first = Shard(Conditions("a", "0/2", "", "in-place", "run", ""),
     ...     Run(declared=3, caught=["c1", "c2"], missed=["m1"]))
-    >>> second = Shard(Conditions("a", "1/2", "", "in-place", "skip"),
+    >>> second = Shard(Conditions("a", "1/2", "", "in-place", "skip", ""),
     ...     Run(declared=2, would_not_compile=["u1"], never_started=[("n1", -1073741502)]))
     >>> whole = one_run_from([first, second])
     >>> whole.declared, whole.caught, whole.missed, whole.would_not_compile, whole.never_started
