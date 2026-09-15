@@ -60,7 +60,9 @@
 # `-- --lib -- --test-threads=8` runs the library alone at eight threads, which
 # is the cheaper of the two suite shapes and leaves the targets under tests/
 # out of the judgement. `--in-place` mutates the tree the script runs in rather
-# than a copy, so the build is incremental; only in a worktree nobody is editing.
+# than a copy, so the build is incremental; only in a worktree nobody is
+# editing, and it refuses to start over a tree with a tracked file modified,
+# because that is what a kill mid-mutant leaves.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -137,6 +139,14 @@ fi
 run_shard() {
     local shard="$1" dir="$2" baseline="$3"
     shift 3
+    # A run mutating the tree in place must start from a clean one. The tool
+    # puts each mutated file back when it is done with the mutant, and a kill
+    # mid-mutant skips that; with the baseline skipped, nothing else would
+    # notice, and every later shard would judge a tree with that mutant in it.
+    # The refusal names the file and the checkout that puts it back.
+    if [ "$COPY" = "in-place" ]; then
+        python scripts/mutants_report.py --tree-is-clean
+    fi
     mkdir -p "$dir"
     printf 'commit = %s\nshard = %s\narguments = %s\ncopy = %s\nbaseline = %s\n' \
         "$(git rev-parse HEAD)" "$shard" "${PASS[*]}" "$COPY" "$baseline" \

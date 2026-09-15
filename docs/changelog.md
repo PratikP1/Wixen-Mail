@@ -22,7 +22,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   quiet machine before each, and after the first complete shard skips the
   baseline and passes the timeout the configuration's rule would have
   given, because the tool otherwise falls back to 300 seconds and files a
-  busy minute as a hang. `scripts/mutants_report.py --shards DIR n` reads
+  busy minute as a hang. A shard run `--in-place` refuses to start over a
+  tree with a tracked file modified, naming the file and the `git checkout`
+  that puts it back, because a kill mid-mutant leaves the mutant behind and
+  with the baseline skipped every later shard would judge that tree.
+  `scripts/mutants_report.py --shards DIR n` reads
   every shard as one run and refuses, naming the shard, one that is
   missing, one that stopped short, and one whose record says a different
   commit or different arguments from the first; the sum then goes through
