@@ -43,7 +43,8 @@
 #
 # Nothing else may be building while it runs. A commit hook running the suite
 # in the middle of one already reported three guards green that go red on their
-# own.
+# own. That was a sentence from 2026-08-08 until 2026-09-14, and it is now a
+# check: `--wait-until-quiet` below.
 #
 # Usage:
 #   scripts/guards.sh              every guard in the record
@@ -51,6 +52,30 @@
 #   scripts/guards.sh --remeasure "a name" "another"
 #                                  exactly those records, and write down the
 #                                  tree each one agreed with
+#   scripts/guards.sh --log sweep.log --wait-until-quiet
+#                                  the whole sweep, detached: every line
+#                                  appended to the log as well as printed,
+#                                  and each record held until no cargo or
+#                                  rustc this run did not start is alive
+#   scripts/guards.sh --log sweep.log --resume --wait-until-quiet
+#                                  pick a stopped sweep up from its own log:
+#                                  every record the log holds a verdict for
+#                                  is skipped, a name with no verdict or one
+#                                  marked contended is measured again, and
+#                                  it refuses to start over a guarded file
+#                                  the tree shows as modified
+#   scripts/guards.sh --log sweep.log --resume --stop-after 20
+#                                  a chunk of a known size, then a line
+#                                  saying how many remain and how to resume;
+#                                  --stop-after 0 reports what remains and
+#                                  measures nothing
+#
+# `--log` appends and never truncates, so a resumed run continues the file it
+# read; `Start-Process` has no append and a shell redirection would overwrite
+# the log the run is resuming from. The runner's `finally` puts a broken file
+# back on an interrupt and not on a process-tree kill, which is why `--resume`
+# reads `git status` over every guarded file first and prints the `git
+# checkout` that cleans one it finds modified.
 #
 # `--remeasure` is what the commit gate sends people here for. Each record
 # writes down how many tests were in the files its red list names, and

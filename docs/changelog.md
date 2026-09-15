@@ -8,6 +8,37 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The guard sweep can be stopped and picked up from its own log, and it
+  waits for a quiet machine.** A developer tool, not a change to the
+  program. `scripts/guards.sh` measures every record in `guards/guards.toml`
+  by breaking the code each one names and running the suite, which is one
+  build and one run per record and hours for all of them; until now a run
+  had no resume, its only artefact was whatever the shell captured, and the
+  rule that nothing else may build beside it was a comment. Four flags:
+  `--log PATH` appends every line the runner prints to a file, flushed per
+  line; `--resume` reads that file for the verdict after each `-- name`
+  line, skips what has one, and measures again a name with none, which is
+  what a kill mid-record leaves; `--stop-after N` makes a chunk a known
+  size and prints the resume command; `--wait-until-quiet` holds each
+  record until no `cargo.exe` or `rustc.exe` the run did not start is
+  alive, and marks a record contended and unmeasured if one is alive as its
+  run returns. Before a resume measures anything it runs `git status` over
+  every guarded file and refuses, naming the file and the `git checkout`
+  that cleans it, if a killed run left its break behind. The reading of
+  the log is a pure function with worked examples for every verdict shape,
+  and `tests/house_style.rs` runs them on every commit that touches the
+  script.
+
+  **Known limitations.** The runner puts a broken file back in a `finally`,
+  which runs on an interrupt and not on a process-tree kill; the refusal on
+  resume is the check for that, and a run stopped hard leaves the tree to
+  be cleaned by the printed command. A build that starts and finishes
+  inside one record's run is seen by neither poll, so a record can be
+  measured beside a short build and not be marked. The log holds carriage
+  returns, because Python writes it through a text stream on Windows; the
+  reading accepts either line ending. `tasklist` is read, so the wait is a
+  Windows check and the flag is refused elsewhere.
+
 - **The message list has numbers over 200,000 rows, and a check that its
   paint reads memory and never the database.** The sample mailbox on the
   Help menu has shipped since phase 3 and no number from it existed
