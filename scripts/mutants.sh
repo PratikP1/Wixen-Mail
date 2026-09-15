@@ -36,15 +36,19 @@
 #   scripts/mutants.sh                    everything the config allows, slow
 #   scripts/mutants.sh src/service        one directory
 #   scripts/mutants.sh --since v0.19.0    only what changed since a commit
-#   scripts/mutants.sh --shard 0/496 [--out DIR] [--in-place] [-- cargo test args [-- binary args]]
+#   scripts/mutants.sh --shard 0/496 [--out DIR] [--in-place] [--file GLOB] [-- cargo test args [-- binary args]]
 #                                         one shard of everything, to DIR/shard-0-of-496,
 #                                         with what it ran under written beside it
 #                                         before it starts and its timing after
-#   scripts/mutants.sh --shards 496 [--out DIR] [--in-place] [-- ...]
+#   scripts/mutants.sh --shards 496 [--out DIR] [--in-place] [--file GLOB] [-- ...]
 #                                         every shard in turn, skipping the ones already
 #                                         complete, waiting for a quiet machine before
 #                                         each; killed and started again with the same
 #                                         command, it picks up at the first incomplete one
+#   scripts/mutants.sh --shards 18 --file 'src/service/protocols/**' --in-place -- --all-targets
+#                                         one area in shards: the glob goes to the tool's
+#                                         --file, the shards divide what it leaves in, and
+#                                         the merger refuses shards whose globs differ
 #
 # Name a real commit or tag to compare against. Every commit here lands on
 # `main`, so `--since main` compares `main` with itself and finds nothing, which
@@ -105,6 +109,8 @@ SHARD=""
 SHARDS=""
 COPY="scratch"
 IN_PLACE=()
+FILES=""
+FILE_ARGS=()
 PASS=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -112,6 +118,10 @@ while [ $# -gt 0 ]; do
         --shards) SHARDS="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --in-place) COPY="in-place"; IN_PLACE=(--in-place); shift ;;
+        # One area rather than the whole tree. The shards divide whatever
+        # this leaves in, so the glob is written into every shard's record
+        # and the merger refuses two shards whose globs differ.
+        --file) FILES="$2"; FILE_ARGS=(--file "$2"); shift 2 ;;
         --) shift; PASS=("$@"); break ;;
         *) break ;;
     esac
@@ -148,14 +158,15 @@ run_shard() {
         python scripts/mutants_report.py --tree-is-clean
     fi
     mkdir -p "$dir"
-    printf 'commit = %s\nshard = %s\narguments = %s\ncopy = %s\nbaseline = %s\n' \
-        "$(git rev-parse HEAD)" "$shard" "${PASS[*]}" "$COPY" "$baseline" \
+    printf 'commit = %s\nshard = %s\narguments = %s\ncopy = %s\nbaseline = %s\nfiles = %s\n' \
+        "$(git rev-parse HEAD)" "$shard" "${PASS[*]}" "$COPY" "$baseline" "$FILES" \
         > "$dir/conditions.txt"
 
     local started finished status=0
     started=$(date +%s)
     cargo mutants --shard "$shard" ${JOBS_ARGS[@]+"${JOBS_ARGS[@]}"} --output "$dir" \
-        ${IN_PLACE[@]+"${IN_PLACE[@]}"} "$@" -- ${PASS[@]+"${PASS[@]}"} || status=$?
+        ${IN_PLACE[@]+"${IN_PLACE[@]}"} ${FILE_ARGS[@]+"${FILE_ARGS[@]}"} "$@" \
+        -- ${PASS[@]+"${PASS[@]}"} || status=$?
     finished=$(date +%s)
 
     python scripts/mutants_report.py --timing "$dir/mutants.out" "$started" "$finished" \

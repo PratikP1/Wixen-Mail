@@ -378,7 +378,7 @@ def conditions_from(text: str) -> Conditions:
 
 
 # The lines `scripts/mutants.sh` writes, in the order the record holds them.
-CONDITION_KEYS = ("commit", "shard", "arguments", "copy", "baseline")
+CONDITION_KEYS = ("commit", "shard", "arguments", "copy", "baseline", "files")
 
 
 def listed(words: list[str]) -> str:
@@ -465,6 +465,13 @@ def why_these_shards_are_not_one_run(shards: list[Shard]) -> str | None:
                 f"{first.commit}, so they are two lists and not one run.\n"
                 "Every shard of a run is taken at one commit."
             )
+        if said.files != first.files:
+            return (
+                f"Shard {said.shard} ran over {files_in_words(said.files)} and "
+                f"shard {first.shard} over {files_in_words(first.files)}, "
+                "so they are two lists and not one run.\n"
+                "Every shard of a run is taken over the same files."
+            )
         if said.arguments != first.arguments:
             return (
                 f"Shard {said.shard} ran with {arguments_in_words(said.arguments)} and "
@@ -490,6 +497,17 @@ def arguments_in_words(arguments: str) -> str:
     'nothing after --'
     """
     return f"`{arguments}`" if arguments else "nothing after --"
+
+
+def files_in_words(files: str) -> str:
+    """A file filter as a refusal names it, the empty one included.
+
+    >>> files_in_words("src/service/protocols/**")
+    '`src/service/protocols/**`'
+    >>> files_in_words("")
+    'every file the configuration allows'
+    """
+    return f"`{files}`" if files else "every file the configuration allows"
 
 
 def one_run_from(shards: list[Shard]) -> Run:
