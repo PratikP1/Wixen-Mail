@@ -51,31 +51,125 @@
 //! `rustc.exe` first. A debug build is refused, because a debug figure is a
 //! figure about a binary nobody ships.
 
+use std::hint::black_box;
 use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
-use wixen_mail::data::message_cache::MessageCache;
-use wixen_mail::presentation::sample_mailbox::SAMPLE_MAILBOX_SIZE;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, WhereToSearch};
+use wixen_mail::presentation::date_display::DateSettings;
+use wixen_mail::presentation::mail_sort::sort_messages;
+use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
+use wixen_mail::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
+use wixen_mail::presentation::ui_types::{MailSortOption, MessageItem};
+use wixen_mail::presentation::view_state::Showing;
+use wixen_mail::presentation::virtual_rows::{Listed, text_for};
+use wixen_mail::service::safety::Verdict;
 
 /// The account the one folder belongs to. Only the folder row names it; no
 /// account is saved, because saving one reaches the credential store and
 /// nothing here needs an account beyond the folder's `account_id`.
 const THE_ACCOUNT: &str = "scale-measurement";
+const THE_FOLDER: &str = "INBOX";
+/// Rows per `upsert_messages` call, each one transaction.
+const A_BATCH: usize = 5_000;
 /// How many rows the format-holding half runs over on every commit.
 const A_FEW: usize = 2_000;
+/// Rows on one page of the list, which is what a scroll paints.
+const A_PAGE: usize = 40;
+/// How many times each timing is taken; the median is the number.
+const TAKES: usize = 3;
+/// What the search box passes as its limit: `LIMIT` inside
+/// `managers::search_messages`, which is private to that function. Written
+/// here so the filter is timed at the limit the program uses; if that one
+/// moves, this one is wrong and the row's conditions name it.
+const THE_SEARCH_BOXES_LIMIT: usize = 500;
+/// A word in one subject in five, the first subject `sample_mailbox` cycles.
+const A_WORD_IN_ONE_SUBJECT_IN_FIVE: &str = "quarterly";
+/// A word in no subject and no sender.
+const A_WORD_IN_NOTHING: &str = "zebra";
+/// A sender, one in four.
+const A_SENDER: &str = "grace";
 
 // ── The cache ───────────────────────────────────────────────────────────────
+
+/// A sample row as the sync would store it: the same subject, sender and
+/// date `sample_mailbox` gives it, no body.
+fn as_incoming(folder_id: i64, item: &MessageItem) -> IncomingMessage {
+    IncomingMessage {
+        folder_id,
+        uid: item.uid,
+        message_id: format!("<sample-{}@example.com>", item.uid),
+        subject: item.subject.clone(),
+        from_addr: item.from.clone(),
+        to_addr: item.to.clone(),
+        cc: None,
+        reply_to: None,
+        date: item.date.clone(),
+        internal_date: Some(item.date.clone()),
+        size_bytes: item.size_bytes,
+        refs_header: None,
+        read: item.read,
+        starred: item.starred,
+        answered: item.answered,
+        draft: item.draft,
+        deleted: false,
+        has_attachments: item.has_attachments,
+        safety: Verdict::ordinary(),
+        gmail_message_id: None,
+        labels: None,
+        receipt_to: None,
+        list_unsubscribe: None,
+        pop_uidl: None,
+    }
+}
 
 /// Write `count` rows into one folder of one account in a cache at `into`,
 /// in batches through `upsert_messages`, and answer the folder's row id.
 fn a_cache_of(count: usize, into: &Path) -> Result<i64, String> {
-    let _ = (count, into);
-    Err(String::from("not written yet"))
+    let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
+    let folder_id = cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: THE_ACCOUNT.to_string(),
+            name: THE_FOLDER.to_string(),
+            path: THE_FOLDER.to_string(),
+            folder_type: FolderType::Inbox.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let rows = sample_mailbox(count);
+    for batch in rows.chunks(A_BATCH) {
+        let arriving: Vec<IncomingMessage> = batch
+            .iter()
+            .map(|item| as_incoming(folder_id, item))
+            .collect();
+        cache
+            .upsert_messages(&arriving)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(folder_id)
 }
 
 // ── Timing ──────────────────────────────────────────────────────────────────
+
+/// Run `work` `TAKES` times, timing each, and answer the takes in the order
+/// taken with what the last run returned.
+fn taken<T>(mut work: impl FnMut() -> T) -> (Vec<Duration>, T) {
+    let mut takes = Vec::with_capacity(TAKES);
+    let mut last = None;
+    for _ in 0..TAKES {
+        let started = Instant::now();
+        let answer = work();
+        takes.push(started.elapsed());
+        last = Some(answer);
+    }
+    (takes, last.expect("at least one take"))
+}
 
 /// The middle take.
 fn median(takes: &[Duration]) -> Duration {
@@ -108,8 +202,187 @@ struct Measured {
 /// Every timing over a cache of `count` rows at `into` and the same rows in
 /// memory, in the order the page lists them.
 fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
-    let _ = (count, into);
-    Ok(Vec::new())
+    let mut measured = Vec::new();
+
+    // The cache: written, closed, and reopened so the first read is the first
+    // read on its connection.
+    let folder_id = a_cache_of(count, into)?;
+    let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
+
+    let started = Instant::now();
+    let listed = cache
+        .get_messages_for_folder(folder_id, THE_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    let cold = started.elapsed();
+    if listed.len() != count {
+        return Err(format!(
+            "the listing read back {} rows of the {count} written",
+            listed.len()
+        ));
+    }
+    measured.push(Measured {
+        what: format!("Listing {count} rows from the cache, cold"),
+        takes: vec![cold],
+        detail: format!(
+            "One take: the first `get_messages_for_folder` on a connection opened after the rows \
+             were written, {} rows returned. The file was warm in the operating system's cache \
+             because this process had just written it.",
+            listed.len()
+        ),
+    });
+    let (takes, listed) = taken(|| {
+        cache
+            .get_messages_for_folder(folder_id, THE_ACCOUNT)
+            .map(|rows| rows.len())
+    });
+    let rows_listed = listed.map_err(|e| e.to_string())?;
+    measured.push(Measured {
+        what: format!("Listing {count} rows from the cache, warm"),
+        takes,
+        detail: format!(
+            "The `get_messages_for_folder` reads after the cold one on the same connection, {rows_listed} rows returned each time."
+        ),
+    });
+
+    // The filter, at the search box's own limit, under every folder and
+    // under the narrowest answer the In list offers for that kind of word.
+    for (word, what, narrowest, narrowest_name) in [
+        (
+            A_WORD_IN_ONE_SUBJECT_IN_FIVE,
+            "a word in one subject in five",
+            WhereToSearch::SubjectOnly,
+            "Subject Only",
+        ),
+        (
+            A_WORD_IN_NOTHING,
+            "a word in no subject and no sender",
+            WhereToSearch::SubjectOnly,
+            "Subject Only",
+        ),
+        (
+            A_SENDER,
+            "a sender, one in four",
+            WhereToSearch::SenderOnly,
+            "Sender Only",
+        ),
+    ] {
+        for (looking_in, looking_in_name) in [
+            (WhereToSearch::EveryFolder, "All Folders"),
+            (narrowest, narrowest_name),
+        ] {
+            let (takes, found) = taken(|| {
+                cache
+                    .search_messages(THE_ACCOUNT, word, looking_in, THE_SEARCH_BOXES_LIMIT)
+                    .map(|rows| rows.len())
+            });
+            let rows_found = found.map_err(|e| e.to_string())?;
+            measured.push(Measured {
+                what: format!("Filter {count} rows for `{word}`, {what}, {looking_in_name}"),
+                takes,
+                detail: format!(
+                    "`search_messages` at the search box's limit of {THE_SEARCH_BOXES_LIMIT}, {rows_found} rows returned each time; the rows carry no message text, so the index holds subjects and senders only."
+                ),
+            });
+        }
+    }
+    // Once with no limit, so the page says how many rows the word matches
+    // and what reading all of them costs.
+    let (takes, found) = taken(|| {
+        cache
+            .search_messages(
+                THE_ACCOUNT,
+                A_WORD_IN_ONE_SUBJECT_IN_FIVE,
+                WhereToSearch::EveryFolder,
+                count,
+            )
+            .map(|rows| rows.len())
+    });
+    let rows_found = found.map_err(|e| e.to_string())?;
+    measured.push(Measured {
+        what: format!(
+            "Filter {count} rows for `{A_WORD_IN_ONE_SUBJECT_IN_FIVE}`, every match, All Folders"
+        ),
+        takes,
+        detail: format!(
+            "`search_messages` with the limit raised to {count}, which the search box never does, {rows_found} rows returned each time: the cost of every match rather than the first page of them."
+        ),
+    });
+
+    // The sort, each order on a fresh clone of the rows in memory.
+    let rows = sample_mailbox(count);
+    for (order, name) in [
+        (MailSortOption::DateNewestFirst, "Date (Newest First)"),
+        (MailSortOption::DateOldestFirst, "Date (Oldest First)"),
+        (MailSortOption::SenderAZ, "Sender (A-Z)"),
+        (MailSortOption::SenderZA, "Sender (Z-A)"),
+        (MailSortOption::SubjectAZ, "Subject (A-Z)"),
+        (MailSortOption::SubjectZA, "Subject (Z-A)"),
+        (MailSortOption::UnreadFirst, "Unread First"),
+    ] {
+        let mut takes = Vec::with_capacity(TAKES);
+        for _ in 0..TAKES {
+            let mut fresh = rows.clone();
+            let started = Instant::now();
+            sort_messages(&mut fresh, order);
+            takes.push(started.elapsed());
+            black_box(&fresh);
+        }
+        measured.push(Measured {
+            what: format!("Sort {count} rows in memory, {name}"),
+            takes,
+            detail: String::from(
+                "`sort_messages` over the generated rows, a fresh clone each take, the clone outside the timing. In the running program this runs off the interface thread and the list control taking the result was not timed, because there is no window.",
+            ),
+        });
+    }
+
+    // The scroll: one page of every visible column, then every row of one.
+    let columns = ColumnLayout::defaults_for(FolderKind::Inbox).visible();
+    let listed = Listed {
+        showing: Showing::Messages,
+        messages: &rows,
+        conversations: &[],
+    };
+    let dates = DateSettings::default();
+    let now = chrono::Local::now();
+    let page = A_PAGE.min(count);
+    let (takes, painted) = taken(|| {
+        let mut characters = 0usize;
+        for row in 0..page {
+            for column in 0..columns.len() {
+                characters +=
+                    text_for(listed, &columns, row as i64, column as i32, dates, now).len();
+            }
+        }
+        black_box(characters)
+    });
+    measured.push(Measured {
+        what: format!("Page paint: `text_for` over {page} rows and {} columns", columns.len()),
+        takes,
+        detail: format!(
+            "One page of the messages view, every visible column of an inbox, {painted} characters of cell text each take. A scroll in the running program is this plus wxWidgets' own painting, which was not timed, because there is no window."
+        ),
+    });
+    let subject = columns
+        .iter()
+        .position(|c| *c == MessageColumn::Subject)
+        .ok_or("an inbox shows a subject column")?;
+    let (takes, painted) = taken(|| {
+        let mut characters = 0usize;
+        for row in 0..count {
+            characters += text_for(listed, &columns, row as i64, subject as i32, dates, now).len();
+        }
+        black_box(characters)
+    });
+    measured.push(Measured {
+        what: format!("Full pass: `text_for` over {count} rows, one column"),
+        takes,
+        detail: format!(
+            "Every row of the messages view, the subject column, {painted} characters of cell text each take: what painting the whole list once would cost the callback, which no scroll does."
+        ),
+    });
+
+    Ok(measured)
 }
 
 // ── The row ─────────────────────────────────────────────────────────────────
