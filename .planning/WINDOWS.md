@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 430
+open_count: 432
 waived_count: 0
 fixed_count: 25
-total_count: 455
-last_updated: 2026-09-15T03:21:02.849Z
+total_count: 457
+last_updated: 2026-09-15T04:28:16.506Z
 ---
 
 # Broken Windows Ledger
@@ -470,6 +470,8 @@ last_updated: 2026-09-15T03:21:02.849Z
 | 453 | 08 | todo | docs/development/measurements.md |  | The low coverage area on 2026-09-14 is the wxWidgets windows, src/presentation/wx_*.rs at 26.88% holding 73% of the missed lines, outside the three areas PERF-05 attributes and not attributed by 08-05; these files build windows that no --lib test opens, and 08-09 decides whether that is a gap to close, a different command to measure with, or a figure to accept with the reason beside it | open |  | 2026-09-15T02:14:28.223Z |  |
 | 454 | 08 | deviation | scripts/guards.py |  | 08-06 edited the docstring of run_the_whole_suite, which the plan's file list did not name, because ledger 443 had assigned it to 08-06 and the plan's own done criterion is that no comment in the tree states the sweep's cost as a figure; the plan was written from the research and the README, neither of which carried the entry, so an assignment written into the ledger alone did not reach the plan it was addressed to | open |  | 2026-09-15T03:20:52.629Z |  |
 | 455 | 08 | deviation | docs/IMPLEMENTATION_STATUS.md |  | Three dated quotations of a retired figure were reworded to keep the figure without the phrase, because the plan's acceptance criteria were single-line greps for the old phrase finding nothing while its rule 1 requires the old figure kept as the figure of its date: the status page's mutation sentence, guards.toml line 40 and guards.sh line 36 now say the run was put at two days or at one or two hours rather than quoting the words; the meaning is unchanged and CLAUDE.md, whose criterion admitted a dated sentence, quotes all four phrases as written; an absence criterion over prose that also requires the quotation has to be scoped to the sentence and not to the phrase | open |  | 2026-09-15T03:21:02.849Z |  |
+| 456 | 08 | deviation | scripts/guards.py |  | 08-07 task 1: --resume is refused without --log, where the plan only said a bare --resume takes the --log path; a run that records its verdicts nowhere cannot itself be resumed, so the refusal prints the flag to add rather than measuring and losing the result | open |  | 2026-09-15T04:28:16.036Z |  |
+| 457 | 08 | deviation | scripts/guards.py |  | 08-07 task 1: a build that starts and finishes inside one record's run is seen by neither the poll before the record nor the poll after it, so such a record is measured beside a build and not marked contended; the plan accepts this as the cheapest reading the log can carry and the changelog says so | open |  | 2026-09-15T04:28:16.506Z |  |
 
 ````json
 [
@@ -5931,6 +5933,30 @@ last_updated: 2026-09-15T03:21:02.849Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T03:21:02.849Z",
+    "resolved_at": null
+  },
+  {
+    "id": 456,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/guards.py",
+    "line": null,
+    "description": "08-07 task 1: --resume is refused without --log, where the plan only said a bare --resume takes the --log path; a run that records its verdicts nowhere cannot itself be resumed, so the refusal prints the flag to add rather than measuring and losing the result",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T04:28:16.036Z",
+    "resolved_at": null
+  },
+  {
+    "id": 457,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/guards.py",
+    "line": null,
+    "description": "08-07 task 1: a build that starts and finishes inside one record's run is seen by neither the poll before the record nor the poll after it, so such a record is measured beside a build and not marked contended; the plan accepts this as the cheapest reading the log can carry and the changelog says so",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T04:28:16.506Z",
     "resolved_at": null
   }
 ]
