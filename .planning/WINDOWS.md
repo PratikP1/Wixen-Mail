@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 432
+open_count: 435
 waived_count: 0
 fixed_count: 25
-total_count: 457
-last_updated: 2026-09-15T04:28:16.506Z
+total_count: 460
+last_updated: 2026-09-15T08:19:56.948Z
 ---
 
 # Broken Windows Ledger
@@ -472,6 +472,9 @@ last_updated: 2026-09-15T04:28:16.506Z
 | 455 | 08 | deviation | docs/IMPLEMENTATION_STATUS.md |  | Three dated quotations of a retired figure were reworded to keep the figure without the phrase, because the plan's acceptance criteria were single-line greps for the old phrase finding nothing while its rule 1 requires the old figure kept as the figure of its date: the status page's mutation sentence, guards.toml line 40 and guards.sh line 36 now say the run was put at two days or at one or two hours rather than quoting the words; the meaning is unchanged and CLAUDE.md, whose criterion admitted a dated sentence, quotes all four phrases as written; an absence criterion over prose that also requires the quotation has to be scoped to the sentence and not to the phrase | open |  | 2026-09-15T03:21:02.849Z |  |
 | 456 | 08 | deviation | scripts/guards.py |  | 08-07 task 1: --resume is refused without --log, where the plan only said a bare --resume takes the --log path; a run that records its verdicts nowhere cannot itself be resumed, so the refusal prints the flag to add rather than measuring and losing the result | open |  | 2026-09-15T04:28:16.036Z |  |
 | 457 | 08 | deviation | scripts/guards.py |  | 08-07 task 1: a build that starts and finishes inside one record's run is seen by neither the poll before the record nor the poll after it, so such a record is measured beside a build and not marked contended; the plan accepts this as the cheapest reading the log can carry and the changelog says so | open |  | 2026-09-15T04:28:16.506Z |  |
+| 458 | 08 | deviation | scripts/mutants.sh |  | 08-08: the every-target mutation shape cannot run in a scratch copy, because cargo mutants copies the tree without .git and test_the_share_of_history_before_red_green_is_computed_and_printed runs git merge-base, so that baseline fails in the copy; the plan asked for a scratch-copy rate under every target and it was measured in place instead, which is the only way it runs | open |  | 2026-09-15T08:19:55.953Z |  |
+| 459 | 08 | deviation | scripts/mutants.sh |  | 08-08: a scoped mutation run, the third option the checkpoint offers, has no shard or resume support: --shard and --shards divide the whole list and pass nothing to -f, so a run over one area today is the older scripts/mutants.sh DIR mode, one process a kill loses whole; if option 3 or 4 is chosen, the shard modes gain a --file glob first, red first | open |  | 2026-09-15T08:19:56.464Z |  |
+| 460 | 08 | deviation | docs/development/measurements.md |  | 08-08: the per-mutant rate rows come from one shard whose 25 mutants all sit in src/presentation/accessibility.rs, a file most of the presentation layer depends on, so each rebuild ran 58 to 75 s where a one-file change elsewhere rebuilt 44 to 46 s; the products are what the tree would cost if every file were that file, and no leaf module was measured | open |  | 2026-09-15T08:19:56.948Z |  |
 
 ````json
 [
@@ -5957,6 +5960,42 @@ last_updated: 2026-09-15T04:28:16.506Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T04:28:16.506Z",
+    "resolved_at": null
+  },
+  {
+    "id": 458,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/mutants.sh",
+    "line": null,
+    "description": "08-08: the every-target mutation shape cannot run in a scratch copy, because cargo mutants copies the tree without .git and test_the_share_of_history_before_red_green_is_computed_and_printed runs git merge-base, so that baseline fails in the copy; the plan asked for a scratch-copy rate under every target and it was measured in place instead, which is the only way it runs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T08:19:55.953Z",
+    "resolved_at": null
+  },
+  {
+    "id": 459,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/mutants.sh",
+    "line": null,
+    "description": "08-08: a scoped mutation run, the third option the checkpoint offers, has no shard or resume support: --shard and --shards divide the whole list and pass nothing to -f, so a run over one area today is the older scripts/mutants.sh DIR mode, one process a kill loses whole; if option 3 or 4 is chosen, the shard modes gain a --file glob first, red first",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T08:19:56.464Z",
+    "resolved_at": null
+  },
+  {
+    "id": 460,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "docs/development/measurements.md",
+    "line": null,
+    "description": "08-08: the per-mutant rate rows come from one shard whose 25 mutants all sit in src/presentation/accessibility.rs, a file most of the presentation layer depends on, so each rebuild ran 58 to 75 s where a one-file change elsewhere rebuilt 44 to 46 s; the products are what the tree would cost if every file were that file, and no leaf module was measured",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T08:19:56.948Z",
     "resolved_at": null
   }
 ]
