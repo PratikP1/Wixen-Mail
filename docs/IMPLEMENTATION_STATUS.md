@@ -225,8 +225,14 @@ code does rather than specifying what it should do, and cannot fail for the bug
 it was written alongside. Mutation testing measures the difference: it alters
 the code and reruns the suite, and reports anything nothing caught.
 
-Run it with `scripts/mutants.sh <dir>`. A whole-tree run is about two days, so
-it is used scoped. The table below is from 2026-07-26.
+Run it with `scripts/mutants.sh <dir>`. A whole-tree run costs a rate times a
+count. The count is a row on `docs/development/measurements.md`: `cargo mutants
+--list` answered 12,335 mutants over 247 files on 2026-09-14. The rate is
+measured on one shard, under the suite shape the run will use, before any whole
+run is scheduled, and the product is written on that page beside the count.
+This paragraph put a whole-tree run at two days from 2026-07-29 until
+2026-09-14, with no date, no machine and no thread setting, so nothing in it
+could be re-taken. So it is used scoped. The table below is from 2026-07-26.
 
 | Module | Caught | Missed | What that means |
 |---|---|---|---|
