@@ -344,6 +344,29 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **One method for counting guard records, and one place for the sweep's
+  cost.** `CLAUDE.md` prescribed an awk for counting the records in
+  `guards/guards.toml` that name a file, as the correction to a grep that
+  overcounted. The awk read the file a line at a time and never counted a
+  record written on one line, which TOML allows and four records use;
+  measured 2026-09-14, it agreed with the format's parser for every file no
+  such record names and undercounted by one for the one file such a record
+  named that day. The prescribed command is now the parser, and the
+  paragraph says what the awk missed and when. The tree also gave four
+  figures for the cost of a whole guard sweep, "roughly 15 hours", "about 20
+  hours", "eighteen hours" and "an hour or two", each right on the day it was
+  written and none dated; `CLAUDE.md` now points at the row on
+  `docs/development/measurements.md`, which is a rate times a count with
+  both terms dated, and names the other three as what the tree used to say.
+  The gate and suite durations in `CLAUDE.md` and the mutation run's "about
+  two days" in `CLAUDE.md` and the status page now say when their figure was
+  taken and which row to read instead. The comments in `tests/house_style.rs`,
+  `guards/guards.toml`, `scripts/guards.sh` and `scripts/guards.py` that gave
+  the sweep a figure now point at the same row, and the three accepted
+  advisories in `.cargo/audit.toml` that carried no date say since when they
+  have stood, from `git log`. No test, record or setting changed value. No
+  figure that was true on its date was changed.
+
 - **Line coverage re-measured: 83.34% on 2026-09-14, where the status page
   had said 60.4% from 2026-07-26.** Same command both times, `cargo llvm-cov
   --lib --summary-only`, so the two are one quantity. Seven rows on

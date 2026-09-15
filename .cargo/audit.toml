@@ -43,7 +43,11 @@ ignore = [
     # data, so neither issue is reachable in a shipped binary. The quick-xml
     # that parses CalDAV responses is a separate, fixed 0.41, and both are in
     # Cargo.lock: 0.38.4 for the macro crate and 0.41.0 for the rest.
-    # Clears when wxdragon updates its macro crate.
+    # Clears when wxdragon updates its macro crate. Accepted on 2026-07-26,
+    # the day this file was written; on 2026-09-14 Cargo.lock still resolves
+    # wxdragon-macros 0.9.17 over quick-xml 0.38.4, so the condition has not
+    # been met. The date is here so the next reader knows how long it has
+    # stood rather than reading it as recent.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 
@@ -52,6 +56,10 @@ ignore = [
     # entry has never changed an exit status. What it does is keep the warning
     # out of the output, which is why it still has to be checked: an entry that
     # silences a line is an entry that can silence the wrong line later.
+    # Accepted on 2026-07-26 with the two above. `cargo tree -i paste` on
+    # 2026-09-14 names two roots, wxdragon 0.9.17 and the boa crates behind a
+    # dev-dependency, so it clears when both stop pulling paste in, and
+    # neither has since it was accepted.
     "RUSTSEC-2024-0436",
 
     # RUSTSEC-2023-0071. rsa 0.9.10, reached through pgp 0.20.0, which is how

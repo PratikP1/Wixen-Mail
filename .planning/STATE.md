@@ -1132,8 +1132,11 @@ places it was wrong.
 the tests start. Eleven ledger entries, 291 to 301, name what that cannot
 settle. Neither PIM-07 nor PIM-08 is ticked.
 
-Version `0.112.0`, `guards/guards.toml` holds 720 records with the census
-reading 192 and 528, `.planning/WINDOWS.md` reaches 301, and nothing is pushed.
+Version `0.112.0`, `guards/guards.toml` held 720 records with the census
+reading 192 and 528 on 2026-09-11 at `3bc2651`, the day this section was
+written, `.planning/WINDOWS.md` reached 301, and nothing was pushed. The
+count on the day you read this is the record row on
+`docs/development/measurements.md`, by the parser it names.
 
 ---
 

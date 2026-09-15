@@ -54,8 +54,9 @@ Outlook PST import and the CI quality gates.
 account or a real provider. "Exercised" means tested against parsing, fuzzed input and
 loopback servers in CI, never against Gmail, Microsoft Graph, a CalDAV server, or any live
 IMAP, SMTP or POP3 host. A further 13 rows are "built but unproven", including every mail
-transport write path, the Google and Microsoft Graph clients, the 8,149-line CalDAV client
-and all three personal information sync paths.
+transport write path, the Google and Microsoft Graph clients, the CalDAV client (8,337 lines
+on 2026-09-14 at `7da68e78` by `wc -l src/service/caldav.rs`; 8,149 when this was written on
+2026-08-29) and all three personal information sync paths.
 
 ### Active
 
@@ -119,7 +120,9 @@ before it can become one.
    "built" there is a code-reading result, not a behavioural one. Phase 9 of this milestone is
    the answer to this question.
 6. **Which document is the debt ledger?** `.planning/codebase/CONCERNS.md` finds only two
-   TODO or FIXME markers in a 259,723-line tree and concludes the changelog's Known
+   TODO or FIXME markers in what was a 259,723-line tree on 2026-08-29 (361,450 lines on
+   2026-09-14 at `7da68e78` by `find src -name '*.rs' | xargs wc -l | tail -1`) and
+   concludes the changelog's Known
    limitations notes are the real ledger. Those notes are self-amending, so a limitation's
    current state can only be read by following its whole entry, not its heading.
 7. **Are contacts, calendar and tasks writes safe on by default?**
@@ -130,17 +133,33 @@ before it can become one.
 
 ## Context
 
-**Brownfield, large, and honest about itself.** 259,723 lines under `src/`, 5,430 tests counted
-2026-08-29, 501 guard records in `guards/guards.toml`, line coverage last measured at 60.4% on
-2026-07-26. The project's own status documents are unusually candid and are the reason this
-milestone could be scoped from evidence rather than guesswork.
+**Brownfield, large, and honest about itself.** Every figure in this paragraph and the next
+was re-taken on 2026-09-14 at `7da68e78`, with the command beside it; the figure this
+paragraph gave on 2026-08-29 follows each in parentheses, and the page every later re-take goes
+on is `docs/development/measurements.md`. 361,450 lines under `src/` over 290 files, by
+`find src -name '*.rs' | xargs wc -l | tail -1` and `find src -name '*.rs' | wc -l`
+(259,723 on 2026-08-29). 7,750 tests every target builds, 7,264 of them in the library, by
+`cargo test --all-targets -- --list 2>&1 | grep -E '^[0-9]+ tests?,' | awk '{s+=$1} END{print s}'`
+and `cargo test --lib -- --list | tail -1` (5,430 counted 2026-08-29). 798 guard records in
+`guards/guards.toml`, by
+`python -c "import tomllib;g=tomllib.load(open('guards/guards.toml','rb'))['guard'];print(len(g))"`,
+the format's parser rather than a grep (501 on 2026-08-29). Line coverage of the library
+83.34% on 2026-09-14 at `55464a5e` by `cargo llvm-cov --lib --summary-only` (60.4% on
+2026-07-26 by the same command, which is what this paragraph said until 2026-09-14). The
+project's own status documents are unusually candid and are the reason this milestone could
+be scoped from evidence rather than guesswork.
 
-**The largest and least verified surface.** `src/service/caldav.rs` at 8,149 lines is the
-single largest service file and has never met a real server. Over 38,000 lines of sync logic
-sit across five `*_sync.rs` files, none of it exercised end to end against a provider.
-`src/presentation/wx_app.rs` at 19,659 lines is far larger than any other file in the
-repository, which makes tracing a non-test path to every piece of logic harder exactly where
-the project's own "done means it runs" rule needs it most.
+**The largest and least verified surface.** `src/service/caldav.rs` at 8,337 lines, by
+`wc -l src/service/caldav.rs` (8,149 on 2026-08-29), is the single largest service file and
+has never met a real server. 36,328 lines of sync logic sit across eight `*_sync.rs` files, by
+`find src -name '*_sync.rs' | xargs wc -l | tail -1` (this paragraph said "over 38,000 across
+five" on 2026-08-29, and that day's count was not re-derived; the eight today are
+`contacts_sync.rs` at 12,507, `mail_sync.rs`, `caldav_sync.rs`, `tasks_sync.rs`,
+`pop_sync.rs`, `notes_sync.rs`, `carddav_sync.rs` and `collection_sync.rs`), none of it
+exercised end to end against a provider. `src/presentation/wx_app.rs` at 30,030 lines by
+`wc -l src/presentation/wx_app.rs` (19,659 on 2026-08-29) is far larger than any other file
+in the repository, which makes tracing a non-test path to every piece of logic harder exactly
+where the project's own "done means it runs" rule needs it most.
 
 **Writes are gated by design.** `src/application/allowed.rs` splits permission into two
 answers: `mail` (sending, changing or deleting on the server) and `personal_information`

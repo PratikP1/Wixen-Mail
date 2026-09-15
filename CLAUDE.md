@@ -263,8 +263,10 @@ a document change still runs the document-reading targets, because
 `tests/house_style.rs` reads documents and its em-dash guard has caught two real
 breaks in markdown. On a branch nobody builds, the slow half waits for the merge,
 and what runs is scoped to the change. A commit touching only
-documents runs formatting, clippy and the three targets that read documents; a
-commit touching code runs those plus the tests reaching the modules it changed,
+documents runs formatting, clippy and the targets that read documents, which
+are listed in `scripts/check.sh`'s documents-only branch with the reason for
+each (three when this sentence was written on 2026-08-31, nine on 2026-09-14);
+a commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
 markdown commit went from about 330 seconds to 36.
 
@@ -293,11 +295,18 @@ skip the tests" would be false, because `tests/house_style.rs` reads documents
 and its em-dash guard has caught two real breaks in markdown. So a document
 change still runs the document-reading targets, and that was proven by breaking
 one on purpose and watching it redden before the rule was trusted.
-Measured warm on 2026-08-30: the whole gate is 311 seconds, of which the test
-suite is 239 and the release build 56, so the quick pair is 15 seconds and the
-slow two are everything else. On a branch they wait for the merge, where they
-run once rather than once per commit. Whoever merges runs `scripts/check.sh all`
-first, and that is the run they are paid for.
+Measured warm on 2026-08-30, the whole gate was 311 seconds, of which the test
+suite was 239 and the release build 56, so the quick pair was 15 seconds and the
+slow two were everything else. Those are that day's figures and the shape is
+what to keep. What the gate costs now is on `docs/development/measurements.md`:
+the full-gate row is a band harvested from the commit bodies, 275 to 654
+seconds across the branches that recorded one on 2026-09-14, and the row for
+`cargo test --all-targets` read 104 seconds the same day with every target
+already built, which is the suite's term taken on its own rather than inside a
+gate run, so read the two against each other with that difference in mind. On
+a branch the slow two wait for the merge, where they run once rather than once
+per commit. Whoever merges runs `scripts/check.sh all` first, and that is the
+run they are paid for.
 
 `which-checks.sh` answers `all` for anything it cannot place, including an
 empty branch name and a detached `HEAD`. A check that cannot tell where it is
@@ -387,9 +396,17 @@ instead of passing. That was written down here as the way to check a change for
 275 commits and could never have tested a line.
 
 Mutation testing alters the code in small ways and runs the suite. Anything
-nothing catches is either untested behaviour or dead code. A whole-tree run is
-about two days, so it is used scoped, and the pull request check runs it on the
-diff only. Before trusting a new regression test, take the fix out and watch the
+nothing catches is either untested behaviour or dead code. A whole-tree run
+costs a rate times a count, and the count is a row on
+`docs/development/measurements.md`: `cargo mutants --list` answered 12,335
+mutants over 247 files on 2026-09-14. The rate is not written anywhere yet on
+purpose; it is measured on one shard, under the suite shape the run will use,
+before any whole run is scheduled, and the product goes on that page beside
+the count. This sentence said a whole-tree run is "about two days" from
+2026-07-29 until 2026-09-14, with no date, no machine, no thread setting and
+no record of which count or rate it was built on, so nothing in it could be
+re-taken. So it is used scoped, and the pull request check runs it on the diff
+only. Before trusting a new regression test, take the fix out and watch the
 test fail; a test that has never been red proves nothing.
 
 Taking it red once is not enough either, because the code around it goes on
@@ -461,14 +478,35 @@ plans were misled by quoting a grep. The ratio is not two and it is not stable: 
 the same tree, on 2026-09-06, `grep -c contacts_sync guards/guards.toml` answered
 363 against the 77 records that really named it in a `tests_last_seen` block, which is nearly five
 to one, because a file appears in a record's `file`, its `before`, its `after`,
-its `red` list and its prose comment as well. Parse the `tests_last_seen` blocks:
+its `red` list and its prose comment as well. Read the file with the format's
+own parser and count the records whose `tests_last_seen` names the file:
 
 ```bash
-awk '/^\[\[guard\]\]/ {if(n>0) c++; n=0}
-     /^tests_last_seen/ {b=1; next} b && /^\]/ {b=0; next}
-     b && /file *=/ && /contacts_sync/ {n++}
-     END {if(n>0) c++; print c}' guards/guards.toml
+python -c "import tomllib;g=tomllib.load(open('guards/guards.toml','rb'))['guard'];print(sum(1 for r in g if any(e['file']=='src/application/contacts_sync.rs' for e in r.get('tests_last_seen',[]))))"
 ```
+
+Print `len(g)` instead of the sum for the number of records. The rows on
+`docs/development/measurements.md` are taken with these two commands and
+nowhere else.
+
+**Until 2026-09-14 this paragraph prescribed an awk in place of the parser,
+and the awk miscounted.** It read the file a line at a time, setting a flag on
+a line beginning `tests_last_seen` and clearing it on a bare `]`. TOML also
+allows the whole block on one line, `tests_last_seen = [{ file = "...", tests
+= N }]`, and the file holds four records spelled that way. On such a record the
+awk consumes the line before it looks for the file, so the record is never
+counted, and the flag it set stays set until a later bare `]`. Measured
+2026-09-14 at `3accd6e1`, the awk against the parser, per file: it agrees for
+`src/presentation/wx_app.rs` (50 and 50), `tests/house_style.rs` (21 and 21)
+and `src/application/contacts_sync.rs` (77 and 77), and for every file no
+inline-table record names; it undercounts by at most one for each file an
+inline record names, which that day was one file,
+`src/presentation/wx_send_later.rs`, 0 against 1. The miss is small today and
+the shape is the point: a line reader for a structured file is right for the
+spelling the file happens to use and silently wrong for the others the format
+allows, and it hands back a plausible number rather than an error. It arrived
+here as the correction to a known miscount, which is the part worth
+remembering.
 
 **A renamed test is worse than a stale record, and it is the second half of
 that middle limit.** A count cannot see a rename: 71 tests before, 71 after. And
@@ -543,28 +581,37 @@ and 536, none of them dated, in a file whose whole argument is that a measuremen
 without a date perishes. Phase 6 and phase 8 research both went to count and found
 617, on 2026-09-06 against `main` at `485030f`.
 
-At that size, on 2026-09-06, the sweep was about **20 hours**, not the 15 this
-used to say. The figure moved for two reasons at once: 52 more records, and a
-library that had grown to roughly 6,000 test functions, which put the per-record
-cost nearer 119 seconds than the 112 the old number assumed. Both terms go on
-moving, so multiply the count you take today by a rate you measure today; the
-product row on `docs/development/measurements.md` is where the latest pair is.
+**The sweep's cost is a rate times a count, and both terms live on
+`docs/development/measurements.md`, not here.** The count is the record row,
+taken with the parser above. The rate is the row read off the `timed:` line
+`scripts/guards.py` prints after every record since 2026-09-14, rebuild and
+run as two figures, because the two move for different reasons and have moved
+in opposite directions. Their product is a third row, and that row is the
+only place the total is written. Until 2026-09-14 the tree gave four figures
+for this one job, none of them dated and none of them the same: "roughly 15
+hours" in the roadmap, "about 20 hours" in this paragraph, "eighteen hours"
+in `tests/house_style.rs` and "an hour or two" in `guards/guards.toml` and
+`scripts/guards.sh`. Each was right on its day at that day's count and rate.
+The 20 hours here was 617 records at about 119 seconds on 2026-09-06, and it
+was already wrong three days later.
 
-**The rate halved on 2026-09-09 and the twenty hours above now overstates it.**
-A record costs one rebuild plus one whole-library run, and the library run
+What moved it: on 2026-09-09 the run term halved, because the library run
 stopped rebuilding the database schema once per test that opens a cache.
-Measured that day at 8 threads, the two commits interleaved so the machine is in
-the same state for both: 120.3s and 120.2s at `02ddbcb`, 64.8s and 63.8s with
-the schema template. Do not read a new total off that halving. The rebuild term
-was never measured beside the run term, so the instruction is the one above,
-unchanged: take the count today and measure the rate today.
+Measured that day at 8 threads, the two commits interleaved so the machine is
+in the same state for both: 120.3s and 120.2s at `02ddbcb`, 64.8s and 63.8s
+with the schema template. The rebuild term then rose on its own, from 29 s on
+2026-09-10 to 44 s on 2026-09-14, which the rate row records, and which is why
+a total read off either term alone is wrong. This paragraph used to say the
+rebuild term was never measured beside the run term; it has been since
+2026-09-10, and the runner has printed both apart since 2026-09-14. The
+instruction is unchanged: take the count today and measure the rate today.
 
 **A plain sweep has no resume.** It writes nothing back to `guards.toml`; its only
 artefact is the flushed log. A job of that size that cannot be stopped and picked
 up is a scheduling question before it is a technical one.
 
 Scoped to a single branch it was 63 records of the 536 that
-existed then, about 90 minutes, for plan 02-01 on 2026-08-31, counting the
+existed on 2026-08-31, about 90 minutes, for plan 02-01 that day, counting the
 records in `guards/guards.toml` that named a test in a module the plan
 changed. Narrowing that to modules which
 actually gained a test only reached 52, because one large shared file gained
@@ -611,15 +658,20 @@ threads, 6s at eight. So `scripts/check.sh` pins the scoped `--lib` run to four
 while the guard runs use eight.
 
 **Neither carries to the `--all-targets` run**, which `scripts/check.sh` still
-leaves at the default: there the test term falls from 197s to 111s and the whole
-gate does not move, 335s against 353s. Reading an isolated figure as though it
-applied everywhere was the original mistake, and timing the thing you are about
-to change rather than assuming is what has now caught it twice.
+leaves at the default: measured 2026-08-31, the test term fell from 197s to
+111s and the whole gate did not move, 335s against 353s. Those are that day's
+figures; the same run read 104 seconds on 2026-09-14 with every target already
+built, the row on `docs/development/measurements.md`, which is the one to
+quote. Reading an isolated figure as though it applied everywhere was the
+original mistake, and timing the thing you are about to change rather than
+assuming is what has now caught it twice.
 
-Running the records in parallel across git worktrees was measured and rejected:
-two concurrent suites take 131s each against 88s alone, so the contention is on
-something shared rather than on the processor and crosses process boundaries.
-Five workers would buy about 1.8x for 43GB of disk and a five-minute build each.
+Running the records in parallel across git worktrees was measured on
+2026-08-31 with `cargo test --lib` and rejected: two concurrent suites took
+131s each against 88s alone, so the contention is on something shared rather
+than on the processor and crosses process boundaries. Five workers would have
+bought about 1.8x for 43GB of disk and a five-minute build each, on that day's
+suite; nothing has re-taken it since the schema change above.
 
 **The other environment setting is `WIXEN_NO_AUDIO`, and it says the machine
 cannot play sound.** CI sets it. Set it anywhere else a sound device opens and

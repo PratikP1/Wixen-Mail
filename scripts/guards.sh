@@ -33,9 +33,13 @@
 # record shorter than the truth is the thing that file exists to stop.
 #
 # Not part of scripts/check.sh, and not in the commit hook. It is one build and
-# one full run per guard, an hour or two for all of them rather than seconds,
-# so it belongs with mutation testing: run it after a change that touches code
-# a guard is about, and read the answer.
+# one full run per guard, hours for all of them rather than seconds, so it
+# belongs with mutation testing: run it after a change that touches code a
+# guard is about, and read the answer. How many hours is a rate times a count,
+# and both terms are rows on docs/development/measurements.md with the product
+# beside them; the runner prints the rate after every record as a `timed:`
+# line. This comment put the whole run at one or two hours from 2026-08-08,
+# when it was written, until 2026-09-14.
 #
 # Nothing else may be building while it runs. A commit hook running the suite
 # in the middle of one already reported three guards green that go red on their

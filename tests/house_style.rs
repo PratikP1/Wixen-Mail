@@ -5362,11 +5362,14 @@ fn how_many_tests(count: usize) -> String {
 /// The command that re-measures exactly the records this found, and nothing
 /// else.
 ///
-/// The whole point of naming them. A full run of the record is 683 builds and
-/// 683 suite runs, which is eighteen hours at the 95 seconds a record measured
-/// on 2026-09-10, and somebody told only that a record may be stale has no
-/// cheaper option than that. Told which records, they have one that costs a
-/// build and a run each.
+/// The whole point of naming them. A full run of the record is one build and
+/// one suite run per record, and its cost is a rate times a count with both
+/// terms on `docs/development/measurements.md`, where the product is a row
+/// of its own; it is hours, and somebody told only that a record may be
+/// stale has no cheaper option than that. Told which records, they have one
+/// that costs a build and a run each. Until 2026-09-14 this comment gave the
+/// product as a figure, 683 records at the 95 seconds a record measured on
+/// 2026-09-10, and it was that day's.
 fn how_to_re_measure(names: &[String]) -> String {
     let quoted: Vec<String> = names.iter().map(|name| format!("\"{name}\"")).collect();
     format!("scripts/guards.sh --remeasure {}", quoted.join(" "))

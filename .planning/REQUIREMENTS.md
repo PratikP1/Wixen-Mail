@@ -1935,6 +1935,12 @@ write path added by this milestone passes through that gate.
     so no target below has a number attached. The source of the target is
     `docs/development/requirements-backlog.md:81`, "Memory profiling | Target <150MB with 1000
     cached messages | Medium".
+    Re-read 2026-09-14 at `7da68e78`: the sentence above was true on 2026-09-04 and is not
+    now. `tests/the_numbers_the_targets_ask_for.rs` starts the release binary against a
+    profile of 1,000 cached messages and reads the working set of the process and its WebView2
+    tree, and the numbers are rows on `docs/development/measurements.md` dated 2026-09-14 with
+    the machine and the build. Whether each `[D]` line closes is read clause by clause when
+    the phase closes, not here.
 
   - [S] `docs/development/requirements-backlog.md`, performance and scale, Medium.
   - [D] A repeatable measurement produces a number for resident memory with 1,000 cached
@@ -1949,6 +1955,12 @@ write path added by this milestone passes through that gate.
     success metric; `docs/development/requirements-backlog.md:82` carries it as Medium. Nothing
     in `src/` times process start against a usable list. The "under 2 seconds" is a target
     rather than a measurement and is correctly written as one.
+    Re-read 2026-09-14 at `7da68e78`: "nothing in `src/` times process start" was true on
+    2026-09-04 and is not now. `src/common/started.rs` takes the start instant as the first
+    statement of `main` and the program writes `the message list is usable: N rows, M ms
+    after start` once per process; the cold-start row on `docs/development/measurements.md`
+    is dated 2026-09-14 with the machine and the build. The roadmap lines cited above were not
+    re-checked here; whether the target is met is read when the phase closes.
 
   - [S] Roadmap Phase 8; `docs/development/requirements-backlog.md`.
   - [D] Cold start is measured from process start to the message list being usable, not to the
@@ -1960,22 +1972,37 @@ write path added by this milestone passes through that gate.
   - Evidence: rewritten 2026-09-04. "The largest thing exercised is a loopback server" is
     false. A 200,000 row sample mailbox generator ships in the product, on the Help menu, put
     there deliberately so that a screen reader user can arrow through one.
-    `SAMPLE_MAILBOX_SIZE` is 200,000 at `src/presentation/wx_app.rs:9125`, `sample_mailbox` at
-    9137 builds the rows, and `ID_LOAD_SCALE_SAMPLE` (line 93, item at 6281, handler at 4908) is
-    on the Help menu rather than behind a build flag, because as its doc comment says, the
-    people who most need to test it are not the people compiling it.
-    **So the first `[D]` line is half satisfied: the mechanism exists and is reachable, and the
-    numbers do not.** Nothing in the tree records a sort, filter or scroll timing from a sample
-    run.
-    **The second `[D]` line is not satisfied and is the part to keep.** The virtual text
-    callback at `wx_app.rs:1101` reads the whole loaded list out of `state.messages` in memory
-    and never touches SQLite, which a comment at 1093 states, but no test asserts it. Nor is the
+    `SAMPLE_MAILBOX_SIZE` is 200,000 and `sample_mailbox` builds the rows, both in
+    `src/presentation/sample_mailbox.rs` since 08-04 moved them out of `wx_app.rs` on
+    2026-09-14 (this line cited them by line number in `wx_app.rs`, 9125 and 9137, on
+    2026-09-04, and a line number without a commit is not a citation, so the names replace
+    the numbers);
+    `ID_LOAD_SCALE_SAMPLE` in `wx_app.rs` is the menu id, its item is on the Help menu and its
+    handler calls `sample_mailbox(SAMPLE_MAILBOX_SIZE)`, `grep -n ID_LOAD_SCALE_SAMPLE
+    src/presentation/wx_app.rs` finds all three, and it is on the Help menu rather than behind
+    a build flag, because as its doc comment says, the people who most need to test it are
+    not the people compiling it.
+    **So the first `[D]` line was half satisfied on 2026-09-04: the mechanism existed and was
+    reachable, and the numbers did not.** Nothing in the tree then recorded a sort, filter or
+    scroll timing from a sample run. Re-read 2026-09-14 at `7da68e78`:
+    `tests/the_list_at_two_hundred_thousand_rows.rs` times the listing, the filter, each sort
+    order and the paint of one page over the same 200,000 rows with no window, and eighteen
+    rows on `docs/development/measurements.md` hold the numbers dated 2026-09-14 at
+    `5cf04528` with the machine and the build.
+    **The second `[D]` line was not satisfied on 2026-09-04 and is the part to keep.** The
+    virtual text callback in `wx_app.rs` (cited at `:1101` that day, and the comment at
+    `:1093`) read the whole loaded list out of `state.messages` in memory and never touched
+    SQLite, but no test asserted it. Re-read 2026-09-14 at `7da68e78`: the callback's body is
+    `virtual_rows::text_for` in `src/presentation/virtual_rows.rs`, a function over slices and
+    copies, and `tests/the_list_reads_only_memory.rs` holds it and the closure that calls it
+    to naming no database, with two guard records coupling both to the reading. Nor is the
     mail-at-scale plan's paged design built: there is no page cache of 200 rows around the
     viewport and no placeholder on a cache miss, because the whole list is held in memory.
     `message_rows::PLACEHOLDER` exists and is returned only when the row index is past the end
     of the loaded list.
     The third `[D]` line, that no criterion here claims a real provider mailbox was used, is
-    still correct and still important.
+    still correct and still important, and still true on 2026-09-14: every row timed was
+    synthetic.
 
   - [S] Roadmap Phase 8; `docs/plans/20260726-mail-at-scale.md`.
   - [S] Sorting 200,000 rows in memory on a header click is a multi-second freeze, and a freeze
@@ -1991,6 +2018,10 @@ write path added by this milestone passes through that gate.
 - [ ] **PERF-04**: Idle memory under 100 MB, measured.
   - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:254` reads
     `- Low memory footprint (< 100MB idle)` under success metrics, with no measurement anywhere.
+    Re-read 2026-09-14 at `7da68e78`: "no measurement anywhere" was true on 2026-09-04 and is
+    not now. The idle row on `docs/development/measurements.md`, memory at 120 s with 1,000
+    cached messages and no input after the usable line, is dated 2026-09-14 with the machine
+    and the build, beside the empty-profile floor taken the same way.
 
   - [S] Roadmap success metrics.
   - [D] Idle memory is measured after startup with a cache present and no user activity, and
@@ -2008,11 +2039,30 @@ write path added by this milestone passes through that gate.
     project's history postdates the reading. The "roughly 275" this line used to give was itself
     a stale count when it was written and had never been re-taken, which is the same defect this
     requirement is about, in the requirement about it.
+    Re-taken 2026-09-14 at `7da68e78`. The coverage was re-measured by 08-05 with the same
+    command: 83.34% on 2026-09-14 at `55464a5e`, 160,966 of 193,153 lines, the row on
+    `docs/development/measurements.md`, with 60.4% kept on the status page as the figure of
+    2026-07-26; the status page citation above, `:201`, was the paragraph's line that day and
+    the paragraph is now three, found by `grep -n 83.34 docs/IMPLEMENTATION_STATUS.md`.
+    `git rev-list --count --since="2026-07-26" HEAD` gives 1,830 commits since the reading, out
+    of 2,077 by `git rev-list --count HEAD`, 88%, against 1,195 of 1,373 on 2026-09-04.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [S] Coverage is the cheap wide sweep answering only "what never runs at all", and low
     coverage in `service/protocols`, `service/oauth` and the provider clients is the network
     transport that has never met a live account, tracked as work rather than as a testing gap.
+    **That was true of the transport on 2026-07-26 and is not the reason on 2026-09-14.** By
+    the run at `55464a5e`, summed from its per-file table with `cargo llvm-cov report --json
+    --summary-only`, `src/service/protocols/` is 92.06%, the two OAuth files 84.55% and the six
+    provider clients 96.75%, every one above the library's 83.34%, and everything outside
+    `src/presentation/` is 95.53%. The low area is the 27 wxWidgets window files,
+    `src/presentation/wx_*.rs`, at 26.88%, holding 73% of the missed lines, `wx_app.rs` at
+    29.83% and eleven of the 27 at 0%. Those files build windows and a `--lib` run opens none,
+    which is a description of where the missed lines are and not an attribution; ledger 452
+    carries this sentence and ledger 453 carries the windows, and what the windows are, a gap
+    to close, a different command to measure with, or a figure to accept with the reason, is
+    decided when the phase closes. The transport's own reason still stands for the transport:
+    none of those files has met anything but a loopback server a test started.
 
   - [D] A current number replaces the stale one, with its date, and the low areas are
     attributed rather than treated as a number to raise.
@@ -2049,6 +2099,32 @@ write path added by this milestone passes through that gate.
     and no thread setting, while `CLAUDE.md:465` gives "about 15 hours" for the 564-record guard
     sweep after `WIXEN_TEST_THREADS` halved it. Those are two different jobs, and a reader
     planning phase 8 has no way to tell which conditions either was taken under.
+    Re-taken 2026-09-14 at `7da68e78`, every figure and citation above being that of
+    2026-09-04:
+
+    ```
+    cargo test --lib -- --list | tail -1                                     7,264      2026-09-14
+    cargo test --all-targets -- --list 2>&1 | grep -E '^[0-9]+ tests?,' | awk '{s+=$1} END{print s}'
+                                                                             7,750      2026-09-14
+    ```
+
+    so the targets under `tests/` hold 486. The three pages quote one row: the status page
+    and `docs/integration-guide.md` say 7,697 tests, 7,245 unit and 452 integration, counted
+    2026-09-14 at `a42331bb` with the command above, the row on
+    `docs/development/measurements.md`, and `test_the_three_pages_that_state_the_test_count_quote_one_row`
+    in `tests/every_number_carries_its_command_and_its_date.rs` holds them to it on every
+    commit; the 7,750 here is a later take on the same day at a later commit, and the page
+    refuses a second row with one `what` and one date, so it stays here as this file's own
+    measurement and no page quotes it until a later day re-takes it. The line citations above
+    have moved: the status page's count is found by
+    `grep -n "7,697 tests" docs/IMPLEMENTATION_STATUS.md`, the changelog's 5,430 lines by
+    `grep -n "5,430" docs/changelog.md` under the entry of their day, and the integration
+    guide's by the same grep on it. The two durations: "about two days" is gone from both
+    pages since 2026-09-14, replaced by the mutant count row, 12,335 by `cargo mutants --list`,
+    and a rate 08-08 measures before any run; "about 15 hours" for the sweep is gone from
+    `CLAUDE.md` since 2026-09-14, which now points at the product row, 784 x 92 s taken by
+    08-01, and names the four figures the tree used to give. `CLAUDE.md`'s guard-record count
+    is by the parser, not the grep, since the same day.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [D] Every count in the documentation carries the command it came from and the date it was
@@ -2089,6 +2165,19 @@ write path added by this milestone passes through that gate.
     has no counterpart in the file today: every record carries a name and a measured red list,
     so there is no marker separating verified from unverified and nothing for that number to
     compare against.
+    Re-taken 2026-09-14 at `7da68e78`: **798** records by the format's parser,
+    `python -c "import tomllib;g=tomllib.load(open('guards/guards.toml','rb'))['guard'];print(len(g))"`,
+    which is the method `CLAUDE.md` prescribes since 2026-09-14 and the one the rows on
+    `docs/development/measurements.md` are taken with; the grep above answers the same 798
+    today, since every record opens with `[[guard]]`, and the parser is prescribed because a
+    line reader miscounts the other question, records naming a file, when a record is spelled
+    on one line. The 192 figure now has a counterpart: the census at the top of the file says
+    192 were swept on 2026-08-12 and 606 have arrived since, and
+    `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it` holds the
+    two to the record count on every commit. `CLAUDE.md:474` and `CLAUDE.md:544` were that
+    day's lines; the record-count paragraph is found by `grep -n "Count records" CLAUDE.md` and
+    the 2026-08-05 run by `grep -n 2026-08-05 CLAUDE.md`. The mutant count the run would face
+    is a row on the same page, 12,335 over 247 files by `cargo mutants --list` on 2026-09-14.
     The two `[S]` claims below about the script are unchanged and still accurate.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md` and `CLAUDE.md`.
