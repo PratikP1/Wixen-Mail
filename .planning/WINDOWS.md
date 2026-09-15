@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 424
+open_count: 427
 waived_count: 0
 fixed_count: 24
-total_count: 448
-last_updated: 2026-09-14T23:50:38.786Z
+total_count: 451
+last_updated: 2026-09-15T01:36:10.285Z
 ---
 
 # Broken Windows Ledger
@@ -463,6 +463,9 @@ last_updated: 2026-09-14T23:50:38.786Z
 | 446 | 08 | unrun-verify | tests/the_numbers_the_targets_ask_for.rs |  | The measurement profile's account points at 127.0.0.1 on a closed port so a startup connection would be refused at once, and the connection was never attempted: nothing in the program checks mail on a schedule, so a start dials nothing and the log of every measured run held no WARN or ERROR line. What the application says or shows when a connection is refused was therefore read by nobody in 08-03, and the cold-start and idle figures are for a start that never touches a server. | open |  | 2026-09-14T23:50:37.822Z |  |
 | 447 | 08 | unrun-verify | docs/development/measurements.md |  | Idle memory on the measurements page is idle with a refusable account that was never dialled. Idle on a machine with a real account and a live connection is a different idle: a folder watch, a sync on new mail and a live WebView2 preview all run then and none ran here. The 120 s reading of 391 MB, of which the application process is 56 MB, says nothing about that case, and no real account has ever been used with this program to take it. | open |  | 2026-09-14T23:50:38.308Z |  |
 | 448 | 08 | deviation | docs/development/measurements.md |  | The cold-start row reports the first start after the binary was built on its own as the file-cache-cold figure, 520 ms against the series median of 476 ms. That figure depends on what else the machine had read: the linker had just written the binary so much of it was in the file cache already, and WebView2's own binaries were warm from the earlier runs. A start after a reboot with the disk cold was not taken and would be a different number; the definition says what was measured and this entry says what it does not cover. | open |  | 2026-09-14T23:50:38.786Z |  |
+| 449 | 08 | unrun-verify | tests/the_list_at_two_hundred_thousand_rows.rs |  | The sort's apply is not timed: apply_sort clones the rows, sorts them off the interface thread and sends MessagesLoaded, and the cost of the list control taking 200,000 rows back needs a window the harness does not have. The sort rows on the measurements page say so; a number for the apply waits for a harness that drives the running program. | open |  | 2026-09-15T01:35:59.293Z |  |
+| 450 | 08 | unrun-verify | tests/the_list_at_two_hundred_thousand_rows.rs |  | A scroll's own paint is not timed: the page paint row is text_for over one page of every inbox column, and wxWidgets' painting of those cells needs a window the harness does not have. A scroll in the running program is the row's figure plus that, and the measurements page says so beside the row. | open |  | 2026-09-15T01:36:09.797Z |  |
+| 451 | 08 | todo | tests/the_list_at_two_hundred_thousand_rows.rs |  | THE_SEARCH_BOXES_LIMIT copies the LIMIT inside managers::search_messages, which is private to that function, so the filter rows are timed at 500 because the harness says 500 and not because it read the program. If the search box's limit moves, the harness times the old one; making the constant reachable from the harness is the fix. | open |  | 2026-09-15T01:36:10.285Z |  |
 
 ````json
 [
@@ -5840,6 +5843,42 @@ last_updated: 2026-09-14T23:50:38.786Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T23:50:38.786Z",
+    "resolved_at": null
+  },
+  {
+    "id": 449,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "tests/the_list_at_two_hundred_thousand_rows.rs",
+    "line": null,
+    "description": "The sort's apply is not timed: apply_sort clones the rows, sorts them off the interface thread and sends MessagesLoaded, and the cost of the list control taking 200,000 rows back needs a window the harness does not have. The sort rows on the measurements page say so; a number for the apply waits for a harness that drives the running program.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T01:35:59.293Z",
+    "resolved_at": null
+  },
+  {
+    "id": 450,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "tests/the_list_at_two_hundred_thousand_rows.rs",
+    "line": null,
+    "description": "A scroll's own paint is not timed: the page paint row is text_for over one page of every inbox column, and wxWidgets' painting of those cells needs a window the harness does not have. A scroll in the running program is the row's figure plus that, and the measurements page says so beside the row.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T01:36:09.797Z",
+    "resolved_at": null
+  },
+  {
+    "id": 451,
+    "kind": "todo",
+    "phase": "08",
+    "file": "tests/the_list_at_two_hundred_thousand_rows.rs",
+    "line": null,
+    "description": "THE_SEARCH_BOXES_LIMIT copies the LIMIT inside managers::search_messages, which is private to that function, so the filter rows are timed at 500 because the harness says 500 and not because it read the program. If the search box's limit moves, the harness times the old one; making the constant reachable from the harness is the fix.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T01:36:10.285Z",
     "resolved_at": null
   }
 ]
