@@ -35,11 +35,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from guards import how_many
+from guards import how_many, wait_until_quiet
 
 # What cargo-mutants exits with, from its own list of codes. A bare number here
 # is a number somebody has to go and look up, and nobody does.
@@ -300,6 +302,406 @@ def read_run(out_dir: Path) -> Run:
     declared = json.loads(declared_in.read_text(encoding="utf-8"))
     happened = json.loads(happened_in.read_text(encoding="utf-8"))
     return run_from_outcomes(len(declared), happened)
+
+
+# ---------------------------------------------------------------------------
+# A whole-tree run is a set of shards on one commit.
+#
+# `cargo mutants --shard k/n` divides the list the tool builds from the tree
+# it runs in. Two shards from two commits are two lists: a mutant can fall
+# between them or land in both, and the sum reads as a whole-tree run with
+# nothing in it saying otherwise. So the script writes what each shard ran
+# under before it starts, and the merge below compares those records and
+# refuses a mismatch. The check lives here and not in the shell, because the
+# shell has no test.
+
+
+@dataclass(frozen=True)
+class Conditions:
+    """What one shard ran under, read from the `conditions.txt` the script
+    writes before the run starts.
+
+    Before rather than after, so a shard killed partway still says what it
+    was: a shard with no record of its commit cannot be shown to belong with
+    the others.
+    """
+
+    commit: str
+    shard: str
+    arguments: str
+    copy: str
+    baseline: str
+
+
+def conditions_from(text: str) -> Conditions:
+    """Read the five lines `scripts/mutants.sh` writes before a shard starts.
+
+    >>> conditions_from('''commit = 1837f93b
+    ... shard = 0/496
+    ... arguments = --lib -- --test-threads=8
+    ... copy = in-place
+    ... baseline = run
+    ... ''')
+    Conditions(commit='1837f93b', shard='0/496', arguments='--lib -- --test-threads=8', copy='in-place', baseline='run')
+
+    A shard run with nothing after `--` records an empty argument list, which
+    is a different thing from a line that is missing:
+
+    >>> conditions_from("commit = a\\nshard = 0/2\\narguments = \\ncopy = scratch\\nbaseline = run\\n").arguments
+    ''
+
+    A line that is missing is refused by name, because a merge comparing a
+    missing commit with a missing commit would find them equal:
+
+    >>> conditions_from("commit = a\\nshard = 0/2\\n")
+    Traceback (most recent call last):
+    ...
+    mutants_report.Wrong: conditions.txt does not say arguments, copy or baseline, so this shard cannot be placed with the others.
+    """
+    said: dict[str, str] = {}
+    for line in text.splitlines():
+        key, equals, value = line.partition(" = ")
+        if equals:
+            said[key.strip()] = value.strip()
+    missing = [key for key in CONDITION_KEYS if key not in said]
+    if missing:
+        raise Wrong(
+            f"conditions.txt does not say {listed(missing)}, "
+            "so this shard cannot be placed with the others."
+        )
+    return Conditions(*(said[key] for key in CONDITION_KEYS))
+
+
+# The lines `scripts/mutants.sh` writes, in the order the record holds them.
+CONDITION_KEYS = ("commit", "shard", "arguments", "copy", "baseline")
+
+
+def listed(words: list[str]) -> str:
+    """Words joined the way a sentence lists alternatives.
+
+    >>> listed(["arguments"])
+    'arguments'
+    >>> listed(["copy", "baseline"])
+    'copy or baseline'
+    >>> listed(["arguments", "copy", "baseline"])
+    'arguments, copy or baseline'
+    """
+    if len(words) == 1:
+        return words[0]
+    return f"{', '.join(words[:-1])} or {words[-1]}"
+
+
+@dataclass(frozen=True)
+class Shard:
+    """One shard as the merge reads it: what it ran under, and what happened."""
+
+    conditions: Conditions
+    run: Run
+
+
+def why_these_shards_are_not_one_run(shards: list[Shard]) -> str | None:
+    """Why this set of shards cannot be read as one run, or None when it can.
+
+    Every shard must say the same commit and the same arguments, sit in the
+    directory its record names, and have reached its last mutant. The list is
+    in shard order, so the first shard is the one the others are held to.
+
+    >>> def at(commit, k, arguments="", declared=2, processed=2):
+    ...     return Shard(Conditions(commit, f"{k}/2", arguments, "in-place", "run"),
+    ...                  Run(declared=declared, caught=["c"] * processed))
+    >>> why_these_shards_are_not_one_run([at("1837f93b", 0), at("1837f93b", 1)]) is None
+    True
+
+    Two commits are two lists:
+
+    >>> print(why_these_shards_are_not_one_run([at("1837f93b", 0), at("d53893b7", 1)]))
+    Shard 1/2 ran at d53893b7 and shard 0/2 at 1837f93b, so they are two lists and not one run.
+    Every shard of a run is taken at one commit.
+
+    Two argument lists are two suites, and a run the library judged is not
+    the same run as one every target judged:
+
+    >>> print(why_these_shards_are_not_one_run([at("a", 0, "--lib"), at("a", 1)]))
+    Shard 1/2 ran with nothing after -- and shard 0/2 with `--lib`, so they are two suites and not one run.
+    Every shard of a run passes the same arguments.
+
+    A shard whose record names a different shard from the directory it sits
+    in was moved or copied by hand, and nobody can say what it holds:
+
+    >>> print(why_these_shards_are_not_one_run([at("a", 0), at("a", 0)]))
+    The directory for shard 1/2 holds a record saying it is shard 0/2, so a shard was moved by hand.
+
+    A shard that stopped before its last mutant is refused by name, because
+    the merged count would read as a whole run that stopped short somewhere:
+
+    >>> print(why_these_shards_are_not_one_run([at("a", 0), at("a", 1, processed=1)]))
+    Shard 1/2 stopped after 1 of its 2 mutants, so the run is not complete.
+    Run that shard again before reading this as a result.
+    """
+    first = shards[0].conditions
+    for k, shard in enumerate(shards):
+        expected = f"{k}/{len(shards)}"
+        said = shard.conditions
+        if said.shard != expected:
+            return (
+                f"The directory for shard {expected} holds a record saying it is "
+                f"shard {said.shard}, so a shard was moved by hand."
+            )
+        if said.commit != first.commit:
+            return (
+                f"Shard {said.shard} ran at {said.commit} and shard {first.shard} at "
+                f"{first.commit}, so they are two lists and not one run.\n"
+                "Every shard of a run is taken at one commit."
+            )
+        if said.arguments != first.arguments:
+            return (
+                f"Shard {said.shard} ran with {arguments_in_words(said.arguments)} and "
+                f"shard {first.shard} with {arguments_in_words(first.arguments)}, "
+                "so they are two suites and not one run.\n"
+                "Every shard of a run passes the same arguments."
+            )
+        if not a_shard_is_complete(shard.run):
+            return (
+                f"Shard {said.shard} stopped after {shard.run.processed} of its "
+                f"{shard.run.declared} mutants, so the run is not complete.\n"
+                "Run that shard again before reading this as a result."
+            )
+    return None
+
+
+def arguments_in_words(arguments: str) -> str:
+    """An argument list as a refusal names it, the empty one included.
+
+    >>> arguments_in_words("--lib -- --test-threads=8")
+    '`--lib -- --test-threads=8`'
+    >>> arguments_in_words("")
+    'nothing after --'
+    """
+    return f"`{arguments}`" if arguments else "nothing after --"
+
+
+def one_run_from(shards: list[Shard]) -> Run:
+    """Every shard's record summed into one run, so the refusals in
+    `why_this_is_not_an_answer` and the summary are asked of the whole exactly
+    as they are asked of a single run.
+
+    >>> first = Shard(Conditions("a", "0/2", "", "in-place", "run"),
+    ...     Run(declared=3, caught=["c1", "c2"], missed=["m1"]))
+    >>> second = Shard(Conditions("a", "1/2", "", "in-place", "skip"),
+    ...     Run(declared=2, would_not_compile=["u1"], never_started=[("n1", -1073741502)]))
+    >>> whole = one_run_from([first, second])
+    >>> whole.declared, whole.caught, whole.missed, whole.would_not_compile, whole.never_started
+    (5, ['c1', 'c2'], ['m1'], ['u1'], [('n1', -1073741502)])
+
+    So a set of shards with one mutant that never built is refused the same
+    way a single run is:
+
+    >>> print(why_this_is_not_an_answer(whole))
+    1 of the 5 mutants never built, so this run is not an answer.
+    The compiler exited with Windows status 0xC0000142 and printed nothing.
+    That is Windows refusing to start it. Only 4 mutants were really tested.
+
+    A baseline that failed in any shard fails the whole:
+
+    >>> stopped = Shard(second.conditions, Run(declared=2, baseline_failed=True))
+    >>> one_run_from([first, stopped]).baseline_failed
+    True
+    """
+    runs = [shard.run for shard in shards]
+    return Run(
+        declared=sum(run.declared for run in runs),
+        caught=[name for run in runs for name in run.caught],
+        missed=[name for run in runs for name in run.missed],
+        timed_out=[name for run in runs for name in run.timed_out],
+        would_not_compile=[name for run in runs for name in run.would_not_compile],
+        never_started=[each for run in runs for each in run.never_started],
+        baseline_failed=any(run.baseline_failed for run in runs),
+    )
+
+
+def a_shard_is_complete(run: Run) -> bool:
+    """Whether every mutant the shard declared has an outcome, which is what
+    `scripts/mutants.sh --shards` asks to skip a shard on a restart.
+
+    >>> a_shard_is_complete(Run(declared=2, caught=["c"], would_not_compile=["u"]))
+    True
+    >>> a_shard_is_complete(Run(declared=2, caught=["c"]))
+    False
+
+    A mutant that never started has an outcome, so its shard is complete and
+    the merge refuses it later. The launcher does not run the shard again for
+    that: a never-started mutant is re-run by name with `-F`, not by shard.
+
+    >>> a_shard_is_complete(Run(declared=1, never_started=[("n", -1073741502)]))
+    True
+
+    A shard whose baseline failed reached no mutant and is not complete:
+
+    >>> a_shard_is_complete(Run(declared=2, baseline_failed=True))
+    False
+    """
+    return not run.baseline_failed and run.processed == run.declared
+
+
+def read_shards(out_dir: Path, count: int) -> list[Shard]:
+    """Load every shard of a run from `out_dir/shard-k-of-count`, in order.
+
+    A missing directory or record is refused naming the shard, before any
+    comparison, because a sum over the shards that are there is a partial
+    run wearing a whole run's count.
+    """
+    shards = []
+    for k in range(count):
+        shard_dir = out_dir / f"shard-{k}-of-{count}"
+        conditions_in = shard_dir / "conditions.txt"
+        if not conditions_in.exists():
+            raise Wrong(
+                f"Shard {k}/{count} is missing: there is no {conditions_in}.\n"
+                "Every shard of the run has to be there before the run is read."
+            )
+        conditions = conditions_from(conditions_in.read_text(encoding="utf-8"))
+        shards.append(Shard(conditions, read_run(shard_dir / "mutants.out")))
+    return shards
+
+
+# ---------------------------------------------------------------------------
+# What a shard cost, in two terms.
+#
+# One term is paid once per shard: the copy of the tree, the build, and the
+# baseline run before the first mutant, plus the tool's own bookkeeping
+# between mutants. The other is paid once per mutant. They scale with
+# different counts, so a product that folds them into one rate is a rate under
+# conditions nobody wrote down.
+
+
+@dataclass(frozen=True)
+class Timing:
+    """A shard's wall time split into the two terms."""
+
+    wall_s: int
+    mutants_s: int
+    tried: int
+    answered: int
+    baseline_build_s: int | None
+    baseline_test_s: int | None
+
+
+def timing_of(outcomes: dict, started: int, finished: int) -> Timing:
+    """Split a shard's wall time, from the two clock readings the script took
+    around the run, into what the mutants took and everything else.
+
+    The tool records a duration for every phase of every scenario. Summing the
+    mutants' phases gives the term that scales with the mutant count; the rest
+    of the wall time is the copy, the build, the baseline and the bookkeeping
+    between mutants, which is the term that scales with the shard count.
+
+    >>> outcomes = {"outcomes": [
+    ...     {"scenario": "Baseline", "summary": "Success",
+    ...      "phase_results": [{"phase": "Build", "duration": 281.4, "process_status": "Success"},
+    ...                        {"phase": "Test", "duration": 52.2, "process_status": "Success"}]},
+    ...     {"scenario": {"Mutant": {"name": "one"}}, "summary": "CaughtMutant",
+    ...      "phase_results": [{"phase": "Build", "duration": 30.0, "process_status": "Success"},
+    ...                        {"phase": "Test", "duration": 50.5, "process_status": {"Failure": 101}}]},
+    ...     {"scenario": {"Mutant": {"name": "two"}}, "summary": "Unviable",
+    ...      "phase_results": [{"phase": "Build", "duration": 12.5, "process_status": {"Failure": 101}}]},
+    ... ]}
+    >>> timing_of(outcomes, started=1000, finished=1500)
+    Timing(wall_s=500, mutants_s=93, tried=2, answered=1, baseline_build_s=281, baseline_test_s=52)
+
+    With `--baseline skip` there is no baseline scenario, and the record says
+    so rather than reading zero seconds as a baseline that took no time:
+
+    >>> timing_of({"outcomes": outcomes["outcomes"][1:]}, 1000, 1100).baseline_build_s is None
+    True
+    """
+    mutants_s = 0.0
+    tried = answered = 0
+    baseline_build = baseline_test = None
+    for outcome in outcomes.get("outcomes", []):
+        phases = {phase["phase"]: phase["duration"] for phase in outcome["phase_results"]}
+        if isinstance(outcome["scenario"], dict) and "Mutant" in outcome["scenario"]:
+            tried += 1
+            answered += outcome["summary"] in ("CaughtMutant", "MissedMutant")
+            mutants_s += sum(phases.values())
+        else:
+            baseline_build = phases.get("Build")
+            baseline_test = phases.get("Test")
+    return Timing(
+        wall_s=finished - started,
+        mutants_s=round(mutants_s),
+        tried=tried,
+        answered=answered,
+        baseline_build_s=None if baseline_build is None else round(baseline_build),
+        baseline_test_s=None if baseline_test is None else round(baseline_test),
+    )
+
+
+def the_timing_line(timing: Timing) -> str:
+    """The one line a shard's cost is read from, printed after the run and
+    written to `timing.txt` beside it, so a restarted launcher's overwritten
+    stdout loses nothing and the shards' wall times can be summed from their
+    own directories.
+
+    >>> print(the_timing_line(Timing(wall_s=2833, mutants_s=2431, tried=25, answered=24,
+    ...     baseline_build_s=281, baseline_test_s=52)))
+    timed: 402 s before and between the mutants (the copy, the build and the baseline, 281 s build + 52 s test), then 2431 s over 25 mutants, 24 answered by the suite, 97 s a mutant
+
+    A shard run with `--baseline skip` says so in the first term:
+
+    >>> print(the_timing_line(Timing(wall_s=2500, mutants_s=2431, tried=25, answered=25,
+    ...     baseline_build_s=None, baseline_test_s=None)))
+    timed: 69 s before and between the mutants (the copy and the build, no baseline), then 2431 s over 25 mutants, 25 answered by the suite, 97 s a mutant
+
+    A shard that reached no mutant has no rate to give, rather than a division
+    by zero or a rate of zero that reads as fast:
+
+    >>> print(the_timing_line(Timing(wall_s=300, mutants_s=0, tried=0, answered=0,
+    ...     baseline_build_s=281, baseline_test_s=19)))
+    timed: 300 s before and between the mutants (the copy, the build and the baseline, 281 s build + 19 s test), then no mutant was tried, so there is no rate
+    """
+    if timing.baseline_build_s is None:
+        before = "the copy and the build, no baseline"
+    else:
+        before = (
+            "the copy, the build and the baseline, "
+            f"{timing.baseline_build_s} s build + {timing.baseline_test_s or 0} s test"
+        )
+    fixed = f"timed: {timing.wall_s - timing.mutants_s} s before and between the mutants ({before})"
+    if timing.tried == 0:
+        return f"{fixed}, then no mutant was tried, so there is no rate"
+    return (
+        f"{fixed}, then {timing.mutants_s} s over {how_many(timing.tried, 'mutant')}, "
+        f"{timing.answered} answered by the suite, "
+        f"{round(timing.mutants_s / timing.tried)} s a mutant"
+    )
+
+
+def timeout_for_a_skipped_baseline(baseline_test_s: float, multiplier: float, minimum: int) -> int:
+    """The `--timeout` a shard run with `--baseline skip` has to be given.
+
+    With a baseline the tool sets each mutant's test timeout itself: the
+    baseline's test time times `timeout_multiplier` from `.cargo/mutants.toml`,
+    floored at `minimum_test_timeout`. Skip the baseline and it warns that it
+    is using 300 seconds instead, whatever the suite takes. Under the
+    every-target shape that is below what the config's rule gives, so a busy
+    minute would be filed as a hang. The launcher reads the first complete
+    shard's baseline and applies the config's own rule to it:
+
+    >>> timeout_for_a_skipped_baseline(52.2, 5.0, 60)
+    261
+    >>> timeout_for_a_skipped_baseline(104.0, 5.0, 60)
+    520
+    >>> timeout_for_a_skipped_baseline(4.0, 5.0, 60)
+    60
+    """
+    return max(minimum, math.ceil(baseline_test_s * multiplier))
+
+
+def the_timeout_rule() -> tuple[float, int]:
+    """`timeout_multiplier` and `minimum_test_timeout` as `.cargo/mutants.toml`
+    sets them, read from the file so the launcher and the tool apply one rule."""
+    settings = tomllib.loads(Path(".cargo/mutants.toml").read_text(encoding="utf-8"))
+    return float(settings["timeout_multiplier"]), int(settings["minimum_test_timeout"])
 
 
 def why_this_is_not_an_answer(run: Run) -> str | None:
@@ -628,6 +1030,66 @@ def whether_this_run_passed(run: Run) -> int:
     return 1 if run.missed or run.timed_out else 0
 
 
+def the_run_to_read(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Run:
+    """One directory, or every shard of a run merged, whichever was asked for.
+
+    A merge is refused before it is summed if the shards cannot be read as
+    one run; what comes back then goes through the same refusals as a single
+    run, in `main`.
+    """
+    if args.shards:
+        out_dir, count = args.shards
+        shards = read_shards(Path(out_dir), int(count))
+        why = why_these_shards_are_not_one_run(shards)
+        if why is not None:
+            raise Wrong(why)
+        return one_run_from(shards)
+    if args.out_dir is None:
+        parser.error("name the directory the run wrote its report to")
+    return read_run(args.out_dir)
+
+
+def whether_the_shard_is_complete(out_dir: Path) -> int:
+    """Exit 0 for a complete shard, 1 for one still to run, saying which.
+
+    A run that left no record is not complete rather than an error, because
+    the launcher asks this of every shard on a restart and most of them have
+    not been run yet.
+    """
+    try:
+        complete = a_shard_is_complete(read_run(out_dir))
+    except Wrong:
+        complete = False
+    print(f"{out_dir}: {'complete' if complete else 'not complete'}")
+    return 0 if complete else 1
+
+
+def timing_line_for(out_dir: Path, started: int, finished: int) -> str:
+    """The shard's timing line, or a line saying why there is none.
+
+    Always a line and never a failure, because it is written to `timing.txt`
+    after the run and before the report, and a run that left no record is
+    the report's to refuse.
+    """
+    happened_in = out_dir / "outcomes.json"
+    if not happened_in.exists():
+        return f"timed: nothing, because the run left no record in {out_dir}"
+    happened = json.loads(happened_in.read_text(encoding="utf-8"))
+    return the_timing_line(timing_of(happened, started, finished))
+
+
+def print_timeout_after(out_dir: Path) -> int:
+    """Print the `--timeout` later shards get from this shard's baseline."""
+    happened = json.loads((out_dir / "outcomes.json").read_text(encoding="utf-8"))
+    baseline_test_s = timing_of(happened, 0, 0).baseline_test_s
+    if baseline_test_s is None:
+        print(f"{out_dir} ran no baseline, so no timeout can be read from it.", file=sys.stderr)
+        return 1
+    multiplier, minimum = the_timeout_rule()
+    print(timeout_for_a_skipped_baseline(baseline_test_s, multiplier, minimum))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -645,6 +1107,35 @@ def main() -> int:
         metavar=("BASE", "BASE_HASH", "HEAD_HASH"),
         help="say which of the two ways the list of changes came out empty",
     )
+    parser.add_argument(
+        "--shards",
+        nargs=2,
+        metavar=("DIR", "N"),
+        help="read DIR/shard-k-of-N for every k and report them as one run",
+    )
+    parser.add_argument(
+        "--complete",
+        type=Path,
+        metavar="OUT_DIR",
+        help="exit 0 if every mutant the shard declared has an outcome",
+    )
+    parser.add_argument(
+        "--timing",
+        nargs=3,
+        metavar=("OUT_DIR", "STARTED", "FINISHED"),
+        help="print the shard's timing line from its record and two clock readings",
+    )
+    parser.add_argument(
+        "--timeout-after",
+        type=Path,
+        metavar="OUT_DIR",
+        help="print the --timeout a shard skipping the baseline gets, from this shard's baseline",
+    )
+    parser.add_argument(
+        "--wait-until-quiet",
+        action="store_true",
+        help="block until no cargo or rustc is running",
+    )
     args = parser.parse_args()
 
     if args.nothing_changed:
@@ -655,11 +1146,23 @@ def main() -> int:
         # touch any code is a legitimate way to have nothing to check.
         return 1 if base_hash == head_hash else 0
 
-    if args.out_dir is None:
-        parser.error("name the directory the run wrote its report to")
+    if args.wait_until_quiet:
+        wait_until_quiet()
+        return 0
+
+    if args.complete is not None:
+        return whether_the_shard_is_complete(args.complete)
+
+    if args.timing:
+        out_dir, started, finished = args.timing
+        print(timing_line_for(Path(out_dir), int(started), int(finished)))
+        return 0
+
+    if args.timeout_after is not None:
+        return print_timeout_after(args.timeout_after)
 
     try:
-        run = read_run(args.out_dir)
+        run = the_run_to_read(args, parser)
     except Wrong as wrong:
         print(wrong)
         if args.exit_status is not None:
