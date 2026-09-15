@@ -457,8 +457,9 @@ fn the_rows(count: usize, measured: &[Measured], build: &str, machine: &str) -> 
             let conditions = format!(
                 "{version} at {commit}, {build} build, {machine}, `WIXEN_TEST_THREADS` unset and one test running. \
                  {} synthetic rows from `sample_mailbox` and no provider mailbox; the cache rows in a `tempfile` directory. \
-                 The three takes: {}. {}",
+                 The {}: {}. {}",
                 count,
+                if m.takes.len() == 1 { "one take" } else { "takes, the median being the value" },
                 the_takes(&m.takes),
                 m.detail
             );
