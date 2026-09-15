@@ -578,7 +578,10 @@ def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
 
 
 def the_filter_that_forbids_recounting_everything(
-    only: str | None, touched_by: str | None, remeasure: list[str] | None
+    only: str | None,
+    touched_by: str | None,
+    remeasure: list[str] | None,
+    shard: str | None = None,
 ) -> str | None:
     """Which narrowing was asked for alongside --recount-everything, if any.
 
@@ -611,6 +614,13 @@ def the_filter_that_forbids_recounting_everything(
 
     >>> the_filter_that_forbids_recounting_everything("deletion", "main", None)
     'a name to match: deletion, --touched-by main'
+
+    A shard is a narrowing too, and the rewrite would refuse it anyway with a
+    message about two readings of the file disagreeing, which reads as a
+    broken file rather than as this:
+
+    >>> the_filter_that_forbids_recounting_everything(None, None, None, "3/41")
+    '--shard 3/41'
     """
     asked_for: list[str] = []
     if only:
@@ -619,6 +629,8 @@ def the_filter_that_forbids_recounting_everything(
         asked_for.append(f"--touched-by {touched_by}")
     if remeasure:
         asked_for.append(f"--remeasure with {how_many(len(remeasure), 'name')}")
+    if shard:
+        asked_for.append(f"--shard {shard}")
     return ", ".join(asked_for) or None
 
 
@@ -1119,6 +1131,34 @@ def verdicts_in(log_text: str) -> dict[str, str]:
     >>> verdicts_in("== 1 guard, one build and one run ==\\r\\n\\r\\n-- one\\r\\n   the one test named went red, and nothing else did\\r\\n")
     {'one': 'agreed'}
 
+    Several runs' logs joined into one file read as one log: the shards of a
+    sweep on runners are downloaded and concatenated, and each shard's log
+    carries its own header, pre-read timing line, closing lines and, when it
+    stopped short, a resume command. None of those is indented with the
+    loop's three spaces, so none is mistaken for a verdict, and the records
+    of every shard answer:
+
+    >>> two_shards = (
+    ...     "== 2 guards, shard 0/2 of 3 records, one build and one run each ==\\n\\n"
+    ...     "Reading what already fails with --lib, before anything is broken.\\n"
+    ...     "   timed: rebuild 300 s, run 140 s, 440 s in all\\n"
+    ...     + block("first", "   the one test named went red, and nothing else did")
+    ...     + block("second", "   1 test went red that this record does not name:", "       a::b", "")
+    ...     + "\\n1 guard is not what the record says it is:\\n    second\\n\\n"
+    ...     "A named test that stayed green is a test whose name still promises\\n"
+    ...     "something it no longer checks.\\n\\n"
+    ...     "Every record selected has a verdict: 2 of 2, 0 from the log and 2 from this run.\\n"
+    ...     "== 1 guard, shard 1/2 of 3 records, one build and one run ==\\n\\n"
+    ...     "Reading what already fails with --lib, before anything is broken.\\n"
+    ...     "   timed: rebuild 300 s, run 140 s, 440 s in all\\n"
+    ...     + block("third", "   the one test named went red, and nothing else did")
+    ...     + "\\nThe guard still goes red when what it defends breaks, and nothing else does.\\n\\n"
+    ...     "0 measured this run; 1 of 3 remain. Resume with:\\n"
+    ...     "    scripts/guards.sh --log sweep-1-of-2.log --resume\\n"
+    ... )
+    >>> verdicts_in(two_shards)
+    {'first': 'agreed', 'second': 'short', 'third': 'agreed'}
+
     A line this cannot read is refused with the line, never guessed at. The
     reading is anchored on the first line in a block that carries the three
     spaces the loop indents with, so a shape the runner never prints there is a
@@ -1370,6 +1410,107 @@ def the_guarded_files_git_sees_as_modified(guards: list[Guard]) -> str:
     return finished.stdout
 
 
+def the_shard_asked_for(text: str) -> tuple[int, int]:
+    """`k/n` as `--shard` takes it: which shard, out of how many, k from 0.
+
+    The same spelling `scripts/mutants.sh --shard` uses, so a workflow that
+    fans out over a matrix hands both scripts the same word. Refused outside
+    `0 <= k < n`, before anything is read or built, because the runner finds
+    out otherwise after the checkout and the build.
+
+    >>> the_shard_asked_for("3/41")
+    (3, 41)
+    >>> the_shard_asked_for("0/1")
+    (0, 1)
+    >>> the_shard_asked_for("41/41")
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: --shard 41/41: k counts from 0 and must sit inside 0..40, so shard 41 of 41 is not one.
+    >>> the_shard_asked_for("-1/2")
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: --shard -1/2: k counts from 0 and must sit inside 0..1, so shard -1 of 2 is not one.
+    >>> the_shard_asked_for("3")
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: --shard 3: written as k/n, which shard out of how many, for example 3/41.
+    >>> the_shard_asked_for("3/0")
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: --shard 3/0: n must be at least 1.
+    """
+    k_text, slash, n_text = text.partition("/")
+    try:
+        k, n = int(k_text), int(n_text)
+    except ValueError:
+        slash = ""
+    if not slash:
+        raise Wrong(
+            f"--shard {text}: written as k/n, which shard out of how many, "
+            "for example 3/41."
+        )
+    if n < 1:
+        raise Wrong(f"--shard {text}: n must be at least 1.")
+    if not 0 <= k < n:
+        raise Wrong(
+            f"--shard {text}: k counts from 0 and must sit inside 0..{n - 1}, "
+            f"so shard {k} of {n} is not one."
+        )
+    return k, n
+
+
+def the_records_in_shard(records: list, k: int, n: int) -> list:
+    """Shard k of n over the records as the file orders them: one contiguous
+    block each, so a shard's log reads in file order and two shards' logs
+    concatenated in shard order read as the file does.
+
+    The cut points are `k * len // n`, so every record is in exactly one shard
+    and no two shards differ in size by more than one. Deterministic: the same
+    file and the same n give the same shard on every machine, which is what
+    lets a run be dispatched as n jobs and read back as one.
+
+    >>> [the_records_in_shard(list(range(7)), k, 3) for k in range(3)]
+    [[0, 1], [2, 3], [4, 5, 6]]
+    >>> the_records_in_shard(list(range(7)), 0, 1)
+    [0, 1, 2, 3, 4, 5, 6]
+
+    802 records in 41 shards, the shape the sweep of 2026-09-15 is dispatched
+    in, is 19 or 20 a shard and every record once:
+
+    >>> shards = [the_records_in_shard(list(range(802)), k, 41) for k in range(41)]
+    >>> sorted({len(s) for s in shards}), sum(len(s) for s in shards)
+    ([19, 20], 802)
+
+    More shards than records leaves some empty, which a run reports as nothing
+    selected rather than refusing, because the dispatch that asked for them
+    has already started the other jobs:
+
+    >>> [the_records_in_shard(["a", "b"], k, 3) for k in range(3)]
+    [[], ['a'], ['b']]
+    """
+    return records[k * len(records) // n : (k + 1) * len(records) // n]
+
+
+def the_header_for(count: int, shard: tuple[int, int, int] | None = None) -> str:
+    """The line a run opens with, saying how many records it will measure and,
+    when it is one shard of a sweep, which shard of how many over how many
+    records, so a shard's log says on its first line what it is.
+
+    >>> the_header_for(1)
+    '== 1 guard, one build and one run =='
+    >>> the_header_for(20)
+    '== 20 guards, one build and one run each =='
+    >>> the_header_for(20, (3, 41, 802))
+    '== 20 guards, shard 3/41 of 802 records, one build and one run each =='
+    >>> the_header_for(1, (40, 41, 802))
+    '== 1 guard, shard 40/41 of 802 records, one build and one run =='
+    """
+    which = f"shard {shard[0]}/{shard[1]} of {shard[2]} records, " if shard else ""
+    if count == 1:
+        return f"== 1 guard, {which}one build and one run =="
+    return f"== {count} guards, {which}one build and one run each =="
+
+
 def the_resume_command(log: str, wait_until_quiet: bool) -> str:
     """The command that picks a stopped run up from its log, printed whenever a
     run stops with records remaining, so a person never has to reconstruct it.
@@ -1521,6 +1662,14 @@ def main() -> int:
         "and for nothing else: it does not say a record is right",
     )
     parsing.add_argument(
+        "--shard",
+        metavar="K/N",
+        help="one contiguous block of the file's records, shard K of N counting "
+        "from 0, the same on every machine for the same file and N; what a "
+        "runner job takes when the sweep is dispatched as N jobs and read back "
+        "as one log",
+    )
+    parsing.add_argument(
         "--log",
         metavar="PATH",
         help="append every line this prints to PATH as well as the screen, "
@@ -1580,15 +1729,32 @@ def main() -> int:
     if asked.log:
         sys.stdout = sys.stderr = Logged(asked.log, sys.stdout)
 
+    # The shard is refused before the record is read, so a runner that was
+    # handed a bad one finds out in the first second and not after the build.
+    shard: tuple[int, int, int] | None = None
     try:
+        if asked.shard:
+            k, n = the_shard_asked_for(asked.shard)
         guards = read_record()
+        if asked.shard:
+            # By position in the whole file, before any other narrowing, so
+            # the shard is the same whatever else the run asked for.
+            shard = (k, n, len(guards))
+            guards = the_records_in_shard(guards, k, n)
+            if not guards:
+                print(
+                    f"\nShard {k}/{n} of {shard[2]} records holds no record, so "
+                    "there is nothing to measure. That is an answer, not a "
+                    "clean sweep.\n"
+                )
+                return 0
     except Wrong as wrong:
         print(f"\n{wrong}\n")
         return 1
 
     if asked.recount_everything:
         narrowed = the_filter_that_forbids_recounting_everything(
-            asked.only, asked.touched_by, asked.remeasure
+            asked.only, asked.touched_by, asked.remeasure, asked.shard
         )
         if narrowed:
             print(
@@ -1706,12 +1872,7 @@ def main() -> int:
     # this invocation means nothing to pre-read: --stop-after 0 reports what
     # remains and a resume with nothing left says so, both without a build.
     if guards:
-        header = (
-            "== 1 guard, one build and one run =="
-            if len(guards) == 1
-            else f"== {len(guards)} guards, one build and one run each =="
-        )
-        print(f"{header}\n", flush=True)
+        print(f"{the_header_for(len(guards), shard)}\n", flush=True)
     # Once per suite, before anything is broken, so an unrelated failure is not
     # blamed on every break in turn. See `what_is_already_failing`, and the
     # deadlock it describes, which is why this is not optional.

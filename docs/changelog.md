@@ -78,6 +78,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   and `tests/house_style.rs` runs them on every commit that touches the
   script.
 
+  And it runs on GitHub's runners, in shards, since 2026-09-15, on Pratik's
+  widening of the checkpoint that day: "Go for running the guard sweep via
+  CI as well." `--shard K/N` takes one contiguous block of the file's
+  records, the same block for the same file and N on every machine, and
+  writes which shard it is on the run's first line.
+  `.github/workflows/guards.yml`, dispatched by hand and by nothing else,
+  asks for the shard count and the first and last shard to run, fans them
+  out over Windows runners at the dispatched commit with the whole history,
+  and uploads each shard's log whether or not it failed. The logs are
+  downloaded, concatenated in shard order, and read back with `--resume
+  --stop-after 0`, which prints that every record has a verdict or which
+  remain. `tests/the_guard_sweep_runs_on_runners.rs` holds the workflow to
+  the flags the script accepts, the inputs it declares, the pinned
+  compiler, the audio variable, the whole-history checkout and the
+  always-uploaded log, with a companion planting each mistake.
+
   **Known limitations.** The runner puts a broken file back in a `finally`,
   which runs on an interrupt and not on a process-tree kill; the refusal on
   resume is the check for that, and a run stopped hard leaves the tree to
@@ -86,7 +102,11 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   measured beside a short build and not be marked. The log holds carriage
   returns, because Python writes it through a text stream on Windows; the
   reading accepts either line ending. `tasklist` is read, so the wait is a
-  Windows check and the flag is refused elsewhere.
+  Windows check and the flag is refused elsewhere. The runner sweep's
+  sizing is a guess until a shard has run, and `WIXEN_TEST_THREADS` is
+  left at 8 on a 4-core runner, unmeasured, so the runner's timing lines
+  read against the page's rate row at one setting; nothing has been
+  dispatched yet.
 
 - **The message list has numbers over 200,000 rows, and a check that its
   paint reads memory and never the database.** The sample mailbox on the

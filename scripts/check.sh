@@ -38,7 +38,13 @@ set -euo pipefail
 # date or its commit. It is here for the third one's reason: a row lands on
 # that page beside the code it measures, which answers `affected`, so without
 # this it would run on every commit except the ones that add a row.
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date)
+#
+# The seventh reads `.github/workflows/guards.yml` against `scripts/guards.py`:
+# the flags the sweep's shard step hands the runner must be ones it accepts.
+# A workflow commit answers `all` on its own, so this is here for the other
+# half of that coupling, a change to the script's flags, which maps to no
+# target and would otherwise run every guard except the one that reads it.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners)
 
 # Which integration targets guard a changed source file.
 #

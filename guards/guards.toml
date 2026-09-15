@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 610 records have arrived since and have not been through it.
+# 611 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -21973,4 +21973,33 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/house_style.rs", tests = 74 },
+]
+
+# ── The guard sweep's shard step hands the runner a flag it accepts ──────────
+#
+# The sweep runs on GitHub's runners in shards since 2026-09-15, and the shard
+# step of `.github/workflows/guards.yml` spells `scripts/guards.py`'s flags. A
+# flag the script does not accept fails on the runner after the checkout and
+# the build, which is the expensive place, so the reading in
+# `tests/the_guard_sweep_runs_on_runners.rs` holds the step to the flags read
+# off the script's own `add_argument` calls. The break is the misspelling the
+# mutation workflow's record above uses too: one letter, and a shard job that
+# would have run for nothing. A target of its own rather than two more tests
+# in `house_style`, which twenty-five records name as their suite.
+#
+# Measured by hand on 2026-09-15 against `the_guard_sweep_runs_on_runners`
+# with the break applied: exactly this one test failed, and the companion,
+# which reads its own text, stayed green.
+
+[[guard]]
+name = "the guard sweep's shard step hands the runner a flag it accepts"
+file = ".github/workflows/guards.yml"
+suite = "the_guard_sweep_runs_on_runners"
+before = """--shard ${{ matrix.k }}/${{ inputs.shards }} --log"""
+after = """--shards ${{ matrix.k }}/${{ inputs.shards }} --log"""
+red = [
+    "test_the_guard_sweep_dispatch_hands_the_script_flags_it_accepts",
+]
+tests_last_seen = [
+    { file = "tests/the_guard_sweep_runs_on_runners.rs", tests = 2 },
 ]
