@@ -6,8 +6,18 @@ Never changes anything through git. Every file it is about to edit is copied
 byte for byte into a scratch directory keyed by its whole path, and put back
 from there whether the run finishes, fails or is interrupted. Two files in this
 project are both called `calendar.rs`, so the key is the whole path and never
-the basename. It reads git in exactly one place, `files_changed_since`, to work
-out which records a branch could have disturbed.
+the basename. It reads git in exactly two places: `files_changed_since`, to work
+out which records a branch could have disturbed, and
+`the_guarded_files_git_sees_as_modified`, so that a resume refuses a tree a
+killed run left broken rather than measuring over it. Until 2026-09-14 it read
+git in one.
+
+A sweep is hours and can be stopped and picked up: `--log` appends every line
+to a file, `--resume` reads that file for the verdict after each `-- name` line
+and measures only what has none, `--stop-after` makes a chunk a known size, and
+`--wait-until-quiet` holds each record until no other cargo is building. The
+`finally` that puts a broken file back runs on an interrupt and not on a
+process-tree kill, which is what `--resume`'s refusal exists for.
 """
 
 from __future__ import annotations
@@ -1121,6 +1131,70 @@ def verdicts_in(log_text: str) -> dict[str, str]:
         something the runner never prints
     The runner prints only the shapes say_what_it_found's examples show. Either this log was not written by it, or the shapes moved and this reading did not.
     """
+    verdicts: dict[str, str] = {}
+    name: str | None = None
+    judged = False
+    for line in log_text.splitlines():
+        if line.startswith("-- "):
+            name = line[len("-- ") :]
+            judged = False
+            # The last block for a name is the one that counts, and a block
+            # with nothing after it is a record to measure again, so an older
+            # verdict for the same name is dropped here and put back only if
+            # this block earns one.
+            verdicts.pop(name, None)
+            continue
+        if name is None or line.startswith("   timed: "):
+            continue
+        if line == CONTENDED:
+            verdicts.pop(name, None)
+            judged = True
+            continue
+        if judged or not line.startswith("   ") or line[3:4] in ("", " "):
+            continue
+        judged = True
+        verdicts[name] = the_verdict_on(name, line)
+    return verdicts
+
+
+# Beneath a record's verdict when another cargo was alive as its run returned.
+# `verdicts_in` reads this exact line, so it is written once.
+CONTENDED = "   contended: another cargo ran during this record"
+
+AGREED = re.compile(
+    r"^   (the one test named|all \d+ tests named) went red, and nothing else did$"
+)
+SHORT = re.compile(
+    r"^   (\d+ of \d+ named tests? stayed green with the guard broken:"
+    r"|\d+ tests? went red that this record does not name:)$"
+)
+# The first line of everything the loop prints for a record it could not
+# measure: the `Wrong` messages `measure`, `run_the_whole_suite` and `cargo`
+# raise, and the line for anything else that broke.
+COULD_NOT_BE_MEASURED = (
+    "   this record could not be measured: ",
+    ": the text this break replaces appears ",
+    "   the test harness never ran ",
+    "   the break did not build, so no test ran.",
+    "   the break built and the run named no test.",
+    "   cargo ran and this captured none of its output",
+)
+
+
+def the_verdict_on(name: str, line: str) -> str:
+    if AGREED.match(line):
+        return "agreed"
+    if SHORT.match(line):
+        return "short"
+    if any(opener in line for opener in COULD_NOT_BE_MEASURED):
+        return "could not be measured"
+    raise Wrong(
+        f'under "-- {name}", a line this cannot read as a verdict:\n'
+        f"    {line.strip()}\n"
+        "The runner prints only the shapes say_what_it_found's examples show. "
+        "Either this log was not written by it, or the shapes moved and this "
+        "reading did not."
+    )
 
 
 def foreign_builds_in(tasklist_output: str, own_pids: set[int]) -> list[str]:
@@ -1151,6 +1225,16 @@ def foreign_builds_in(tasklist_output: str, own_pids: set[int]) -> list[str]:
     >>> foreign_builds_in("INFO: No tasks are running which match the specified criteria.\\n", set())
     []
     """
+    found: list[str] = []
+    for line in tasklist_output.splitlines():
+        seen = BUILD_PROCESS.match(line)
+        if seen and int(seen.group(2)) not in own_pids:
+            found.append(f"{seen.group(1)} {seen.group(2)}")
+    return found
+
+
+# A row of `tasklist /FO CSV /NH` for one of the two processes a build is.
+BUILD_PROCESS = re.compile(r'^"(cargo\.exe|rustc\.exe)","(\d+)"', re.I)
 
 
 def is_quiet(tasklist_output: str, own_pids: set[int]) -> bool:
@@ -1167,6 +1251,56 @@ def is_quiet(tasklist_output: str, own_pids: set[int]) -> bool:
     >>> is_quiet('"rustc.exe","1240","Console","1","900,000 K"\\n', {1240})
     True
     """
+    return not foreign_builds_in(tasklist_output, own_pids)
+
+
+def what_is_running() -> str:
+    """`tasklist` as it lists every process, for `foreign_builds_in` to read.
+
+    One unfiltered listing rather than one filtered call per image name,
+    because `tasklist` joins its filters with AND, so asking for cargo and
+    rustc in one call answers nothing. About a tenth of a second.
+    """
+    try:
+        listing = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError:
+        raise Wrong(
+            "--wait-until-quiet reads tasklist, which is not on this machine. "
+            "The sweep is a Windows job; drop the flag elsewhere."
+        ) from None
+    if listing.returncode != 0:
+        raise Wrong(
+            f"tasklist exited {listing.returncode}, so whether the machine is "
+            f"quiet cannot be read:\n{listing.stderr.strip()}"
+        )
+    return listing.stdout
+
+
+def wait_until_quiet() -> None:
+    """Block until no cargo or rustc this process did not start is running.
+
+    Polled only between records, when this runner has no child alive: `cargo`
+    here is `subprocess.run`, which returns after its process and every rustc
+    it spawned have exited. So the set of own pids handed to `is_quiet` is
+    empty in practice, and the parameter is there so the reading says what
+    quiet means rather than for anything this caller passes.
+
+    A poll before a record cannot see a build that starts after it, which is
+    exactly a hook running during a sweep; the poll after each record in the
+    loop is what catches that, and marks the record contended.
+    """
+    waited = 0
+    while foreign := foreign_builds_in(what_is_running(), set()):
+        if waited % 60 == 0:
+            print(f"waiting for a quiet machine: {', '.join(foreign)}", flush=True)
+        time.sleep(10)
+        waited += 10
 
 
 def why_a_resume_is_refused(porcelain: str) -> str | None:
@@ -1205,6 +1339,35 @@ def why_a_resume_is_refused(porcelain: str) -> str | None:
     change is not yours, put the file back and start again:
         git checkout -- src/a.rs src/b.rs
     """
+    modified = [line[3:] for line in porcelain.splitlines() if line.strip()]
+    if not modified:
+        return None
+    return (
+        "A guarded file is modified in the working tree, so nothing was measured:\n"
+        + "".join(f"    {path}\n" for path in modified)
+        + "\n"
+        "A run killed hard enough to skip its restore leaves its break behind, and a\n"
+        "sweep resumed over it would measure every record against that edit. If the\n"
+        "change is not yours, put the file back and start again:\n"
+        f"    git checkout -- {' '.join(modified)}"
+    )
+
+
+def the_guarded_files_git_sees_as_modified(guards: list[Guard]) -> str:
+    """`git status --porcelain` over every guarded file, for the refusal above."""
+    files = sorted({str(guard.file.relative_to(ROOT)).replace("\\", "/") for guard in guards})
+    finished = subprocess.run(
+        ["git", "status", "--porcelain", "--", *files],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if finished.returncode != 0:
+        raise Wrong(
+            "git could not say whether the guarded files are clean, so a resume "
+            f"cannot start:\n{finished.stderr.strip()}"
+        )
+    return finished.stdout
 
 
 def the_resume_command(log: str, wait_until_quiet: bool) -> str:
@@ -1216,6 +1379,8 @@ def the_resume_command(log: str, wait_until_quiet: bool) -> str:
     >>> the_resume_command("target/one-record.log", wait_until_quiet=False)
     'scripts/guards.sh --log target/one-record.log --resume'
     """
+    quiet = " --wait-until-quiet" if wait_until_quiet else ""
+    return f"scripts/guards.sh --log {log} --resume{quiet}"
 
 
 def the_closing_line(
@@ -1241,6 +1406,80 @@ def the_closing_line(
     >>> print(the_closing_line(3, 0, 1, None))
     1 measured this run; 2 of 3 remain, and no --log was given, so nothing recorded this run for a resume.
     """
+    remaining = total - from_log - this_run
+    if remaining == 0:
+        return (
+            f"Every record selected has a verdict: {total} of {total}, "
+            f"{from_log} from the log and {this_run} from this run."
+        )
+    if resume is None:
+        return (
+            f"{this_run} measured this run; {remaining} of {total} remain, and "
+            "no --log was given, so nothing recorded this run for a resume."
+        )
+    return (
+        f"{this_run} measured this run; {remaining} of {total} remain. "
+        f"Resume with:\n    {resume}"
+    )
+
+
+class Logged:
+    """Everything printed, to the screen and to the log at once, each write
+    flushed to the file before it returns.
+
+    Appended, never truncated, so a resumed run continues the file it read
+    and no shell redirection is needed: `Start-Process` has no append and
+    would overwrite the log it is resuming from. Both stdout and stderr go
+    through it, so a traceback that ends a run is in the run's own log
+    underneath the record it ended on.
+    """
+
+    def __init__(self, path: str, screen) -> None:
+        self.file = open(path, "a", encoding="utf-8")
+        self.screen = screen
+
+    def write(self, text: str) -> int:
+        self.file.write(text)
+        self.file.flush()
+        return self.screen.write(text)
+
+    def flush(self) -> None:
+        self.file.flush()
+        self.screen.flush()
+
+
+def measured_and_said(
+    guard: Guard,
+    scratch: Path,
+    already_failing: set[str] | None,
+    named_only: bool,
+) -> bool:
+    """Measure one record and print what was found; whether it agreed.
+
+    A record that could not be measured is said so and counted as not
+    agreeing, in one of the shapes `verdicts_in` reads.
+    """
+    try:
+        measured = measure(guard, scratch, already_failing, named_only=named_only)
+    except Wrong as wrong:
+        print(f"   {wrong}\n")
+        return False
+    except Exception as broke:
+        # One record must not take the run down with it. A sweep of 208
+        # records is hours of building and running, and losing all of it to
+        # an unexpected failure on one is how a check nobody can afford to
+        # finish becomes a check nobody runs.
+        #
+        # Counted as slipped rather than passed, because a record that could
+        # not be measured is not a record that holds. The file is already
+        # restored: `measure` puts it back in a `finally`.
+        #
+        # KeyboardInterrupt and SystemExit are not `Exception`, so an
+        # interrupt still stops the run and still restores the tree.
+        print(f"   this record could not be measured: {broke!r}\n")
+        return False
+    say_what_it_found(guard, measured)
+    return measured.agrees_with_the_record()
 
 
 def main() -> int:
@@ -1281,7 +1520,65 @@ def main() -> int:
         "nothing. For adopting the count on records written before it existed, "
         "and for nothing else: it does not say a record is right",
     )
+    parsing.add_argument(
+        "--log",
+        metavar="PATH",
+        help="append every line this prints to PATH as well as the screen, "
+        "flushed per line, so a detached run can be watched and a stopped one "
+        "picked up from it with --resume",
+    )
+    parsing.add_argument(
+        "--resume",
+        nargs="?",
+        const="",
+        metavar="PATH",
+        help="skip every record the log at PATH, or at --log when PATH is "
+        "left out, already holds a verdict for, and measure the rest. A name "
+        "with no verdict, which is what a kill mid-record leaves, and a record "
+        "marked contended are measured again. Refuses to start over a "
+        "guarded file the working tree shows as modified",
+    )
+    parsing.add_argument(
+        "--stop-after",
+        type=int,
+        metavar="N",
+        help="measure at most N records this invocation, then say how many "
+        "remain and how to resume. 0 measures nothing and reports what remains",
+    )
+    parsing.add_argument(
+        "--wait-until-quiet",
+        action="store_true",
+        help="before the pre-read and before each record, wait until no "
+        "cargo.exe or rustc.exe this run did not start is alive, and after each "
+        "record mark it contended and unmeasured if one is, so a resume "
+        "measures it again",
+    )
     asked = parsing.parse_args()
+
+    # Read before the log is opened for appending, because opening it creates
+    # it, and a resume from a log that is not there then read as a resume from
+    # an empty one and started the whole sweep. That happened on the first try.
+    picked_up: str | None = None
+    if asked.resume is not None:
+        if not asked.log:
+            print(
+                "\n--resume needs --log: a run that records its verdicts nowhere "
+                "cannot itself be\nresumed. Add --log PATH, which --resume then "
+                "reads too unless given a path of its own.\n"
+            )
+            return 1
+        picked_up_from = asked.resume or asked.log
+        try:
+            picked_up = Path(picked_up_from).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(
+                f"\nNothing to resume from: {picked_up_from} is not there. A first "
+                "run takes --log without --resume.\n"
+            )
+            return 1
+
+    if asked.log:
+        sys.stdout = sys.stderr = Logged(asked.log, sys.stdout)
 
     try:
         guards = read_record()
@@ -1368,18 +1665,63 @@ def main() -> int:
             )
             return 0
 
-    header = (
-        "== 1 guard, one build and one run =="
-        if len(guards) == 1
-        else f"== {len(guards)} guards, one build and one run each =="
-    )
-    print(f"{header}\n", flush=True)
+    selected = len(guards)
     slipped: list[str] = []
     agreed: list[Guard] = []
+    contended: list[str] = []
+    # What the log already holds for the records selected, so this run measures
+    # only the rest and the summary can count both.
+    from_the_log: dict[str, str] = {}
+    resume = the_resume_command(asked.log, asked.wait_until_quiet) if asked.log else None
+    if picked_up is not None:
+        try:
+            refused = why_a_resume_is_refused(the_guarded_files_git_sees_as_modified(guards))
+            if refused:
+                print(f"\n{refused}\n")
+                return 1
+            from_the_log = verdicts_in(picked_up)
+        except Wrong as wrong:
+            print(f"\n{picked_up_from}: {wrong}\n")
+            return 1
+        from_the_log = {g.name: from_the_log[g.name] for g in guards if g.name in from_the_log}
+        slipped += [name for name, verdict in from_the_log.items() if verdict != "agreed"]
+        guards = [g for g in guards if g.name not in from_the_log]
+        print(
+            f"Resuming from {picked_up_from}: {len(from_the_log)} of {selected} "
+            f"already measured, {len(guards)} to go",
+            flush=True,
+        )
+
+    # A chunk of a known size, cut before the pre-read so only the suites the
+    # chunk's records name are read: the file names 23 integration targets
+    # besides the library, and a one-record chunk read all of them once.
+    # Counted by records started, contended ones included, or a machine that
+    # is never quiet would never stop.
+    if asked.stop_after is not None:
+        guards = guards[: asked.stop_after]
+
+    # The pre-read is taken again on every invocation, a resumed one included,
+    # because the tree may have moved between invocations and a pre-read kept
+    # from the log would blame or excuse the wrong failures. Nothing to measure
+    # this invocation means nothing to pre-read: --stop-after 0 reports what
+    # remains and a resume with nothing left says so, both without a build.
+    if guards:
+        header = (
+            "== 1 guard, one build and one run =="
+            if len(guards) == 1
+            else f"== {len(guards)} guards, one build and one run each =="
+        )
+        print(f"{header}\n", flush=True)
     # Once per suite, before anything is broken, so an unrelated failure is not
     # blamed on every break in turn. See `what_is_already_failing`, and the
     # deadlock it describes, which is why this is not optional.
     already_failing: dict[tuple[str, ...], set[str]] = {}
+    try:
+        if guards and asked.wait_until_quiet:
+            wait_until_quiet()
+    except Wrong as wrong:
+        print(f"\n{wrong}\n")
+        return 1
     for suite in {guard.suite for guard in guards}:
         # Announced, because this is a whole suite run per distinct suite before
         # any break is applied, and it is the first two minutes of every run.
@@ -1414,43 +1756,41 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
-            # Flushed, because this is the only sign of life a run gives and a
-            # run here is hours. Python block-buffers a redirected stdout, so
-            # without this a sweep writes nothing to its log until it exits: a
-            # 220-record run showed an empty file for seven hours, and a
-            # 33-record re-measurement killed at about 50 minutes had already
-            # written 31 counts into the record with its whole report still in
-            # the buffer, leaving a committable artefact and no evidence for it.
-            # A check that cannot be watched is one somebody kills.
-            print(f"-- {guard.name}", flush=True)
             try:
-                measured = measure(
-                    guard,
-                    scratch,
-                    already_failing.get(guard.suite),
-                    named_only=asked.named_only,
+                if asked.wait_until_quiet:
+                    wait_until_quiet()
+                # Flushed, because this is the only sign of life a run gives
+                # and a run here is hours. Python block-buffers a redirected
+                # stdout, so without this a sweep writes nothing to its log
+                # until it exits: a 220-record run showed an empty file for
+                # seven hours, and a 33-record re-measurement killed at about
+                # 50 minutes had already written 31 counts into the record with
+                # its whole report still in the buffer, leaving a committable
+                # artefact and no evidence for it. A check that cannot be
+                # watched is one somebody kills.
+                print(f"-- {guard.name}", flush=True)
+                held = measured_and_said(
+                    guard, scratch, already_failing.get(guard.suite), asked.named_only
+                )
+                # Polled once the run has returned. A cargo alive now either
+                # ran beside the suite or started as it ended, and this cannot
+                # tell which, so the record is unmeasured either way and a
+                # resume takes it again. A build that started and finished
+                # inside the run is the gap this cheapest reading leaves.
+                foreign = (
+                    foreign_builds_in(what_is_running(), set())
+                    if asked.wait_until_quiet
+                    else []
                 )
             except Wrong as wrong:
-                print(f"   {wrong}\n")
-                slipped.append(guard.name)
-                continue
-            except Exception as broke:
-                # One record must not take the run down with it. A sweep of 208
-                # records is hours of building and running, and losing all of it
-                # to an unexpected failure on one is how a check nobody can
-                # afford to finish becomes a check nobody runs.
-                #
-                # Counted as slipped rather than passed, because a record that
-                # could not be measured is not a record that holds. The file is
-                # already restored: `measure` puts it back in a `finally`.
-                #
-                # KeyboardInterrupt and SystemExit are not `Exception`, so an
-                # interrupt still stops the run and still restores the tree.
-                print(f"   this record could not be measured: {broke!r}\n")
-                slipped.append(guard.name)
-                continue
-            say_what_it_found(guard, measured)
-            if measured.agrees_with_the_record():
+                print(f"\n{wrong}\n")
+                return 1
+            if foreign:
+                print(CONTENDED, flush=True)
+                for process in foreign:
+                    print(f"       {process}", flush=True)
+                contended.append(guard.name)
+            elif held:
                 agreed.append(guard)
             else:
                 slipped.append(guard.name)
@@ -1486,6 +1826,24 @@ def main() -> int:
     # to agree in number and this project has already read out "1 changes are
     # waiting here" to somebody.
     print()
+    if contended:
+        print(
+            "1 record had another cargo alive as its run returned, so it is "
+            "unmeasured and a resume takes it again:"
+            if len(contended) == 1
+            else f"{len(contended)} records had another cargo alive as their runs "
+            "returned, so they are unmeasured and a resume takes them again:"
+        )
+        for name in contended:
+            print(f"    {name}")
+        print()
+    # The last line, which is how somebody told not to read the verdicts knows
+    # whether the sweep is done. A stopped run exits 0 whatever it found so
+    # far, because stopping was asked for and the chunk is reported as one;
+    # only a run that finished the selection answers with its exit status.
+    this_run = len(guards) - len(contended)
+    remaining = selected - len(from_the_log) - this_run
+    closing = the_closing_line(selected, len(from_the_log), this_run, resume)
     if slipped:
         print(
             "1 guard is not what the record says it is:"
@@ -1494,14 +1852,23 @@ def main() -> int:
         )
         for name in slipped:
             print(f"    {name}")
+        earlier = sum(1 for name in slipped if name in from_the_log)
+        if earlier == len(slipped) == 1:
+            print("\nThat verdict came from the log.")
+        elif earlier:
+            print(f"\n{earlier} of those {len(slipped)} verdicts came from the log.")
         print(
             "\nA named test that stayed green is a test whose name still "
             "promises\nsomething it no longer checks. A test that went red "
             "and is not named is\na guard nobody wrote down, and a record "
             "shorter than the truth is what\nthis file exists to stop. Either "
             "way: measure it by hand and write down\nwhat it really does now."
+            f"\n\n{closing}"
         )
-        return 1
+        return 0 if remaining else 1
+    if remaining:
+        print(closing)
+        return 0
     if asked.named_only:
         # Never "and nothing else does", because this run did not ask. Said
         # every time rather than once at the top, since the last line is what
@@ -1513,8 +1880,8 @@ def main() -> int:
         # not, so somebody watched a real run print "All 1 guards".
         opening = (
             "The guard still reddens the tests its record names."
-            if len(guards) == 1
-            else f"All {len(guards)} guards still redden the tests their records name."
+            if selected == 1
+            else f"All {selected} guards still redden the tests their records name."
         )
         print(
             f"{opening}\n"
@@ -1526,14 +1893,16 @@ def main() -> int:
             "of the 23 records found wrong on 2026-09-01 were wrong in.\n"
             "\n"
             f"Run the same selection without --named-only to ask it. That is\n"
-            f"{THE_COST_OF_ASKING_PROPERLY}"
+            f"{THE_COST_OF_ASKING_PROPERLY}\n"
+            f"\n{closing}"
         )
         return 0
     print(
         "The guard still goes red when what it defends breaks, and nothing else does."
-        if len(guards) == 1
-        else f"All {len(guards)} guards redden exactly the tests their records name."
+        if selected == 1
+        else f"All {selected} guards redden exactly the tests their records name."
     )
+    print(f"\n{closing}")
     return 0
 
 
