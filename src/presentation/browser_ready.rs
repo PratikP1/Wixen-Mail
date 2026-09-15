@@ -40,6 +40,7 @@ pub struct BrowserReady {
 
 struct State {
     reported: bool,
+    waiting: Vec<Box<dyn FnOnce()>>,
 }
 
 impl BrowserReady {
@@ -66,13 +67,30 @@ impl BrowserReady {
 
     fn not_yet() -> Self {
         Self {
-            state: Rc::new(RefCell::new(State { reported: true })),
+            state: Rc::new(RefCell::new(State {
+                reported: false,
+                waiting: Vec::new(),
+            })),
         }
     }
 
     /// The browser has reported: created, or failed to be. Runs everything
     /// that was waiting, once.
-    fn report(&self) {}
+    ///
+    /// Marked reported before anything runs, and the queue taken out of the
+    /// cell before anything runs, so something that was waiting may itself
+    /// call [`when_ready`](Self::when_ready) and be run at once rather than
+    /// pushed onto a queue nobody will drain again.
+    fn report(&self) {
+        let waiting = {
+            let mut state = self.state.borrow_mut();
+            state.reported = true;
+            std::mem::take(&mut state.waiting)
+        };
+        for then in waiting {
+            then();
+        }
+    }
 
     /// Whether the browser has reported.
     pub fn is_ready(&self) -> bool {
@@ -80,16 +98,22 @@ impl BrowserReady {
     }
 
     /// Runs `then` now if the browser has reported, and the moment it does
-    /// otherwise.
+    /// otherwise. When it is the moment, `then` runs inside the browser's own
+    /// `created` or `error` event handler.
     pub fn when_ready(&self, then: impl FnOnce() + 'static) {
-        then();
+        if self.is_ready() {
+            then();
+        } else {
+            self.state.borrow_mut().waiting.push(Box::new(then));
+        }
     }
 
     /// Hides `window` now and destroys it once the browser it holds has
     /// reported. In place of `window.destroy()` for any window holding a
     /// `WebView`; see the module comment for what destroying one early does.
     pub fn destroy_when_ready(&self, window: impl WxWidget + 'static) {
-        window.destroy();
+        window.hide();
+        self.when_ready(move || window.destroy());
     }
 }
 

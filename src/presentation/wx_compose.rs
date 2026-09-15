@@ -1106,7 +1106,7 @@ pub fn show_compose_dialog_full(
         spell_btn,
         attach_btn,
         body_editor,
-        browser: _,
+        browser,
         attachment_label,
         attachment_list,
         draft_btn,
@@ -2601,7 +2601,13 @@ pub fn show_compose_dialog_full(
     // every compose window ever opened stayed for the life of the session,
     // and since the body became a web view that is a browser process tree
     // each time.
-    dialog.destroy();
+    //
+    // Through the watch on the browser rather than `dialog.destroy()`. A
+    // window closed before WebView2 has made the browser inside it, which is
+    // Escape within a quarter of a second warm and within seconds after the
+    // runtime updates itself, took the whole application down with it. See
+    // `browser_ready`.
+    browser.destroy_when_ready(dialog);
     outcome
 }
 
@@ -3704,13 +3710,17 @@ fn show_send_preview(
     account_names: &[String],
     palette: Option<theme::Palette>,
 ) -> PreviewDecision {
-    let SendPreviewWidgets { dialog: dlg, .. } =
-        build_send_preview_dialog(parent, data, account_names, palette);
+    let SendPreviewWidgets {
+        dialog: dlg,
+        browser,
+        ..
+    } = build_send_preview_dialog(parent, data, account_names, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
-    // and the compose window holds another.
-    dlg.destroy();
+    // and the compose window holds another. Through the watch on the browser,
+    // for the reason `show_compose_dialog_full` gives at its own close.
+    browser.destroy_when_ready(dlg);
     if answer == ID_CONFIRM_SEND {
         PreviewDecision::ConfirmSend
     } else {
