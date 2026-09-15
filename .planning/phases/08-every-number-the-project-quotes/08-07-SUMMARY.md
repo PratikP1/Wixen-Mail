@@ -13,15 +13,16 @@ requires:
     plan: 06
     provides: "the sweep's cost stated once as a rate times a count, so the checkpoint quotes a row rather than a figure"
 provides:
-  - "`scripts/guards.py` with `--log`, `--resume`, `--stop-after` and `--wait-until-quiet`; `verdicts_in`, `foreign_builds_in`, `is_quiet`, `why_a_resume_is_refused`, `the_resume_command` and `the_closing_line` as pure parts with worked examples the gate runs"
-  - "A worktree at `../wixen-mail-sweep` on `main` at `1837f93b`, built once, waiting for Pratik to start the sweep"
-  - "The checkpoint below, usable without the plan"
+  - "`scripts/guards.py` with `--log`, `--resume`, `--stop-after`, `--wait-until-quiet` and `--shard K/N`; `verdicts_in`, `foreign_builds_in`, `is_quiet`, `why_a_resume_is_refused`, `the_resume_command`, `the_closing_line`, `the_shard_asked_for`, `the_records_in_shard` and `the_header_for` as pure parts with worked examples the gate runs"
+  - "`.github/workflows/guards.yml`, the sweep dispatched by hand onto GitHub's Windows runners in shards, each shard's log kept; `tests/the_guard_sweep_runs_on_runners.rs` holding the workflow to the script, in `check.sh`'s whole-tree list, with its record"
+  - "A worktree at `../wixen-mail-sweep`, built once, to be moved to the dispatched commit when the run completes; the local start kept as the fallback"
+  - "The checkpoint below, usable without the plan, with the exact download-and-merge lines"
 affects: [08-07 task 3, 08-08, 08-09]
 
 actuals:
-  tokens: 10312
+  tokens: 23882
   tasks: 1
-  commits: 3
+  commits: 9
 
 tech-stack:
   added: []
@@ -30,10 +31,14 @@ tech-stack:
     - "A tool that breaks the tree and restores in a `finally` gets a refusal at the next start, read from `git status` over the files it breaks, because a process-tree kill does not reach a `finally`"
 
 key-files:
-  created: []
+  created:
+    - .github/workflows/guards.yml
+    - tests/the_guard_sweep_runs_on_runners.rs
   modified:
     - scripts/guards.py
     - scripts/guards.sh
+    - scripts/check.sh
+    - guards/guards.toml
     - docs/changelog.md
     - .planning/STATE.md
     - .planning/ROADMAP.md
@@ -46,6 +51,9 @@ key-decisions:
   - "The log is read before it is opened for appending, because the open creates it and the first live probe of a resume from a missing log started the whole sweep"
   - "`own_pids` is passed empty: the runner polls only between records, when `subprocess.run` has returned and no child of its own is alive, and the parameter stays so `is_quiet` states what quiet means"
   - "The worktree was created and built by the executor, because a checkpoint instruction nobody has run is the check nobody reads; the sweep itself was not started"
+  - "The runner reading lives in a target of its own, `tests/the_guard_sweep_runs_on_runners.rs`, in `check.sh`'s whole-tree list, rather than in `house_style.rs`, which twenty-five records name as their suite and every added test flags for re-measurement"
+  - "`WIXEN_TEST_THREADS` stays at 8 on the 4-core runners, unmeasured, so the runner's timing lines read against the page's rate row at one setting; ledger 465"
+  - "The workflow caches the cargo registry and not `target/`, because twenty jobs saving eight gigabytes each into a ten-gigabyte cache would evict each other"
 
 patterns-established:
   - "A refusal in an impure shell is run once on the input it refuses before the work is called done; the pure examples cannot see where in the sequence it sits"
@@ -73,23 +81,65 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
+    description: "The sweep dispatched onto GitHub's runners in shards, each shard's log kept and the logs read back as one"
+    requirement: PERF-06
+    verification:
+      - kind: integration
+        ref: "tests/the_guard_sweep_runs_on_runners.rs#test_the_guard_sweep_dispatch_hands_the_script_flags_it_accepts, with its companion and its record"
+        status: pass
+      - kind: other
+        ref: "python scripts/guards.py --shard 41/41, --shard 3, --shard 0/1000, --shard 3/41 --stop-after 0, --shard 3/41 --recount-everything, each refused or reported as the examples say"
+        status: pass
+    human_judgment: false
+  - id: D4
     description: "The one guard sweep of the milestone, every record on one commit"
     requirement: PERF-06
     verification:
       - kind: manual_procedural
-        ref: "the checkpoint below; Pratik starts it"
+        ref: "the checkpoint below; Pratik dispatches it"
         status: unknown
     human_judgment: true
 
-duration: 1h20min
+duration: 1h20min, then 40min for the answer
 completed: 2026-09-15
 ---
 
 # Phase 8 Plan 07: A sweep that can be stopped and picked up Summary
 
-**The guard runner can be started detached, stopped at any record, and picked up from its own log measuring only what the log holds no verdict for; it refuses to resume over a tree a killed run left broken and prints the `git checkout` that cleans it; it waits before each record until no other cargo is building and marks a record contended when one was alive as its run returned. Every one of those was run, not read. The sweep itself is not started: it is hours on an idle machine and Pratik starts it, from the checkpoint below, in a worktree at `main` as it stands after this task's merge, `1837f93b`, which exists and is built.**
+**The guard runner can be started detached, stopped at any record, and picked up from its own log measuring only what the log holds no verdict for; it refuses to resume over a tree a killed run left broken and prints the `git checkout` that cleans it; it waits before each record until no other cargo is building and marks a record contended when one was alive as its run returned. Every one of those was run, not read. And since Pratik widened the checkpoint, it runs on GitHub's runners in shards: `--shard K/N` takes one contiguous block of the file's records, `.github/workflows/guards.yml` fans the sweep out over Windows runners at the dispatched commit and keeps every shard's log, and the logs concatenate into one that `--resume --stop-after 0` reads back as complete or not. Nothing is dispatched: the checkpoint below is Pratik's, with the Actions-tab inputs, the download-and-merge lines, and the local start kept as the fallback.**
 
-Task 1 of 3. Task 2 is the checkpoint. Task 3 is not attempted.
+Task 1 of 3, then the answer to the checkpoint. Task 2 is the checkpoint, widened and not yet dispatched. Task 3 is not attempted.
+
+## The checkpoint, answered
+
+Pratik answered on 2026-09-15 by widening it: **"Go for running the guard sweep via CI as well."** The repository is public, so GitHub's Windows runners are free and twenty jobs run at once; the sweep moves there in shards instead of twenty hours on his machine. What was done for the answer, all on branch `the-sweep-runs-in-shards-on-runners` from `main` at `b611ed82`, merged alone at `bd8c2832`, nothing dispatched:
+
+**`--shard K/N` on `scripts/guards.py`.** Shard K of N counting from 0, one contiguous block of the file's records cut at `K * len // N`, taken over the whole file's order before any other narrowing, so the same file and N give the same shard on every machine and two shards' logs concatenated in shard order read as the file does; 802 records in 41 shards is 19 or 20 each and every record once. Refused outside `0 <= K < N` before the record is read, so a runner handed a bad shard finds out in its first second. Written into the run's first line: `== 20 guards, shard 3/41 of 802 records, one build and one run each ==`. Refused beside `--recount-everything` with the other narrowings. An empty shard, which more shards than records leaves, is reported as nothing to measure rather than refused, because the dispatch that asked for it has already started the other jobs. Each refusal run once:
+
+```
+--shard 41/41: k counts from 0 and must sit inside 0..40, so shard 41 of 41 is not one.
+--shard 3: written as k/n, which shard out of how many, for example 3/41.
+Shard 0/1000 of 802 records holds no record, so there is nothing to measure. That is an answer, not a clean sweep.
+--recount-everything writes a fingerprint on every record in the file, so it cannot also be narrowed, and this run asked for --shard 3/41.
+```
+
+and `--shard 3/41 --log target/shard.log --stop-after 0` printed `0 measured this run; 20 of 20 remain`. `verdicts_in` reads several shards' logs joined into one file, headers, pre-read timing lines and closing lines included, and a worked example shows it; that example was green on arrival, because the reading is anchored on the loop's three-space indent and nothing else in a log carries it, and the summary says so rather than calling it a red. 113 worked examples in 57 items where there were 95.
+
+**Probing the flag with a hard kill left a real break behind.** A probe of `--shard 900/1000`, meant to be empty, held one record (positions 721 to 722), started measuring, and was killed with `taskkill /F`; `git status` then showed `src/presentation/managers.rs` modified with the record's break in it. `python scripts/guards.py --log target/shard.log --resume --stop-after 0` refused, naming the file and printing `git checkout -- src/presentation/managers.rs`, which cleaned it. That is the first time the refusal has fired on a leftover it was written for rather than one planted for it, and it is observation 0005 in the skill log seen live.
+
+**`.github/workflows/guards.yml`, "Would each guard still go red".** `workflow_dispatch` and nothing else under `on:`. A `range` job turns `first` and `last` into the matrix and refuses a range the 256-job cap would truncate; a `shard` job per k on `windows-latest`, `timeout-minutes: 360`, `fail-fast: false`, checks out `github.sha` with `fetch-depth: 0` (twenty-five records name `house_style` as their suite, and that target holds the share-of-history test that a one-commit checkout fails at the pre-read), installs `dtolnay/rust-toolchain@1.98.1`, caches the cargo registry and not `target/`, prints `python --version` and imports `tomllib` so the log says which interpreter ran, runs `bash scripts/guards.sh --shard k/n --log sweep-k-of-n.log`, and uploads the log with `if: always()`. `WIXEN_NO_AUDIO` is set as `ci.yml` sets it. No `--wait-until-quiet`: a runner is nobody's machine. The Python it finds: under `shell: bash` on the image CI last went green on, `windows-2025-vs2026` `20260907.229`, `python` is the image's own 3.12.10, and the same doctests run green under CI's Test Suite job there, so `tomllib` is present.
+
+**`tests/the_guard_sweep_runs_on_runners.rs`**, a target of its own. The reading holds the workflow to: `workflow_dispatch` and no other trigger; the three inputs declared and every `inputs.<name>` a step reads declared; a step running `scripts/guards.sh` with `--shard` and `--log`, passing only flags read off the script's own `add_argument` lines and not `--wait-until-quiet`; the pinned compiler; `WIXEN_NO_AUDIO`; and in the job that runs the script, `ref: ${{ github.sha }}`, `fetch-depth: 0`, an upload with `if: always()`, a timeout and `fail-fast: false`. The companion accepts a sound workflow and plants each of eleven mistakes, one at a time, requiring each to be named. Red first: the reading failed on the absent workflow; the companion was green on the same commit. Two bugs in the reading were found by the companion before the red commit, a `match_indices` index misread and `- if: always()` not matching as a list item; both fixed before anything was committed, which is what the companion is for.
+
+**`scripts/check.sh`**: the target joins `guards_that_read_the_whole_tree`, seventh, with the reason: a workflow commit answers `all` on its own, and the other half of the coupling, a change to the script's flags, maps to no target.
+
+**One record**, "the guard sweep's shard step hands the runner a flag it accepts", `file = .github/workflows/guards.yml`, `suite = the_guard_sweep_runs_on_runners`, breaking `--shard` to `--shards` in the run line. Taken by hand first: exactly the named test red, the companion green. Then `scripts/guards.sh --remeasure` agreed and wrote `tests_last_seen` as 2. 803 records; census 192 + 611.
+
+**Commits, all through the hook:** red `ef2f5346` (14 of 17 new examples failing, trailer `test_the_guard_runner_still_obeys_its_own_examples`), green `a9220a25`, red `930cb991` (trailer `test_the_guard_sweep_dispatch_hands_the_script_flags_it_accepts`), green `9032b9be` (the workflow; `.github/workflows/` answers `all`, 7,752 passed and none failed over 59 result lines), record `6cf50cdb`, `scripts/check.sh all` on the branch's final tree exit 0 on its first run in 334 s, 7,752 passed, merge `bd8c2832` with the gate green on the merge in 327 s. Nothing pushed, nothing dispatched.
+
+**Sizing, a guess until a shard has run.** A record on a 4-core runner is a rebuild plus a library run, guessed at three times this machine's 92 s, about five minutes; 802 records at 20 a shard is 41 shards of about 1.7 hours plus a build each, two waves of twenty jobs, roughly four hours of wall clock. Twenty a shard rather than forty because a runner job is capped at six hours, and forty at that guess is 3.3 hours plus the build. The first shard's timing lines are the measurement. `WIXEN_TEST_THREADS` is left at 8, unmeasured on 4 cores, so the runner's `timed:` lines read against the page's rate row at one setting; ledger 465 says so and says to re-take the curve on a runner if the shards run slower than the guess.
+
+**What the gate selected, by `scripts/which-checks.sh the-sweep-runs-in-shards-on-runners <file>`:** `scripts/guards.py` `affected`; `tests/the_guard_sweep_runs_on_runners.rs` `affected` (its own target plus the tree guards); `.github/workflows/guards.yml` `all`; `scripts/check.sh` `affected`; `guards/guards.toml` `affected`, read by the seven `house_style` tests plus the new target's record; `docs/changelog.md` `docs_only`. `--suites-for .github/workflows/guards.yml` prints nothing, ledger 442's reason. `house_style.rs` holds 74 tests before and after (08-08 took it from 70), `wx_app.rs` 199; the count check printed no remedy.
 
 ## Performance
 
@@ -241,11 +291,43 @@ Branch `a-sweep-that-can-be-stopped-and-picked-up` from `main` at `4bdaa47f`.
 
 **Plan metadata:** the commit carrying this summary, `STATE.md`, `ROADMAP.md` and `WINDOWS.md`.
 
-## The checkpoint: start the sweep on an idle machine, and resume it as often as it takes
+## The checkpoint: dispatch the sweep onto the runners, and tell the executor when the run has finished
 
-This is written to be acted on without the plan.
+This is written to be acted on without the plan. It was rewritten on 2026-09-15 after Pratik widened the checkpoint with "Go for running the guard sweep via CI as well."; the local start it used to give is kept below as the fallback.
 
-**What it is.** The one guard sweep of the milestone: `scripts/guards.sh` unfiltered over every record in `guards/guards.toml`, 798 today, one build and one whole-suite run per record, with nothing else building beside it. It is hours, it has to be started by you on a machine you are not about to need, and it can be stopped and picked up as often as you like.
+**What it is.** The one guard sweep of the milestone: every record in `guards/guards.toml`, 803 today, one build and one whole-suite run per record, with nothing else building beside it. On GitHub's Windows runners it is 41 jobs of about 20 records each, dispatched by hand from the Actions tab, and nothing has been dispatched yet.
+
+**First, push `main`.** Nothing is pushed: the workflow exists only here, and GitHub lists a workflow for dispatch only once it is on the default branch there (`gh run list --workflow guards.yml` answers 404 as this is written). The push runs CI's seven jobs as every push does; that is the usual push and not a dispatch.
+
+**Dispatch.** On GitHub, Actions, the workflow "Would each guard still go red", Run workflow, on `main`. The three inputs as you will see them, with their defaults:
+
+| Input | Description shown | Default |
+|---|---|---|
+| `shards` | how many shards the record is divided into, n; about 20 records each at the 2026-09-15 count of 802 | `41` |
+| `first` | the first shard this dispatch runs, from 0 | `0` |
+| `last` | the last shard this dispatch runs, inclusive, at most first + 255 | `40` |
+
+The defaults run the whole record in one dispatch: 41 jobs, twenty at a time. The run is at `main`'s head at the moment you press the button (`github.sha`), which is what "the same commit" means below. Nothing else needs to be quiet on your machine; the runners are nobody's machine.
+
+**How long, a guess until a shard has run.** A record on a 4-core runner is a rebuild plus a library run, guessed at three times this machine's 92 s, about five minutes; 20 records a shard is about 1.7 hours plus a build each, two waves of twenty jobs, roughly four hours of wall clock. The 6-hour job cap is why it is 20 a shard and not 40. The first shard's `timed:` lines are the measurement; the page's rate row is this machine's and says nothing about a runner.
+
+**How to know it is done, without reading the verdicts.** The run's page shows every shard job finished, green or red; a red shard is a shard that found a record short, and its log is still uploaded. A job killed at the six-hour cap is the one case to look at: its log stops at some `-- name` with no verdict, and the read-back below names what remains. Do not read the verdicts: task 3 reads them after the logs are merged, because a partial log has already produced a wrong commit message here once.
+
+**When it is done, give the executor the run id** (the number in the run's URL). The executor then, on this machine:
+
+```
+git -C ../wixen-mail-sweep checkout --detach <the run's github.sha>
+cd ../wixen-mail-sweep
+gh run download <run id> --dir target/runner-sweep
+for k in $(seq 0 40); do cat target/runner-sweep/sweep-$k-of-41/sweep-$k-of-41.log; done > sweep.log
+bash scripts/guards.sh --log sweep.log --resume --stop-after 0
+```
+
+The first line moves the sweep worktree to the commit the run judged, which is `main`'s head when it was dispatched, so that task 3's corrections are read against the tree the sweep measured; the worktree sits at `abf3e24c` as this is written and is moved when the run completes, not before. The last line must print `Every record selected has a verdict: 803 of 803, 803 from the log and 0 from this run.` (or the count the record held at that commit); `K measured this run; R of N remain. Resume with:` names what a killed shard left, and a second dispatch of that shard number alone (`first` and `last` both set to it) fills it, its log concatenated onto `sweep.log` before the read-back is run again. That line is task 3's precondition. The executor also measures the merged log's carriage returns with `tr -cd '\r' < sweep.log | wc -c`, since the runner's Python writes them as this machine's does, and checks `git status --porcelain` in the worktree names nothing but `?? sweep.log` and `target/`'s untracked download is under an ignored directory.
+
+## The fallback: the sweep on this machine, as the checkpoint first gave it
+
+Kept in case the runners cannot be used. Everything below was run once here except the sweep itself.
 
 **How long.** The row "The whole guard sweep, every record once" on `docs/development/measurements.md` reads **784 x 92 s = 72,128 s, about 20 hours**, dated 2026-09-14 at `bb61e88e`, from the rate row above it, 92 s a record. The file holds 798 records today, so the same rate gives about 20.4 hours; the seven records timed in this session ran 83 to 86 s each, which would be about 19 hours. Both are a rate times a count and the log will say what it really cost, one `timed:` line per record. Triage of what it finds is on top.
 
@@ -323,11 +405,17 @@ Any other last line, `K measured this run; R of 798 remain. Resume with:` and th
 
 **4. The stop-after cut moved before the pre-read.** Under "What the first live run found". A design refinement inside the plan's behaviour, not a change to it.
 
-Otherwise the plan's task 1 was executed as written. No package installed, `Cargo.toml` untouched, no version bump, no test added to or removed from any `.rs` file, no record's `before`, `after` or `red` changed, no tracked file edited by anything but the editing tool (exception set: zero, kept at zero), carriage returns measured with `tr -cd '\r' | wc -c` on every tracked file touched, none; no em dash, `test_no_dashes_that_should_be_punctuation` in the gate on every commit. `WIXEN_TEST_THREADS` at its default.
+**5. The answer's reading is a new integration target, not two tests in `house_style.rs`.** The coordinator named `house_style.rs` as the pattern's home; twenty-five records name that target as their suite and every added test flags them, and the phase README says new readings go in new targets at zero records. The target is in `check.sh`'s whole-tree list and has its record. Ledger 465 is the thread-setting guess, not this.
+
+**6. The concatenation example was green on arrival.** The coordinator asked that the parser be made to tolerate several headers and summary lines with a worked example; it already did, since the reading is anchored on the loop's indent, so the example documents rather than drove, and the red of that commit was the three shard functions.
+
+Otherwise the plan's task 1 and the answer were executed as written. No package installed, `Cargo.toml` untouched, no version bump, no test added to or removed from any existing `.rs` file (the two in the new target are the new target's), no existing record's `before`, `after` or `red` changed, no committed tracked file edited by anything but the editing tool (exception set: zero, kept at zero; one temporary break applied to `guards.yml` by a two-line script to take the record red by hand and restored by `git checkout`, the way the runner applies one, said here rather than hidden), carriage returns measured with `tr -cd '\r' | wc -c` on every tracked file touched, none; no em dash, `test_no_dashes_that_should_be_punctuation` in the gate on every commit. `WIXEN_TEST_THREADS` at its default here and in the workflow.
 
 ## Guard records
 
 None added, removed or re-measured. 798 by the parser before and after; census 192 + 606 at `guards/guards.toml:82-83`. `tests/house_style.rs` holds 70 test functions and `src/presentation/wx_app.rs` 199 before and after by `grep -cE '^\s*#\[(test|tokio::test)\]\s*$'`, so `test_every_guard_record_says_how_many_tests_the_files_it_names_held` printed no remedy on any commit. `scripts/guards.py` is named by no record. The two records measured during the proofs, `the Google merge asks what the whole contact is owed` and `the Microsoft merge asks what the whole contact is owed`, agreed every time, four and two named tests red and nothing else; no count was written, because none of those runs was `--remeasure`.
+
+**For the answer:** one record added, "the guard sweep's shard step hands the runner a flag it accepts", taken by hand first and then through `--remeasure`, which agreed and wrote `tests_last_seen` as `tests/the_guard_sweep_runs_on_runners.rs`, 2. 802 records before, 803 after; census 192 + 611 at `guards/guards.toml:83-84`. `house_style.rs` 74 and `wx_app.rs` 199 before and after; the count check printed no remedy on any commit.
 
 ## Ledger
 
@@ -336,27 +424,33 @@ None added, removed or re-measured. 798 by the parser before and after; census 1
 - 456, deviation, `scripts/guards.py`: `--resume` refused without `--log`.
 - 457, deviation, `scripts/guards.py`: a build inside one record's run is seen by neither poll.
 
+**For the answer:** 464 before, 465 after. 463, 08-08's entry that the sweep could be sharded onto runners and was not, closed with `gsd-tools windows fixed 463`, both halves `fixed`. 465 added, deviation, `.github/workflows/guards.yml`: `WIXEN_TEST_THREADS` left at 8 on a 4-core runner, unmeasured, with why and what re-takes it. Both halves checked, one and one; no backslash, no carriage return.
+
 ## Issues Encountered
 
 The runaway run, above, killed during its pre-read with nothing broken. `git merge -F -` does not read a message from stdin; the merge was made with a message file. Nothing else stopped anything; the gate passed on every commit through the hook and `scripts/check.sh all` passed on its first run.
 
 ## Known Stubs
 
-None. Every flag is reachable from `scripts/guards.sh`, exercised in this session, and documented in its usage block. The sweep is not a stub; it is the checkpoint, and the checkpoint says it has not run.
+None. Every flag is reachable from `scripts/guards.sh`, exercised in this session, and documented in its usage block; the workflow is reachable from the Actions tab and held by a reading and a record. The sweep is not a stub; it is the checkpoint, and the checkpoint says it has not run and nothing has been dispatched.
 
 ## Threat Flags
 
-None. `tasklist` and `git status` are read; nothing is written through either. No network endpoint, auth path or schema. T-08-SC: no package added.
+| Flag | File | Description |
+|---|---|---|
+| threat_flag: ci-spend | `.github/workflows/guards.yml` | A dispatch is 41 runner jobs of hours each; `workflow_dispatch` only, held by the reading, so nothing but a person starts one. `permissions: contents: read`; nothing is written back. |
+
+`tasklist` and `git status` are read; nothing is written through either. No network endpoint, auth path or schema. T-08-SC: no package added.
 
 ## Self-Check: PASSED
 
-`scripts/guards.py` holds `def verdicts_in`, `def foreign_builds_in`, `def is_quiet`, `def why_a_resume_is_refused`, `def the_resume_command`, `def the_closing_line` and `class Logged`, checked by `grep -c`; `scripts/guards.sh` holds `--wait-until-quiet`; `docs/changelog.md` holds "The guard sweep can be stopped and picked up from its own log"; the commits `812241ea`, `bbd1f28d` and `1837f93b` are in `git log --all`; `../wixen-mail-sweep` exists at `1837f93b` with `target/` built; `main` is ahead of `origin/main` and nothing was pushed.
+`scripts/guards.py` holds `def verdicts_in`, `def foreign_builds_in`, `def is_quiet`, `def why_a_resume_is_refused`, `def the_resume_command`, `def the_closing_line`, `def the_shard_asked_for`, `def the_records_in_shard`, `def the_header_for` and `class Logged`, checked by `grep -c`; `scripts/guards.sh` holds `--wait-until-quiet` and `--shard`; `.github/workflows/guards.yml` and `tests/the_guard_sweep_runs_on_runners.rs` exist; `scripts/check.sh`'s list holds `the_guard_sweep_runs_on_runners`; `docs/changelog.md` holds "The guard sweep can be stopped and picked up from its own log" and Pratik's words, which wrap across a line there so `grep -c "Go for running the guard sweep via" docs/changelog.md` is the grep that finds them, 1; the commits `812241ea`, `bbd1f28d`, `1837f93b`, `ef2f5346`, `a9220a25`, `930cb991`, `9032b9be`, `6cf50cdb` and `bd8c2832` are in `git log --all`; `../wixen-mail-sweep` exists with `target/` built; `main` is ahead of `origin/main` and nothing was pushed; `gh run list --workflow guards.yml` answers 404, because the workflow is not on `origin/main` yet, so nothing can have been dispatched.
 
 ## Status
 
-`partial`. Task 1 of three, merged alone into `main` at `1837f93b`. Task 2 is the checkpoint and is Pratik's. Task 3 was not attempted and must not be until a start prints that nothing remains.
+`partial`. Task 1 of three, merged alone into `main` at `1837f93b`; the checkpoint's answer, the runner sweep, merged alone at `bd8c2832`. Task 2 is the checkpoint, widened by Pratik to the runners, and the dispatch is his. Task 3 was not attempted and must not be until the merged log's read-back prints that nothing remains.
 
-Criterion 5 does not close: the runner exists and the sweep has not run.
+Criterion 5 does not close: the runner and the workflow exist and the sweep has not run.
 
 ---
 *Phase: 08-every-number-the-project-quotes*

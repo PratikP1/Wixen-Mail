@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 439
 waived_count: 0
-fixed_count: 25
-total_count: 464
-last_updated: 2026-09-15T10:58:18.818Z
+fixed_count: 26
+total_count: 465
+last_updated: 2026-09-15T11:45:40.600Z
 ---
 
 # Broken Windows Ledger
@@ -477,8 +477,9 @@ last_updated: 2026-09-15T10:58:18.818Z
 | 460 | 08 | deviation | docs/development/measurements.md |  | 08-08: the per-mutant rate rows come from one shard whose 25 mutants all sit in src/presentation/accessibility.rs, a file most of the presentation layer depends on, so each rebuild ran 58 to 75 s where a one-file change elsewhere rebuilt 44 to 46 s; the products are what the tree would cost if every file were that file, and no leaf module was measured | open |  | 2026-09-15T08:19:56.948Z |  |
 | 461 | 08 | deviation | docs/development/measurements.md |  | 08-08, for 08-09: the whole-tree mutation run is deferred by Pratik's answer of 2026-09-15; 12,391 mutants at 2847391c, 130 s a mutant under every target in place and 194 s a shard over 496 shards, about 19.8 days of this machine, or two dispatches of 248 runners at an unmeasured rate; the run over src/service/protocols, 450 mutants in 18 shards, is what this milestone makes, and criterion 4 is revised under criterion 6 with 08-08's product table as the reason | open |  | 2026-09-15T10:58:17.286Z |  |
 | 462 | 08 | deviation | .github/workflows/mutants.yml |  | 08-08, for 08-09: mutants.yml ran on pull_request only, and this project merges to main without pull requests, so the diff-scoped mutation check in CI had never run once since it was written; a workflow_dispatch with mode=diff and a since ref now exists, and it has not been dispatched | open |  | 2026-09-15T10:58:17.811Z |  |
-| 463 | 08 | deviation | scripts/guards.sh |  | 08-08: the guard sweep could be sharded onto GitHub's runners the way the mutation shards now are, one runner per chunk of records with --stop-after and the log as the artifact, and it is not; the sweep still runs on this machine from 08-07's checkpoint | open |  | 2026-09-15T10:58:18.330Z |  |
+| 463 | 08 | deviation | scripts/guards.sh |  | 08-08: the guard sweep could be sharded onto GitHub's runners the way the mutation shards now are, one runner per chunk of records with --stop-after and the log as the artifact, and it is not; the sweep still runs on this machine from 08-07's checkpoint | fixed |  | 2026-09-15T10:58:18.330Z | 2026-09-15T11:45:40.115Z |
 | 464 | 08 | deviation | .github/workflows/ci.yml |  | 08-08: found by the push of main at 0fa393ba on 2026-09-15, CI run 34956059032, Test Suite job 104338271778: test_the_share_of_history_before_red_green_is_computed_and_printed failed on the runner because the checkout fetched one commit and git merge-base could not see 18a02454; fixed at abf3e24c with fetch-depth 0 and a reading that holds every job running cargo test to it; the fix is unconfirmed on a runner until the next push | open |  | 2026-09-15T10:58:18.818Z |  |
+| 465 | 08 | deviation | .github/workflows/guards.yml |  | 08-07, the answer: WIXEN_TEST_THREADS is left at the script's default of 8 on a 4-core runner, unmeasured, so the runner's timing lines and the rate row on docs/development/measurements.md read against each other at one setting; the thread curve on CLAUDE.md was taken on 24 cores and says nothing about 4, and verdicts are what the sweep is for. Re-take the curve on a runner if the shards run slower than the sizing guess | open |  | 2026-09-15T11:45:40.600Z |  |
 
 ````json
 [
@@ -6033,10 +6034,10 @@ last_updated: 2026-09-15T10:58:18.818Z
     "file": "scripts/guards.sh",
     "line": null,
     "description": "08-08: the guard sweep could be sharded onto GitHub's runners the way the mutation shards now are, one runner per chunk of records with --stop-after and the log as the artifact, and it is not; the sweep still runs on this machine from 08-07's checkpoint",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-15T10:58:18.330Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-15T11:45:40.115Z"
   },
   {
     "id": 464,
@@ -6048,6 +6049,18 @@ last_updated: 2026-09-15T10:58:18.818Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T10:58:18.818Z",
+    "resolved_at": null
+  },
+  {
+    "id": 465,
+    "kind": "deviation",
+    "phase": "08",
+    "file": ".github/workflows/guards.yml",
+    "line": null,
+    "description": "08-07, the answer: WIXEN_TEST_THREADS is left at the script's default of 8 on a 4-core runner, unmeasured, so the runner's timing lines and the rate row on docs/development/measurements.md read against each other at one setting; the thread curve on CLAUDE.md was taken on 24 cores and says nothing about 4, and verdicts are what the sweep is for. Re-take the curve on a runner if the shards run slower than the sizing guess",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T11:45:40.600Z",
     "resolved_at": null
   }
 ]
