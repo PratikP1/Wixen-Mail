@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -564,6 +565,38 @@ def why_an_in_place_shard_is_refused(porcelain: str) -> str | None:
     and start again:
         git checkout -- src/presentation/accessibility.rs
     """
+    modified = [
+        line[3:]
+        for line in porcelain.splitlines()
+        if line[:2].strip() and not line.startswith("??")
+    ]
+    if not modified:
+        return None
+    named = "\n".join(f"    {path}" for path in modified)
+    return (
+        "The tree this shard would mutate in place is already modified, so nothing was run:\n"
+        f"{named}\n"
+        "A shard killed mid-mutant leaves its mutant behind, and with the baseline skipped\n"
+        "every later shard would judge that tree. If the change is not yours, put it back\n"
+        "and start again:\n"
+        f"    git checkout -- {' '.join(modified)}"
+    )
+
+
+def whether_the_tree_may_be_mutated_in_place() -> int:
+    """Exit 0 over a clean tree, 1 with the refusal printed over a modified one."""
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    why = why_an_in_place_shard_is_refused(status.stdout)
+    if why is None:
+        return 0
+    print(why)
+    return 1
 
 
 def read_shards(out_dir: Path, count: int) -> list[Shard]:
@@ -1159,7 +1192,15 @@ def main() -> int:
         action="store_true",
         help="block until no cargo or rustc is running",
     )
+    parser.add_argument(
+        "--tree-is-clean",
+        action="store_true",
+        help="exit 0 if no tracked file is modified, else print which and the checkout",
+    )
     args = parser.parse_args()
+
+    if args.tree_is_clean:
+        return whether_the_tree_may_be_mutated_in_place()
 
     if args.nothing_changed:
         base, base_hash, head_hash = args.nothing_changed
