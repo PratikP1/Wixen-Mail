@@ -543,6 +543,29 @@ def a_shard_is_complete(run: Run) -> bool:
     return not run.baseline_failed and run.processed == run.declared
 
 
+def why_an_in_place_shard_is_refused(porcelain: str) -> str | None:
+    """Why a shard may not mutate this tree in place, if it may not, read from
+    `git status --porcelain` over the tree.
+
+    The tool puts each mutated file back when it is done with the mutant, and a
+    kill mid-mutant skips that. `--shards` skips the baseline after the first
+    complete shard, so nothing else would notice, and every later shard would
+    judge a tree with a stranger's mutant in it. A modified tracked file is
+    refused by name with the command that puts it back; an untracked file,
+    which is what the launcher's own logs are, is not a modification:
+
+    >>> why_an_in_place_shard_is_refused("?? mutants.log\\n") is None
+    True
+    >>> print(why_an_in_place_shard_is_refused(" M src/presentation/accessibility.rs\\n?? mutants.log\\n"))
+    The tree this shard would mutate in place is already modified, so nothing was run:
+        src/presentation/accessibility.rs
+    A shard killed mid-mutant leaves its mutant behind, and with the baseline skipped
+    every later shard would judge that tree. If the change is not yours, put it back
+    and start again:
+        git checkout -- src/presentation/accessibility.rs
+    """
+
+
 def read_shards(out_dir: Path, count: int) -> list[Shard]:
     """Load every shard of a run from `out_dir/shard-k-of-count`, in order.
 
