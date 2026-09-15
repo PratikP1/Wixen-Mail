@@ -26,14 +26,23 @@ jobs:
   test:
     name: Test Suite
     runs-on: windows-latest
-    
+
     permissions:
       contents: read
-    
+
     steps:
     - name: Checkout code
+      # The whole history, because one target reads it.
+      # test_the_share_of_history_before_red_green_is_computed_and_printed in
+      # tests/every_number_carries_its_command_and_its_date.rs runs
+      # `git merge-base --is-ancestor 18a02454 HEAD`, and on a checkout of one
+      # commit that commit is not a valid object name. The push of main at
+      # 0fa393ba on 2026-09-15 failed this job on exactly that, with every
+      # other test green. mutants.yml already checks out this way and says why.
       uses: actions/checkout@v4
-      
+      with:
+        fetch-depth: 0
+
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.98.1
       
