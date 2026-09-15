@@ -272,9 +272,35 @@ file. The lists of endings it walks are written out by hand and nothing made
 them keep up with the two sets of endings they stand for. Both gaps are tests
 now.
 
-Line coverage was 60.4% when last measured, on 2026-07-26, with
-`cargo llvm-cov --lib --summary-only`. A great deal has landed since, so that
-number is the last measurement rather than today's answer. The least covered
-code then was the network transport, which is the same fact as never having
-been run against a live account rather than a separate problem, and no amount
-of test writing substitutes for it.
+Line coverage of the library was 83.34% on 2026-09-14, 160,966 of 193,153
+lines, measured at `55464a5e` with `cargo llvm-cov --lib --summary-only`; the
+row on `docs/development/measurements.md` has the run's conditions and the
+seven rows beneath it are the areas, summed from the same run's per-file
+table. It was 60.4% on 2026-07-26 by the same command, so the two are one
+quantity and the 23 points between them are real. That earlier figure stays
+here as the figure of its date.
+
+Where the missing lines are moved as well. On 2026-07-26 the least covered
+code was the network transport, and this paragraph said that was the same
+fact as never having been run against a live account, which is still true of
+the transport and is no longer where the low coverage is. On 2026-09-14 the
+wire protocols under `src/service/protocols/` read 92.06%, the two OAuth
+files 84.55%, and the six provider clients for Google, Microsoft Graph,
+CalDAV, CardDAV and OneNote 96.75%, every one above the library's figure and
+every one only ever run against a loopback server a test started. No amount
+of test writing substitutes for a live account, and none of these is a number
+to raise by writing tests at a fake server; what they wait for is the first
+real account, which the ledger and the roadmap record across every phase.
+
+The low area is somewhere else, and it is not attributed here. The 27
+wxWidgets window files, `src/presentation/wx_*.rs`, read 26.88% on
+2026-09-14 and hold 73% of every line the run missed; `wx_app.rs` alone is
+29.83% of 18,000 lines, and `wx_settings.rs` and ten smaller windows are at
+0%. Everything outside `src/presentation/` is 95.53%. Those files build
+windows, and the library's own tests open none; the targets that do are under
+`tests/` and a `--lib` run leaves them out. That is a description and not a
+reason, and `PERF-05`'s attribution to the transport does not cover it. Ledger
+entry 453 in `.planning/WINDOWS.md` carries it, and whether it is a gap to
+close, a different command to measure with, or a number to accept with the
+reason written beside it is decided when the phase closes and not by this
+page.

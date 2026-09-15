@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 427
+open_count: 429
 waived_count: 0
 fixed_count: 24
-total_count: 451
-last_updated: 2026-09-15T01:36:10.285Z
+total_count: 453
+last_updated: 2026-09-15T02:14:28.223Z
 ---
 
 # Broken Windows Ledger
@@ -466,6 +466,8 @@ last_updated: 2026-09-15T01:36:10.285Z
 | 449 | 08 | unrun-verify | tests/the_list_at_two_hundred_thousand_rows.rs |  | The sort's apply is not timed: apply_sort clones the rows, sorts them off the interface thread and sends MessagesLoaded, and the cost of the list control taking 200,000 rows back needs a window the harness does not have. The sort rows on the measurements page say so; a number for the apply waits for a harness that drives the running program. | open |  | 2026-09-15T01:35:59.293Z |  |
 | 450 | 08 | unrun-verify | tests/the_list_at_two_hundred_thousand_rows.rs |  | A scroll's own paint is not timed: the page paint row is text_for over one page of every inbox column, and wxWidgets' painting of those cells needs a window the harness does not have. A scroll in the running program is the row's figure plus that, and the measurements page says so beside the row. | open |  | 2026-09-15T01:36:09.797Z |  |
 | 451 | 08 | todo | tests/the_list_at_two_hundred_thousand_rows.rs |  | THE_SEARCH_BOXES_LIMIT copies the LIMIT inside managers::search_messages, which is private to that function, so the filter rows are timed at 500 because the harness says 500 and not because it read the program. If the search box's limit moves, the harness times the old one; making the constant reachable from the harness is the fix. | open |  | 2026-09-15T01:36:10.285Z |  |
+| 452 | 08 | deviation | .planning/REQUIREMENTS.md |  | PERF-05's [S] line and roadmap criterion 3 attribute low coverage to service/protocols, service/oauth and the provider clients; on 2026-09-14 those read 92.06%, 84.55% and 96.75% against a library at 83.34%, so the attribution names areas that are no longer low; 08-06 corrects the evidence line and 08-09 closes the clause with the reason | open |  | 2026-09-15T02:14:27.761Z |  |
+| 453 | 08 | todo | docs/development/measurements.md |  | The low coverage area on 2026-09-14 is the wxWidgets windows, src/presentation/wx_*.rs at 26.88% holding 73% of the missed lines, outside the three areas PERF-05 attributes and not attributed by 08-05; these files build windows that no --lib test opens, and 08-09 decides whether that is a gap to close, a different command to measure with, or a figure to accept with the reason beside it | open |  | 2026-09-15T02:14:28.223Z |  |
 
 ````json
 [
@@ -5879,6 +5881,30 @@ last_updated: 2026-09-15T01:36:10.285Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T01:36:10.285Z",
+    "resolved_at": null
+  },
+  {
+    "id": 452,
+    "kind": "deviation",
+    "phase": "08",
+    "file": ".planning/REQUIREMENTS.md",
+    "line": null,
+    "description": "PERF-05's [S] line and roadmap criterion 3 attribute low coverage to service/protocols, service/oauth and the provider clients; on 2026-09-14 those read 92.06%, 84.55% and 96.75% against a library at 83.34%, so the attribution names areas that are no longer low; 08-06 corrects the evidence line and 08-09 closes the clause with the reason",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T02:14:27.761Z",
+    "resolved_at": null
+  },
+  {
+    "id": 453,
+    "kind": "todo",
+    "phase": "08",
+    "file": "docs/development/measurements.md",
+    "line": null,
+    "description": "The low coverage area on 2026-09-14 is the wxWidgets windows, src/presentation/wx_*.rs at 26.88% holding 73% of the missed lines, outside the three areas PERF-05 attributes and not attributed by 08-05; these files build windows that no --lib test opens, and 08-09 decides whether that is a gap to close, a different command to measure with, or a figure to accept with the reason beside it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T02:14:28.223Z",
     "resolved_at": null
   }
 ]

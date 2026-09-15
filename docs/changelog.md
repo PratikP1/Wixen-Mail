@@ -344,6 +344,22 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Line coverage re-measured: 83.34% on 2026-09-14, where the status page
+  had said 60.4% from 2026-07-26.** Same command both times, `cargo llvm-cov
+  --lib --summary-only`, so the two are one quantity. Seven rows on
+  `docs/development/measurements.md` hold the figure, the run's conditions,
+  and the areas summed from the same run's per-file table. The status page
+  quotes the row and keeps the old figure as the figure of its date. The
+  network transport, which the requirement named as the low area and
+  attributed to never having met a live account, is no longer low: the wire
+  protocols read 92.06%, OAuth 84.55% and the provider clients 96.75%, all
+  above the library. They still have only ever spoken to a loopback server a
+  test started, and no test was written to move any of these numbers,
+  because a test at a fake server cannot stand in for the first real
+  account. The low area now is the wxWidgets windows at 26.88%, which the
+  library's own tests never open; that is reported and not attributed, and
+  what to do about it is decided when the phase closes.
+
 - **Tasks and calendar events now come due, in the same window as reminders,
   and every row says what it is first.** Until now only a reminder ever went
   off; a task with a due date and an event with an alert were listed and
