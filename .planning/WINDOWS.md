@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 429
+open_count: 430
 waived_count: 0
-fixed_count: 24
-total_count: 453
-last_updated: 2026-09-15T02:14:28.223Z
+fixed_count: 25
+total_count: 455
+last_updated: 2026-09-15T03:21:02.849Z
 ---
 
 # Broken Windows Ledger
@@ -457,7 +457,7 @@ last_updated: 2026-09-15T02:14:28.223Z
 | 440 | 06 | todo | src/presentation/wx_reminder_alert.rs |  | '1 thing due', '3 things due' and 'And 2 more' are English plurals written in code, the shape 06-03 retired for the date wording by putting it through the catalogue with Fluent's plural rules. Not put through the catalogue in 06-09 because it holds one area, dates.ftl, and its loader and completeness reading are written for one file; a second area, due.ftl, is the catalogue's next step and touches catalogue.rs, six records. When it arrives these three sentences and the window's button labels are the first to move | open |  | 2026-09-14T17:46:23.567Z |  |
 | 441 | 06 | todo | src/application/event_alerts.rs |  | Two small holes in what off means, said rather than widened. Microsoft's isReminderOn true with reminderMinutesBeforeStart 0 is stored as nothing, as before, so an Outlook alert at the start of the event gets this program's default lead instead of a lead of nought. And alerts_with_the_first_at with nothing stored and nought in the box keeps nothing stored, which is right, and has no test of its own because managers.rs has 50 records and one more test there is hours of remeasure; the two flipped tests pin the other branches | open |  | 2026-09-14T17:46:24.026Z |  |
 | 442 | 08 | deviation | scripts/check.sh |  | plan 08-01 task 1 required check.sh --suites-for guards/guards.toml docs/development/measurements.md to print the new target once its guard record existed; it prints nothing, because the coupling function drops a candidate already in guards_that_read_the_whole_tree on purpose, since every scoped run ends with that list. The record couples: a copy of the script with the target taken out of the list answers with it. The criterion asked for output the tool suppresses by design, and a target in both lists is answered by the whole-tree list first | open |  | 2026-09-14T20:41:00.106Z |  |
-| 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | open |  | 2026-09-14T20:41:09.046Z |  |
+| 443 | 08 | todo | scripts/guards.py |  | the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree | fixed |  | 2026-09-14T20:41:09.046Z | 2026-09-15T03:20:43.920Z |
 | 444 | 08 | todo | docs/privacy.md | 417 | the privacy page's update download size is a target of about 12 MB and not a measurement, because no release has been published to measure; once one exists, measure the installer, write the size on the page with its date, and add a row to docs/development/measurements.md | open |  | 2026-09-14T21:45:39.956Z |  |
 | 445 | 08 | deviation | docs/integration-guide.md | 5 | the agreement reading holds every figure shaped N tests on the three test-count pages to a row on the measurements page and cannot tell a past count from a present one, so the guide's historical 'counted 64 tests' was reworded to 'put the count of tests at 64' and the convention (a past count on those three pages is not written as N tests) lives in the reading's section comment rather than anywhere a page author would meet it first | open |  | 2026-09-14T22:05:28.433Z |  |
 | 446 | 08 | unrun-verify | tests/the_numbers_the_targets_ask_for.rs |  | The measurement profile's account points at 127.0.0.1 on a closed port so a startup connection would be refused at once, and the connection was never attempted: nothing in the program checks mail on a schedule, so a start dials nothing and the log of every measured run held no WARN or ERROR line. What the application says or shows when a connection is refused was therefore read by nobody in 08-03, and the cold-start and idle figures are for a start that never touches a server. | open |  | 2026-09-14T23:50:37.822Z |  |
@@ -468,6 +468,8 @@ last_updated: 2026-09-15T02:14:28.223Z
 | 451 | 08 | todo | tests/the_list_at_two_hundred_thousand_rows.rs |  | THE_SEARCH_BOXES_LIMIT copies the LIMIT inside managers::search_messages, which is private to that function, so the filter rows are timed at 500 because the harness says 500 and not because it read the program. If the search box's limit moves, the harness times the old one; making the constant reachable from the harness is the fix. | open |  | 2026-09-15T01:36:10.285Z |  |
 | 452 | 08 | deviation | .planning/REQUIREMENTS.md |  | PERF-05's [S] line and roadmap criterion 3 attribute low coverage to service/protocols, service/oauth and the provider clients; on 2026-09-14 those read 92.06%, 84.55% and 96.75% against a library at 83.34%, so the attribution names areas that are no longer low; 08-06 corrects the evidence line and 08-09 closes the clause with the reason | open |  | 2026-09-15T02:14:27.761Z |  |
 | 453 | 08 | todo | docs/development/measurements.md |  | The low coverage area on 2026-09-14 is the wxWidgets windows, src/presentation/wx_*.rs at 26.88% holding 73% of the missed lines, outside the three areas PERF-05 attributes and not attributed by 08-05; these files build windows that no --lib test opens, and 08-09 decides whether that is a gap to close, a different command to measure with, or a figure to accept with the reason beside it | open |  | 2026-09-15T02:14:28.223Z |  |
+| 454 | 08 | deviation | scripts/guards.py |  | 08-06 edited the docstring of run_the_whole_suite, which the plan's file list did not name, because ledger 443 had assigned it to 08-06 and the plan's own done criterion is that no comment in the tree states the sweep's cost as a figure; the plan was written from the research and the README, neither of which carried the entry, so an assignment written into the ledger alone did not reach the plan it was addressed to | open |  | 2026-09-15T03:20:52.629Z |  |
+| 455 | 08 | deviation | docs/IMPLEMENTATION_STATUS.md |  | Three dated quotations of a retired figure were reworded to keep the figure without the phrase, because the plan's acceptance criteria were single-line greps for the old phrase finding nothing while its rule 1 requires the old figure kept as the figure of its date: the status page's mutation sentence, guards.toml line 40 and guards.sh line 36 now say the run was put at two days or at one or two hours rather than quoting the words; the meaning is unchanged and CLAUDE.md, whose criterion admitted a dated sentence, quotes all four phrases as written; an absence criterion over prose that also requires the quotation has to be scoped to the sentence and not to the phrase | open |  | 2026-09-15T03:21:02.849Z |  |
 
 ````json
 [
@@ -5782,10 +5784,10 @@ last_updated: 2026-09-15T02:14:28.223Z
     "file": "scripts/guards.py",
     "line": null,
     "description": "the docstring of run_the_whole_suite still says the rebuild a break forces is 23 seconds and the library is 89, a pair taken before the suite was halved on 2026-09-09, and the arithmetic built on it, a 220-record sweep from 6.8 hours to 88 minutes, is built on both stale terms; the runner now prints today's terms on every run and the rate row on docs/development/measurements.md holds them, so 08-06's pass over comments in scripts should point this sentence at the page rather than leave a fifth sweep figure in the tree",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-14T20:41:09.046Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-15T03:20:43.920Z"
   },
   {
     "id": 444,
@@ -5905,6 +5907,30 @@ last_updated: 2026-09-15T02:14:28.223Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T02:14:28.223Z",
+    "resolved_at": null
+  },
+  {
+    "id": 454,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "scripts/guards.py",
+    "line": null,
+    "description": "08-06 edited the docstring of run_the_whole_suite, which the plan's file list did not name, because ledger 443 had assigned it to 08-06 and the plan's own done criterion is that no comment in the tree states the sweep's cost as a figure; the plan was written from the research and the README, neither of which carried the entry, so an assignment written into the ledger alone did not reach the plan it was addressed to",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T03:20:52.629Z",
+    "resolved_at": null
+  },
+  {
+    "id": 455,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "docs/IMPLEMENTATION_STATUS.md",
+    "line": null,
+    "description": "Three dated quotations of a retired figure were reworded to keep the figure without the phrase, because the plan's acceptance criteria were single-line greps for the old phrase finding nothing while its rule 1 requires the old figure kept as the figure of its date: the status page's mutation sentence, guards.toml line 40 and guards.sh line 36 now say the run was put at two days or at one or two hours rather than quoting the words; the meaning is unchanged and CLAUDE.md, whose criterion admitted a dated sentence, quotes all four phrases as written; an absence criterion over prose that also requires the quotation has to be scoped to the sentence and not to the phrase",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T03:21:02.849Z",
     "resolved_at": null
   }
 ]
