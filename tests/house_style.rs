@@ -4424,6 +4424,173 @@ fn test_what_a_change_touched_is_asked_the_same_way_in_both_places() {
     );
 }
 
+/// The inputs a dispatch of the mutation workflow reads, by name. A step that
+/// reads `inputs.first` when the workflow declares no such input gets an empty
+/// string and runs shard `/496`, which the tool refuses after the checkout and
+/// the build, on a runner, an hour in.
+const THE_DISPATCH_INPUTS: &[&str] = &["mode", "since", "file", "shards", "first", "last"];
+
+/// The flags a shard step must hand the script, spelled as the script accepts
+/// them. `--all-targets` goes to `cargo test` after the `--`, and is here
+/// because a dispatch that ran the library alone would judge less than the
+/// gate does and say nothing.
+const THE_FLAGS_A_SHARD_STEP_PASSES: &[&str] =
+    &["--shard ", "--in-place", "--file", "--all-targets"];
+
+/// Every flag `scripts/mutants.sh` accepts, read off the arms of its `case`.
+fn the_flags_the_mutation_script_accepts(script: &str) -> Vec<String> {
+    script
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            let (flag, _) = trimmed.split_once(')')?;
+            flag.starts_with("--").then(|| flag.to_string())
+        })
+        .collect()
+}
+
+/// What the mutation workflow's dispatch gets wrong, one line each, empty when
+/// nothing is. Read from the workflow text, the script text and the pinned
+/// compiler, so a companion can hand it a planted mistake.
+fn what_the_mutation_dispatch_gets_wrong(
+    workflow: &str,
+    script: &str,
+    pinned: &str,
+) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let runs = what_it_does_not_what_it_says(workflow);
+
+    if !runs.contains("workflow_dispatch:") {
+        wrong.push("the workflow cannot be dispatched by hand, and this project merges to main without pull requests, so its diff job has never run".to_string());
+    }
+    for input in THE_DISPATCH_INPUTS {
+        if !runs.lines().any(|line| line.trim() == format!("{input}:")) {
+            wrong.push(format!("the dispatch declares no input called {input}"));
+        }
+    }
+
+    let accepted = the_flags_the_mutation_script_accepts(script);
+    let shard_steps: Vec<&str> = runs
+        .lines()
+        .filter(|line| line.contains("scripts/mutants.sh") && line.contains("--shard"))
+        .collect();
+    if shard_steps.is_empty() {
+        wrong.push(
+            "no step runs scripts/mutants.sh with --shard, so a dispatch cannot run a shard"
+                .to_string(),
+        );
+    }
+    for step in &shard_steps {
+        for flag in THE_FLAGS_A_SHARD_STEP_PASSES {
+            if !step.contains(flag) {
+                wrong.push(format!("the shard step does not pass {}", flag.trim()));
+            }
+        }
+        // Every flag before the bare `--` is the script's; after it, cargo
+        // test's. A flag may sit inside a shell expansion such as
+        // `${FILE:+--file "$FILE"}`, which is how an empty input passes
+        // nothing, so the flag is read from where `--` starts in the word.
+        for word in step
+            .split_whitespace()
+            .skip_while(|word| !word.ends_with("mutants.sh"))
+            .skip(1)
+        {
+            if word == "--" {
+                break;
+            }
+            let Some(at) = word.find("--") else {
+                continue;
+            };
+            let flag = word[at..].trim_end_matches(['"', '\'', '}']);
+            if !accepted.iter().any(|known| known == flag) {
+                wrong.push(format!(
+                    "the shard step passes {flag}, which scripts/mutants.sh does not accept"
+                ));
+            }
+        }
+    }
+
+    for (line, named) in the_compilers_a_workflow_installs(workflow) {
+        if named != pinned {
+            wrong.push(format!(
+                "line {line} installs {named} where the pin file names {pinned}"
+            ));
+        }
+    }
+    if !runs
+        .lines()
+        .any(|line| line.trim().starts_with("WIXEN_NO_AUDIO:"))
+    {
+        wrong.push("WIXEN_NO_AUDIO is not set, and GitHub's runners have no audio driver, so the first sound test would crash the run".to_string());
+    }
+    if !runs.contains("cargo install cargo-mutants --version 27.1.0 --locked") {
+        wrong.push("cargo-mutants is not pinned to 27.1.0, the version every rate on the measurements page was taken with".to_string());
+    }
+    wrong
+}
+
+#[test]
+fn test_the_mutation_workflow_dispatch_hands_the_script_flags_it_accepts() {
+    // The workflow file is the artefact, and it cannot be run from here. What
+    // this cannot see is whether a dispatched shard passes, only that the step
+    // spells the script's flags the way the script reads them, reads inputs
+    // the workflow declares, installs the pinned compiler, and sets the one
+    // variable a runner with no audio device needs. Each of those fails on a
+    // runner after the checkout and the build, which is the expensive place
+    // to find out.
+    let workflow =
+        fs::read_to_string(".github/workflows/mutants.yml").expect("the mutation workflow");
+    let script = fs::read_to_string("scripts/mutants.sh").expect("the mutation script");
+    let pin = fs::read_to_string("rust-toolchain.toml").expect("the pin file");
+    let pinned = the_compiler_the_pin_file_names(&pin).expect("the pin file names a channel");
+
+    let wrong = what_the_mutation_dispatch_gets_wrong(&workflow, &script, &pinned);
+    assert!(
+        wrong.is_empty(),
+        "the mutation workflow's dispatch would fail on a runner:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept() {
+    // The companion: a reading that iterates over nothing passes, so it is
+    // shown a workflow with one flag misspelled and a script that accepts the
+    // right one, and must name the misspelling.
+    let script = "case \"$1\" in\n    --shard) SHARD=\"$2\" ;;\n    --in-place) COPY=in-place ;;\n    --file) FILES=\"$2\" ;;\nesac\n";
+    let sound = "on:\n  workflow_dispatch:\n    inputs:\n      mode:\n      since:\n      file:\n      shards:\n      first:\n      last:\nenv:\n  WIXEN_NO_AUDIO: \"1\"\njobs:\n  shard:\n    steps:\n    - uses: dtolnay/rust-toolchain@1.98.1\n    - run: cargo install cargo-mutants --version 27.1.0 --locked\n    - run: scripts/mutants.sh --shard 0/18 --in-place --file 'src/service/protocols/**' -- --all-targets\n";
+    assert!(
+        what_the_mutation_dispatch_gets_wrong(sound, script, "1.98.1").is_empty(),
+        "a sound dispatch was refused"
+    );
+
+    let misspelled = sound.replace("--in-place", "--inplace");
+    let wrong = what_the_mutation_dispatch_gets_wrong(&misspelled, script, "1.98.1");
+    assert!(
+        wrong
+            .iter()
+            .any(|line| line.contains("--inplace") && line.contains("does not accept")),
+        "a flag the script does not accept was not named: {wrong:?}"
+    );
+
+    let no_input = sound.replace("      first:\n", "");
+    let wrong = what_the_mutation_dispatch_gets_wrong(&no_input, script, "1.98.1");
+    assert!(
+        wrong
+            .iter()
+            .any(|line| line.contains("no input called first")),
+        "a step reading an input the workflow does not declare was not named: {wrong:?}"
+    );
+
+    let wrong = what_the_mutation_dispatch_gets_wrong(sound, script, "1.97.1");
+    assert!(
+        wrong
+            .iter()
+            .any(|line| line.contains("1.98.1 where the pin file names 1.97.1")),
+        "a compiler disagreeing with the pin was not named: {wrong:?}"
+    );
+}
+
 #[test]
 fn test_only_one_place_reads_stored_message_text() {
     // Message text is stored two ways, as text when it is short and packed
