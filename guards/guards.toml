@@ -37,9 +37,13 @@
 #
 # That rule is also checked at commit time now, by
 # `test_every_guard_record_still_names_one_place_in_the_tree` in
-# tests/house_style.rs, because a full run is an hour or two and nothing forces
-# one. It says a record still points at one place. It cannot say the list of
-# tests beside that record is still true; only a run says that.
+# tests/house_style.rs, because a full run costs a build and a suite run per
+# record, a rate times a count that docs/development/measurements.md holds
+# as a product row and this file does not, and nothing forces one. It says a
+# record still points at one place. It cannot say the list of tests beside
+# that record is still true; only a run says that. This comment put a full
+# run at one or two hours from the day it was written, 2026-08-12, at about
+# 192 records, until 2026-09-14.
 #
 # ── `tests_last_seen`, and what it is worth ─────────────────────────────────
 #
@@ -3556,7 +3560,8 @@ tests_last_seen = [
 # record measured nothing for a whole commit while a report said the opposite.
 #
 # The runner is strict about this and nothing was strict about it at commit
-# time, and a full run is an hour or two that nothing forces. So the same
+# time, and a full run is hours that nothing forces; how many is the product
+# row on docs/development/measurements.md, not a figure here. So the same
 # question is now asked in milliseconds by a test that reads this file. The two
 # breaks below are the two halves of that reading: text that appears twice, and
 # text that appears nowhere.

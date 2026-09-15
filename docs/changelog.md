@@ -360,8 +360,12 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
   both terms dated, and names the other three as what the tree used to say.
   The gate and suite durations in `CLAUDE.md` and the mutation run's "about
   two days" in `CLAUDE.md` and the status page now say when their figure was
-  taken and which row to read instead. No figure that was true on its date
-  was changed.
+  taken and which row to read instead. The comments in `tests/house_style.rs`,
+  `guards/guards.toml`, `scripts/guards.sh` and `scripts/guards.py` that gave
+  the sweep a figure now point at the same row, and the three accepted
+  advisories in `.cargo/audit.toml` that carried no date say since when they
+  have stood, from `git log`. No test, record or setting changed value. No
+  figure that was true on its date was changed.
 
 - **Line coverage re-measured: 83.34% on 2026-09-14, where the status page
   had said 60.4% from 2026-07-26.** Same command both times, `cargo llvm-cov

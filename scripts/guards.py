@@ -718,9 +718,13 @@ def run_the_whole_suite(
     **`filters` narrows it, and it does not answer the same question. Measured,
     and the measurement is why this mode is a pre-filter and not a sweep.**
 
-    The arithmetic looked good: the rebuild a break forces is 23 seconds and the
-    library is 89, so filtering would take a 220-record sweep from 6.8 hours to
-    about 88 minutes. Two things spoil it.
+    The arithmetic looked good on 2026-09-02, when this was measured: the
+    rebuild a break forced was 23 seconds and the library was 89, so filtering
+    would have taken that day's 220-record sweep from 6.8 hours to about 88
+    minutes. Both terms have moved since and the runner now prints today's
+    pair after every record; the rate row on `docs/development/measurements.md`
+    is where the current pair is, and the argument below does not depend on
+    the figures. Two things spoil it.
 
     The known one: it cannot see a test in a module no filter reaches, and 21 of
     the 23 records the 2026-09-01 sweep found wrong were wrong in exactly that
