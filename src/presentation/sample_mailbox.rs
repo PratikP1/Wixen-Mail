@@ -23,8 +23,58 @@ pub const SAMPLE_MAILBOX_SIZE: usize = 200_000;
 /// flag, because the people who most need to test it are not the people
 /// compiling it.
 pub fn sample_mailbox(count: usize) -> Vec<MessageItem> {
-    let _ = count;
-    Vec::new()
+    let senders = [
+        "Ada Lovelace <ada@example.com>",
+        "Grace Hopper <grace@example.com>",
+        "Alan Turing <alan@example.com>",
+        "no-reply@example.com",
+    ];
+    let subjects = [
+        "Quarterly report",
+        "Re: schedule for next week",
+        "Invoice 4021",
+        "Notes from the accessibility review",
+        "",
+    ];
+
+    (0..count)
+        .map(|i| MessageItem {
+            uid: i as u32 + 1,
+            message_id: i as i64 + 1,
+            subject: subjects[i % subjects.len()].to_string(),
+            from: senders[i % senders.len()].to_string(),
+            // One day, a minute per row, wrapping after 1,440 rows. This said
+            // "descending so the newest is first" from the day it was written
+            // until 08-04 read it: the rows climb, and it is the default sort
+            // that puts the newest first.
+            date: format!("2026-07-26 {:02}:{:02}", (i / 60) % 24, i % 60),
+            read: i % 3 != 0,
+            starred: i % 17 == 0,
+            answered: i % 11 == 0,
+            draft: false,
+            has_attachments: i % 7 == 0,
+            attachments: Vec::new(),
+            thread_depth: i % 5,
+            is_thread_parent: i % 5 == 0,
+            thread_id: (i % 5 != 0).then(|| format!("thread-{}", i / 5)),
+            snippet: Some(format!(
+                "Sample message {} for testing the list at scale.",
+                i + 1
+            )),
+            size_bytes: Some(((i % 40) as i64 + 1) * 1024),
+            to: "me@example.com".to_string(),
+            cc: String::new(),
+            reply_to: String::new(),
+            header_message_id: String::new(),
+            refs_header: None,
+            safety: crate::service::safety::Safety::Ordinary,
+            safety_reasons: Vec::new(),
+            receipt_to: None,
+            list_unsubscribe: None,
+            account_id: String::new(),
+            labels: Vec::new(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

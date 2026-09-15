@@ -18,6 +18,7 @@ pub mod first_run;
 pub mod folder_tree;
 pub mod help_page;
 pub mod html_renderer;
+pub mod mail_sort;
 pub mod manager_words;
 pub mod managers;
 pub mod markdown_input;

@@ -6377,25 +6377,27 @@ tests_last_seen = [
 
 [[guard]]
 name = "each way of sorting the message list really puts it in that order"
-file = "src/presentation/wx_app.rs"
+file = "src/presentation/mail_sort.rs"
 before = """        MailSortOption::DateNewestFirst => messages.sort_by(|a, b| b.date.cmp(&a.date)),"""
 after = """        MailSortOption::DateNewestFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_each_way_of_sorting_the_list_puts_it_in_that_order",
 ]
 tests_last_seen = [
+    { file = "src/presentation/mail_sort.rs", tests = 0 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
 [[guard]]
 name = "sorting by unread brings the unread ones to the top"
-file = "src/presentation/wx_app.rs"
+file = "src/presentation/mail_sort.rs"
 before = """        MailSortOption::UnreadFirst => messages.sort_by_key(|a| a.read),"""
 after = """        MailSortOption::UnreadFirst => messages.sort_by(|_a, _b| std::cmp::Ordering::Equal),"""
 red = [
     "presentation::wx_app::tests::test_sorting_by_unread_brings_the_unread_ones_to_the_top",
 ]
 tests_last_seen = [
+    { file = "src/presentation/mail_sort.rs", tests = 0 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
