@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 439
+open_count: 441
 waived_count: 0
 fixed_count: 26
-total_count: 465
-last_updated: 2026-09-15T11:45:40.600Z
+total_count: 467
+last_updated: 2026-09-15T12:50:16.261Z
 ---
 
 # Broken Windows Ledger
@@ -480,6 +480,8 @@ last_updated: 2026-09-15T11:45:40.600Z
 | 463 | 08 | deviation | scripts/guards.sh |  | 08-08: the guard sweep could be sharded onto GitHub's runners the way the mutation shards now are, one runner per chunk of records with --stop-after and the log as the artifact, and it is not; the sweep still runs on this machine from 08-07's checkpoint | fixed |  | 2026-09-15T10:58:18.330Z | 2026-09-15T11:45:40.115Z |
 | 464 | 08 | deviation | .github/workflows/ci.yml |  | 08-08: found by the push of main at 0fa393ba on 2026-09-15, CI run 34956059032, Test Suite job 104338271778: test_the_share_of_history_before_red_green_is_computed_and_printed failed on the runner because the checkout fetched one commit and git merge-base could not see 18a02454; fixed at abf3e24c with fetch-depth 0 and a reading that holds every job running cargo test to it; the fix is unconfirmed on a runner until the next push | open |  | 2026-09-15T10:58:18.818Z |  |
 | 465 | 08 | deviation | .github/workflows/guards.yml |  | 08-07, the answer: WIXEN_TEST_THREADS is left at the script's default of 8 on a 4-core runner, unmeasured, so the runner's timing lines and the rate row on docs/development/measurements.md read against each other at one setting; the thread curve on CLAUDE.md was taken on 24 cores and says nothing about 4, and verdicts are what the sweep is for. Re-take the curve on a runner if the shards run slower than the sizing guess | open |  | 2026-09-15T11:45:40.600Z |  |
+| 466 | 08 | deviation | src/presentation/wx_app.rs |  | debug theme-reach-crashes-on-runner, 2026-09-15: wxWidgets 3.3.2 (wxdragon 0.9.17) delivers WebView2 creation completions to a destroyed control (wxWidgets #26491, fixed upstream for the unreleased 3.3.4). presentation::browser_ready now holds Compose and Preview Before Send until their browsers report. The main window's preview pane (wx_app.rs preview WebView) and the conversation-as-headings frame are destroyed only at application exit; an exit inside the creation moment, about 250 ms warm and seconds after a runtime update, ends the process with 0xc000041d after the window is gone and nothing else is wrong. Left as it is until a wxdragon release vendors 3.3.4, at which point browser_ready can be retired | open |  | 2026-09-15T12:50:15.759Z |  |
+| 467 | 08 | unrun-verify | tests/theme_reach.rs |  | debug theme-reach-crashes-on-runner, 2026-09-15: the crash of theme_reach on GitHub's runners (runs 34956059032 and 34961574447, exit 0xc000041d) was reproduced here only through a scratch case tearing a WebView down at once, never through theme_reach itself, whose two browsers finish in a quarter of a second on this machine. The wait added to theme_reach and the child-process test in closing_a_window_before_its_browser_exists are unconfirmed on a runner until the next push of main; the CI Test Suite job is the confirmation | open |  | 2026-09-15T12:50:16.261Z |  |
 
 ````json
 [
@@ -6061,6 +6063,30 @@ last_updated: 2026-09-15T11:45:40.600Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T11:45:40.600Z",
+    "resolved_at": null
+  },
+  {
+    "id": 466,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "debug theme-reach-crashes-on-runner, 2026-09-15: wxWidgets 3.3.2 (wxdragon 0.9.17) delivers WebView2 creation completions to a destroyed control (wxWidgets #26491, fixed upstream for the unreleased 3.3.4). presentation::browser_ready now holds Compose and Preview Before Send until their browsers report. The main window's preview pane (wx_app.rs preview WebView) and the conversation-as-headings frame are destroyed only at application exit; an exit inside the creation moment, about 250 ms warm and seconds after a runtime update, ends the process with 0xc000041d after the window is gone and nothing else is wrong. Left as it is until a wxdragon release vendors 3.3.4, at which point browser_ready can be retired",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T12:50:15.759Z",
+    "resolved_at": null
+  },
+  {
+    "id": 467,
+    "kind": "unrun-verify",
+    "phase": "08",
+    "file": "tests/theme_reach.rs",
+    "line": null,
+    "description": "debug theme-reach-crashes-on-runner, 2026-09-15: the crash of theme_reach on GitHub's runners (runs 34956059032 and 34961574447, exit 0xc000041d) was reproduced here only through a scratch case tearing a WebView down at once, never through theme_reach itself, whose two browsers finish in a quarter of a second on this machine. The wait added to theme_reach and the child-process test in closing_a_window_before_its_browser_exists are unconfirmed on a runner until the next push of main; the CI Test Suite job is the confirmation",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-15T12:50:16.261Z",
     "resolved_at": null
   }
 ]

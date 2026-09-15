@@ -661,6 +661,27 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Fixed
 
+- **Closing Compose or Preview Before Send before the message body had
+  finished loading took the whole application down.** The body of each is a
+  browser, which WebView2 makes a moment after the window appears: about a
+  quarter of a second on the machine this was found on, and seconds the
+  first time after the WebView2 runtime updates itself. wxWidgets 3.3.2,
+  which this build uses, hands WebView2 a pointer to the control and does not
+  take it back when the control goes (wxWidgets issue #26491, fixed upstream
+  for the unreleased 3.3.4), so a window closed inside that moment had its
+  completion delivered to freed memory and Windows ended the process with
+  exit code 0xc000041d and no message. Somebody who opened Compose by mistake
+  and pressed Escape at once was inside it. Both windows are now hidden at
+  once and destroyed only after the browser has reported, and a test closes
+  one before its browser exists and reads the exit status of the process it
+  did it in. Found on 2026-09-15 because the theme test does the same thing
+  at teardown and died that way on every run on GitHub's runners that day,
+  where a browser takes over three seconds to make. The preview pane in the
+  main window and the conversation-as-headings window hold browsers too and
+  are only ever destroyed when the application exits; if that happens inside
+  the same moment the exit code is wrong and nothing else is, and that is
+  left as it is until the wxWidgets fix arrives.
+
 - **CI's Test Suite job checks out the whole history.** The push of `main`
   at `0fa393ba` on 2026-09-15 failed that job on one test,
   `test_the_share_of_history_before_red_green_is_computed_and_printed`,

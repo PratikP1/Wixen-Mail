@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
 # 192 records were swept that day.
-# 611 records have arrived since and have not been through it.
+# 614 records have arrived since and have not been through it.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -22002,4 +22002,86 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/the_guard_sweep_runs_on_runners.rs", tests = 2 },
+]
+
+# ── A window holding a browser waits for the browser before it goes ──────────
+#
+# WebView2 makes the browser inside a `WebView` after `build()` returns, and
+# wxWidgets 3.3.2 delivers the completions to the control whether or not it
+# still exists (wxWidgets #26491, fixed upstream for the unreleased 3.3.4).
+# A window destroyed inside that moment took the application down with exit
+# code 0xc000041d and no message, and `tests/theme_reach.rs` died that way on
+# every run on GitHub's runners on 2026-09-15. `presentation::browser_ready`
+# is the answer, and three records hold its three halves.
+#
+# The first is the state machine: the browser's report is what frees what was
+# waiting. The break makes a report leave the browser unready, so a wait
+# queued after it never runs and one queued during the drain is lost. Three of
+# the module's four tests go red; the fourth, that a second report runs
+# nothing twice, is satisfied by a report that runs nothing at all.
+#
+# Measured by hand on 2026-09-15 against the whole library with the break
+# applied: exactly these three failed.
+
+[[guard]]
+name = "the browser's report is what frees a window waiting on it"
+file = "src/presentation/browser_ready.rs"
+before = """            state.reported = true;"""
+after = """            state.reported = false;"""
+red = [
+    "presentation::browser_ready::tests::test_nothing_waiting_runs_before_the_browser_reports",
+    "presentation::browser_ready::tests::test_once_the_browser_has_reported_a_new_wait_runs_at_once",
+    "presentation::browser_ready::tests::test_a_wait_queued_by_something_that_was_waiting_runs_too",
+]
+tests_last_seen = [
+    { file = "src/presentation/browser_ready.rs", tests = 4 },
+]
+
+# The second is the live half: a window handed to `destroy_when_ready` before
+# its browser exists is not destroyed until the browser reports. The break
+# destroys it at once, which is what every caller did before 2026-09-15, and
+# the child process the test spawns dies with 0xc000041d. The parent reads the
+# exit status, so a crash is a failing test here and not a run that never
+# finished. The reading over `wx_compose` in the same target stays green,
+# because the dialogs there still go through the watch.
+#
+# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
+# with the break applied: exactly this one test failed.
+
+[[guard]]
+name = "a window handed over before its browser exists is not destroyed until the browser reports"
+file = "src/presentation/browser_ready.rs"
+suite = "closing_a_window_before_its_browser_exists"
+before = """        self.when_ready(move || window.destroy());"""
+after = """        window.destroy();"""
+red = [
+    "test_closing_a_window_before_its_browser_exists_does_not_kill_the_process",
+]
+tests_last_seen = [
+    { file = "src/presentation/browser_ready.rs", tests = 4 },
+    { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
+]
+
+# The third is the two dialogs a person can close early, Compose and Preview
+# Before Send. Both are modal, so no test can drive them, and the reading
+# holds each close path to the watch rather than to `destroy()`. The break
+# puts the preview's direct `destroy()` back, the line as it stood before
+# 2026-09-15. The live half above stays green, because it does not read
+# `wx_compose` at all.
+#
+# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
+# with the break applied: exactly this one test failed.
+
+[[guard]]
+name = "the two dialogs holding a browser close through the watch on it"
+file = "src/presentation/wx_compose.rs"
+suite = "closing_a_window_before_its_browser_exists"
+before = """    browser.destroy_when_ready(dlg);"""
+after = """    dlg.destroy();"""
+red = [
+    "test_the_two_dialogs_holding_a_browser_are_closed_through_the_browser_watch",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]

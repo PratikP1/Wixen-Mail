@@ -39,6 +39,7 @@ use wixen_mail::application::spell_session;
 use wixen_mail::application::words::{TextNode, words_in};
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
+use wixen_mail::presentation::browser_ready::BrowserReady;
 use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind};
 use wixen_mail::presentation::reader_text::{ReaderAttachment, ReaderDocument, ReaderPicture};
 use wixen_mail::presentation::theme::{self, Theme};
@@ -49,6 +50,11 @@ use wixen_mail::presentation::{
     wx_tasks_module, wx_thread_view, wx_which_days,
 };
 use wxdragon::prelude::*;
+
+/// How long the live test gives the two browsers it builds to report before
+/// saying so and leaving. Generous: GitHub's runner took over three seconds
+/// on 2026-09-15, and a run that hangs without a word is the one nobody reads.
+const AT_MOST_BEFORE_GIVING_UP_ON_A_BROWSER_MS: i32 = 60_000;
 
 /// Proves the harness itself works, as the first site in the consolidated
 /// test below rather than as a `#[test]` of its own (see the file comment
@@ -558,7 +564,14 @@ fn check_insert_table(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
 /// compose body editor and the conversation-as-headings page are (see the
 /// `appears_live` checks at the bottom of this file), so the dialog itself
 /// is the only site.
-fn check_send_preview(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+///
+/// Returns the watch on the preview's browser, which the test at the bottom
+/// must not tear down before it has reported.
+fn check_send_preview(
+    parent: &Frame,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) -> BrowserReady {
     let scratch_parent = Dialog::builder(parent, "scratch parent for send preview").build();
     let data = wx_compose::ComposeData {
         to: "person@example.com".to_string(),
@@ -573,9 +586,14 @@ fn check_send_preview(parent: &Frame, palette: theme::Palette, into: &mut Vec<Si
         answering: None,
         send_at: None,
     };
-    let (dialog, _send_btn, _back_btn) =
-        wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
-    check("send preview dialog", &dialog, palette.main_surface(), into);
+    let widgets = wx_compose::build_send_preview_dialog(&scratch_parent, &data, &[], Some(palette));
+    check(
+        "send preview dialog",
+        &widgets.dialog,
+        palette.main_surface(),
+        into,
+    );
+    widgets.browser
 }
 
 /// The Calendar list window. An empty event list is enough: painting the
@@ -1030,7 +1048,14 @@ fn check_reader(parent: &Frame, a11y: &Arc<Accessibility>, into: &mut Vec<SiteRe
 /// around, and the message body is a `WebView` excluded from painting for
 /// the same reason `check_send_preview` above excludes one: it owns its
 /// colour through its own document's HTML and CSS.
-fn check_compose(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
+///
+/// Returns the watch on the body editor's browser, which the test at the
+/// bottom must not tear down before it has reported.
+fn check_compose(
+    parent: &Frame,
+    palette: theme::Palette,
+    into: &mut Vec<SiteResult>,
+) -> BrowserReady {
     let widgets = wx_compose::build_compose_dialog(
         parent,
         "Compose New Message",
@@ -1058,6 +1083,7 @@ fn check_compose(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteRes
         palette.main_surface(),
         into,
     );
+    widgets.browser
 }
 
 /// The shell shared by the Filter, Tag and Signature managers' own list
@@ -1400,7 +1426,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_which_days(&frame, palette, &mut sites);
             check_check_spelling(&frame, palette, &mut sites);
             check_insert_table(&frame, palette, &mut sites);
-            check_send_preview(&frame, palette, &mut sites);
+            let preview_browser = check_send_preview(&frame, palette, &mut sites);
             check_calendar_list(&frame, palette, &mut sites);
             check_confirm_delete(&frame, palette, &mut sites);
             check_search(&frame, palette, &mut sites);
@@ -1414,7 +1440,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_reminder_alert(&frame, palette, &mut sites);
             check_thread_view(&frame, palette, &mut sites);
             check_about(&frame, palette, &mut sites);
-            check_compose(&frame, palette, &mut sites);
+            let compose_browser = check_compose(&frame, palette, &mut sites);
             check_managers_shell(&frame, palette, &mut sites);
             check_contact_manager(&frame, &a11y, palette, &mut sites);
             check_wait_for_an_answer(&frame, palette, &mut sites);
@@ -1430,9 +1456,45 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
 
             *results.lock().unwrap() = sites;
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
-            }));
+            // Not before both browsers have reported. Two of the dialogs
+            // above hold a `WebView`, and WebView2 makes the browser inside
+            // one after `build()` returns, through completions the event
+            // loop delivers later. wxWidgets 3.3.2 delivers them to the
+            // control whether or not it still exists (wxWidgets #26491), so
+            // tearing down first is the crash `browser_ready` describes:
+            // exit code 0xc000041d, no message, no test name. This test did
+            // exactly that on every run on GitHub's runners on 2026-09-15,
+            // where a browser takes over three seconds and this closure took
+            // two, and passed here, where a browser takes a quarter of one.
+            //
+            // `exit_main_loop` queued rather than called from the report, for
+            // the reason the harness self-check gives above.
+            let browsers = [preview_browser, compose_browser];
+            let exit = move || {
+                wxdragon::call_after(Box::new(move || {
+                    app.exit_main_loop();
+                }));
+            };
+            let [first, second] = browsers.clone();
+            first.when_ready(move || second.when_ready(exit));
+
+            // A browser that never reports would hang this forever, and a run
+            // that hangs without a word is the one nobody reads. Say which,
+            // and leave without tearing down, since tearing down is the crash.
+            let giving_up = Timer::new(&frame);
+            giving_up.on_tick(move |_| {
+                let still_owed = browsers.iter().filter(|it| !it.is_ready()).count();
+                eprintln!(
+                    "{still_owed} of {} browsers had not reported after \
+                     {AT_MOST_BEFORE_GIVING_UP_ON_A_BROWSER_MS} ms; leaving without tearing \
+                     the windows down, since that is the crash this wait exists to avoid",
+                    browsers.len()
+                );
+                std::process::exit(2);
+            });
+            giving_up.start(AT_MOST_BEFORE_GIVING_UP_ON_A_BROWSER_MS, true);
+            // Dropping a Timer destroys it, and this one must outlive on_init.
+            std::mem::forget(giving_up);
         })
     };
 
