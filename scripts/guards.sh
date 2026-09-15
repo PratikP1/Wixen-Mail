@@ -69,6 +69,14 @@
 #                                  saying how many remain and how to resume;
 #                                  --stop-after 0 reports what remains and
 #                                  measures nothing
+#   scripts/guards.sh --shard 3/41 --log sweep-3-of-41.log
+#                                  shard 3 of 41, counting from 0: one
+#                                  contiguous block of the file's records, the
+#                                  same on every machine for the same file and
+#                                  N, which is what one runner job takes when
+#                                  .github/workflows/guards.yml fans the sweep
+#                                  out over N jobs; the logs are concatenated
+#                                  in shard order and read back with --resume
 #
 # `--log` appends and never truncates, so a resumed run continues the file it
 # read; `Start-Process` has no append and a shell redirection would overwrite

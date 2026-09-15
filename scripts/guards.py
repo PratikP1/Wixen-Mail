@@ -578,7 +578,10 @@ def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
 
 
 def the_filter_that_forbids_recounting_everything(
-    only: str | None, touched_by: str | None, remeasure: list[str] | None
+    only: str | None,
+    touched_by: str | None,
+    remeasure: list[str] | None,
+    shard: str | None = None,
 ) -> str | None:
     """Which narrowing was asked for alongside --recount-everything, if any.
 
@@ -611,6 +614,13 @@ def the_filter_that_forbids_recounting_everything(
 
     >>> the_filter_that_forbids_recounting_everything("deletion", "main", None)
     'a name to match: deletion, --touched-by main'
+
+    A shard is a narrowing too, and the rewrite would refuse it anyway with a
+    message about two readings of the file disagreeing, which reads as a
+    broken file rather than as this:
+
+    >>> the_filter_that_forbids_recounting_everything(None, None, None, "3/41")
+    '--shard 3/41'
     """
     asked_for: list[str] = []
     if only:
@@ -619,6 +629,8 @@ def the_filter_that_forbids_recounting_everything(
         asked_for.append(f"--touched-by {touched_by}")
     if remeasure:
         asked_for.append(f"--remeasure with {how_many(len(remeasure), 'name')}")
+    if shard:
+        asked_for.append(f"--shard {shard}")
     return ", ".join(asked_for) or None
 
 
@@ -1427,6 +1439,24 @@ def the_shard_asked_for(text: str) -> tuple[int, int]:
         ...
     guards.Wrong: --shard 3/0: n must be at least 1.
     """
+    k_text, slash, n_text = text.partition("/")
+    try:
+        k, n = int(k_text), int(n_text)
+    except ValueError:
+        slash = ""
+    if not slash:
+        raise Wrong(
+            f"--shard {text}: written as k/n, which shard out of how many, "
+            "for example 3/41."
+        )
+    if n < 1:
+        raise Wrong(f"--shard {text}: n must be at least 1.")
+    if not 0 <= k < n:
+        raise Wrong(
+            f"--shard {text}: k counts from 0 and must sit inside 0..{n - 1}, "
+            f"so shard {k} of {n} is not one."
+        )
+    return k, n
 
 
 def the_records_in_shard(records: list, k: int, n: int) -> list:
@@ -1458,6 +1488,7 @@ def the_records_in_shard(records: list, k: int, n: int) -> list:
     >>> [the_records_in_shard(["a", "b"], k, 3) for k in range(3)]
     [[], ['a'], ['b']]
     """
+    return records[k * len(records) // n : (k + 1) * len(records) // n]
 
 
 def the_header_for(count: int, shard: tuple[int, int, int] | None = None) -> str:
@@ -1474,6 +1505,10 @@ def the_header_for(count: int, shard: tuple[int, int, int] | None = None) -> str
     >>> the_header_for(1, (40, 41, 802))
     '== 1 guard, shard 40/41 of 802 records, one build and one run =='
     """
+    which = f"shard {shard[0]}/{shard[1]} of {shard[2]} records, " if shard else ""
+    if count == 1:
+        return f"== 1 guard, {which}one build and one run =="
+    return f"== {count} guards, {which}one build and one run each =="
 
 
 def the_resume_command(log: str, wait_until_quiet: bool) -> str:
@@ -1627,6 +1662,14 @@ def main() -> int:
         "and for nothing else: it does not say a record is right",
     )
     parsing.add_argument(
+        "--shard",
+        metavar="K/N",
+        help="one contiguous block of the file's records, shard K of N counting "
+        "from 0, the same on every machine for the same file and N; what a "
+        "runner job takes when the sweep is dispatched as N jobs and read back "
+        "as one log",
+    )
+    parsing.add_argument(
         "--log",
         metavar="PATH",
         help="append every line this prints to PATH as well as the screen, "
@@ -1686,15 +1729,32 @@ def main() -> int:
     if asked.log:
         sys.stdout = sys.stderr = Logged(asked.log, sys.stdout)
 
+    # The shard is refused before the record is read, so a runner that was
+    # handed a bad one finds out in the first second and not after the build.
+    shard: tuple[int, int, int] | None = None
     try:
+        if asked.shard:
+            k, n = the_shard_asked_for(asked.shard)
         guards = read_record()
+        if asked.shard:
+            # By position in the whole file, before any other narrowing, so
+            # the shard is the same whatever else the run asked for.
+            shard = (k, n, len(guards))
+            guards = the_records_in_shard(guards, k, n)
+            if not guards:
+                print(
+                    f"\nShard {k}/{n} of {shard[2]} records holds no record, so "
+                    "there is nothing to measure. That is an answer, not a "
+                    "clean sweep.\n"
+                )
+                return 0
     except Wrong as wrong:
         print(f"\n{wrong}\n")
         return 1
 
     if asked.recount_everything:
         narrowed = the_filter_that_forbids_recounting_everything(
-            asked.only, asked.touched_by, asked.remeasure
+            asked.only, asked.touched_by, asked.remeasure, asked.shard
         )
         if narrowed:
             print(
@@ -1812,12 +1872,7 @@ def main() -> int:
     # this invocation means nothing to pre-read: --stop-after 0 reports what
     # remains and a resume with nothing left says so, both without a build.
     if guards:
-        header = (
-            "== 1 guard, one build and one run =="
-            if len(guards) == 1
-            else f"== {len(guards)} guards, one build and one run each =="
-        )
-        print(f"{header}\n", flush=True)
+        print(f"{the_header_for(len(guards), shard)}\n", flush=True)
     # Once per suite, before anything is broken, so an unrelated failure is not
     # blamed on every break in turn. See `what_is_already_failing`, and the
     # deadlock it describes, which is why this is not optional.
