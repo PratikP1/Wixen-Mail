@@ -4591,6 +4591,98 @@ fn test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept() {
     );
 }
 
+/// The jobs of a workflow, as `(name, text)`, split at the two-space keys
+/// under `jobs:`. Comment lines are dropped first, so a commented-out step is
+/// not a step.
+fn the_jobs_of(workflow: &str) -> Vec<(String, String)> {
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    let mut inside = false;
+    for line in what_it_does_not_what_it_says(workflow).lines() {
+        if line.trim_end() == "jobs:" {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let is_a_job = line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+            && !line.trim().contains(' ');
+        if is_a_job {
+            jobs.push((line.trim().trim_end_matches(':').to_string(), String::new()));
+        } else if let Some((_, text)) = jobs.last_mut() {
+            text.push_str(line);
+            text.push('\n');
+        }
+    }
+    jobs
+}
+
+/// Which jobs run `cargo test` on a checkout without the history, one line
+/// each, empty when none does.
+///
+/// `test_the_share_of_history_before_red_green_is_computed_and_printed` runs
+/// `git merge-base --is-ancestor 18a02454 HEAD`, and on a checkout of one
+/// commit that commit is not a valid object name. The push of `main` at
+/// `0fa393ba` on 2026-09-15 failed its Test Suite job on exactly that, with
+/// 7,263 library tests green beside it, because `actions/checkout` fetches
+/// one commit unless told otherwise.
+fn jobs_that_run_the_tests_without_the_history(workflow: &str) -> Vec<String> {
+    the_jobs_of(workflow)
+        .into_iter()
+        .filter(|(_, text)| text.contains("cargo test"))
+        .filter(|(_, text)| !text.lines().any(|line| line.trim() == "fetch-depth: 0"))
+        .map(|(name, _)| {
+            format!(
+                "the {name} job runs cargo test on a checkout without the history, so the test \
+                 that reads the share of history before red/green cannot compute it; give its \
+                 checkout fetch-depth: 0"
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_job_that_runs_the_tests_checks_out_the_whole_history() {
+    // The workflow file is the artefact, and it cannot be run from here. What
+    // this cannot see is whether the job passes on a runner, only whether its
+    // checkout is the shape the fraction test needs.
+    let workflow = fs::read_to_string(".github/workflows/ci.yml").expect("the CI workflow");
+    let wrong = jobs_that_run_the_tests_without_the_history(&workflow);
+    assert!(
+        wrong.is_empty(),
+        "CI would fail the fraction test on the runner:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_history_reading_can_see_a_job_with_one_commit() {
+    // The companion: the reading iterates over jobs, so it is shown one that
+    // runs the tests over a shallow checkout and must name it, and one over
+    // the whole history and must not.
+    let whole = "jobs:\n  test:\n    steps:\n    - uses: actions/checkout@v4\n      with:\n        fetch-depth: 0\n    - run: cargo test --all-targets\n  fmt:\n    steps:\n    - uses: actions/checkout@v4\n    - run: cargo fmt --check\n";
+    assert!(
+        jobs_that_run_the_tests_without_the_history(whole).is_empty(),
+        "a job with the whole history was named, or a job that runs no test was"
+    );
+
+    let shallow = whole.replace("fetch-depth: 0", "fetch-depth: 1");
+    let wrong = jobs_that_run_the_tests_without_the_history(&shallow);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the test job"),
+        "a job on one commit was not named: {wrong:?}"
+    );
+
+    let bare = whole.replace("      with:\n        fetch-depth: 0\n", "");
+    let wrong = jobs_that_run_the_tests_without_the_history(&bare);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the test job"),
+        "a job whose checkout says nothing about depth was not named: {wrong:?}"
+    );
+}
+
 #[test]
 fn test_only_one_place_reads_stored_message_text() {
     // Message text is stored two ways, as text when it is short and packed
