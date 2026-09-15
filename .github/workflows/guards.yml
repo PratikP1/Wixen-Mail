@@ -1,0 +1,169 @@
+name: Would each guard still go red
+
+# The guard sweep, on GitHub's runners instead of a machine for a day.
+#
+# guards/guards.toml records, for each guard test, the exact edit that should
+# break it and the tests that should go red when it does. scripts/guards.sh
+# applies each one, runs the whole suite the record names, and requires the
+# tests that failed to be exactly the ones named. That is one build and one
+# suite run per record, hours for all of them, and nothing else may build
+# beside it; on a machine it is a day with the machine given up. Pratik
+# widened 08-07's checkpoint on 2026-09-15: "Go for running the guard sweep
+# via CI as well." The repository is public, so the runners are free and
+# twenty jobs run at once.
+#
+# Dispatched by hand and by nothing else. A sweep is hours of runners, and
+# this project's seventh guardrail says anything that spends or publishes
+# happens on purpose. The Actions tab asks for three things: how many shards
+# the record is divided into, and the first and last shard this dispatch
+# runs. Each shard is one runner job: it checks out the dispatched commit
+# with the whole history, builds, runs `scripts/guards.sh --shard k/n --log
+# sweep-k-of-n.log` over its contiguous block of records, and uploads the
+# log whether or not it failed, because a failed shard's log is the one
+# worth reading. Nothing is written back; the logs are the record.
+#
+# Read back on a machine, in the sweep worktree moved to the commit the
+# dispatch ran at, `github.sha`, which is main's head when it was dispatched:
+#
+#     gh run download <run id> --dir target/runner-sweep
+#     for k in $(seq 0 <n-1>); do
+#         cat target/runner-sweep/sweep-$k-of-<n>/sweep-$k-of-<n>.log
+#     done > sweep.log
+#     bash scripts/guards.sh --log sweep.log --resume --stop-after 0
+#
+# The last command prints that every record has a verdict, or which remain;
+# a shard that was killed at the six-hour cap leaves records with no verdict,
+# and a second dispatch of that shard fills them. The verdicts are then read
+# by hand, which is 08-07's task 3.
+#
+# Sizing, a guess until a shard has run: a record on a 4-core runner is a
+# rebuild plus a library run, guessed at three times this machine's 92 s,
+# about five minutes; 802 records at 20 a shard is 41 shards of about 1.7
+# hours plus a build each, two waves of twenty jobs, roughly four hours of
+# wall clock. Twenty a shard rather than forty because a runner job is
+# capped at six hours and forty at that guess is 3.3 hours plus the build,
+# which leaves less room than the guess deserves. The first shard's timing
+# lines are the measurement; read them before trusting any of this.
+#
+# WIXEN_TEST_THREADS is left at the script's default of 8 on a 4-core runner,
+# unmeasured, so that the runner's timing lines and the rate row on
+# docs/development/measurements.md were taken at one setting and read against
+# each other; verdicts are what a sweep is for, and the setting moves only
+# the time. That is a ledger entry until a shard has been timed.
+#
+# Python: the shard step runs under `shell: bash`, Git Bash on the runner,
+# where `python` is the image's own, 3.12.10 on windows-2025-vs2026 as of
+# 2026-09-15, and scripts/guards.py needs 3.11 or later for tomllib. The
+# same doctests run under CI's Test Suite job on the same image and are
+# green there, and the step before the sweep prints the version so the log
+# says which interpreter ran.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "how many shards the record is divided into, n; about 20 records each at the 2026-09-15 count of 802"
+        type: string
+        default: "41"
+      first:
+        description: "the first shard this dispatch runs, from 0"
+        type: string
+        default: "0"
+      last:
+        description: "the last shard this dispatch runs, inclusive, at most first + 255"
+        type: string
+        default: "40"
+
+env:
+  CARGO_TERM_COLOR: always
+  # GitHub's Windows runners ship no audio driver. Every sound test still runs
+  # and still asserts; the sound goes to a mixer with nothing listening. See
+  # ci.yml for what a crash there cost.
+  WIXEN_NO_AUDIO: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  # A matrix cannot be built from an input directly, so this job turns
+  # `first` and `last` into the list of shard numbers the next job fans out
+  # over, and refuses a range the matrix cap would silently truncate.
+  range:
+    name: Which shards this dispatch runs
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.list.outputs.shards }}
+    steps:
+    - name: List the shards
+      id: list
+      shell: bash
+      run: |
+        first=${{ inputs.first }}
+        last=${{ inputs.last }}
+        n=${{ inputs.shards }}
+        if [ "$last" -lt "$first" ] || [ "$last" -ge "$n" ] || [ $((last - first)) -ge 256 ]; then
+          echo "first=$first last=$last shards=$n: the range must sit inside 0..n-1 and hold at most 256 shards, because a matrix is capped there."
+          exit 1
+        fi
+        echo "shards=[$(seq -s, "$first" "$last")]" >> "$GITHUB_OUTPUT"
+
+  shard:
+    name: Shard ${{ matrix.k }} of ${{ inputs.shards }}
+    needs: range
+    runs-on: windows-latest
+    # The runner's own cap, written so a reader sees it: a shard that has not
+    # finished by then is killed, its log holds the records it reached, and
+    # the read-back names the rest as remaining.
+    timeout-minutes: 360
+    strategy:
+      # Every shard is its own unit. One that fails says nothing about the
+      # others, and a run that stopped the rest on one failure would have to
+      # be dispatched again for all of them.
+      fail-fast: false
+      matrix:
+        k: ${{ fromJSON(needs.range.outputs.shards) }}
+
+    steps:
+    - name: Checkout code
+      # The whole history at the dispatched commit: twenty-five records name
+      # house_style as their suite on 2026-09-15, and that target holds the test
+      # that reads git for the share of history before red/green, which a
+      # checkout of one commit fails at the pre-read, before any break.
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.98.1
+
+    # The registry and not target/: twenty jobs building at once would each
+    # try to save eight gigabytes of debug build into a cache capped at ten,
+    # and evict each other. Each shard pays its build; the guess above counts it.
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-guards-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Which Python the runner finds
+      shell: bash
+      run: python --version && python -c "import tomllib"
+
+    # One contiguous block of the record, by position in the file, the same
+    # block for the same file and n on every machine. No --wait-until-quiet:
+    # a runner is nobody's machine and nothing else builds on it.
+    - name: One shard of the sweep
+      shell: bash
+      run: bash scripts/guards.sh --shard ${{ matrix.k }}/${{ inputs.shards }} --log sweep-${{ matrix.k }}-of-${{ inputs.shards }}.log
+
+    # Whether or not the shard failed: a record found short exits 1, and its
+    # log is exactly the one task 3 reads.
+    - name: Keep the log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sweep-${{ matrix.k }}-of-${{ inputs.shards }}
+        path: sweep-${{ matrix.k }}-of-${{ inputs.shards }}.log
