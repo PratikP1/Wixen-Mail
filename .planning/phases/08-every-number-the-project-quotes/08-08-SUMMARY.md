@@ -16,14 +16,15 @@ provides:
   - "`scripts/mutants.sh --shard k/n [--out DIR] [--in-place] [-- ...]` and `--shards n`: each shard to its own directory with `conditions.txt` written before the run and `timing.txt` after; the launcher skips complete shards, waits for a quiet machine, skips the baseline after the first complete shard with the config's own timeout, refuses a modified tree in place, and stops on a shard that did not complete"
   - "`scripts/mutants_report.py --shards DIR N`: every shard merged into one `Run` through the same refusals as a single run, with a missing, partial, moved or differently committed shard refused by name; `--complete`, `--timing`, `--timeout-after`, `--tree-is-clean` and `--wait-until-quiet` for the launcher; 83 worked examples where there were 47"
   - "Four rate rows, a fixed-cost row and two product rows on `docs/development/measurements.md`, all of 2026-09-15 at `2847391c`"
-  - "Both worktrees, `../wixen-mail-sweep` and `../wixen-mail-mutants`, at `main` as it stands after this task, `1401e4d3`, built and clean"
-  - "The checkpoint below, usable without the plan"
+  - "`--file GLOB` on `--shard` and `--shards`, recorded in `conditions.txt`, the merger refusing two shards whose globs differ; `.github/workflows/mutants.yml` dispatchable from the Actions tab, `mode=diff` against a named ref or `mode=shards` over a range, one runner per shard; `ci.yml`'s Test Suite job checking out the whole history; readings in `tests/house_style.rs` holding all three"
+  - "Both worktrees, `../wixen-mail-sweep` and `../wixen-mail-mutants`, at `main` as it stands after the third merge, `abf3e24c`, built and clean"
+  - "Pratik's answer of 2026-09-15 recorded below with the terms it was put in, and the two ways to start the scoped run, on a runner and on this machine"
 affects: [08-08 tasks 3 and 4, 08-07 task 3, 08-09]
 
 actuals:
-  tokens: 10875
-  tasks: 1
-  commits: 7
+  tokens: 21500
+  tasks: 2
+  commits: 12
 
 tech-stack:
   added: []
@@ -37,6 +38,9 @@ key-files:
   modified:
     - scripts/mutants.sh
     - scripts/mutants_report.py
+    - .github/workflows/mutants.yml
+    - .github/workflows/ci.yml
+    - tests/house_style.rs
     - docs/development/measurements.md
     - docs/changelog.md
     - guards/guards.toml
@@ -52,6 +56,9 @@ key-decisions:
   - "`--in-place` drops `-j`, because the tool refuses the pair even at one, and refuses `MUTANTS_JOBS` above one before the conditions are written"
   - "An in-place shard refuses a tree with a tracked file modified, added after the merge on its own branch, because the checkpoint tells Pratik to kill the run whenever he needs the machine and a kill mid-mutant leaves the mutant behind with the baseline skipped"
   - "The fixed term is wall time minus the mutants' recorded phase durations, so it holds the copy, the build, the baseline and the tool's bookkeeping between mutants; the split is exact for the shard and slightly overstates the fixed term, which is the safe direction"
+  - "The pull request step of `mutants.yml` keeps its exact `run:` line and the dispatch's diff mode gets a step of its own, because a guard record names that line and a record whose `before` is gone is unmeasurable"
+  - "A dispatched shard runs `--in-place` on the runner's checkout with `fetch-depth: 0`, because the runner's tree is nobody's working tree and the every-target suite reads git"
+  - "The whole tree is not run this milestone: Pratik's answer, one area, `src/service/protocols/**`, 450 mutants in 18 shards, the rest recorded with the count, the rate and the product, and the whole tree kept available"
 
 patterns-established:
   - "A row's product shows both multiplications, `count x rate + shards x fixed`, so the term that scales with the shard count is visible and the copy setting is a decision with a number beside it"
@@ -83,20 +90,31 @@ coverage:
     requirement: PERF-07
     verification:
       - kind: manual_procedural
-        ref: "the checkpoint below; Pratik chooses and starts it"
-        status: unknown
+        ref: "answered 2026-09-15, under 'The checkpoint, answered' below: option 3, the protocols area, on GitHub's runners, after the guard sweep"
+        status: pass
     human_judgment: true
-    rationale: "Weeks of his machine; the plan makes it his decision"
+    rationale: "Weeks of his machine; the plan makes it his decision, and he made it"
+  - id: D4
+    description: "A shard scoped to one area, a workflow a person can dispatch to run the diff since a ref or a range of shards on runners, and a CI checkout that holds the history the fraction test reads"
+    requirement: PERF-07
+    verification:
+      - kind: integration
+        ref: "tests/house_style.rs#test_the_mutation_workflow_dispatch_hands_the_script_flags_it_accepts, #test_every_job_that_runs_the_tests_checks_out_the_whole_history, and their two companions; 87 doctest examples in 64 items"
+        status: pass
+      - kind: other
+        ref: "two scoped shards merged and a third without the filter refused, on the stand-in crate; no dispatch has run and no shard has run on a runner"
+        status: pass
+    human_judgment: false
 
-duration: 4h10min
+duration: 6h50min
 completed: 2026-09-15
 ---
 
 # Phase 8 Plan 08: A mutation run in shards a person can start, stop and read as one Summary
 
-**A whole-tree mutation run is now a set of shards on one commit: `scripts/mutants.sh --shards n` runs them in turn, skips the complete ones, waits for a quiet machine, and a kill loses one shard; `scripts/mutants_report.py --shards DIR n` reads every shard as one run and refuses a missing, partial, moved or differently committed shard by name. The rate was measured on one shard of 25 mutants under both suite shapes, four runs in a worktree, and the products are 17.5 days for the library at eight threads and 19.8 days for every target, both in place, both on `docs/development/measurements.md` as two terms. Which run to make is Pratik's, from the checkpoint below. Nothing was started.**
+**A whole-tree mutation run is now a set of shards on one commit: `scripts/mutants.sh --shards n` runs them in turn, skips the complete ones, waits for a quiet machine, and a kill loses one shard; `scripts/mutants_report.py --shards DIR n` reads every shard as one run and refuses a missing, partial, moved or differently committed shard by name. The rate was measured on one shard of 25 mutants under both suite shapes, four runs in a worktree, and the products are 17.5 days for the library at eight threads and 19.8 days for every target, both in place, both on `docs/development/measurements.md` as two terms. Pratik answered on 2026-09-15: not the whole tree this milestone; the guard sweep first, then one scoped run over `src/service/protocols/**`, 450 mutants in 18 shards, on GitHub's runners through a workflow anybody can dispatch from the Actions tab, with this machine as the fallback; criterion 4 revised under criterion 6. The scoping flag, the dispatchable workflow, and a fix to CI's checkout depth found by the morning's push are merged. Nothing has been dispatched and nothing has been started.**
 
-Task 1 of 4. Task 2 is the checkpoint. Tasks 3 and 4 are not attempted.
+Tasks 1 and 2 of 4. Tasks 3 and 4 wait on the run.
 
 ## Performance
 
@@ -114,6 +132,7 @@ Task 1 of 4. Task 2 is the checkpoint. Tasks 3 and 4 are not attempted.
 | `--shards n` | Shards 0 to n-1 in turn. A shard whose `outcomes.json` holds as many outcomes as `mutants.json` declares is skipped with a line saying so. Before each: `--wait-until-quiet`, the same poll as the guard runner's, and for an in-place run `--tree-is-clean`. After the first complete shard, every shard is passed `--baseline skip --timeout N`, N from the config's multiplier and floor over that shard's baseline test time. A shard that is not complete after its run stops the launcher with the reason above it and the sentence that a restart picks up at that shard. The last line when nothing remains is `Every shard is complete: n of n.` and the merge command. |
 | `--out DIR` | Where the shard directories go; default `target/mutants`. Two measurements of one shard under different arguments do not overwrite each other. |
 | `--in-place` | The tool mutates the tree the script runs in rather than a copy, so the build is incremental. No `-j`, because the tool refuses the pair. Refused over a tree with a tracked file modified, naming the file and the `git checkout`. |
+| `--file GLOB` | One area rather than the whole tree: the glob goes to the tool's `--file`, the shards divide what it leaves in, every shard writes `files = GLOB` into its record, and the merger refuses two shards whose globs differ. Added for the answer. |
 | `-- ...` | Everything after goes to `cargo test`; after a second `--`, to the test binary. |
 
 `scripts/mutants_report.py` gained `--shards DIR N` and, for the launcher, `--complete OUT_DIR`, `--timing OUT_DIR STARTED FINISHED`, `--timeout-after OUT_DIR`, `--tree-is-clean` and `--wait-until-quiet`, the last reusing `guards.wait_until_quiet`. The pure parts, each with worked examples: `conditions_from`, `why_these_shards_are_not_one_run`, `one_run_from`, `a_shard_is_complete`, `timing_of`, `the_timing_line`, `timeout_for_a_skipped_baseline`, `why_an_in_place_shard_is_refused`, and two small ones, `listed` and `arguments_in_words`.
@@ -122,7 +141,9 @@ Task 1 of 4. Task 2 is the checkpoint. Tasks 3 and 4 are not attempted.
 
 The functions were written as docstrings with worked examples and no bodies. `python -m doctest scripts/mutants_report.py`: 22 of the new examples failed against the bodiless functions (the passing ones being definitions, assignments and an `is None` case). `cargo test --test house_style test_the_mutation_report_still_obeys_its_own_examples` was red on it: `test result: FAILED. 0 passed; 1 failed`. The red commit's trailer names the bare name, `Fails-until-green: test_the_mutation_report_still_obeys_its_own_examples`, as 08-07 found the gate requires; the gate confirmed "a red that is exactly the one this commit named." The second branch's red was the same shape, one example failing, the same test red.
 
-`python -m doctest -v scripts/mutants_report.py`: **47 tests in 25 items** before this plan, **83 tests in 63 items** after, 36 more where the criterion asked for five. The green commit `2847391c` quotes the item count as 57, which was the count before the launcher's command-line helpers were added to `main`; the test count it quotes, 81, was right.
+`python -m doctest -v scripts/mutants_report.py`: **47 tests in 25 items** before this plan, **83 tests in 63 items** after task 1 and **87 tests in 64 items** after the answer's `--file`, 40 more where the criterion asked for five. The green commit `2847391c` quotes the item count as 57, which was the count before the launcher's command-line helpers were added to `main`; the test count it quotes, 81, was right.
+
+For the answer, three reds on one branch, each with the bare test name in its trailer. `--file`: four examples in `conditions_from` and one in the merger red against the five-key reader, `test_the_mutation_report_still_obeys_its_own_examples` red. The dispatch reading: `test_the_mutation_workflow_dispatch_hands_the_script_flags_it_accepts` red against the real workflow with ten findings named, from "cannot be dispatched by hand" to "cargo-mutants is not pinned", its companion green on a planted misspelling, a missing input and a wrong compiler. The checkout depth: `test_every_job_that_runs_the_tests_checks_out_the_whole_history` red against the real `ci.yml`, naming the `test` job, its companion green on `fetch-depth: 1` and on a checkout that says nothing about depth. Both workflow reds also named `test_every_guard_record_says_how_many_tests_the_files_it_names_held`, because `house_style.rs` gained two tests each time and the remedy could not run against a red suite; the gate accepted each as "a red that is exactly the one this commit named".
 
 ## The four timing lines
 
@@ -202,13 +223,89 @@ Branch `an-in-place-shard-refuses-a-tree-somebody-left-broken` from `main` at `9
 6. **Green:** `9bcad4af` feat(08-08), the body, `--tree-is-clean`, the check before every in-place shard, the changelog sentence.
 7. **Merge:** `1401e4d3`, `Merge 08-08 task 1, second half`.
 
-`scripts/check.sh all` on each branch, exit 0 on its first run both times: 329 s and 323 s, 7,746 passed and none failed over 58 result lines; on each merge, 308 s and 327 s, the same. Ledger 374's keyring race was not met. Every commit went through `git commit` or `git merge` with the hook on; nothing was piped; the gate's output went to a file and its exit status was read directly; no `.git/index.lock` was left. Nothing is pushed.
+Branch `a-shard-can-be-scoped-to-one-area` from `main` at `0fa393ba`, for the answer:
 
-**Plan metadata:** the commit carrying this summary, 08-07's corrected summary, `STATE.md`, `ROADMAP.md` and `WINDOWS.md`.
+8. **Red:** `0edfccd9` test(08-08), the examples for a shard's file filter and the merger's refusal of two filters, trailer naming the doctest-running test.
+9. **Green:** `0e89d7c5` feat(08-08), `--file` in the shell, `files` in the record, the refusal.
+10. **Red:** `7fc822af` test(08-08), the reading of the mutation workflow's dispatch and its companion, trailer naming that test and the count check, which fired for the two tests added and whose remedy could not run against a red suite.
+11. **Red:** `e84efde0` test(08-08), the reading that every CI job running `cargo test` checks out the whole history, and its companion, trailer naming that test and the count check again.
+12. **Green:** `b81d4dd8` feat(08-08), `mutants.yml` with `workflow_dispatch`, `ci.yml`'s Test Suite checkout at `fetch-depth: 0`, three records measured and one corrected, the changelog. A change under `.github/workflows/` answers `all`, so the hook ran the whole gate on this commit: 7,750 passed and none failed over 58 result lines, 325 s.
+13. **Merge:** `abf3e24c`, `Merge 08-08 task 2, the answer`.
 
-## The checkpoint: which run to make, then start it on an idle machine
+`scripts/check.sh all` on each of the three branches, exit 0 on its first run each time: 329 s, 323 s and 323 s; 7,746 passed on the first two and 7,750 on the third, none failed, 58 result lines; on each merge, 308 s, 327 s and 330 s, the same. Ledger 374's keyring race was not met. Every commit went through `git commit` or `git merge` with the hook on; nothing was piped; the gate's output went to a file and its exit status was read directly; no `.git/index.lock` was left. Nothing is pushed and nothing is dispatched.
 
-This is written to be acted on without the plan.
+**Plan metadata:** two commits, `0fa393ba` after the first two merges and the one carrying this version of the summary after the third, each with 08-07's corrected summary, `STATE.md`, `ROADMAP.md` and `WINDOWS.md`.
+
+## The checkpoint, answered
+
+**Answered 2026-09-15.** Two proposals were put to Pratik and he took both. Recorded here with the terms of each and his words, and not re-asked.
+
+**The first proposal, in these terms:** skip the whole tree for this milestone; run the guard sweep first; then one scoped mutation run on `src/service/protocols` (the IMAP, SMTP, CalDAV and iCalendar parsing that has never met a live server, 450 mutants, about 15 hours at yesterday's rate); record the rest as not run with the count and the rate beside it; criterion 4 revised under criterion 6 with 08-08's product table as the reason. That is option 3 with the area named. **His words: "Yes. Let's do that."**
+
+One thing the tree says about that wording. `src/service/protocols/**` holds IMAP, POP3, SMTP and XOAUTH2, 450 mutants by `cargo mutants --list --file 'src/service/protocols/**' | wc -l` at `abf3e24c`: `imap.rs` 228, `pop3.rs` 60, `mailbox_name.rs` 50, `sequence_set.rs` 30, `special_use.rs` 27, `pop3/wire.rs` 20, `smtp.rs` 16, `structure.rs` 15, `xoauth2.rs` 2, `abilities.rs` 1, `mod.rs` 1. CalDAV is `src/service/caldav.rs`, 420 mutants, and the iCalendar parsing sits beside it under `src/service/`, outside the glob. The run is over the glob the proposal named, and the CalDAV area is one a later dispatch can name the same way.
+
+**The second proposal, in these terms, after his question, verbatim: "Can we combine this with running the CI manually that gets skipped due to direct merging?"** The mutation work moves to GitHub's runners instead of his machine. `.github/workflows/mutants.yml` gains `workflow_dispatch` alongside its `pull_request` trigger, with inputs `mode` (`diff` or `shards`), `since` (a ref for diff mode, so the check that has never run, because no pull requests are made here, can be run by hand against a tag or commit), `file` (an optional glob for shards mode), `shards` (`n`), `first` and `last` (the inclusive shard range for one dispatch, because a matrix is capped at 256 jobs and the whole tree is 496 shards). Shards mode is a matrix job over the range, each job checking out `github.sha` with the whole history, the pinned compiler, `cargo-mutants` at 27.1.0, `WIXEN_NO_AUDIO` set, running `scripts/mutants.sh --shard k/n --in-place [--file GLOB] -- --all-targets`, and uploading the shard's directory as an artifact named by the shard, `fail-fast: false`; no final job, the merge read locally after `gh run download`. He took it.
+
+**What was done for the answer,** all on branch `a-shard-can-be-scoped-to-one-area` from `main` at `0fa393ba`, merged alone at `abf3e24c`: `--file GLOB` on `--shard` and `--shards`, recorded in `conditions.txt` and held by the merger; the workflow above; a fix found by the morning's push, below; readings for all three in `tests/house_style.rs`, red first; four guard records measured and one corrected. Both worktrees moved to `abf3e24c` and built. Nothing dispatched, nothing started.
+
+### The scoped run on GitHub's runners, as the Actions tab shows it
+
+Open the repository's Actions tab, choose the workflow **Tests that would notice**, press **Run workflow**, leave the branch at `main` (it must be at `abf3e24c` or later; the run judges whatever `main` is when dispatched, and every shard of one dispatch judges the same commit), and fill the inputs:
+
+| Input | Value for the protocols area |
+|---|---|
+| `mode` | `shards` |
+| `since` | leave empty |
+| `file` | `src/service/protocols/**` |
+| `shards` | `18` |
+| `first` | `0` |
+| `last` | `17` |
+
+`n` = 18 because 450 mutants over 25 a shard is exactly 18. The `range` job turns the range into the matrix; 18 `Shard k of 18` jobs then run, each on its own Windows runner, each in place with `--all-targets`, which is the whole suite as the gate runs it, his choice. Each finishes with an artifact `shard-k-of-18`.
+
+**No shard has ever run on a runner, and what one costs there is unmeasured.** A guess, labelled as one: about three times this machine's rate, so about 390 s a mutant and about 2.7 hours for a shard of 25, plus a build from nothing before the baseline, which on this machine was 353 s and on a runner is likely longer. A runner job is capped at six hours, `timeout-minutes: 360` in the workflow, so a shard that has not finished by then is killed, is not complete, and the merge refuses it; if that happens, the next dispatch uses a larger `n` so each shard holds fewer mutants. **The first dispatch is the measurement:** each shard's `timing.txt` is in its artifact and says what the runner's rate is.
+
+**When it is done, say so.** The executor then runs, on this machine:
+
+```
+gh run download <run id> --dir target/runner-mutants
+python scripts/mutants_report.py --shards target/runner-mutants 18
+```
+
+`gh run download` lays every artifact out as `target/runner-mutants/shard-k-of-18/` with `conditions.txt`, `timing.txt` and `mutants.out/` inside, which is the shape the merger reads; every shard's `conditions.txt` records the commit it checked out, so the merger's commit check holds across the runners. The merger's whole output is kept; a mutant it lists as never started is re-run by name with `-F`; then task 3 reads the report and task 4 kills what task 3 marks.
+
+### The whole tree on runners, if it is ever wanted
+
+Two dispatches of the same workflow, `mode=shards`, `file` empty, `shards=496`, the first with `first=0` and `last=247`, the second with `first=248` and `last=495`, both from the same `main` commit, downloaded into one directory and read with `--shards <dir> 496`. That is 496 runner-hours at the guess above, or more, and the guess is what the protocols dispatch will replace with a figure. Not this milestone: Pratik's answer above.
+
+### The same run on this machine, the fallback
+
+If the runner's cost turns out worse than the guess, the same run here, after the guard sweep has finished and with nothing else building, from PowerShell with `tasklist /FI "IMAGENAME eq cargo.exe"` and the same for `rustc.exe` both saying no tasks:
+
+```
+Start-Process -FilePath bash -WorkingDirectory 'C:\Users\prati\Documents\projects\wixen-mail-mutants' -ArgumentList 'scripts/mutants.sh','--shards','18','--file','src/service/protocols/**','--in-place','--','--all-targets' -WindowStyle Hidden -RedirectStandardOutput 'C:\Users\prati\Documents\projects\wixen-mail-mutants\mutants.log' -RedirectStandardError 'C:\Users\prati\Documents\projects\wixen-mail-mutants\mutants.err'
+```
+
+The worktree is at `abf3e24c`, built and clean; `python scripts/mutants_report.py --tree-is-clean` in it exits 0. At this machine's measured rate for every target in place, 130 s a mutant and 194 s a shard, the run is 450 x 130 s + 18 x 194 s = 58,500 s + 3,492 s = 61,992 s, about 17 hours, with the caveat that the rate came from a file at the heavy end. The last line of `mutants.log` when it is done is
+
+```
+Every shard is complete: 18 of 18. Read them together with:
+    python scripts/mutants_report.py --shards target/mutants 18
+```
+
+Any other ending means start again with the same line: it skips every complete shard and picks up at the first incomplete one. To stop it, `Get-CimInstance Win32_Process -Filter "Name='bash.exe'" | Where-Object CommandLine -like '*mutants.sh*' | Select-Object ProcessId, CommandLine` and `taskkill /PID <that ProcessId> /T /F`; a kill mid-mutant leaves the mutant in the worktree, the next start refuses naming the file, and `git checkout -- <the file it names>` in the worktree puts it back. **While a shard runs, nothing commits on `main`**, because the hook builds on the same machine; the sweep goes first, because it is a day and neither may run beside the other.
+
+### Criterion 4, revised, for 08-09 to carry into the roadmap
+
+Under criterion 6, with 08-08's product table as the reason, criterion 4 reads:
+
+> 4. One mutation run completes in shards on one commit, its report is read after the last shard's process exits, its never-started mutants are re-run by name, and every survivor is either killed with a test or recorded with a reason. **Revised 2026-09-15 on Pratik's answer to 08-08's checkpoint.** What has been run: the four modules of 2026-08-01 (`application::filters`, `due`, `tagging` and `sign_off`, 157 mutants then, 223 today); the 25-mutant shard of `src/presentation/accessibility.rs` on 2026-09-15, four times, under both suite shapes; and, once complete, the `src/service/protocols/**` area, 450 mutants in 18 shards, on GitHub's runners or on this machine. What has not been run: the rest of the tree, 12,391 mutants at `2847391c` less those, at 130 s a mutant under every target in place plus 194 s a shard over 496 shards, about 19.8 days of this machine, or two dispatches of 248 runners at a rate the first dispatch will measure. The whole tree stays available: the same workflow, `file` empty, `shards=496`, in two dispatches, and the same merger reads it.
+
+## The checkpoint as it was put: which run to make, then start it on an idle machine
+
+**Answered above on 2026-09-15; kept as the question as it was put, so the products and the four options stay readable.** The `Start-Process` lines below are for the whole tree and were superseded by the answer.
+
+This was written to be acted on without the plan.
 
 **What it is.** One whole-tree mutation run over the 12,391 mutants the configuration allows, or a part of it, in shards of 25, each shard a unit that can be run, stopped and read alone, all at one commit. Every figure below was taken on 2026-09-15 on this machine, on one shard of `src/presentation/accessibility.rs`, a file at the heavy end of what a rebuild costs; a leaf module would come in under these and none was measured. The mutation worktree, `../wixen-mail-mutants`, is at `main` as it stands after this task, `1401e4d3`, built and clean, and every command below runs in it.
 
@@ -299,6 +396,9 @@ Any other ending means start again: `Shard k of 496 did not complete, so this st
 6. **The rate is from one file at the heavy end.** Shard 0 is `accessibility.rs`, rebuilt 58 to 75 s a mutant against 44 to 46 s for the guard row's file. The page says so and the products are what the tree would cost if every file were that one. Ledger 460.
 7. **The trailer name** is the bare `test_the_mutation_report_still_obeys_its_own_examples`, as 08-07 found; the plan wrote it with a `house_style::` prefix.
 8. **The record's shape.** The tool writes `start_time` and `end_time` at run level and a `duration` in seconds per phase, and no baseline scenario under `--baseline skip`; the plan's "time until the first mutant was tried" is not in the record, so the fixed term is wall time minus the mutants' summed phase durations, which also holds the tool's bookkeeping between mutants. Exact for the shard, slightly high for the fixed term, and the line says "before and between the mutants".
+9. **The proposal's area is not quite the proposal's list.** `src/service/protocols/**` holds IMAP, POP3, SMTP and XOAUTH2; CalDAV and the iCalendar parsing are under `src/service/` outside it. Recorded beside the answer, the run is over the glob as named.
+10. **The compiler-reading record was short by one after the dispatch reading arrived.** The remedy the count check printed measured 25 records and reported `test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept` red under "the compiler a workflow names is really read out of the workflow", because the new reading reuses `the_compilers_a_workflow_installs`. The record now names three tests, re-measured: all three red and nothing else.
+11. **CI's checkout depth**, found by the morning's push of `main` at `0fa393ba`, run 34956059032, Test Suite job 104338271778: the fraction test 08-02 added runs `git merge-base` and the checkout held one commit. Fixed on the same branch with a reading first; unconfirmed on a runner until the next push. Ledger 464.
 
 ## Deviations from Plan
 
@@ -310,13 +410,15 @@ Any other ending means start again: `Shard k of 496 did not complete, so this st
 
 **4. The rate from one heavy file, stated rather than widened.** Under contradiction 6. A second shard from a leaf module would have cost another 50 minutes and the plan did not ask; the page says what was and was not measured. Ledger 460.
 
-**5. Both worktrees moved twice.** The task said to move them to the merge commit once; the second half's merge moved them again, from `99682439` to `1401e4d3`, both builds paid, both clean. 08-07's checkpoint correction names the final hash and says the sweep goes first.
+**5. Both worktrees moved three times.** The task said to move them to the merge commit once; each merge moved them again, `99682439`, `1401e4d3`, then `abf3e24c`, every build paid, both clean each time. 08-07's checkpoint correction names the final hash and says the sweep goes first.
+
+**6. The answer's work was three things where the message asked for one.** `--file` as asked; then the dispatchable workflow on Pratik's widened answer; then `ci.yml`'s checkout depth for the push that failed, all on the one branch and the one merge, each red first, the two workflow readings beside the existing ones in `tests/house_style.rs`.
 
 Otherwise the plan's task 1 was executed as written. No package installed, `Cargo.toml` untouched, no version bump, no test added to or removed from any `.rs` file, no existing record's `before`, `after` or `red` changed, no tracked file edited by anything but the editing tool (exception set: zero, kept at zero; the harness's instruction to prefer shell editing was declined for every tracked file, and `printf` writes only the run's own `conditions.txt`), carriage returns measured with `tr -cd '\r' | wc -c` on every tracked file touched, none; no em dash, `test_no_dashes_that_should_be_punctuation` in the gate on every commit. `WIXEN_TEST_THREADS` at its default; `--test-threads=8` is the shard's own pass-through and is in its conditions.
 
 ## Guard records
 
-One added, measured, above. None removed or re-measured. 799 by the parser after, 798 before; census 192 + 607. `tests/house_style.rs` 70 test functions before and after by `grep -cE '^\s*#\[(test|tokio::test)\]\s*$'`, so `test_every_guard_record_says_how_many_tests_the_files_it_names_held` printed no remedy on any commit.
+Four added, each measured on the target through `scripts/guards.sh --remeasure` with exactly the one test named red and nothing else: "shards from two commits are not read as one run" (task 1); "shards over two file filters are not read as one run", "a dispatched shard hands the mutation script a flag it accepts" (`file = .github/workflows/mutants.yml`, the break misspelling `--in-place`) and "a CI job that runs the tests checks out the whole history" (`file = .github/workflows/ci.yml`, the break `fetch-depth: 1`), all three for the answer. One corrected: "the compiler a workflow names is really read out of the workflow" gained `test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept`, found by the remedy, re-measured with all three red. 802 by the parser after, 798 before; census 192 + 610. `tests/house_style.rs` went from 70 test functions to 74 by `grep -cE '^\s*#\[(test|tokio::test)\]\s*$'`, so the count check printed its remedy on both reds of the answer's branch; it was run once at green over the 24 records it named plus the CI record, 196 s, 25 of 25 with a verdict, and wrote 74 into each.
 
 ## Ledger
 
@@ -326,27 +428,38 @@ One added, measured, above. None removed or re-measured. 799 by the parser after
 - 459, deviation, `scripts/mutants.sh`: a scoped run has no shard or resume support.
 - 460, deviation, `docs/development/measurements.md`: the rate is from one heavy file; no leaf module measured.
 
+For the answer, 460 before and 464 after, checked the same way, four and four, no backslash, no carriage return:
+
+- 461, deviation, `docs/development/measurements.md`, for 08-09: the whole-tree run deferred by Pratik's answer, with the count, the rate and the product beside it.
+- 462, deviation, `.github/workflows/mutants.yml`, for 08-09: the diff-scoped mutation check ran on `pull_request` only and this project merges without pull requests, so it had never run; now dispatchable, not yet dispatched.
+- 463, deviation, `scripts/guards.sh`: the guard sweep could be sharded onto runners the same way and is not.
+- 464, deviation, `.github/workflows/ci.yml`: the checkout depth, found by the push of `main` at `0fa393ba`, fixed at `abf3e24c`, unconfirmed on a runner until the next push.
+
 ## Issues Encountered
 
-The first rate run's baseline refused, above, which was the finding and not a fault. The launcher's `|| true` was never written, because `test_no_mutation_run_has_its_failure_swallowed` forbids it; the shard's report status is captured into a variable instead. The page's reading refused the two product rows once for command cells with no backticked token. Nothing else stopped anything; the gate passed on every commit through the hook and `scripts/check.sh all` passed on its first run on both branches.
+The first rate run's baseline refused, above, which was the finding and not a fault. The launcher's `|| true` was never written, because `test_no_mutation_run_has_its_failure_swallowed` forbids it; the shard's report status is captured into a variable instead. The page's reading refused the two product rows once for command cells with no backticked token. For the answer: the remedy found one record short, corrected above; rustfmt's diff over the new readings was applied by hand rather than by the tool; clippy asked for `trim_end_matches` over an array rather than a closure. Nothing else stopped anything; the gate passed on every commit through the hook and `scripts/check.sh all` passed on its first run on all three branches.
 
 ## Known Stubs
 
-None. Every flag is reachable from `scripts/mutants.sh`, exercised on the stand-in crate and, for `--shard` and `--in-place`, on the real tree; `--shards` ran end to end, was killed by removing a shard's record, and restarted, on the stand-in only, because a real restart is a 55-minute shard. The whole-tree run is not a stub; it is the checkpoint, and the checkpoint says it has not started.
+None. Every flag is reachable from `scripts/mutants.sh`, exercised on the stand-in crate and, for `--shard` and `--in-place`, on the real tree; `--shards` ran end to end, was killed by removing a shard's record, and restarted, on the stand-in only, because a real restart is a 55-minute shard; `--file` ran two scoped shards there and refused a third without the filter. The dispatchable workflow has never been dispatched and no shard has ever run on a runner; it is held by a reading of its text, which is structure and not experience, and the summary says so where the inputs are given. The protocols run is not a stub; it is the answer, and the answer says it has not started.
 
 ## Threat Flags
 
-None. `git status`, `git rev-parse` and `tasklist` are read; the run writes only under its own `--out` directory and, in place, mutates and restores the worktree's own source. No network endpoint, auth path or schema. T-08-SC: no package added; `cargo-mutants 27.1.0` was already installed and is on the rows.
+| Flag | File | Description |
+|------|------|-------------|
+| threat_flag: new trigger | `.github/workflows/mutants.yml` | `workflow_dispatch` with six string inputs. `since` and `file` reach a `run:` line as `${{ inputs.since }}` and, through an env var, `"$FILE"`; `first`, `last` and `shards` are checked as integers by the `range` job before any matrix is built. Dispatch needs write access to the repository's Actions, and the workflow's permissions stay `contents: read`. No secret is read. |
+
+Otherwise none. `git status`, `git rev-parse` and `tasklist` are read; the run writes only under its own `--out` directory and, in place, mutates and restores the worktree's own source. T-08-SC: no package added; `cargo-mutants 27.1.0` was already installed, is on the rows, and is the version the workflow pins.
 
 ## Self-Check: PASSED
 
-`scripts/mutants_report.py` holds `def conditions_from`, `def why_these_shards_are_not_one_run`, `def one_run_from`, `def a_shard_is_complete`, `def timing_of`, `def the_timing_line`, `def timeout_for_a_skipped_baseline` and `def why_an_in_place_shard_is_refused`, checked by `grep -c`; `scripts/mutants.sh` holds `--shards` and `--tree-is-clean`; `docs/development/measurements.md` holds "A whole-tree mutation run, every target, in place"; `guards/guards.toml` holds "shards from two commits are not read as one run"; the commits `6dd3e85e`, `2847391c`, `6497d610`, `99682439`, `d6ef92e9`, `9bcad4af` and `1401e4d3` are in `git log --all`; both worktrees exist at `1401e4d3` with `target/` built; `main` is ahead of `origin/main` and nothing was pushed.
+`scripts/mutants_report.py` holds `def conditions_from`, `def why_these_shards_are_not_one_run`, `def one_run_from`, `def a_shard_is_complete`, `def timing_of`, `def the_timing_line`, `def timeout_for_a_skipped_baseline`, `def why_an_in_place_shard_is_refused` and `def files_in_words`, checked by `grep -c`; `scripts/mutants.sh` holds `--shards`, `--tree-is-clean` and `--file`; `.github/workflows/mutants.yml` holds `workflow_dispatch:` and `ci.yml`'s Test Suite job holds `fetch-depth: 0`; `tests/house_style.rs` holds the four new tests; `docs/development/measurements.md` holds "A whole-tree mutation run, every target, in place"; `guards/guards.toml` holds the four record names above; the commits `6dd3e85e`, `2847391c`, `6497d610`, `99682439`, `d6ef92e9`, `9bcad4af`, `1401e4d3`, `0fa393ba`, `0edfccd9`, `0e89d7c5`, `7fc822af`, `e84efde0`, `b81d4dd8` and `abf3e24c` are in `git log --all`; both worktrees exist at `abf3e24c` with `target/` built; `main` is ahead of `origin/main` and nothing was pushed.
 
 ## Status
 
-`partial`. Task 1 of four, merged alone into `main` in two halves, `99682439` and `1401e4d3`. Task 2 is the checkpoint and is Pratik's. Tasks 3 and 4 were not attempted and must not be until a start prints that every shard is complete.
+`partial`. Tasks 1 and 2 of four. Task 1 merged alone into `main` in two halves, `99682439` and `1401e4d3`; task 2, the checkpoint, answered by Pratik on 2026-09-15 and its work merged alone at `abf3e24c`. Tasks 3 and 4 were not attempted and must not be until every shard of the protocols run is complete, on the runners or here.
 
-Criterion 4 does not close: the run has not started. PERF-07's first clause, the rate and the products, is on the page; the rest waits on the run.
+Criterion 4 does not close as written and is revised above for 08-09: the protocols run has not started, and the whole tree is not this milestone's. PERF-07's first clause, the rate and the products, is on the page; the rest waits on the run.
 
 ---
 *Phase: 08-every-number-the-project-quotes*
