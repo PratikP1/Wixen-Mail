@@ -36,6 +36,7 @@ pub mod theme;
 pub mod tree_walk;
 pub mod ui_types;
 pub mod view_state;
+pub mod virtual_rows;
 pub mod what_the_scans_can_judge;
 pub mod wx_account_manager;
 pub mod wx_add_address_book;
