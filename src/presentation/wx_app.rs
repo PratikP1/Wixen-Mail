@@ -12423,6 +12423,7 @@ fn open_single_message(
             &[reader_text::ConversationPart {
                 message,
                 body,
+                said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
                 depth: 0,
             }],
             &signature,
@@ -12560,6 +12561,7 @@ fn conversation_parts(
                     labels: Vec::new(),
                 },
                 body,
+                said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
                 depth: node.depth,
             }
         })
@@ -17185,6 +17187,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                         &[reader_text::ConversationPart {
                             message,
                             body: body.clone(),
+                            said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(
+                            ),
                             depth: 0,
                         }],
                     )
