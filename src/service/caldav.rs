@@ -3152,6 +3152,50 @@ mod tests {
     }
 
     #[test]
+    fn test_a_clock_that_is_not_digits_is_not_dressed_up_as_a_time() {
+        // The mutation run of 2026-09-15: the shape check on the clock half
+        // could be turned into "long enough, or digits" and nothing noticed,
+        // because every input the tests gave had digits there. A feed with
+        // letters where the hour goes would then have come back as
+        // "2026-03-05T09:ab:00", which reads as a time and parses as nothing.
+        assert_eq!(
+            normalize_ical_datetime("20260305T09ab00"),
+            "20260305T09ab00"
+        );
+    }
+
+    #[test]
+    fn test_a_collection_is_recognised_by_its_element_and_not_by_a_name_that_starts_the_same_way() {
+        // `journal_entries_in` drops the blocks that name a collection, so a
+        // calendar is never read as a note. The mutation run of 2026-09-15
+        // found nothing asking this function anything: it could answer no to
+        // everything, or fall over on a block that opened with the element.
+        assert!(names_a_collection(
+            "<d:response><d:resourcetype><d:collection/></d:resourcetype></d:response>"
+        ));
+        assert!(names_a_collection(
+            "<D:collection xmlns:D=\"DAV:\"></D:collection>"
+        ));
+        assert!(names_a_collection("<d:collection>"));
+        assert!(!names_a_collection("<d:collectionish/>"));
+        assert!(!names_a_collection(
+            "<d:response><d:href>/a/b.ics</d:href></d:response>"
+        ));
+    }
+
+    #[test]
+    fn test_a_document_whose_first_line_is_indented_keeps_that_line() {
+        // A continuation line with nothing before it to continue is a line of
+        // its own, not a line to drop. The mutation run of 2026-09-15 turned
+        // the guard on that into "always a continuation" and nothing noticed,
+        // because every document the tests fold opens with BEGIN.
+        assert_eq!(
+            put_back_together(&[" first", "SUMMARY:x", " continued"]),
+            vec![" first".to_string(), "SUMMARY:xcontinued".to_string()]
+        );
+    }
+
+    #[test]
     fn test_ical_duration_reads_the_grammar_and_only_the_grammar() {
         // RFC 5545 section 3.3.6. Radicale's own fixtures
         // (radicale/tests/static/event_daily_rrule_overridden.ics and
@@ -8333,5 +8377,99 @@ mod discovery_tests {
             .expect_err("nothing to answer");
 
         assert!(matches!(unreachable, Error::Network(_)), "{unreachable:?}");
+    }
+
+    // The four below are survivors of the mutation run over this file on
+    // 2026-09-15. Every test above answered 207, so a check written as "not
+    // a success and not 207" could be turned into "not a success or not 207"
+    // and nothing noticed, and two of the three reads had no refusal test at
+    // all, so "refused unless it is 207" could become "refused if it is 207".
+
+    #[tokio::test]
+    async fn test_a_home_set_answered_with_a_plain_200_is_still_read() {
+        // 207 is the usual answer to a PROPFIND and 200 is a legal one, and
+        // a server that gives the second must not read as a server that
+        // refused.
+        let (address, _listening) = answering("200 OK", "application/xml", a_home_set()).await;
+
+        let found = CalDavClient::new()
+            .discover_calendars(&format!("http://{address}/dav/sam/"), "sam", "secret")
+            .await
+            .expect("a 200 is not a refusal");
+
+        assert_eq!(found.len(), 2, "{found:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_report_the_server_refuses_is_a_refusal_and_not_an_empty_calendar() {
+        // The defect shape this project keeps meeting: a refused read that
+        // comes back as "nothing there", which a sync then acts on.
+        let (address, _listening) =
+            answering("401 Unauthorized", "text/plain", String::new()).await;
+
+        let refused = CalDavClient::new()
+            .list_events(
+                &format!("http://{address}/dav/sam/work/"),
+                "sam",
+                "wrong",
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect_err("a refusal");
+
+        assert!(refused.to_string().contains("401"), "{refused}");
+    }
+
+    /// A journal collection as a server lists it: the collection itself,
+    /// which is not an entry, and two documents that are.
+    fn a_journal_with_two_entries() -> String {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response>
+    <d:href>/dav/sam/notes/</d:href>
+    <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/dav/sam/notes/one.ics</d:href>
+    <d:propstat><d:prop><d:getetag>"v1"</d:getetag><d:resourcetype/></d:prop></d:propstat>
+  </d:response>
+  <d:response>
+    <d:href>/dav/sam/notes/two.ics</d:href>
+    <d:propstat><d:prop><d:getetag>"v2"</d:getetag><d:resourcetype/></d:prop></d:propstat>
+  </d:response>
+</d:multistatus>"#
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_a_journal_listing_answered_with_a_plain_200_is_still_read() {
+        let (address, _listening) =
+            answering("200 OK", "application/xml", a_journal_with_two_entries()).await;
+
+        let listed = CalDavClient::new()
+            .journal_entries_in(&format!("http://{address}/dav/sam/notes/"), "sam", "secret")
+            .await
+            .expect("a 200 is not a refusal");
+
+        assert_eq!(listed.len(), 2, "{listed:?}");
+        assert_eq!(listed[0].1.as_deref(), Some("\"v1\""));
+    }
+
+    #[tokio::test]
+    async fn test_a_journal_listing_the_server_refuses_says_which_status_it_refused_with() {
+        let (address, _listening) =
+            answering("401 Unauthorized", "text/plain", String::new()).await;
+
+        let refused = CalDavClient::new()
+            .journal_entries_in(&format!("http://{address}/dav/sam/"), "sam", "wrong")
+            .await
+            .expect_err("a refusal");
+
+        assert!(
+            matches!(refused, Error::Api { status: 401, .. }),
+            "{refused:?}"
+        );
     }
 }

@@ -74,5 +74,14 @@ exclude_re = [
 # including pure string builders with no loop in them at all. Those were the
 # machine being busy, not code hanging. Lowering the multiplier, or excluding
 # the file, would have hidden the same thing again next time.
+#
+# On GitHub's runners on 2026-09-15, at `3e633252`, the every-target baseline
+# ran 187 to 277 s per shard, so the multiplier set each mutant's budget at
+# about 935 to 1,385 s there, and 870 mutants across two runs produced four
+# timeouts. All four timed out again on this machine at a 594 s budget with
+# nothing else running, and each is the mutant's own doing: two turn a loop's
+# step into one that never advances, and two make every test that opens a
+# connection wait out its own limit, ninety times over. Neither setting moved;
+# docs/plans/20260915-whole-tree-mutation-run.md has the four by name.
 timeout_multiplier = 5.0
 minimum_test_timeout = 60

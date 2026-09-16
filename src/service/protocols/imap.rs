@@ -2581,6 +2581,36 @@ mod tests {
     }
 
     #[test]
+    fn test_every_list_attribute_the_parser_knows_is_spelled_and_none_is_dropped() {
+        // The test above names three. The mutation run of 2026-09-15 deleted
+        // each of the other nine arms in turn and nothing noticed, because a
+        // deleted arm falls to the one that answers an empty string for an
+        // attribute this code has no use for. An empty string is what
+        // `special_use::classify` sees for a folder with no attributes at all,
+        // so a server saying `\Trash` would have been read as saying nothing.
+        let spelled = [
+            (NameAttribute::NoInferiors, "\\Noinferiors"),
+            (NameAttribute::NoSelect, "\\Noselect"),
+            (NameAttribute::Marked, "\\Marked"),
+            (NameAttribute::Unmarked, "\\Unmarked"),
+            (NameAttribute::All, "\\All"),
+            (NameAttribute::Archive, "\\Archive"),
+            (NameAttribute::Drafts, "\\Drafts"),
+            (NameAttribute::Flagged, "\\Flagged"), // not a message flag
+            (NameAttribute::Junk, "\\Junk"),
+            (NameAttribute::Sent, "\\Sent"),
+            (NameAttribute::Trash, "\\Trash"),
+            (
+                NameAttribute::Extension("\\HasChildren".into()),
+                "\\HasChildren",
+            ),
+        ];
+        for (attribute, expected) in spelled {
+            assert_eq!(attribute_name(&attribute), expected, "{attribute:?}");
+        }
+    }
+
+    #[test]
     fn test_an_arrival_while_watching_is_reported_with_the_new_total() {
         use async_imap::imap_proto::{MailboxDatum, Response};
         assert_eq!(
@@ -3594,6 +3624,229 @@ pub(crate) mod against_a_server_that_answers {
             .expect("an empty folder is not a failure");
 
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    // The tests from here to the watch are the survivors of the mutation run
+    // over this file on 2026-09-15, each killed by pinning the behaviour the
+    // mutant would have lost. docs/plans/20260915-whole-tree-mutation-run.md
+    // names each mutant beside its test.
+
+    #[tokio::test]
+    async fn test_the_folder_that_was_opened_is_the_one_the_session_says_is_open() {
+        // Every move and copy in the controller asks this before it acts, and
+        // opens the right folder when the answer differs. An answer of
+        // nothing, or of a folder that was never opened, would have it open
+        // the folder again for every message or act on the wrong one.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = signed_in_to(&server).await;
+        assert_eq!(session.selected_folder(), None);
+
+        waiting_for(session.select_folder("Archive"), "the folder to open")
+            .await
+            .expect("the folder to open");
+
+        assert_eq!(session.selected_folder(), Some("Archive"));
+    }
+
+    #[tokio::test]
+    async fn test_a_session_with_no_folder_open_refuses_a_search_rather_than_searching_nothing() {
+        // A search sent with no mailbox selected is refused by the server as
+        // BAD, which this reader would then report as the server refusing the
+        // search. The refusal here is earlier and says what is really wrong.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = signed_in_to(&server).await;
+
+        let said = the_failure(waiting_for(session.all_uids(), "the search").await);
+
+        assert!(said.contains("No folder is open"), "{said}");
+        assert!(
+            !server.was_told("UID SEARCH").await,
+            "the search was sent anyway"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_fresh_session_may_not_change_anything_until_it_is_told_it_may() {
+        // The gate every write asks. A session that answered yes before
+        // `allow_changes` would let the sync delete on an account whose
+        // setting says read only.
+        let server = a_server_that_can("UIDPLUS").await;
+        let mut session = allowed_nothing_on(&server).await;
+        assert!(!session.may_change());
+
+        session.allow_changes();
+
+        assert!(session.may_change());
+    }
+
+    #[tokio::test]
+    async fn test_asking_for_the_uids_above_one_asks_the_server_for_exactly_that_range() {
+        // An incremental sync asks for what arrived after the last UID it
+        // holds. Asking for everything, or for nothing, and answering with a
+        // made-up list would both read as a folder that had or had not
+        // changed.
+        let server = a_server_answering(|said, tag| {
+            said.contains("UID SEARCH UID 5:*")
+                .then(|| Turn::Say(format!("* SEARCH 6 7\r\n{tag} OK done\r\n")))
+        })
+        .await;
+        let mut session = with_the_inbox_open(&server).await;
+
+        let above = waiting_for(session.uids_above(5), "the search")
+            .await
+            .expect("the search to be answered");
+
+        assert_eq!(above, vec![6, 7]);
+    }
+
+    #[tokio::test]
+    async fn test_counting_a_folder_reads_the_totals_the_server_gave() {
+        // The unread count on every folder in the tree comes from here. Zero
+        // for every folder would read as a mailbox with nothing new in it.
+        let server = a_server_answering(|said, tag| {
+            said.contains("STATUS").then(|| {
+                Turn::Say(format!(
+                    "* STATUS \"Archive\" (MESSAGES 3 UNSEEN 1)\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = signed_in_to(&server).await;
+
+        let counts = waiting_for(session.folder_counts("Archive"), "the count")
+            .await
+            .expect("the count to be answered");
+
+        assert_eq!(
+            counts,
+            FolderCounts {
+                total: 3,
+                unread: 1
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_names_the_highest_modseq_on_opening_is_heard() {
+        // The value a CONDSTORE sync compares against next time. Losing it
+        // means every open of the folder is a first open.
+        let server = a_server_answering(|said, tag| {
+            said.contains("SELECT").then(|| {
+                Turn::Say(format!(
+                    "* 0 EXISTS\r\n* OK [UIDVALIDITY 1] valid\r\n* OK [HIGHESTMODSEQ 4711] \
+                     kept\r\n{tag} OK [READ-WRITE] open\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = signed_in_to(&server).await;
+
+        let status = waiting_for(session.select_folder("INBOX"), "the folder to open")
+            .await
+            .expect("the folder to open");
+
+        assert_eq!(status.uid_validity, Some(1));
+        assert_eq!(status.highest_modseq, Some(4711));
+    }
+
+    #[tokio::test]
+    async fn test_a_nested_folder_is_named_by_its_last_segment() {
+        // The tree shows the leaf under its parent. A folder named by its
+        // whole path would show "Parent/Child" as a child of "Parent".
+        let server = a_server_answering(|said, tag| {
+            (said.contains("LIST") && !said.contains("LSUB")).then(|| {
+                Turn::Say(format!(
+                    "* LIST (\\HasNoChildren) \"/\" \"Parent/Child\"\r\n{tag} OK done\r\n"
+                ))
+            })
+        })
+        .await;
+        let mut session = signed_in_to(&server).await;
+
+        let folders = waiting_for(session.list_folders(), "the list")
+            .await
+            .expect("the list to be answered");
+
+        let child = folders
+            .iter()
+            .find(|folder| folder.display_path == "Parent/Child")
+            .expect("the nested folder to be listed");
+        assert_eq!(child.name, "Child");
+    }
+
+    #[tokio::test]
+    async fn test_a_server_that_takes_an_introduction_is_given_one() {
+        // NetEase refuses a client that does not say who it is. The
+        // introduction is best effort, so a session that skipped it would
+        // still sign in here and be refused there.
+        let server = a_server_that_can("ID").await;
+        let _session = signed_in_to(&server).await;
+
+        let transcript = server.transcript().await;
+        assert!(server.was_told("ID (").await, "{transcript:?}");
+    }
+
+    #[test]
+    fn test_the_idle_window_stays_inside_what_the_standard_allows() {
+        // RFC 2177: re-issue IDLE at least every 29 minutes, because the boxes
+        // between here and the server drop a connection that looks idle for
+        // half an hour. Far shorter is a connection renewed for nothing.
+        assert!(
+            IDLE_WINDOW <= Duration::from_secs(29 * 60),
+            "{IDLE_WINDOW:?}"
+        );
+        assert!(
+            IDLE_WINDOW >= Duration::from_secs(20 * 60),
+            "{IDLE_WINDOW:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stopping_a_watch_ends_it_and_says_so() {
+        // The handle's whole job is to wait: dropping it would end the watch
+        // too, because the task reads a dropped sender as a stop, but a stop
+        // that returned before the connection had signed out would let the
+        // caller open the next connection on top of one still idling. So
+        // when `stop` returns, the server has already been told LOGOUT.
+        let idle_tag = std::sync::Mutex::new(String::new());
+        let server = a_server_answering(move |said, tag| {
+            if said.split_whitespace().nth(1) == Some("IDLE") {
+                *idle_tag.lock().expect("the tag") = tag.to_string();
+                return Some(Turn::Say("+ idling\r\n".to_string()));
+            }
+            if said.trim() == "DONE" {
+                let tag = idle_tag.lock().expect("the tag").clone();
+                return Some(Turn::Say(format!("{tag} OK done\r\n")));
+            }
+            None
+        })
+        .await;
+        let session = with_the_inbox_open(&server).await;
+
+        let (mut events, handle) = session.watch("INBOX".to_string());
+        waiting_for(server_has_heard(&server, "IDLE"), "the watch to start").await;
+        waiting_for(handle.stop(), "the watch to stop")
+            .await
+            .expect("stopping is not a failure");
+
+        let transcript = server.transcript().await;
+        assert!(
+            server.was_told("LOGOUT").await,
+            "stop returned before the connection was closed: {transcript:?}"
+        );
+        let last = waiting_for(events.recv(), "the stop to be reported").await;
+        assert!(
+            matches!(last, Some(ImapIdleEvent::Stopped { ref reason, .. }) if reason == "the watch was stopped"),
+            "{last:?}"
+        );
+    }
+
+    /// Poll until the server has been told something, so a test can wait for
+    /// a command that is sent by a task rather than by the test.
+    async fn server_has_heard(server: &Conversation, wanted: &str) {
+        while !server.was_told(wanted).await {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     #[tokio::test]

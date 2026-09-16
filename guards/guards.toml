@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 3 records have arrived since and have not been through it.
+# 23 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -644,7 +644,7 @@ tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/ical_subscription.rs", tests = 19 },
 ]
 
@@ -2098,7 +2098,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -2376,7 +2376,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -2404,7 +2404,7 @@ red = [
     "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # -- What a zone name of no letters means -----------------------------------
@@ -2440,7 +2440,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/common/moment.rs", tests = 10 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # -- Which addresses say two records are one person -------------------------
@@ -3167,7 +3167,7 @@ red = [
     "service::caldav::tests::test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # The column holds two shapes, and a comma means something different in each.
@@ -3191,7 +3191,7 @@ red = [
     "service::caldav::tests::test_the_column_is_walked_by_one_routine_whatever_shape_it_holds",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3250,7 +3250,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3268,7 +3268,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3287,7 +3287,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # ── The timezone rules a document must carry ────────────────────────────────
@@ -3328,7 +3328,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3346,7 +3346,7 @@ red = [
     "service::caldav::writing_tests::test_a_change_into_a_document_that_defines_no_zone_adds_the_rules",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3362,7 +3362,7 @@ red = [
     "service::caldav::writing_tests::test_a_change_into_a_document_already_defining_the_zone_adds_no_second_copy",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3374,7 +3374,7 @@ red = [
     "service::caldav::tests::test_a_document_that_names_no_zone_defines_none",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3402,7 +3402,7 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -3464,7 +3464,7 @@ red = [
     "service::vtimezone::tests::test_the_rules_for_a_zone_that_counts_weeks_forward",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/vtimezone.rs", tests = 10 },
 ]
 
@@ -3769,7 +3769,7 @@ tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 16 },
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -3804,7 +3804,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── How many previous drafts were really removed ────────────────────────────
@@ -3833,7 +3833,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A blind copy is blind because of a default nobody wrote down ────────────
@@ -4330,7 +4330,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -4362,7 +4362,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A failed draft save that left no copy on the server ────────────────────
@@ -4473,7 +4473,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_server_that_will_not_say_what_it_supports_is_not_a_server_that_supports_nothing",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A connection that went away, reported as an answer that arrived ──────────
@@ -4505,7 +4505,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_session.rs", tests = 14 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A whole-folder request that moves one bound and not the other ────────────
@@ -4800,7 +4800,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_the_subscriptions_a_server_lists_reach_the_folders_they_are_about",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -4852,7 +4852,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
 #
@@ -4885,7 +4885,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/pop3.rs", tests = 7 },
+    { file = "src/service/protocols/pop3.rs", tests = 10 },
 ]
 
 # ── A clear-out the setting held back, reported as a failed mail check ──────
@@ -4951,7 +4951,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── Every message sent left with no identifier of its own ───────────────────
@@ -6252,7 +6252,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # ── A meeting that repeats, on its way to Outlook and back ──────────────────
@@ -7721,7 +7721,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # Measured by hand on 2026-08-13. This is the other direction from the guard
@@ -7777,7 +7777,7 @@ red = [
     "service::outward::tests::test_a_read_that_is_not_a_get_can_only_ask_for_something",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/outward.rs", tests = 38 },
 ]
 
@@ -8182,7 +8182,7 @@ red = [
     "service::protocols::imap::tests::test_xoauth2_answers_the_credential_once_and_then_answers_empty",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── Capability is read once at sign-in and never again ───────────────────────
@@ -8209,7 +8209,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_capability_is_asked_for_exactly_once_after_signing_in",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A second SELECT of the same folder still reads the server's answer ──────
@@ -8240,7 +8240,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_second_select_of_the_same_folder_reports_a_changed_uidvalidity",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── A CalDAV exception row is recognised without needing its series ─────────
@@ -8378,7 +8378,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # ── An occurrence is read off the document the same careful way ─────────────
@@ -8414,7 +8414,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 # ── An occurrence exception is opened exactly as narrowly as intended ───────
@@ -9693,7 +9693,7 @@ after = """    for line in &lines {
         }"""
 red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9707,7 +9707,7 @@ after = """        if inside < 0 {
         }"""
 red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9717,7 +9717,7 @@ before = """    let is_a_component_name = !named.is_empty() && !named.contains([
 after = """    let is_a_component_name = !named.is_empty() || !named.contains([':', ';', ',', ' ', '\\t']);"""
 red = ["service::caldav::tests::test_a_marker_is_refused_unless_what_follows_it_is_a_clean_single_word"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9727,7 +9727,7 @@ before = """        (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_dig
 after = """        (!digits.is_empty() || digits.bytes().all(|b| b.is_ascii_digit()))"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9745,7 +9745,7 @@ after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
             }"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9763,7 +9763,7 @@ after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
             }"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9773,7 +9773,7 @@ before = """    parameter_among(&line[semicolon + 1..colon], parameter).map(str:
 after = """    parameter_among(&line[semicolon - 1..colon], parameter).map(str::to_string)"""
 red = ["service::caldav::tests::test_a_property_name_ending_in_more_than_one_octet_does_not_move_the_delimiter_mid_character"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9783,7 +9783,7 @@ before = """    if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {"""
 after = """    if bytes.len() == 8 || bytes.iter().all(u8::is_ascii_digit) {"""
 red = ["service::caldav::tests::test_a_cancelled_day_is_a_whole_day_only_at_exactly_eight_digits"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9820,7 +9820,7 @@ after = """fn the_occurrence_came_back_out(
 }"""
 red = ["service::caldav::writing_tests::test_the_occurrence_change_has_to_come_back_out_of_its_own_vevent"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 163 },
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
 
 [[guard]]
@@ -9892,7 +9892,7 @@ after = """                    format!("UID FETCH 1:* (UID FLAGS) (CHANGEDSINCE 
                     },"""
 red = ["service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9911,7 +9911,7 @@ after = """                    format!("UID FETCH {set} (UID FLAGS)"),
                     },"""
 red = ["service::protocols::imap::against_a_server_that_answers::test_the_flags_a_server_reports_reach_the_caller_on_both_fetch_flags_paths"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9925,7 +9925,7 @@ after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abil
 }"""
 red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9939,7 +9939,7 @@ after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abil
 }"""
 red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9953,7 +9953,7 @@ after = """fn removal_fell_back_to_flag_and_leave(uids: &[u32], abilities: &Abil
 }"""
 red = ["service::protocols::imap::tests::test_removal_only_reports_falling_back_to_flag_and_leave_when_it_actually_did"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9966,7 +9966,7 @@ after = """            _ => None,
         }),"""
 red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -9982,7 +9982,7 @@ before = """                AttributeValue::GmailLabels(labels) => Some(
 after = """                _ => None,"""
 red = ["service::protocols::imap::tests::test_gmail_message_id_and_labels_reach_the_message_when_the_server_sent_them"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── The seven ways of faking a flags reply ─────────────────────────────────
@@ -10009,7 +10009,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10026,7 +10026,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10043,7 +10043,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10060,7 +10060,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10077,7 +10077,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10094,7 +10094,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10111,7 +10111,7 @@ red = [
     "service::protocols::imap::tests::test_flags_from_attributes_pairs_the_uid_with_the_flags_the_server_sent",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -10124,7 +10124,7 @@ before = """        Status::Bad => Error::Protocol(format!(
 after = """        _ => Error::Protocol(format!("The mail server refused while {doing}.{words}")),"""
 red = ["service::protocols::imap::tests::test_a_bad_status_says_the_server_did_not_understand_rather_than_a_generic_refusal"]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -12129,7 +12129,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -12159,7 +12159,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -12449,7 +12449,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_each_mailbox_carries_the_separator_the_server_gave_for_it",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -12532,7 +12532,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 [[guard]]
@@ -13479,7 +13479,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outward.rs", tests = 38 },
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
 # ── The constant whose name stopped matching its shape ──────────────────────
@@ -15840,7 +15840,7 @@ red = [
     "test_the_header_fetch_asks_for_the_header_the_warning_is_built_on",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap.rs", tests = 91 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
     { file = "tests/the_list_warning_reads_the_message.rs", tests = 8 },
 ]
 
@@ -22308,4 +22308,353 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
+]
+
+# ── What the mutation run of 2026-09-15 found nothing watching ───────────────
+#
+# Two areas went through `scripts/mutants.sh` in shards on GitHub's runners at
+# `3e633252`: the mail protocols under src/service/protocols/ and the CalDAV
+# client. docs/plans/20260915-whole-tree-mutation-run.md lists every survivor.
+# The records below are the ones killed by a test: each `after` is the mutant
+# as the tool wrote it, so the record's break is the very change the suite
+# had let through, and the test named is the one written to notice it. A test
+# written to kill a mutant is a guard by definition, and the mutant is its
+# break.
+#
+# Each was measured on 2026-09-16 on the whole library through
+# `scripts/guards.sh --remeasure`, with the verdict written beside it.
+
+[[guard]]
+name = "every LIST attribute the parser knows is spelled the way IMAP spells it"
+file = "src/service/protocols/imap.rs"
+before = """        NameAttribute::Trash => "\\\\Trash".to_string(),
+"""
+after = ""
+red = [
+    "service::protocols::imap::tests::test_every_list_attribute_the_parser_knows_is_spelled_and_none_is_dropped",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "the session says which folder it opened"
+file = "src/service/protocols/imap.rs"
+before = """    pub fn selected_folder(&self) -> Option<&str> {
+        self.selected.as_deref()
+    }"""
+after = """    pub fn selected_folder(&self) -> Option<&str> {
+        None
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_folder_that_was_opened_is_the_one_the_session_says_is_open",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "the UIDs above one are asked for and answered from the server"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn uids_above(&mut self, after: u32) -> Result<Vec<u32>> {
+        self.search_uids(&format!("UID {after}:*")).await
+    }"""
+after = """    pub async fn uids_above(&mut self, after: u32) -> Result<Vec<u32>> {
+        Ok(vec![])
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_asking_for_the_uids_above_one_asks_the_server_for_exactly_that_range",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "a folder's counts are the totals the server gave"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn folder_counts(&mut self, path: &str) -> Result<FolderCounts> {
+        let mailbox = with_timeout("""
+after = """    pub async fn folder_counts(&mut self, path: &str) -> Result<FolderCounts> {
+        return Ok(Default::default());
+        let mailbox = with_timeout("""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_counting_a_folder_reads_the_totals_the_server_gave",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "a command that needs a folder is refused when none is open"
+file = "src/service/protocols/imap.rs"
+before = """    fn require_selected(&self) -> Result<()> {
+        if self.selected.is_none() {
+            return Err(Error::Protocol("No folder is open".into()));
+        }
+        Ok(())
+    }"""
+after = """    fn require_selected(&self) -> Result<()> {
+        Ok(())
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_session_with_no_folder_open_refuses_a_search_rather_than_searching_nothing",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "a fresh IMAP session may not change anything until told"
+file = "src/service/protocols/imap.rs"
+before = """    pub const fn may_change(&self) -> bool {
+        self.may_change
+    }"""
+after = """    pub const fn may_change(&self) -> bool {
+        true
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_fresh_session_may_not_change_anything_until_it_is_told_it_may",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "a server that takes an introduction is given one"
+file = "src/service/protocols/imap.rs"
+before = """    async fn introduce_ourselves(&mut self) {
+        if !self.abilities.id {
+            return;
+        }"""
+after = """    async fn introduce_ourselves(&mut self) {
+        if true {
+            return;
+        }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_server_that_takes_an_introduction_is_given_one",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "a nested folder is named by its last segment"
+file = "src/service/protocols/imap.rs"
+before = """                let leaf = match delimiter.as_deref().filter(|d| !d.is_empty()) {"""
+after = """                let leaf = match delimiter.as_deref().filter(|d| d.is_empty()) {"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_nested_folder_is_named_by_its_last_segment",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "the highest modseq a server names on opening is heard"
+file = "src/service/protocols/imap.rs"
+before = """                Response::Data {
+                    status: Status::Ok,
+                    code: Some(ResponseCode::HighestModSeq(modseq)),
+                    ..
+                } => Some(WhatOpeningAFolderSaid::HighestModSeq(*modseq)),
+                _ => None,"""
+after = """                _ => None,"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_a_server_that_names_the_highest_modseq_on_opening_is_heard",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "the idle window stays inside what RFC 2177 allows"
+file = "src/service/protocols/imap.rs"
+before = """const IDLE_WINDOW: Duration = Duration::from_secs(29 * 60);"""
+after = """const IDLE_WINDOW: Duration = Duration::from_secs(29 + 60);"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_the_idle_window_stays_inside_what_the_standard_allows",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "stopping a watch waits for the connection to sign out"
+file = "src/service/protocols/imap.rs"
+before = """    pub async fn stop(mut self) -> Result<()> {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        let _ = self.task.await;
+        Ok(())
+    }"""
+after = """    pub async fn stop(mut self) -> Result<()> {
+        Ok(())
+    }"""
+red = [
+    "service::protocols::imap::against_a_server_that_answers::test_stopping_a_watch_ends_it_and_says_so",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+[[guard]]
+name = "STAT's two numbers are read from the server"
+file = "src/service/protocols/pop3.rs"
+before = """    pub async fn stat(&mut self) -> Result<(usize, usize)> {
+        let said = self.command("STAT", &[]).await?;"""
+after = """    pub async fn stat(&mut self) -> Result<(usize, usize)> {
+        return Ok((0, 0));
+        let said = self.command("STAT", &[]).await?;"""
+red = [
+    "service::protocols::pop3::against_a_server_that_answers::test_stat_reads_the_count_and_the_bytes_the_server_gave",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/pop3.rs", tests = 10 },
+]
+
+[[guard]]
+name = "a POP3 listing is read from the text block the server sends"
+file = "src/service/protocols/pop3.rs"
+before = """    async fn read_text_data(&mut self) -> Result<Vec<String>> {
+        Ok(self"""
+after = """    async fn read_text_data(&mut self) -> Result<Vec<String>> {
+        return Ok(vec![]);
+        Ok(self"""
+red = [
+    "service::protocols::pop3::against_a_server_that_answers::test_the_listing_pairs_every_message_with_its_size_and_its_identifier",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/pop3.rs", tests = 10 },
+]
+
+[[guard]]
+name = "a reset is said to the server"
+file = "src/service/protocols/pop3.rs"
+before = """    pub async fn reset(&mut self) -> Result<()> {
+        self.command("RSET", &[]).await?;
+        Ok(())
+    }"""
+after = """    pub async fn reset(&mut self) -> Result<()> {
+        Ok(())
+    }"""
+red = [
+    "service::protocols::pop3::against_a_server_that_answers::test_reset_tells_the_server_to_undo_the_deletions",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/pop3.rs", tests = 10 },
+]
+
+[[guard]]
+name = "a clock of letters is not dressed up as a time"
+file = "src/service/caldav.rs"
+before = """        if time.len() >= 6 && all_digits(&time[..6]) {"""
+after = """        if time.len() >= 6 || all_digits(&time[..6]) {"""
+red = [
+    "service::caldav::tests::test_a_clock_that_is_not_digits_is_not_dressed_up_as_a_time",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
+]
+
+[[guard]]
+name = "a collection is told from a name that starts the same way"
+file = "src/service/caldav.rs"
+before = """fn names_a_collection(block: &str) -> bool {
+    ["<d:collection", "<D:collection"].iter().any(|opening| {"""
+after = """fn names_a_collection(block: &str) -> bool {
+    return false;
+    ["<d:collection", "<D:collection"].iter().any(|opening| {"""
+red = [
+    "service::caldav::tests::test_a_collection_is_recognised_by_its_element_and_not_by_a_name_that_starts_the_same_way",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
+]
+
+[[guard]]
+name = "a document whose first line is indented keeps that line"
+file = "src/service/caldav.rs"
+before = """            Some(carried_on) if !lines.is_empty() => {"""
+after = """            Some(carried_on) if true => {"""
+red = [
+    "service::caldav::tests::test_a_document_whose_first_line_is_indented_keeps_that_line",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
+]
+
+[[guard]]
+name = "a home set answered with a plain 200 is still read"
+file = "src/service/caldav.rs"
+before = """        // has "the network failed" can tell them none of them.
+        if !response.status().is_success() && response.status().as_u16() != 207 {"""
+after = """        // has "the network failed" can tell them none of them.
+        if !response.status().is_success() || response.status().as_u16() != 207 {"""
+red = [
+    "service::caldav::discovery_tests::test_a_home_set_answered_with_a_plain_200_is_still_read",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
+]
+
+[[guard]]
+name = "a report the server refuses is a refusal and not an empty calendar"
+file = "src/service/caldav.rs"
+before = """            .map_err(|e| Error::Network(format!("CalDAV REPORT failed: {}", e)))?;
+
+        if !response.status().is_success() && response.status().as_u16() != 207 {"""
+after = """            .map_err(|e| Error::Network(format!("CalDAV REPORT failed: {}", e)))?;
+
+        if !response.status().is_success() && response.status().as_u16() == 207 {"""
+red = [
+    "service::caldav::discovery_tests::test_a_report_the_server_refuses_is_a_refusal_and_not_an_empty_calendar",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
+]
+
+[[guard]]
+name = "a journal listing is refused unless the server answered it"
+file = "src/service/caldav.rs"
+before = """            .map_err(|e| Error::Network(format!("CalDAV PROPFIND failed: {}", e)))?;
+
+        if !response.status().is_success() && response.status().as_u16() != 207 {
+            let status = response.status();
+            return Err(Error::Api {
+                status: status.as_u16(),
+                provider: CALENDAR_SERVER.to_string(),
+                message: format!("PROPFIND returned {status}"),
+            });
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV response read error: {}", e)))?;
+
+        let here = resolved_against("", collection_url);"""
+after = """            .map_err(|e| Error::Network(format!("CalDAV PROPFIND failed: {}", e)))?;
+
+        if response.status().is_success() && response.status().as_u16() != 207 {
+            let status = response.status();
+            return Err(Error::Api {
+                status: status.as_u16(),
+                provider: CALENDAR_SERVER.to_string(),
+                message: format!("PROPFIND returned {status}"),
+            });
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("CalDAV response read error: {}", e)))?;
+
+        let here = resolved_against("", collection_url);"""
+red = [
+    "service::caldav::discovery_tests::test_a_journal_listing_answered_with_a_plain_200_is_still_read",
+    "service::caldav::discovery_tests::test_a_journal_listing_the_server_refuses_says_which_status_it_refused_with",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 170 },
 ]
