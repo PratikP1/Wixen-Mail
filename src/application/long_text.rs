@@ -497,6 +497,12 @@ pub fn from_markup(html: &str) -> String {
     read_markup(html, Keeping::OnlyWhatIsSpoken)
 }
 
+/// The words of a provider's markup and nothing else, for a place that has
+/// room for words alone: a snippet on a message row, a search index.
+pub fn words_of_markup(html: &str) -> String {
+    from_markup(html)
+}
+
 /// How much of the markup to keep, which depends on what happens to the result.
 ///
 /// The walk below is one walk and differs at three arms. Which of the two is
@@ -1641,6 +1647,28 @@ Rear Admiral",
         assert!(
             !converted.contains("example.com"),
             "the address leaked into text meant to be read aloud: {converted}"
+        );
+    }
+
+    #[test]
+    fn test_the_words_of_markup_are_the_words_alone_without_markers_or_stylesheets() {
+        // What a snippet and a search index take from an HTML-only message.
+        // Marketing mail opens its head with the Outlook reset stylesheet,
+        // and a reader that kept everything between tags read `#outlook a {
+        // padding: 0; }` aloud on every row (#32). The words come through the
+        // same reader the message does, so a stylesheet, a script and the
+        // page's title are dropped, and the structure the reader found is
+        // given as its words with no marker in front, because a snippet
+        // beginning `# ` or `- ` spends its first characters on punctuation.
+        let markup = "<html><head><title>Weekly</title>\
+             <style>#outlook a { padding: 0; }</style>\
+             <script>track()</script></head>\
+             <body><h1>Big news</h1><ul><li>one</li><li>two</li></ul>\
+             <p>Hello from the newsletter</p></body></html>";
+
+        assert_eq!(
+            words_of_markup(markup),
+            "Big news one two Hello from the newsletter"
         );
     }
 }

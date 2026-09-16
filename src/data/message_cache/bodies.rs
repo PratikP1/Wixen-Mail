@@ -683,6 +683,11 @@ impl MessageCache {
         }
         Ok(moved)
     }
+
+    /// Re-derive the snippet of every HTML-only message, once.
+    pub fn put_right_the_snippets_read_from_stylesheets(&self) -> Result<usize> {
+        Ok(0)
+    }
 }
 
 /// Current time as an RFC 3339 string, which sorts correctly as text.
@@ -971,6 +976,174 @@ mod tests {
             )
             .unwrap();
         assert_eq!(snippet.as_deref(), Some("Hello there"));
+    }
+
+    /// The opening most marketing mail has: the Outlook reset stylesheet in
+    /// the head, then the words. What the tester heard on every row was the
+    /// stylesheet (#32).
+    const A_NEWSLETTER: &str = "<html><head><title>Weekly</title>\
+         <style>#outlook a { padding: 0; }</style>\
+         <script>track()</script></head>\
+         <body><p>Hello from the newsletter</p></body></html>";
+
+    fn snippet_of_message(cache: &MessageCache, id: i64) -> Option<String> {
+        cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet() {
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(4, "Weekly")).unwrap();
+        cache
+            .save_message_body(id, None, Some(A_NEWSLETTER))
+            .unwrap();
+
+        assert_eq!(
+            snippet_of_message(&cache, id).as_deref(),
+            Some("Hello from the newsletter")
+        );
+    }
+
+    #[test]
+    fn test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers() {
+        // The reader the message goes through writes `# ` for a heading and
+        // `- ` for an item, which is right for a box somebody edits and wrong
+        // for a line read aloud on every row.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(5, "Agenda")).unwrap();
+        cache
+            .save_message_body(
+                id,
+                None,
+                Some("<h1>Big news</h1><ul><li>one</li><li>two</li></ul>"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            snippet_of_message(&cache, id).as_deref(),
+            Some("Big news one two")
+        );
+    }
+
+    // ── Snippets already stored are put right once ──────────────────────
+    //
+    // Every HTML-only message somebody downloaded before the reader changed
+    // has the stylesheet in its snippet column, and the column is what the
+    // list reads. So the stored ones are re-derived once, on the first open
+    // after the change, and each row put right is reindexed, because the
+    // index holds a copy of the snippet and the body text and a search for
+    // `padding` would otherwise still find the newsletter.
+
+    /// The snippet an old build stored for `A_NEWSLETTER`, written over the
+    /// column by SQL the way it sits in a database from before the change.
+    const THE_STYLESHEET_SNIPPET: &str =
+        "Weekly #outlook a { padding: 0; } track() Hello from the newsletter";
+
+    fn plant_the_old_snippet(cache: &MessageCache, id: i64) {
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET snippet = ?1 WHERE id = ?2",
+                rusqlite::params![THE_STYLESHEET_SNIPPET, id],
+            )
+            .unwrap();
+        cache.index_message_for_search(id).unwrap();
+    }
+
+    #[test]
+    fn test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included() {
+        let cache = body_test_cache();
+        let newsletter = cache.save_message(&cached(6, "Weekly")).unwrap();
+        cache
+            .save_message_body(newsletter, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, newsletter);
+        // A message with a plain part, whose snippet came from that part and
+        // is not this pass's to touch, however odd it looks.
+        let letter = cache.save_message(&cached(7, "A letter")).unwrap();
+        cache
+            .save_message_body(letter, Some("Dear Ada, the numbers are attached."), None)
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET snippet = 'left as it was' WHERE id = ?1",
+                rusqlite::params![letter],
+            )
+            .unwrap();
+        assert_eq!(
+            found_by_the_search_box(&cache, "padding"),
+            1,
+            "the fixture does not reproduce the defect: the index does not find the stylesheet"
+        );
+
+        let put_right = cache
+            .put_right_the_snippets_read_from_stylesheets()
+            .unwrap();
+
+        assert_eq!(put_right, 1, "one HTML-only message was stored wrongly");
+        assert_eq!(
+            snippet_of_message(&cache, newsletter).as_deref(),
+            Some("Hello from the newsletter")
+        );
+        assert_eq!(
+            snippet_of_message(&cache, letter).as_deref(),
+            Some("left as it was"),
+            "a snippet derived from a plain part was rewritten"
+        );
+        assert_eq!(
+            found_by_the_search_box(&cache, "padding"),
+            0,
+            "the index row was not rebuilt with the snippet"
+        );
+        assert_eq!(found_by_the_search_box(&cache, "newsletter"), 1);
+    }
+
+    #[test]
+    fn test_snippets_are_put_right_once_and_a_second_call_reads_no_body() {
+        let cache = body_test_cache();
+        let first = cache.save_message(&cached(8, "Weekly")).unwrap();
+        cache
+            .save_message_body(first, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, first);
+
+        assert_eq!(
+            cache
+                .put_right_the_snippets_read_from_stylesheets()
+                .unwrap(),
+            1
+        );
+
+        // A second wrong row arriving after the pass: a body written by an
+        // old build that somehow reached the database later. The pass is
+        // over, so it is not read, which is how the second call is known to
+        // have read nothing rather than to have found nothing.
+        let later = cache.save_message(&cached(9, "Weekly again")).unwrap();
+        cache
+            .save_message_body(later, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, later);
+
+        assert_eq!(
+            cache
+                .put_right_the_snippets_read_from_stylesheets()
+                .unwrap(),
+            0,
+            "the pass ran a second time"
+        );
+        assert_eq!(
+            snippet_of_message(&cache, later).as_deref(),
+            Some(THE_STYLESHEET_SNIPPET),
+            "a body was read on the second call"
+        );
     }
 
     #[test]

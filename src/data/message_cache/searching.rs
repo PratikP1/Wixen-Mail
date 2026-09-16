@@ -686,6 +686,50 @@ mod finding_things {
         }
     }
 
+    // ── What the index holds for an HTML-only body ──────────────────────
+
+    #[test]
+    fn test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet() {
+        // The index took an HTML-only body through the same crude stripper
+        // the snippet did, so a newsletter's row held its stylesheet as body
+        // text and a search for `padding` found it (#32). The body goes
+        // through the reader the message does, for the same reason the
+        // snippet now does, and the word has to sit past the snippet so the
+        // claim is about the body column and not the snippet column.
+        let (cache, inbox) = cache("index_words_not_stylesheet");
+        let id = cache
+            .save_message(&message(inbox, 1, "Weekly"))
+            .expect("a message");
+        let filler = "<p>filler words</p>".repeat(40);
+        cache
+            .save_message_body(
+                id,
+                None,
+                Some(&format!(
+                    "<html><head><style>#outlook a {{ padding: 0; }}</style></head>\
+                     <body>{filler}<p>Hello from the newsletter</p></body></html>"
+                )),
+            )
+            .expect("a body");
+
+        let found = |word: &str| {
+            cache
+                .search_messages("acc", word, WhereToSearch::EveryFolder, 10)
+                .expect("a search")
+                .len()
+        };
+        assert_eq!(
+            found("padding"),
+            0,
+            "a word from the stylesheet found the message"
+        );
+        assert_eq!(
+            found("newsletter"),
+            1,
+            "the words of the body did not find it"
+        );
+    }
+
     // ── Where the search box says it is looking ─────────────────────────
 
     #[test]
