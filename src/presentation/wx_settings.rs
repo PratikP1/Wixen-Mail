@@ -59,16 +59,75 @@ pub enum Along {
 
 impl Along {
     /// The way a wxWidgets key code moves along the row, or `None` for a key
-    /// that is not an arrow.
-    pub fn from_key_code(_code: i32) -> Option<Self> {
-        None
+    /// that is not an arrow. Left and Up move back, Right and Down forward,
+    /// which is how the native tab control reads them; the numpad's arrows
+    /// with Num Lock off reach Windows as the same virtual keys without the
+    /// extended bit, wxWidgets gives them codes of their own, and the
+    /// control reads those the same way too.
+    pub fn from_key_code(code: i32) -> Option<Self> {
+        const WXK_LEFT: i32 = 314;
+        const WXK_UP: i32 = 315;
+        const WXK_RIGHT: i32 = 316;
+        const WXK_DOWN: i32 = 317;
+        const WXK_NUMPAD_LEFT: i32 = 376;
+        const WXK_NUMPAD_UP: i32 = 377;
+        const WXK_NUMPAD_RIGHT: i32 = 378;
+        const WXK_NUMPAD_DOWN: i32 = 379;
+        match code {
+            WXK_LEFT | WXK_UP | WXK_NUMPAD_LEFT | WXK_NUMPAD_UP => Some(Self::Back),
+            WXK_RIGHT | WXK_DOWN | WXK_NUMPAD_RIGHT | WXK_NUMPAD_DOWN => Some(Self::Forward),
+            _ => None,
+        }
     }
 }
 
 /// The tab an arrow reaches from `current` in a row of `count`, or `None` at
-/// either end.
-pub fn the_tab_an_arrow_reaches(_current: usize, _count: usize, _along: Along) -> Option<usize> {
-    None
+/// either end: the row does not wrap, as the native control's does not.
+pub fn the_tab_an_arrow_reaches(current: usize, count: usize, along: Along) -> Option<usize> {
+    match along {
+        Along::Back => current.checked_sub(1),
+        Along::Forward => (current + 1 < count).then_some(current + 1),
+    }
+}
+
+/// The tab row answers its own arrow keys, so each tab is raised once.
+///
+/// #33: the reached tab was often spoken twice. `scripts/uia-events.ps1`,
+/// run on 2026-09-16 against the release build at `96298371`, showed why on
+/// the channel NVDA reads for a native tab control: the control's own
+/// arrow-key handler in comctl32 raises `EVENT_OBJECT_SELECTION` once and
+/// then `EVENT_OBJECT_FOCUS` twice on the same tab, one millisecond apart,
+/// and a screen reader that flushes its event queue between the two speaks
+/// the tab for each. Moving the selection through `TCM_SETCURSEL` raised the
+/// focus event once. wxWidgets' `SetSelection` goes that way, so an arrow is
+/// taken here, the selection moved through it, and the key not passed on;
+/// the page-changing and page-changed events are sent as before, and focus
+/// stays on the row as it does natively. A key with a modifier held, and any
+/// key that is not an arrow, is left to the control.
+fn answer_the_arrows_on(notebook: &Notebook) {
+    notebook.on_key_down({
+        let notebook = *notebook;
+        move |event| {
+            let WindowEventData::Keyboard(ref key) = event else {
+                return;
+            };
+            if key.control_down() || key.shift_down() || key.alt_down() {
+                return;
+            }
+            let Some(along) = key.get_key_code().and_then(Along::from_key_code) else {
+                return;
+            };
+            event.skip(false);
+            let Ok(current) = usize::try_from(notebook.selection()) else {
+                return;
+            };
+            if let Some(reached) =
+                the_tab_an_arrow_reaches(current, notebook.get_page_count(), along)
+            {
+                notebook.set_selection(reached);
+            }
+        }
+    });
 }
 
 // ── Widget references ────────────────────────────────────────────────────────
@@ -249,6 +308,7 @@ pub fn build_settings_dialog(
 
     // Notebook (tabbed pane)
     let notebook = Notebook::builder(&dlg).build();
+    answer_the_arrows_on(&notebook);
 
     // ── Tab 1: General
     let general_panel = Panel::builder(&notebook).build();

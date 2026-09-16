@@ -148,14 +148,36 @@ fn events_raised_by(hwnd: isize, act: impl FnOnce()) -> Vec<Raised> {
     })
 }
 
+/// Where a key was pressed. An arrow on the main keyboard reaches Windows as
+/// an extended key; the same arrow on the numpad with Num Lock off reaches it
+/// as the same virtual key without the extended bit, and wxWidgets gives the
+/// two different codes.
+#[derive(Debug, Clone, Copy)]
+enum Keyboard {
+    Main,
+    Numpad,
+}
+
 /// A key pressed and released on the window, the way the message loop hands
 /// a real key to it: the repeat count of one on the down, the transition bit
-/// on the up.
-fn press(hwnd: isize, key: usize) {
+/// on the up, and the extended bit for a main-keyboard arrow. Without that
+/// bit, wxWidgets reads `VK_RIGHT` as `WXK_NUMPAD_RIGHT`, which is how the
+/// first version of this test found the handler answering nothing.
+fn press(hwnd: isize, key: usize, from: Keyboard) {
+    const KF_EXTENDED: isize = 0x0100 << 16;
+    let extended = match from {
+        Keyboard::Main => KF_EXTENDED,
+        Keyboard::Numpad => 0,
+    };
     // SAFETY: `hwnd` is a live window on this thread, built by the caller.
     unsafe {
-        SendMessageW(hwnd, WM_KEYDOWN, key, 1);
-        SendMessageW(hwnd, WM_KEYUP, key, 0xC000_0001_u32 as i32 as isize);
+        SendMessageW(hwnd, WM_KEYDOWN, key, 1 | extended);
+        SendMessageW(
+            hwnd,
+            WM_KEYUP,
+            key,
+            0xC000_0001_u32 as i32 as isize | extended,
+        );
     }
 }
 
@@ -207,37 +229,31 @@ fn test_one_arrow_on_the_settings_tab_row_raises_one_focus_event() {
             // The reading: Right from the first tab, then Left back, each a
             // real key on the control's own window. Tab items are numbered
             // from one on this channel.
-            let raised = events_raised_by(tab_row, || press(tab_row, VK_RIGHT));
-            if settings.notebook.selection() != 1 {
-                wrong.push((
-                    "Right from the first tab".to_string(),
-                    format!(
-                        "the selection is {} rather than 1",
-                        settings.notebook.selection()
-                    ),
-                ));
-            }
-            if let Err(why) = one_reading_of(&raised, 2) {
-                wrong.push(("what Right raised".to_string(), why));
-            }
-            let raised = events_raised_by(tab_row, || press(tab_row, VK_LEFT));
-            if settings.notebook.selection() != 0 {
-                wrong.push((
-                    "Left back to the first tab".to_string(),
-                    format!(
-                        "the selection is {} rather than 0",
-                        settings.notebook.selection()
-                    ),
-                ));
-            }
-            if let Err(why) = one_reading_of(&raised, 1) {
-                wrong.push(("what Left raised".to_string(), why));
-            }
+            let mut arrow = |key, from, reached: i32, said: &str| {
+                let raised = events_raised_by(tab_row, || press(tab_row, key, from));
+                if settings.notebook.selection() != reached - 1 {
+                    wrong.push((
+                        said.to_string(),
+                        format!(
+                            "the selection is {} rather than {}",
+                            settings.notebook.selection(),
+                            reached - 1
+                        ),
+                    ));
+                }
+                if let Err(why) = one_reading_of(&raised, reached) {
+                    wrong.push((format!("what {said} raised"), why));
+                }
+            };
+            arrow(VK_RIGHT, Keyboard::Main, 2, "Right from the first tab");
+            arrow(VK_LEFT, Keyboard::Main, 1, "Left back to the first tab");
+            arrow(VK_RIGHT, Keyboard::Numpad, 2, "Right on the numpad");
+            arrow(VK_LEFT, Keyboard::Numpad, 1, "Left on the numpad");
 
             // Left at the first tab and Right at the last stay where they are,
             // as the native control does, and raise nothing about a tab that
             // was not reached.
-            let raised = events_raised_by(tab_row, || press(tab_row, VK_LEFT));
+            let raised = events_raised_by(tab_row, || press(tab_row, VK_LEFT, Keyboard::Main));
             if settings.notebook.selection() != 0 || !raised.is_empty() {
                 wrong.push((
                     "Left at the first tab".to_string(),
@@ -308,6 +324,13 @@ fn test_an_arrow_is_read_from_its_key_code() {
     assert_eq!(Along::from_key_code(315), Some(Along::Back));
     assert_eq!(Along::from_key_code(316), Some(Along::Forward));
     assert_eq!(Along::from_key_code(317), Some(Along::Forward));
+    // The numpad's arrows with Num Lock off: WXK_NUMPAD_LEFT 376 to
+    // WXK_NUMPAD_DOWN 379, which the native control reads the same way.
+    assert_eq!(Along::from_key_code(376), Some(Along::Back));
+    assert_eq!(Along::from_key_code(377), Some(Along::Back));
+    assert_eq!(Along::from_key_code(378), Some(Along::Forward));
+    assert_eq!(Along::from_key_code(379), Some(Along::Forward));
     assert_eq!(Along::from_key_code(313), None, "Home is not an arrow");
+    assert_eq!(Along::from_key_code(375), None, "nor is the numpad's Home");
     assert_eq!(Along::from_key_code(9), None, "nor is Tab");
 }

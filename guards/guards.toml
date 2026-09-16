@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 44 records have arrived since and have not been through it.
+# 45 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -23337,4 +23337,33 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/no_label_is_only_a_space.rs", tests = 7 },
+]
+
+# The Settings tab row answers its own arrow keys (#33). The tester heard the
+# reached tab spoken twice; `scripts/uia-events.ps1` on 2026-09-16 showed the
+# native tab control's own arrow handler raising EVENT_OBJECT_FOCUS twice on
+# the same tab per key, and the selection moved through TCM_SETCURSEL raising
+# it once. `answer_the_arrows_on` takes the arrow on the notebook and moves
+# the selection through wxWidgets' SetSelection, which goes that way. The
+# break takes the one call that installs it, so the control's own handler
+# runs again and the built dialog raises two focus events for one real
+# WM_KEYDOWN, which is what the target counts with an in-context win-event
+# hook. `suite` names the target, which couples it to this file for
+# `check.sh --suites-for`; the file has no unit tests of its own.
+#
+# Measured 2026-09-16 on the branch the record was written on,
+# `cargo test --test the_settings_tab_row_says_each_tab_once`.
+[[guard]]
+name = "the Settings tab row answers its own arrow keys, so a tab is raised once"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_tab_row_says_each_tab_once"
+before = """    let notebook = Notebook::builder(&dlg).build();
+    answer_the_arrows_on(&notebook);"""
+after = """    let notebook = Notebook::builder(&dlg).build();"""
+red = [
+    "test_one_arrow_on_the_settings_tab_row_raises_one_focus_event",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_tab_row_says_each_tab_once.rs", tests = 3 },
 ]
