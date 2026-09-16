@@ -8,6 +8,45 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Added
 
+- **The mail protocols and the CalDAV client went through a mutation run on
+  GitHub's runners, and every survivor is killed or has its reason written
+  down.** Two dispatches of the mutation workflow on 2026-09-15 at
+  `3e633252`, one runner per shard: `src/service/protocols/**`, 450 mutants
+  in 18 shards, 316 caught, 41 nothing noticed, 91 the compiler rejected, 2
+  timed out; `src/service/caldav.rs`, 420 mutants in 17 shards, 378 caught,
+  15 nothing noticed, 25 rejected, 2 timed out. Read together afterwards
+  with the merger, which accepted both runs whole. Of the 56 survivors, 43
+  are killed by tests each shown red against its mutant by hand: the IMAP
+  session now has a test for which folder it says is open, for the UID range
+  an incremental sync asks for, for the counts a folder reports, for
+  refusing a search with no folder open, for the write gate before it is
+  opened, for the introduction a server that asks for one is given, for a
+  nested folder's name, for the highest-modseq a server names on opening,
+  for the idle window staying inside RFC 2177, for a stopped watch having
+  signed out before `stop` returns, and for every LIST attribute the parser
+  knows being spelled; the POP3 session for STAT's two numbers, for a
+  listing pairing sizes with identifiers, and for RSET being sent; the
+  CalDAV client for accepting a plain 200 on a PROPFIND, for refusing a
+  refused REPORT rather than reading it as an empty calendar, for a journal
+  listing on 200 and on 401, for a collection being told from a name that
+  starts the same way, for a clock of letters not being dressed up as a
+  time, and for a document whose first line is indented keeping it. Six
+  survivors are equivalent mutants with the reason beside each, and seven
+  are recorded as untested behaviour: the STARTTLS upgrade and the TLS half
+  of the stream shims, which no loopback test reaches without a TLS server,
+  and a client constructor that reads this machine's own settings. The four
+  timeouts were run again here and are the mutants' own doing. The page is
+  `docs/plans/20260915-whole-tree-mutation-run.md`; the runner's rate, about
+  2.9 times this machine's, is on the measurements page.
+
+  Known limitations: the run judged one commit, `3e633252`; the whole tree
+  outside the two areas has not been through a run since the sweeps of
+  August, and the measurements page says what it would cost; the wxWidgets
+  layer is excluded by the configuration, which says why; the seven
+  survivors recorded as untested are untested behaviour until a TLS
+  loopback exists and the client constructor takes its setting as an
+  argument.
+
 - **A whole-tree mutation run is a set of shards on one commit, each one
   a unit a person can run, stop and read alone.** A developer tool, not a
   change to the program. `scripts/mutants.sh --shard k/n` runs one shard

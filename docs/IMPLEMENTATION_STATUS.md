@@ -278,6 +278,27 @@ file. The lists of endings it walks are written out by hand and nothing made
 them keep up with the two sets of endings they stand for. Both gaps are tests
 now.
 
+On 2026-09-15, at `3e633252`, the mail protocols under
+`src/service/protocols/` and the CalDAV client in `src/service/caldav.rs`
+went through `scripts/mutants.sh` in shards on GitHub's runners, one runner
+per shard, dispatched from the Actions tab, and were read together
+afterwards with `scripts/mutants_report.py --shards`. The protocols: 450
+mutants, 316 caught, 41 nothing noticed, 91 the compiler rejected, 2 timed
+out, so 21 percent of that run asked nothing. CalDAV: 420 mutants, 378
+caught, 15 nothing noticed, 25 rejected, 2 timed out, 6 percent asked
+nothing. The four timeouts were run again on this machine and timed out
+again: two are loops the mutant stops advancing, and two make every test
+that opens a connection fail at its own ten-second limit, which over ninety
+such tests is longer than the mutant's budget. Every survivor is on
+`docs/plans/20260915-whole-tree-mutation-run.md` with what became of it: 43
+killed by tests shown red against them by hand, 6 equivalent with the
+reason, 7 recorded as untested behaviour, which is the STARTTLS upgrade and
+the TLS half of the stream shims, neither reachable from a loopback test
+without a TLS server, and a client constructor that reads this machine's own
+settings. The rest of the tree, 12,391 mutants less those two areas at that
+commit, has not been through a run since the sweeps above, and the rows on
+`docs/development/measurements.md` say what it would cost.
+
 Line coverage of the library was 83.34% on 2026-09-14, 160,966 of 193,153
 lines, measured at `55464a5e` with `cargo llvm-cov --lib --summary-only`; the
 row on `docs/development/measurements.md` has the run's conditions and the
