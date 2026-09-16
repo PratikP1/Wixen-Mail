@@ -79,8 +79,9 @@ pub struct SettingsWidgets {
     undo_send_hold: SpinCtrl,
     draft_autosave: SpinCtrl,
     add_signature_automatically: CheckBox,
-    // Reading
-    sort_order: Choice,
+    // Reading. The two sort choices are public because a test builds this
+    // dialog and reads their tab order back (#36); nothing else is.
+    pub sort_order: Choice,
     read_receipts: Choice,
     read_messages_as: Choice,
     date_style: Choice,
@@ -88,7 +89,7 @@ pub struct SettingsWidgets {
     date_wording: Choice,
     clock_hours: Choice,
     mark_read_after: Choice,
-    sort_then: Choice,
+    pub sort_then: Choice,
     copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
