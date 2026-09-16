@@ -31,12 +31,13 @@
 //! untouched and gives a row nobody has held before the status an invitation
 //! implies.
 //!
-//! **Whether the answer reached anybody.** That is [`HowItWent`], and it is
+//! **Whether the answer is on its way.** That is [`HowItWent`], and it is
 //! asked here rather than at the window because the rule belongs with the
 //! writing. An answer that never left the machine must not be filed as though
 //! it had: the person has just been told nobody was told and that it can be
 //! tried again, and a calendar entry contradicting that sentence is worse than
-//! either alone.
+//! either alone. An answer in the outbox is filed while it is still held, and
+//! [`file_the_answer`] says what that costs.
 //!
 //! **Which calendar.** [`crate::data::message_cache::MessageCache::ensure_default_calendar`]
 //! already answers that for every other path that has to put an event
@@ -147,6 +148,17 @@ fn the_row_an_answer_leaves(
 /// so an invitation older than the one already answered is an ordinary event
 /// rather than a broken one, and acting on it would put a meeting back to where
 /// it was before it moved with nothing said.
+///
+/// A queued answer is filed at once, while it is still held, and that is a
+/// decision too. Every answer is held for ten seconds like any other message,
+/// so filing only once it had gone would need the send loop to reach back to
+/// the calendar, which nothing does today; filing at once means the calendar
+/// says what the person answered from the moment they pressed. What it costs:
+/// Undo Send inside the hold takes the reply back and leaves the meeting on
+/// the calendar as answered. Answering the same meeting again replaces the
+/// entry, so somebody who undoes and answers differently ends with the
+/// calendar right; somebody who undoes and does not answer has an entry the
+/// organiser never heard about, and the changelog says so.
 pub fn file_the_answer(
     cache: &MessageCache,
     account_id: &str,
@@ -154,7 +166,7 @@ pub fn file_the_answer(
     answer: Answer,
     how_it_went: &HowItWent,
 ) -> Result<()> {
-    if !matches!(how_it_went, HowItWent::Sent) {
+    if matches!(how_it_went, HowItWent::DidNotSend { .. }) {
         return Ok(());
     }
     let invitation = answering.invitation();
@@ -256,14 +268,21 @@ mod tests {
         })
     }
 
-    /// Answer a meeting the way pressing the button does, having sent.
+    /// Answer a meeting the way pressing the button does: the reply queued
+    /// under the default hold.
     fn answer_it(cache: &MessageCache, document: &str, answer: Answer) {
         file_the_answer(
             cache,
             "acct",
             &ready_to_answer(document),
             answer,
-            &HowItWent::Sent,
+            &HowItWent::Queued {
+                goes: crate::application::sending_later::WhenItGoes::WhenItsTimeComes,
+                waiting_on: crate::application::sending_later::GoAfter::held(
+                    crate::application::sending_later::Hold::DEFAULT,
+                    chrono::Local::now(),
+                ),
+            },
         )
         .expect("the answer to be filed");
     }
@@ -525,6 +544,36 @@ mod tests {
             .expect("the default calendar");
         assert_eq!(on_the_day.calendar_id.as_deref(), Some(default.id.as_str()));
         assert_eq!(default.name, "My Calendar");
+    }
+
+    #[test]
+    fn test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go() {
+        // Every answer is held for ten seconds like any other message, so this
+        // is what pressing Accept produces, and the calendar says what the
+        // person answered from the moment they pressed. Undo Send in those ten
+        // seconds takes the reply back and leaves the entry; answering again
+        // replaces it, so the calendar ends up right either way.
+        let cache = a_calendar_on_this_computer("a_held_answer_is_filed");
+        let now = chrono::Local::now();
+
+        file_the_answer(
+            &cache,
+            "acct",
+            &ready_to_answer(&an_invitation_that_arrived()),
+            Answer::Accepted,
+            &HowItWent::Queued {
+                goes: crate::application::sending_later::WhenItGoes::WhenItsTimeComes,
+                waiting_on: crate::application::sending_later::GoAfter::held(
+                    crate::application::sending_later::Hold::DEFAULT,
+                    now,
+                ),
+            },
+        )
+        .expect("a held answer to be filed");
+
+        let filed = the_meeting_on_the_calendar(&cache)
+            .expect("a held answer was not written to the calendar, so for ten seconds the outbox says one thing and the calendar another, and after that they agree by accident");
+        assert_eq!(filed.show_as, "busy");
     }
 
     #[test]

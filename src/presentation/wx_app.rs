@@ -4078,14 +4078,7 @@ impl WxMailApp {
                             } else {
                                 Answer::Declined
                             };
-                            answer_the_invitation(
-                                &state,
-                                &message_cache,
-                                &ui_tx,
-                                &runtime,
-                                &a11y,
-                                answer,
-                            );
+                            answer_the_invitation(app, &message_cache, &a11y, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
@@ -6099,14 +6092,44 @@ impl WxMailApp {
         file.prepend_separator();
         file.prepend_submenu(new_sub, "&New", "Create a new item");
 
-        // One item, and that is the right number. Find has lived under Edit on
-        // this platform for thirty years, so somebody who has used any other
-        // Windows application already knows where it is. Marking a task done
-        // and pinning a note used to be here too, which put two commands that
-        // are not edits in any sense under a heading that promised they were.
-        // They are on the Action menu with the rest of what acts on the thing
-        // in front of you.
+        // Undo, the clipboard four, and Find: what Edit holds on every Windows
+        // program, so somebody who has used any other already knows where each
+        // is. Marking a task done and pinning a note used to be here too, which
+        // put two commands that are not edits in any sense under a heading that
+        // promised they were. They are on the Action menu with the rest of what
+        // acts on the thing in front of you.
         let edit = Menu::builder()
+            // First, where Undo sits on every Edit menu on this platform. This
+            // is the one undo the program has, and it lived on Tools between
+            // the address book commands and Flush Outbox until the first day
+            // of testing, when the tester said "undo send should be in the
+            // edit menu" (#44). Somebody working by ear opens Edit, hears the
+            // clipboard commands and Search, and cannot tell a command they
+            // walked past from one that is not there.
+            //
+            // It is the command the countdown names. Pressing Send says
+            // "Sending in 10 seconds. Undo Send takes it back", and the Outbox
+            // row for a held message says the same, so this is the door those
+            // sentences point at.
+            //
+            // Both halves of that have been false in turn, which is why it is
+            // written out. First there was no Undo Send at all: no menu item,
+            // no key, no button, while the countdown's words already named it.
+            // Then this item existed and nothing ever showed the countdown,
+            // because nothing production ever held a message, so the command
+            // refused every time it was pressed and the sentence above was
+            // said to nobody. 04.2-01 made both true at once.
+            //
+            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
+            // would mean a key that puts characters back in one window and
+            // stops a message in another. `tests/undo_send_is_where_somebody_looks.rs`
+            // holds it here, first, and off Tools.
+            .append_item(
+                ID_UNDO_SEND,
+                "&Undo Send\tCtrl+Shift+Z",
+                "Take back the message you just sent, while it is still being held",
+            )
+            .append_separator()
             // The four every Windows program has. They were missing entirely,
             // and Ctrl+A was worse than missing: it opened the Account Manager,
             // so the key that means Select All everywhere else put a dialog in
@@ -6884,27 +6907,8 @@ impl WxMailApp {
                  tried for real",
             )
             .append_separator()
-            // The command the countdown names. Pressing Send says "Sending in
-            // 10 seconds. Undo Send takes it back", and the Outbox row for a
-            // held message says the same, so this is the door those sentences
-            // point at.
-            //
-            // Both halves of that have been false in turn, which is why it is
-            // written out. First there was no Undo Send at all: no menu item,
-            // no key, no button, while the countdown's words already named it.
-            // Then this item existed and nothing ever showed the countdown,
-            // because nothing production ever held a message, so the command
-            // refused every time it was pressed and the sentence above was
-            // said to nobody. 04.2-01 made both true at once.
-            //
-            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
-            // would mean a key that puts characters back in one window and
-            // stops a message in another.
-            .append_item(
-                ID_UNDO_SEND,
-                "&Undo Send\tCtrl+Shift+Z",
-                "Take back the message you just sent, while it is still being held",
-            )
+            // Undo Send was here, before Flush Outbox, until #44 moved it to
+            // the top of Edit, where an undo is looked for.
             .append_item(
                 ID_FLUSH_OUTBOX,
                 "Flush &Outbox",
@@ -13016,15 +13020,19 @@ fn fill_folders_from(
 /// explain that rather than send anything. A button that quietly did nothing
 /// would be worse than no button at all.
 fn answer_the_invitation(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    ui_tx: &Sender<UIUpdate>,
-    runtime: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
     answer: crate::application::invitations::Answer,
 ) {
     use crate::application::answering;
     use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles {
+        state,
+        tx: ui_tx,
+        rt: runtime,
+    } = app;
 
     let told = |said: &str, how: Priority| {
         send_status(ui_tx, runtime, said);
@@ -13100,16 +13108,32 @@ fn answer_the_invitation(
     let went = send_the_answer(state, cache, &to_send);
     // The other half of answering, and the half somebody lives with. Filing
     // decides for itself that an answer which never left the machine is not
-    // written down as though it had, so the rule sits beside the writing rather
-    // than in this branch. A calendar that could not be written is not worth
-    // interrupting the answer's own sentence for: the reply has gone, which is
-    // what the person asked for, and the meeting can be added by hand.
+    // written down as though it had, and that a held one is filed while it is
+    // held, so the rule sits beside the writing rather than in this branch. A
+    // calendar that could not be written is not worth interrupting the
+    // answer's own sentence for: the reply is on its way, which is what the
+    // person asked for, and the meeting can be added by hand.
     if let Err(why) = crate::application::answered_meetings::file_the_answer(
         cache, &account, &ready, answer, &went,
     ) {
-        tracing::warn!("The answer was sent and could not be put on the calendar: {why}");
+        tracing::warn!("The answer was queued and could not be put on the calendar: {why}");
     }
-    told(&ready.what_answering_did(answer, &went), Priority::Normal);
+    told(
+        &ready.what_answering_did(answer, &went, chrono::Local::now()),
+        Priority::Normal,
+    );
+    // What the composer's Send does for a message with the hold off, and this
+    // did not: the send loop runs on a clock only for rows carrying a moment,
+    // so a row with nothing on it waits for somebody to press something. The
+    // sentence above says "Sending to ..." for this case, and this is what
+    // makes it true.
+    if let answering::HowItWent::Queued {
+        goes: crate::application::sending_later::WhenItGoes::Now,
+        ..
+    } = &went
+    {
+        flush_outbox(app);
+    }
 }
 
 /// The address this account answers an invitation as.
@@ -13126,6 +13150,12 @@ fn the_address_this_account_answers_as(state: &Arc<StdMutex<WxUIState>>, account
 }
 
 /// Put the answer in the queue that sends mail, and say how that went.
+///
+/// How it went is what the queue said, carried back as it was said: the row
+/// is held, or goes now, or waits for a network, and the sentence afterwards
+/// is worded from that value the way the composer's Send words its own. It
+/// used to answer `Sent` and throw the queue's answer away, and `Sent` was
+/// documented as having reached the organiser's mail server (#56).
 fn send_the_answer(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Arc<MessageCache>,
@@ -13162,7 +13192,14 @@ fn send_the_answer(
         send_at: None,
     };
     match queue_for_sending(state, &Some(cache.clone()), &data) {
-        Ok(_) => HowItWent::Sent,
+        Ok((_, waiting_on)) => HowItWent::Queued {
+            goes: crate::application::sending_later::when_it_goes(
+                reachability_of(state),
+                &waiting_on,
+                chrono::Local::now(),
+            ),
+            waiting_on,
+        },
         Err(because) => HowItWent::DidNotSend { because },
     }
 }

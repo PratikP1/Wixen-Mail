@@ -57,6 +57,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: a message whose text was never fetched has no snippet to put right, as
   before; it gains one when its text arrives.
 
+- **Undo Send is first on the Edit menu.** Reported on 2026-09-15 from build
+  `0.125.1+g3e633252` (#44), in the tester's words: "undo send should be in the edit menu." It
+  was on the Tools menu, between the address book commands and Flush Outbox, and Edit held no
+  undo of any kind, so somebody looking for the one undo this program has opened Edit and found
+  Cut. It is the first item on Edit now, with the same key, `Ctrl+Shift+Z`, and does the same
+  thing: takes back the message you just sent while it is still being held. The shortcuts page
+  says which menu.
+
+- **Answering a meeting said the organiser had been told before the answer had gone.** Found
+  on 2026-09-15 in build `0.125.1+g3e633252` (#56). Accept, Tentative and Decline put the reply
+  in the Outbox under the same ten-second hold as any other message, and the sentence afterwards
+  was "Ada Lovelace has been told", said at once, with no countdown and no mention of Undo Send.
+  So the one path where somebody most needs the ten seconds, a wrong button on an invitation, was
+  the one path that did not announce them. Pressing any of the three now says what pressing Send
+  says, from the same value the composer uses: "Declined Quarterly review. Sending in 10 seconds.
+  Undo Send takes it back." With the hold switched off it says "Sending to Ada Lovelace..." and
+  hands the answer to the server at once, which it also did not do before: an answer with the
+  hold off used to wait in the Outbox for the next Send of anything. With offline mode on it says
+  the answer is waiting for a network. Nothing is said when the held answer leaves, as with any
+  other held message, so "has been told" is not said at any point.
+  Known limitations: the meeting is put on the calendar as answered the moment you press, while
+  the reply is still held. Undo Send in those ten seconds takes the reply back and leaves the
+  meeting on the calendar as answered; answering the meeting again, either way, replaces the
+  entry. Nothing here has been heard with a screen reader yet, so whether what is spoken after a
+  mistaken Accept points somebody at Undo Send in time is still an open question.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

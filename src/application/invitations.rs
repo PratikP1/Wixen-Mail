@@ -383,18 +383,25 @@ pub fn what_will_happen(invitation: &Invitation, answer: Answer, when_in_words: 
     )
 }
 
-/// What answering did, in one sentence, once the reply has gone.
+/// What answering did, in one sentence, once the reply is in the outbox.
 ///
 /// Said because the only other sign the answer went anywhere is that the
 /// buttons stopped being offered, which somebody who cannot see the screen
 /// has no way to notice. The time is left out: it was said before pressing,
-/// and what matters afterwards is which answer went and to whom.
-pub fn what_happened(invitation: &Invitation, answer: Answer) -> String {
+/// and what matters afterwards is which answer went.
+///
+/// It names the answer and the meeting and stops there. What comes next is
+/// what the queue does with any message, and `sending_later::what_send_did`
+/// words that in the same words every other Send hears, so nothing here says
+/// the organiser knows: while the answer is held they do not, and when it
+/// leaves nothing is said, as with any other message. This used to end
+/// "<organiser> has been told", said at once for an answer that sat in the
+/// outbox for ten seconds like everything else (#56).
+pub fn what_was_done(invitation: &Invitation, answer: Answer) -> String {
     format!(
-        "{} {}. {}",
+        "{} {}.",
         answer.what_it_did(),
         what_the_meeting_is_called(invitation),
-        who_was_told(invitation)
     )
 }
 
@@ -436,16 +443,6 @@ fn who_will_be_told(invitation: &Invitation) -> String {
         Some(organiser) => format!("{} will be told.", how_to_say(organiser)),
         None => "Nothing can be sent, because the invitation does not say who called the \
              meeting."
-            .to_string(),
-    }
-}
-
-/// Who heard the answer, said as a whole sentence.
-fn who_was_told(invitation: &Invitation) -> String {
-    match invitation.organiser.as_ref() {
-        Some(organiser) => format!("{} has been told.", how_to_say(organiser)),
-        None => "Nobody was told, because the invitation does not say who called the \
-                 meeting."
             .to_string(),
     }
 }
@@ -1191,20 +1188,6 @@ mod tests {
     }
 
     #[test]
-    fn test_after_answering_the_sentence_says_what_was_done_and_that_it_went() {
-        // The other half. Without it the only sign the answer went anywhere is
-        // that the buttons stopped being offered, which somebody who cannot
-        // see the screen has no way to notice.
-        let invitation =
-            read_the_invitation(&an_invitation_that_arrived()).expect("an invitation to read");
-
-        let said = what_happened(&invitation, Answer::Declined);
-
-        assert!(said.starts_with("Declined Quarterly review"), "{said}");
-        assert!(said.contains("Ada Lovelace has been told"), "{said}");
-    }
-
-    #[test]
     fn test_each_answer_is_said_in_words_rather_than_in_the_standards_own() {
         // PARTSTAT=TENTATIVE is what goes on the wire, and it is not a thing
         // to read to somebody. Each answer says what it means both before and
@@ -1218,10 +1201,14 @@ mod tests {
             (Answer::Declined, "Decline ", "Declined "),
         ] {
             let will = what_will_happen(&invitation, answer, "");
-            let did = what_happened(&invitation, answer);
+            let did = what_was_done(&invitation, answer);
 
             assert!(will.contains(before), "{answer:?} before: {will}");
             assert!(did.contains(after), "{answer:?} after: {did}");
+            // The sentence afterwards names the answer and the meeting and
+            // claims nothing about who heard it; the hold is worded by the
+            // queue, in the words every Send hears.
+            assert!(!did.contains("told"), "{answer:?} after: {did}");
             assert!(
                 !will.contains("PARTSTAT") && !did.contains("PARTSTAT"),
                 "{answer:?} was read out in the standard's own words"
@@ -1451,7 +1438,7 @@ mod tests {
             };
             read_whole += 1;
             let _ = what_will_happen(&invitation, Answer::Accepted, "Thursday");
-            let _ = what_happened(&invitation, Answer::Declined);
+            let _ = what_was_done(&invitation, Answer::Declined);
             let _ = what_changed(&invitation, None);
             for guest in invitation.guests.clone() {
                 let _ = a_reply_to(&invitation, &guest.address, Answer::Accepted, answered_at());

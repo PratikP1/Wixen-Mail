@@ -126,7 +126,7 @@ pub struct ComposeData {
 
 /// Ask when this message should go, and close the composer if a time was set.
 ///
-/// One routine for both ways in, the toolbar button and Alt+E out of the
+/// One routine for both ways in, the toolbar button and Alt+H out of the
 /// message body, so the two cannot come to behave differently. Cancelling the
 /// picker leaves the composer exactly as it was: nothing is written, nothing
 /// is sent, and Send goes on meaning what it always meant.
