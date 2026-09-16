@@ -934,6 +934,374 @@ fn test_the_reading_can_see_a_release_trigger_that_was_widened() {
 }
 
 // ---------------------------------------------------------------------------
+// Publishing the version the tree already carries
+// ---------------------------------------------------------------------------
+
+/// The level that publishes the version `Cargo.toml` already carries.
+///
+/// Named once, because the rule below, the companion and the messages they
+/// print all have to say the same string.
+const AS_IS: &str = "as-is";
+
+/// The name of the step that hands cargo-release its level.
+const THE_RELEASE_STEP: &str = "Create release version and tag";
+
+/// Every level the dispatch form offers, off the `options:` list under the
+/// `release_level` input.
+///
+/// The list runs from `options:` to the first line that is neither a member,
+/// a comment nor blank. Comments are dropped, so a level can be explained
+/// above its line without the explanation being read as a level.
+fn the_release_levels(yaml: &str) -> Vec<String> {
+    yaml.lines()
+        .map(str::trim)
+        .skip_while(|line| *line != "options:")
+        .skip(1)
+        .take_while(|line| line.is_empty() || line.starts_with('-') || line.starts_with('#'))
+        .filter_map(|line| line.strip_prefix('-'))
+        .map(|level| level.trim().to_string())
+        .collect()
+}
+
+/// Whether the workflow can publish the version the tree already carries,
+/// and what is wrong when it cannot.
+///
+/// Every other level bumps before it tags, so from a tree at `1.0.0-alpha.1`
+/// the `alpha` level publishes `-alpha.2` and nothing could ever publish
+/// `-alpha.1`. The tree's version is the next build to go to testers and was
+/// moved in the commit that changed behaviour, so the workflow has nothing to
+/// bump: it has to be able to hand cargo-release the number `Cargo.toml`
+/// carries, read off the same line `scripts/build-installer.sh:12` reads.
+///
+/// Three things, each with its own message. The option is on the form; the
+/// step that runs `cargo release` branches on it; and the branch reads the
+/// version off the manifest rather than passing the word through, because
+/// `as-is` is not a level cargo-release knows and handing it over verbatim
+/// fails at the one moment somebody is trying to publish.
+fn the_workflow_can_publish_the_version_as_it_stands(yaml: &str) -> Result<(), String> {
+    let levels = the_release_levels(yaml);
+    if levels.is_empty() {
+        return Err("no release level was read at all, so this rule looked at nothing".to_string());
+    }
+    if !levels.iter().any(|level| level == AS_IS) {
+        return Err(format!(
+            "the release_level choice list has no `{AS_IS}` option, so from a tree at \
+             1.0.0-alpha.1 the workflow can only ever publish -alpha.2; it offers {levels:?}"
+        ));
+    }
+
+    let release_step = step(yaml, THE_RELEASE_STEP);
+    if release_step.is_empty() {
+        return Err(format!(
+            "no step called '{THE_RELEASE_STEP}' was read, so this rule has no cargo release \
+             line to look at"
+        ));
+    }
+    if !release_step.iter().any(|line| line.contains(AS_IS)) {
+        return Err(format!(
+            "'{THE_RELEASE_STEP}' does not branch on `{AS_IS}`, so choosing it hands \
+             cargo-release a word it does not know"
+        ));
+    }
+    if !release_step
+        .iter()
+        .any(|line| line.contains("Cargo.toml") && line.contains("version"))
+    {
+        return Err(format!(
+            "the `{AS_IS}` branch of '{THE_RELEASE_STEP}' does not read the version off \
+             Cargo.toml, so the tag would be something other than the number the tree carries"
+        ));
+    }
+    if release_step
+        .iter()
+        .any(|line| line.contains("cargo release ${{ inputs.release_level }}"))
+    {
+        return Err(format!(
+            "cargo release is still handed the level verbatim, so `{AS_IS}` reaches it as a \
+             word it does not know"
+        ));
+    }
+    Ok(())
+}
+
+/// The Release workflow can publish the version the tree carries.
+#[test]
+fn test_the_release_workflow_can_publish_the_version_the_tree_already_carries() {
+    if let Err(wrong) = the_workflow_can_publish_the_version_as_it_stands(&the_release_workflow()) {
+        panic!("{wrong}");
+    }
+}
+
+/// An `as-is` publish of a prerelease is still a GitHub prerelease.
+///
+/// The capture step decides `prerelease` from the tag's suffix and not from
+/// the level, so `as-is` on `1.0.0-alpha.1` is a prerelease and `as-is` on
+/// `1.0.0` is a full release, without either being said twice. Held here so
+/// that the branch added for `as-is` cannot quietly move that decision onto
+/// the level.
+#[test]
+fn test_an_as_is_publish_of_a_prerelease_is_still_a_prerelease() {
+    let workflow = the_release_workflow();
+    let capture = step(&workflow, "Capture release tag");
+    assert!(
+        !capture.is_empty(),
+        "no step called 'Capture release tag' was read, so this test is looking at nothing"
+    );
+    assert!(
+        capture.contains(
+            &"$prerelease = if ($tag -match '-(alpha|beta|rc)') { 'true' } else { 'false' }"
+        ),
+        "prerelease is no longer decided from the tag's suffix: {capture:?}"
+    );
+}
+
+/// The reading can see a workflow that cannot publish the version as it
+/// stands.
+///
+/// The companion the test above cannot do without. It reads one workflow,
+/// and while that workflow offers the level it passes whether the reading
+/// works or has been narrowed until it finds the word anywhere, which is how
+/// a document guard in this tree came to prove nothing at all. The first
+/// failing case is the real workflow with the option spliced out, so the
+/// reading is shown to see the absence in the text it really reads.
+#[test]
+fn test_the_reading_can_see_a_workflow_that_cannot_publish_the_version_as_it_stands() {
+    const CAN: &str = "        options:\n          - patch\n          # Publish what is there.\n          - as-is\n\nenv:\n    steps:\n      - name: Create release version and tag\n        run: |\n          level=\"${{ inputs.release_level }}\"\n          if [ \"$level\" = \"as-is\" ]; then\n            level=$(grep -m1 -E '^version = \"' Cargo.toml | sed -E 's/^version = \"(.*)\"/\\1/')\n          fi\n          cargo release \"$level\" --execute\n      - name: Capture release tag\n";
+    const PASSES_THE_WORD_THROUGH: &str = "        options:\n          - patch\n          - as-is\n\nenv:\n    steps:\n      - name: Create release version and tag\n        run: >\n          cargo release ${{ inputs.release_level }} --execute\n      - name: Capture release tag\n";
+    const NO_LEVELS_READ: &str = "jobs:\n  build:\n";
+
+    assert_eq!(
+        the_workflow_can_publish_the_version_as_it_stands(CAN),
+        Ok(())
+    );
+
+    let real = the_release_workflow();
+    let spliced_out: String = real
+        .lines()
+        .filter(|line| line.trim() != format!("- {AS_IS}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let absent = the_workflow_can_publish_the_version_as_it_stands(&spliced_out)
+        .expect_err("a workflow without the option has to be refused");
+    assert!(
+        absent.contains(AS_IS) && absent.contains("no `"),
+        "{absent}"
+    );
+
+    let verbatim = the_workflow_can_publish_the_version_as_it_stands(PASSES_THE_WORD_THROUGH)
+        .expect_err("a step that hands the word to cargo-release has to be refused");
+    assert!(verbatim.contains("does not branch on"), "{verbatim}");
+
+    let blind = the_workflow_can_publish_the_version_as_it_stands(NO_LEVELS_READ)
+        .expect_err("a reading that found no level has to be refused");
+    assert!(blind.contains("looked at nothing"), "{blind}");
+}
+
+// ---------------------------------------------------------------------------
+// The four-number version Windows shows
+// ---------------------------------------------------------------------------
+
+/// The installer build script, read from the repository root.
+fn the_installer_build_script() -> String {
+    std::fs::read_to_string("scripts/build-installer.sh").expect("the installer build script")
+}
+
+/// What each prerelease word puts in the thousands of the fourth field, and
+/// what a plain version gets, read off the script's own `case` arms.
+#[derive(Debug, PartialEq, Eq)]
+struct StageTable {
+    alpha: u64,
+    beta: u64,
+    rc: u64,
+    plain: u64,
+}
+
+/// The number one `case` arm assigns to `stage`, given the pattern that opens
+/// the arm, or `None` when no such arm is in the script.
+fn stage_arm(script: &str, pattern: &str) -> Option<u64> {
+    script.lines().find_map(|line| {
+        let assignment = line.trim().strip_prefix(pattern)?.trim();
+        let value = assignment.strip_prefix("stage=")?;
+        value.split(char::is_whitespace).next()?.parse().ok()
+    })
+}
+
+/// The four arms the encoding needs, each read off the script, and the name of
+/// the first one that is missing.
+///
+/// Read rather than copied, because a second copy of the arithmetic held to
+/// nothing is the failure this file is about: two versions of one rule that
+/// agree until one of them is edited. The multiplier and the cap are held by
+/// the test that uses this, which asks the script for the expression itself.
+fn the_stage_table(script: &str) -> Result<StageTable, String> {
+    let arm = |pattern: &str| {
+        stage_arm(script, pattern).ok_or_else(|| {
+            format!(
+                "no `{pattern} stage=N` arm was read off scripts/build-installer.sh, so the \
+                 fourth field of a version of that shape is no longer computed"
+            )
+        })
+    };
+    Ok(StageTable {
+        alpha: arm("*-alpha.*)")?,
+        beta: arm("*-beta.*)")?,
+        rc: arm("*-rc.*)")?,
+        plain: arm("*)")?,
+    })
+}
+
+/// The four numbers Windows shows for a version, computed the way the script
+/// computes them: the three numbers as they are, and a fourth of
+/// `stage * 1000 + step`, with the step capped at 999 so it can never read as
+/// the next stage.
+///
+/// Ordered by the derived `Ord` on the array, which compares the four fields
+/// as numbers left to right. That is the order Windows applies to a file
+/// version, so a comparison of two of these is a comparison of the two
+/// installs as Apps and Features would rank them.
+fn windows_file_version(table: &StageTable, version: &str) -> [u64; 4] {
+    let (numbers, prerelease) = match version.split_once('-') {
+        Some((numbers, prerelease)) => (numbers, Some(prerelease)),
+        None => (version, None),
+    };
+    let mut fields = numbers
+        .split('.')
+        .map(|field| field.parse::<u64>().expect("a whole number in a version"));
+    let mut next = || fields.next().expect("three numbers in a version");
+    let (major, minor, patch) = (next(), next(), next());
+
+    let (stage, step) = match prerelease {
+        None => (table.plain, 0),
+        Some(prerelease) => {
+            let (word, counter) = prerelease
+                .split_once('.')
+                .expect("a prerelease word, a dot and a counter");
+            let stage = match word {
+                "alpha" => table.alpha,
+                "beta" => table.beta,
+                "rc" => table.rc,
+                other => panic!("{other} is not a prerelease word the script names"),
+            };
+            let step: u64 = counter
+                .parse()
+                .expect("a whole number after the prerelease word");
+            (stage, step.min(999))
+        }
+    };
+    [major, minor, patch, stage * 1000 + step]
+}
+
+/// The encoding here agrees with the script's own comment table, and with the
+/// two versions this project moved between on 2026-09-16.
+///
+/// The table is the one at `scripts/build-installer.sh` above the `case`, and
+/// this holds the reading to it row by row. The stage numbers come off the
+/// script; the multiplier and the cap are asserted to still be in it, so a
+/// script that stopped multiplying by a thousand, or stopped capping the
+/// step, fails here by name rather than by a number that quietly disagrees.
+#[test]
+fn test_the_four_field_version_follows_the_scripts_own_table() {
+    let script = the_installer_build_script();
+    let table = the_stage_table(&script).unwrap_or_else(|missing| panic!("{missing}"));
+
+    assert!(
+        script.contains("$((stage * 1000 + step))"),
+        "the fourth field is no longer stage * 1000 + step, so the reading here is a copy \
+         of arithmetic the script no longer does"
+    );
+    assert!(
+        script.contains(r#"[ "$step" -gt 999 ] && step=999"#),
+        "the step is no longer capped at 999, so a step of 1000 would read as the next stage"
+    );
+
+    let encoded = |version: &str| windows_file_version(&table, version);
+    assert_eq!(encoded("0.5.0"), [0, 5, 0, 4000]);
+    assert_eq!(encoded("0.6.0-alpha.1"), [0, 6, 0, 1001]);
+    assert_eq!(encoded("0.6.0-beta.2"), [0, 6, 0, 2002]);
+    assert_eq!(encoded("0.6.0-rc.1"), [0, 6, 0, 3001]);
+    assert_eq!(encoded("0.6.0"), [0, 6, 0, 4000]);
+
+    assert_eq!(encoded("1.0.0-alpha.1"), [1, 0, 0, 1001]);
+    assert_eq!(encoded("0.125.1"), [0, 125, 1, 4000]);
+}
+
+/// The first alpha of 1.0.0 is above the last 0.x version the way Windows
+/// orders an upgrade.
+///
+/// Not obvious from the fourth field alone: a plain version lands on 4000 and
+/// an alpha on 1001, so on that field the old version is the higher one. The
+/// major decides first, which is what makes the step from `0.125.1` to
+/// `1.0.0-alpha.1` an upgrade in Apps and Features rather than a downgrade
+/// the installer would refuse to make.
+#[test]
+fn test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it() {
+    let script = the_installer_build_script();
+    let table = the_stage_table(&script).unwrap_or_else(|missing| panic!("{missing}"));
+
+    let first_alpha = windows_file_version(&table, "1.0.0-alpha.1");
+    let last_of_0_x = windows_file_version(&table, "0.125.1");
+
+    assert!(
+        first_alpha[3] < last_of_0_x[3],
+        "the fourth field alone would put the old version above the new one, which is what \
+         makes the field-by-field order the thing worth holding: {first_alpha:?} against \
+         {last_of_0_x:?}"
+    );
+    assert!(
+        first_alpha > last_of_0_x,
+        "Windows would rank {last_of_0_x:?} above {first_alpha:?}, and refuse the upgrade"
+    );
+}
+
+/// The reading can see a stage arm that is gone.
+///
+/// The companion the two tests above cannot do without. They read one script,
+/// and while that script has its four arms they pass whether the reading
+/// works or has been narrowed until it finds a number anywhere, which is how
+/// a document guard in this tree came to prove nothing at all.
+#[test]
+fn test_the_reading_can_see_a_stage_arm_that_is_gone() {
+    const ALL_FOUR: &str = "case \"$VERSION\" in\n  *-alpha.*) stage=1 ;;\n  *-beta.*) stage=2 ;;\n  *-rc.*) stage=3 ;;\n  *-*) stage=0 ;;\n  *) stage=4 ;;\nesac\n";
+    const NO_ALPHA: &str = "case \"$VERSION\" in\n  *-beta.*) stage=2 ;;\n  *-rc.*) stage=3 ;;\n  *-*) stage=0 ;;\n  *) stage=4 ;;\nesac\n";
+
+    assert_eq!(
+        the_stage_table(ALL_FOUR),
+        Ok(StageTable {
+            alpha: 1,
+            beta: 2,
+            rc: 3,
+            plain: 4
+        })
+    );
+
+    let missing =
+        the_stage_table(NO_ALPHA).expect_err("a script with no alpha arm has to be refused");
+    assert!(missing.contains("*-alpha.*)"), "{missing}");
+}
+
+/// The version the tree carries is a 1.x version.
+///
+/// Pratik decided on 2026-09-15 (#46) that the builds going to testers are
+/// the alpha, beta and release-candidate stages of 1.0.0, so the scheme
+/// cannot drift back to `0.x` without a test saying so. Red before the bump
+/// to `1.0.0-alpha.1` and green after it.
+#[test]
+fn test_the_version_the_tree_carries_is_at_least_one_point_oh() {
+    let manifest = std::fs::read_to_string("Cargo.toml").expect("the manifest");
+    let version = the_version(&manifest);
+    let major: u64 = version
+        .split('.')
+        .next()
+        .and_then(|major| major.parse().ok())
+        .unwrap_or_else(|| panic!("{version} does not start with a whole number"));
+
+    assert!(
+        major >= 1,
+        "Cargo.toml says {version}, and the builds going to testers are the stages of 1.0.0"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // What has to be signed
 // ---------------------------------------------------------------------------
 

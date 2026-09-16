@@ -7,14 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       release_level:
-        description: "How to bump. patch or minor for ordinary versions; alpha, beta or rc to stage the next one; release to drop a prerelease suffix."
+        description: "How to bump. as-is to publish the version Cargo.toml already carries; alpha, beta or rc to advance the stage; release to drop a prerelease suffix; patch or minor for ordinary versions, never on a prerelease."
         required: true
         type: choice
         options:
-          # Ordinary development, which is where most releases land. 0.x
-          # already means unstable, so a version needs no suffix to say so.
-          - patch
-          - minor
+          # Publish the version Cargo.toml already carries, without bumping
+          # it. The tree's version is the next build to go to testers and
+          # was moved in the commit that changed behaviour, so there is
+          # nothing left to bump: from 1.0.0-alpha.1, `alpha` would publish
+          # -alpha.2 and nothing could ever publish -alpha.1. This is the
+          # level the alpha uses. A prerelease suffix still makes it a
+          # GitHub prerelease, because that is decided from the tag below.
+          - as-is
           # Staging a release that is about to go to people. Each of these
           # bumps from the current version and starts or advances a
           # prerelease series: 0.5.0 then alpha gives 0.5.1-alpha.1.
@@ -23,6 +27,11 @@ on:
           - rc
           # Drop the suffix and cut the thing the prereleases were for.
           - release
+          # Ordinary development after 1.0.0. Never on a prerelease:
+          # cargo-release reads `patch` on 1.0.0-alpha.N as "remove the
+          # suffix" and cuts 1.0.0 as a full release.
+          - patch
+          - minor
 
 env:
   CARGO_TERM_COLOR: always
@@ -95,10 +104,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # `as-is` hands cargo-release the version itself rather than a level,
+      # read off the same line scripts/build-installer.sh:12 reads, so the
+      # tag is the number the tree carries. Given its current version,
+      # cargo-release 1.1.5 plans no bump, skips the commit when no file
+      # changed (`commit_all` in its ops/git.rs), and tags `v1.0.0-alpha.1`:
+      # a dry run on 2026-09-16 from a tree at 1.0.0-alpha.1 planned exactly
+      # the tag and the push.
       - name: Create release version and tag
-        run: >
-          cargo release ${{ inputs.release_level }} --execute --no-confirm --no-publish
-          --allow-branch main --push-remote origin
+        shell: bash
+        run: |
+          level="${{ inputs.release_level }}"
+          if [ "$level" = "as-is" ]; then
+            level=$(grep -m1 -E '^version = "' Cargo.toml | sed -E 's/^version = "(.*)"/\1/')
+            echo "Publishing the version Cargo.toml already carries: $level"
+          fi
+          cargo release "$level" --execute --no-confirm --no-publish \
+            --allow-branch main --push-remote origin
 
       - name: Capture release tag
         id: release_tag

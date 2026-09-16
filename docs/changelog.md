@@ -2,9 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-Versioning follows [SemVer](https://semver.org/). Development happens on plain `0.x.y`, because `0.x` already means unstable and a version should not also claim a testing programme that is not running. A suffix like `0.6.0-alpha.1` stages a release that is about to go to testers. A build handed to somebody between releases carries the commit it came from, as `0.5.0+g64c73dd`; everything after the `+` is build metadata and is ignored when comparing versions.
+Versioning follows [SemVer](https://semver.org/). The version the tree carries is the next build to go to testers, and since 2026-09-16 that is a stage of `1.0.0`: `1.0.0-alpha.1` first, then beta and release candidate, then `1.0.0` when the round closes. After a build is cut, the first behaviour change moves the prerelease counter once, in the commit that makes it, and later changes before the next cut leave it alone, because the version names the next build rather than counting commits. A build handed to somebody between releases carries the commit it came from, as `1.0.0-alpha.1+g64c73dd`; everything after the `+` is build metadata and is ignored when comparing versions. Until 2026-09-16 this paragraph said development happened on plain `0.x.y`, with a suffix like `0.6.0-alpha.1` only for a release about to go to testers; a build went to a tester on 2026-09-15, and that rule was written for the day it did.
 
 ## [Unreleased]
+
+### Changed
+
+- **The version is `1.0.0-alpha.1`.** It was `0.125.1`. Pratik decided on 2026-09-15, testing
+  build `0.125.1+g3e633252`, that the builds going to testers are the alpha, beta and
+  release-candidate stages of 1.0.0, so the number moved once, by hand, and every fix that follows
+  lands under it. Nothing you use changed except the number you see in About, in `--version`, in
+  Apps and Features and in the installer's file name. The Release workflow gained an `as-is` level
+  that publishes the version as the tree carries it, so the first alpha can be published as
+  `1.0.0-alpha.1` rather than being bumped to `-alpha.2` on the way out.
+  A settings file now says which build last wrote it. The `version` stamp in `app_config.json`
+  used to be copied through from whatever build created the profile, so a profile made by 0.7.7
+  still said 0.7.7 after every save a later build made, and a settings file sent with a bug report
+  could not say which build it came from. It is written with the running build's version on every
+  save.
+  Known limitations: no `1.0.0-alpha.1` has been published. Cutting the first alpha is a dispatch
+  of the Release workflow, done on purpose, and has not happened.
 
 ### Added
 

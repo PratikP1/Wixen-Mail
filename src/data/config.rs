@@ -1013,7 +1013,16 @@ impl ConfigManager {
     /// Save app configuration to file
     fn save_app_config(&self) -> Result<()> {
         self.app_config.validate()?;
-        let content = serde_json::to_string_pretty(&self.app_config)
+        // The stamp names the build that last wrote the file, not the one
+        // that created the profile. Until 2026-09-16 it was copied through
+        // from whatever `load` read, so a profile made by 0.7.7 said 0.7.7
+        // after every save 0.125.1 made, and a settings file sent with a
+        // bug report could not say which build it came from.
+        let stamped_by_this_build = AppConfig {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..self.app_config.clone()
+        };
+        let content = serde_json::to_string_pretty(&stamped_by_this_build)
             .map_err(|e| Error::Config(format!("Failed to serialize app config: {}", e)))?;
         fs::write(self.app_config_path(), content)
             .map_err(|e| Error::Config(format!("Failed to write app config: {}", e)))?;
@@ -1079,6 +1088,68 @@ mod tests {
             crate::application::allowed::Allowed::NOTHING,
             "an upgrade would have handed back permissions somebody took away"
         );
+    }
+
+    #[test]
+    fn test_a_saved_settings_file_names_the_build_that_wrote_it() {
+        // The stamp used to name the build that created the profile: `load`
+        // read it back and `save` wrote it out unchanged, so a tester's
+        // profile written on 2026-09-15 by 0.125.1 still said 0.7.7, and a
+        // settings file sent with a bug report could not say which build it
+        // came from. Found on 2026-09-16 reading his profile for #21.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+
+        let from_an_older_build = AppConfig {
+            version: "0.7.7".to_string(),
+            date_wording: "numeric".to_string(),
+            working_day_starts: 6,
+            ..AppConfig::default()
+        };
+        fs::write(
+            config_dir.join("app_config.json"),
+            serde_json::to_string_pretty(&from_an_older_build).expect("the settings as JSON"),
+        )
+        .expect("a settings file stamped by an older build");
+
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.load().expect("the older file to be read");
+        assert_eq!(
+            manager.app_config().version,
+            "0.7.7",
+            "load keeps the stamp as it was"
+        );
+        manager.save().expect("the settings to be written");
+
+        let written = fs::read_to_string(config_dir.join("app_config.json"))
+            .expect("the settings file this build wrote");
+        let stamped: AppConfig = serde_json::from_str(&written).expect("the written settings");
+        assert_eq!(
+            stamped.version,
+            env!("CARGO_PKG_VERSION"),
+            "a file this build wrote still names the build that created the profile"
+        );
+        assert_eq!(stamped.date_wording, "numeric");
+        assert_eq!(stamped.working_day_starts, 6);
+    }
+
+    #[test]
+    fn test_a_settings_file_this_build_created_keeps_its_own_stamp() {
+        // The other half: the stamp is written by `save` and not rewritten
+        // by `load`. A file this build created already carries this build's
+        // version, and a save changes nothing about it.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        assert_eq!(manager.app_config().version, env!("CARGO_PKG_VERSION"));
+
+        manager.save().expect("the settings to be written");
+
+        let written = fs::read_to_string(config_dir.join("app_config.json"))
+            .expect("the settings file this build wrote");
+        let stamped: AppConfig = serde_json::from_str(&written).expect("the written settings");
+        assert_eq!(stamped.version, env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
