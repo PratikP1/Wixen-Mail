@@ -161,12 +161,41 @@ pub enum ScanTarget {
     TasksModule,
     /// The main window with the notes module showing.
     NotesModule,
+    // The five below arrived on 2026-09-16 (#42, #40 point 5). Each is an
+    // editor that opens only from inside a manager, behind Add or Edit, so
+    // the manager targets above never reached it: the scan walked the
+    // manager and reported a pass for an editor nobody looked at. Two
+    // testers met an unnamed checkbox in two of them on the first day of
+    // testing. Each opens directly on a fixture from `scan_fixtures`, as
+    // `WhichDays` and `SendLater` do, and the manager it belongs to is not
+    // built at all.
+    /// The contact editor, "Edit Contact", opened on a contact with every
+    /// field filled and a row on each of its four lists. `Contacts` reached
+    /// the Contact Manager and stopped at Add.
+    ContactEditor,
+    /// The condition editor, "Edit Condition", the second dialog of the
+    /// saved-search editor, opened on a stored condition. No target reached
+    /// it: it opens from inside the rule manager, which opens from inside a
+    /// saved search.
+    ConditionEditor,
+    /// The filter editor, "Edit Filter Rule", opened on a stored rule.
+    /// `Filters` reached the Filter Manager and stopped at Add.
+    FilterEditor,
+    /// The signature editor, "Edit Signature", opened on the default
+    /// signature, which is where the tester met the unnamed checkbox.
+    /// `Signatures` reached the Signature Manager and stopped at Add.
+    SignatureEditor,
+    /// The account editor, "Edit Account", opened on the scan-only account
+    /// the `Accounts` target uses, and turned to its second page, where
+    /// every checkbox it has is. `Accounts` reached the Account Manager and
+    /// stopped at Edit.
+    AccountEditor,
 }
 
 impl ScanTarget {
     /// Every target, so the workflow and the tests iterate the same list
     /// rather than each keeping their own copy of it.
-    pub const ALL: [ScanTarget; 30] = [
+    pub const ALL: [ScanTarget; 35] = [
         ScanTarget::Settings,
         ScanTarget::Accounts,
         ScanTarget::Compose,
@@ -197,6 +226,11 @@ impl ScanTarget {
         ScanTarget::RemindersModule,
         ScanTarget::TasksModule,
         ScanTarget::NotesModule,
+        ScanTarget::ContactEditor,
+        ScanTarget::ConditionEditor,
+        ScanTarget::FilterEditor,
+        ScanTarget::SignatureEditor,
+        ScanTarget::AccountEditor,
     ];
 
     /// The name used on the command line.
@@ -232,6 +266,11 @@ impl ScanTarget {
             Self::RemindersModule => "reminders-module",
             Self::TasksModule => "tasks-module",
             Self::NotesModule => "notes-module",
+            Self::ContactEditor => "contact-editor",
+            Self::ConditionEditor => "condition-editor",
+            Self::FilterEditor => "filter-editor",
+            Self::SignatureEditor => "signature-editor",
+            Self::AccountEditor => "account-editor",
         }
     }
 
@@ -347,6 +386,11 @@ mod tests {
         // name here is a window somebody meets, counted from the tree rather
         // than from the plan, and a name missing from this list is a window
         // the scan has never looked at.
+        //
+        // The five editors arrived on 2026-09-16 (#42, #40): each opens only
+        // from inside a manager, behind Add or Edit, so the manager targets
+        // never reached them, and two testers met an unnamed checkbox in two
+        // of them on the first day of testing.
         for name in [
             "columns",
             "which-copy",
@@ -368,6 +412,11 @@ mod tests {
             "reminders-module",
             "tasks-module",
             "notes-module",
+            "contact-editor",
+            "condition-editor",
+            "filter-editor",
+            "signature-editor",
+            "account-editor",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));

@@ -17,7 +17,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    leave_the_cell_empty, name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
 use crate::presentation::theme;
@@ -768,27 +768,28 @@ fn describe_password_box(field: &TextCtrl, email: &str) {
 /// boxes used to stay on screen regardless of which one was chosen, simply
 /// left blank, which reads the same to a screen reader whether a box does
 /// not apply to this account or nobody has filled it in yet.
+///
+/// A section heading and a checkbox each sit alone in their row: the other
+/// cell is a sizer spacer, which is not a window and needs no hiding. It was
+/// an empty static text until 2026-09-16, a nameless control in the tree
+/// straight before each checkbox (#42).
 #[derive(Clone, Copy)]
 struct ImapFields {
     section_heading: StaticText,
-    section_spacer: StaticText,
     server_label: StaticText,
     server: TextCtrl,
     port_label: StaticText,
     port: TextCtrl,
-    tls_label: StaticText,
     tls: CheckBox,
 }
 
 impl ImapFields {
     fn set_visible(&self, visible: bool) {
         self.section_heading.show(visible);
-        self.section_spacer.show(visible);
         self.server_label.show(visible);
         self.server.show(visible);
         self.port_label.show(visible);
         self.port.show(visible);
-        self.tls_label.show(visible);
         self.tls.show(visible);
     }
 }
@@ -799,36 +800,28 @@ impl ImapFields {
 #[derive(Clone, Copy)]
 struct PopFields {
     section_heading: StaticText,
-    section_spacer: StaticText,
     server_label: StaticText,
     server: TextCtrl,
     port_label: StaticText,
     port: TextCtrl,
-    tls_label: StaticText,
     tls: CheckBox,
-    leave_label: StaticText,
     leave: CheckBox,
     days_label: StaticText,
     days: SpinCtrl,
-    allow_deleting_label: StaticText,
     allow_deleting: CheckBox,
 }
 
 impl PopFields {
     fn set_visible(&self, visible: bool) {
         self.section_heading.show(visible);
-        self.section_spacer.show(visible);
         self.server_label.show(visible);
         self.server.show(visible);
         self.port_label.show(visible);
         self.port.show(visible);
-        self.tls_label.show(visible);
         self.tls.show(visible);
-        self.leave_label.show(visible);
         self.leave.show(visible);
         self.days_label.show(visible);
         self.days.show(visible);
-        self.allow_deleting_label.show(visible);
         self.allow_deleting.show(visible);
     }
 }
@@ -849,7 +842,6 @@ fn show_protocol_fields(imap: ImapFields, pop: PopFields, protocol: Protocol) {
 struct PasswordFields {
     password_label: StaticText,
     password: TextCtrl,
-    app_password_spacer: StaticText,
     get_app_password: Button,
 }
 
@@ -857,7 +849,6 @@ impl PasswordFields {
     fn set_visible(&self, visible: bool) {
         self.password_label.show(visible);
         self.password.show(visible);
-        self.app_password_spacer.show(visible);
         self.get_app_password.show(visible);
     }
 }
@@ -894,44 +885,35 @@ impl IdentityFields {
 /// one protocol or one sign-in method. Shown as a block on that page,
 /// alongside whichever of [`ImapFields`], [`PopFields`], and
 /// [`PasswordFields`] currently apply.
+///
+/// The sign-in hint, the section headings, the checkboxes and the allowed
+/// note each sit alone in their row beside a sizer spacer, as [`ImapFields`]
+/// says, so there is nothing to hide beside them.
 #[derive(Clone, Copy)]
 struct Page2Shell {
-    auth_hint_label: StaticText,
     auth_hint: StaticText,
     protocol_label: StaticText,
     protocol_choice: Choice,
     smtp_section_heading: StaticText,
-    smtp_section_spacer: StaticText,
     smtp_label: StaticText,
     smtp: TextCtrl,
     smtp_port_label: StaticText,
     smtp_port: TextCtrl,
-    smtp_tls_label: StaticText,
     smtp_tls: CheckBox,
     auth_section_heading: StaticText,
-    auth_section_spacer: StaticText,
-    oauth_label: StaticText,
     use_oauth: CheckBox,
     user_label: StaticText,
     user: TextCtrl,
     settings_section_heading: StaticText,
-    settings_section_spacer: StaticText,
     interval_label: StaticText,
     interval: TextCtrl,
-    enabled_label: StaticText,
     enabled: CheckBox,
     allowed_section_heading: StaticText,
-    allowed_section_spacer: StaticText,
-    allow_mail_here_label: StaticText,
     allow_mail_here: CheckBox,
-    allow_personal_information_here_label: StaticText,
     allow_personal_information_here: CheckBox,
-    allow_reading_here_label: StaticText,
     allow_reading_here: CheckBox,
-    allowed_note_label: StaticText,
     allowed_note: StaticText,
     directory_section_heading: StaticText,
-    directory_section_spacer: StaticText,
     directory_url_label: StaticText,
     directory_url: TextCtrl,
     directory_base_label: StaticText,
@@ -940,42 +922,29 @@ struct Page2Shell {
 
 impl Page2Shell {
     fn set_visible(&self, visible: bool) {
-        self.auth_hint_label.show(visible);
         self.auth_hint.show(visible);
         self.protocol_label.show(visible);
         self.protocol_choice.show(visible);
         self.smtp_section_heading.show(visible);
-        self.smtp_section_spacer.show(visible);
         self.smtp_label.show(visible);
         self.smtp.show(visible);
         self.smtp_port_label.show(visible);
         self.smtp_port.show(visible);
-        self.smtp_tls_label.show(visible);
         self.smtp_tls.show(visible);
         self.auth_section_heading.show(visible);
-        self.auth_section_spacer.show(visible);
-        self.oauth_label.show(visible);
         self.use_oauth.show(visible);
         self.user_label.show(visible);
         self.user.show(visible);
         self.settings_section_heading.show(visible);
-        self.settings_section_spacer.show(visible);
         self.interval_label.show(visible);
         self.interval.show(visible);
-        self.enabled_label.show(visible);
         self.enabled.show(visible);
         self.allowed_section_heading.show(visible);
-        self.allowed_section_spacer.show(visible);
-        self.allow_mail_here_label.show(visible);
         self.allow_mail_here.show(visible);
-        self.allow_personal_information_here_label.show(visible);
         self.allow_personal_information_here.show(visible);
-        self.allow_reading_here_label.show(visible);
         self.allow_reading_here.show(visible);
-        self.allowed_note_label.show(visible);
         self.allowed_note.show(visible);
         self.directory_section_heading.show(visible);
-        self.directory_section_spacer.show(visible);
         self.directory_url_label.show(visible);
         self.directory_url.show(visible);
         self.directory_base_label.show(visible);
@@ -1381,8 +1350,13 @@ fn show_edit(
 /// split out the same way [`build_account_manager_dialog`] splits the list
 /// window above it: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// `parent` is any window rather than the Account Manager's dialog: the
+/// accessibility scan opens this editor on the main frame with no manager
+/// behind it, since one scan is one window. Nothing here reads the parent
+/// beyond handing it to the dialog builder.
 pub fn build_account_edit_dialog(
-    parent: &Dialog,
+    parent: &dyn WxWidget,
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
@@ -1454,15 +1428,17 @@ pub fn build_account_edit_dialog(
             }
             (l, f)
         };
-    let section = |label: &str| -> (StaticText, StaticText) {
+    // A heading alone in its row: the cell beside it is a sizer spacer, not a
+    // window. It was an empty static text until 2026-09-16, which reached the
+    // accessibility tree as a nameless control (#42); the same goes for the
+    // cell before every checkbox below.
+    let section = |label: &str| -> StaticText {
         let h = StaticText::builder(&dlg).with_label(label).build();
-        let s = StaticText::builder(&dlg).with_label("").build();
         fields.add(&h, 0, SizerFlag::All, 4);
-        fields.add(&s, 0, SizerFlag::All, 4);
-        (h, s)
+        leave_the_cell_empty(&fields);
+        h
     };
-    let cb = |label: &str, default: bool| -> (StaticText, CheckBox) {
-        let l = StaticText::builder(&dlg).with_label("").build();
+    let cb = |label: &str, default: bool| -> CheckBox {
         let c = CheckBox::builder(&dlg).with_label(label).build();
         // Set here as well as carried on the label. A checkbox's own label is
         // what Windows falls back to, so these were named already, but that is
@@ -1470,25 +1446,23 @@ pub fn build_account_edit_dialog(
         // every other builder in this dialog says the name outright.
         set_accessible_name(&c, &name_from_label(label));
         c.set_value(default);
-        fields.add(&l, 0, SizerFlag::All, 4);
+        leave_the_cell_empty(&fields);
         fields.add(&c, 0, SizerFlag::All, 4);
-        (l, c)
+        c
     };
     // For a checkbox whose consequence is not obvious from its label alone.
     // One call, not two, same as `describe_password_box` above and for the
     // same reason: attaching an accessible object replaces the last one, so
     // this is `cb` with `set_accessible_name_and_description` in the one spot
     // that call happens, never `cb` followed by a second attach afterward.
-    let cb_with_description =
-        |label: &str, default: bool, description: &str| -> (StaticText, CheckBox) {
-            let l = StaticText::builder(&dlg).with_label("").build();
-            let c = CheckBox::builder(&dlg).with_label(label).build();
-            set_accessible_name_and_description(&c, &name_from_label(label), description);
-            c.set_value(default);
-            fields.add(&l, 0, SizerFlag::All, 4);
-            fields.add(&c, 0, SizerFlag::All, 4);
-            (l, c)
-        };
+    let cb_with_description = |label: &str, default: bool, description: &str| -> CheckBox {
+        let c = CheckBox::builder(&dlg).with_label(label).build();
+        set_accessible_name_and_description(&c, &name_from_label(label), description);
+        c.set_value(default);
+        leave_the_cell_empty(&fields);
+        fields.add(&c, 0, SizerFlag::All, 4);
+        c
+    };
 
     let choice = |label: &str, options: &[&str]| -> (StaticText, Choice) {
         let l = StaticText::builder(&dlg).with_label(label).build();
@@ -1535,12 +1509,11 @@ pub fn build_account_edit_dialog(
     // Auth hint: shown on the connection page, tells the person what will
     // happen when they save, before they have gone looking for a password
     // box that will not be there.
-    let (auth_hint_label, auth_hint) = {
-        let l = StaticText::builder(&dlg).with_label("").build();
+    let auth_hint = {
         let h = StaticText::builder(&dlg).with_label("").build();
-        fields.add(&l, 0, SizerFlag::All, 4);
+        leave_the_cell_empty(&fields);
         fields.add(&h, 0, SizerFlag::Expand | SizerFlag::All, 4);
-        (l, h)
+        h
     };
 
     // Which protocol reads the mail. Whichever is not chosen has its own
@@ -1552,29 +1525,27 @@ pub fn build_account_edit_dialog(
         &Protocol::ALL.map(Protocol::spoken),
     );
 
-    let (imap_section_heading, imap_section_spacer) = section("── IMAP Settings ──");
+    let imap_section_heading = section("── IMAP Settings ──");
     let (imap_label, imap_f) = tf("&IMAP Server:", "");
     let (imap_port_label, imap_port_f) = tf("IMAP &Port:", "993");
-    let (imap_tls_label, imap_tls) = cb("Use &TLS", true);
+    let imap_tls = cb("Use &TLS", true);
     let imap_fields = ImapFields {
         section_heading: imap_section_heading,
-        section_spacer: imap_section_spacer,
         server_label: imap_label,
         server: imap_f,
         port_label: imap_port_label,
         port: imap_port_f,
-        tls_label: imap_tls_label,
         tls: imap_tls,
     };
 
-    let (pop_section_heading, pop_section_spacer) = section("── POP Settings ──");
+    let pop_section_heading = section("── POP Settings ──");
     let (pop_label, pop_f) = tf("PO&P Server:", "");
     let (pop_port_label, pop_port_f) = tf("POP P&ort:", "995");
-    let (pop_tls_label, pop_tls) = cb("Use TL&S for POP", true);
+    let pop_tls = cb("Use TL&S for POP", true);
     // On by default and deliberately. POP3 has one delete and it is permanent,
     // so a client that clears the server as it downloads leaves somebody with
     // one copy, on one computer, with no way back.
-    let (pop_leave_label, pop_leave) = cb_with_description(
+    let pop_leave = cb_with_description(
         "&Leave mail on the server after downloading it",
         true,
         SERVER_REMOVAL_IS_PERMANENT,
@@ -1585,40 +1556,36 @@ pub fn build_account_edit_dialog(
     // touches a server: mail moves to this account's own Trash folder here.
     // Somebody clearing the POP server after downloading has this computer as
     // the only copy, and this is how they say Delete must not lose it.
-    let (allow_deleting_label, allow_deleting) = cb_with_description(
+    let allow_deleting = cb_with_description(
         "Let me delete mail on this &computer",
         true,
         DELETING_HERE_NEVER_REACHES_THE_SERVER,
     );
     let pop_fields = PopFields {
         section_heading: pop_section_heading,
-        section_spacer: pop_section_spacer,
         server_label: pop_label,
         server: pop_f,
         port_label: pop_port_label,
         port: pop_port_f,
-        tls_label: pop_tls_label,
         tls: pop_tls,
-        leave_label: pop_leave_label,
         leave: pop_leave,
         days_label: pop_days_label,
         days: pop_days,
-        allow_deleting_label,
         allow_deleting,
     };
 
-    let (smtp_section_heading, smtp_section_spacer) = section("── SMTP Settings ──");
+    let smtp_section_heading = section("── SMTP Settings ──");
     let (smtp_label, smtp_f) = tf("&SMTP Server:", "");
     let (smtp_port_label, smtp_port_f) = tf("SM&TP Port:", "465");
-    let (smtp_tls_label, smtp_tls) = cb("Use TL&S", true);
+    let smtp_tls = cb("Use TL&S", true);
 
-    let (auth_section_heading, auth_section_spacer) = section("── Authentication ──");
+    let auth_section_heading = section("── Authentication ──");
     // A choice rather than something worked out from the address. Google
     // accounts can sign in either way, and browser sign-in needs this
     // application to be through Google verification, so an address is not
     // enough to decide. Deciding it silently left people unable to add their
     // own mail with no control to change it and nothing saying why.
-    let (oauth_label, use_oauth_cb) = cb("Sign in with the provider in a &browser (OAuth)", false);
+    let use_oauth_cb = cb("Sign in with the provider in a &browser (OAuth)", false);
     let (user_label, user_f) = tf("&Username:", "");
     // Built with a raw `TextCtrl::builder` rather than through `tf`, because
     // it needs the password style `tf` does not offer, so it needs its own
@@ -1638,26 +1605,24 @@ pub fn build_account_edit_dialog(
     // Opening the page rather than describing where it is. It sits three levels
     // into account settings and does not come up from searching the settings
     // for "app password", so finding it is the whole difficulty of this route.
-    let (app_password_spacer, get_app_password) = {
-        let l = StaticText::builder(&dlg).with_label("").build();
+    let get_app_password = {
         let b = Button::builder(&dlg)
             .with_label("&Get an app password in your browser")
             .with_id(ID_APP_PASSWORD)
             .build();
-        fields.add(&l, 0, SizerFlag::All, 4);
+        leave_the_cell_empty(&fields);
         fields.add(&b, 0, SizerFlag::All, 4);
-        (l, b)
+        b
     };
     let password_fields = PasswordFields {
         password_label,
         password: pass_f,
-        app_password_spacer,
         get_app_password,
     };
 
-    let (settings_section_heading, settings_section_spacer) = section("── Settings ──");
+    let settings_section_heading = section("── Settings ──");
     let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
-    let (enabled_label, enabled) = cb("Ena&ble this account", true);
+    let enabled = cb("Ena&ble this account", true);
 
     // ── What this account may change ─────────────────────────────────────
     //
@@ -1671,35 +1636,34 @@ pub fn build_account_edit_dialog(
     // application-wide one where there is not. Where Settings has an answer
     // off for every account, the box is unavailable rather than offered,
     // because ticking it could not turn anything on, and its label says so.
-    let (allowed_section_heading, allowed_section_spacer) =
-        section(&format!("── {SETTINGS_SECTION} for this account ──"));
+    let allowed_section_heading = section(&format!("── {SETTINGS_SECTION} for this account ──"));
     let (everywhere, here) = what_this_account_may_change(existing.map(|a| a.id.as_str()));
     let permission_box = |what: &str,
                           shown: bool,
                           allowed_everywhere: bool,
                           off_under: &str|
-     -> (StaticText, CheckBox) {
-        let (l, c) = cb_with_description(
+     -> CheckBox {
+        let c = cb_with_description(
             &permission_box_label(what, allowed_everywhere, off_under),
             shown,
             "An account can be allowed less than Settings allows for every account, never more.",
         );
         c.enable(allowed_everywhere);
-        (l, c)
+        c
     };
-    let (allow_mail_here_label, allow_mail_here) = permission_box(
+    let allow_mail_here = permission_box(
         MAIL_FROM_THIS_ACCOUNT,
         here.mail,
         everywhere.mail,
         SETTINGS_SECTION,
     );
-    let (allow_personal_information_here_label, allow_personal_information_here) = permission_box(
+    let allow_personal_information_here = permission_box(
         PERSONAL_INFORMATION_FROM_THIS_ACCOUNT,
         here.personal_information,
         everywhere.personal_information,
         SETTINGS_SECTION,
     );
-    let (allow_reading_here_label, allow_reading_here) = permission_box(
+    let allow_reading_here = permission_box(
         MESSAGE_TEXT_FOR_THIS_ACCOUNT,
         here.reading,
         everywhere.reading,
@@ -1707,14 +1671,13 @@ pub fn build_account_edit_dialog(
     );
     // The sentence three boxes cannot say between them, beneath them, on both
     // channels like every other sentence on this page.
-    let (allowed_note_label, allowed_note) = {
+    let allowed_note = {
         let said = this_account_can_only_be_allowed_less();
-        let l = StaticText::builder(&dlg).with_label("").build();
         let n = StaticText::builder(&dlg).with_label(&said).build();
         set_accessible_name(&n, &said);
-        fields.add(&l, 0, SizerFlag::All, 4);
+        leave_the_cell_empty(&fields);
         fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
-        (l, n)
+        n
     };
 
     // Where somebody's employer keeps its list of people, so typing part of a
@@ -1724,8 +1687,7 @@ pub fn build_account_edit_dialog(
     // it is the answer every account starts with: while they are empty nothing
     // that gets typed into a message goes anywhere. Filling them in is how
     // somebody says a name being typed may be sent to that server.
-    let (directory_section_heading, directory_section_spacer) =
-        section("── Looking people up at work ──");
+    let directory_section_heading = section("── Looking people up at work ──");
     let (directory_url_label, directory_url_f) = tf_with_description(
         "Directory &address:",
         "",
@@ -1741,42 +1703,29 @@ pub fn build_account_edit_dialog(
     );
 
     let page_two_shell = Page2Shell {
-        auth_hint_label,
         auth_hint,
         protocol_label,
         protocol_choice,
         smtp_section_heading,
-        smtp_section_spacer,
         smtp_label,
         smtp: smtp_f,
         smtp_port_label,
         smtp_port: smtp_port_f,
-        smtp_tls_label,
         smtp_tls,
         auth_section_heading,
-        auth_section_spacer,
-        oauth_label,
         use_oauth: use_oauth_cb,
         user_label,
         user: user_f,
         settings_section_heading,
-        settings_section_spacer,
         interval_label,
         interval: interval_f,
-        enabled_label,
         enabled,
         allowed_section_heading,
-        allowed_section_spacer,
-        allow_mail_here_label,
         allow_mail_here,
-        allow_personal_information_here_label,
         allow_personal_information_here,
-        allow_reading_here_label,
         allow_reading_here,
-        allowed_note_label,
         allowed_note,
         directory_section_heading,
-        directory_section_spacer,
         directory_url_label,
         directory_url: directory_url_f,
         directory_base_label,
@@ -2445,12 +2394,9 @@ mod tests {
         let screen = the_account_manager();
 
         for (site, constant) in [
+            ("let pop_leave = ", "SERVER_REMOVAL_IS_PERMANENT"),
             (
-                "let (pop_leave_label, pop_leave) = ",
-                "SERVER_REMOVAL_IS_PERMANENT",
-            ),
-            (
-                "let (allow_deleting_label, allow_deleting) = ",
+                "let allow_deleting = ",
                 "DELETING_HERE_NEVER_REACHES_THE_SERVER",
             ),
         ] {

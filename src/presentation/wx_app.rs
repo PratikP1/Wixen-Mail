@@ -15676,6 +15676,75 @@ fn open_for_scanning(
             show_about_dialog(frame);
             OnReturn::WindowClosed
         }
+        // The five editors, each opened on the frame with no manager behind
+        // it, as the windows above are: the manager targets open the managers,
+        // and an editor behind Add or Edit is a modal the scan never reached
+        // (#42, #40). Built and shown here rather than through the manager's
+        // own `show_*` function, because those read the answer back into the
+        // manager's list and there is no list; the builders are the same ones
+        // the managers call, so what is scanned is what somebody meets. Each
+        // is taken down after the modal loop, as the managers take theirs
+        // down, because wxWidgets does not free a dialog when the Rust value
+        // goes.
+        ScanTarget::ContactEditor => {
+            let editor = crate::presentation::wx_managers::build_contact_edit_dialog(
+                frame,
+                Some(&scan_fixtures::contact()),
+                theme::current_from_stored_config(),
+                a11y,
+            );
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::ConditionEditor => {
+            let editor = crate::presentation::wx_managers::build_rule_edit_dialog(
+                frame,
+                Some(&scan_fixtures::condition()),
+                a11y,
+                theme::current_from_stored_config(),
+            );
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::FilterEditor => {
+            let editor = crate::presentation::wx_managers::build_filter_edit_dialog(
+                frame,
+                Some(&scan_fixtures::filter()),
+                theme::current_from_stored_config(),
+            );
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::SignatureEditor => {
+            let editor = crate::presentation::wx_managers::build_sig_edit_dialog(
+                frame,
+                Some(&scan_fixtures::signature()),
+                theme::current_from_stored_config(),
+            );
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
+        ScanTarget::AccountEditor => {
+            // On the scan-only account the Accounts target uses, and turned
+            // to its second page before it is shown: the first page is three
+            // text fields, and every checkbox the editor has is on the
+            // second, which is the page #42 is about.
+            let fixture = scan_only_account();
+            let editor = wx_account_manager::build_account_edit_dialog(
+                frame,
+                Some(&fixture),
+                a11y,
+                theme::current_from_stored_config(),
+            );
+            wx_account_manager::advance_to_connection_page(&editor);
+            editor.dialog.show_modal();
+            editor.dialog.destroy();
+            OnReturn::WindowClosed
+        }
         // The main window with a module showing and nothing over it. `main`
         // is the frame with the first-run question on top, because that
         // question opens whenever no target is given, so the bare window and
