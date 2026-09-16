@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 455
+open_count: 457
 waived_count: 0
 fixed_count: 28
-total_count: 483
-last_updated: 2026-09-16T14:30:27.270Z
+total_count: 485
+last_updated: 2026-09-16T17:19:57.441Z
 ---
 
 # Broken Windows Ledger
@@ -498,6 +498,8 @@ last_updated: 2026-09-16T14:30:27.270Z
 | 481 | 08 | unrun-verify | src/presentation/wx_app.rs |  | 08-09: nothing this phase changed that a person meets has been confirmed with a screen reader. 08-03 made the window fill the module it opens on at startup, so the folder tree and the message list are there on a fresh start instead of after a mail check or a module switch, and nobody has heard what NVDA or Narrator says at that moment or whether focus lands somewhere useful; the usable line the harness reads is a log line and nothing speaks it, by design. The check is one item for docs/manual-accessibility-pass.md: start the release build against a profile with mail in it and listen to the first thing said. | open |  | 2026-09-16T07:40:18.547Z |  |
 | 482 | 08 | deviation | .planning/REQUIREMENTS.md |  | 08-09: PERF-01 and PERF-04 are ticked on a reading, not on a number that meets the target either way. The application process is 57 MB with 1,000 cached messages and 56 MB idle, under 150 MB and 100 MB; the six WebView2 processes Windows runs for the preview pane weigh about 333 MB beside it, so the sum is 390 MB and 391 MB and misses both. The targets were written before the preview was a browser and do not say whether they count it. The coordinator's reading, put to Pratik on 2026-09-14 and not contradicted, is the application process alone, and both boxes are ticked on it with the tree's weight written beside the target wherever it is judged. If Pratik reads the target as the sum, untick PERF-01 and PERF-04, change the two [D] lines added 2026-09-16, and revise the targets or the preview. | open |  | 2026-09-16T07:40:19.070Z |  |
 | 483 | 09 | unrun-verify | .github/workflows/release.yml | 118 | The as-is level has never been dispatched: that cargo-release 1.1.5 given its current version on the runner plans no bump, skips the commit on a clean tree and tags v1.0.0-alpha.1 is read from a dry run on this machine and from commit_all in its ops/git.rs, not from a run; the first as-is dispatch is Pratik's and is what proves it | open |  | 2026-09-16T14:30:27.270Z |  |
+| 484 | 09 | unrun-verify | src/service/spellcheck/mod.rs | 349 | Whether a profile created before 2026-09-03, holding the bare en every profile got then, now shows English (United States) in Settings and is checked in it without a hand change is a run on such a profile; the tester's own profile has held a hand-set en-US since 2026-09-15, which the resolver leaves as stored, so his machine cannot show the fix and only a profile still holding the bare value can. 09-02 proved it on this machine through the real General tab built in a test, not on a profile | open |  | 2026-09-16T17:19:56.885Z |  |
+| 485 | 09 | unrun-verify | src/data/message_cache/bodies.rs | 690 | The once-only pass that puts stored snippets right has run against a temp profile holding one HTML-only message (1 row in 3 ms, log line quoted in 09-02's summary) and never against the tester's 20 MB cache of 12,872 messages; how many of his rows it rewrites, how long his first start takes, and whether his rows then read as words are his first open of the next build to answer, and the log line says the first two | open |  | 2026-09-16T17:19:57.441Z |  |
 
 ````json
 [
@@ -6295,6 +6297,30 @@ last_updated: 2026-09-16T14:30:27.270Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T14:30:27.270Z",
+    "resolved_at": null
+  },
+  {
+    "id": 484,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/service/spellcheck/mod.rs",
+    "line": 349,
+    "description": "Whether a profile created before 2026-09-03, holding the bare en every profile got then, now shows English (United States) in Settings and is checked in it without a hand change is a run on such a profile; the tester's own profile has held a hand-set en-US since 2026-09-15, which the resolver leaves as stored, so his machine cannot show the fix and only a profile still holding the bare value can. 09-02 proved it on this machine through the real General tab built in a test, not on a profile",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T17:19:56.885Z",
+    "resolved_at": null
+  },
+  {
+    "id": 485,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/data/message_cache/bodies.rs",
+    "line": 690,
+    "description": "The once-only pass that puts stored snippets right has run against a temp profile holding one HTML-only message (1 row in 3 ms, log line quoted in 09-02's summary) and never against the tester's 20 MB cache of 12,872 messages; how many of his rows it rewrites, how long his first start takes, and whether his rows then read as words are his first open of the next build to answer, and the log line says the first two",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T17:19:57.441Z",
     "resolved_at": null
   }
 ]
