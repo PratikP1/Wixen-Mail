@@ -34,25 +34,34 @@ tab:
 
 - Workflow file: `.github/workflows/release.yml`
 - GitHub Actions URL: `https://github.com/PratikP1/Wixen-Mail/actions/workflows/release.yml`
-- Running it asks for one choice, **How to bump**: `patch` or `minor` for
-  ordinary development versions, `alpha`, `beta`, or `rc` to start or advance
-  a prerelease series from the current version, or `release` to drop a
-  prerelease suffix and cut the thing the prereleases were staging.
+- Running it asks for one choice, **How to bump**: `as-is` to publish the
+  version `Cargo.toml` already carries without bumping it, `alpha`, `beta`,
+  or `rc` to advance a prerelease series from the current version, `release`
+  to drop a prerelease suffix and cut the thing the prereleases were staging,
+  or `patch` or `minor` for ordinary versions after that.
 
-Wixen Mail develops on a plain `0.x.y` version with no suffix. `0.x` already
-means unstable, so a version does not need to say that twice. A prerelease
-suffix is added only when a build is about to go to testers: `alpha`
-through a run or two, then `beta` when it is closer, then `release` to drop
-the suffix and cut the thing the prereleases were staging.
+The version the tree carries is the next build to go to testers, and since
+2026-09-16 that is a stage of `1.0.0`, starting at `1.0.0-alpha.1`. After a
+build is cut, the first behaviour change moves the prerelease counter once,
+in the commit that makes it; later changes before the next cut leave it
+alone, because the version names the next build rather than counting
+commits. So the level to dispatch for an alpha is `as-is`: the number is
+already right, and `alpha` would publish one step past it. Never dispatch
+`patch` while the version carries a suffix: `cargo release` reads that as
+dropping the suffix and publishes a full release. Until 2026-09-16 this
+paragraph said Wixen Mail develops on a plain `0.x.y` version with no
+suffix, and that a prerelease suffix is added only when a build is about to
+go to testers. A build went to a tester on 2026-09-15.
 
 ## What the workflow does
 
 A quality gate runs first, on a Windows runner: `cargo fmt --check`, clippy
 with warnings denied, and the test suite. Only once that passes does
 `cargo release` bump the version in `Cargo.toml`, tag the commit, and push
-both. The setup executable is then built with the same script a person would
-run locally, `scripts/build-installer.sh`, so the file testers download was
-built the way the one you tested was.
+both; with `as-is` there is no bump and no commit, only the tag. The setup
+executable is then built with the same script a person would run locally,
+`scripts/build-installer.sh`, so the file testers download was built the
+way the one you tested was.
 
 The workflow publishes three files, plus the changelog, to a GitHub Release:
 

@@ -963,14 +963,35 @@ the gap stays visible.
 
 ### Versioning and releases
 
-**Development happens on plain `0.x.y`.** Minor for feature work, patch for fixes. No suffix. `0.x`
+**The version the tree carries is the next build to go to testers, and since 2026-09-16 that is a
+stage of `1.0.0`.** Pratik decided on 2026-09-15 (#46), testing the first build handed to him, that
+the builds going to testers are the alpha, beta and release-candidate stages of `1.0.0`, so the tree
+moved from `0.125.1` to `1.0.0-alpha.1` by hand, once. Until 2026-09-16 this paragraph read
+"Development happens on plain `0.x.y`. Minor for feature work, patch for fixes. No suffix. `0.x`
 already means unstable in SemVer, so a version does not need `-alpha` on top of it to say the same
-thing twice, and it should not claim a testing programme that is not running.
+thing twice, and it should not claim a testing programme that is not running." That held while no
+build went to anybody. One does now, so the suffix says something true.
 
-**A prerelease suffix stages a release that is about to go to people.** When builds start going to
-testers, cut `0.6.0-alpha.1`, then `-alpha.2`, then `0.6.0` when that round closes. That is what
-prerelease identifiers are for. Twenty-five `0.1.0-alpha.N` versions were cut before this rule
-existed, none of them tagged or published, because the version was being used as a build counter.
+**How a version moves inside a prerelease.** The tree stays at `1.0.0-alpha.1` through the fixes
+that follow the first day of testing, because that build has not been cut and the number already
+names something newer than any build handed out. After a build is cut, the first behaviour change
+moves the prerelease counter, once, in the commit that makes it: `1.0.0-alpha.2`. Later behaviour
+changes before the next cut do not move it again, because the version is a name for the next build
+and not a count of commits. Documents and bug fixes that change no behaviour move nothing, as
+before. `alpha` becomes `beta` and `rc` the same way when Pratik says the round has moved on, and
+`release` drops the suffix to `1.0.0` when it closes. After `1.0.0`, minor for features and patch
+for fixes. Until 2026-09-16 the paragraph here read "A prerelease suffix stages a release that is
+about to go to people. When builds start going to testers, cut `0.6.0-alpha.1`, then `-alpha.2`,
+then `0.6.0` when that round closes. That is what prerelease identifiers are for." It was the same
+rule with the numbers left open, and it did not say when the counter moves, which is the sentence
+above. Twenty-five `0.1.0-alpha.N` versions were cut before either rule existed, none of them
+tagged or published, because the version was being used as a build counter.
+
+**`patch` is never dispatched while the version carries a suffix.** cargo-release reads `patch` on
+`1.0.0-alpha.N` as "remove the suffix" and cuts `1.0.0` as a full release. The Release workflow's
+`as-is` level publishes the version the tree carries without bumping it, and is the level the alpha
+uses; without it, `alpha` on a tree at `1.0.0-alpha.1` would publish `-alpha.2` and nothing could
+ever publish `-alpha.1`.
 
 **"Alpha" as a state of the product belongs in the product, not in the number.** Nobody reads a
 version number and learns that sending mail has never touched a real server. The first-run screen,
@@ -983,7 +1004,8 @@ build metadata, which version ordering ignores. Nothing is appended at a tag, si
 the release. See `src/common/version.rs`.
 
 A bug fix or a docs pass does not need a bump. A new feature, a schema change, or a behaviour change
-does, in the same commit as the change rather than in a jump at release time.
+does, in the same commit as the change rather than in a jump at release time. Inside a prerelease
+the bump is the counter moving on the first behaviour change after a cut, as above, and only then.
 
 `docs/changelog.md` is the record. Every user-visible change gets an entry under `[Unreleased]` in
 the commit that makes it, and honest "Known limitations" notes belong there too. A feature list that
