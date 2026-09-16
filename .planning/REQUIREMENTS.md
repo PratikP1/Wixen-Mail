@@ -3,7 +3,12 @@
 **Defined:** 2026-08-29
 **Core Value:** Making correspondence and personal information legible to people who cannot see it.
 **Milestone:** The outstanding work. Drawn from the two "not built" sections of
-`.planning/intel/built-and-left.md` and from nothing else.
+`.planning/intel/built-and-left.md` and from nothing else. **Corrected 2026-09-16:** "and
+from nothing else" was true until the first day of manual testing. Phases 1 to 8 are executed
+and merged, and the milestone's verification is the testing Pratik began on 2026-09-15 with
+build `0.125.1+g3e633252`, which produced 44 GitHub issues, #20 to #63, in one day. Phase 9's
+requirements, `FOUND-01` to `FOUND-12`, are drawn from those issues and from nothing else; the
+section "What the first day of testing found" says which issue each one comes from.
 
 ## How to read the acceptance criteria
 
@@ -2326,6 +2331,332 @@ write path added by this milestone passes through that gate.
   - [D] Every survivor is either killed with a test or recorded with a reason, and the surviving
     list becomes the input to the next round rather than a headline number.
 
+### What the first day of testing found
+
+Added 2026-09-16 for phase 9. Every requirement here is one GitHub issue, or one shared cause
+behind two, from the 44 that Pratik's first day of testing produced on 2026-09-15 against build
+`0.125.1+g3e633252`. The `[S]` lines quote the tester's own words from the issue, or a sentence
+read from the code on the day the issue was filed. The `[D]` lines were written on 2026-09-16
+by the planner and are proposals in the sense the top of this file gives. Every evidence line
+was re-taken against `main` at `524ff24f` on 2026-09-16, because the tree moved after most of
+the issues were written (08-07, 08-08 and 08-09 merged afterwards), and where an issue's premise
+had moved the evidence line says which way.
+
+**Every other issue in Pratik's order of 2026-09-16 is a requirement of some later phase, not of
+this one.** The order has seven groups and phase 9 is the first two: the version, and the
+cause-known defects an hour to a day each. The README in `.planning/phases/09-what-the-first-day-of-testing-found/`
+names the remaining five groups and the issues in each, so the next planner adds their
+requirements to a later phase's section rather than here.
+
+- [ ] **FOUND-01**: The next build is `1.0.0-alpha.1`, and the versioning rule says how a
+  version moves inside a prerelease.
+  - Evidence: `grep -n '^version' Cargo.toml` -> `0.125.1` on 2026-09-16 at `524ff24f`;
+    `Cargo.lock:6805` carries the same number and nothing else in the tree does
+    (`grep -rn '0\.125\.1'` over `*.toml`, `*.lock`, `*.rs`, `*.md`, `*.iss`, `*.sh`, `*.yml`,
+    less `target/`, `.planning/` and the changelog, finds those two lines). The Release
+    workflow offers `patch`, `minor`, `alpha`, `beta`, `rc` and `release` and no `major`
+    (`grep -n major .github/workflows/release.yml` -> nothing). `scripts/build-installer.sh`
+    encodes a prerelease as `stage * 1000 + step` into the fourth field of the Windows file
+    version, so `1.0.0-alpha.1` reads `1.0.0.1001` and `0.125.1` reads `0.125.1.4000`, and
+    Windows orders the four fields numerically, so the first is above the second by its major.
+    `src/common/version.rs` compares the three numbers first and a prerelease below its release,
+    with tests for `1.0.0` against `0.99.0` and `0.6.0` against `0.6.0-alpha.1`, and none naming
+    the exact step this requirement makes. cargo-release's reference says `alpha` on a
+    prerelease increments it (`1.0.1-rc.1 -> 1.0.1-rc.2`), `release` strips the suffix, and
+    `patch` on a prerelease **also strips the suffix** (`0.1.0-alpha.1 -> 0.1.0`), read from
+    `docs/reference.md` in `crate-ci/cargo-release` on 2026-09-16. The first-run screen and
+    `--help` name no version shape (`grep -n 'alpha\|version' src/presentation/first_run.rs`,
+    `src/presentation/command_line.rs` -> "alpha" as a state, no number), so the issue's list
+    of places to touch was two too long; `docs/changelog.md:5`, `docs/BETA_RELEASE.md:42-44`,
+    `CLAUDE.md`'s versioning section and `.claude/skills/cutting-a-release/SKILL.md` do name
+    the `0.x.y` scheme.
+  - [S] #46, the tester on 2026-09-15: "Since we're nearing version 1 with alpha/beta/rc, we
+    should make the versions to 1.xx.x instead of 0.1xx.x."
+  - [S] `CLAUDE.md`, Versioning and releases: "A prerelease suffix stages a release that is
+    about to go to people. When builds start going to testers, cut `0.6.0-alpha.1`."
+  - [D] `Cargo.toml` and `Cargo.lock` say `1.0.0-alpha.1`, `--version` prints it, and a test
+    on `common::version` names the exact steps `0.125.1` to `1.0.0-alpha.1` to `1.0.0` in
+    both directions.
+  - [D] A test reads `scripts/build-installer.sh`'s arithmetic for `1.0.0-alpha.1` and for
+    `0.125.1` and holds the first above the second in the four-field order Windows uses.
+  - [D] The Release workflow can publish the version the tree already carries, without
+    bumping it first, so the first alpha published is `1.0.0-alpha.1` and not `-alpha.2`; a
+    test in `tests/installer.rs` reads the level and its `cargo release` line.
+  - [D] `CLAUDE.md`, the changelog's opening paragraph, `docs/BETA_RELEASE.md` and the
+    release skill say the rule in force: the tree's version is the next build to go to
+    testers; it stays until that build is cut; the first behaviour change after a cut moves
+    the prerelease counter in the commit that makes it, once, and later changes before the
+    next cut do not move it again; `release` drops the suffix when the round closes; and
+    `patch` is never dispatched on a prerelease, because cargo-release reads it as `release`.
+  - [S] Whether `1.0.0-alpha.1` is published through the Release workflow is a dispatch, and a
+    dispatch is Pratik's. This requirement bumps the tree and makes the dispatch possible.
+
+- [ ] **FOUND-02**: A machine set to English (United States) checks spelling in English
+  (United States), and the settings screen shows the language that will be used.
+  - Evidence: a scratch test on 2026-09-16 at `524ff24f`, run with `--nocapture` and then
+    removed with `git checkout`, printed `system_language() = Some("en-US")`,
+    `what_this_machine_offers()` as `TheseLanguages` with nineteen English tags beginning
+    `en-029` and holding `en-US` seventeenth, and `language_to_check_in(...) = "en-US"`. So
+    on this machine the pure path the issue names answers correctly, and neither of the
+    issue's two candidate causes holds as written. What does hold: `default_language()` in
+    `src/data/config.rs` was `"en"` for everybody until `580a334a` on 2026-09-03 (`git log
+    -S'language_to_check_in' -- src/data/config.rs`), and a stored `"en"` produces both
+    symptoms today. `wx_settings.rs` selects the stored tag by exact match and falls to
+    index 0 when nothing matches (`.position(|language| language.tag == config.language)
+    .unwrap_or(0)`, `build_general_tab`), and index 0 in Windows' order is `en-029`, English
+    (Caribbean). And `spellcheck::for_language("en")` resolves a bare tag through
+    `find_regional_variant`, which takes the first of the family Windows lists, `en-029`
+    again (`test_a_bare_language_matches_the_first_regional_variant_windows_offers`). Whether
+    the tester's stored value is `"en"` can only be read from his settings file; both fixes
+    below hold whatever it is.
+  - [S] #21, the tester on 2026-09-15: "Currently, a Windows OS set to U.S. English as its
+    language does not correspond to the default spellcheck language. English Caribbean is
+    shown as default."
+  - [D] A bare or unlisted stored language resolves to this machine's own region when the
+    machine's language is in the same family (`"en"` on an `en-US` machine is `en-US`, not the
+    first English Windows lists), in one function both the checker and the settings screen
+    ask, and a family with no such member still takes Windows' first.
+  - [D] The settings screen shows the language that will be used, never index 0 for a value
+    it could not match, and a test builds the real screen with `"en"` stored and reads the
+    selection back.
+  - [S] Whether English (United States) is what the tester now hears on his machine is a
+    test on his profile: pick nothing, open Settings, read the language.
+
+- [ ] **FOUND-03**: A snippet of an HTML-only message is the first words of its text, never
+  its stylesheet, and snippets already stored are put right.
+  - Evidence: `src/data/message_cache/bodies.rs`, `strip_markup` at `:317` on 2026-09-16,
+    keeps everything between tags, `<style>` content included; `save_message_body` derives
+    the snippet through it when there is no plain part. `application::long_text::from_markup`
+    (`long_text.rs:496`) runs `ammonia::clean`, which drops `<script>` and `<style>` content
+    outright, then walks the tree with `scraper`, no window involved; a unit test holds
+    `blocks_output("<style>body { color: red }</style>") == ""`. `data` already reaches
+    `application` 133 times (`grep -rn 'crate::application' src/data/ | wc -l`), so the
+    direction is not new. On-open backfills have a shape and a place: `migrate_inline_bodies`,
+    `backfill_thread_ids` and `backfill_message_identifiers` run from `MessageCache` open in
+    `mod.rs` around `:1390-1435`, each non-fatal with a warning. `bodies.rs` is named by 4
+    guard records and `long_text.rs` by 18.
+  - [S] #32, the tester on 2026-09-15: "snippets appear to read CSS styles on occasion. So
+    far the behavior seems to start with '#outlook' as the start of css."
+  - [D] A snippet derived from an HTML-only body is derived through the same reader the
+    reading path uses, so `<style>`, `<script>` and `<head>` content never reach it, and
+    `strip_markup` is gone rather than patched.
+  - [D] Snippets already stored for HTML-only bodies are re-derived once, on the first open
+    after the change, through the same function, non-fatally and once only, with the count
+    logged; the changelog says when a stored snippet is put right and what it costs.
+  - [S] Whether the tester's rows now read as words is a test on his profile after the
+    first open of the new build.
+
+- [ ] **FOUND-04**: Undo Send is on the Edit menu.
+  - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: the Edit menu is built at `:6109`
+    with Cut, Copy, Paste, Select All, Search and Save This Search; `ID_UNDO_SEND`'s item is
+    appended inside the Tools menu at `:6904` with `Ctrl+Shift+Z`; `docs/KEYBOARD_SHORTCUTS.md:413`
+    lists it under Application Control without naming a menu. `tests/wired.rs` holds the item
+    to its handler by id, and nothing reads which menu it is on.
+  - [S] #44, the tester on 2026-09-15: "undo send should be in the edit menu."
+  - [D] Undo Send is the first item on the Edit menu, keeps `Ctrl+Shift+Z`, and is not on
+    Tools; a reading holds the Edit menu's first item to `ID_UNDO_SEND`; the shortcuts page
+    says which menu.
+
+- [ ] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
+  the organiser has been told only once it has gone.
+  - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: `send_the_answer` at `:13129`
+    queues the reply through `queue_for_sending`, which returns a `GoAfter` and holds the
+    message like any other; on `Ok` it answers `HowItWent::Sent`, whose doc comment in
+    `src/application/answering.rs:336` says "The answer reached the organiser's mail server",
+    which is not what happened; `what_answering_did` then says
+    `invitations::what_happened`, whose last sentence is "<Organiser> has been told."
+    (`invitations.rs:446`). `sending_later::countdown` (`:681`) words the hold for the
+    composer: "Sending in 10 seconds. Undo Send takes it back." `wx_compose.rs:129` still says
+    "Alt+E out of the message body" where the key is Alt+H (`:696`, `:703`).
+    `answered_meetings::file_the_answer` files the meeting on the calendar from `went`, so
+    what a held answer files is a decision the plan carries.
+  - [S] #56, from the audit of 2026-09-15: "the sentence afterwards is '<Organiser> has been
+    told.' with no countdown and no mention of Undo Send, so for that path the hold is not
+    announced when it starts and the wording claims delivery during it."
+  - [D] Answering a meeting says, at the moment of pressing, the same countdown any other
+    send says, through the same function; "has been told" is not said while the answer is
+    held; `HowItWent` has a variant for a held answer and its doc comment says what happened.
+  - [D] The `wx_compose.rs` doc comment names Alt+H, and a reading holds it.
+  - [S] Ledger 155's question, whether anything spoken after pressing Accept by mistake
+    points at Undo Send, is a listening pass and stays open until somebody hears it.
+
+- [ ] **FOUND-06**: The two sort controls on the Reading tab sit together, and a compose
+  setting is on the Compose tab.
+  - Evidence: `src/presentation/wx_settings.rs` on 2026-09-16: "Default sort order" is built
+    by hand into `list_sec`, the Message List section, at `:1142-1176`; "Then by" is
+    `labelled_choice(panel, &date_sec, ...)` at `:1516-1523`, inside the Dates and Times
+    section straight after "Write the month as" at `:1508`; "Cc and Bcc lines" follows it at
+    `:1524-1531` in the same section and is a compose setting. The dialog has seven pages,
+    not the five #33 and #34 say: General, Compose, Reading, Permissions, Calendar and PIM,
+    Feedback, Advanced (`notebook.add_page` at `:241` to `:299`). `wx_settings.rs` has no
+    unit tests, so `--lib presentation::wx_settings::` matches nothing; the gate reaches it
+    through `every_event_has_a_control` and `checkbox_labels` (`check.sh --suites-for`), and 8
+    records name it.
+  - [S] #36, the tester on 2026-09-15: "On reading tab, the two sort options do not appear
+    together. They are separated by multiple tab stops." And on the same day: "The first
+    time the user tabs from the 'reading' tab, they hear 'default sort order'. As they
+    continue to tab, they hear 'then by'. This option immediately follows 'write the month
+    as'."
+  - [D] "Then by" is built into the Message List section directly after "Default sort order",
+    so the two are adjacent tab stops; a test builds the real tab and reads the order back.
+  - [D] "Cc and Bcc lines" is on the Compose tab, and
+    `test_every_setting_somebody_can_change_is_offered_by_a_screen` stays green.
+  - [S] Whether the tab now reads as one group by ear is a listening pass.
+
+- [ ] **FOUND-07**: Exactly one item in the View menu's Sort submenu is checked.
+  - Evidence: `src/presentation/wx_app.rs:6160-6197` on 2026-09-16: seven `append_radio_item`
+    calls in four runs with `append_separator` at `:6171`, `:6182` and `:6193` between them.
+    wxWidgets ends a radio group at a separator, so those are four groups. `sync_sort_menu`
+    at `:14169`, which the issue did not name, checks the chosen id and unchecks nothing,
+    called at `:1212` and `:3102`.
+  - [S] #39, the tester on 2026-09-15: "Sort options in the view menu are confusing as
+    multiple items are checked."
+  - [D] The seven sort items are one radio group, so choosing one unchecks the rest whichever
+    way the sort was chosen, including from a column header; a reading holds the submenu's
+    builder to having no separator between its first and last radio item.
+
+- [ ] **FOUND-08**: Every checkbox in the editors is named on the channel NVDA reads, no
+  empty static text sits before a control as a spacer, and the check that refuses a
+  whitespace label refuses that shape too.
+  - Evidence: `grep -rn 'with_label("")' src/presentation/*.rs` finds 22 on 2026-09-16, the
+    issue's count. Read one by one: eleven are status or problem lines something fills later
+    or names outright, and eleven are spacers nothing ever fills. The five the issue names in
+    `wx_managers.rs` are at `:1285` (Favourite, contact editor), `:2826` and `:3285` (Case
+    Sensitive, the condition editor and the filter editor), `:3309` (Enabled) and `:3837`
+    (Default signature), and none of those five checkboxes gets `set_accessible_name`
+    (`grep -c 'set_accessible_name(&fav_check'` and the other three -> 0 each). The account
+    manager's `cb` and `cb_with_description` closures at `wx_account_manager.rs:1464-1488`
+    do place a spacer, and **do name every checkbox through `set_accessible_name`** with the
+    comment "every other builder in this dialog says the name outright", so #42's comment that
+    those go on the same fix is right about the spacers and wrong about the names. Four more
+    spacers sit before things that are not checkboxes: `:1459` (a section heading's partner),
+    `:1539` (the sign-in hint), `:1642` (the app-password button), `:1712` (the allowed
+    note). The scan cannot reach any of these editors: `ScanTarget::Contacts`,
+    `::Signatures` and `::Filters` open the managers, and the editors behind Add are
+    nested modals, which 06-06 counted among the seventeen outside the scan; `ScanTarget::WhichDays`
+    and `::SendLater` show how a nested dialog is opened directly with a fixture.
+    `tests/no_label_is_only_a_space.rs` reads `with_label(` and `set_label(` literals that are
+    non-empty whitespace and is named by one record. Ledger 408: a spin control's text field
+    is a different shape, `set_accessible_name` landing on the arrows, and is not this class.
+  - [S] #42, the tester on 2026-09-15: "There is an unlabeled checkbox in the signature
+    compose field." #40: "There is an unlabeled checkbox on the basic tab."
+  - [S] `docs/wcag-coverage.md` and the MSAA script's own header: a control with a visible
+    label beside it is named by that label on MSAA even when nothing set one, and a checkbox
+    carries its own text, so why these two are heard unnamed is measured before it is
+    explained.
+  - [D] The five editors (contact, condition, filter, signature, account) are scan targets
+    opened directly with a fixture, in the workflow's list, so both channels reach them.
+  - [D] Every checkbox in those editors is named through `set_accessible_name` with the
+    mnemonic stripped, and the MSAA walk on each editor reports a name for every checkbox.
+  - [D] No `StaticText` built with an empty literal is added to a sizer and never filled or
+    named afterwards; the empty spacers go, a sizer spacer keeps the grid where one is needed,
+    and `tests/no_label_is_only_a_space.rs` refuses the shape with a companion that plants one.
+  - [S] What the tester hears on the signature editor and the contact editor afterwards is a
+    listening pass.
+
+- [ ] **FOUND-09**: Arrowing through the Settings tab row says each tab once.
+  - Evidence: `src/presentation/wx_settings.rs` on 2026-09-16 builds a `Notebook` with seven
+    pages and announces nothing on a page change (`grep -n announce` finds save and validation
+    only). Accessibility Insights for Windows is not installed on this machine
+    (`ls "$LOCALAPPDATA/Programs"` -> no such entry), so its event viewer cannot be the
+    instrument. `scripts/msaa-names.ps1` walks a tree once and records no events.
+    `nvda-tests/` drives a real NVDA on CI against the real binary and records what it said,
+    and its README says it never runs on this machine. NVDA's own log at debug level records
+    every focus, selection and name-change event it acts on, and a PowerShell UI Automation
+    client can subscribe to the same events without NVDA present.
+  - [S] #33, the tester on 2026-09-15: "Arrowing left/right on a tab list in the settings
+    dialog frequently reads the focused tab twice."
+  - [D] The event stream during Right and Left on the tab row is captured on this machine by
+    a UI Automation event logger kept in `scripts/`, and the capture is in the summary before
+    anything changes.
+  - [D] Whatever the capture names as the second event is stopped at its source, and a test
+    holds the handler that stops it.
+  - [D] An `nvda-tests` case arrows through the Settings tabs and holds the transcript to
+    each tab name once; it runs on CI at the next push.
+  - [S] Whether the tab is now heard once is a listening pass on the tester's machine.
+
+- [ ] **FOUND-10**: Every surface that shows a message tries the PGP key, states the S/MIME
+  envelope and carries the signature bar, from one path.
+  - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: `opening_pgp::for_body` is called
+    at `:11195` (Shift+Space, `read_the_whole_message`) and `:12464`
+    (`open_in_the_text_reader`); `envelope_check_for` at `:11184` and `:12478`;
+    `open_single_message`'s Formatted branch at `:12418-12441` passes only
+    `signature_check_for` into `show_conversation_as_page` (`:20247`), whose bar is
+    `reader_text::conversation(subject, parts).with_signature(signature)` and nothing else;
+    the preview pane renders `reader_text::conversation_html` at `:17158` with no bar. The
+    guard `test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open`
+    (`tests/wired.rs:4087`) names `open_in_the_text_reader` and `read_the_whole_message`
+    only. The mailbox-import rustdoc sits above `import_a_pgp_private_key` at `:12760-12787`
+    ahead of its own. The changelog's PGP entry is at `:1630` and its S/MIME envelope entry
+    near `:2348`, moved from the lines the issue cites.
+  - [S] #51, from the audit of 2026-09-15: "the PGP key and the S/MIME envelope sentence are
+    only tried on the plain-text reader and on Shift+Space, never on the default Formatted
+    reader or the preview pane."
+  - [D] One function composes, for a message and its body, the opened body, the PGP finding,
+    the envelope sentence and the signature verdict, and every surface asks it: the text
+    reader, Shift+Space, the Formatted reader, the conversation window and the preview pane.
+  - [D] The preview pane's document carries the bar above the message.
+  - [D] The `wired.rs` guard names every surface, and the changelog entries are corrected by
+    dating; the stray rustdoc is put with the function it describes.
+  - [S] Nothing here has met a real correspondent's key or a real signed message; that is
+    the standing condition and stays.
+
+- [ ] **FOUND-11**: Mail import and export do what their commands and documents say: the
+  Outlook data file reader is reached from the picker, Save As writes a file, and a folder
+  can be chosen.
+  - Evidence: `src/service/outlook_data_file.rs` is 3,608 lines with 38 tests, referenced
+    only by `pub mod` in `service/mod.rs:28` (`grep -rn outlook_data_file src` less itself
+    -> one line), and named by no guard record; it yields
+    `ItemInTheDataFile::{Mail(Vec<u8>), Appointment, Contact, Task, Note}` with the cache's
+    own entry types (`:2176`). The picker at `wx_app.rs:12872` lists `*.zip;*.eml;*.mbox`.
+    `import_tree::what_was_chosen` (`:513`) answers `AnArchive` or `MailInOneFile` from the
+    file's first bytes. `ID_SAVE_AS`'s handler at `:5027` sends "Save As: no message
+    selected" whatever is selected; the item is at `:6026` and `docs/KEYBOARD_SHORTCUTS.md:485`
+    promises a file. `message_files::written_as_one_message` (`:232`) is reached by
+    `export_tree.rs:814` and tests only. The changelog at `:4667` says the reader works and
+    was never run against a real file; the `[Unreleased]` import entry near `:4680` promises
+    "a folder you point it at" while the picker is a `FileDialog`; `DirDialog` is already
+    used at `wx_app.rs:2230` for `.vcf` folders. The four documents: `docs/comparison.md:102`,
+    `docs/privacy.md:89`, `.planning/intel/built-and-left.md:55`,
+    `.planning/codebase/INTEGRATIONS.md:58`.
+  - [S] #53, from the audit of 2026-09-15: "the .pst reader is unwired, Save As is a stub,
+    and a folder import is promised but impossible."
+  - [D] File, Import Mailbox lists `*.pst`, a chosen data file is read through
+    `outlook_data_file` on the import worker, its mail lands under Imported the way an
+    archive's does and its appointments, contacts, tasks and notes land on this computer
+    through the cache's existing writers, and the closing sentence counts each kind and what
+    stayed behind, saying the reader has never met a real file.
+  - [D] File, Save As writes the selected message as `.eml` through
+    `written_as_one_message`, or the selected attachment as itself, through the ordinary
+    save dialog, and refuses with a reason when nothing is selected.
+  - [D] A folder of saved messages can be chosen through a directory picker and goes down
+    the directory branch `mailbox_archive::opened` already has; the changelog's promise is
+    true or corrected by dating.
+  - [D] The four documents describe what is reachable, dated where they change.
+  - [S] No real Outlook data file has ever been read here, and the changelog keeps saying so.
+
+- [ ] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
+  - Evidence: `build_settings_dialog` (`wx_settings.rs:209`) builds seven pages before
+    `show_modal`; `available_languages()` at `:638` creates the Windows spell-checker factory
+    and asks `GetLocaleInfoEx` per tag; `fonts::installed_families()` at `:762` walks
+    `EnumFontFamiliesExW`; `SoundScheme::discover` at `:2714` reads the schemes directory.
+    None is remembered between opens. `common::started` marks `main`'s first instant and
+    words one line a harness parses; `tests/the_numbers_the_targets_ask_for.rs` starts the
+    release binary and reads it. `build_settings_dialog` is buildable without showing, and
+    `tests/every_event_has_a_control.rs` and `tests/checkbox_labels.rs` already build it in a
+    test process, one window per process. Nothing has timed any of it.
+  - [S] #34, the tester on 2026-09-15: "Loading settings by pressing ctrl+, is noticeably
+    slow."
+  - [D] The time from `Ctrl+,` to the dialog built is measured on this machine on the
+    release binary and each candidate cost on its own, and the rows are on
+    `docs/development/measurements.md` with the machine and the build, before anything
+    changes.
+  - [D] Whatever the rows name as the cost is asked of Windows once per process and kept, or
+    built when its tab is first shown, and the after row sits beside the before row; every
+    setting is still on the settings screen and `test_every_setting_somebody_can_change_is_offered_by_a_screen`
+    stays green.
+  - [S] Whether it feels at once on the tester's machine is his to say.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -2399,12 +2730,31 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PERF-05 | Phase 8 | Complete |
 | PERF-06 | Phase 8 | Complete |
 | PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
+| FOUND-01 | Phase 9 | Pending |
+| FOUND-02 | Phase 9 | Pending |
+| FOUND-03 | Phase 9 | Pending |
+| FOUND-04 | Phase 9 | Pending |
+| FOUND-05 | Phase 9 | Pending |
+| FOUND-06 | Phase 9 | Pending |
+| FOUND-07 | Phase 9 | Pending |
+| FOUND-08 | Phase 9 | Pending |
+| FOUND-09 | Phase 9 | Pending |
+| FOUND-10 | Phase 9 | Pending |
+| FOUND-11 | Phase 9 | Pending |
+| FOUND-12 | Phase 9 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 44 total
-- Mapped to phases: 44
+- v1 requirements: 56 total
+- Mapped to phases: 56
 - Unmapped: 0
+
+**Re-taken 2026-09-16.** This block said 44 and 44 from 2026-09-04 until phase 9 was planned.
+Counted with the same command as below, `grep -c '^- \[[ x]\] \*\*[A-Z]\+-[0-9]\+\*\*'
+.planning/REQUIREMENTS.md`, which gives 56 at `524ff24f` with the twelve `FOUND` requirements
+in, and the traceability table above has 56 rows. The twelve are the first requirements in
+this file that did not come from `.planning/intel/built-and-left.md`; the section "Where these
+came from" says where they did.
 
 **Corrected 2026-09-04.** This block said 40 and 40. Counted from the file on 2026-09-04 with
 `grep -c '^- \[[ x]\] \*\*[A-Z]\+-[0-9]\+\*\*' .planning/REQUIREMENTS.md`, which gives 44, and
@@ -2440,6 +2790,13 @@ said until 2026-09-04. There are 44 now. The four extra came from three splits m
 section was written, all of them recorded in the requirements they came from, and the totals here
 were never re-taken. Read the arithmetic above as the accounting at the moment of writing rather
 than as a current count.
+
+**Added 2026-09-16.** `FOUND-01` to `FOUND-12` trace to no row of
+`.planning/intel/built-and-left.md`. Each traces to one GitHub issue, or two sharing a cause,
+among #20 to #63, filed on 2026-09-15 from Pratik's first day of testing build
+`0.125.1+g3e633252` and from the audit of the 2026-08-27 Outlook gap report made the same day.
+The issue number is in each requirement's `[S]` line. The 44 above are unchanged; the total
+is 56.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
