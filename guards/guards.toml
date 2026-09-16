@@ -78,10 +78,50 @@
 # `--recount-everything`, which measured nothing. They are the tree as it stood
 # that day, not a statement that 548 records are correct.
 #
+# ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
+#
+# 802 records were swept that day.
+# 3 records have arrived since and have not been through it.
+#
+# The one sweep of the milestone, every record once, on GitHub's Windows
+# runners rather than on a machine: 41 shards of about 20 records each,
+# dispatched by hand from `.github/workflows/guards.yml` at `main` as it stood
+# at `df3437a1`, which held 803 records. Run 34965790937, first shard started
+# 11:56:37Z and last finished 16:04:09Z, 4 h 7 min of wall clock; the median
+# record cost 260 s there, rebuild 144 s and run 111 s, against 92 s on the
+# machine the rate row on docs/development/measurements.md was taken on. The
+# log is `.planning/phases/08-every-number-the-project-quotes/sweep.log`, 803
+# blocks, no record contended and none unmeasurable. It reads 802 above
+# rather than 803 because one of the 803, "the other setting is named only
+# while the change is somebody's work", was retired the same day: its break
+# reddened nothing, on the runners and again here, and a comment where it
+# stood says why. The 3 arrived on 2026-09-15 with the theme_reach fix,
+# each measured by hand when it was written.
+#
+# 772 of the 803 agreed with what they said. 31 did not, every one of them
+# measured again on this machine before anything was edited, and 29 were
+# short here too; the other 2, "an hour with no zone means an hour here" and
+# "the walk into Windows own chain structures really happens", are right on
+# this machine and blind on a runner, whose clock is UTC and which has no
+# certificate chain to walk, and they are left as they are with that said on
+# each. Of the 29: 24 named too few, because a test written after the record
+# reaches the same rule, 21 of them in a file the record had never named,
+# which is the limit the count check cannot see, and 3 in a file the record
+# names but written before the 2026-09-02 recount stamped every record
+# without measuring; 2 named a test that no longer reaches the break, one
+# since 2026-09-05 when ce3e89ba rewrote its scenario and one that fails only
+# in company and never guarded what it was listed under; 1 had its break on
+# the title's line while its tests were about the body, and was given the
+# body's line; 1 named a rule no marking now holds and was renamed to the one
+# fact its moved break really guards, the rule going to the ledger; and 1
+# reddened nothing and was retired. Each correction is dated on its record,
+# every corrected record was measured again through `--remeasure` after the
+# edit, and 08-07's summary lists them by cause.
+#
 # ── What the sweep of 2026-08-12 covered, and what it did not ───────────────
 #
-# 192 records were swept that day.
-# 614 records have arrived since and have not been through it.
+# 192 records were swept on 2026-08-12, and by 2026-09-15, when the sweep
+# above ran over all of them, 614 had arrived since that had not been.
 #
 # Six went on 2026-08-26 with the code they were about: five in
 # application/notes.rs, whose module doc already said nothing in the running
@@ -589,13 +629,20 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_a_module_holding_one_thing_does_not_say_one_things",
     "presentation::wx_app::what_the_status_line_says::test_an_account_with_one_folder_does_not_say_one_folders",
     "service::ical_subscription::tests::test_event_without_a_uid_is_not_stored_and_the_feed_says_why_it_is_empty",
+    # Added 2026-09-15 by 08-07's sweep, on the runners at df3437a1: two more
+    # sentences built through `how_many`, written 2026-09-10 and 2026-09-11 in
+    # files this record had never named, so the count check could not see them.
+    "application::notes_sync::tests::test_the_summary_names_the_setting_only_when_something_was_really_held",
+    "presentation::note_folder_tree::tests::test_the_branch_says_what_is_under_it_even_when_it_is_one_or_none",
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 163 },
     { file = "src/service/ical_subscription.rs", tests = 19 },
@@ -635,7 +682,12 @@ red = [
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_folding_two_address_books_together_counts_one_contact_once",
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
-    "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
+    # `test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice`
+    # was named here until 2026-09-15 and taken off by 08-07's sweep: since
+    # ce3e89ba of 2026-09-05 its scenario holds the edit for somebody to
+    # choose and offers the second address book nothing, so the fold this
+    # break doubles is not on its path and it stays green with the guard
+    # broken. Eight remain, measured on the runners and again here.
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
@@ -713,19 +765,17 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
 
-[[guard]]
-name = "the other setting is named only while the change is somebody's work"
-file = "src/application/contacts_sync.rs"
-before = """                if the_copy_here_was_written_here(&contact) {
-                    result.waiting_on_how_far_a_change_goes.note(&contact.id);
-                }"""
-after = """                result.waiting_on_how_far_a_change_goes.note(&contact.id);"""
-red = [
-    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
-]
-tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
-]
+# A record retired on 2026-09-15 by 08-07's sweep: "the other setting is named
+# only while the change is somebody's work". Its break took the
+# `the_copy_here_was_written_here` gate off the `note` call above, and it
+# named one test. Since ce3e89ba of 2026-09-05 that test's scenario holds the
+# contact for somebody to choose rather than replacing the edit, so the gate
+# is not on its path, and the sweep on the runners and a re-measurement here
+# both found the break reddening nothing at all. A record naming no test is
+# one the runner refuses, and a rule no test would notice is a ledger entry
+# rather than a record: the gate is in the tree and untested, and the test
+# that covers it belongs in contacts_sync.rs, which 77 records name, so it is
+# written when somebody is prepared to re-measure those. WINDOWS.md has it.
 
 [[guard]]
 # Measured again on 2026-08-12. A later commit added a second sentence beside
@@ -757,11 +807,15 @@ red = [
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-09 in a file this
+    # record had never named.
+    "application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting",
 ]
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
 [[guard]]
@@ -981,8 +1035,12 @@ red = [
     "application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice",
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-10 in a file this
+    # record had never named.
+    "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
 
@@ -1160,8 +1218,12 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
     "data::message_cache::contacts::tests::test_deleting_a_contact_leaves_a_note_for_every_address_book_that_knew_her",
     "data::message_cache::contacts::tests::test_telling_one_address_book_leaves_the_other_still_owed_the_deletion",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-10 in a file this
+    # record had never named.
+    "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
@@ -1211,8 +1273,12 @@ red = [
     "application::contacts_sync::tests::test_a_contact_google_took_the_deletion_for_stays_gone_on_a_later_sync",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-10 in a file this
+    # record had never named.
+    "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
 ]
 
@@ -1254,8 +1320,12 @@ red = [
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_is_not_written_back_by_the_same_read",
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
     "data::message_cache::contacts::tests::test_telling_one_address_book_leaves_the_other_still_owed_the_deletion",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-10 in a file this
+    # record had never named.
+    "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
@@ -1566,11 +1636,22 @@ red = [
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_a_later_sync",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_outlook",
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+    # Added 2026-09-15 by 08-07's sweep: the CardDAV and notes syncs, written
+    # 2026-09-10 and 2026-09-11 in files this record had never named, both
+    # keep a deletion the clock must not let go of.
+    "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
+    "application::notes_sync::tests::test_a_deletion_the_backend_has_taken_is_still_remembered",
+    "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
+    "application::notes_sync::tests::test_a_note_deleted_here_is_offered_to_the_backend_for_deletion",
+    "application::notes_sync::tests::test_a_removal_is_only_offered_to_the_container_the_note_was_in",
+    "application::notes_sync::tests::test_a_removal_waits_for_the_copy_a_move_is_making",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
     { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
@@ -1825,6 +1906,10 @@ before = """    (!PROVIDERS_A_CHANGE_CAN_REACH.contains(&came_from)).then_some(N
 after = """    None"""
 red = [
     "application::calendar::tests::test_a_change_in_a_calendar_made_on_this_computer_is_said",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-08-19 in the file this
+    # record names, eleven days after the record, and stamped over on
+    # 2026-09-02 by --recount-everything, which measured nothing.
+    "application::calendar::tests::test_two_calendars_that_share_a_reason_are_still_said_separately",
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
@@ -2274,6 +2359,10 @@ red = [
     "service::caldav::tests::test_a_real_radicale_master_and_override_in_a_legacy_iana_zone_alias_read_correctly",
     "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
     "service::tasks_api::tests::test_a_completion_time_microsoft_gave_us_goes_back_as_the_same_hour",
+    # Added 2026-09-15 by 08-07's sweep: the due window's sentences, written
+    # 2026-09-14 in a file this record had never named, read a moment with a T.
+    "presentation::wx_reminder_alert::tests::test_one_row_is_said_as_its_own_sentence_exactly_as_before",
+    "presentation::wx_reminder_alert::tests::test_several_rows_are_said_as_a_count_then_each_then_how_many_more",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
@@ -2286,6 +2375,7 @@ tests_last_seen = [
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
     { file = "src/service/caldav.rs", tests = 163 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
@@ -3323,9 +3413,26 @@ after = """    let zone: Tz = tzid.parse().unwrap_or(Tz::UTC);"""
 red = [
     "application::caldav_sync::tests::test_a_change_naming_a_zone_the_writer_cannot_describe_stays_waiting",
     "service::vtimezone::tests::test_a_name_that_names_no_zone_writes_nothing",
+    # Added 2026-09-15 by 08-07's sweep: ten tests written 2026-08-11 to
+    # 2026-08-13, two to four days after the record, about refusing a change
+    # in a zone the writer cannot describe; one in the file the record names,
+    # stamped over on 2026-09-02 by --recount-everything, and nine in two
+    # files it never named.
+    "application::caldav_sync::tests::test_a_day_whose_replacement_cannot_be_created_is_not_taken_off_the_series_at_the_server",
+    "application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting",
+    "application::calendar::tests::test_no_refusal_said_before_anything_is_written_describes_a_write_that_was_tried",
+    "application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed",
+    "application::calendar::tests::test_the_editor_and_the_sync_say_the_same_thing_about_a_zone_they_cannot_write",
+    "application::calendar::tests::test_the_one_day_answer_does_not_promise_a_calendar_server_a_zone_it_cannot_be_told",
+    "application::calendar::tests::test_the_refusal_check_can_tell_a_good_sentence_from_a_bad_one",
+    "application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words",
+    "presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written",
+    "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
+    { file = "src/application/calendar.rs", tests = 194 },
+    { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/vtimezone.rs", tests = 10 },
 ]
 
@@ -3336,6 +3443,10 @@ before = """            format!("RDATE:{}", onsets.join(",")),"""
 after = """            "RRULE:FREQ=YEARLY;BYMONTH=1;BYDAY=1SU".to_string(),"""
 red = [
     "service::vtimezone::tests::test_a_zone_whose_changes_follow_no_yearly_rule_lists_its_days_rather_than_guessing",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-08-19 in the file this
+    # record names, ten days after the record, and stamped over on 2026-09-02
+    # by --recount-everything, which measured nothing.
+    "service::vtimezone::tests::test_listed_blocks_keeps_each_pair_of_offsets_in_its_own_block",
 ]
 tests_last_seen = [
     { file = "src/service/vtimezone.rs", tests = 10 },
@@ -3646,8 +3757,17 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_a_removal_the_server_refuses_still_leaves_the_newer_draft_on_it",
     "service::protocols::imap::against_a_server_that_answers::test_a_delete_whose_flag_the_server_refuses_changes_nothing",
     "service::protocols::imap::against_a_server_that_answers::test_a_move_that_fails_at_the_flag_has_already_made_the_copy",
+    # Added 2026-09-15 by 08-07's sweep: the waiting flag changes and the
+    # crossed moves, written 2026-09-05 and 2026-09-08 in files this record
+    # had never named, both read a refused flag as a refusal.
+    "application::flag_changes_waiting::tests::test_a_server_that_answers_no_is_read_as_a_refusal_and_still_puts_the_change_back",
+    "application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked",
+    "application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places",
+    "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
 ]
 tests_last_seen = [
+    { file = "src/application/flag_changes_waiting.rs", tests = 16 },
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/service/protocols/imap.rs", tests = 91 },
 ]
@@ -4376,8 +4496,15 @@ after = """                    let Some(response) = arrived else {
                     };"""
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_server_that_hangs_up_in_the_middle_of_a_search_is_not_an_empty_folder",
+    # Added 2026-09-15 by 08-07's sweep: the session that signs in again after
+    # a dropped connection, written 2026-09-04 in a file this record had never
+    # named, needs the drop read as a drop.
+    "application::mail_session::tests::test_a_connection_the_server_dropped_is_signed_in_again_and_the_work_finishes",
+    "application::mail_session::tests::test_a_reconnect_that_fails_too_is_refused_in_plain_words",
+    "application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more",
 ]
 tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 14 },
     { file = "src/service/protocols/imap.rs", tests = 91 },
 ]
 
@@ -4698,8 +4825,33 @@ after = """                format!("UID FETCH {uid} BODY.PEEK[]"),
 red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_session_allowed_to_read_reaches_the_command",
     "service::protocols::imap::against_a_server_that_answers::test_the_message_a_server_sends_back_is_the_one_that_is_handed_over",
+    # Added 2026-09-15 by 08-07's sweep: a move across accounts, written
+    # 2026-09-07 and 2026-09-08 in a file this record had never named, fetches
+    # the message from the source and every one of its cases reads what the
+    # server handed over. Nineteen, which is what a record naming two said
+    # nothing about for a week.
+    "application::mail_across_accounts::tests::test_a_copy_across_accounts_says_nothing_to_the_source_that_changes_it",
+    "application::mail_across_accounts::tests::test_a_destination_that_refuses_the_append_leaves_the_source_untouched",
+    "application::mail_across_accounts::tests::test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards",
+    "application::mail_across_accounts::tests::test_a_message_that_was_already_there_is_not_read_as_the_one_just_sent",
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves",
+    "application::mail_across_accounts::tests::test_a_move_that_crosses_never_sends_a_copy_or_a_move_to_the_source",
+    "application::mail_across_accounts::tests::test_a_refusal_is_an_answer_so_a_message_already_there_is_not_read_as_an_arrival",
+    "application::mail_across_accounts::tests::test_a_source_that_cannot_remove_one_message_says_it_is_here_and_marked",
+    "application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places",
+    "application::mail_across_accounts::tests::test_an_account_this_program_may_not_write_to_refuses_at_its_own_session",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_found_afterwards_is_removed_at_the_source",
+    "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing",
+    "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
+    "application::mail_across_accounts::tests::test_nothing_is_said_to_the_source_that_changes_it_until_the_append_has_gone_out",
+    "application::mail_across_accounts::tests::test_the_destination_is_told_to_append_into_the_folder_that_was_chosen",
+    "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
+    "application::mail_across_accounts::tests::test_the_message_reaches_one_server_and_leaves_the_other",
+    "application::mail_across_accounts::tests::test_the_message_the_destination_is_given_is_the_one_the_source_handed_over",
 ]
 tests_last_seen = [
+    { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/service/protocols/imap.rs", tests = 91 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -7452,10 +7604,17 @@ red = [
     "service::onenote_page::tests::test_the_inline_span_styles_do_not_appear_in_what_comes_back",
     "service::tasks_api::tests::test_a_microsoft_task_arrives_from_json_with_its_progress_and_its_markup_read",
     "service::tasks_api::tests::test_a_microsoft_task_body_written_as_html_is_read_as_words_not_tags",
+    # Added 2026-09-15 by 08-07's sweep: a OneNote page's body, written
+    # 2026-09-11 in a file this record had never named, is read through the
+    # same reading.
+    "service::onenote_notes::tests::test_a_note_is_its_title_from_the_resource_and_its_body_from_the_document",
+    "service::onenote_notes::tests::test_a_note_made_here_reaches_onenote_as_a_page_in_the_section_it_was_given",
+    "service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out",
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
@@ -7937,15 +8096,29 @@ tests_last_seen = [
 # dropped, and is deleted the moment after it was created.
 #
 # Measured by hand on 2026-08-14, against the whole library.
+#
+# Rewritten on 2026-09-15 by 08-07's sweep, twice in one day, and the second
+# time is the honest one. The sweep found the break above, the insert at the
+# top of `one_caldav_day_kept_out_of_its_series` taken out, reddening nothing
+# on the runners and again here. The break was moved to the other marking,
+# where the loop over the server's answer marks whatever identity a row was
+# stored under, on the reading that the rule had moved there; measured, that
+# break reddens exactly one test, and it is not the moved-day test above. So
+# neither marking is what keeps a moved day now, the rule this record was
+# named for has no test that would notice it broken, and it is a ledger
+# entry rather than a record; the first insert is a dead-code candidate on
+# the same ledger. What stays is what the measurement found: the marking of
+# a stored identity is guarded by the one test named below, and the record
+# is renamed to what it guards. The old name and the old red are the two
+# lines above this paragraph in git.
 
 [[guard]]
-name = "a changed day of a CalDAV series is marked seen before the removal pass can run"
+name = "a row stored under the identity the server named is not taken for one it dropped"
 file = "src/application/caldav_sync.rs"
-before = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);
-    seen_uids.insert(compound_id.clone());"""
-after = """    let compound_id = format!("{}:{}", changed.uid, the_day_it_was);"""
+before = """            seen_uids.insert(under.to_string());"""
+after = """            let _ = under;"""
 red = [
-    "application::caldav_sync::tests::test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it",
+    "application::caldav_sync::tests::test_an_event_stored_under_half_an_identifier_keeps_what_was_typed_on_it",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 67 },
@@ -11082,8 +11255,15 @@ red = [
     "service::spellcheck::tests::test_the_exact_tag_is_preferred_over_its_family",
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
     "service::spellcheck::tests::test_nothing_answers_when_no_family_member_is_available",
+    # Added 2026-09-15 by 08-07's sweep to all four records below this line
+    # and this one: the same fourth test the record after them was found to
+    # redden on 2026-09-13, written 2026-09-03 in `data::config`, a file none
+    # of the five names. That finding was written on one record and the four
+    # beside it, with the same break site, were not measured again.
+    "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11092,8 +11272,13 @@ name = "the exact language match has to spell the tag the same, not differently"
 file = "src/service/spellcheck/mod.rs"
 before = """        .find(|c| c.available && c.tag.to_ascii_lowercase() == wanted)"""
 after = """        .find(|c| c.available && c.tag.to_ascii_lowercase() != wanted)"""
-red = ["service::spellcheck::tests::test_the_exact_tag_is_preferred_over_its_family"]
+red = [
+    "service::spellcheck::tests::test_the_exact_tag_is_preferred_over_its_family",
+    # Added 2026-09-15 by 08-07's sweep; see the record above.
+    "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+]
 tests_last_seen = [
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11105,8 +11290,11 @@ after = """            c.available || c.tag.to_ascii_lowercase().split('-').next
 red = [
     "service::spellcheck::tests::test_nothing_answers_when_no_family_member_is_available",
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
+    # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
+    "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11115,8 +11303,13 @@ name = "a family language match has to share the family, not differ from it"
 file = "src/service/spellcheck/mod.rs"
 before = """            c.available && c.tag.to_ascii_lowercase().split('-').next() == Some(family.as_str())"""
 after = """            c.available && c.tag.to_ascii_lowercase().split('-').next() != Some(family.as_str())"""
-red = ["service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member"]
+red = [
+    "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
+    # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
+    "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+]
 tests_last_seen = [
+    { file = "src/data/config.rs", tests = 66 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11725,11 +11918,15 @@ red = [
     "data::message_cache::signed_original::tests::test_dropping_one_to_stay_under_the_budget_leaves_it_saying_it_was_signed",
     "data::message_cache::signed_original::tests::test_the_form_a_signed_message_arrived_in_comes_back_byte_for_byte",
     "presentation::wx_app::what_an_export_holds::test_a_signed_message_reaches_the_export_as_it_arrived",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-06 in a file this
+    # record had never named.
+    "data::message_cache::how_it_arrived::tests::test_the_one_call_still_keeps_the_bytes_a_signed_message_arrived_in",
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
     { file = "src/application/importing_messages.rs", tests = 37 },
     { file = "src/application/pop_sync.rs", tests = 49 },
+    { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
@@ -12288,8 +12485,12 @@ red = [
     "application::folders_underneath::tests::test_renaming_a_folder_moves_every_row_underneath_it_too",
     "application::folders_underneath::tests::test_the_separator_each_row_already_had_is_the_one_it_keeps",
     "application::folders_underneath::tests::test_two_branches_of_the_same_depth_both_come_back",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-08-30, the same day as
+    # this record, in a file it had never named.
+    "application::emptying::tests::test_the_reach_on_takes_the_folder_and_everything_under_it_deepest_first",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying.rs", tests = 23 },
     { file = "src/application/folders_underneath.rs", tests = 13 },
 ]
 
@@ -13327,12 +13528,16 @@ before = """    #[serde(default = "default_reading")]
 after = """    #[serde(default)]
     pub reading: bool,"""
 red = [
-    "application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first",
+    # `test_a_command_that_names_a_different_folder_opens_that_one_first` was
+    # named here until 2026-09-15 and taken off by 08-07's sweep: it stayed
+    # green with the guard broken on the runners and again here. It is the
+    # test `scripts/guards.py` records as failing only in company, and it was
+    # red in company on 2026-08-31 when this record was written; it is not
+    # about a settings file and never guarded this rule on purpose.
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
-    { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/data/config.rs", tests = 66 },
 ]
 
@@ -19081,12 +19286,17 @@ tests_last_seen = [
 [[guard]]
 name = "a note's body comes back from a document the bytes it went out as"
 file = "src/service/note_document.rs"
-before = '''        title: inside
+# The break moved from the title's line to the body's on 2026-09-15, after
+# 08-07's sweep found it reddening nothing on the runners and again here: the
+# two tests named are about the body, and no fixture's title ends in a space,
+# so trimming the title was a break nothing could see. The title's own
+# reading is guarded by nothing, said here rather than left to be assumed.
+before = '''        body: inside
             .iter()
-            .find_map(|line| the_whole_value_on(line, "SUMMARY"))'''
-after = '''        title: inside
+            .find_map(|line| the_whole_value_on(line, "DESCRIPTION"))'''
+after = '''        body: inside
             .iter()
-            .find_map(|line| value_named_on(line, "SUMMARY"))'''
+            .find_map(|line| value_named_on(line, "DESCRIPTION"))'''
 red = [
     "service::note_document::tests::test_a_body_long_enough_to_be_broken_across_lines_is_put_back_together",
     "service::note_document::tests::test_a_note_written_as_a_document_comes_back_the_bytes_it_went_in_as",
@@ -19874,9 +20084,13 @@ red = [
     "service::microsoft_graph::tests::test_a_change_reads_the_page_before_it_writes",
     "service::microsoft_graph::tests::test_a_second_change_names_what_the_second_read_said_and_not_the_first",
     "service::microsoft_graph::tests::test_an_account_that_may_only_be_read_changes_no_page",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-11, the same day as
+    # this record, in a file it had never named.
+    "service::onenote_notes::tests::test_the_marker_handed_back_after_a_change_is_the_one_the_page_carries_afterwards",
 ]
 tests_last_seen = [
     { file = "src/service/microsoft_graph.rs", tests = 57 },
+    { file = "src/service/onenote_notes.rs", tests = 13 },
 ]
 
 # What a backend could not keep is read off its own copy, not worked out from
@@ -20168,9 +20382,13 @@ red = [
     "common::version::tests::test_a_build_identifier_after_a_plus_is_not_part_of_the_version",
     "common::version::tests::test_two_builds_of_one_version_are_the_same_version",
     "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
+    # Added 2026-09-15 by 08-07's sweep: written 2026-09-12, the same day as
+    # this record, in a file it had never named.
+    "service::update_check::tests::test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest",
 ]
 tests_last_seen = [
     { file = "src/common/version.rs", tests = 24 },
+    { file = "src/service/update_check.rs", tests = 23 },
 ]
 
 # The channel check passing everything through, which is the half-fix rather
@@ -21072,9 +21290,15 @@ after = """            Kind::Reminder | Kind::Task => true,
             Kind::Event => true,"""
 red = [
     "application::due::tests::test_an_event_cannot_be_done_and_the_other_two_can",
+    # Added 2026-09-15 by 08-07's sweep: the due window's two tests, written
+    # 2026-09-14 by 06-09's task 2 in a file this record from task 1 had
+    # never named.
+    "presentation::wx_reminder_alert::tests::test_done_is_refused_on_an_event_row_and_taken_on_a_task_row",
+    "presentation::wx_reminder_alert::tests::test_mark_done_and_details_say_why_they_are_unavailable",
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
+    { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
 ]
 
 # The future twin chooses its unit the way the past reading does, so "in 90
