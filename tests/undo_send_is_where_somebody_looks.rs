@@ -144,6 +144,46 @@ fn which_key_the_schedule_comment_names(compose: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether answering a meeting hands the queue to the server when nothing
+/// holds the answer back, said as a complaint when it does not.
+///
+/// The composer's Send does this: a message with the hold off is told
+/// "Sending to ..." and the outbox is flushed in the same breath, because
+/// the send loop runs on a clock only for rows carrying a moment and a row
+/// with nothing on it waits for somebody to press something. Answering a
+/// meeting said the same words and flushed nothing, so with the hold off the
+/// answer sat in the Outbox until the next Send of anything (#56, found while
+/// wording the answer through the composer's own sentence).
+fn whether_an_unheld_answer_is_handed_to_the_server(app: &str) -> Result<(), String> {
+    let handler = body_of(app, "fn answer_the_invitation(")?;
+    if !handler.contains("WhenItGoes::Now") {
+        return Err(
+            "answering a meeting no longer asks whether the answer goes now, so an \
+                    answer with the hold off is told it is sending and nothing sends it"
+                .to_string(),
+        );
+    }
+    if !handler.contains("flush_outbox(") {
+        return Err(
+            "answering a meeting no longer flushes the outbox for an answer that goes \
+                    now, so it is told \"Sending to ...\" and waits for the next Send of anything"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// One function's text, from its signature to the closing brace at column
+/// nought, or a complaint when the signature is gone.
+fn body_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    Ok(rest[..ends].to_string())
+}
+
 fn the_main_window() -> String {
     fs::read_to_string("src/presentation/wx_app.rs").expect("the main window")
 }
@@ -236,4 +276,34 @@ fn test_the_reading_complains_when_the_comment_names_a_key_that_does_nothing() {
     let complaint = which_key_the_schedule_comment_names(&planted)
         .expect_err("the comment named Alt+E and the reading did not notice");
     assert!(complaint.contains("Alt+E"), "{complaint}");
+}
+
+#[test]
+fn test_answering_a_meeting_with_the_hold_off_hands_the_answer_to_the_server_as_send_does() {
+    // What this cannot see: whether the flush reaches a server, which no test
+    // here can drive. It reads that the handler asks the question the
+    // composer's Send asks and acts on the same answer.
+    let app = the_main_window();
+
+    if let Err(why) = whether_an_unheld_answer_is_handed_to_the_server(&app) {
+        panic!("{why}");
+    }
+}
+
+#[test]
+fn test_the_reading_complains_when_the_answer_is_no_longer_flushed() {
+    // The companion takes the flush out of the handler and leaves everything
+    // else, which is the shape the handler had until #56.
+    let app = the_main_window();
+    let handler = body_of(&app, "fn answer_the_invitation(").expect("the handler");
+    let without = handler.replacen("flush_outbox(app);", "", 1);
+    assert!(
+        without != handler,
+        "the plant changed nothing, so the flush is no longer written as this expects"
+    );
+    let planted = app.replacen(&handler, &without, 1);
+
+    let complaint = whether_an_unheld_answer_is_handed_to_the_server(&planted)
+        .expect_err("the flush was taken out and the reading did not notice");
+    assert!(complaint.contains("flushes"), "{complaint}");
 }

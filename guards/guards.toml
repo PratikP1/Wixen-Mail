@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 34 records have arrived since and have not been through it.
+# 37 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -17198,8 +17198,11 @@ red = [
     "application::answered_meetings::tests::test_an_invitation_that_names_no_end_is_stored_with_one_rather_than_a_blank",
     "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+    "application::answered_meetings::tests::test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go",
 ]
-tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 17 },
+]
 
 # ── The version answered is written against the row that is really here ─────
 #
@@ -17234,7 +17237,9 @@ after = """    let id = uuid::Uuid::new_v4().to_string();"""
 red = [
     "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
 ]
-tests_last_seen = [{ file = "src/application/answered_meetings.rs", tests = 16 }]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 17 },
+]
 
 # ── The count of held-back pictures, kept and said ──────────────────────────
 #
@@ -23000,7 +23005,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 5 },
+    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]
 
 # The composer's schedule routine described as reached by Alt+E, which is what
@@ -23028,5 +23033,103 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 5 },
+    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
+]
+
+# A queued meeting answer worded as delivered, which is the sentence the
+# tester heard on 2026-09-15 (#56): "Ada Lovelace has been told", said at
+# once for an answer that sat in the outbox for ten seconds like any other
+# message. The break puts that ending back in place of the composer's own
+# sentence for the same queue row, so the three endings a queued answer can
+# have, the countdown, "Sending to ...", and the offline sentence, all go
+# red; the refused answer's sentence is untouched and stays green.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on, the
+# whole library at the default eight threads.
+[[guard]]
+name = "a queued meeting answer says what the composer's Send says, not that the organiser has been told"
+file = "src/application/answering.rs"
+before = """                crate::application::sending_later::what_send_did(
+                    *goes,
+                    waiting_on,
+                    now,
+                    how_to_say(&self.organiser)
+                )"""
+after = """                format!("{} has been told.", how_to_say(&self.organiser))"""
+red = [
+    "application::answering::tests::test_a_held_answer_says_which_answer_went_and_the_countdown_every_send_says",
+    "application::answering::tests::test_an_answer_with_the_hold_off_says_it_is_sending_and_not_that_anybody_has_heard",
+    "application::answering::tests::test_an_answer_queued_while_offline_says_it_waits_for_a_network",
+]
+tests_last_seen = [
+    { file = "src/application/answering.rs", tests = 37 },
+]
+
+# A queued meeting answer left off the calendar, which is what the filing
+# rule did with any variant but the retired `Sent`: every answer is queued
+# now, so the break files only an answer that never left and files nothing
+# that is on its way. The held-answer test goes red on that, and so does
+# every test that answers through the fixture, because the fixture queues
+# under the default hold as pressing the button does; the never-left test
+# goes red the other way, because the break files what it refuses.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on, the
+# whole library at the default eight threads.
+[[guard]]
+name = "a queued meeting answer is filed on the calendar while it waits, not left off it"
+file = "src/application/answered_meetings.rs"
+before = """    if matches!(how_it_went, HowItWent::DidNotSend { .. }) {"""
+after = """    if !matches!(how_it_went, HowItWent::DidNotSend { .. }) {"""
+red = [
+    "application::answered_meetings::tests::test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go",
+    "application::answered_meetings::tests::test_a_change_to_a_meeting_already_accepted_is_answered_as_a_change_to_it",
+    "application::answered_meetings::tests::test_a_meeting_named_after_one_on_another_accounts_calendar_leaves_that_one_alone",
+    "application::answered_meetings::tests::test_a_meeting_of_whole_days_keeps_its_dates_rather_than_gaining_a_clock_reading",
+    "application::answered_meetings::tests::test_accepting_puts_the_meeting_on_the_calendar_taking_up_its_time",
+    "application::answered_meetings::tests::test_an_answer_that_never_left_the_machine_is_not_filed_as_though_it_had",
+    "application::answered_meetings::tests::test_an_invitation_older_than_the_one_answered_does_not_move_the_meeting_back",
+    "application::answered_meetings::tests::test_an_invitation_that_names_no_end_is_stored_with_one_rather_than_a_blank",
+    "application::answered_meetings::tests::test_answering_the_same_meeting_three_times_leaves_one_entry",
+    "application::answered_meetings::tests::test_answering_the_same_version_again_writes_nothing_at_all",
+    "application::answered_meetings::tests::test_each_answer_decides_whether_the_time_is_taken_and_says_it_in_the_stored_word",
+    "application::answered_meetings::tests::test_the_entry_is_marked_as_a_change_this_computer_has_made",
+    "application::answered_meetings::tests::test_the_meeting_is_filed_under_a_calendar_made_for_an_account_that_has_none",
+    "application::answered_meetings::tests::test_the_meetings_own_status_is_not_the_guests_answer",
+    "application::answered_meetings::tests::test_the_version_answered_is_written_against_the_row_the_calendar_already_holds",
+]
+tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 17 },
+]
+
+# Answering a meeting with the hold off told "Sending to ..." and handed to
+# nothing, which is the shape the handler had until #56: the send loop runs
+# on a clock only for rows carrying a moment, so a row with nothing on it
+# waited for the next Send of anything. The break takes the flush out and
+# leaves the question, so the reading goes red on the missing flush and its
+# companion goes red because its plant of the same removal then changes
+# nothing.
+#
+# `suite` names the target that reads the handler, which couples the target
+# to this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on,
+# `cargo test --test undo_send_is_where_somebody_looks`.
+[[guard]]
+name = "answering a meeting with the hold off hands the answer to the server, not to the next Send of anything"
+file = "src/presentation/wx_app.rs"
+suite = "undo_send_is_where_somebody_looks"
+before = """    } = &went
+    {
+        flush_outbox(app);
+    }"""
+after = """    } = &went
+    {
+    }"""
+red = [
+    "test_answering_a_meeting_with_the_hold_off_hands_the_answer_to_the_server_as_send_does",
+    "test_the_reading_complains_when_the_answer_is_no_longer_flushed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]

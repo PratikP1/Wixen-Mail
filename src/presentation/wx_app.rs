@@ -4078,14 +4078,7 @@ impl WxMailApp {
                             } else {
                                 Answer::Declined
                             };
-                            answer_the_invitation(
-                                &state,
-                                &message_cache,
-                                &ui_tx,
-                                &runtime,
-                                &a11y,
-                                answer,
-                            );
+                            answer_the_invitation(app, &message_cache, &a11y, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
                             send_receipt_for_the_open_message(app);
@@ -13027,15 +13020,19 @@ fn fill_folders_from(
 /// explain that rather than send anything. A button that quietly did nothing
 /// would be worse than no button at all.
 fn answer_the_invitation(
-    state: &Arc<StdMutex<WxUIState>>,
+    app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
-    ui_tx: &Sender<UIUpdate>,
-    runtime: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
     answer: crate::application::invitations::Answer,
 ) {
     use crate::application::answering;
     use crate::presentation::accessibility::announcements::Priority;
+
+    let AppHandles {
+        state,
+        tx: ui_tx,
+        rt: runtime,
+    } = app;
 
     let told = |said: &str, how: Priority| {
         send_status(ui_tx, runtime, said);
@@ -13111,19 +13108,32 @@ fn answer_the_invitation(
     let went = send_the_answer(state, cache, &to_send);
     // The other half of answering, and the half somebody lives with. Filing
     // decides for itself that an answer which never left the machine is not
-    // written down as though it had, so the rule sits beside the writing rather
-    // than in this branch. A calendar that could not be written is not worth
-    // interrupting the answer's own sentence for: the reply has gone, which is
-    // what the person asked for, and the meeting can be added by hand.
+    // written down as though it had, and that a held one is filed while it is
+    // held, so the rule sits beside the writing rather than in this branch. A
+    // calendar that could not be written is not worth interrupting the
+    // answer's own sentence for: the reply is on its way, which is what the
+    // person asked for, and the meeting can be added by hand.
     if let Err(why) = crate::application::answered_meetings::file_the_answer(
         cache, &account, &ready, answer, &went,
     ) {
-        tracing::warn!("The answer was sent and could not be put on the calendar: {why}");
+        tracing::warn!("The answer was queued and could not be put on the calendar: {why}");
     }
     told(
         &ready.what_answering_did(answer, &went, chrono::Local::now()),
         Priority::Normal,
     );
+    // What the composer's Send does for a message with the hold off, and this
+    // did not: the send loop runs on a clock only for rows carrying a moment,
+    // so a row with nothing on it waits for somebody to press something. The
+    // sentence above says "Sending to ..." for this case, and this is what
+    // makes it true.
+    if let answering::HowItWent::Queued {
+        goes: crate::application::sending_later::WhenItGoes::Now,
+        ..
+    } = &went
+    {
+        flush_outbox(app);
+    }
 }
 
 /// The address this account answers an invitation as.
@@ -13140,6 +13150,12 @@ fn the_address_this_account_answers_as(state: &Arc<StdMutex<WxUIState>>, account
 }
 
 /// Put the answer in the queue that sends mail, and say how that went.
+///
+/// How it went is what the queue said, carried back as it was said: the row
+/// is held, or goes now, or waits for a network, and the sentence afterwards
+/// is worded from that value the way the composer's Send words its own. It
+/// used to answer `Sent` and throw the queue's answer away, and `Sent` was
+/// documented as having reached the organiser's mail server (#56).
 fn send_the_answer(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Arc<MessageCache>,
@@ -13176,7 +13192,14 @@ fn send_the_answer(
         send_at: None,
     };
     match queue_for_sending(state, &Some(cache.clone()), &data) {
-        Ok(_) => HowItWent::Sent,
+        Ok((_, waiting_on)) => HowItWent::Queued {
+            goes: crate::application::sending_later::when_it_goes(
+                reachability_of(state),
+                &waiting_on,
+                chrono::Local::now(),
+            ),
+            waiting_on,
+        },
         Err(because) => HowItWent::DidNotSend { because },
     }
 }

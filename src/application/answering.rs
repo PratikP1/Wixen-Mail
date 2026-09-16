@@ -296,17 +296,32 @@ impl Answering {
     /// somebody believing the organiser knows, and they find out at the
     /// meeting. So the sentence names what went wrong, says plainly that
     /// nobody was told, and says the answer is not lost.
+    ///
+    /// A queued answer names the answer and the meeting, then says what the
+    /// composer's Send says for the same queue row, through the same function
+    /// and from the same value: "Sending in 10 seconds. Undo Send takes it
+    /// back" under the hold, "Sending to ..." with the hold off, and the
+    /// offline sentence when offline mode is on. This used to say the
+    /// organiser had been told, at once, for an answer that sat in the outbox
+    /// for ten seconds like everything else (#56). `now` is passed in because
+    /// a countdown is a duration from the moment it is said.
     pub fn what_answering_did(
         &self,
         answer: Answer,
         how_it_went: &HowItWent,
         now: DateTime<Local>,
     ) -> String {
-        let _ = now;
         match how_it_went {
-            HowItWent::Sent | HowItWent::Queued { .. } => {
-                crate::application::invitations::what_happened(&self.invitation, answer)
-            }
+            HowItWent::Queued { goes, waiting_on } => format!(
+                "{} {}",
+                crate::application::invitations::what_was_done(&self.invitation, answer),
+                crate::application::sending_later::what_send_did(
+                    *goes,
+                    waiting_on,
+                    now,
+                    how_to_say(&self.organiser)
+                )
+            ),
             HowItWent::DidNotSend { because } => format!(
                 "{} could not be {}. {} Nothing reached {}, so it can be tried again.",
                 what_the_meeting_is_called(&self.invitation),
@@ -338,12 +353,20 @@ impl Answering {
 }
 
 /// How the sending went, so the sentence afterwards can say what really
-/// happened rather than what was meant to.
+/// happened on this machine rather than what was meant to.
+///
+/// Two variants and not three, because the queue can only hold an answer or
+/// refuse it. There used to be a `Sent`, documented as "the answer reached
+/// the organiser's mail server", and nothing could ever have produced it: the
+/// answer goes into the same outbox as every other message, under the same
+/// hold, and leaves when the send loop takes it, which is after this value
+/// has been read and said (#56).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HowItWent {
-    /// The answer reached the organiser's mail server.
-    Sent,
-    /// The answer is in the outbox and has not left this machine.
+    /// The answer is in the outbox, waiting on what the queue was told, and
+    /// has not left this machine. Under the default hold that is ten seconds
+    /// in which Undo Send takes it back; with the hold off it is the next
+    /// pass of the send loop; with offline mode on it is going back online.
     Queued {
         /// What the send loop said about it: now, when there is a network
         /// again, or when its own time comes.
@@ -352,7 +375,8 @@ pub enum HowItWent {
         /// words its own Send from.
         waiting_on: GoAfter,
     },
-    /// Nothing left this machine.
+    /// Nothing left this machine and nothing is waiting to: the reply could
+    /// not be written where the queue reads it, or the queue refused it.
     DidNotSend {
         /// What the sending layer said went wrong, as a whole sentence.
         because: String,
