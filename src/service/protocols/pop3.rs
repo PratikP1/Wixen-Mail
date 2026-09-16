@@ -777,4 +777,88 @@ Subject: Hola
         assert!(!reading_only_on(&server).await.may_change());
         assert!(signed_in_to(&server).await.may_change());
     }
+
+    // The three below are the survivors of the mutation run over this file on
+    // 2026-09-15: nothing read what STAT answered, nothing read a listing, and
+    // nothing asked whether RSET was ever sent.
+
+    #[tokio::test]
+    async fn test_stat_reads_the_count_and_the_bytes_the_server_gave() {
+        // The two numbers a sync shows before it downloads anything. Zero
+        // for both would read as an empty mailbox; one and one would read as
+        // a mailbox with one message of one byte.
+        let server = conversing("+OK loopback ready\r\n", |said: &str| {
+            if said.starts_with("STAT") {
+                Turn::Say("+OK 3 120\r\n".to_string())
+            } else {
+                Turn::Say("+OK done\r\n".to_string())
+            }
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let counted = tokio::time::timeout(LONG_ENOUGH, session.stat())
+            .await
+            .expect("the server never answered")
+            .expect("a STAT the server answered");
+
+        assert_eq!(counted, (3, 120));
+    }
+
+    #[tokio::test]
+    async fn test_the_listing_pairs_every_message_with_its_size_and_its_identifier() {
+        // LIST gives the sizes and UIDL the identifiers, and the listing is
+        // the two joined on the session's own numbering. An empty listing,
+        // or one read from a text block with nothing in it, is what the sync
+        // sees as a mailbox with nothing to fetch.
+        let server = conversing("+OK loopback ready\r\n", |said: &str| {
+            if said.starts_with("LIST") {
+                Turn::Say("+OK two messages\r\n1 100\r\n2 200\r\n.\r\n".to_string())
+            } else if said.starts_with("UIDL") {
+                Turn::Say("+OK\r\n1 first-one\r\n2 second-one\r\n.\r\n".to_string())
+            } else {
+                Turn::Say("+OK done\r\n".to_string())
+            }
+        })
+        .await;
+        let mut session = reading_only_on(&server).await;
+
+        let listed = tokio::time::timeout(LONG_ENOUGH, session.listing())
+            .await
+            .expect("the server never answered")
+            .expect("a listing the server answered");
+
+        assert_eq!(
+            listed,
+            vec![
+                Pop3MessageInfo {
+                    id: 1,
+                    size: 100,
+                    uidl: "first-one".to_string(),
+                },
+                Pop3MessageInfo {
+                    id: 2,
+                    size: 200,
+                    uidl: "second-one".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reset_tells_the_server_to_undo_the_deletions() {
+        // A session that answered "done" without saying RSET would leave
+        // every deletion marked so far to be committed at QUIT, which is the
+        // one thing a reset exists to prevent.
+        let server = a_pop_server().await;
+        let mut session = reading_only_on(&server).await;
+
+        tokio::time::timeout(LONG_ENOUGH, session.reset())
+            .await
+            .expect("the server never answered")
+            .expect("a reset the server answered");
+
+        let transcript = server.transcript().await;
+        assert!(server.was_told("RSET").await, "{transcript:?}");
+    }
 }
