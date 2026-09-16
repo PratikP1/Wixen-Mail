@@ -258,8 +258,10 @@ stand on.
     where somebody would look for it, by moving through in order without
     skimming. The Notes section last on the Calendar and PIM tab; the
     three-valued combo box; the Say-where-a-picture-is-decorative box with
-    its description. **Both.** [row 3.3.2, ledger 137, ledger 233, ledger 295,
-    ledger 317]
+    its description. Arrow along the tab row, Right and then Left, and hear
+    each tab once; then Tab into a page and back, and hear the row again
+    without the page speaking twice. **Both.** [row 3.3.2, ledger 137,
+    ledger 233, ledger 295, ledger 317, ledger 492]
 32. **Open the Feedback tab's per-event panel.** Sixteen events in a picker;
     changing the picked event reloads three controls beneath the cursor, and
     whether that reads well is the question. The sentence saying speech

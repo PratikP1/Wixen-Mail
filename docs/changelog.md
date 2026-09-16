@@ -128,6 +128,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   channel NVDA reads, waits for its next run: the walk that reads them cannot run on the machine
   this was built on, for a reason not yet found.
 
+- **Arrowing along the Settings tab row raises each tab once.** Reported on 2026-09-15 from build
+  `0.125.1+g3e633252` (#33), in the tester's words: "Arrowing left/right on a tab list in the
+  settings dialog frequently reads the focused tab twice." Nothing in this program announces a
+  page change, so what was heard came from what the tab control raises, and that was recorded on
+  2026-09-16 with a new script, `scripts/uia-events.ps1`, which listens on both of the channels a
+  screen reader can read. On the one NVDA reads for a native tab control, every Right or Left
+  raised a selection event once and then a focus event twice on the same tab, one millisecond
+  apart, from the control's own key handling; a screen reader that empties its queue between the
+  two says the tab for each, which is why it was often and not always. Moving the selection
+  another way raised the focus event once. So the tab row now answers Left, Right, Up and Down
+  itself, on the main keyboard or the numpad, and moves the selection that other way; the pages
+  change as before, focus stays on the row as before, and a test sends a real key to the built
+  dialog and counts one focus event where there were two.
+  Known limitations: whether each tab is now heard once has not been heard by anybody. The
+  screen-reader test that will say so, `nvda-tests/tests/settings-tabs-read-once.test.js`, runs
+  only on the project's own test machine on the next push, and the tester's ear is the other
+  proof.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
