@@ -1,6 +1,6 @@
 # Phase 9: What the first day of testing found
 
-Ten plans, one per wave, written 2026-09-16 against `main` at `524ff24f`,
+Eleven plans, one per wave, written 2026-09-16 against `main` at `524ff24f`,
 version `0.125.1`, `guards/guards.toml` holding 825 records by the TOML
 reader (census 802 + 23), `.planning/WINDOWS.md` at entry 482, 7,779 tests on
 the last whole gate, CI green at the last push (`3e633252`) with 14 commits
@@ -22,10 +22,19 @@ defects the first day found with a known cause are fixed the way the tester
 described them, test-first, so the second day of testing meets a different
 program.
 
-**Requirements:** FOUND-01 to FOUND-12, one per issue or per shared cause, in
+**Requirements:** FOUND-01 to FOUND-13, one per issue or per shared cause, in
 `.planning/REQUIREMENTS.md` under "What the first day of testing found".
+FOUND-13 was added for #66, filed on 2026-09-16 from a read of the tester's
+profile, and its plan, 09-11, executes first.
 
-**Roadmap success criteria this phase owns:** all nine.
+**Roadmap success criteria this phase owns:** all ten.
+
+**Execution order: 09-11 first, then 09-01 to 09-10.** Nothing the tester
+reports about a setting can be trusted until one survives a restart, and #22
+cannot be read until the log holds something. 09-11 is wave 1 with no
+dependency; 09-01 is wave 2, because the two share `docs/changelog.md` and
+`guards/guards.toml`, and the order is by decision as well as by wave: 09-11
+first.
 
 ## Pratik's order, and which part of it this is
 
@@ -54,40 +63,48 @@ to `FOUND`.
 
 | Plan | Wave | Criterion | Issues | Closes or advances | What it does |
 |---|---|---|---|---|---|
-| 09-01 | 1 | 1 | #46 | closes, tree side | `Cargo.toml` to `1.0.0-alpha.1`; a pin naming the step; the installer's four-field version held above today's; a Release level that publishes the version as it stands; the rule for moving inside a prerelease in `CLAUDE.md`, the changelog, `BETA_RELEASE.md` and the release skill |
-| 09-02 | 2 | 2 | #21, #32 | closes both | a stored bare language resolves to this machine's region and the screen shows what will be used; the snippet comes through the reading path's reader and stored ones are put right once |
-| 09-03 | 3 | 3 | #44, #56 | closes both | Undo Send first on the Edit menu; a held meeting answer says the countdown and never "has been told" while held; the Alt+E comment names Alt+H |
-| 09-04 | 4 | 4 | #36, #39 | closes both | Then by beside Default sort order, Cc and Bcc lines on the Compose tab; the Sort submenu one radio group |
-| 09-05 | 5 | 5 | #42, #40 point 5 | closes #42, advances #40 | five editors as scan targets; the MSAA walk before and after; every checkbox named; the empty spacers gone; the label check widened |
-| 09-06 | 6 | 6 | #33 | advances | a UI Automation event logger and the capture; the second event stopped; an NVDA case waiting for the next push |
-| 09-07 | 7 | 7 | #51 | closes | one composition of the opened body, PGP finding, envelope and signature, asked by all six surfaces (the issue counted five; the whole conversation in the text reader is the sixth); the preview pane with a bar; the guard names every surface |
-| 09-08 | 8 | 8 | #53 | advances, points 1 and 2 | the Outlook data file reader wired into the picker, each message down the path a saved `.eml` takes; Save As writes the list's message, and the reader keeps its own Save Attachment |
-| 09-09 | 9 | 9 | #34 | closes | Settings measured, the cost paid once, measured again |
-| 09-10 | 10 | 8 | #53 | advances, points 3 and 7 | a folder picker on its own File item, the Thunderbird layout said as a limitation, the four documents corrected by dating, a guide section; the phase's closing read |
+| 09-11 | 1 | 10 | #66 | advances; executes first | the program says which folder it is in, in the log and on the settings status line; a setting survives a restart with the build's stamp, proved through the July file's shape; the status line names the path or the reason; the log outlives its second minute on the release binary; one question to the tester about how he launches |
+| 09-01 | 2 | 1 | #46 | closes, tree side | `Cargo.toml` to `1.0.0-alpha.1`; a pin naming the step; the installer's four-field version held above today's; a Release level that publishes the version as it stands; the rule for moving inside a prerelease in `CLAUDE.md`, the changelog, `BETA_RELEASE.md` and the release skill |
+| 09-02 | 3 | 2 | #21, #32 | closes both | a stored bare language resolves to this machine's region and the screen shows what will be used; the snippet comes through the reading path's reader and stored ones are put right once |
+| 09-03 | 4 | 3 | #44, #56 | closes both | Undo Send first on the Edit menu; a held meeting answer says the countdown and never "has been told" while held; the Alt+E comment names Alt+H |
+| 09-04 | 5 | 4 | #36, #39 | closes both | Then by beside Default sort order, Cc and Bcc lines on the Compose tab; the Sort submenu one radio group |
+| 09-05 | 6 | 5 | #42, #40 point 5 | closes #42, advances #40 | five editors as scan targets; the MSAA walk before and after; every checkbox named; the empty spacers gone; the label check widened |
+| 09-06 | 7 | 6 | #33 | advances | a UI Automation event logger and the capture; the second event stopped; an NVDA case waiting for the next push |
+| 09-07 | 8 | 7 | #51 | closes | one composition of the opened body, PGP finding, envelope and signature, asked by all six surfaces (the issue counted five; the whole conversation in the text reader is the sixth); the preview pane with a bar; the guard names every surface |
+| 09-08 | 9 | 8 | #53 | advances, points 1 and 2 | the Outlook data file reader wired into the picker, each message down the path a saved `.eml` takes; Save As writes the list's message, and the reader keeps its own Save Attachment |
+| 09-09 | 10 | 9 | #34 | closes | Settings measured, the cost paid once, measured again |
+| 09-10 | 11 | 8 | #53 | advances, points 3 and 7 | a folder picker on its own File item, the Thunderbird layout said as a limitation, the four documents corrected by dating, a guide section; the phase's closing read |
 
 Requirement coverage: FOUND-01 by 09-01; FOUND-02 and FOUND-03 by 09-02;
 FOUND-04 and FOUND-05 by 09-03; FOUND-06 and FOUND-07 by 09-04; FOUND-08 by
 09-05; FOUND-09 by 09-06; FOUND-10 by 09-07; FOUND-11 by 09-08 and 09-10;
-FOUND-12 by 09-09.
+FOUND-12 by 09-09; FOUND-13 by 09-11.
+
+The waves: 09-11 is wave 1 and every other plan moved down one when it was
+added, because 09-11 writes `docs/changelog.md` and `guards/guards.toml` as
+09-01 does, and a wave is a set of plans sharing no file. 09-01's
+`depends_on` names 09-11 for that reason, the shared files, and not because
+it needs anything 09-11 builds; the order is by decision either way.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit, so the tracker and the tree
 agree. Closing an issue is not a publish and the executor may do it; filing
 or editing other issues is not theirs.
 
-## Why ten plans, and why one per wave
+## Why eleven plans, and why one per wave
 
-Ten because the twelve issues fall into ten pieces that do not share a
-shape or a file set: the version alone; two stored-value fixes; two things
-about Undo Send; two things about sort; the checkbox class with its scan
-targets; the tab-row diagnosis; the reading path; the import reader and the
-Save As writer; the measurement; and the folder picker with the documents,
-which the plan check cut out of the import plan on 2026-09-16 because
-sixteen files in one plan was the widest in the phase and the documents
-share no code with the reader. Each is two or three tasks.
+Eleven because the thirteen issues fall into eleven pieces that do not share
+a shape or a file set: the profile, the save and the log, first; the version
+alone; two stored-value fixes; two things about Undo Send; two things about
+sort; the checkbox class with its scan targets; the tab-row diagnosis; the
+reading path; the import reader and the Save As writer; the measurement; and
+the folder picker with the documents, which the plan check cut out of the
+import plan on 2026-09-16 because sixteen files in one plan was the widest
+in the phase and the documents share no code with the reader. Each is two or
+three tasks.
 
-One per wave because every plan writes `docs/changelog.md` and eight of the
-ten write `guards/guards.toml`, and a wave is a set of plans sharing no file.
+One per wave because every plan writes `docs/changelog.md` and nine of the
+eleven write `guards/guards.toml`, and a wave is a set of plans sharing no file.
 The order is Pratik's suggestion made concrete: the version first, so every
 entry that follows is written under it; then the pure-logic pair, which proves
 the flow on the cheapest ground; then the windows; then the two that touch
@@ -149,11 +166,13 @@ in kind:
 | #51 | five surfaces show a message | six: `open_conversation` (`wx_app.rs:12577`), the whole thread in the text reader, has no bar and no PGP opening either | `grep -n 'fn open_conversation(' src/presentation/wx_app.rs`; `wx_app.rs:20200` |
 | #53 | `written_as_one_message` is reached by the exporter only | and by the `.pst` reader itself at `outlook_data_file.rs:1701`, which composes each `Mail` item through it, so an imported message takes the path a saved `.eml` takes | `grep -rn written_as_one_message src --include='*.rs'` |
 | #53 | Save As saves "a message or attachment" | the attachment list is in the reader frame, which has its own Save Attachment (`wx_reader.rs:35`, `:794`, `:878`) and whose focus makes the main menu inactive; Save As is the list's message | `grep -n 'ID_SAVE_ATTACHMENT\|fn save_attachment_now' src/presentation/wx_reader.rs` |
-| #21 | the tester's profile cannot be read from here | this machine's profile can (`"language": "en"`, dated 2026-07-30) and is the stored shape the cause needs; the tester's profile is elsewhere (this machine has no 2026-09-16 log and no running process while he has tested for two days), was created by an earlier build and held the same, and he has since set English (United States) by hand | `grep -o '"language": *"[^"]*"' "$LOCALAPPDATA/wixen-mail/config/app_config.json"` |
+| #21, #66 | the tester's profile cannot be read from here; then, read, it is another machine's | it is his, on this machine, and the one path is two profiles chosen by the identity of the process reading it: the plain `%LOCALAPPDATA%\wixen-mail` (cmd, PowerShell, bash) holds `"language": "en"` from 0.1.0-alpha.22, 2026-07-30, a 4 KB database and the 09-14 log; the copy Windows keeps for launches under the Claude desktop application's package identity (`Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\wixen-mail`, which Python from this harness reads at the same path) holds `"language": "en-US"` written 2026-09-15 18:39 and the 20 MB database with his Gmail account and 12,872 messages. His hand-set language was saved, into the second; a Start Menu launch reads the first | `grep -o ... "$LOCALAPPDATA/wixen-mail/config/app_config.json"` against `python -c "json.load(open(r'C:\Users\prati\AppData\Local\wixen-mail\config\app_config.json'))"`; `find /c/Users/prati/AppData/Local/Packages -path '*wixen-mail*' -name app_config.json` |
+| #66 | "the stored version proves no build after alpha 22 has ever written this file" | `version` is set in `AppConfig::default()` (`config.rs:651`) and copied through by `save()`, so a stamp names the build that created a file; the 28 keys against the 56 a save writes are what show the plain file untouched. The July file loads, validates and saves in a temp folder | a scratch test in `config.rs`, run with `--nocapture`, removed with `git checkout` |
 
-The last five rows were found by the plan check on 2026-09-16, after the
-first draft of these plans; each plan's `<premise_corrections>` says so
-where it was wrong.
+The last five rows before #66's were found by the plan check on
+2026-09-16, after the first draft of these plans; each plan's
+`<premise_corrections>` says so where it was wrong. The #66 rows were found
+while writing 09-11 the same day.
 
 One decision the issues left open is made here and can be overruled with a
 reason in the summary: **#53's `.pst` reader is wired, not retired.** Both
@@ -240,6 +259,14 @@ rather than restated per task:
 - `cargo test`'s positional filters after `--` are ORed by libtest: `--lib
   presentation::wx_app:: -- sort` runs 240 tests, not the sort tests. One
   filter per invocation, the module's own path.
+- Every process this harness starts runs under the Claude desktop
+  application's package identity and sees `AppData\Local` through that
+  package's `LocalCache`: a release binary started from here without
+  `WIXEN_MAIL_DATA` reads and writes the tester's virtualised profile, and
+  Python from here reads a different file at the same path than cmd,
+  PowerShell or bash do. So every launch sets `WIXEN_MAIL_DATA` to a temp
+  folder (the 08-03 launcher does), and a reading of the tester's plain
+  profile is done with cmd, PowerShell or bash and never with Python.
 
 ## What only a person can settle
 
@@ -272,7 +299,7 @@ from the files and said here.
 
 1. **The roadmap's phase 9 entry and progress row.** Done by the planner in
    the commit that lands these plans: the goal, the twelve requirements, nine
-   criteria, the plan list, the row at `0/10`, and the milestone paragraph
+   criteria, the plan list, the row at `0/11`, and the milestone paragraph
    corrected to say the milestone continues with what testing found.
    `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to the
    files.
@@ -280,7 +307,7 @@ from the files and said here.
    the twelve traceability rows, the coverage count re-taken at 56, the
    provenance note, and the milestone line corrected.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
-   phase 9 current, plan 1 of 10, `Total Plans in Phase: 10`,
+   phase 9 current, `current_plan` 11 because 09-11 executes first, `Total Plans in Phase: 11`,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan writes its entries under
    `[Unreleased]`; 09-01 corrects the opening paragraph; 09-07 and 09-08 date
