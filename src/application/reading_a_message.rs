@@ -60,8 +60,9 @@
 //! an enveloped message; a body that arrived after the window opened would be
 //! a blank message that filled itself in afterwards.
 
-use crate::application::checking_signatures::SignatureCheck;
-use crate::application::encrypted_mail::WhatTheEnvelopeSays;
+use crate::application::checking_signatures::{self, SignatureCheck};
+use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
+use crate::application::opening_pgp;
 use crate::common::types::MessageBody;
 use crate::data::message_cache::MessageCache;
 use crate::service::pgp::WhatOpeningItFound;
@@ -143,11 +144,15 @@ pub fn put_together(
     envelope: WhatTheEnvelopeSays,
     signature: SignatureCheck,
 ) -> WhatAMessageShowsAndSays {
-    // Not yet built: the red half. The armour is never offered to the key.
+    // Before any document is built, not after. A message that opens has its
+    // armour replaced by its words here, so `single_message` finds no armour
+    // and adds no sentence about any, and there is nothing to take back out.
+    let opened = opening_pgp::for_body(&body);
+    let body = opening_pgp::the_body_to_show(body, opened.as_ref());
     WhatAMessageShowsAndSays {
         body,
         said: WhatIsSaidAboutIt {
-            opened: None,
+            opened,
             envelope,
             signature,
         },
@@ -155,23 +160,43 @@ pub fn put_together(
 }
 
 /// What can be said about one message's signature, from what the cache holds.
+///
+/// Why this runs here rather than on a worker thread, and what it costs, is
+/// in the module comment. `NotSigned` with no cache, which is the position a
+/// message nothing is known about is in.
 pub fn signature_check_for(
-    _cache: Option<&MessageCache>,
-    _message_row_id: i64,
-    _from: &str,
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
+    from: &str,
 ) -> SignatureCheck {
-    // Not yet built: the red half. The reader window's own copy still answers.
-    SignatureCheck::NotSigned
+    let Some(cache) = cache else {
+        return SignatureCheck::NotSigned;
+    };
+    checking_signatures::for_message(
+        cache,
+        message_row_id,
+        // The bare address out of the header, which is what the certificate is
+        // compared against. `receipts` already answers this and is the one
+        // place it is answered, because a second reading of a display name is
+        // a second chance to disagree about which address a message came from.
+        &crate::application::receipts::address_of(from),
+        chrono::Utc::now(),
+    )
 }
 
 /// What can be said about one message's S/MIME envelope, from what the cache
 /// holds.
+///
+/// Beside [`signature_check_for`] and asked in the same place for the same
+/// reason. `NotEncrypted` with no cache, as above.
 pub fn envelope_check_for(
-    _cache: Option<&MessageCache>,
-    _message_row_id: i64,
+    cache: Option<&MessageCache>,
+    message_row_id: i64,
 ) -> WhatTheEnvelopeSays {
-    // Not yet built: the red half. The reader window's own copy still answers.
-    WhatTheEnvelopeSays::NotEncrypted
+    let Some(cache) = cache else {
+        return WhatTheEnvelopeSays::NotEncrypted;
+    };
+    encrypted_mail::for_message(cache, message_row_id)
 }
 
 #[cfg(test)]
@@ -285,13 +310,16 @@ mod tests {
 
     /// One message in the cache, its body stored the way the fetch path
     /// stores one and nothing yet noted about the form it arrived in.
-    fn a_message_in(cache: &MessageCache) -> i64 {
+    ///
+    /// `uid` tells two apart: a second save under the same uid and Message-ID
+    /// is the same message again and replaces the row.
+    fn a_message_in(cache: &MessageCache, uid: u32) -> i64 {
         cache
             .save_message(&CachedMessage {
                 id: 0,
-                uid: 1,
+                uid,
                 folder_id: 1,
-                message_id: "<1@example.com>".to_string(),
+                message_id: format!("<{uid}@example.com>"),
                 subject: "The meeting moved".to_string(),
                 from_addr: "alice@example.com".to_string(),
                 to_addr: "me@example.com".to_string(),
@@ -317,11 +345,11 @@ mod tests {
         // "not signed, not encrypted" for everything would pass an ordinary
         // message and fail this.
         let cache = a_cache();
-        let signed = a_message_in(&cache);
+        let signed = a_message_in(&cache, 1);
         cache
             .keep_signed_original(signed, &signed_beside())
             .expect("kept");
-        let enveloped = a_message_in(&cache);
+        let enveloped = a_message_in(&cache, 2);
         cache
             .note_the_form_it_arrived_in(enveloped, &encrypted_to_alice())
             .expect("noted");
@@ -357,7 +385,7 @@ mod tests {
         // ones that change nothing, and asking with no cache at all answers
         // the same way rather than failing.
         let cache = a_cache();
-        let row = a_message_in(&cache);
+        let row = a_message_in(&cache, 1);
         let body = || MessageBody::Plain("One o'clock?".to_string());
 
         let in_the_cache = for_message(Some(&cache), row, FROM, body());

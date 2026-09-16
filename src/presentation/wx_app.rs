@@ -11191,38 +11191,22 @@ fn read_the_whole_message(
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
-    let envelope = envelope_check_for(cache, message);
-    let body = cache
+    let stored = cache
         .as_ref()
-        .and_then(|c| c.get_message_body(message.message_id).ok().flatten())
-        .map(|body| body_as_written(Some(body)));
-    // The same order as the reader window: the words replace the armour before
-    // anything reads the body, so nothing downstream has a sentence about
-    // armour to take back out. Space and the reader have to say the same thing
-    // about the same message.
-    let opened = body
-        .as_ref()
-        .and_then(crate::application::opening_pgp::for_body);
+        .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
+    let nothing_stored = stored.is_none();
+    // The same composition as the reader window, so Space and the reader say
+    // the same thing about the same message: the words replace the armour
+    // before anything reads the body, and the three facts arrive together.
+    let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
     // An encrypted message has no body to fetch and is never going to have
     // one, so falling back to the row would answer the second press with the
     // row for ever, on the one kind of message that most needs a word about
     // itself. It has something to say instead.
-    if body.is_none() && envelope.said().is_none() {
+    if nothing_stored && shown.said.envelope.said().is_none() {
         return with_conversation_count(in_conversation, &message.read_full(out));
     }
-    let body = crate::application::opening_pgp::the_body_to_show(
-        body.unwrap_or_else(|| body_as_written(None)),
-        opened.as_ref(),
-    );
-    whole_message_reading(
-        message,
-        &body,
-        signature_check_for(cache, message),
-        envelope,
-        opened,
-        in_conversation,
-        out,
-    )
+    whole_message_reading(message, &shown, in_conversation, out)
 }
 
 /// The message itself, with the part of the row the message does not carry.
@@ -11237,10 +11221,7 @@ fn read_the_whole_message(
 /// way whether or not its body has been downloaded.
 fn whole_message_reading(
     message: &MessageItem,
-    body: &MessageBody,
-    signature: crate::application::checking_signatures::SignatureCheck,
-    envelope: crate::application::encrypted_mail::WhatTheEnvelopeSays,
-    opened: Option<crate::service::pgp::WhatOpeningItFound>,
+    shown: &crate::application::reading_a_message::WhatAMessageShowsAndSays,
     in_conversation: Option<usize>,
     out: read_aloud::Reading,
 ) -> String {
@@ -11248,14 +11229,10 @@ fn whole_message_reading(
     // Reading a message aloud without opening it is the one path where nothing
     // is on screen afterwards to go back to, so leaving the signature out of it
     // would mean the quickest way to read a message was the one that never said
-    // what its signature was worth.
-    //
-    // The envelope goes in first, for the ordering reason `with_encryption`
-    // carries: everything above `HOW_IT_WAS_CHECKED` is what gets spoken.
-    let document = reader_text::single_message(message, body, out)
-        .with_pgp(opened.as_ref())
-        .with_smime_envelope(&envelope)
-        .with_signature(&signature);
+    // what its signature was worth. The fold keeps the order that keeps each
+    // sentence spoken.
+    let document =
+        reader_text::single_message(message, &shown.body, out).with_what_is_said(&shown.said);
     let state = read_aloud::state_worth_saying(message);
     let reading = reader_text::read_whole(&document);
     let reading = if state.is_empty() {
@@ -12435,7 +12412,9 @@ fn open_single_message(
         let body = body_as_written(body);
         let mut message = message.clone();
         message.attachments = attachments_of(cache, message.message_id);
-        let signature = signature_check_for(cache, &message);
+        let signature = what_a_message_shows_and_says(cache, &message, body.clone())
+            .said
+            .signature;
         show_conversation_as_page(
             frame,
             reader,
@@ -12464,104 +12443,38 @@ fn open_in_the_text_reader(
     message: &MessageItem,
     out: read_aloud::Reading,
 ) {
-    let body = cache
+    let stored = cache
         .as_ref()
         .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
-    let body = body_as_written(body);
-    // Before the document is built, not after. A message that opens has its
-    // armour replaced by its words here, so `single_message` finds no armour
-    // and adds no sentence about any, and there is nothing to take back out.
-    let opened = crate::application::opening_pgp::for_body(&body);
-    let body = crate::application::opening_pgp::the_body_to_show(body, opened.as_ref());
+    let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
     // The list row does not carry the attachments, only whether there are any,
     // because a folder listing that loaded them would do a query per row. The
     // reader is the one place that needs them.
     let mut message = message.clone();
     message.attachments = attachments_of(cache, message.message_id);
     reader.open(
-        reader_text::single_message(&message, &body, out)
-            .with_pgp(opened.as_ref())
-            // Before the signature verdict, and that ordering is load-bearing
-            // rather than tidy: a verdict puts `HOW_IT_WAS_CHECKED` into the
-            // bar and `said_before_the_message` cuts there, so a sentence
-            // folded in after one is on screen and never spoken.
-            .with_smime_envelope(&envelope_check_for(cache, &message))
-            .with_signature(&signature_check_for(cache, &message)),
+        reader_text::single_message(&message, &shown.body, out).with_what_is_said(&shown.said),
     );
 }
 
-/// What can be said about one message's signature, for the surfaces that open
-/// mail.
+/// What one message shows and says, asked the way every surface here asks it.
 ///
-/// # Why this runs here rather than on a worker thread
-///
-/// Because it is fast, and because being late would be worse than being slow.
-///
-/// Fast, and measured rather than assumed. On this machine, in a release build,
-/// the whole of it, reading the bytes out of the database, taking the message
-/// apart, hashing it, checking the signature against the certificate's key and
-/// asking this computer about that certificate, takes **406 microseconds** for a
-/// signed message of ordinary size. At the ceiling on what is kept, a message of
-/// 25 MB, it takes **60 milliseconds**, nearly all of it reading and hashing the
-/// bytes. The first is invisible. The second is a hitch somebody would notice
-/// and is not a freeze, and it happens only on a signed message at the largest
-/// size kept, which is rare twice over.
-///
-/// Nothing here waits on anything: the two questions put to this computer's
-/// certificate store are asked with `Reach::WhatIsAlreadyHere`, which contacts
-/// nobody. Ordinary mail, which is nearly all of it, costs one row that is not
-/// there.
-///
-/// Late would be worse than slow. The reader speaks the top of the bar as the
-/// message opens. A verdict that arrived afterwards would either miss that
-/// announcement, which is the whole point of it, or arrive as a second one over
-/// somebody already reading, and the bar on screen would be the one composed
-/// before the answer came. Announcing a change without the thing it changed
-/// being in place is a shape this program has got wrong before.
-///
-/// [`Reach::WhatIsAlreadyHere`]: crate::service::signed_mail::Reach::WhatIsAlreadyHere
-fn signature_check_for(
+/// The one seam between this window and
+/// [`crate::application::reading_a_message`], which is where the questions are
+/// asked and why they are asked on this thread rather than on a worker. Every
+/// surface that shows a message goes through here, so a surface that does not
+/// is a surface `tests/wired.rs` can name.
+fn what_a_message_shows_and_says(
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
-) -> crate::application::checking_signatures::SignatureCheck {
-    use crate::application::checking_signatures::{self, SignatureCheck};
-
-    let Some(cache) = cache.as_ref() else {
-        return SignatureCheck::NotSigned;
-    };
-    checking_signatures::for_message(
-        cache,
+    body: MessageBody,
+) -> crate::application::reading_a_message::WhatAMessageShowsAndSays {
+    crate::application::reading_a_message::for_message(
+        cache.as_deref(),
         message.message_id,
-        // The bare address out of the header, which is what the certificate is
-        // compared against. `receipts` already answers this and is the one
-        // place it is answered, because a second reading of a display name is
-        // a second chance to disagree about which address a message came from.
-        &crate::application::receipts::address_of(&message.from),
-        chrono::Utc::now(),
+        &message.from,
+        body,
     )
-}
-
-/// What can be said about one message's S/MIME envelope, for the surfaces that
-/// open mail.
-///
-/// Beside [`signature_check_for`] and asked in the same place for the same
-/// reason. It costs a column and, for the one message in a great many that
-/// arrived encrypted, a row and a DER read. Ordinary mail costs the column and
-/// stops there.
-///
-/// Late would be worse than slow here too: this sentence is the body of the
-/// message. A body that arrived after the window opened would be a blank
-/// message that filled itself in afterwards.
-fn envelope_check_for(
-    cache: &Option<Arc<MessageCache>>,
-    message: &MessageItem,
-) -> crate::application::encrypted_mail::WhatTheEnvelopeSays {
-    use crate::application::encrypted_mail::{self, WhatTheEnvelopeSays};
-
-    let Some(cache) = cache.as_ref() else {
-        return WhatTheEnvelopeSays::NotEncrypted;
-    };
-    encrypted_mail::for_message(cache, message.message_id)
 }
 
 /// The attachments recorded for one message, as the reader wants them.
@@ -23427,15 +23340,11 @@ mod tests {
         m.starred = true;
         m.labels = vec!["Work".to_string()];
 
-        let downloaded = super::whole_message_reading(
-            &m,
-            &crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
-            crate::application::checking_signatures::SignatureCheck::NotSigned,
-            crate::application::encrypted_mail::WhatTheEnvelopeSays::NotEncrypted,
-            None,
-            None,
-            aloud(),
-        );
+        let shown = crate::application::reading_a_message::WhatAMessageShowsAndSays {
+            body: crate::common::types::MessageBody::Plain("The numbers are attached.".to_string()),
+            said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+        };
+        let downloaded = super::whole_message_reading(&m, &shown, None, aloud());
 
         assert!(downloaded.contains("Labels: Work"), "{downloaded}");
         assert!(downloaded.contains("unread, flagged"), "{downloaded}");

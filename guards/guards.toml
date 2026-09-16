@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 45 records have arrived since and have not been through it.
+# 47 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -16977,6 +16977,13 @@ tests_last_seen = [
 # recording separately: two surfaces open mail and wiring one is exactly how
 # the two come to disagree about the same message.
 #
+# Rewritten 2026-09-16 (09-07, #51): the two calls this break took out moved
+# into `application::reading_a_message`, and the text reader asks the window's
+# one seam to it, `what_a_message_shows_and_says`. The break now builds the
+# text reader's answer by hand with nothing said, which is the bypass the
+# missing surfaces had. Measured again the same day through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+#
 # Measured by hand on 2026-09-06 against a green tree, with
 # `cargo test --no-fail-fast --test wired`.
 
@@ -16984,9 +16991,13 @@ tests_last_seen = [
 name = "a PGP message the reader window never offers to the key"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
-before = '''    let opened = crate::application::opening_pgp::for_body(&body);
-    let body = crate::application::opening_pgp::the_body_to_show(body, opened.as_ref());'''
-after = '''    let opened = None;'''
+before = '''    let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
+    // The list row does not carry the attachments, only whether there are any,'''
+after = '''    let shown = crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        body: body_as_written(stored),
+        said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+    };
+    // The list row does not carry the attachments, only whether there are any,'''
 red = [
     "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
 ]
@@ -23366,4 +23377,58 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_settings_tab_row_says_each_tab_once.rs", tests = 3 },
+]
+
+# ── What a message shows and says, decided once (#51) ────────────────────────
+#
+# Two of six surfaces offered a PGP message to the key and said what an
+# envelope and a signature were worth; the default reader, both conversation
+# readings and the preview did not. `application::reading_a_message` is the
+# one composition every surface now asks. Two things about it are worth a
+# record because both were right on the two working surfaces only by each
+# carrying a comment.
+#
+# The opening: the armour is offered to the key and the body handed on is the
+# words where it opened. The break keeps the armour as the body, which is the
+# state every missing surface was in, and the reading against the message
+# GnuPG encrypted to Alice is what reddens.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a message the key opens is shown as its words and not as its armour"
+file = "src/application/reading_a_message.rs"
+before = """    let body = opening_pgp::the_body_to_show(body, opened.as_ref());"""
+after = """    // the armour stays where it was"""
+red = [
+    "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 7 },
+]
+
+# The order of the fold: a signature verdict puts "More about this signature:"
+# into the bar and the reader speaks only what is above it, so the envelope
+# goes in first. The text reader and Shift+Space each carried that as a
+# comment; `with_what_is_said` carries it as code, once. The break folds the
+# signature before the envelope, and the reading holds the envelope sentence
+# inside the spoken cut.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the envelope is folded in before the signature, so it is spoken"
+file = "src/presentation/reader_text.rs"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_signature(&said.signature)
+            .with_smime_envelope(&said.envelope)"""
+red = [
+    "application::reading_a_message::tests::test_the_envelope_is_folded_in_before_the_signature_so_it_is_spoken",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/presentation/reader_text.rs", tests = 120 },
 ]

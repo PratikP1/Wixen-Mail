@@ -1702,8 +1702,9 @@ impl ReaderDocument {
         self,
         said: &crate::application::reading_a_message::WhatIsSaidAboutIt,
     ) -> Self {
-        // Not yet built: the red half. Only the signature is folded in.
-        self.with_signature(&said.signature)
+        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_signature(&said.signature)
     }
 }
 

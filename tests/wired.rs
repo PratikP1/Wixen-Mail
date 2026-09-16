@@ -3346,20 +3346,25 @@ fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
 fn test_opening_a_message_works_out_what_its_signature_is_worth() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
-    for opening in [
-        "fn open_in_the_text_reader(",
-        "fn show_conversation_as_page(",
-    ] {
-        assert!(
-            body_of(&app, opening).contains("with_signature("),
-            "{opening} composes a message without folding in what its signature is worth, \
-             so signed mail opens there saying nothing about its signature"
-        );
-    }
-
     assert!(
-        body_of(&app, "fn signature_check_for(").contains("checking_signatures::for_message("),
-        "the reader no longer asks what a message's signature is worth"
+        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
+        "the text reader composes a message without folding in what is said about it, \
+         so signed mail opens there saying nothing about its signature"
+    );
+    assert!(
+        body_of(&app, "fn show_conversation_as_page(").contains("with_signature("),
+        "the page composes a message without folding in what its signature is worth, \
+         so signed mail opens there saying nothing about its signature"
+    );
+
+    // The question moved out of the window on 2026-09-16, into the one
+    // composition every surface asks, and it is still asked there.
+    let composition = fs::read_to_string("src/application/reading_a_message.rs")
+        .expect("what a message shows and says");
+    assert!(
+        body_of(&composition, "fn signature_check_for(")
+            .contains("checking_signatures::for_message("),
+        "nothing asks what a message's signature is worth any more"
     );
 }
 
@@ -4087,22 +4092,32 @@ fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
 fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
+    // The one seam. Every surface asks this, and this asks the composition,
+    // which is where the armour is offered to the key. A surface that built a
+    // part or a document without going through here is the defect (#51).
+    assert!(
+        body_of(&app, "fn what_a_message_shows_and_says(")
+            .contains("reading_a_message::for_message("),
+        "the window's one seam to the composition no longer asks it, so no surface \
+         offers a PGP message to the key on this computer"
+    );
+
     for opening in ["fn open_in_the_text_reader(", "fn read_the_whole_message("] {
         let body = body_of(&app, opening);
         assert!(
-            body.contains("opening_pgp::"),
+            body.contains("what_a_message_shows_and_says("),
             "{opening} builds a message without ever offering its armour to the \
              private key on this computer, so a PGP message never opens there"
         );
     }
 
     assert!(
-        body_of(&app, "fn whole_message_reading(").contains("with_pgp("),
+        body_of(&app, "fn whole_message_reading(").contains("with_what_is_said("),
         "reading a message aloud never says why a PGP message did not open, so the \
          quickest way to read a message is the one that explains nothing"
     );
     assert!(
-        body_of(&app, "fn open_in_the_text_reader(").contains("with_pgp("),
+        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
         "the reader never says why a PGP message did not open, so all four reasons \
          arrive as the one general sentence"
     );
