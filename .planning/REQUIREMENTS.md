@@ -6,10 +6,9 @@
 `.planning/intel/built-and-left.md` and from nothing else. **Corrected 2026-09-16:** "and
 from nothing else" was true until the first day of manual testing. Phases 1 to 8 are executed
 and merged, and the milestone's verification is the testing Pratik began on 2026-09-15 with
-build `0.125.1+g3e633252`, which produced 44 GitHub issues, #20 to #63, in one day, and a
-read of his profile on 2026-09-16 produced #66. Phase 9's requirements, `FOUND-01` to
-`FOUND-13`, are drawn from those issues and from nothing else; the section "What the first day
-of testing found" says which issue each one comes from.
+build `0.125.1+g3e633252`, which produced 44 GitHub issues, #20 to #63, in one day. Phase 9's
+requirements, `FOUND-01` to `FOUND-12`, are drawn from those issues and from nothing else; the
+section "What the first day of testing found" says which issue each one comes from.
 
 ## How to read the acceptance criteria
 
@@ -2383,6 +2382,13 @@ requirements to a later phase's section rather than here.
   - [D] The Release workflow can publish the version the tree already carries, without
     bumping it first, so the first alpha published is `1.0.0-alpha.1` and not `-alpha.2`; a
     test in `tests/installer.rs` reads the level and its `cargo release` line.
+  - [D] A saved settings file carries the version of the build that wrote it:
+    `ConfigManager::save` re-stamps `version` with the running build, red first against a
+    file stamped `0.7.7`, and the changelog says a profile now says which build last wrote
+    it. Added 2026-09-16: `AppConfig::default()` sets the stamp (`config.rs:651`) and `save`
+    copied it through, so the tester's profile, written on 2026-09-15 by 0.125.1, still said
+    `0.7.7`, the build that created it, and a profile sent with a report could not say which
+    build it came from.
   - [D] `CLAUDE.md`, the changelog's opening paragraph, `docs/BETA_RELEASE.md` and the
     release skill say the rule in force: the tree's version is the next build to go to
     testers; it stays until that build is cut; the first behaviour change after a cut moves
@@ -2409,19 +2415,20 @@ requirements to a later phase's section rather than here.
     `find_regional_variant`, which takes the first of the family Windows lists, `en-029`
     again (`test_a_bare_language_matches_the_first_regional_variant_windows_offers`). The
     tester's profile is on this machine (his words, 2026-09-16: "I'm running on this
-    machine") and its settings file holds that shape: `grep -o '"language": *"[^"]*"'
-    "$LOCALAPPDATA/wixen-mail/config/app_config.json"` -> `"language": "en"`, 886 bytes, 28
-    keys, stamped `0.1.0-alpha.22`, written 2026-07-30. That path is two files on this
-    machine, told apart by the identity of the process reading them: a process under the
-    Claude desktop application's package identity (Python from this harness is one) reads
-    `Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\wixen-mail\config\app_config.json`, 1,921
-    bytes, 52 keys, `"language": "en-US"`, written 2026-09-15 18:39 beside the 20 MB database
-    holding his Gmail account and 12,872 messages. So his hand-set English (United States) of
-    2026-09-15 was saved, into the profile a packaged launch reads, and a Start Menu launch
-    reads the July file and lands on Caribbean again; #66 and 09-11 carry the two folders
-    and the question of which launcher he uses. (This evidence was written three ways on
-    2026-09-16: "cannot be read from here", then "read, but another machine's", then this;
-    the commands are in 09-11's premise 1.)
+    machine"), and read through a plain Win32 process it is `%LOCALAPPDATA%\wixen-mail`:
+    `app_config.json` 1,921 bytes, 53 keys, written 2026-09-15 18:39, stamped `0.7.7` (the
+    build that created the profile; `save` copies the stamp through, which 09-01 changes),
+    `"language": "en-US"`, `mark_read_after` `never`, `log_level` `error`, beside a 20 MB
+    database with his Gmail account and 12,872 messages (`python -c "import json;
+    d=json.load(open(r'C:\Users\prati\AppData\Local\wixen-mail\config\app_config.json'));
+    print(d['version'], d['language'])"` -> `0.7.7 en-US`). So the profile was created by
+    0.7.7, before `580a334a` of 2026-09-03 changed the default, stored the bare `"en"` that
+    lands on Caribbean, and he has since set `en-US` by hand, which is stored. One dated
+    line so nobody repeats it: on 2026-09-16 this evidence was written three earlier ways
+    from a stale copy, the 886-byte July file stamped `0.1.0-alpha.22` that bash and
+    PowerShell started from this harness read at the same path from
+    `Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\wixen-mail`; the tester's profile is read
+    through Python from here and never through its shells.
   - [S] #21, the tester on 2026-09-15: "Currently, a Windows OS set to U.S. English as its
     language does not correspond to the default spellcheck language. English Caribbean is
     shown as default."
@@ -2433,9 +2440,9 @@ requirements to a later phase's section rather than here.
     it could not match, and a test builds the real screen with `"en"` stored and reads the
     selection back.
   - [S] The tester has set English (United States) by hand (his words on 2026-09-16: "My
-    setting to U.S. English was done manually"), and that value is in the profile a packaged
-    launch reads; whether a Start Menu launch of the fixed build shows English (United States)
-    on his July-shaped profile without a hand change is his to read.
+    setting to U.S. English was done manually") and it is stored; the fix leaves it. Whether
+    a profile created before 2026-09-03 now shows English (United States) without a hand
+    change is a test on such a profile, and his own no longer holds the bare value.
 
 - [ ] **FOUND-03**: A snippet of an HTML-only message is the first words of its text, never
   its stylesheet, and so is the text the search index holds for it; snippets and index rows
@@ -2706,58 +2713,14 @@ requirements to a later phase's section rather than here.
     stays green.
   - [S] Whether it feels at once on the tester's machine is his to say.
 
-- [ ] **FOUND-13**: The program says which folder it is writing, a setting confirmed on the
-  Settings screen is on disk with the running build's stamp, and the log outlives its second
-  minute. Added 2026-09-16 for #66, filed the same day from a read of the tester's profile;
-  it executes before FOUND-01, because nothing the tester reports about a setting can be
-  trusted until one survives a restart and #22 cannot be read until the log holds something.
-  - Evidence: on 2026-09-16 at `358c7026`, `%LOCALAPPDATA%\wixen-mail` is two profiles on
-    the tester's machine, chosen by the identity of the reading process (the commands and
-    the table are 09-11's premise 1): the plain one, read by cmd, PowerShell and bash, holds
-    `config/app_config.json` at 886 bytes, 28 keys, stamped `0.1.0-alpha.22`, dated
-    2026-07-30, a 4 KB database with a 2.3 MB WAL dated 2026-09-14, and logs for 2026-09-14
-    (24 lines, 0.123.1, ending at 17:32Z) and 2026-09-15 (0 bytes, created 10:40); the
-    virtualised one under `Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\wixen-mail`, read
-    by any process under the Claude desktop application's package identity, holds the file
-    at 1,921 bytes, 52 keys, `0.7.7` stamp, written 2026-09-15 18:39, and the 20 MB database
-    with the Gmail account and 12,872 messages. A scratch test (added with Edit, run once,
-    removed with `git checkout`) fed the July text to `serde_json::from_str::<AppConfig>`
-    and a `ConfigManager` in a temp folder: it loads (`Ok`), validates (`Ok`), and `save()`
-    writes 56 keys with the changed language and the `version` stamp copied through unchanged,
-    because `version` is set only in `AppConfig::default()` (`config.rs:651`), so a stamp
-    names the build that created a file and not the one that last wrote it, and the issue's
-    "the stored version proves no build after alpha 22 has ever written this file" is not a
-    proof; the 28 keys are. `handle_settings` (`wx_app.rs:16499`) saves on OK through
-    `ConfigManager::save` (`config.rs:1024`) and says "Settings saved" or "Settings save
-    error" through the low-priority status topic the queue coalesces. `main.rs:103` holds
-    `_log_guard` as a local for the whole of `main`; `init_logging` (`logging.rs:84-97`)
-    uses `tracing_appender::non_blocking`'s default, which drops lines when its channel is
-    full. No 2026-09-15 log with content exists in either profile or in `%TEMP%\wixen-mail\logs`
-    while the virtualised database was written from 10:40 to 19:43 that day, so the log
-    symptom is real and separate from the two-profile finding. The launcher in
-    `tests/the_numbers_the_targets_ask_for.rs:385-390` starts the release binary with
-    `WIXEN_MAIL_DATA` and `--read-only`, which every harness here reuses so no run touches
-    either profile.
-  - [S] #66: "Settings are never written to disk (the file is still from alpha 22), and the
-    log stops after two minutes or stays empty."
-  - [S] The tester on 2026-09-16: "I'm running on this machine. Build was updated to
-    0.125.1 a few days ago. I haven't launched it today. Most of the testing was done
-    yesterday."
-  - [D] The program says which folder it is reading and writing, and whether it runs under
-    a package identity, in its log's first lines and on the settings status line, worded by
-    one tested function.
-  - [D] `save` writes the running build's version stamp; a test loads the July file's exact
-    text through `ConfigManager` in a temp folder, changes one setting, saves, and reads
-    back the new stamp, the changed value and every field a save writes; a second test loads
-    what was written, which is the restart.
-  - [D] The settings status line says the path written, or the reason it was not, at a
-    priority the queue does not coalesce away.
-  - [D] A release binary run against a temp profile for longer than two minutes writes a
-    line in its third minute, held by an ignored harness on the 08-03 launcher, and the log
-    guard's lifetime is explicit where `main` holds it; if the harness is red on the binary
-    as it is, the cause is found and fixed and the harness is the proof.
-  - [S] Which launcher the tester uses on which day, and so which of his two profiles each
-    session wrote, is his to say; the summary asks him in plain words and assumes nothing.
+**#66 was filed and withdrawn on 2026-09-16, and its one real item is in FOUND-01.** It said
+settings were never written and the log stopped or stayed empty, from a read of the tester's
+profile made through a shell started from this harness, which reads a stale July copy of
+`%LOCALAPPDATA%\wixen-mail` at the same path; read through a plain Win32 process the profile
+was written on 2026-09-15 with his hand-set language, and its `log_level` is `error`, which is
+why the day's log is empty. No settings defect and no log defect. What the read did find is
+that a settings file's `version` stamp is copied through by `save` and names the build that
+created the profile, so FOUND-01 gains the line that `save` re-stamps it.
 
 ## v2 Requirements
 
@@ -2844,19 +2807,18 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-10 | Phase 9 | Pending |
 | FOUND-11 | Phase 9 | Pending |
 | FOUND-12 | Phase 9 | Pending |
-| FOUND-13 | Phase 9 | Pending, executes first |
 
 **Coverage:**
 
-- v1 requirements: 57 total
-- Mapped to phases: 57
+- v1 requirements: 56 total
+- Mapped to phases: 56
 - Unmapped: 0
 
 **Re-taken 2026-09-16.** This block said 44 and 44 from 2026-09-04 until phase 9 was planned.
 Counted with the same command as below, `grep -c '^- \[[ x]\] \*\*[A-Z]\+-[0-9]\+\*\*'
-.planning/REQUIREMENTS.md`, which gives 57 at `358c7026` with the thirteen `FOUND`
-requirements in (56 earlier the same day, before `FOUND-13` was added for #66), and the
-traceability table above has 57 rows. The thirteen are the first requirements in this file
+.planning/REQUIREMENTS.md`, which gives 56 at `b24fb991` with the twelve `FOUND` requirements
+in (57 for part of the same day, while a `FOUND-13` for the withdrawn #66 existed), and the
+traceability table above has 56 rows. The twelve are the first requirements in this file
 that did not come from `.planning/intel/built-and-left.md`; the section "Where these came
 from" says where they did.
 
@@ -2895,12 +2857,12 @@ section was written, all of them recorded in the requirements they came from, an
 were never re-taken. Read the arithmetic above as the accounting at the moment of writing rather
 than as a current count.
 
-**Added 2026-09-16.** `FOUND-01` to `FOUND-13` trace to no row of
+**Added 2026-09-16.** `FOUND-01` to `FOUND-12` trace to no row of
 `.planning/intel/built-and-left.md`. Each traces to one GitHub issue, or two sharing a cause,
 among #20 to #63, filed on 2026-09-15 from Pratik's first day of testing build
-`0.125.1+g3e633252` and from the audit of the 2026-08-27 Outlook gap report made the same day,
-and #66, filed on 2026-09-16 from a read of his profile. The issue number is in each
-requirement's `[S]` line. The 44 above are unchanged; the total is 57.
+`0.125.1+g3e633252` and from the audit of the 2026-08-27 Outlook gap report made the same day.
+The issue number is in each requirement's `[S]` line. The 44 above are unchanged; the total
+is 56.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
