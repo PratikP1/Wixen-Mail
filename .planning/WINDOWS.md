@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 463
+open_count: 466
 waived_count: 0
 fixed_count: 28
-total_count: 491
-last_updated: 2026-09-16T21:25:37.084Z
+total_count: 494
+last_updated: 2026-09-16T22:44:35.707Z
 ---
 
 # Broken Windows Ledger
@@ -506,6 +506,9 @@ last_updated: 2026-09-16T21:25:37.084Z
 | 489 | 09 | unrun-verify | src/presentation/scan_target.rs | 232 | 09-05: the five editors are scan targets and were each opened here on a throwaway profile and seen (Edit Contact, Edit Condition, Edit Filter Rule, Edit Signature, Edit Account, each owned above the frame), and the MSAA walk on each, run once before task 2 and once after as the machine is, left with -1073740791 every time, ten runs, as ledger 390 records, NVDA running and the cause not diagnosed; so the names of their checkboxes on the channel NVDA reads have been read by nothing, the before and after rows #42 asks for do not exist, and roadmap criterion 5's walk clause and FOUND-08's second [D] line stay open until the Accessibility workflow has walked the five at the next push. What was read instead is the Win32 child list of each window, which shows the empty statics gone and is not a name | open |  | 2026-09-16T21:25:20.597Z |  |
 | 490 | 09 | unrun-verify | src/presentation/wx_managers.rs | 67 | 09-05: what NVDA says on the signature editor's Default signature box and the contact editor's Favorite box after the change is FOUND-08's last [S] line and has not been heard. Both boxes, and three more built the same way, now carry set_accessible_name with the mnemonic stripped and no empty static text before them; tests/checkbox_labels.rs reads the built windows and finds an accessible object on every one of the fifteen editor checkboxes and no nameless static before any, which is structure present. Why the tester heard the two unnamed is still not settled by anything read here: a native checkbox carries its own window text and the MSAA walk that would say what the channel reported could not run. The next instrument is NVDA's own log on his machine, Tab through the signature editor with the log at debug, if the next build still reads the box as unnamed | open |  | 2026-09-16T21:25:36.495Z |  |
 | 491 | 09 | deviation | tests/no_label_is_only_a_space.rs | 60 | 09-05: the plan's premise 5 said the widened reading would catch all eleven spacers and none of the eleven filled lines with a rule about which calls take the binding later; that rule flagged three filled lines (a static handed on bare from a block, one handed to the dialog's own filler, the live region written through Win32) and would have needed an allow list holding filled lines rather than what task 2 left. The rule written instead refuses a binding whose only later use is a sizer add, which on the tree at 1d934e26 refuses exactly the five in wx_managers.rs and none of the filled lines, and does not see a spacer handed on in a tuple to be stored and hidden, the account editor's old shape for its six; the module comment says so, tests/checkbox_labels.rs reads the built tree for the fifteen editor checkboxes, and there is no allow list because an empty one watched by a test is the census-emptying failure | open |  | 2026-09-16T21:25:37.084Z |  |
+| 492 | 09 | unrun-verify | nvda-tests/tests/settings-tabs-read-once.test.js | 1 | 09-06: whether each Settings tab is heard once along the tab row is FOUND-09's listening line and has not been heard. What is held: the native tab control's own arrow handler raised EVENT_OBJECT_FOCUS twice on the reached tab per key (scripts/uia-events.ps1, 2026-09-16, before) and raises it once now that the row answers its arrows through SetSelection (the same script, after); tests/the_settings_tab_row_says_each_tab_once.rs sends a real WM_KEYDOWN to the built dialog and counts one, which is structure present. What NVDA says about one event is the NVDA case's to answer, on CI at the next push of main, which is Pratik's, and the tester's ear after; neither has run. Roadmap criterion 6's transcript clause and FOUND-09's third [D] line stay open until that run | open |  | 2026-09-16T22:44:18.512Z |  |
+| 493 | 09 | deviation | scripts/uia-events.ps1 | 1 | 09-06: the plan prescribed a UI Automation event logger and read a capture of one event per key as meaning the second reading was NVDA's own; the managed UI Automation client did show exactly one ElementSelected per key and nothing else, and it is blind to what NVDA reads for a native SysTabControl32, which is MSAA and win events. The logger logs both channels, the win-event hook reading class, text and child id only and never an IAccessible (ledger 390). Two conditions of the capture: the session was locked (the focused element was the Lock Screen, pid 16028), so SendInput answered ERROR_ACCESS_DENIED and SendKeys threw, keys were posted as WM_KEYDOWN to the tab control's own window, and no window could take foreground focus, so the page-panel candidate is judged from the in-thread focus events (the row took focus at open, both captures) and wxWidgets' UpdateSelection giving the page focus only when the notebook has none, not from a foreground run; and NVDA was running and not stopped. The fix also takes the numpad's arrows, found because the test's first key lacked the extended bit and wxWidgets read VK_RIGHT as WXK_NUMPAD_RIGHT | open |  | 2026-09-16T22:44:35.134Z |  |
+| 494 | 09 | todo | nvda-tests/README.md | 60 | 09-06: the README's What is in here table lists two test files and the directory holds five (calendar-immediate-actions, filter-manager-delete and settings-tabs-read-once are not in it), and its prose says two tests where the workflow runs five. A table that is read as the inventory and is short by three is a check nobody reads; bring it to the directory, or have a reading hold it there | open |  | 2026-09-16T22:44:35.707Z |  |
 
 ````json
 [
@@ -6399,6 +6402,42 @@ last_updated: 2026-09-16T21:25:37.084Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T21:25:37.084Z",
+    "resolved_at": null
+  },
+  {
+    "id": 492,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "nvda-tests/tests/settings-tabs-read-once.test.js",
+    "line": 1,
+    "description": "09-06: whether each Settings tab is heard once along the tab row is FOUND-09's listening line and has not been heard. What is held: the native tab control's own arrow handler raised EVENT_OBJECT_FOCUS twice on the reached tab per key (scripts/uia-events.ps1, 2026-09-16, before) and raises it once now that the row answers its arrows through SetSelection (the same script, after); tests/the_settings_tab_row_says_each_tab_once.rs sends a real WM_KEYDOWN to the built dialog and counts one, which is structure present. What NVDA says about one event is the NVDA case's to answer, on CI at the next push of main, which is Pratik's, and the tester's ear after; neither has run. Roadmap criterion 6's transcript clause and FOUND-09's third [D] line stay open until that run",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T22:44:18.512Z",
+    "resolved_at": null
+  },
+  {
+    "id": 493,
+    "kind": "deviation",
+    "phase": "09",
+    "file": "scripts/uia-events.ps1",
+    "line": 1,
+    "description": "09-06: the plan prescribed a UI Automation event logger and read a capture of one event per key as meaning the second reading was NVDA's own; the managed UI Automation client did show exactly one ElementSelected per key and nothing else, and it is blind to what NVDA reads for a native SysTabControl32, which is MSAA and win events. The logger logs both channels, the win-event hook reading class, text and child id only and never an IAccessible (ledger 390). Two conditions of the capture: the session was locked (the focused element was the Lock Screen, pid 16028), so SendInput answered ERROR_ACCESS_DENIED and SendKeys threw, keys were posted as WM_KEYDOWN to the tab control's own window, and no window could take foreground focus, so the page-panel candidate is judged from the in-thread focus events (the row took focus at open, both captures) and wxWidgets' UpdateSelection giving the page focus only when the notebook has none, not from a foreground run; and NVDA was running and not stopped. The fix also takes the numpad's arrows, found because the test's first key lacked the extended bit and wxWidgets read VK_RIGHT as WXK_NUMPAD_RIGHT",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T22:44:35.134Z",
+    "resolved_at": null
+  },
+  {
+    "id": 494,
+    "kind": "todo",
+    "phase": "09",
+    "file": "nvda-tests/README.md",
+    "line": 60,
+    "description": "09-06: the README's What is in here table lists two test files and the directory holds five (calendar-immediate-actions, filter-manager-delete and settings-tabs-read-once are not in it), and its prose says two tests where the workflow runs five. A table that is read as the inventory and is short by three is a check nobody reads; bring it to the directory, or have a reading hold it there",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T22:44:35.707Z",
     "resolved_at": null
   }
 ]
