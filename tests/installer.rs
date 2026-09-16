@@ -934,6 +934,170 @@ fn test_the_reading_can_see_a_release_trigger_that_was_widened() {
 }
 
 // ---------------------------------------------------------------------------
+// Publishing the version the tree already carries
+// ---------------------------------------------------------------------------
+
+/// The level that publishes the version `Cargo.toml` already carries.
+///
+/// Named once, because the rule below, the companion and the messages they
+/// print all have to say the same string.
+const AS_IS: &str = "as-is";
+
+/// The name of the step that hands cargo-release its level.
+const THE_RELEASE_STEP: &str = "Create release version and tag";
+
+/// Every level the dispatch form offers, off the `options:` list under the
+/// `release_level` input.
+///
+/// The list runs from `options:` to the first line that is neither a member,
+/// a comment nor blank. Comments are dropped, so a level can be explained
+/// above its line without the explanation being read as a level.
+fn the_release_levels(yaml: &str) -> Vec<String> {
+    yaml.lines()
+        .map(str::trim)
+        .skip_while(|line| *line != "options:")
+        .skip(1)
+        .take_while(|line| line.is_empty() || line.starts_with('-') || line.starts_with('#'))
+        .filter_map(|line| line.strip_prefix('-'))
+        .map(|level| level.trim().to_string())
+        .collect()
+}
+
+/// Whether the workflow can publish the version the tree already carries,
+/// and what is wrong when it cannot.
+///
+/// Every other level bumps before it tags, so from a tree at `1.0.0-alpha.1`
+/// the `alpha` level publishes `-alpha.2` and nothing could ever publish
+/// `-alpha.1`. The tree's version is the next build to go to testers and was
+/// moved in the commit that changed behaviour, so the workflow has nothing to
+/// bump: it has to be able to hand cargo-release the number `Cargo.toml`
+/// carries, read off the same line `scripts/build-installer.sh:12` reads.
+///
+/// Three things, each with its own message. The option is on the form; the
+/// step that runs `cargo release` branches on it; and the branch reads the
+/// version off the manifest rather than passing the word through, because
+/// `as-is` is not a level cargo-release knows and handing it over verbatim
+/// fails at the one moment somebody is trying to publish.
+fn the_workflow_can_publish_the_version_as_it_stands(yaml: &str) -> Result<(), String> {
+    let levels = the_release_levels(yaml);
+    if levels.is_empty() {
+        return Err("no release level was read at all, so this rule looked at nothing".to_string());
+    }
+    if !levels.iter().any(|level| level == AS_IS) {
+        return Err(format!(
+            "the release_level choice list has no `{AS_IS}` option, so from a tree at \
+             1.0.0-alpha.1 the workflow can only ever publish -alpha.2; it offers {levels:?}"
+        ));
+    }
+
+    let release_step = step(yaml, THE_RELEASE_STEP);
+    if release_step.is_empty() {
+        return Err(format!(
+            "no step called '{THE_RELEASE_STEP}' was read, so this rule has no cargo release \
+             line to look at"
+        ));
+    }
+    if !release_step.iter().any(|line| line.contains(AS_IS)) {
+        return Err(format!(
+            "'{THE_RELEASE_STEP}' does not branch on `{AS_IS}`, so choosing it hands \
+             cargo-release a word it does not know"
+        ));
+    }
+    if !release_step
+        .iter()
+        .any(|line| line.contains("Cargo.toml") && line.contains("version"))
+    {
+        return Err(format!(
+            "the `{AS_IS}` branch of '{THE_RELEASE_STEP}' does not read the version off \
+             Cargo.toml, so the tag would be something other than the number the tree carries"
+        ));
+    }
+    if release_step
+        .iter()
+        .any(|line| line.contains("cargo release ${{ inputs.release_level }}"))
+    {
+        return Err(format!(
+            "cargo release is still handed the level verbatim, so `{AS_IS}` reaches it as a \
+             word it does not know"
+        ));
+    }
+    Ok(())
+}
+
+/// The Release workflow can publish the version the tree carries.
+#[test]
+fn test_the_release_workflow_can_publish_the_version_the_tree_already_carries() {
+    if let Err(wrong) = the_workflow_can_publish_the_version_as_it_stands(&the_release_workflow()) {
+        panic!("{wrong}");
+    }
+}
+
+/// An `as-is` publish of a prerelease is still a GitHub prerelease.
+///
+/// The capture step decides `prerelease` from the tag's suffix and not from
+/// the level, so `as-is` on `1.0.0-alpha.1` is a prerelease and `as-is` on
+/// `1.0.0` is a full release, without either being said twice. Held here so
+/// that the branch added for `as-is` cannot quietly move that decision onto
+/// the level.
+#[test]
+fn test_an_as_is_publish_of_a_prerelease_is_still_a_prerelease() {
+    let workflow = the_release_workflow();
+    let capture = step(&workflow, "Capture release tag");
+    assert!(
+        !capture.is_empty(),
+        "no step called 'Capture release tag' was read, so this test is looking at nothing"
+    );
+    assert!(
+        capture.contains(
+            &"$prerelease = if ($tag -match '-(alpha|beta|rc)') { 'true' } else { 'false' }"
+        ),
+        "prerelease is no longer decided from the tag's suffix: {capture:?}"
+    );
+}
+
+/// The reading can see a workflow that cannot publish the version as it
+/// stands.
+///
+/// The companion the test above cannot do without. It reads one workflow,
+/// and while that workflow offers the level it passes whether the reading
+/// works or has been narrowed until it finds the word anywhere, which is how
+/// a document guard in this tree came to prove nothing at all. The first
+/// failing case is the real workflow with the option spliced out, so the
+/// reading is shown to see the absence in the text it really reads.
+#[test]
+fn test_the_reading_can_see_a_workflow_that_cannot_publish_the_version_as_it_stands() {
+    const CAN: &str = "        options:\n          - patch\n          # Publish what is there.\n          - as-is\n\nenv:\n    steps:\n      - name: Create release version and tag\n        run: |\n          level=\"${{ inputs.release_level }}\"\n          if [ \"$level\" = \"as-is\" ]; then\n            level=$(grep -m1 -E '^version = \"' Cargo.toml | sed -E 's/^version = \"(.*)\"/\\1/')\n          fi\n          cargo release \"$level\" --execute\n      - name: Capture release tag\n";
+    const PASSES_THE_WORD_THROUGH: &str = "        options:\n          - patch\n          - as-is\n\nenv:\n    steps:\n      - name: Create release version and tag\n        run: >\n          cargo release ${{ inputs.release_level }} --execute\n      - name: Capture release tag\n";
+    const NO_LEVELS_READ: &str = "jobs:\n  build:\n";
+
+    assert_eq!(
+        the_workflow_can_publish_the_version_as_it_stands(CAN),
+        Ok(())
+    );
+
+    let real = the_release_workflow();
+    let spliced_out: String = real
+        .lines()
+        .filter(|line| line.trim() != format!("- {AS_IS}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let absent = the_workflow_can_publish_the_version_as_it_stands(&spliced_out)
+        .expect_err("a workflow without the option has to be refused");
+    assert!(
+        absent.contains(AS_IS) && absent.contains("no `"),
+        "{absent}"
+    );
+
+    let verbatim = the_workflow_can_publish_the_version_as_it_stands(PASSES_THE_WORD_THROUGH)
+        .expect_err("a step that hands the word to cargo-release has to be refused");
+    assert!(verbatim.contains("does not branch on"), "{verbatim}");
+
+    let blind = the_workflow_can_publish_the_version_as_it_stands(NO_LEVELS_READ)
+        .expect_err("a reading that found no level has to be refused");
+    assert!(blind.contains("looked at nothing"), "{blind}");
+}
+
+// ---------------------------------------------------------------------------
 // The four-number version Windows shows
 // ---------------------------------------------------------------------------
 
