@@ -18,7 +18,7 @@ use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::{
-    name_from_label, set_accessible_name, set_accessible_name_and_description,
+    leave_the_cell_empty, name_from_label, set_accessible_name, set_accessible_name_and_description,
 };
 use crate::presentation::manager_words;
 use crate::presentation::status_line::said_and_shown;
@@ -53,6 +53,23 @@ fn add_field(parent: &Dialog, sizer: &FlexGridSizer, label: &str) -> TextCtrl {
     sizer.add(&lbl, 0, SizerFlag::AlignCenterVertical | SizerFlag::All, 4);
     sizer.add(&field, 1, SizerFlag::Expand | SizerFlag::All, 4);
     field
+}
+
+/// Add a checkbox row to a two-column FlexGridSizer, the label column left
+/// empty. Returns the CheckBox.
+///
+/// The box carries its label, so UI Automation names it from the window text,
+/// and is named outright as well, so the channel NVDA reads gets a name this
+/// code set rather than one Windows fell back to; the account editor's `cb`
+/// does the same and says why. The label column is an empty sizer cell and
+/// not an empty static text: that was a nameless window built straight before
+/// the box, and two testers met a box built that way with no name (#42, #40).
+fn add_checkbox(parent: &Dialog, sizer: &FlexGridSizer, label: &str) -> CheckBox {
+    let check = CheckBox::builder(parent).with_label(label).build();
+    set_accessible_name(&check, &name_from_label(label));
+    leave_the_cell_empty(sizer);
+    sizer.add(&check, 0, SizerFlag::All, 4);
+    check
 }
 
 /// Select a Choice item by matching its string value.
@@ -1282,11 +1299,15 @@ pub fn build_contact_edit_dialog(
     let rel_f = add_panel_field(&basic_panel, &basic_fields, "&Relationship:");
     let avatar_f = add_panel_field(&basic_panel, &basic_fields, "&Avatar URL:");
 
-    let fav_spacer = StaticText::builder(&basic_panel).with_label("").build();
+    // Named outright as well as carrying its label, and with nothing built
+    // before it: the tester met this box with no name (#40), built after an
+    // empty static text placed to hold the label column open.
+    let fav_label = "&Favorite";
     let fav_check = CheckBox::builder(&basic_panel)
-        .with_label("&Favorite")
+        .with_label(fav_label)
         .build();
-    basic_fields.add(&fav_spacer, 0, SizerFlag::All, 4);
+    set_accessible_name(&fav_check, &name_from_label(fav_label));
+    leave_the_cell_empty(&basic_fields);
     basic_fields.add(&fav_check, 0, SizerFlag::All, 4);
 
     basic_sizer.add_sizer(&basic_fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
@@ -2828,12 +2849,7 @@ pub fn build_rule_edit_dialog(
 
     let pattern_f = add_field(&dlg, &fields, "&Pattern:");
 
-    let cs_label = StaticText::builder(&dlg).with_label("").build();
-    let cs_check = CheckBox::builder(&dlg)
-        .with_label("&Case Sensitive")
-        .build();
-    fields.add(&cs_label, 0, SizerFlag::All, 4);
-    fields.add(&cs_check, 0, SizerFlag::All, 4);
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -3289,12 +3305,7 @@ pub fn build_filter_edit_dialog(
 
     let pattern_f = add_field(&dlg, &fields, "&Pattern:");
 
-    let cs_label = StaticText::builder(&dlg).with_label("").build();
-    let cs_check = CheckBox::builder(&dlg)
-        .with_label("&Case Sensitive")
-        .build();
-    fields.add(&cs_label, 0, SizerFlag::All, 4);
-    fields.add(&cs_check, 0, SizerFlag::All, 4);
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
 
     let action_label = StaticText::builder(&dlg).with_label("&Action:").build();
     let action_choices: Vec<String> = RULE_ACTIONS
@@ -3313,11 +3324,8 @@ pub fn build_filter_edit_dialog(
 
     let action_value_f = add_field(&dlg, &fields, "Action &Value:");
 
-    let en_label = StaticText::builder(&dlg).with_label("").build();
-    let en_check = CheckBox::builder(&dlg).with_label("&Enabled").build();
+    let en_check = add_checkbox(&dlg, &fields, "&Enabled");
     en_check.set_value(true);
-    fields.add(&en_label, 0, SizerFlag::All, 4);
-    fields.add(&en_check, 0, SizerFlag::All, 4);
 
     sizer.add_sizer(&fields, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -3843,12 +3851,10 @@ pub fn build_sig_edit_dialog(
     // Accelerators are all first letters: N(Name), D(Default), S(Signature/plain), H(HTML)
     let name_f = add_field(&dlg, &fields, "&Name:");
 
-    let def_label = StaticText::builder(&dlg).with_label("").build();
-    let def_check = CheckBox::builder(&dlg)
-        .with_label("&Default signature")
-        .build();
-    fields.add(&def_label, 0, SizerFlag::All, 4);
-    fields.add(&def_check, 0, SizerFlag::All, 4);
+    // The box the tester met with no name (#42), built after an empty static
+    // text placed to hold the label column open; named outright now, with
+    // nothing built before it.
+    let def_check = add_checkbox(&dlg, &fields, "&Default signature");
 
     sizer.add_sizer(
         &fields,

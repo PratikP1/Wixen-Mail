@@ -153,23 +153,29 @@ other control, window or sentence.
 
 ## Which windows the scans reach
 
-As of 2026-09-14 the scan workflow asks for thirty-one windows: the main frame
+As of 2026-09-16 the scan workflow asks for thirty-six windows: the main frame
 under the first-run question, the bare main window, its five other module
-panels, the window a message opens into for reading, and twenty-three
+panels, the window a message opens into for reading, and twenty-eight
 dialogs, each started on a fresh profile with `--scan-target`. That is
-1 + 1 + 5 + 1 + 23. The workflow runs both channels against every one of the
-thirty-one.
+1 + 1 + 5 + 1 + 28. The workflow runs both channels against every one of the
+thirty-six. From 2026-09-14 until 2026-09-16 it asked for thirty-one, with
+twenty-three dialogs; the five added on 2026-09-16 are the contact, condition,
+filter, signature and account editors, each opened directly on made-up data,
+because two testers met an unnamed checkbox in two of them on 2026-09-15 and
+the scan had reached the manager in front of each and stopped at Add.
 
-Seventeen dialogs are outside the scan, because each opens only from inside
-another dialog and the scan starts one window per run. By name: the account
-edit dialog; Confirm Delete in the Calendar window; Check Spelling, Insert
-Table and Preview Before Send in the composer; the contact edit dialog and its
-Add Email Address, Add Phone Number, Add Address and Add Custom Field; the
-rule, filter, tag and signature edit dialogs; and the three small questions
-the application asks, wait-for-an-answer, choose-from-list and ask-for-a-name.
+Twelve dialogs are outside the scan, because each opens only from inside
+another dialog and the scan starts one window per run. By name: Confirm
+Delete in the Calendar window; Check Spelling, Insert Table and Preview Before
+Send in the composer; the contact editor's Add Email Address, Add Phone Number,
+Add Address and Add Custom Field; the tag edit dialog; and the three small
+questions the application asks, wait-for-an-answer, choose-from-list and
+ask-for-a-name. Until 2026-09-16 the five editors were among them and the
+count was seventeen.
 
-A "yes" in the table is a yes for the thirty-one windows the scan reaches and
-for no other.
+A "yes" in the table is a yes for the thirty-six windows the scan reaches and
+for no other, and for the five editors it is a yes that no run has yet made:
+the section below is the run of 2026-09-14, over the thirty-one.
 
 **The first run against the thirty-one was on 2026-09-14**, and the section
 below is what it found. Before the workflow that asks for them was written,
@@ -368,7 +374,7 @@ reason given under the table.
 | 3.3.4 Error Prevention (Legal, Financial, Data) | AA | yes | no | no | no | Deleting asks first and names the thing; sending can be previewed and held in the outbox. A person confirms each path asks. |
 | 3.3.7 Redundant Entry | A | yes | no | no | no | Whether setting up an account asks for anything twice. Walked by a person. |
 | 3.3.8 Accessible Authentication (Minimum) | AA | yes | no | no | no | Signing in goes through the provider's own page or a stored password; the program itself sets no puzzle. A person confirms the stored path works without retyping. |
-| 4.1.2 Name, Role, Value | A | yes | yes, 9 rules, about which control patterns a button supports and whether focusable siblings have different names | yes, the Name part only: every operated control has a non-empty name on the channel NVDA reads | no; the skipped test would hear a radio button as both focused and checked | Whether the name is the right one, whether the role is right, and whether value and state reach the screen reader, in every window. Fourteen more Axe.Windows rules test the name and seven test the localized control type, and all twenty-one cite Section 508 rather than this criterion. |
+| 4.1.2 Name, Role, Value | A | yes | yes, 9 rules, about which control patterns a button supports and whether focusable siblings have different names | yes, the Name part only: every operated control has a non-empty name on the channel NVDA reads. Since 2026-09-16 the contact, condition, filter, signature and account editors are among the windows walked, because two testers met an unnamed checkbox in two of them; the walk has not yet run over them, on this machine (it crashes there, ledger 390) or on CI (nothing pushed since) | no; the skipped test would hear a radio button as both focused and checked | Whether the name is the right one, whether the role is right, and whether value and state reach the screen reader, in every window. Fourteen more Axe.Windows rules test the name and seven test the localized control type, and all twenty-one cite Section 508 rather than this criterion. |
 | 4.1.3 Status Messages | AA | yes | no | no | yes, three tests hear three announcements made without moving focus | Every other announcement the program makes: whether it is spoken, whether it is spoken once, and whether a syncing mailbox floods it. |
 
 Fifty-five rows. Three say "yes" under Axe.Windows, one says "yes" under the
@@ -406,6 +412,11 @@ two of them would be.
 - One scan has run against the thirty-one windows on both channels, on
   2026-09-14. The nine fixes in the table above have not been confirmed by a
   run since; the next push to `main` is what confirms them.
+- No scan has run against the five editors added on 2026-09-16. Each was
+  opened on a throwaway profile on the machine that added them and its window
+  seen; the MSAA walk was run once on each there and crashed each time, as it
+  does on every window on that machine (ledger 390). The names of their
+  checkboxes on the channel NVDA reads have been read by nothing.
 - Nobody has walked the fifty-five criteria against this application. The
   table is a reading of each criterion against what a mail client does.
 - Most of the application has not had a manual pass with a screen reader.

@@ -484,6 +484,25 @@ pub fn name_from_label(label: &str) -> String {
     }
 }
 
+/// Hold one cell of a two-column grid open with nothing in it.
+///
+/// A checkbox carries its own label, so in a grid of label and field pairs
+/// the label column beside it is empty. That cell used to be filled with a
+/// `StaticText` built on `""`, which is a real window: it reaches both
+/// accessibility channels as a nameless control, sitting straight before the
+/// checkbox in the order Tab moves in, and it is the window Windows picks
+/// when it names a control that set no name from the nearest static text.
+/// Two testers met an unnamed checkbox built that way on the first day of
+/// testing (#42, #40). A sizer spacer takes up the cell and is not a window
+/// at all, so nothing nameless is in the tree.
+///
+/// One pixel rather than none, because `wxdragon` adds nothing at all for a
+/// spacer of size zero and the cells after it would shift left a column. In
+/// a grid with a growable field column a pixel is not visible.
+pub fn leave_the_cell_empty(grid: &wxdragon::sizers::FlexGridSizer) {
+    grid.add_spacer(1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

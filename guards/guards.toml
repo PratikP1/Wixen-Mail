@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 41 records have arrived since and have not been through it.
+# 43 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -8510,17 +8510,20 @@ tests_last_seen = [
 # else marks the difference.
 #
 # Measured by hand on 2026-08-16, against the whole library: the one test
-# named went red and nothing else did.
+# named went red and nothing else did. The break's text changed on
+# 2026-09-16, when `cb` and `cb_with_description` stopped handing back the
+# empty static they used to place before each box (09-05, #42), and both
+# records were measured again the same day through `--remeasure`.
 
 [[guard]]
 name = "POP's leave-on-server checkbox keeps its spoken consequence"
 file = "src/presentation/wx_account_manager.rs"
-before = """    let (pop_leave_label, pop_leave) = cb_with_description(
+before = """    let pop_leave = cb_with_description(
         "&Leave mail on the server after downloading it",
         true,
         SERVER_REMOVAL_IS_PERMANENT,
     );"""
-after = """    let (pop_leave_label, pop_leave) = cb("&Leave mail on the server after downloading it", true);"""
+after = """    let pop_leave = cb("&Leave mail on the server after downloading it", true);"""
 red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
@@ -8531,12 +8534,12 @@ tests_last_seen = [
 [[guard]]
 name = "POP's local-delete checkbox keeps its spoken consequence"
 file = "src/presentation/wx_account_manager.rs"
-before = """    let (allow_deleting_label, allow_deleting) = cb_with_description(
+before = """    let allow_deleting = cb_with_description(
         "Let me delete mail on this &computer",
         true,
         DELETING_HERE_NEVER_REACHES_THE_SERVER,
     );"""
-after = """    let (allow_deleting_label, allow_deleting) = cb("Let me delete mail on this &computer", true);"""
+after = """    let allow_deleting = cb("Let me delete mail on this &computer", true);"""
 red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
@@ -23243,4 +23246,61 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/scan_target.rs", tests = 11 },
+]
+
+# Task 2. Four of the five checkboxes two testers reported are built by one
+# helper now, `add_checkbox`, which names the box outright and leaves the
+# label cell to a sizer spacer. The break is the simplification somebody
+# reaches for on reading that a checkbox carries its own label: the naming
+# call taken out of the helper, on the reasoning that Windows names the box
+# anyway. It does, on UI Automation; on the channel NVDA reads the name is
+# then the framework's fallback rather than one this code set, which is the
+# state the tester met. `suite` names the target that builds the five
+# editors and asks each checkbox for its accessible object, which couples
+# the target to this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 on the branch the record was written on,
+# `cargo test --test checkbox_labels`: four rows in the one complaint.
+[[guard]]
+name = "a checkbox in an editor grid is named outright, not left to the fallback"
+file = "src/presentation/wx_managers.rs"
+suite = "checkbox_labels"
+before = """    let check = CheckBox::builder(parent).with_label(label).build();
+    set_accessible_name(&check, &name_from_label(label));
+    leave_the_cell_empty(sizer);"""
+after = """    let check = CheckBox::builder(parent).with_label(label).build();
+    leave_the_cell_empty(sizer);"""
+red = [
+    "test_every_check_box_in_a_form_carries_its_own_label",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/checkbox_labels.rs", tests = 1 },
+]
+
+# The other half of the same rule, on the box the tester reported on the
+# contact editor's Basic tab (#40, point 5). The break puts the spacer back
+# as it was: an empty static text built straight before the Favourite box
+# to hold the label column open, which is a nameless window in the tree and
+# the one Windows picks when it names what follows from the nearest static.
+# The naming call stays, so only the spacer reading goes red.
+#
+# Measured 2026-09-16 the same way as the record above: one row in the one
+# complaint.
+[[guard]]
+name = "no empty static text is built before the Favourite box as a spacer"
+file = "src/presentation/wx_managers.rs"
+suite = "checkbox_labels"
+before = """    let fav_label = "&Favorite";
+    let fav_check = CheckBox::builder(&basic_panel)"""
+after = """    let fav_label = "&Favorite";
+    let fav_spacer = StaticText::builder(&basic_panel).with_label("").build();
+    basic_fields.add(&fav_spacer, 0, SizerFlag::All, 4);
+    let fav_check = CheckBox::builder(&basic_panel)"""
+red = [
+    "test_every_check_box_in_a_form_carries_its_own_label",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/checkbox_labels.rs", tests = 1 },
 ]

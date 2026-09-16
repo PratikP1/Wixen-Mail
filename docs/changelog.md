@@ -106,6 +106,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the lines gave a screen reader was a pause between the pairs; what they cost was a menu whose
   ticks were not the state of the sort.
 
+- **Every checkbox in the signature, contact, filter, condition and account editors says its own
+  name on the channel NVDA reads.** Reported on 2026-09-15 from build `0.125.1+g3e633252`, twice:
+  "There is an unlabeled checkbox in the signature compose field" (#42) and "There is an unlabeled
+  checkbox on the basic tab" of the contact editor (#40). Those two boxes, "Default signature" and
+  "Favorite", and three more built the same way, "Case Sensitive" in the condition editor and in
+  the filter editor and "Enabled" in the filter editor, carried their label on the control and
+  nothing else: no name set by this program, and an empty piece of static text placed straight
+  before each one to hold the label column of the grid open. That text is a real control with no
+  name, and it is the one Windows picks when it names a control that set no name from the nearest
+  text beside it. All five are named outright now, the way every checkbox in the account editor
+  already was, and the empty text before them is gone: in those five editors the label column
+  beside a checkbox, beside a section heading and beside a note is empty space rather than a
+  nameless control, eleven of them in all, ten in the account editor. Nothing you can see moved.
+  The five editors are also windows the accessibility scan opens on its own now. Before this, the
+  scan opened each manager and stopped at Add, so no editor had ever been scanned on either
+  channel.
+  Known limitations: what NVDA says on the signature editor and the contact editor after this
+  change has not been heard by anybody; a test reads the built windows and finds a name attached
+  to every checkbox and no empty text before one. The scan's own reading of the names, on the
+  channel NVDA reads, waits for its next run: the walk that reads them cannot run on the machine
+  this was built on, for a reason not yet found.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
