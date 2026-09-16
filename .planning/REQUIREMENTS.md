@@ -1929,7 +1929,7 @@ write path added by this milestone passes through that gate.
 
 ### Every number the project quotes
 
-- [ ] **PERF-01**: Memory under 150 MB with 1,000 cached messages, measured.
+- [x] **PERF-01**: Memory under 150 MB with 1,000 cached messages, measured.
   - Evidence: re-checked 2026-09-04 and still accurate. No `benches/` directory, no `criterion`,
     no `divan` and no `[[bench]]` in `Cargo.toml`, and nothing in `src/` reads resident memory,
     so no target below has a number attached. The source of the target is
@@ -1941,15 +1941,34 @@ write path added by this milestone passes through that gate.
     tree, and the numbers are rows on `docs/development/measurements.md` dated 2026-09-14 with
     the machine and the build. Whether each `[D]` line closes is read clause by clause when
     the phase closes, not here.
+    **Closed 2026-09-16 by 08-09, clause by clause.** The first `[D]` line was closed by 08-03:
+    the row "Memory with 1,000 cached messages" on `docs/development/measurements.md`, taken
+    2026-09-14 at `9d5f15c5` on a named machine from a release build, the median of five runs
+    of a harness that is in the tree and can be run again. The second `[D]` line closes on a
+    reading, and the reading is written down rather than assumed. The row holds two numbers:
+    the application process peaked at 57 MB, under the target by 93 MB; the six
+    `msedgewebview2.exe` processes Windows starts for the preview pane weighed 333 MB beside
+    it, the same as on an empty profile, so the sum is 390 MB, over the target by 240 MB. The
+    target was written before the preview was a browser and does not say whether it counts the
+    renderer Microsoft ships beside the application. The coordinator's reading, put to Pratik
+    on 2026-09-14 and not contradicted: the target is about the application process, so it is
+    met, and the tree's weight is written on the same row and in the same sentence wherever
+    the target is judged (`docs/roadmap.md`, `docs/development/requirements-backlog.md`, the
+    changelog) so nobody reads 57 MB as the whole cost. The other reading, the sum, would miss
+    this target by 240 MB and PERF-04's by 291 MB. This box is ticked on the first reading,
+    pending Pratik's word, and one line here reverses it. Ledger 482.
 
   - [S] `docs/development/requirements-backlog.md`, performance and scale, Medium.
   - [D] A repeatable measurement produces a number for resident memory with 1,000 cached
     messages, recorded with the date, the machine and the build it came from.
 
   - [D] The number is either under 150 MB or the target is revised with the reason, rather
-    than the target quietly remaining aspirational.
+    than the target quietly remaining aspirational. Added 2026-09-16: "the number" means the
+    application process's own working set, and the WebView2 tree's is reported beside it and
+    not counted against the target, on the coordinator's reading pending Pratik's word; until
+    then a number that leaves out the tree says so where it is quoted.
 
-- [ ] **PERF-02**: Cold start under 2 seconds, measured.
+- [x] **PERF-02**: Cold start under 2 seconds, measured.
   - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:221` still reads
     `- [ ] Startup time optimization (<2 seconds)`, unticked, and line 253 repeats it as a
     success metric; `docs/development/requirements-backlog.md:82` carries it as Medium. Nothing
@@ -1961,6 +1980,19 @@ write path added by this milestone passes through that gate.
     after start` once per process; the cold-start row on `docs/development/measurements.md`
     is dated 2026-09-14 with the machine and the build. The roadmap lines cited above were not
     re-checked here; whether the target is met is read when the phase closes.
+    **Closed 2026-09-16 by 08-09, clause by clause.** Both `[D]` lines were closed by 08-03.
+    The first: the start instant is the first statement of `main` and the end is the usable
+    line, written once per process when the message list first holds a row, so the number is
+    to a usable list and not to a window; a reading in `tests/the_numbers_the_targets_ask_for.rs`
+    holds the line's shape and a record couples the fill to it. The second: the row "Cold
+    start to a usable list, 1,000 cached messages" on `docs/development/measurements.md`,
+    476 ms, the median of five, on 2026-09-14 at `9d5f15c5`, the machine and the build named,
+    the first start after the build 520 ms on the same side of the target, from a harness in
+    the tree. The target is met on that machine on that day, and the two roadmap lines and the
+    backlog row now say so with the row named; 08-03 also found and fixed the reason no start
+    had ever reached a usable list, the module the window opens on not being filled at
+    startup, which the changelog dates to 2026-07-26. What is not measured: a start after a
+    reboot (ledger 448), and a start with a live account (ledger 447's shape).
 
   - [S] Roadmap Phase 8; `docs/development/requirements-backlog.md`.
   - [D] Cold start is measured from process start to the message list being usable, not to the
@@ -1968,7 +2000,7 @@ write path added by this milestone passes through that gate.
 
   - [D] The measurement is repeatable and recorded with the date, the machine and the build.
 
-- [ ] **PERF-03**: A real mailbox of 100,000 messages or more, exercised.
+- [x] **PERF-03**: A real mailbox of 100,000 messages or more, exercised.
   - Evidence: rewritten 2026-09-04. "The largest thing exercised is a loopback server" is
     false. A 200,000 row sample mailbox generator ships in the product, on the Help menu, put
     there deliberately so that a screen reader user can arrow through one.
@@ -2003,6 +2035,26 @@ write path added by this milestone passes through that gate.
     The third `[D]` line, that no criterion here claims a real provider mailbox was used, is
     still correct and still important, and still true on 2026-09-14: every row timed was
     synthetic.
+    **Closed 2026-09-16 by 08-09, clause by clause, with the title read as its `[D]` lines
+    read it.** The title says "a real mailbox" and the third `[D]` line says synthetic rows
+    answer the list question and the provider question waits for a live account; the clauses
+    are what is ticked, and the provider question is ledger 480 and open. The first `[D]`
+    line was closed by 08-04: 200,000 rows from `sample_mailbox`, the Help menu's generator,
+    written into a cache and timed with no window by `tests/the_list_at_two_hundred_thousand_rows.rs`,
+    eighteen rows on `docs/development/measurements.md` dated 2026-09-14 at `5cf04528`.
+    Sort: `sort_messages` over every order, 61 ms to 260 ms. Filter: `search_messages` at the
+    box's limit, 78 ms to 110 ms, and every match of a one-in-five word, 193 ms. Scroll: the
+    number is the page paint, `virtual_rows::text_for` over one page of every inbox column,
+    0.09 ms, which is the whole of what the paint callback does after taking the lock;
+    wxWidgets' own painting of those cells and the list control taking a sort's 200,000 rows
+    back were not timed, because the harness has no window, ledgers 449 and 450, and a tick
+    without that sentence would claim a measurement nobody took. The second `[S]` line's
+    freeze is answered by the numbers: the slowest sort is a quarter of a second and runs off
+    the interface thread. The second `[D]` line was closed by 08-04 in two halves: by type,
+    `text_for` takes slices and copies and cannot reach the connection the program holds;
+    by reading, `tests/the_list_reads_only_memory.rs` holds the module and the closure to
+    naming no database, with two guard records. The third `[D]` line holds: no row and no
+    sentence in this phase claims a provider mailbox.
 
   - [S] Roadmap Phase 8; `docs/plans/20260726-mail-at-scale.md`.
   - [S] Sorting 200,000 rows in memory on a header click is a multi-second freeze, and a freeze
@@ -2015,21 +2067,34 @@ write path added by this milestone passes through that gate.
   - [D] No criterion here claims a real provider mailbox was used. Synthetic rows answer the
     list question; the provider question waits for a live account.
 
-- [ ] **PERF-04**: Idle memory under 100 MB, measured.
+- [x] **PERF-04**: Idle memory under 100 MB, measured.
   - Evidence: re-checked 2026-09-04 and still accurate. `docs/roadmap.md:254` reads
     `- Low memory footprint (< 100MB idle)` under success metrics, with no measurement anywhere.
     Re-read 2026-09-14 at `7da68e78`: "no measurement anywhere" was true on 2026-09-04 and is
     not now. The idle row on `docs/development/measurements.md`, memory at 120 s with 1,000
     cached messages and no input after the usable line, is dated 2026-09-14 with the machine
     and the build, beside the empty-profile floor taken the same way.
+    **Closed 2026-09-16 by 08-09, clause by clause, on the same reading as PERF-01.** The
+    first `[D]` line was closed by 08-03: the row "Idle memory at 120 s, 1,000 cached
+    messages" on `docs/development/measurements.md`, no input after the usable line, the
+    window left where the start put it, read at 60 s and 120 s, taken 2026-09-14 at
+    `9d5f15c5` with the machine and the build, the median of five. The second `[D]` line: the
+    application process sat at 56 MB, under the target by 44 MB and about 3 MB over the
+    empty-profile floor; the WebView2 tree 334 MB beside it, so the sum is 391 MB, over by
+    291 MB, and idle growth over the minute was about 1 MB, all of it in the tree. Read as
+    the application process, PERF-01's reading, met; the sum is written beside the target in
+    `docs/roadmap.md` and here. Pending Pratik's word, ledger 482. Idle with a live account is
+    a different idle and was not taken, ledger 447.
 
   - [S] Roadmap success metrics.
   - [D] Idle memory is measured after startup with a cache present and no user activity, and
     recorded with the date, machine and build.
 
-  - [D] The number is either under 100 MB or the target is revised with the reason.
+  - [D] The number is either under 100 MB or the target is revised with the reason. Added
+    2026-09-16: "the number" means the application process's own working set, as PERF-01's
+    second `[D]` line says, with the WebView2 tree reported beside it.
 
-- [ ] **PERF-05**: Line coverage re-measured.
+- [x] **PERF-05**: Line coverage re-measured.
   - Evidence: corrected 2026-09-04. The coverage figure and its date are still right and the
     commit count attached to them was out by a factor of about four.
     60.4%, measured 2026-07-26 with `cargo llvm-cov --lib --summary-only`, stale since, and
@@ -2046,6 +2111,23 @@ write path added by this milestone passes through that gate.
     the paragraph is now three, found by `grep -n 83.34 docs/IMPLEMENTATION_STATUS.md`.
     `git rev-list --count --since="2026-07-26" HEAD` gives 1,830 commits since the reading, out
     of 2,077 by `git rev-list --count HEAD`, 88%, against 1,195 of 1,373 on 2026-09-04.
+    **Closed 2026-09-16 by 08-09, clause by clause.** The `[D]` line has two clauses. The
+    first, a current number with its date replacing the stale one, was closed by 08-05:
+    83.34% on 2026-09-14 at `55464a5e` by the same command, the row on
+    `docs/development/measurements.md`, on the status page with 60.4% kept as the figure of
+    2026-07-26. The second, the low areas attributed rather than treated as a number to raise,
+    closes with the attribution corrected, because the one the requirement wrote turned out
+    not to describe the tree: the three transport areas read 92.06%, 84.55% and 96.75%, all
+    above the library, so the transport is not where the missed lines are. Where they are is
+    the 27 wxWidgets window files at 26.88%, holding 73% of the missed lines, and the
+    attribution 08-09 writes for them is this: those files build windows, `cargo llvm-cov
+    --lib` runs the library's own tests and opens none, and the targets under `tests/` that
+    do open windows are outside that command. A run that included them would be a different
+    quantity from the 2026-07-26 one, and the same quantity is what makes the 23-point rise
+    real; so the figure is accepted with that reason written beside it on the page, the
+    status page and `docs/architecture.md`, and is not a number to raise by writing tests
+    toward it. The 80% target in `docs/architecture.md` is met by the library and kept as
+    written. Ledgers 452 and 453 close with this paragraph.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [S] Coverage is the cheap wide sweep answering only "what never runs at all", and low
@@ -2067,7 +2149,7 @@ write path added by this milestone passes through that gate.
   - [D] A current number replaces the stale one, with its date, and the low areas are
     attributed rather than treated as a number to raise.
 
-- [ ] **PERF-06**: Every document that quotes a test count quotes the same measurement.
+- [x] **PERF-06**: Every document that quotes a test count quotes the same measurement.
   - Evidence: rewritten 2026-09-04. The three-way disagreement this evidence described is
     closed, and the reconciled number has since moved, which is exactly what the third `[D]`
     line says a check must not treat as a failure.
@@ -2125,6 +2207,26 @@ write path added by this milestone passes through that gate.
     `CLAUDE.md` since 2026-09-14, which now points at the product row, 784 x 92 s taken by
     08-01, and names the four figures the tree used to give. `CLAUDE.md`'s guard-record count
     is by the parser, not the grep, since the same day.
+    **Closed 2026-09-16 by 08-09, clause by clause; this requirement is the whole phase.**
+    The first `[D]` line was closed by 08-01, 08-02 and 08-06 together: the page exists and a
+    reading refuses a row without its command, date and commit (08-01); a count, a coverage
+    figure or a duration on any page under `docs/` other than the changelog and the dated
+    plans, in `README.md` or in `CLAUDE.md`, sits in a paragraph with a date and a backticked
+    source or names a target, read on every commit by
+    `test_every_figure_on_a_page_carries_its_date_and_its_source` (08-02); and the thirteen
+    paragraphs that reading named, the four sweep-cost figures and a fifth, and the three
+    planning documents were dated and pointed by hand rather than re-numbered (08-02, 08-06).
+    The second `[D]` line holds: the status page and the integration guide say 7,697 tests
+    as 7,245 unit and 452 integration, two rows, and
+    `test_the_three_pages_that_state_the_test_count_quote_one_row` holds the three pages to
+    the page and not to each other (08-02). The third `[D]` line was closed by 08-01 and
+    08-06: every duration row on the page carries its thread setting, whether the build was
+    warm and what else was running, and the gate, suite, sweep and mutation-run durations on
+    `CLAUDE.md` and the status page are dated and point at the rows. The fourth `[D]` line
+    holds by construction: the reading compares shape and never value, and its four
+    companions prove it can see an omission without ever comparing a number with today's.
+    Every later plan of the phase wrote its figures as rows and nowhere else, which is the
+    requirement doing its work.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md`.
   - [D] Every count in the documentation carries the command it came from and the date it was
@@ -2179,6 +2281,32 @@ write path added by this milestone passes through that gate.
     the 2026-08-05 run by `grep -n 2026-08-05 CLAUDE.md`. The mutant count the run would face
     is a row on the same page, 12,335 over 247 files by `cargo mutants --list` on 2026-09-14.
     The two `[S]` claims below about the script are unchanged and still accurate.
+    **Read 2026-09-16 by 08-09, clause by clause, and left open as revised.** The first
+    `[D]` line asks for one whole-tree run, and that did not happen: 08-08 measured the rate
+    on one shard of 25 mutants under both suite shapes on 2026-09-15, put the products to
+    Pratik, 17.5 days for the library and 19.8 days for every target on this machine, and he
+    answered the same day: not the whole tree this milestone, the guard sweep first, then one
+    scoped run, moved to GitHub's runners. What ran instead, at `3e633252` on 2026-09-15, is
+    two areas in shards on one commit, `src/service/protocols/**` (450 mutants, 18 shards)
+    and `src/service/caldav.rs` (420 mutants, 17 shards), each read after its last shard's
+    process exited by `scripts/mutants_report.py --shards`, which refuses a missing, partial
+    or differently committed shard, so the "not from a partial `mutants.out`" half of the
+    clause holds for what ran. The rest of the tree, 12,391 mutants at `2847391c` less those
+    870, has not been through a run since the sweeps of July and August; the rows on
+    `docs/development/measurements.md` say what it would cost on this machine and, from the
+    two runs, about 2.9 times that a mutant on a runner. Roadmap criterion 4 was revised in
+    place by 08-08 with that as the reason, and this clause is revised the same way: not
+    closed, and its cost written down instead of an estimate. The second `[D]` line holds
+    for what ran: no mutant never started in either run, and the four that timed out were
+    re-run by name on this machine and timed out again for reasons the run page gives. The
+    third `[D]` line was closed by 08-08 for what ran: every one of the 56 survivors is on
+    `docs/plans/20260915-whole-tree-mutation-run.md`, 43 killed by tests shown red against
+    their mutants, 6 equivalent with the reason, 7 untested behaviour queued as ledgers 472
+    to 478 with the six equivalents held together as 479, so the surviving list is the input
+    to the next round. The box stays unticked because the first clause is not what happened;
+    the justification for the requirement no longer rests on the share of tests written after
+    their code, which 08-02 made a computed figure, but on what the runs found, and the
+    status page says so since 2026-09-16.
 
   - [S] `docs/IMPLEMENTATION_STATUS.md` and `CLAUDE.md`.
   - [S] `scripts/mutants.sh` refuses to summarise a partial or degenerate run: a build that
@@ -2264,13 +2392,13 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
 | SHIP-06 | Phase 7 | Complete |
-| PERF-01 | Phase 8 | Pending |
-| PERF-02 | Phase 8 | Pending |
-| PERF-03 | Phase 8 | Pending |
-| PERF-04 | Phase 8 | Pending |
-| PERF-05 | Phase 8 | Pending |
-| PERF-06 | Phase 8 | Pending |
-| PERF-07 | Phase 8 | Pending |
+| PERF-01 | Phase 8 | Complete, on the reading the evidence states, pending Pratik's word |
+| PERF-02 | Phase 8 | Complete |
+| PERF-03 | Phase 8 | Complete |
+| PERF-04 | Phase 8 | Complete, on the reading the evidence states, pending Pratik's word |
+| PERF-05 | Phase 8 | Complete |
+| PERF-06 | Phase 8 | Complete |
+| PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
 
 **Coverage:**
 
