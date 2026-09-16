@@ -6179,7 +6179,16 @@ impl WxMailApp {
             )
             .build();
 
-        // Sort submenu
+        // Sort submenu. Seven radio items and no separator between them, on
+        // purpose: wxWidgets ends a radio group at a separator and checks the
+        // first item of each group as it is made, and with a separator
+        // between each pair this was four groups, so the menu showed four
+        // ticks before anybody had sorted anything and sorting moved one of
+        // them (#39). One group is what makes checking one item uncheck the
+        // rest, which is what `sync_sort_menu` relies on.
+        // `tests/one_sort_is_checked.rs` reads the chain for anything
+        // appended between the first sort item and the last, and
+        // `tests/one_sort_is_checked_on_a_live_menu.rs` asks a real menu.
         let sort_menu = Menu::builder()
             .append_radio_item(
                 ID_SORT_DATE_NEWEST,
@@ -6191,7 +6200,6 @@ impl WxMailApp {
                 "Date (Oldest First)",
                 "Sort by date, oldest first",
             )
-            .append_separator()
             .append_radio_item(
                 ID_SORT_SENDER_AZ,
                 "Sender (A-Z)",
@@ -6202,7 +6210,6 @@ impl WxMailApp {
                 "Sender (Z-A)",
                 "Sort by sender descending",
             )
-            .append_separator()
             .append_radio_item(
                 ID_SORT_SUBJECT_AZ,
                 "Subject (A-Z)",
@@ -6213,7 +6220,6 @@ impl WxMailApp {
                 "Subject (Z-A)",
                 "Sort by subject descending",
             )
-            .append_separator()
             .append_radio_item(
                 ID_SORT_UNREAD_FIRST,
                 "Unread First",
