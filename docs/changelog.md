@@ -96,6 +96,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: whether the Reading tab now reads as one group by ear has not been listened
   to with a screen reader; a test reads the tab order back from the built dialog.
 
+- **The View menu's Sort submenu shows one tick, for the sort in force.** Reported on 2026-09-15
+  from build `0.125.1+g3e633252` (#39), in the tester's words: "Sort options in the view menu are
+  confusing as multiple items are checked." The seven sorts were in four runs with a line between
+  each pair, and a line ends a group of radio items, so they were four groups. Each group shows a
+  tick of its own from the moment the menu is made, so the menu showed four ticks before you had
+  sorted anything, and sorting moved one of them. The lines are gone and the seven are one group,
+  so exactly one is ticked, whichever way you sorted, from the menu or from a column header. What
+  the lines gave a screen reader was a pause between the pairs; what they cost was a menu whose
+  ticks were not the state of the sort.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

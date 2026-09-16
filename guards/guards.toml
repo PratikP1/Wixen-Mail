@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 38 records have arrived since and have not been through it.
+# 39 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -23167,4 +23167,34 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_sort_controls_sit_together.rs", tests = 1 },
+]
+
+# The Sort submenu was seven radio items in four runs with a separator
+# between each run, and wxWidgets ends a radio group at a separator and
+# checks the first item of each group as it is made, so the menu showed four
+# ticks before anybody had sorted anything (#39). The break puts one of the
+# three separators back, after Date (Oldest First), which splits the group
+# in two again. The companion that plants a separator there stays green,
+# because it plants a second and the complaint is the same.
+#
+# `suite` names the target that reads the chain, which couples the target to
+# this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on,
+# `cargo test --test one_sort_is_checked`.
+[[guard]]
+name = "the seven sort items are one radio group, not four with a tick each"
+file = "src/presentation/wx_app.rs"
+suite = "one_sort_is_checked"
+before = """            .append_radio_item(
+                ID_SORT_SENDER_AZ,"""
+after = """            .append_separator()
+            .append_radio_item(
+                ID_SORT_SENDER_AZ,"""
+red = [
+    "test_the_seven_sort_items_are_one_radio_group",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_sort_is_checked.rs", tests = 5 },
 ]
