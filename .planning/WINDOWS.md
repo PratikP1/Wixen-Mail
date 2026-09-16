@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 457
+open_count: 458
 waived_count: 0
 fixed_count: 28
-total_count: 485
-last_updated: 2026-09-16T17:19:57.441Z
+total_count: 486
+last_updated: 2026-09-16T18:19:35.079Z
 ---
 
 # Broken Windows Ledger
@@ -500,6 +500,7 @@ last_updated: 2026-09-16T17:19:57.441Z
 | 483 | 09 | unrun-verify | .github/workflows/release.yml | 118 | The as-is level has never been dispatched: that cargo-release 1.1.5 given its current version on the runner plans no bump, skips the commit on a clean tree and tags v1.0.0-alpha.1 is read from a dry run on this machine and from commit_all in its ops/git.rs, not from a run; the first as-is dispatch is Pratik's and is what proves it | open |  | 2026-09-16T14:30:27.270Z |  |
 | 484 | 09 | unrun-verify | src/service/spellcheck/mod.rs | 349 | Whether a profile created before 2026-09-03, holding the bare en every profile got then, now shows English (United States) in Settings and is checked in it without a hand change is a run on such a profile; the tester's own profile has held a hand-set en-US since 2026-09-15, which the resolver leaves as stored, so his machine cannot show the fix and only a profile still holding the bare value can. 09-02 proved it on this machine through the real General tab built in a test, not on a profile | open |  | 2026-09-16T17:19:56.885Z |  |
 | 485 | 09 | unrun-verify | src/data/message_cache/bodies.rs | 690 | The once-only pass that puts stored snippets right has run against a temp profile holding one HTML-only message (1 row in 3 ms, log line quoted in 09-02's summary) and never against the tester's 20 MB cache of 12,872 messages; how many of his rows it rewrites, how long his first start takes, and whether his rows then read as words are his first open of the next build to answer, and the log line says the first two | open |  | 2026-09-16T17:19:57.441Z |  |
+| 486 | 09 | deviation | src/application/answered_meetings.rs | 162 | 09-03: a meeting answer is filed on the calendar the moment Accept, Tentative or Decline is pressed, while the reply is still held for ten seconds like any other message. Undo Send inside the hold takes the reply back and leaves the meeting on the calendar as answered; answering the same meeting again replaces the entry, so somebody who undoes and answers differently ends with the calendar right, and somebody who undoes and does not answer has an entry the organiser never heard about. Filing only when the queue drains needs the send loop to reach back to the calendar, which nothing does, and is a feature of its own. Said in the changelog under Known limitations. Ledger 155's listening question, whether anything spoken after a mistaken Accept points at Undo Send, stays open: the sentence now says Undo Send takes it back, and nobody has heard it. | open |  | 2026-09-16T18:19:35.079Z |  |
 
 ````json
 [
@@ -6321,6 +6322,18 @@ last_updated: 2026-09-16T17:19:57.441Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T17:19:57.441Z",
+    "resolved_at": null
+  },
+  {
+    "id": 486,
+    "kind": "deviation",
+    "phase": "09",
+    "file": "src/application/answered_meetings.rs",
+    "line": 162,
+    "description": "09-03: a meeting answer is filed on the calendar the moment Accept, Tentative or Decline is pressed, while the reply is still held for ten seconds like any other message. Undo Send inside the hold takes the reply back and leaves the meeting on the calendar as answered; answering the same meeting again replaces the entry, so somebody who undoes and answers differently ends with the calendar right, and somebody who undoes and does not answer has an entry the organiser never heard about. Filing only when the queue drains needs the send loop to reach back to the calendar, which nothing does, and is a feature of its own. Said in the changelog under Known limitations. Ledger 155's listening question, whether anything spoken after a mistaken Accept points at Undo Send, stays open: the sentence now says Undo Send takes it back, and nobody has heard it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T18:19:35.079Z",
     "resolved_at": null
   }
 ]
