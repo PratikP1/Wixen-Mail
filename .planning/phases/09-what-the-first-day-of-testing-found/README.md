@@ -1,6 +1,6 @@
 # Phase 9: What the first day of testing found
 
-Nine plans, one per wave, written 2026-09-16 against `main` at `524ff24f`,
+Ten plans, one per wave, written 2026-09-16 against `main` at `524ff24f`,
 version `0.125.1`, `guards/guards.toml` holding 825 records by the TOML
 reader (census 802 + 23), `.planning/WINDOWS.md` at entry 482, 7,779 tests on
 the last whole gate, CI green at the last push (`3e633252`) with 14 commits
@@ -39,7 +39,7 @@ writing requirements.
 | Group | What it is | Issues | Where |
 |---|---|---|---|
 | 1 | The version becomes `1.0.0-alpha.1`, first, so every fix lands under the number it will ship as | #46 | this phase, 09-01 |
-| 2 | The cause-known defects, each an hour to a day | #21, #32, #36, #39, #42 with #40 point 5, #44, #51, #53, #56, #33, #34 | this phase, 09-02 to 09-09 |
+| 2 | The cause-known defects, each an hour to a day | #21, #32, #36, #39, #42 with #40 point 5, #44, #51, #53, #56, #33, #34 | this phase, 09-02 to 09-10 |
 | 3 | All the mail, and what is said while it comes | #20, #23, #24, #37, #38 | a later phase |
 | 4 | Reading and the list | #25, #26, #27, #28 with #29, #30, #31, #62 | a later phase |
 | 5 | The editors | #35, #40 points 1 to 4 and 6, #41, #43, #48 | a later phase |
@@ -60,35 +60,41 @@ to `FOUND`.
 | 09-04 | 4 | 4 | #36, #39 | closes both | Then by beside Default sort order, Cc and Bcc lines on the Compose tab; the Sort submenu one radio group |
 | 09-05 | 5 | 5 | #42, #40 point 5 | closes #42, advances #40 | five editors as scan targets; the MSAA walk before and after; every checkbox named; the empty spacers gone; the label check widened |
 | 09-06 | 6 | 6 | #33 | advances | a UI Automation event logger and the capture; the second event stopped; an NVDA case waiting for the next push |
-| 09-07 | 7 | 7 | #51 | closes | one composition of the opened body, PGP finding, envelope and signature, asked by all five surfaces; the preview pane with a bar; the guard names every surface |
-| 09-08 | 8 | 8 | #53 | advances, points 1 to 3 | the Outlook data file reader wired into the picker; Save As writes; a folder picker; four documents and the guide |
+| 09-07 | 7 | 7 | #51 | closes | one composition of the opened body, PGP finding, envelope and signature, asked by all six surfaces (the issue counted five; the whole conversation in the text reader is the sixth); the preview pane with a bar; the guard names every surface |
+| 09-08 | 8 | 8 | #53 | advances, points 1 and 2 | the Outlook data file reader wired into the picker, each message down the path a saved `.eml` takes; Save As writes the list's message, and the reader keeps its own Save Attachment |
 | 09-09 | 9 | 9 | #34 | closes | Settings measured, the cost paid once, measured again |
+| 09-10 | 10 | 8 | #53 | advances, points 3 and 7 | a folder picker on its own File item, the Thunderbird layout said as a limitation, the four documents corrected by dating, a guide section; the phase's closing read |
 
 Requirement coverage: FOUND-01 by 09-01; FOUND-02 and FOUND-03 by 09-02;
 FOUND-04 and FOUND-05 by 09-03; FOUND-06 and FOUND-07 by 09-04; FOUND-08 by
-09-05; FOUND-09 by 09-06; FOUND-10 by 09-07; FOUND-11 by 09-08; FOUND-12 by
-09-09.
+09-05; FOUND-09 by 09-06; FOUND-10 by 09-07; FOUND-11 by 09-08 and 09-10;
+FOUND-12 by 09-09.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit, so the tracker and the tree
 agree. Closing an issue is not a publish and the executor may do it; filing
 or editing other issues is not theirs.
 
-## Why nine plans, and why one per wave
+## Why ten plans, and why one per wave
 
-Nine because the twelve issues fall into nine pieces that do not share a
+Ten because the twelve issues fall into ten pieces that do not share a
 shape or a file set: the version alone; two stored-value fixes; two things
 about Undo Send; two things about sort; the checkbox class with its scan
-targets; the tab-row diagnosis; the reading path; the import and export
-commands; the measurement. Each is two or three tasks.
+targets; the tab-row diagnosis; the reading path; the import reader and the
+Save As writer; the measurement; and the folder picker with the documents,
+which the plan check cut out of the import plan on 2026-09-16 because
+sixteen files in one plan was the widest in the phase and the documents
+share no code with the reader. Each is two or three tasks.
 
-One per wave because every plan writes `docs/changelog.md` and seven of the
-nine write `guards/guards.toml`, and a wave is a set of plans sharing no file.
+One per wave because every plan writes `docs/changelog.md` and eight of the
+ten write `guards/guards.toml`, and a wave is a set of plans sharing no file.
 The order is Pratik's suggestion made concrete: the version first, so every
 entry that follows is written under it; then the pure-logic pair, which proves
 the flow on the cheapest ground; then the windows; then the two that touch
 reading and importing paths; then the one that measures before it changes,
-last, because its measurement must be of the tree the other eight left.
+because its measurement must be of the tree the code plans left; then the
+documents last, because they describe what the others built, and the
+phase's closing read goes with them.
 
 ## How versions move under the alpha
 
@@ -139,6 +145,15 @@ in kind:
 | #46 | the first-run screen and `--help` name a version shape | neither does; "alpha" there is a state | `grep -n 'alpha\|version' src/presentation/first_run.rs src/presentation/command_line.rs` |
 | #46 | a hand bump or a `major` level | a hand bump, and also a level that tags the version as it stands, because the workflow bumps before it tags and could otherwise never publish `-alpha.1` | `grep -n 'cargo release' .github/workflows/release.yml`; cargo-release's reference |
 | #56 | a sentence says "has been told" too early | and the variant it lands on, `HowItWent::Sent`, is documented as "reached the organiser's mail server" while the answer only entered the hold; the calendar is filed from the same variant | `sed -n 335,343p src/application/answering.rs`; `wx_app.rs:13129-13170` |
+| #32 | `strip_markup` has one caller, the snippet | two: the search index takes an HTML-only body through it too (`searching.rs:360`), so the index holds stylesheets and a search for `padding` finds newsletters | `grep -rn strip_markup src --include='*.rs'` |
+| #51 | five surfaces show a message | six: `open_conversation` (`wx_app.rs:12577`), the whole thread in the text reader, has no bar and no PGP opening either | `grep -n 'fn open_conversation(' src/presentation/wx_app.rs`; `wx_app.rs:20200` |
+| #53 | `written_as_one_message` is reached by the exporter only | and by the `.pst` reader itself at `outlook_data_file.rs:1701`, which composes each `Mail` item through it, so an imported message takes the path a saved `.eml` takes | `grep -rn written_as_one_message src --include='*.rs'` |
+| #53 | Save As saves "a message or attachment" | the attachment list is in the reader frame, which has its own Save Attachment (`wx_reader.rs:35`, `:794`, `:878`) and whose focus makes the main menu inactive; Save As is the list's message | `grep -n 'ID_SAVE_ATTACHMENT\|fn save_attachment_now' src/presentation/wx_reader.rs` |
+| #21 | the tester's profile cannot be read from here | this machine's profile can (`"language": "en"`, dated 2026-07-30) and is the stored shape the cause needs; the tester's profile is elsewhere (this machine has no 2026-09-16 log and no running process while he has tested for two days), was created by an earlier build and held the same, and he has since set English (United States) by hand | `grep -o '"language": *"[^"]*"' "$LOCALAPPDATA/wixen-mail/config/app_config.json"` |
+
+The last five rows were found by the plan check on 2026-09-16, after the
+first draft of these plans; each plan's `<premise_corrections>` says so
+where it was wrong.
 
 One decision the issues left open is made here and can be overruled with a
 reason in the summary: **#53's `.pst` reader is wired, not retired.** Both
@@ -152,16 +167,20 @@ Retiring would delete 3,608 lines whose whole reason is that answer.
 
 **Guard records, by the TOML reader on 2026-09-16, 825 in all.** Files the
 plans touch, with records naming them and `#[test]` lines in them:
-`src/presentation/wx_app.rs` 50 and 196; `src/service/spellcheck/mod.rs` 30
-and 56; `tests/house_style.rs` 25 and 83; `src/application/long_text.rs` 18
-and 59; `tests/wired.rs` 14 and 72; `src/data/config.rs` 10 and 66;
+`src/presentation/wx_app.rs` 50 and 196 (`cargo test --lib presentation::wx_app::`
+runs 199; the `#[test]` grep misses the `tokio::test` lines);
+`src/service/spellcheck/mod.rs` 30 and 56 (the filter runs 65, because
+`windows_speller.rs`'s 9 sit under the same path); `tests/house_style.rs`
+25 and 83; `src/application/long_text.rs` 18 and 59; `tests/wired.rs` 14
+and 72; `src/data/config.rs` 10 and 66; `src/data/message_cache/searching.rs`
+3 and 25;
 `src/presentation/reader_text.rs` 10 and 120; `src/presentation/wx_settings.rs`
 8 and 0; `src/presentation/wx_managers.rs` 7 and 44;
 `src/presentation/wx_account_manager.rs` 6 and 14; `tests/installer.rs` 4 and
 13; `src/data/message_cache/bodies.rs` 4 and 43; `src/common/started.rs` 3
 and 6; `src/common/version.rs` 2 and 24; `src/presentation/scan_target.rs` 2
 and 11; `tests/no_label_is_only_a_space.rs` 1 and 4; `src/application/invitations.rs`,
-`src/service/outlook_data_file.rs`, `src/application/mailbox_archive.rs` and
+`src/service/outlook_data_file.rs`, `src/service/mailbox_archive.rs` and
 `src/service/fonts.rs` 0 each. A test added to a file flags every record
 naming it, at the rate on `docs/development/measurements.md` each; so no plan
 adds a test to `house_style.rs` or to `wx_app.rs`, the new readings go in new
@@ -211,9 +230,16 @@ rather than restated per task:
 - Measure carriage returns with `tr -cd '\r' | wc -c`, never grep. No em dash
   anywhere, `.planning` included; `tests/house_style.rs` reads it. No
   scripted rewrite of a tracked file: Read, then Edit or Write.
-- The MSAA walk crashes PowerShell on this machine with NVDA running (06-06);
-  a plan that runs it says under what conditions it ran, or that it waits
-  for CI.
+- The MSAA walk crashes PowerShell on this machine, ledger 390: "Walking any
+  Wixen Mail window over MSAA crashes PowerShell on this machine with
+  STATUS_STACK_BUFFER_OVERRUN ... NVDA is running here and CI has no screen
+  reader ... Not diagnosed." NVDA running is a difference between the
+  machines, not a diagnosed cause, and stopping it on a screen reader user's
+  machine is not asked for; a plan that needs the walk runs it once as the
+  machine is, and if it crashes, waits for CI and says so.
+- `cargo test`'s positional filters after `--` are ORed by libtest: `--lib
+  presentation::wx_app:: -- sort` runs 240 tests, not the sort tests. One
+  filter per invocation, the module's own path.
 
 ## What only a person can settle
 
@@ -246,7 +272,7 @@ from the files and said here.
 
 1. **The roadmap's phase 9 entry and progress row.** Done by the planner in
    the commit that lands these plans: the goal, the twelve requirements, nine
-   criteria, the plan list, the row at `0/9`, and the milestone paragraph
+   criteria, the plan list, the row at `0/10`, and the milestone paragraph
    corrected to say the milestone continues with what testing found.
    `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to the
    files.
@@ -254,7 +280,7 @@ from the files and said here.
    the twelve traceability rows, the coverage count re-taken at 56, the
    provenance note, and the milestone line corrected.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
-   phase 9 current, plan 1 of 9, `Total Plans in Phase: 9`,
+   phase 9 current, plan 1 of 10, `Total Plans in Phase: 10`,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan writes its entries under
    `[Unreleased]`; 09-01 corrects the opening paragraph; 09-07 and 09-08 date

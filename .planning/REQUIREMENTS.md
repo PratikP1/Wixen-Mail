@@ -2406,9 +2406,16 @@ requirements to a later phase's section rather than here.
     .unwrap_or(0)`, `build_general_tab`), and index 0 in Windows' order is `en-029`, English
     (Caribbean). And `spellcheck::for_language("en")` resolves a bare tag through
     `find_regional_variant`, which takes the first of the family Windows lists, `en-029`
-    again (`test_a_bare_language_matches_the_first_regional_variant_windows_offers`). Whether
-    the tester's stored value is `"en"` can only be read from his settings file; both fixes
-    below hold whatever it is.
+    again (`test_a_bare_language_matches_the_first_regional_variant_windows_offers`). This
+    machine's own profile holds that shape: `grep -o '"language": *"[^"]*"'
+    "$LOCALAPPDATA/wixen-mail/config/app_config.json"` -> `"language": "en"`, the file dated
+    2026-07-30 (added 2026-09-16 after the plan check; the first draft said a profile could
+    not be read from here). It is evidence of the stored shape, not of the tester's profile:
+    this machine has no 2026-09-16 log and no running process while he has tested for two
+    days, so he tests elsewhere; his profile was created by an earlier build (0.40.0 of
+    2026-08-27 was the last installer before 0.125.1, and the default wrote `"en"` until
+    2026-09-03), so it held the same bare value, and he has since set English (United States)
+    by hand there, which the fix leaves as set.
   - [S] #21, the tester on 2026-09-15: "Currently, a Windows OS set to U.S. English as its
     language does not correspond to the default spellcheck language. English Caribbean is
     shown as default."
@@ -2419,14 +2426,21 @@ requirements to a later phase's section rather than here.
   - [D] The settings screen shows the language that will be used, never index 0 for a value
     it could not match, and a test builds the real screen with `"en"` stored and reads the
     selection back.
-  - [S] Whether English (United States) is what the tester now hears on his machine is a
-    test on his profile: pick nothing, open Settings, read the language.
+  - [S] The tester has set English (United States) by hand on his profile (his words on
+    2026-09-16: "My setting to U.S. English was done manually"); what this fixes for him is
+    the next profile an earlier build created, and whether a fresh profile on his machine now
+    shows English (United States) without a hand change is his to read.
 
 - [ ] **FOUND-03**: A snippet of an HTML-only message is the first words of its text, never
-  its stylesheet, and snippets already stored are put right.
+  its stylesheet, and so is the text the search index holds for it; snippets and index rows
+  already stored are put right.
   - Evidence: `src/data/message_cache/bodies.rs`, `strip_markup` at `:317` on 2026-09-16,
     keeps everything between tags, `<style>` content included; `save_message_body` derives
-    the snippet through it when there is no plain part. `application::long_text::from_markup`
+    the snippet through it when there is no plain part, and `searching.rs:360`,
+    `index_message_for_search`, takes an HTML-only body through the same function for the
+    index's body text (found by the plan check 2026-09-16; `grep -rn strip_markup src`
+    answers both), so the index holds stylesheets too and a search for `padding` finds a
+    newsletter; `searching.rs` is named by 3 guard records. `application::long_text::from_markup`
     (`long_text.rs:496`) runs `ammonia::clean`, which drops `<script>` and `<style>` content
     outright, then walks the tree with `scraper`, no window involved; a unit test holds
     `blocks_output("<style>body { color: red }</style>") == ""`. `data` already reaches
@@ -2437,12 +2451,14 @@ requirements to a later phase's section rather than here.
     guard records and `long_text.rs` by 18.
   - [S] #32, the tester on 2026-09-15: "snippets appear to read CSS styles on occasion. So
     far the behavior seems to start with '#outlook' as the start of css."
-  - [D] A snippet derived from an HTML-only body is derived through the same reader the
-    reading path uses, so `<style>`, `<script>` and `<head>` content never reach it, and
-    `strip_markup` is gone rather than patched.
+  - [D] A snippet derived from an HTML-only body, and the body text the search index holds
+    for it, are derived through the same reader the reading path uses, so `<style>`,
+    `<script>` and `<head>` content never reach either, and `strip_markup` is gone rather
+    than patched.
   - [D] Snippets already stored for HTML-only bodies are re-derived once, on the first open
     after the change, through the same function, non-fatally and once only, with the count
-    logged; the changelog says when a stored snippet is put right and what it costs.
+    logged, and each row put right is reindexed; the changelog says when a stored snippet is
+    put right and what it costs.
   - [S] Whether the tester's rows now read as words is a test on his profile after the
     first open of the new build.
 
@@ -2474,8 +2490,12 @@ requirements to a later phase's section rather than here.
     told.' with no countdown and no mention of Undo Send, so for that path the hold is not
     announced when it starts and the wording claims delivery during it."
   - [D] Answering a meeting says, at the moment of pressing, the same countdown any other
-    send says, through the same function; "has been told" is not said while the answer is
-    held; `HowItWent` has a variant for a held answer and its doc comment says what happened.
+    send says, through the same function; nothing is said when the held answer leaves, as
+    with any other held message, so "has been told" is not said at any point on this path
+    and the sentence is retired with its test; `HowItWent` has a variant for a held answer
+    and its doc comment says what happened. (Reworded 2026-09-16 after the plan check: the
+    first wording, "not said while the answer is held", read as though it were said
+    afterwards.)
   - [D] The `wx_compose.rs` doc comment names Alt+H, and a reading holds it.
   - [S] Ledger 155's question, whether anything spoken after pressing Accept by mistake
     points at Undo Send, is a listening pass and stays open until somebody hears it.
@@ -2547,7 +2567,11 @@ requirements to a later phase's section rather than here.
   - [D] The five editors (contact, condition, filter, signature, account) are scan targets
     opened directly with a fixture, in the workflow's list, so both channels reach them.
   - [D] Every checkbox in those editors is named through `set_accessible_name` with the
-    mnemonic stripped, and the MSAA walk on each editor reports a name for every checkbox.
+    mnemonic stripped, and the MSAA walk on each editor reports a name for every checkbox,
+    on this machine or on CI's next run. Ledger 390 records the walk crashing here with
+    STATUS_STACK_BUFFER_OVERRUN, "Not diagnosed", NVDA running being a difference between the
+    machines and not a cause; stopping NVDA is not asked for, and this line stays open until
+    one of the two has walked the five editors.
   - [D] No `StaticText` built with an empty literal is added to a sizer and never filled or
     named afterwards; the empty spacers go, a sizer spacer keeps the grid where one is needed,
     and `tests/no_label_is_only_a_space.rs` refuses the shape with a companion that plants one.
@@ -2583,7 +2607,10 @@ requirements to a later phase's section rather than here.
     `open_single_message`'s Formatted branch at `:12418-12441` passes only
     `signature_check_for` into `show_conversation_as_page` (`:20247`), whose bar is
     `reader_text::conversation(subject, parts).with_signature(signature)` and nothing else;
-    the preview pane renders `reader_text::conversation_html` at `:17158` with no bar. The
+    the preview pane renders `reader_text::conversation_html` at `:17158` with no bar; and
+    `open_conversation` at `:12577`, reached at `:20200` for `ThreadChoice::WholeConversation`,
+    opens `reader_text::conversation` in the text reader with no bar and no PGP opening, a
+    sixth surface the issue did not count (found by the plan check 2026-09-16). The
     guard `test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open`
     (`tests/wired.rs:4087`) names `open_in_the_text_reader` and `read_the_whole_message`
     only. The mailbox-import rustdoc sits above `import_a_pgp_private_key` at `:12760-12787`
@@ -2593,8 +2620,9 @@ requirements to a later phase's section rather than here.
     only tried on the plain-text reader and on Shift+Space, never on the default Formatted
     reader or the preview pane."
   - [D] One function composes, for a message and its body, the opened body, the PGP finding,
-    the envelope sentence and the signature verdict, and every surface asks it: the text
-    reader, Shift+Space, the Formatted reader, the conversation window and the preview pane.
+    the envelope sentence and the signature verdict, and every surface asks it, six of them:
+    the text reader, Shift+Space, the Formatted reader, the conversation window as headings,
+    the whole conversation in the text reader, and the preview pane.
   - [D] The preview pane's document carries the bar above the message.
   - [D] The `wired.rs` guard names every surface, and the changelog entries are corrected by
     dating; the stray rustdoc is put with the function it describes.
@@ -2613,7 +2641,14 @@ requirements to a later phase's section rather than here.
     file's first bytes. `ID_SAVE_AS`'s handler at `:5027` sends "Save As: no message
     selected" whatever is selected; the item is at `:6026` and `docs/KEYBOARD_SHORTCUTS.md:485`
     promises a file. `message_files::written_as_one_message` (`:232`) is reached by
-    `export_tree.rs:814` and tests only. The changelog at `:4667` says the reader works and
+    `export_tree.rs:814` and by the `.pst` reader itself at `outlook_data_file.rs:1701`,
+    which composes each `Mail` item through it, so an imported message's bytes are one saved
+    message and take the path a `.eml` takes (the first draft of this line said the exporter
+    only; the plan check re-ran the grep on 2026-09-16). The attachment list is in the
+    reader frame, which has its own Save Attachment command (`wx_reader.rs:35`, `:794`,
+    `save_attachment_now` at `:878`), and the main frame's menu is not active while the
+    reader has focus, so a Save As branch for an attachment on the main frame would reach
+    nothing. The changelog at `:4667` says the reader works and
     was never run against a real file; the `[Unreleased]` import entry near `:4680` promises
     "a folder you point it at" while the picker is a `FileDialog`; `DirDialog` is already
     used at `wx_app.rs:2230` for `.vcf` folders. The four documents: `docs/comparison.md:102`,
@@ -2622,17 +2657,25 @@ requirements to a later phase's section rather than here.
   - [S] #53, from the audit of 2026-09-15: "the .pst reader is unwired, Save As is a stub,
     and a folder import is promised but impossible."
   - [D] File, Import Mailbox lists `*.pst`, a chosen data file is read through
-    `outlook_data_file` on the import worker, its mail lands under Imported the way an
-    archive's does and its appointments, contacts, tasks and notes land on this computer
-    through the cache's existing writers, and the closing sentence counts each kind and what
-    stayed behind, saying the reader has never met a real file.
-  - [D] File, Save As writes the selected message as `.eml` through
-    `written_as_one_message`, or the selected attachment as itself, through the ordinary
-    save dialog, and refuses with a reason when nothing is selected.
-  - [D] A folder of saved messages can be chosen through a directory picker and goes down
-    the directory branch `mailbox_archive::opened` already has; the changelog's promise is
-    true or corrected by dating.
-  - [D] The four documents describe what is reachable, dated where they change.
+    `outlook_data_file` on the import worker, each `Mail` item goes through
+    `each_message_in(bytes, ReadAs::OneMessage)` and `file_one_imported_message` under
+    Imported the way a saved `.eml` does, its appointments, contacts, tasks and notes land
+    on this computer through the cache's existing writers, and the closing sentence counts
+    each kind and what stayed behind, saying the reader has never met a real file. (09-08)
+  - [D] File, Save As writes the message under the cursor in the list as `.eml` through
+    `written_as_one_message`, through the ordinary save dialog, and refuses with a reason
+    when nothing is selected; an attachment is saved by the reader's own Save Attachment
+    command as before, and the shortcuts page says which command does which. (09-08)
+  - [D] A folder of saved messages can be chosen through a directory picker on its own File
+    item and goes down the directory branch `mailbox_archive::opened` already has; the
+    changelog's promise is true with a dated sentence saying it was impossible until then;
+    and the changelog says a Thunderbird profile folder (an mbox file beside an `.sbd`
+    directory and an `.msf` index) is not recognised as such. (09-10)
+  - [D] The four documents describe what is reachable, dated where they change, and the
+    user guide names the three File commands. (09-10)
+  - [S] #53's points 4 to 6 (a bare `.mbox` or loose `.eml` export, `.msg`, `.pst` export)
+    are later work and the issue stays open for them; point 7, the guide, closes with the
+    fourth `[D]` line.
   - [S] No real Outlook data file has ever been read here, and the changelog keeps saying so.
 
 - [ ] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
