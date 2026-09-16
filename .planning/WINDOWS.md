@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 460
+open_count: 463
 waived_count: 0
 fixed_count: 28
-total_count: 488
-last_updated: 2026-09-16T19:36:44.529Z
+total_count: 491
+last_updated: 2026-09-16T21:25:37.084Z
 ---
 
 # Broken Windows Ledger
@@ -404,7 +404,7 @@ last_updated: 2026-09-16T19:36:44.529Z
 | 387 | 06 | deviation | .github/workflows/accessibility.yml |  | 06-06 task 1 said to prove the gate hole by breaking ScanTarget::ALL and watching check.sh pass. That break lives in src/presentation/scan_target.rs, which the gate maps to a scoped target, so it would have run the reading test and gone red: the wrong side of the hole. Measured instead by taking one window out of the workflow's array with the code left alone, which is the change the hole is about. Before the rule: affected, exit 0 in 64s. After: all, exit 101 in 206s, naming blocked-senders. | open |  | 2026-09-14T10:10:12.940Z |  |
 | 388 | 06 | unrun-verify | .github/workflows/accessibility.yml |  | 06-06 task 2 wired thirty scan targets where there were ten and every one opened the window it names on a throwaway profile on this machine, as a listing of the process's top-level windows shows. No CI scan has run on any of them: nothing has been pushed since 2026-09-10, so on both channels each new target is a window somebody has opened and nobody has scanned, until 06-08 reads an artifact. | open |  | 2026-09-14T11:33:47.755Z |  |
 | 389 | 06 | unrun-verify | scripts/msaa-names.ps1 |  | The MSAA walk now enumerates every visible top-level window the process owns rather than .NET's main window, which is never a dialog. Proved against notepad.exe, one window walked with its title leading each path, and against a process that does not exist, exit 2 where the old script exited 1. Not proved against this application on this machine: the walk of any Wixen Mail window crashes pwsh here, see the next entry, so the first dialog this channel reads is the one CI reads. | open |  | 2026-09-14T11:33:48.209Z |  |
-| 390 | 06 | todo | scripts/msaa-names.ps1 |  | Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass. | open |  | 2026-09-14T11:33:48.643Z |  |
+| 390 | 06 | todo | scripts/msaa-names.ps1 |  | Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass. Still so on 2026-09-16: 09-05 ran the walk under pwsh on the Signature Manager and on each of the five new editor targets, twice for the editors, eleven runs, exit -1073740791 every time and nothing printed before it, NVDA running, nothing stopped and nothing diagnosed. | open |  | 2026-09-14T11:33:48.643Z |  |
 | 391 | 06 | deviation | .github/workflows/accessibility.yml |  | 06-06 task 2 added --alwayssavetestfile to the Axe.Windows call, which the plan did not name. The CLI's own --help says the test file is saved only if errors are found, so the workflow's no-file-means-broken check reported seven of eleven clean windows as scans that failed on 2026-09-10, each a line after the CLI printed 0 errors were found. Rule 1: the distinction the workflow exists to make was inverted for the clean case. | open |  | 2026-09-14T11:33:49.055Z |  |
 | 392 | 06 | deviation | scripts/msaa-names.ps1 |  | 06-06 task 2 changed scripts/msaa-names.ps1, which the plan did not name: it walks every visible top-level window the process owns instead of .NET's MainWindowHandle, and a failed walk exits 2 instead of terminating at Write-Error under the Stop preference with exit 1, which the workflow read as an unnamed control. Rule 2: the channel NVDA reads had never seen a dialog, measured from the CI log of 2026-09-10 where three dialogs reported the same 1797 elements. | open |  | 2026-09-14T11:33:49.490Z |  |
 | 393 | 06 | deviation | src/presentation/scan_target.rs |  | 06-06 task 2 added mail-module, a thirty-first window beyond the count Pratik answered. With no target given the first-run question opens over the frame on a fresh profile, so main has always been the frame under a modal and the bare main window had never been scanned. Six module targets rather than five, and main left as what it is: the window a fresh profile first meets. | open |  | 2026-09-14T11:33:49.914Z |  |
@@ -503,6 +503,9 @@ last_updated: 2026-09-16T19:36:44.529Z
 | 486 | 09 | deviation | src/application/answered_meetings.rs | 162 | 09-03: a meeting answer is filed on the calendar the moment Accept, Tentative or Decline is pressed, while the reply is still held for ten seconds like any other message. Undo Send inside the hold takes the reply back and leaves the meeting on the calendar as answered; answering the same meeting again replaces the entry, so somebody who undoes and answers differently ends with the calendar right, and somebody who undoes and does not answer has an entry the organiser never heard about. Filing only when the queue drains needs the send loop to reach back to the calendar, which nothing does, and is a feature of its own. Said in the changelog under Known limitations. Ledger 155's listening question, whether anything spoken after a mistaken Accept points at Undo Send, stays open: the sentence now says Undo Send takes it back, and nobody has heard it. | open |  | 2026-09-16T18:19:35.079Z |  |
 | 487 | 09 | unrun-verify | src/presentation/wx_app.rs | 14212 | 09-04: the look the plan asked for at the running program, sort by sender from View, Sort and then by date from a column header and open the submenu, was not made. tests/one_sort_is_checked_on_a_live_menu.rs asks a real menu bar the same question by id, one group answers one tick and the old shape four from the moment it is built, and tests/one_sort_is_checked.rs holds the application's chain to one group; what neither reaches is the application's own menu after a real header click through sync_sort_menu, which is the next build's View, Sort to answer, and it is a look rather than a listening pass | open |  | 2026-09-16T19:36:32.825Z |  |
 | 488 | 09 | unrun-verify | src/presentation/wx_settings.rs | 1264 | 09-04: whether the Reading tab now reads as one group by ear, Default sort order and then Then by as consecutive tab stops under NVDA, is FOUND-06's listening line and has not been listened to. tests/the_sort_controls_sit_together.rs builds the real dialog and reads the sibling chain, which is the order Tab moves in, and finds only Then by's own label between the two; that is structure present, and the tester who reported #36 is the one who can say whether it is experience good, along with whether Cc and Bcc lines is where he would look for it on the Compose tab | open |  | 2026-09-16T19:36:44.529Z |  |
+| 489 | 09 | unrun-verify | src/presentation/scan_target.rs | 232 | 09-05: the five editors are scan targets and were each opened here on a throwaway profile and seen (Edit Contact, Edit Condition, Edit Filter Rule, Edit Signature, Edit Account, each owned above the frame), and the MSAA walk on each, run once before task 2 and once after as the machine is, left with -1073740791 every time, ten runs, as ledger 390 records, NVDA running and the cause not diagnosed; so the names of their checkboxes on the channel NVDA reads have been read by nothing, the before and after rows #42 asks for do not exist, and roadmap criterion 5's walk clause and FOUND-08's second [D] line stay open until the Accessibility workflow has walked the five at the next push. What was read instead is the Win32 child list of each window, which shows the empty statics gone and is not a name | open |  | 2026-09-16T21:25:20.597Z |  |
+| 490 | 09 | unrun-verify | src/presentation/wx_managers.rs | 67 | 09-05: what NVDA says on the signature editor's Default signature box and the contact editor's Favorite box after the change is FOUND-08's last [S] line and has not been heard. Both boxes, and three more built the same way, now carry set_accessible_name with the mnemonic stripped and no empty static text before them; tests/checkbox_labels.rs reads the built windows and finds an accessible object on every one of the fifteen editor checkboxes and no nameless static before any, which is structure present. Why the tester heard the two unnamed is still not settled by anything read here: a native checkbox carries its own window text and the MSAA walk that would say what the channel reported could not run. The next instrument is NVDA's own log on his machine, Tab through the signature editor with the log at debug, if the next build still reads the box as unnamed | open |  | 2026-09-16T21:25:36.495Z |  |
+| 491 | 09 | deviation | tests/no_label_is_only_a_space.rs | 60 | 09-05: the plan's premise 5 said the widened reading would catch all eleven spacers and none of the eleven filled lines with a rule about which calls take the binding later; that rule flagged three filled lines (a static handed on bare from a block, one handed to the dialog's own filler, the live region written through Win32) and would have needed an allow list holding filled lines rather than what task 2 left. The rule written instead refuses a binding whose only later use is a sizer add, which on the tree at 1d934e26 refuses exactly the five in wx_managers.rs and none of the filled lines, and does not see a spacer handed on in a tuple to be stored and hidden, the account editor's old shape for its six; the module comment says so, tests/checkbox_labels.rs reads the built tree for the fifteen editor checkboxes, and there is no allow list because an empty one watched by a test is the census-emptying failure | open |  | 2026-09-16T21:25:37.084Z |  |
 
 ````json
 [
@@ -5180,7 +5183,7 @@ last_updated: 2026-09-16T19:36:44.529Z
     "phase": "06",
     "file": "scripts/msaa-names.ps1",
     "line": null,
-    "description": "Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass.",
+    "description": "Walking any Wixen Mail window over MSAA crashes PowerShell on this machine with STATUS_STACK_BUFFER_OVERRUN, exit -1073740791, under pwsh 7.6.6 and Windows PowerShell 5.1 alike, on the main window alone and before the enumeration change. NVDA is running here and CI has no screen reader; the run of 2026-09-10 walked 1797 elements without crashing. Not diagnosed. The workflow now records any exit other than 0 or 1 as a walk that failed, so if CI meets this it is a named failure rather than a clean pass. Still so on 2026-09-16: 09-05 ran the walk under pwsh on the Signature Manager and on each of the five new editor targets, twice for the editors, eleven runs, exit -1073740791 every time and nothing printed before it, NVDA running, nothing stopped and nothing diagnosed.",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-14T11:33:48.643Z",
@@ -6360,6 +6363,42 @@ last_updated: 2026-09-16T19:36:44.529Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T19:36:44.529Z",
+    "resolved_at": null
+  },
+  {
+    "id": 489,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/scan_target.rs",
+    "line": 232,
+    "description": "09-05: the five editors are scan targets and were each opened here on a throwaway profile and seen (Edit Contact, Edit Condition, Edit Filter Rule, Edit Signature, Edit Account, each owned above the frame), and the MSAA walk on each, run once before task 2 and once after as the machine is, left with -1073740791 every time, ten runs, as ledger 390 records, NVDA running and the cause not diagnosed; so the names of their checkboxes on the channel NVDA reads have been read by nothing, the before and after rows #42 asks for do not exist, and roadmap criterion 5's walk clause and FOUND-08's second [D] line stay open until the Accessibility workflow has walked the five at the next push. What was read instead is the Win32 child list of each window, which shows the empty statics gone and is not a name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T21:25:20.597Z",
+    "resolved_at": null
+  },
+  {
+    "id": 490,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/wx_managers.rs",
+    "line": 67,
+    "description": "09-05: what NVDA says on the signature editor's Default signature box and the contact editor's Favorite box after the change is FOUND-08's last [S] line and has not been heard. Both boxes, and three more built the same way, now carry set_accessible_name with the mnemonic stripped and no empty static text before them; tests/checkbox_labels.rs reads the built windows and finds an accessible object on every one of the fifteen editor checkboxes and no nameless static before any, which is structure present. Why the tester heard the two unnamed is still not settled by anything read here: a native checkbox carries its own window text and the MSAA walk that would say what the channel reported could not run. The next instrument is NVDA's own log on his machine, Tab through the signature editor with the log at debug, if the next build still reads the box as unnamed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T21:25:36.495Z",
+    "resolved_at": null
+  },
+  {
+    "id": 491,
+    "kind": "deviation",
+    "phase": "09",
+    "file": "tests/no_label_is_only_a_space.rs",
+    "line": 60,
+    "description": "09-05: the plan's premise 5 said the widened reading would catch all eleven spacers and none of the eleven filled lines with a rule about which calls take the binding later; that rule flagged three filled lines (a static handed on bare from a block, one handed to the dialog's own filler, the live region written through Win32) and would have needed an allow list holding filled lines rather than what task 2 left. The rule written instead refuses a binding whose only later use is a sizer add, which on the tree at 1d934e26 refuses exactly the five in wx_managers.rs and none of the filled lines, and does not see a spacer handed on in a tuple to be stored and hidden, the account editor's old shape for its six; the module comment says so, tests/checkbox_labels.rs reads the built tree for the fifteen editor checkboxes, and there is no allow list because an empty one watched by a test is the census-emptying failure",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T21:25:37.084Z",
     "resolved_at": null
   }
 ]
