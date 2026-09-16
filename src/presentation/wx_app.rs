@@ -13120,7 +13120,10 @@ fn answer_the_invitation(
     ) {
         tracing::warn!("The answer was sent and could not be put on the calendar: {why}");
     }
-    told(&ready.what_answering_did(answer, &went), Priority::Normal);
+    told(
+        &ready.what_answering_did(answer, &went, chrono::Local::now()),
+        Priority::Normal,
+    );
 }
 
 /// The address this account answers an invitation as.

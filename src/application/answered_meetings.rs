@@ -528,6 +528,36 @@ mod tests {
     }
 
     #[test]
+    fn test_a_held_answer_is_filed_on_the_calendar_while_it_waits_to_go() {
+        // Every answer is held for ten seconds like any other message, so this
+        // is what pressing Accept produces, and the calendar says what the
+        // person answered from the moment they pressed. Undo Send in those ten
+        // seconds takes the reply back and leaves the entry; answering again
+        // replaces it, so the calendar ends up right either way.
+        let cache = a_calendar_on_this_computer("a_held_answer_is_filed");
+        let now = chrono::Local::now();
+
+        file_the_answer(
+            &cache,
+            "acct",
+            &ready_to_answer(&an_invitation_that_arrived()),
+            Answer::Accepted,
+            &HowItWent::Queued {
+                goes: crate::application::sending_later::WhenItGoes::WhenItsTimeComes,
+                waiting_on: crate::application::sending_later::GoAfter::held(
+                    crate::application::sending_later::Hold::DEFAULT,
+                    now,
+                ),
+            },
+        )
+        .expect("a held answer to be filed");
+
+        let filed = the_meeting_on_the_calendar(&cache)
+            .expect("a held answer was not written to the calendar, so for ten seconds the outbox says one thing and the calendar another, and after that they agree by accident");
+        assert_eq!(filed.show_as, "busy");
+    }
+
+    #[test]
     fn test_an_answer_that_never_left_the_machine_is_not_filed_as_though_it_had() {
         // The person has just been told nobody was told and that it can be
         // tried again. A calendar entry contradicting that sentence is worse

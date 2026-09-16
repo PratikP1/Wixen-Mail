@@ -60,7 +60,9 @@ use crate::application::invitations::{
     AlreadyOnTheCalendar, Answer, Invitation, WhatChanged, WhatItAsks, a_reply_to,
     read_the_invitation, what_changed, what_it_asks,
 };
+use crate::application::sending_later::{GoAfter, WhenItGoes};
 use crate::common::types::EmailAddress;
+use chrono::{DateTime, Local};
 
 /// Why an invitation cannot be answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,9 +296,15 @@ impl Answering {
     /// somebody believing the organiser knows, and they find out at the
     /// meeting. So the sentence names what went wrong, says plainly that
     /// nobody was told, and says the answer is not lost.
-    pub fn what_answering_did(&self, answer: Answer, how_it_went: &HowItWent) -> String {
+    pub fn what_answering_did(
+        &self,
+        answer: Answer,
+        how_it_went: &HowItWent,
+        now: DateTime<Local>,
+    ) -> String {
+        let _ = now;
         match how_it_went {
-            HowItWent::Sent => {
+            HowItWent::Sent | HowItWent::Queued { .. } => {
                 crate::application::invitations::what_happened(&self.invitation, answer)
             }
             HowItWent::DidNotSend { because } => format!(
@@ -335,6 +343,15 @@ impl Answering {
 pub enum HowItWent {
     /// The answer reached the organiser's mail server.
     Sent,
+    /// The answer is in the outbox and has not left this machine.
+    Queued {
+        /// What the send loop said about it: now, when there is a network
+        /// again, or when its own time comes.
+        goes: WhenItGoes,
+        /// What the queue was told it waits on, the same value the composer
+        /// words its own Send from.
+        waiting_on: GoAfter,
+    },
     /// Nothing left this machine.
     DidNotSend {
         /// What the sending layer said went wrong, as a whole sentence.
@@ -1440,17 +1457,89 @@ mod tests {
         );
     }
 
+    pub(super) fn a_moment() -> DateTime<Local> {
+        use chrono::TimeZone;
+        chrono::Local
+            .with_ymd_and_hms(2026, 9, 16, 9, 0, 0)
+            .single()
+            .expect("a moment that exists once")
+    }
+
+    /// An answer in the outbox under the default hold, which is what pressing
+    /// any of the three buttons produces.
+    pub(super) fn held_for_ten_seconds(now: DateTime<Local>) -> HowItWent {
+        HowItWent::Queued {
+            goes: WhenItGoes::WhenItsTimeComes,
+            waiting_on: GoAfter::held(crate::application::sending_later::Hold::DEFAULT, now),
+        }
+    }
+
     #[test]
-    fn test_after_answering_the_sentence_says_which_answer_went_and_who_heard_it() {
-        // Without it the only sign the answer went anywhere is that the
-        // buttons stopped being offered, which somebody who cannot see the
-        // screen has no way to notice.
-        let said = ready_to_answer().what_answering_did(Answer::Declined, &HowItWent::Sent);
+    fn test_a_held_answer_says_which_answer_went_and_the_countdown_every_send_says() {
+        // The tester pressed Accept and heard "Ada Lovelace has been told" at
+        // once, while the answer sat in the outbox for ten seconds like any
+        // other message (#56). The sentence names the answer and the meeting,
+        // because the only other sign anything happened is that the buttons
+        // stopped being offered, and then says exactly what the composer's
+        // Send says, through the same function, so the ten seconds and the
+        // way out of them are heard where they are heard everywhere else.
+        let now = a_moment();
+
+        let said =
+            ready_to_answer().what_answering_did(Answer::Declined, &held_for_ten_seconds(now), now);
 
         assert_eq!(
             said,
-            "Declined Quarterly review. Ada Lovelace has been told."
+            "Declined Quarterly review. Sending in 10 seconds. Undo Send takes it back."
         );
+        assert!(!said.contains("has been told"), "{said}");
+    }
+
+    #[test]
+    fn test_an_answer_with_the_hold_off_says_it_is_sending_and_not_that_anybody_has_heard() {
+        // With the hold switched off the composer says "Sending to ..." and
+        // hands the queue to the server, and the answer says the same. Nothing
+        // has reached the organiser at the moment this is said, and the
+        // sentence does not claim it has.
+        let now = a_moment();
+
+        let said = ready_to_answer().what_answering_did(
+            Answer::Accepted,
+            &HowItWent::Queued {
+                goes: WhenItGoes::Now,
+                waiting_on: GoAfter::AsSoonAsPossible,
+            },
+            now,
+        );
+
+        assert_eq!(
+            said,
+            "Accepted Quarterly review. Sending to Ada Lovelace..."
+        );
+    }
+
+    #[test]
+    fn test_an_answer_queued_while_offline_says_it_waits_for_a_network() {
+        // Offline mode is a switch the person set, and an answer queued under
+        // it is waiting on that before anything else. The old sentence said
+        // the organiser had been told while the answer could not leave at all.
+        let now = a_moment();
+
+        let said = ready_to_answer().what_answering_did(
+            Answer::Tentative,
+            &HowItWent::Queued {
+                goes: WhenItGoes::WhenThereIsANetworkAgain,
+                waiting_on: GoAfter::held(crate::application::sending_later::Hold::DEFAULT, now),
+            },
+            now,
+        );
+
+        assert!(
+            said.starts_with("Said you might come to Quarterly review. Offline mode is on"),
+            "{said}"
+        );
+        assert!(said.contains("Ada Lovelace"), "{said}");
+        assert!(!said.contains("has been told"), "{said}");
     }
 
     #[test]
@@ -1465,6 +1554,7 @@ mod tests {
             &HowItWent::DidNotSend {
                 because: "The mail server refused the message.".to_string(),
             },
+            a_moment(),
         );
 
         assert_eq!(
@@ -1493,6 +1583,7 @@ mod tests {
                 &HowItWent::DidNotSend {
                     because: "The mail server refused the message.".to_string(),
                 },
+                a_moment(),
             );
 
             assert!(said.starts_with(expected), "{answer:?}: {said}");
@@ -1546,7 +1637,7 @@ mod tests {
 /// live in two files that ask the same questions separately.
 #[cfg(test)]
 mod invitations_from_strangers {
-    use super::tests::{a_hostile_invitation, answered_at};
+    use super::tests::{a_hostile_invitation, a_moment, answered_at, held_for_ten_seconds};
     use super::*;
 
     /// Everybody worth trying to answer as: two real guests, a stranger, a
@@ -1646,7 +1737,11 @@ mod invitations_from_strangers {
                     "Thursday",
                     Some(Answer::Accepted),
                 );
-                let did = answering.what_answering_did(Answer::Declined, &HowItWent::Sent);
+                let did = answering.what_answering_did(
+                    Answer::Declined,
+                    &held_for_ten_seconds(a_moment()),
+                    a_moment(),
+                );
                 for said in [&will, &did, &sending.body] {
                     assert!(!said.contains("PARTSTAT"), "seed {seed}: {said}");
                     assert!(!said.contains("  "), "seed {seed}: {said:?}");
