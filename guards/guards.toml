@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 23 records have arrived since and have not been through it.
+# 26 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -11263,7 +11263,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11278,7 +11278,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11294,7 +11294,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11309,7 +11309,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -11335,7 +11335,7 @@ red = [
     "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -12682,7 +12682,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
 ]
 
 [[guard]]
@@ -13538,7 +13538,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 27 },
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -17761,7 +17761,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -19096,7 +19096,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -20267,7 +20267,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 13 },
+    { file = "tests/installer.rs", tests = 17 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -20387,7 +20387,7 @@ red = [
     "service::update_check::tests::test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest",
 ]
 tests_last_seen = [
-    { file = "src/common/version.rs", tests = 24 },
+    { file = "src/common/version.rs", tests = 25 },
     { file = "src/service/update_check.rs", tests = 23 },
 ]
 
@@ -20420,7 +20420,7 @@ red = [
     "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/common/version.rs", tests = 24 },
+    { file = "src/common/version.rs", tests = 25 },
 ]
 
 # A fresh installation asking GitHub for a version list nobody asked for. The
@@ -20458,7 +20458,7 @@ red = [
     "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 66 },
+    { file = "src/data/config.rs", tests = 68 },
 ]
 
 # Nothing published reading as up to date, which is T-07-19 in one line. The
@@ -20562,7 +20562,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 13 },
+    { file = "tests/installer.rs", tests = 17 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -20591,7 +20591,7 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 13 },
+    { file = "tests/installer.rs", tests = 17 },
 ]
 
 # ── 07-08 ─────────────────────────────────────────────────────────────────
@@ -20633,7 +20633,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 13 },
+    { file = "tests/installer.rs", tests = 17 },
 ]
 
 # The break is the half-fix, not the deletion. Taking the publisher comparison
@@ -22657,4 +22657,106 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav.rs", tests = 170 },
+]
+
+# ── 09-01: the version is 1.0.0-alpha.1 ─────────────────────────────────────
+#
+# The test naming the step from 0.125.1 to 1.0.0-alpha.1 to 1.0.0 was green
+# the day it was written, because the ordering was right already, so it has no
+# red half of its own and this record is the substitute. The break moves the
+# release stage to the front of the enum whose declaration order is the
+# comparison order, so a prerelease sorts above the release it stages: 1.0.0
+# reads as older than 1.0.0-alpha.1, and the update check would offer the
+# alpha to somebody already on the release. `is_prerelease` still answers
+# correctly under it, because it matches the variant by name, so what this
+# breaks is the order and nothing else.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads. The first
+# reading named three tests and the runner found a fourth: the offer decision
+# routes through the same comparison, so a row of its table where a release
+# is compared with its own prerelease turns over too. Nothing in
+# src/service/update_check.rs went red, because its tests compare versions
+# that differ in their numbers rather than in their stage. Written down as
+# the runner reported it, the same day, and measured again to earn the
+# counts below.
+[[guard]]
+name = "a prerelease stays below the release it stages"
+file = "src/common/version.rs"
+before = """enum Stage {
+    Alpha,
+    Beta,
+    Rc,
+    /// Not a prerelease at all, which is why it is last: a release is newer
+    /// than every prerelease that staged it.
+    Release,
+}"""
+after = """enum Stage {
+    /// Not a prerelease at all, which is why it is last: a release is newer
+    /// than every prerelease that staged it.
+    Release,
+    Alpha,
+    Beta,
+    Rc,
+}"""
+red = [
+    "common::version::tests::test_the_step_from_the_last_0_x_version_to_1_0_0_is_ordered_both_ways",
+    "common::version::tests::test_a_release_is_newer_than_the_prerelease_that_staged_it",
+    "common::version::tests::test_a_published_tag_carries_a_v_and_is_still_a_version",
+    "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
+]
+tests_last_seen = [
+    { file = "src/common/version.rs", tests = 25 },
+]
+
+# The half-fix rather than the absent one: the stamp is still written, still
+# a version, and still the wrong one. Copying the loaded value through is what
+# `save` did until 2026-09-16, so a profile named the build that created it
+# and not the one that last wrote it, and a settings file sent with a bug
+# report could not say which build it came from. The other test in the pair,
+# a file this build created keeping its own stamp, stays green under the break
+# on purpose: it holds that `load` does not rewrite the stamp, which the break
+# does not touch.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "a saved settings file names the build that wrote it"
+file = "src/data/config.rs"
+before = """            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..self.app_config.clone()"""
+after = """            version: self.app_config.version.clone(),
+            ..self.app_config.clone()"""
+red = [
+    "data::config::tests::test_a_saved_settings_file_names_the_build_that_wrote_it",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 68 },
+]
+
+# The reading in tests/installer.rs is a second copy of the script's
+# arithmetic, and this is what holds it to the first: the stage numbers come
+# off the script's own `case` arms, so a script whose alpha arm says 2 makes
+# the reading say 0.6.0.2001 for 0.6.0-alpha.1 and the table test fails by
+# row. The ordering test stays green under it on purpose, because 1.0.0.2001
+# is still above 0.125.1.4000 by the first field, which is the only field
+# that test is about.
+#
+# `file` is not a Rust file, so the count check skips the count for it and
+# takes the counts off the red list instead, which with `suite` set resolves
+# to tests/installer.rs.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, `cargo test --test installer`.
+[[guard]]
+name = "the installer's alpha arm is the first stage"
+file = "scripts/build-installer.sh"
+suite = "installer"
+before = '  *-alpha.*) stage=1 ;;'
+after = '  *-alpha.*) stage=2 ;;'
+red = [
+    "test_the_four_field_version_follows_the_scripts_own_table",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 17 },
 ]

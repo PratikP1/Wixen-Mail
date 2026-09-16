@@ -1013,7 +1013,16 @@ impl ConfigManager {
     /// Save app configuration to file
     fn save_app_config(&self) -> Result<()> {
         self.app_config.validate()?;
-        let content = serde_json::to_string_pretty(&self.app_config)
+        // The stamp names the build that last wrote the file, not the one
+        // that created the profile. Until 2026-09-16 it was copied through
+        // from whatever `load` read, so a profile made by 0.7.7 said 0.7.7
+        // after every save 0.125.1 made, and a settings file sent with a
+        // bug report could not say which build it came from.
+        let stamped_by_this_build = AppConfig {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..self.app_config.clone()
+        };
+        let content = serde_json::to_string_pretty(&stamped_by_this_build)
             .map_err(|e| Error::Config(format!("Failed to serialize app config: {}", e)))?;
         fs::write(self.app_config_path(), content)
             .map_err(|e| Error::Config(format!("Failed to write app config: {}", e)))?;
