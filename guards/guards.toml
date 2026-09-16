@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 43 records have arrived since and have not been through it.
+# 44 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -21410,7 +21410,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/no_label_is_only_a_space.rs", tests = 4 },
+    { file = "tests/no_label_is_only_a_space.rs", tests = 7 },
 ]
 
 # ── 06-09 task 2: the hold table, and done on a task ────────────────────────
@@ -23303,4 +23303,38 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/checkbox_labels.rs", tests = 1 },
+]
+
+# Task 3. The same spacer put back, read from the source rather than from
+# the built tree: the whole-tree check now refuses an empty static text that
+# is placed in a sizer and never touched again, in any file under src/, so
+# the shape cannot come back in a window no built-tree test covers. Read on
+# the tree as it stood at 1d934e26, before task 2, the reading refused
+# exactly the five spacers in this file the tester's two boxes were among,
+# and none of the eleven lines something fills later; it does not see a
+# spacer handed on in a tuple, which is how the account editor built its
+# six, and its module comment says so. `suite` names the target, which
+# couples it to this file for `check.sh --suites-for`; the target is in the
+# whole-tree list as well, so the script answers with the list and not with
+# the name (ledger 442), and the coupling was shown with a copy of the
+# script that had the target taken out of that list.
+#
+# Measured 2026-09-16 on the branch the record was written on,
+# `cargo test --test no_label_is_only_a_space`.
+[[guard]]
+name = "no empty static text nothing fills is placed in a sizer, read from the source"
+file = "src/presentation/wx_managers.rs"
+suite = "no_label_is_only_a_space"
+before = """    let fav_label = "&Favorite";
+    let fav_check = CheckBox::builder(&basic_panel)"""
+after = """    let fav_label = "&Favorite";
+    let fav_spacer = StaticText::builder(&basic_panel).with_label("").build();
+    basic_fields.add(&fav_spacer, 0, SizerFlag::All, 4);
+    let fav_check = CheckBox::builder(&basic_panel)"""
+red = [
+    "test_no_empty_static_is_built_that_nothing_fills",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/no_label_is_only_a_space.rs", tests = 7 },
 ]

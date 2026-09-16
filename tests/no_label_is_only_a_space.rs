@@ -80,16 +80,117 @@ const ME: &str = "no_label_is_only_a_space";
 /// The two ways a label is put on a control in this tree.
 const LABEL_CALLS: [&str; 2] = ["with_label(", "set_label("];
 
-/// Every empty static `text` builds with a `let`, filled or not. Sees none
-/// yet: the companions below are red until it does.
-fn empty_statics_in(_text: &str) -> Vec<String> {
-    Vec::new()
+/// Where a static text is built, which is where the second reading starts.
+const A_STATIC_IS_BUILT: &str = "StaticText::builder(";
+
+/// The end of a builder chain, which is where the second reading stops
+/// looking for the empty label.
+const THE_CHAIN_ENDS: &str = ".build()";
+
+/// The label the second reading is about.
+const AN_EMPTY_LABEL: &str = ".with_label(\"\")";
+
+/// The two sizer calls a spacer is put in a grid with. A reference handed to
+/// either is the spacer being placed, not filled.
+const SIZER_ADDS: [&str; 2] = ["add(", "add_sizer("];
+
+/// An empty static the second reading found, and where.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EmptyStatic {
+    /// The line the builder is on, counted from one.
+    line: usize,
+    /// What the built control was bound to.
+    binding: String,
+    /// The byte the statement ends at, where the search for a later use
+    /// starts.
+    statement_ends: usize,
+}
+
+/// Every empty static `text` builds with a `let`, filled or not.
+fn empty_statics_in(text: &str) -> Vec<EmptyStatic> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(offset) = text[from..].find(A_STATIC_IS_BUILT) {
+        let at = from + offset;
+        let chain_ends = text[at..]
+            .find(THE_CHAIN_ENDS)
+            .map_or(text.len(), |i| at + i + THE_CHAIN_ENDS.len());
+        let line_starts = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        let binding = text[line_starts..at]
+            .trim()
+            .strip_prefix("let ")
+            .and_then(|rest| rest.split('=').next())
+            .map(|name| name.trim().to_string());
+        if let Some(binding) = binding
+            && text[at..chain_ends].contains(AN_EMPTY_LABEL)
+        {
+            found.push(EmptyStatic {
+                line: text[..at].matches('\n').count() + 1,
+                binding,
+                statement_ends: chain_ends,
+            });
+        }
+        from = chain_ends.max(at + 1);
+    }
+    found
+}
+
+/// Whether the byte at `at` is inside an identifier.
+fn is_part_of_a_name(text: &str, at: usize) -> bool {
+    text[at..]
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Where the function holding the byte `from` ends: the first `}` at column
+/// zero after it, or the end of the text.
+fn end_of_this_function(text: &str, from: usize) -> usize {
+    text[from..]
+        .find("\n}\n")
+        .map_or(text.len(), |i| from + i + 1)
+}
+
+/// Whether `binding` is used for anything other than being put in a sizer
+/// between `statement_ends` and the end of its function.
+///
+/// Any later use but `add(&NAME, ..)` counts: a method called on it, a
+/// reference handed to a filler, the binding handed on bare, in a tuple or
+/// in a struct to a caller that fills it. A spacer is placed and never
+/// touched again, and that is the whole of what tells it apart.
+fn is_filled_later(text: &str, empty: &EmptyStatic) -> bool {
+    let until = end_of_this_function(text, empty.statement_ends);
+    let rest = &text[empty.statement_ends..until];
+    let mut from = 0;
+    while let Some(offset) = rest[from..].find(&empty.binding) {
+        let at = from + offset;
+        let after = at + empty.binding.len();
+        from = after;
+        let whole_word = (at == 0 || !is_part_of_a_name(rest, at - 1))
+            && (after >= rest.len() || !is_part_of_a_name(rest, after));
+        if !whole_word {
+            continue;
+        }
+        let referenced = at > 0 && &rest[at - 1..at] == "&";
+        if !referenced {
+            return true;
+        }
+        let before = rest[..at - 1].trim_end();
+        let placed = SIZER_ADDS.iter().any(|add| before.ends_with(add));
+        if !placed {
+            return true;
+        }
+    }
+    false
 }
 
 /// Every empty static in `text` that nothing fills, as `line: binding`.
-/// Sees none yet: the companions below are red until it does.
-fn empty_statics_nothing_fills(_text: &str) -> Vec<String> {
-    Vec::new()
+fn empty_statics_nothing_fills(text: &str) -> Vec<String> {
+    empty_statics_in(text)
+        .iter()
+        .filter(|empty| !is_filled_later(text, empty))
+        .map(|empty| format!("{}: {}", empty.line, empty.binding))
+        .collect()
 }
 
 fn collect(dir: &Path, into: &mut Vec<PathBuf>) {
@@ -241,19 +342,26 @@ fn test_no_empty_static_is_built_that_nothing_fills() {
 #[test]
 fn test_the_reading_can_see_a_spacer_nothing_fills() {
     // The companion, on the file's own lines: the spacer the tester's
-    // Favourite box was built after, put back exactly as it was. A reading
+    // Favourite box was built after, put back as it was under a name the
+    // file never uses, since the reading is blind to a binding reused later
+    // and a guard record plants the original under its own name. A reading
     // that could not see it would pass the check above for free.
     let text = fs::read_to_string(THE_FILE_THE_SPACERS_WERE_IN).expect("the managers file");
-    let planted = "    let fav_spacer = StaticText::builder(&basic_panel).with_label(\"\").build();\n\
-                   basic_fields.add(&fav_spacer, 0, SizerFlag::All, 4);\n";
+    let planted = "    let planted_spacer = StaticText::builder(&basic_panel).with_label(\"\").build();\n\
+                   basic_fields.add(&planted_spacer, 0, SizerFlag::All, 4);\n";
     let (spliced, line) = spliced_before_the_favourite_box(&text, planted);
 
     let found = empty_statics_nothing_fills(&spliced);
 
-    assert_eq!(
-        found,
-        vec![format!("{line}: fav_spacer")],
-        "the spacer before the Favourite box, and nothing else in the file"
+    // Against what the file says unspliced rather than against nothing, so
+    // this judges the splice: with a spacer planted in the file itself, as a
+    // guard record does, the whole-tree check is what goes red, not this.
+    let already = empty_statics_nothing_fills(&text).len();
+    let planted = format!("{line}: planted_spacer");
+    assert!(
+        found.contains(&planted) && found.len() == already + 1,
+        "the spacer before the Favourite box and nothing else the file did not already say: \
+         wanted {planted:?} among {already} others, found {found:?}"
     );
 }
 
@@ -279,11 +387,13 @@ fn test_the_reading_passes_every_shape_something_fills_later() {
 
     let found = empty_statics_nothing_fills(&spliced);
 
+    // Counted against the unspliced file for the reason the companion above
+    // gives: this judges the five planted, not the tree.
     assert_eq!(
-        found,
-        Vec::<String>::new(),
+        found.len(),
+        empty_statics_nothing_fills(&text).len(),
         "a method called on it, a reference handed to something other than a sizer, and \
-         a binding handed on bare are all a static something fills later"
+         a binding handed on bare are all a static something fills later; refused: {found:?}"
     );
     assert_eq!(
         empty_statics_in(&spliced).len(),
