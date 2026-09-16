@@ -1391,6 +1391,26 @@ impl MessageCache {
             tracing::warn!("Could not move inline message bodies: {}", e);
         }
 
+        // Databases written before 2026-09-16 hold, for every HTML-only
+        // message, a snippet derived by a stripper that kept the stylesheet,
+        // so the list read `#outlook a { padding: 0; }` aloud on every such
+        // row (#32). Put them right on open, once, through the reader the
+        // message goes through, and reindex each row that changes. After the
+        // move above, because that is what makes the bodies readable from
+        // their table. Not fatal for the same reason as above: a snippet
+        // still wrong is what it was yesterday, and the next open tries again,
+        // because the pass records itself as done only when it finished.
+        let started = std::time::Instant::now();
+        match cache.put_right_the_snippets_read_from_stylesheets() {
+            Ok(0) => {}
+            Ok(put_right) => tracing::info!(
+                "Put right the snippets of {put_right} HTML-only messages through the reader, \
+                 index rows included, in {} ms",
+                started.elapsed().as_millis()
+            ),
+            Err(e) => tracing::warn!("Could not put the stored snippets right: {}", e),
+        }
+
         // Databases written before the five local folders were shared have one
         // set per account. Bring them together on open (D-18, D-19). Not fatal
         // for the same reason as above: every message is still readable where
@@ -2293,6 +2313,25 @@ impl MessageCache {
                 [],
             )
             .map_err(|e| Error::Other(format!("Failed to create held alerts table: {}", e)))?;
+
+        // ── Work done once ──────────────────────────────────────────────
+        // Which once-only passes over stored data have run, since
+        // 2026-09-16, named in words so a second pass is a second row and not
+        // a schema change. The first is the re-derivation of stored snippets
+        // in `bodies.rs`, which reads every HTML-only body once and must not
+        // do so on every open. The backfills before it needed no marker,
+        // because each is cheap once done or idempotent by its own rule; this
+        // one is neither. On the `held_alerts` shape. Additive: nothing
+        // dropped, nothing renamed.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS work_done_once (
+                name TEXT PRIMARY KEY,
+                done_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create work done once table: {}", e)))?;
 
         // ── Task lists ──────────────────────────────────────────────────
         self.conn

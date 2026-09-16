@@ -40,6 +40,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: the stored value is rewritten to the resolved language only when you press OK
   in Settings. Until then the file still says `en`, and every start resolves it the same way.
 
+- **The first line of a newsletter read its stylesheet aloud, starting `#outlook a { padding: 0;
+  }`, and a search for a word from a stylesheet found the newsletter.** Reported on 2026-09-15
+  from build `0.125.1+g3e633252` (#32). The snippet on every message row, which is what a screen
+  reader says first as you arrow through a folder, was derived for a message with no plain-text
+  part by a stripper of its own that kept everything between tags, and most marketing mail opens
+  its head with a stylesheet. The search index took the same text, so its copy of the message held
+  the stylesheet too. A snippet now comes through the same reader the message itself does, which
+  drops stylesheets, scripts and the page title and keeps the words, and so does the text the
+  search index holds, so a search no longer finds a newsletter by a word in its stylesheet.
+  Snippets already stored for messages with no plain-text part are put right once, on the first
+  start after this build. What that costs: each such message's stored text is read once, its
+  snippet rewritten where it differs, and its row in the search index rebuilt; the log says how
+  many and how long it took, and nothing is read on later starts. If the first start is stopped
+  before the pass finishes, the next start finishes it.
+  Known limitations: a message whose text was never fetched has no snippet to put right, as
+  before; it gains one when its text arrives.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

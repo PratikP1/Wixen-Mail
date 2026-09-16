@@ -351,13 +351,18 @@ impl MessageCache {
         // The body if one is cached, and nothing if not. A message whose text
         // has been evicted stays searchable by its subject and sender rather
         // than dropping out of the index altogether.
+        //
+        // An HTML-only body goes in as its words through the reader the
+        // message itself goes through, for the reason its snippet does: a
+        // cruder stripper kept a stylesheet as body text, and a search for
+        // `padding` found every newsletter (#32).
         let body = self
             .get_message_body(message_id)
             .ok()
             .flatten()
             .map(|body| match (body.body_plain, body.body_html) {
                 (Some(plain), _) => plain,
-                (None, Some(html)) => super::bodies::strip_markup(&html),
+                (None, Some(html)) => crate::application::long_text::words_of_markup(&html),
                 (None, None) => String::new(),
             });
 

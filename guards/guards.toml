@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 29 records have arrived since and have not been through it.
+# 32 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -7535,9 +7535,20 @@ name = "a task or event body written as html is read as the structure it carries
 file = "src/application/long_text.rs"
 # Re-measured 2026-09-11. `from_markup` is now one of two entry points onto
 # `read_markup`, so the break moved to the function that does the work and
-# covers both readings at once.
+# covers both readings at once. Re-measured 2026-09-16 when the sanitising
+# call gained the `<title>` element and `words_of_markup` became a third
+# reading through it: the `before` is the body as it stands, and the words
+# test reddens with the rest.
 before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
-    let cleaned = ammonia::clean(html);
+    // `ammonia`'s defaults drop a `<script>` or `<style>` element with its
+    // content and strip every other disallowed tag around its content. A
+    // `<title>` is the one element whose content is not part of what a reader
+    // would say either: a whole message carries one in its head, and kept, it
+    // arrived at the front of every newsletter's snippet (#32).
+    let cleaned = ammonia::Builder::default()
+        .add_clean_content_tags(["title"])
+        .clean(html)
+        .to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
@@ -7556,6 +7567,16 @@ after = '''fn read_markup(html: &str, keeping: Keeping) -> String {
 # naming five where the truth is forty is the shape this file exists to stop,
 # and nothing found it except running the remedy the count check printed.
 red = [
+    "application::long_text::tests::test_the_words_of_markup_are_the_words_alone_without_markers_or_stylesheets",
+    # The snippet and the search index read an HTML-only message body through
+    # this function since 2026-09-16 (#32), so a reader that flattens reddens
+    # them too; the runner named these five, the first draft of this list did
+    # not.
+    "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
+    "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
+    "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
     "application::long_text::tests::test_a_bar_inside_a_cell_does_not_break_the_table_it_is_in",
     "application::long_text::tests::test_a_line_break_kept_for_editing_is_still_a_line_break",
@@ -7613,7 +7634,9 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
     { file = "src/service/tasks_api.rs", tests = 62 },
@@ -8822,7 +8845,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8860,7 +8883,7 @@ red = [
     "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8888,7 +8911,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8906,7 +8929,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8921,7 +8944,7 @@ before = '''                        push_item("- ", child, out, keeping);'''
 after = '''                        let _ = &child;'''
 red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8939,7 +8962,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8950,7 +8973,7 @@ before = """                    "br" => out.push('\\n'),
 after = """                    // An image reached without a paragraph around it."""
 red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8964,7 +8987,7 @@ red = [
     "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8992,7 +9015,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9011,7 +9034,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9029,7 +9052,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9058,7 +9081,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9074,7 +9097,7 @@ after = """            if let Node::Element(element) = child.value()
                 saw_a_paragraph = true;"""
 red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9091,7 +9114,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9117,7 +9140,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9146,7 +9169,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9160,7 +9183,7 @@ before = '''                    "script" | "style" => {}
 after = '''                    _ => inline(child, out, keeping),'''
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 # ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
@@ -13659,8 +13682,8 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -13970,7 +13993,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/mod.rs", tests = 23 },
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
 # ── A narrowed search not paying for a coverage figure it cannot use ────────
@@ -14003,7 +14026,7 @@ red = [
     "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_offered_no_fetch",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -15042,7 +15065,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -15122,7 +15145,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -15162,7 +15185,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -22870,4 +22893,76 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_language_the_screen_shows_is_the_one_used.rs", tests = 1 },
+]
+
+# The snippet of an HTML-only body taken from the markup as it is rather than
+# through the reader the message goes through, which is the shape of #32 one
+# step cruder: the stylesheet, the script and the tags themselves all reach
+# the column the list reads aloud on every row. The pass that puts stored
+# snippets right derives through the same function, so its rows come out
+# wrong the same way and its test reddens with the save's. So does the index
+# test, which the first draft of this list did not name and the runner did:
+# the index row carries the snippet column, and a snippet holding the
+# stylesheet is findable by `padding` whatever the body column holds.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "a snippet of an HTML-only body is its words through the reader, not the markup as it is"
+file = "src/data/message_cache/bodies.rs"
+before = """        .or_else(|| body.body_html.as_deref().map(long_text::words_of_markup));"""
+after = """        .or_else(|| body.body_html.as_deref().map(str::to_string));"""
+red = [
+    "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
+    "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
+    "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
+]
+
+# The index row for an HTML-only body taking the markup as it is, so a search
+# for a word inside a stylesheet finds every newsletter, which is the second
+# half of #32 and the one the issue did not name. The pass that puts stored
+# snippets right rebuilds each row's index entry through this arm, so its
+# search for `padding` finds the newsletter again under the break.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "the index takes an HTML-only body as its words through the reader, not as the markup"
+file = "src/data/message_cache/searching.rs"
+before = """                (None, Some(html)) => crate::application::long_text::words_of_markup(&html),"""
+after = """                (None, Some(html)) => html,"""
+red = [
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
+]
+
+# The pass recording itself as done under a name nothing asks about, which is
+# the marker never written in the shape a real slip would take: the second
+# open reads every HTML-only body again, and the test that plants a second
+# wrong row after the first pass finds it put right when it should have been
+# left alone. The first pass's own test stays green, because a first pass
+# does not read the marker.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "the snippet pass records itself as done, not under a name nothing asks about"
+file = "src/data/message_cache/bodies.rs"
+before = """                rusqlite::params![SNIPPETS_PUT_RIGHT, now()],"""
+after = """                rusqlite::params!["never", now()],"""
+red = [
+    "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]

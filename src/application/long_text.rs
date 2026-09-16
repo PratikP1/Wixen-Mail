@@ -271,24 +271,7 @@ fn the_same_words(pieces: &[Piece], written: &str) -> bool {
     fn only_the_words(text: &str) -> String {
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
-    let read = pieces
-        .iter()
-        .map(|piece| match piece {
-            Piece::Heading { text, .. }
-            | Piece::Item { text, .. }
-            | Piece::Quote(text)
-            | Piece::Image(text)
-            | Piece::Paragraph(text) => text.clone(),
-            Piece::Table { columns, rows } => columns
-                .iter()
-                .chain(rows.iter().flatten())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(" "),
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
-    only_the_words(&read) == only_the_words(written)
+    only_the_words(&words_of(pieces)) == only_the_words(written)
 }
 
 /// A long field as one passage to be read aloud, with its structure spoken.
@@ -499,8 +482,44 @@ pub fn from_markup(html: &str) -> String {
 
 /// The words of a provider's markup and nothing else, for a place that has
 /// room for words alone: a snippet on a message row, a search index.
+///
+/// The same reader as [`from_markup`], so what it drops is dropped here too:
+/// a `<style>` or `<script>` element's content goes before anything reads
+/// it, and so does a `<title>`, which a whole message carries in its head
+/// and a note never does. Then the pieces the read found, given as their
+/// words with no marker in front, joined with a space so the last word of a
+/// heading and the first of the paragraph under it do not run together. A
+/// snippet beginning `# ` or `- ` spends its first characters on punctuation
+/// nobody wants read out, which is [`first_line`]'s reason as well.
+///
+/// The snippet on every message row came through a cruder reader of its own
+/// until 2026-09-16, one that kept everything between tags, and marketing
+/// mail opens its head with the Outlook reset stylesheet, so the row read
+/// `#outlook a { padding: 0; }` aloud (#32). One reader for the message and
+/// its snippet is what stops the two disagreeing again.
 pub fn words_of_markup(html: &str) -> String {
-    from_markup(html)
+    words_of(&structure(&from_markup(html)))
+}
+
+/// Every piece's words, in order, joined with a space.
+fn words_of(pieces: &[Piece]) -> String {
+    pieces
+        .iter()
+        .map(|piece| match piece {
+            Piece::Heading { text, .. }
+            | Piece::Item { text, .. }
+            | Piece::Quote(text)
+            | Piece::Image(text)
+            | Piece::Paragraph(text) => text.clone(),
+            Piece::Table { columns, rows } => columns
+                .iter()
+                .chain(rows.iter().flatten())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// How much of the markup to keep, which depends on what happens to the result.
@@ -517,7 +536,15 @@ enum Keeping {
 }
 
 fn read_markup(html: &str, keeping: Keeping) -> String {
-    let cleaned = ammonia::clean(html);
+    // `ammonia`'s defaults drop a `<script>` or `<style>` element with its
+    // content and strip every other disallowed tag around its content. A
+    // `<title>` is the one element whose content is not part of what a reader
+    // would say either: a whole message carries one in its head, and kept, it
+    // arrived at the front of every newsletter's snippet (#32).
+    let cleaned = ammonia::Builder::default()
+        .add_clean_content_tags(["title"])
+        .clean(html)
+        .to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
