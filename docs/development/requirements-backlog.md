@@ -78,9 +78,9 @@ still listed as outstanding; each now says so and where it lives.
 | Item | Description | Priority |
 |------|-------------|----------|
 | ~~Virtual scrolling~~ | Built. The message list and every PIM list run in native virtual mode | Done |
-| Memory profiling | Target <150MB with 1000 cached messages | Medium |
-| Startup time | Target <2 seconds cold start | Medium |
-| Large mailbox testing | Validate with real-world 100K+ mailboxes | Medium |
+| ~~Memory profiling~~ | Target <150MB with 1000 cached messages. Measured 2026-09-14 at `9d5f15c5`, the row "Memory with 1,000 cached messages" on `docs/development/measurements.md`: the application process peaked at 57 MB, under the target; the six WebView2 processes Windows runs for the preview pane weighed 333 MB beside it, the same as with no mail, and this target was written before the preview was a browser and does not say whether it counts them. Read as the application process, so met, with the sum of 390 MB on the same row; the reading is Pratik's to reverse | Done, on that reading |
+| ~~Startup time~~ | Target <2 seconds cold start. Met 2026-09-14 at `9d5f15c5`: 476 ms to a usable message list with 1,000 cached messages, the median of five starts of the release binary on one machine, the row "Cold start to a usable list" on `docs/development/measurements.md` | Done |
+| Large mailbox testing | Validate with real-world 100K+ mailboxes. Half done 2026-09-14: the list was timed over 200,000 synthetic rows, eighteen rows on `docs/development/measurements.md` from "Listing 200000 rows from the cache" to "Full pass", none over a third of a second. The real-world half waits for a live account, which nothing here has ever had | Medium |
 
 ### Platform & Distribution
 

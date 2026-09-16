@@ -483,6 +483,40 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Every performance target the project quotes is now judged against a
+  measurement, met or revised, with the reason written beside it.** Nothing
+  here changed how the program behaves. This closes the phase that replaced
+  estimates with measurements, and each figure is a row on
+  `docs/development/measurements.md` with the day, the machine and the build
+  it was taken on, so read each as that day's number and not a promise.
+  - Starting up: 476 ms from launch to a usable message list with 1,000
+    cached messages, on 2026-09-14, against a target of 2 seconds. Met, on the
+    machine it was taken on.
+  - Memory: the application itself 57 MB at its peak with 1,000 cached
+    messages and 56 MB after two minutes idle, against targets of 150 MB and
+    100 MB. Met by the application. The preview pane is a WebView2 browser
+    and its six processes weigh about 333 MB beside it, with or without any
+    mail; the targets were written before the preview was a browser and do
+    not say whether they count it. They are read as the application alone,
+    the browser's weight is written on the same row so nobody takes 57 MB for
+    the whole cost, and the other reading, the sum of about 390 MB, would miss
+    both targets. That reading is Pratik's to reverse with one line.
+  - A list of 200,000 messages: listing them from the cache in 351 ms, a
+    search in 78 to 193 ms, the slowest sort order in 260 ms and painting one
+    page in 0.09 ms, over synthetic rows with no window, so the list itself
+    does not freeze on a header click. Two things were not timed: the list
+    control taking the sorted rows back, and wxWidgets' own painting. No
+    claim is made that a real mailbox of 100,000 messages has been used; that
+    waits for a live account.
+  - Test coverage: 83.34% of the library's lines on 2026-09-14, against an
+    80% target, up from 60.4% on 2026-07-26 by the same command. Met. The
+    low area is the window code, which no library test opens, and not the
+    mail transport, which the earlier figure had blamed.
+  - Mutation testing: the whole-tree run the requirement asked for was not
+    made this milestone and its cost is written down instead; two areas, the
+    mail protocols and CalDAV, went through one, and the reason to keep
+    running it is now what those runs found rather than how old the tests
+    are.
 - **Every guard record has been through one sweep, on one commit, and the
   31 it found short are corrected.** A developer-facing change, not one in
   the program. The sweep ran on GitHub's Windows runners on 2026-09-15 at

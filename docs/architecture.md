@@ -398,6 +398,15 @@ once as the user, because an uninstaller cannot reach them.
 - Test individual components in isolation
 - Mock external dependencies
 - High code coverage (target: 80%+)
+  Met by the library on 2026-09-14: 83.34% line coverage by
+  `cargo llvm-cov --lib --summary-only` at `55464a5e`, the row on
+  `docs/development/measurements.md`, against 60.4% on 2026-07-26 by the same
+  command. That is the library as one number. Everything outside
+  `src/presentation/` read 95.53% and the wxWidgets window files 26.88%, on
+  the same page from the same run, because those files build windows and a
+  `--lib` run opens none; the targets under `tests/` that open one are outside
+  that command, so the target is kept as it is and read against the library,
+  with the windows' figure written beside it rather than folded in.
 
 ### Integration Tests
 - Test component interactions

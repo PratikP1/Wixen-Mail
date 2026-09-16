@@ -11,7 +11,7 @@
 > Two documents answering one question is how this repository's documentation
 > drifted before; keeping their jobs apart is the fix.
 
-_Last updated: 2026-09-02_
+_Last updated: 2026-09-16_
 
 ## Vision
 Wixen Mail aims to be a fully accessible, light-weight mail client built with Rust, providing a Thunderbird/Outlook-inspired experience with first-class support for screen readers and keyboard navigation on Windows.
@@ -216,9 +216,24 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 
 ### Performance
 - [x] Virtual scrolling, for the message list and for every other list in the application
-- [ ] Large mailbox testing (100K+ messages)
-- [ ] Memory profiling and optimization
-- [ ] Startup time optimization (<2 seconds)
+- [~] Large mailbox testing (100K+ messages). Half answered on 2026-09-14: the
+      list was exercised over 200,000 synthetic rows with no window, and every
+      timing is a row on `docs/development/measurements.md`, "Listing 200000
+      rows from the cache" through "Full pass"; the slowest, one sort order, is
+      under a third of a second. The other half, a real provider's mailbox of
+      that size, waits for a live account, which nothing here has ever had, and
+      this line stays open for it.
+- [~] Memory profiling and optimization. Profiled on 2026-09-14, the rows
+      "Memory with 1,000 cached messages" and "Idle memory at 120 s" on
+      `docs/development/measurements.md`: the application process 57 MB at its
+      peak and 56 MB idle, the six WebView2 processes Windows starts for the
+      preview pane 333 MB beside it, on one machine on that day. Nothing was
+      optimised, because the process was under both targets below.
+- [x] Startup time optimization (<2 seconds). Met without an optimisation:
+      the row "Cold start to a usable list, 1,000 cached messages" on
+      `docs/development/measurements.md` reads 476 ms, the median of five, on
+      2026-09-14 at `9d5f15c5`, and the first start after a build 520 ms, on
+      one machine on that day.
 
 ### Beta Testing
 - [ ] Internal beta testing
@@ -250,8 +265,19 @@ Wixen Mail aims to be a fully accessible, light-weight mail client built with Ru
 - [ ] macOS support validation
 
 ## Success Metrics
-- Fast startup time (< 2 seconds)
-- Low memory footprint (< 100MB idle)
+- Fast startup time (< 2 seconds). Met on 2026-09-14: 476 ms to a usable
+  message list with 1,000 cached messages, the median of five starts of the
+  release binary at `9d5f15c5` on one machine, the row "Cold start to a usable
+  list" on `docs/development/measurements.md`.
+- Low memory footprint (< 100MB idle). Met by the application process on
+  2026-09-14, 56 MB at 120 s of idling with 1,000 cached messages, the row
+  "Idle memory at 120 s" on `docs/development/measurements.md`, taken at
+  `9d5f15c5` on one machine. The same row holds the six WebView2 processes
+  Windows runs for the preview pane, 334 MB, which weigh the same with no mail
+  at all; this line was written before the preview was a browser and does not
+  say whether it counts them. It is read as the application process, so the
+  sum, 391 MB, is written here beside it rather than hidden, and the reading
+  is Pratik's to reverse.
 - 100% keyboard accessible
 - WCAG 2.2 Level AA compliance
 - Support for major screen readers (NVDA, JAWS, Narrator)
