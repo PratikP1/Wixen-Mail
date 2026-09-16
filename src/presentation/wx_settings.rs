@@ -46,6 +46,31 @@ pub enum SettingsResult {
     Cancelled,
 }
 
+// ── The tab row's arrow keys ─────────────────────────────────────────────────
+
+/// Which way an arrow key moves along the tab row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Along {
+    /// Towards the first tab: Left, or Up.
+    Back,
+    /// Towards the last tab: Right, or Down.
+    Forward,
+}
+
+impl Along {
+    /// The way a wxWidgets key code moves along the row, or `None` for a key
+    /// that is not an arrow.
+    pub fn from_key_code(_code: i32) -> Option<Self> {
+        None
+    }
+}
+
+/// The tab an arrow reaches from `current` in a row of `count`, or `None` at
+/// either end.
+pub fn the_tab_an_arrow_reaches(_current: usize, _count: usize, _along: Along) -> Option<usize> {
+    None
+}
+
 // ── Widget references ────────────────────────────────────────────────────────
 
 /// Holds references to all mutable settings widgets so we can read them back
