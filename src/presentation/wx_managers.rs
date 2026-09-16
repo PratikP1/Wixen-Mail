@@ -2772,8 +2772,13 @@ pub struct RuleEditWidgets {
 /// the one a saved search never sees, because D-2-01 says the editor writes
 /// any of the eleven. What that field does is said out loud instead of the
 /// field being quietly left out.
+///
+/// `parent` is any window, as the contact editor's is, rather than the rule
+/// manager's dialog: the accessibility scan opens this editor on the main
+/// frame with nothing behind it, since one scan is one window. Nothing here
+/// reads the parent beyond handing it to the dialog builder.
 pub fn build_rule_edit_dialog(
-    parent: &Dialog,
+    parent: &dyn WxWidget,
     existing: Option<&Question>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
@@ -3222,8 +3227,10 @@ pub struct FilterEditWidgets {
 /// [`crate::presentation::wx_settings::build_settings_dialog`] splits
 /// Settings: a test can build the real dialog and read back the real colour
 /// a live control holds, and never call `.show_modal()` at all.
+///
+/// `parent` is any window, for the reason [`build_rule_edit_dialog`] gives.
 pub fn build_filter_edit_dialog(
-    parent: &Dialog,
+    parent: &dyn WxWidget,
     existing: Option<&FilterRule>,
     palette: Option<theme::Palette>,
 ) -> FilterEditWidgets {
@@ -3813,8 +3820,10 @@ pub struct SigEditWidgets {
 /// [`crate::presentation::wx_settings::build_settings_dialog`] splits
 /// Settings: a test can build the real dialog and read back the real colour
 /// a live control holds, and never call `.show_modal()` at all.
+///
+/// `parent` is any window, for the reason [`build_rule_edit_dialog`] gives.
 pub fn build_sig_edit_dialog(
-    parent: &Dialog,
+    parent: &dyn WxWidget,
     existing: Option<&SignatureEntry>,
     palette: Option<theme::Palette>,
 ) -> SigEditWidgets {

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 39 records have arrived since and have not been through it.
+# 41 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -23198,4 +23198,49 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/one_sort_is_checked.rs", tests = 5 },
+]
+
+# ── 09-05: the five editors reached, every checkbox named ───────────────────
+#
+# Task 1. Five editors that open only from inside a manager became scan
+# targets on 2026-09-16 (#42, #40): the manager targets stopped at Add, so
+# the scan had never looked at the windows two testers met an unnamed
+# checkbox in. The break is the shape of forgetting the workflow for one of
+# them, the same shape 06-06's record takes for which-days: the variant
+# stays, the program opens the editor on request, and the workflow never
+# asks for it, so it is never scanned and nothing says so.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh` on the whole library at eight threads.
+[[guard]]
+name = "an editor the program can open for the scan is one the workflow asks for"
+file = ".github/workflows/accessibility.yml"
+before = """          'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor'"""
+after = """          'contact-editor', 'condition-editor', 'filter-editor', 'account-editor'"""
+red = [
+    "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
+]
+tests_last_seen = [
+    { file = "src/presentation/scan_target.rs", tests = 11 },
+]
+
+# The other half of the same coupling: the name the workflow asks for has to
+# be the name the program answers to. The break misspells one editor's
+# command-line name in `as_name`, so `--scan-target signature-editor` is
+# refused as unknown while the workflow goes on asking for it. Two go red:
+# the list of windows a fresh profile can reach no longer finds the name,
+# and the workflow's list no longer matches the program's.
+#
+# Measured 2026-09-16 the same way as the record above.
+[[guard]]
+name = "the name the scan asks an editor by is the name the program answers to"
+file = "src/presentation/scan_target.rs"
+before = """            Self::SignatureEditor => "signature-editor","""
+after = """            Self::SignatureEditor => "signatures-editor","""
+red = [
+    "presentation::scan_target::tests::test_every_window_a_fresh_profile_can_reach_has_a_name",
+    "presentation::scan_target::tests::test_the_workflow_asks_for_every_target",
+]
+tests_last_seen = [
+    { file = "src/presentation/scan_target.rs", tests = 11 },
 ]

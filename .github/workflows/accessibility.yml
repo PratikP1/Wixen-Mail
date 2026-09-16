@@ -140,11 +140,17 @@ jobs:
         # always been the frame under a modal, and neither the bare window
         # nor the other five panels had been scanned by anything. Two tests
         # in scan_target.rs hold this list and ScanTarget::ALL together.
+        #
+        # The five *-editor names, added 2026-09-16 (#42, #40), are editors
+        # that open only from inside a manager, behind Add or Edit, so the
+        # manager targets never reached them and two testers met an unnamed
+        # checkbox in two of them. Each opens directly on a fixture.
         $targets = @(
           'main', 'settings', 'accounts', 'compose', 'reader', 'search', 'filters', 'calendar', 'first-run', 'add-calendar', 'blocked-senders',
           'columns', 'which-copy', 'destination', 'folder-choice', 'new-event', 'contacts', 'tags', 'signatures', 'reminder', 'conversation',
           'which-days', 'send-later', 'add-address-book', 'about',
-          'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module'
+          'mail-module', 'calendar-module', 'contacts-module', 'reminders-module', 'tasks-module', 'notes-module',
+          'contact-editor', 'condition-editor', 'filter-editor', 'signature-editor', 'account-editor'
         )
 
         # Point the app at a throwaway profile so the scan never touches real

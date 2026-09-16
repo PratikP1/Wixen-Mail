@@ -20,7 +20,9 @@ use crate::application::destinations::{Branch, Destination};
 use crate::application::due::Due;
 use crate::application::saved_searches::Question;
 use crate::presentation::wx_folder_choice::FolderRow;
-use crate::presentation::wx_managers::{ContactEntry, FilterRule, SignatureEntry};
+use crate::presentation::wx_managers::{
+    AddressItem, ContactEntry, CustomFieldItem, EmailItem, FilterRule, PhoneItem, SignatureEntry,
+};
 use crate::presentation::wx_thread_view::ThreadNode;
 
 /// A conversation with a reply in it, so the tree has a second level.
@@ -165,14 +167,30 @@ pub fn contact() -> ContactEntry {
         company: "Example".to_string(),
         department: "Scanning".to_string(),
         job_title: "Fixture".to_string(),
-        emails: Vec::new(),
-        phones: Vec::new(),
-        addresses: Vec::new(),
+        emails: vec![EmailItem {
+            label: "Work".to_string(),
+            address: "scan-target@example.com".to_string(),
+        }],
+        phones: vec![PhoneItem {
+            label: "Work".to_string(),
+            number: "+1 555 0100".to_string(),
+        }],
+        addresses: vec![AddressItem {
+            label: "Work".to_string(),
+            street: "1 Example Street".to_string(),
+            city: "Example".to_string(),
+            state: "EX".to_string(),
+            zip: "00000".to_string(),
+            country: "Nowhere".to_string(),
+        }],
         birthday: "2000-01-01".to_string(),
         website: "https://example.com".to_string(),
         relationship: "Colleague".to_string(),
         notes: "Opened for the accessibility scan.".to_string(),
-        custom_fields: Vec::new(),
+        custom_fields: vec![CustomFieldItem {
+            label: "Opened by".to_string(),
+            value: "the accessibility scan".to_string(),
+        }],
         avatar_url: String::new(),
         favorite: true,
     }
@@ -185,8 +203,8 @@ pub fn contact() -> ContactEntry {
 /// does, or the scan meets a refusal box rather than the editor.
 pub fn condition() -> Question {
     Question {
-        field: String::new(),
-        match_type: String::new(),
+        field: "subject".to_string(),
+        match_type: "contains".to_string(),
         pattern: "scan target".to_string(),
         case_sensitive: true,
     }
@@ -198,8 +216,8 @@ pub fn filter() -> FilterRule {
     FilterRule {
         id: "scan-filter".to_string(),
         name: "Scan target".to_string(),
-        field: String::new(),
-        match_type: String::new(),
+        field: "subject".to_string(),
+        match_type: "contains".to_string(),
         pattern: "scan target".to_string(),
         case_sensitive: true,
         action_type: "add_tag".to_string(),
@@ -217,7 +235,7 @@ pub fn signature() -> SignatureEntry {
         name: "Scan target".to_string(),
         content_plain: "Sent from the accessibility scan.".to_string(),
         content_html: None,
-        is_default: false,
+        is_default: true,
     }
 }
 

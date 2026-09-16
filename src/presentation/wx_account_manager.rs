@@ -1381,8 +1381,13 @@ fn show_edit(
 /// split out the same way [`build_account_manager_dialog`] splits the list
 /// window above it: a test can build the real dialog and read back the real
 /// colour a live control holds, and never call `.show_modal()` at all.
+///
+/// `parent` is any window rather than the Account Manager's dialog: the
+/// accessibility scan opens this editor on the main frame with no manager
+/// behind it, since one scan is one window. Nothing here reads the parent
+/// beyond handing it to the dialog builder.
 pub fn build_account_edit_dialog(
-    parent: &Dialog,
+    parent: &dyn WxWidget,
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
