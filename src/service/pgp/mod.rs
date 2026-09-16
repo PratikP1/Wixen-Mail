@@ -53,6 +53,10 @@
 
 mod keys;
 
+/// The GnuPG-made key and message, for the tests of modules that open mail.
+#[cfg(test)]
+pub(crate) use keys::for_tests;
+
 /// Credential store service name holding this program's OpenPGP private key.
 ///
 /// **This name is permanent from the commit that writes it.** Changing it

@@ -177,6 +177,32 @@ pub(super) fn a_key_is_here() -> bool {
         .is_some()
 }
 
+/// A key and a message for the tests of other modules.
+///
+/// The same GnuPG-made fixtures this file's own tests open, for the reason
+/// [`crate::service::signed_mail::for_tests`] gives about its S/MIME messages:
+/// a surface that says it opens a PGP message has to be tested against one
+/// that really was encrypted by something other than the crate behind this
+/// file, or it agrees with itself and with nothing else. Armour and words
+/// only; nothing here names a crate type.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    /// Alice's private key, as the armoured text a key file holds.
+    pub(crate) fn alices_private_key() -> String {
+        super::tests::armour(super::tests::ALICE_PRIVATE)
+    }
+
+    /// A message encrypted to Alice by GnuPG, as it sits in a text part.
+    pub(crate) fn a_message_to_alice() -> String {
+        super::tests::armour(super::tests::TO_ALICE)
+    }
+
+    /// The words inside it, exactly as opening it hands them back.
+    pub(crate) fn what_alices_message_says() -> &'static str {
+        "The meeting moved to Thursday at ten.\n"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,7 +228,7 @@ mod tests {
     // one of them can be offered to the other.
 
     /// Alice's private key, exported by GnuPG with no passphrase on it.
-    const ALICE_PRIVATE: &str = "
+    pub(super) const ALICE_PRIVATE: &str = "
         LS0tLS1CRUdJTiBQR1AgUFJJVkFURSBLRVkgQkxPQ0stLS0tLQoKbFFPWUJHcWRrWFFCQ0FD
         MkdHMER0U2FWb1N4UkZnMTJ1QlA0YzhqdnQzNjhiMC9RWXNKQVNPSjBlMnlWTTljeApwSUtt
         OTYvMmh2L1Z1d2w0MTRWMFJBSm5yd2tSdEdTSTVVTEYwK3l2Q09xWncrZDNScTRlL3FjajYw
@@ -302,7 +328,7 @@ mod tests {
     ///
     /// It opens under `gpg --decrypt` with the key above, which was checked
     /// before this was written down.
-    const TO_ALICE: &str = "
+    pub(super) const TO_ALICE: &str = "
         LS0tLS1CRUdJTiBQR1AgTUVTU0FHRS0tLS0tCgpoUUVNQTZsK2U3ZEJBZnMrQVFmL1Yycyty
         TmxnS2VPQ2NXOG9QY1VLTUlYNHJHaWU5QnFac01KMXlmVmJPeERZClAxSmFSaWRPM051VVdW
         aUVDVk0raXEyemtmT0xuSk4zb3J1eWdzWWFNTmFmRWhWYW01Nk41T1FKdXFSSnladzMKWmYx
@@ -316,7 +342,7 @@ mod tests {
         LS0tLUVORCBQR1AgTUVTU0FHRS0tLS0tCg==";
 
     /// The bytes a fixture stands for.
-    fn armour(encoded: &str) -> String {
+    pub(super) fn armour(encoded: &str) -> String {
         let packed: String = encoded.split_whitespace().collect();
         String::from_utf8(STANDARD.decode(packed).expect("a fixture that decodes"))
             .expect("armour is text")

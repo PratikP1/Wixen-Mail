@@ -1684,6 +1684,27 @@ impl ReaderDocument {
         });
         self
     }
+
+    /// Fold in the three things said about a message, in the one order that
+    /// keeps each of them spoken.
+    ///
+    /// [`with_pgp`](Self::with_pgp), then
+    /// [`with_smime_envelope`](Self::with_smime_envelope), then
+    /// [`with_signature`](Self::with_signature). The order is the load-bearing
+    /// part and it is written here once: a signature verdict puts
+    /// [`HOW_IT_WAS_CHECKED`] into the bar and [`said_before_the_message`] cuts
+    /// there, so a sentence folded in after one is on screen and never spoken.
+    /// Two surfaces got that order right by each carrying the comment; four
+    /// never folded anything at all (#51). A surface asks
+    /// [`crate::application::reading_a_message`] and hands the answer here,
+    /// and cannot get the order wrong.
+    pub fn with_what_is_said(
+        self,
+        said: &crate::application::reading_a_message::WhatIsSaidAboutIt,
+    ) -> Self {
+        // Not yet built: the red half. Only the signature is folded in.
+        self.with_signature(&said.signature)
+    }
 }
 
 /// Put a sentence where the reader would otherwise say there is no text.
