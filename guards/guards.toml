@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 37 records have arrived since and have not been through it.
+# 38 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -23132,4 +23132,39 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
+]
+
+# "Then by" was built into Dates and Times at the bottom of the Reading tab,
+# so the tester heard it straight after "Write the month as", with the
+# folders and reading sections between it and "Default sort order" (#36). The
+# break plants that neighbour back: a static labelled "Write the month as:"
+# built straight before "Then by", so it is no longer the tab stop after the
+# sort and the month setting is behind it again. Not the plan's break, which
+# was to build it into the date section again: `date_sec` is declared 250
+# lines below the new site, so that edit does not compile as one replacement.
+#
+# `suite` names the target that builds the dialog and walks the panel's
+# children, which couples the target to this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on,
+# `cargo test --test the_sort_controls_sit_together`.
+[[guard]]
+name = "Then by is the tab stop after Default sort order, not after Write the month as"
+file = "src/presentation/wx_settings.rs"
+suite = "the_sort_controls_sit_together"
+before = """    let sort_then = labelled_choice(
+        panel,
+        &list_sec,"""
+after = """    let _planted = StaticText::builder(panel)
+        .with_label("Write the month as:")
+        .build();
+    let sort_then = labelled_choice(
+        panel,
+        &list_sec,"""
+red = [
+    "test_then_by_is_the_tab_stop_after_default_sort_order",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_sort_controls_sit_together.rs", tests = 1 },
 ]

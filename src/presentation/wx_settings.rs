@@ -79,6 +79,7 @@ pub struct SettingsWidgets {
     undo_send_hold: SpinCtrl,
     draft_autosave: SpinCtrl,
     add_signature_automatically: CheckBox,
+    copy_lines: Choice,
     // Reading. The two sort choices are public because a test builds this
     // dialog and reads their tab order back (#36); nothing else is.
     pub sort_order: Choice,
@@ -90,7 +91,6 @@ pub struct SettingsWidgets {
     clock_hours: Choice,
     mark_read_after: Choice,
     pub sort_then: Choice,
-    copy_lines: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
     a_conversation_reaches: Choice,
@@ -245,13 +245,14 @@ pub fn build_settings_dialog(
 
     // ── Tab 2: Compose
     let compose_panel = Panel::builder(&notebook).build();
-    let (
+    let ComposeTabControls {
+        copy_lines,
         preview_before_send,
         keep_sent_mail_on_this_computer,
         undo_send_hold,
         draft_autosave,
         add_signature_automatically,
-    ) = build_compose_tab(&compose_panel, config);
+    } = build_compose_tab(&compose_panel, config);
     notebook.add_page(&compose_panel, "Compose", false, None);
 
     // ── Tab 3: Reading
@@ -266,7 +267,6 @@ pub fn build_settings_dialog(
         clock_hours,
         mark_read_after,
         sort_then,
-        copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,
@@ -975,15 +975,45 @@ fn add_new_versions(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> Choi
     choice
 }
 
-/// Compose settings: preview before sending, what Sent keeps, drafts, signature.
-fn build_compose_tab(
-    panel: &Panel,
-    config: &AppConfig,
-) -> (CheckBox, CheckBox, SpinCtrl, SpinCtrl, CheckBox) {
+/// The controls `build_compose_tab` lays out, one field per control, named for
+/// what it controls rather than by position: two of them are check boxes and
+/// two are spin boxes, and a tuple would tell them apart by counting.
+struct ComposeTabControls {
+    copy_lines: Choice,
+    preview_before_send: CheckBox,
+    keep_sent_mail_on_this_computer: CheckBox,
+    undo_send_hold: SpinCtrl,
+    draft_autosave: SpinCtrl,
+    add_signature_automatically: CheckBox,
+}
+
+/// Compose settings: the compose window, sending, drafts, signature.
+fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
     use crate::application::sending_later::{Hold, what_send_does};
     use crate::application::sent_copy::{KEEP_A_COPY_CONSEQUENCE, KEEP_A_COPY_LABEL};
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    // -- Writing
+    //
+    // Whether the Cc and Bcc lines are in the compose window from the start.
+    // It sat in Dates and Times on the Reading tab, which is two wrong answers
+    // to where somebody would look for it (#36): it is about the window a
+    // message is written in, so it is here, first, before anything about what
+    // happens once Send is pressed.
+    let writing_sec = section(panel, "Writing");
+    let copy_lines = labelled_choice(
+        panel,
+        &writing_sec,
+        "Cc and Bcc &lines:",
+        "Cc and Bcc lines",
+        &["Always in the compose window", "Only when they are in use"],
+        match CopyLines::from_setting(&config.copy_lines) {
+            CopyLines::Shown => 0,
+            CopyLines::Hidden => 1,
+        },
+    );
+    sizer.add_sizer(&writing_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // -- Sending
     let send_sec = section(panel, "Sending");
@@ -1118,7 +1148,14 @@ fn build_compose_tab(
     sizer.add_sizer(&sig_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (preview_cb, keep_a_copy_cb, hold_spin, autosave_spin, sig_cb)
+    ComposeTabControls {
+        copy_lines,
+        preview_before_send: preview_cb,
+        keep_sent_mail_on_this_computer: keep_a_copy_cb,
+        undo_send_hold: hold_spin,
+        draft_autosave: autosave_spin,
+        add_signature_automatically: sig_cb,
+    }
 }
 
 /// One sentence, said once, in the label and in the accessible name.
@@ -1165,7 +1202,6 @@ struct ReadingTabControls {
     clock_hours: Choice,
     mark_read_after: Choice,
     sort_then: Choice,
-    copy_lines: Choice,
 }
 
 /// Reading settings: how the list is sorted, how a message opens, dates.
@@ -1213,6 +1249,23 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
     );
     sort_row.add(&sort_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
     list_sec.add_sizer(&sort_row, 0, SizerFlag::Expand, 0);
+
+    // The second level of that sort, and the next tab stop after it. It was
+    // built into Dates and Times at the bottom of this tab, so somebody
+    // arrowing through by screen reader heard "Then by" straight after "Write
+    // the month as", with the folders and reading sections between it and the
+    // sort it is the second level of (#36). Tab moves through this panel's
+    // children in the order they were made, so being built here is what puts
+    // it beside the sort, and `tests/the_sort_controls_sit_together.rs` reads
+    // that order back from the built dialog.
+    let sort_then = labelled_choice(
+        panel,
+        &list_sec,
+        "Then &by:",
+        "Then by",
+        &SECOND_LEVEL_LABELS,
+        second_level_index(&config.message_columns),
+    );
 
     // A checkbox reading "Enable threaded view by default" used to sit here.
     // Threaded view is not implemented: its View menu item is built disabled
@@ -1551,25 +1604,6 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
             _ => 0,
         },
     );
-    let sort_then = labelled_choice(
-        panel,
-        &date_sec,
-        "Then &by:",
-        "Then by",
-        &SECOND_LEVEL_LABELS,
-        second_level_index(&config.message_columns),
-    );
-    let copy_lines = labelled_choice(
-        panel,
-        &date_sec,
-        "Cc and Bcc &lines:",
-        "Cc and Bcc lines",
-        &["Always in the compose window", "Only when they are in use"],
-        match CopyLines::from_setting(&config.copy_lines) {
-            CopyLines::Shown => 0,
-            CopyLines::Hidden => 1,
-        },
-    );
     let clock_hours = labelled_choice(
         panel,
         &date_sec,
@@ -1600,7 +1634,6 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
         clock_hours,
         mark_read_after: markread_choice,
         sort_then,
-        copy_lines,
         start_in_all_inboxes,
         unread_on_a_parent,
         a_conversation_reaches,

@@ -83,6 +83,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   entry. Nothing here has been heard with a screen reader yet, so whether what is spoken after a
   mistaken Accept points somebody at Undo Send in time is still an open question.
 
+- **The two sort controls on the Reading tab sit together, and the Cc and Bcc setting is on the
+  Compose tab.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#36), in the tester's
+  words: "On reading tab, the two sort options do not appear together. They are separated by
+  multiple tab stops." "Default sort order" was at the top of the tab, in the Message List
+  section, and "Then by", the second level of that sort, was at the bottom, in Dates and Times,
+  straight after "Write the month as", with the folders and reading sections between them. "Then
+  by" is now the tab stop after "Default sort order", in the same section. "Cc and Bcc lines",
+  which was also in Dates and Times and is about the compose window, is on the Compose tab now,
+  first, in a section called Writing. Both keep their names and their choices, and what you had
+  chosen is kept.
+  Known limitations: whether the Reading tab now reads as one group by ear has not been listened
+  to with a screen reader; a test reads the tab order back from the built dialog.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
