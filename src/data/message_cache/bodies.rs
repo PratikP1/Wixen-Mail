@@ -22,6 +22,7 @@
 //! design rather than what ran.
 
 use super::MessageCache;
+use crate::application::long_text;
 use crate::common::{Error, Result};
 use rusqlite::OptionalExtension;
 
@@ -168,7 +169,7 @@ pub(super) fn body_text(text: Option<String>, packed: Option<Vec<u8>>) -> Option
 ///
 /// The question is [`MessageCache::index_message_for_search`]'s. It decides the
 /// same thing in Rust, over the body it is about to index: the plain half when
-/// there is one, the markup with its tags taken out when there is not, and it
+/// there is one, the words of the markup when there is not, and it
 /// records in `text_is_in_the_search_index` whether that came out with anything
 /// in it. The migration that fills that column in for rows written before it
 /// existed cannot ask the index and will not run the live writer over every
@@ -185,9 +186,9 @@ pub(super) fn body_text(text: Option<String>, packed: Option<Vec<u8>>) -> Option
 /// which cannot happen for nothing.
 ///
 /// Two things it cannot look inside, and counts as text: a packed half that no
-/// longer unpacks, which [`unpacked`] discards as damaged, and markup that is
-/// one unterminated tag, which [`strip_markup`] reduces to nothing. Each is
-/// corrected the next time that message is indexed.
+/// longer unpacks, which [`unpacked`] discards as damaged, and markup with no
+/// words in it, a stylesheet and nothing else, which the reader reduces to
+/// nothing. Each is corrected the next time that message is indexed.
 pub(super) const THE_STORED_BODY_HOLDS_TEXT: &str = "
     (b.body_plain_packed IS NOT NULL OR COALESCE(length(b.body_plain), 0) > 0)
     OR (b.body_plain IS NULL AND b.body_plain_packed IS NULL
@@ -309,27 +310,32 @@ fn snippet_from(text: &str) -> String {
     snippet.chars().take(SNIPPET_LIMIT).collect()
 }
 
-/// Crude tag removal for deriving a snippet from an HTML-only body.
+/// The snippet a body gives: its first words, one line, bounded.
 ///
-/// Not sanitizing: nothing here is rendered. It exists so a message with no
-/// plain part still gets a snippet instead of a silently empty column, which
-/// is a large share of newsletters and most marketing mail.
-pub(super) fn strip_markup(html: &str) -> String {
-    let mut text = String::with_capacity(html.len());
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                text.push(' ');
-            }
-            _ if !in_tag => text.push(ch),
-            _ => {}
-        }
-    }
-    text
+/// The plain part when it has words in it, else the words of the markup
+/// through the reader the message itself goes through,
+/// [`long_text::words_of_markup`], so a message with no plain part still gets
+/// a snippet, which is a large share of newsletters and most marketing mail.
+/// Until 2026-09-16 that fallback was a crude stripper of this module's own
+/// that kept everything between tags, and marketing mail opens its head with
+/// the Outlook reset stylesheet, so the row read `#outlook a { padding: 0; }`
+/// aloud (#32). Two readers of one body disagreed; now there is one.
+///
+/// One function for the save and for the pass that puts stored snippets
+/// right, so the two cannot come to derive different snippets from one body.
+fn snippet_of(body: &MessageBody) -> String {
+    let source = body
+        .body_plain
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| body.body_html.as_deref().map(long_text::words_of_markup));
+    source.as_deref().map(snippet_from).unwrap_or_default()
 }
+
+/// The name under which the once-only re-derivation of stored snippets is
+/// recorded as done in `work_done_once`.
+const SNIPPETS_PUT_RIGHT: &str = "snippets of HTML-only bodies re-derived through the reader";
 
 impl MessageCache {
     /// Store a message body, replacing any previous one.
@@ -378,13 +384,7 @@ impl MessageCache {
         // long after this body has been evicted, so deriving it at display
         // time would leave the column blank for exactly the older messages
         // someone is scrolling back through.
-        let source = body
-            .body_plain
-            .as_deref()
-            .filter(|text| !text.trim().is_empty())
-            .map(str::to_string)
-            .or_else(|| body.body_html.as_deref().map(strip_markup));
-        let snippet = source.as_deref().map(snippet_from).unwrap_or_default();
+        let snippet = snippet_of(&body);
         // Written even when it is empty, and that is the difference between
         // the two things a blank column used to mean. Null is text nobody has
         // fetched; an empty string is a message somebody fetched and there was
@@ -683,6 +683,109 @@ impl MessageCache {
         }
         Ok(moved)
     }
+
+    /// Re-derive the snippet of every HTML-only message, once, and reindex
+    /// each row that changes.
+    ///
+    /// Every HTML-only message downloaded before 2026-09-16 has a snippet
+    /// derived by the crude stripper [`snippet_of`] describes, so the
+    /// stylesheet is in the column the list reads on every row. Each such
+    /// body is read once, through the same rule the save uses, and the row is
+    /// rewritten only where the snippet differs. Each row rewritten goes back
+    /// through [`MessageCache::index_message_for_search`], the one writer of
+    /// an index row, because the index holds its own copy of the snippet and
+    /// of the body text and a search for `padding` would otherwise still find
+    /// the newsletter the list no longer shows it for.
+    ///
+    /// Returns how many rows were put right. Runs from
+    /// [`MessageCache::new`], after the inline bodies have been moved into
+    /// their table, and is not fatal there.
+    ///
+    /// # Once, and how that is known
+    ///
+    /// Reading every HTML-only body is not cheap enough to do on every open,
+    /// so a row in `work_done_once` says the pass has run, and a second call
+    /// answers 0 without reading a body. The row is written only after the
+    /// pass finished, so a pass that failed halfway is tried again on the
+    /// next open and a row put right twice is put right the same way. This
+    /// is the marker [`THE_MESSAGES_STILL_HOLDING_THEIR_TEXT_INLINE`] argues
+    /// against for the inline migration, and the argument does not carry: a
+    /// marker wrong in the done direction there is text nothing will ever
+    /// move, and here it is a snippet that the next save of that body
+    /// derives again anyway.
+    ///
+    /// The candidates are read into a `Vec` before anything is written, for
+    /// the reason [`Self::migrate_inline_bodies`] gives: a cached statement
+    /// held open over a table while the same table is written is a lock
+    /// against itself. A body that no longer reads, evicted or damaged, is
+    /// left as it is, because there is nothing to derive from.
+    pub fn put_right_the_snippets_read_from_stylesheets(&self) -> Result<usize> {
+        let already: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM work_done_once WHERE name = ?1)",
+                rusqlite::params![SNIPPETS_PUT_RIGHT],
+                |row| row.get(0),
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to ask whether snippets were put right: {e}"
+                ))
+            })?;
+        if already {
+            return Ok(0);
+        }
+
+        let candidates: Vec<(i64, Option<String>)> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT m.id, m.snippet
+                     FROM messages m
+                     INNER JOIN message_bodies b ON b.message_id = m.id
+                     WHERE b.body_plain_packed IS NULL
+                       AND COALESCE(length(trim(b.body_plain)), 0) = 0
+                       AND (b.body_html_packed IS NOT NULL
+                            OR COALESCE(length(b.body_html), 0) > 0)",
+                )
+                .map_err(|e| Error::Other(format!("Failed to find the HTML-only bodies: {e}")))?;
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map_err(|e| Error::Other(format!("Failed to read the HTML-only bodies: {e}")))?
+                .collect::<std::result::Result<_, _>>()
+                .map_err(|e| Error::Other(format!("Failed to read an HTML-only body row: {e}")))?
+        };
+
+        let mut put_right = 0usize;
+        for (message_id, stored) in candidates {
+            let Some(body) = self.get_message_body(message_id)? else {
+                continue;
+            };
+            let snippet = snippet_of(&body);
+            if stored.as_deref() == Some(snippet.as_str()) {
+                continue;
+            }
+            self.conn
+                .execute(
+                    "UPDATE messages SET snippet = ?1 WHERE id = ?2",
+                    rusqlite::params![snippet, message_id],
+                )
+                .map_err(|e| Error::Other(format!("Failed to put a snippet right: {e}")))?;
+            self.index_message_for_search(message_id)?;
+            put_right += 1;
+        }
+
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO work_done_once (name, done_at) VALUES (?1, ?2)",
+                rusqlite::params![SNIPPETS_PUT_RIGHT, now()],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record that snippets were put right: {e}"
+                ))
+            })?;
+        Ok(put_right)
+    }
 }
 
 /// Current time as an RFC 3339 string, which sorts correctly as text.
@@ -971,6 +1074,188 @@ mod tests {
             )
             .unwrap();
         assert_eq!(snippet.as_deref(), Some("Hello there"));
+    }
+
+    /// The opening most marketing mail has: the Outlook reset stylesheet in
+    /// the head, then the words. What the tester heard on every row was the
+    /// stylesheet (#32).
+    const A_NEWSLETTER: &str = "<html><head><title>Weekly</title>\
+         <style>#outlook a { padding: 0; }</style>\
+         <script>track()</script></head>\
+         <body><p>Hello from the newsletter</p></body></html>";
+
+    fn snippet_of_message(cache: &MessageCache, id: i64) -> Option<String> {
+        cache
+            .conn
+            .query_row(
+                "SELECT snippet FROM messages WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet() {
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(4, "Weekly")).unwrap();
+        cache
+            .save_message_body(id, None, Some(A_NEWSLETTER))
+            .unwrap();
+
+        assert_eq!(
+            snippet_of_message(&cache, id).as_deref(),
+            Some("Hello from the newsletter")
+        );
+    }
+
+    #[test]
+    fn test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers() {
+        // The reader the message goes through writes `# ` for a heading and
+        // `- ` for an item, which is right for a box somebody edits and wrong
+        // for a line read aloud on every row.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(5, "Agenda")).unwrap();
+        cache
+            .save_message_body(
+                id,
+                None,
+                Some("<h1>Big news</h1><ul><li>one</li><li>two</li></ul>"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            snippet_of_message(&cache, id).as_deref(),
+            Some("Big news one two")
+        );
+    }
+
+    // ── Snippets already stored are put right once ──────────────────────
+    //
+    // Every HTML-only message somebody downloaded before the reader changed
+    // has the stylesheet in its snippet column, and the column is what the
+    // list reads. So the stored ones are re-derived once, on the first open
+    // after the change, and each row put right is reindexed, because the
+    // index holds a copy of the snippet and the body text and a search for
+    // `padding` would otherwise still find the newsletter.
+
+    /// The snippet an old build stored for `A_NEWSLETTER`, written over the
+    /// column by SQL the way it sits in a database from before the change.
+    const THE_STYLESHEET_SNIPPET: &str =
+        "Weekly #outlook a { padding: 0; } track() Hello from the newsletter";
+
+    fn plant_the_old_snippet(cache: &MessageCache, id: i64) {
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET snippet = ?1 WHERE id = ?2",
+                rusqlite::params![THE_STYLESHEET_SNIPPET, id],
+            )
+            .unwrap();
+        cache.index_message_for_search(id).unwrap();
+    }
+
+    /// A database from before the pass existed, which is what everybody
+    /// upgrading has. `MessageCache::new` runs the pass on open and records
+    /// it as done, so a fresh test cache already carries the record; taking
+    /// it out is what makes the fixture the old database rather than a new
+    /// one with an old row planted in it.
+    fn as_if_the_pass_had_never_run(cache: &MessageCache) {
+        cache
+            .conn
+            .execute("DELETE FROM work_done_once", [])
+            .unwrap();
+    }
+
+    #[test]
+    fn test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included() {
+        let cache = body_test_cache();
+        let newsletter = cache.save_message(&cached(6, "Weekly")).unwrap();
+        cache
+            .save_message_body(newsletter, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, newsletter);
+        // A message with a plain part, whose snippet came from that part and
+        // is not this pass's to touch, however odd it looks.
+        let letter = cache.save_message(&cached(7, "A letter")).unwrap();
+        cache
+            .save_message_body(letter, Some("Dear Ada, the numbers are attached."), None)
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET snippet = 'left as it was' WHERE id = ?1",
+                rusqlite::params![letter],
+            )
+            .unwrap();
+        assert_eq!(
+            found_by_the_search_box(&cache, "padding"),
+            1,
+            "the fixture does not reproduce the defect: the index does not find the stylesheet"
+        );
+        as_if_the_pass_had_never_run(&cache);
+
+        let put_right = cache
+            .put_right_the_snippets_read_from_stylesheets()
+            .unwrap();
+
+        assert_eq!(put_right, 1, "one HTML-only message was stored wrongly");
+        assert_eq!(
+            snippet_of_message(&cache, newsletter).as_deref(),
+            Some("Hello from the newsletter")
+        );
+        assert_eq!(
+            snippet_of_message(&cache, letter).as_deref(),
+            Some("left as it was"),
+            "a snippet derived from a plain part was rewritten"
+        );
+        assert_eq!(
+            found_by_the_search_box(&cache, "padding"),
+            0,
+            "the index row was not rebuilt with the snippet"
+        );
+        assert_eq!(found_by_the_search_box(&cache, "newsletter"), 1);
+    }
+
+    #[test]
+    fn test_snippets_are_put_right_once_and_a_second_call_reads_no_body() {
+        let cache = body_test_cache();
+        let first = cache.save_message(&cached(8, "Weekly")).unwrap();
+        cache
+            .save_message_body(first, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, first);
+        as_if_the_pass_had_never_run(&cache);
+
+        assert_eq!(
+            cache
+                .put_right_the_snippets_read_from_stylesheets()
+                .unwrap(),
+            1
+        );
+
+        // A second wrong row arriving after the pass: a body written by an
+        // old build that somehow reached the database later. The pass is
+        // over, so it is not read, which is how the second call is known to
+        // have read nothing rather than to have found nothing.
+        let later = cache.save_message(&cached(9, "Weekly again")).unwrap();
+        cache
+            .save_message_body(later, None, Some(A_NEWSLETTER))
+            .unwrap();
+        plant_the_old_snippet(&cache, later);
+
+        assert_eq!(
+            cache
+                .put_right_the_snippets_read_from_stylesheets()
+                .unwrap(),
+            0,
+            "the pass ran a second time"
+        );
+        assert_eq!(
+            snippet_of_message(&cache, later).as_deref(),
+            Some(THE_STYLESHEET_SNIPPET),
+            "a body was read on the second call"
+        );
     }
 
     #[test]

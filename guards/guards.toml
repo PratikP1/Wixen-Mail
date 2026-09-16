@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 27 records have arrived since and have not been through it.
+# 32 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -7535,9 +7535,20 @@ name = "a task or event body written as html is read as the structure it carries
 file = "src/application/long_text.rs"
 # Re-measured 2026-09-11. `from_markup` is now one of two entry points onto
 # `read_markup`, so the break moved to the function that does the work and
-# covers both readings at once.
+# covers both readings at once. Re-measured 2026-09-16 when the sanitising
+# call gained the `<title>` element and `words_of_markup` became a third
+# reading through it: the `before` is the body as it stands, and the words
+# test reddens with the rest.
 before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
-    let cleaned = ammonia::clean(html);
+    // `ammonia`'s defaults drop a `<script>` or `<style>` element with its
+    // content and strip every other disallowed tag around its content. A
+    // `<title>` is the one element whose content is not part of what a reader
+    // would say either: a whole message carries one in its head, and kept, it
+    // arrived at the front of every newsletter's snippet (#32).
+    let cleaned = ammonia::Builder::default()
+        .add_clean_content_tags(["title"])
+        .clean(html)
+        .to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
@@ -7556,6 +7567,16 @@ after = '''fn read_markup(html: &str, keeping: Keeping) -> String {
 # naming five where the truth is forty is the shape this file exists to stop,
 # and nothing found it except running the remedy the count check printed.
 red = [
+    "application::long_text::tests::test_the_words_of_markup_are_the_words_alone_without_markers_or_stylesheets",
+    # The snippet and the search index read an HTML-only message body through
+    # this function since 2026-09-16 (#32), so a reader that flattens reddens
+    # them too; the runner named these five, the first draft of this list did
+    # not.
+    "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
+    "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
+    "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
     "application::long_text::tests::test_a_bar_inside_a_cell_does_not_break_the_table_it_is_in",
     "application::long_text::tests::test_a_line_break_kept_for_editing_is_still_a_line_break",
@@ -7613,7 +7634,9 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
     { file = "src/service/tasks_api.rs", tests = 62 },
@@ -8822,7 +8845,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8860,7 +8883,7 @@ red = [
     "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8888,7 +8911,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8906,7 +8929,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -8921,7 +8944,7 @@ before = '''                        push_item("- ", child, out, keeping);'''
 after = '''                        let _ = &child;'''
 red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8939,7 +8962,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8950,7 +8973,7 @@ before = """                    "br" => out.push('\\n'),
 after = """                    // An image reached without a paragraph around it."""
 red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8964,7 +8987,7 @@ red = [
     "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -8992,7 +9015,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9011,7 +9034,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9029,7 +9052,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9058,7 +9081,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9074,7 +9097,7 @@ after = """            if let Node::Element(element) = child.value()
                 saw_a_paragraph = true;"""
 red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9091,7 +9114,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -9117,7 +9140,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9146,7 +9169,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9160,7 +9183,7 @@ before = '''                    "script" | "style" => {}
 after = '''                    _ => inline(child, out, keeping),'''
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 59 },
+    { file = "src/application/long_text.rs", tests = 60 },
 ]
 
 # ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
@@ -11243,7 +11266,7 @@ before = """    let wanted = system_language()?.to_ascii_lowercase();
 after = """    None"""
 red = ["service::spellcheck::tests::test_the_machines_language_is_exactly_the_best_match_for_its_real_locale"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11264,7 +11287,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11279,7 +11302,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11292,10 +11315,15 @@ red = [
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
     # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+    # Added 2026-09-16 by 09-02's re-measure: the family arm moved into
+    # `first_available_in_the_family_of` and `language_to_use`'s last arm
+    # reaches it too, so two of the resolver's tests redden under this break.
+    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11307,10 +11335,18 @@ red = [
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
     # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+    # Added 2026-09-16 by 09-02's re-measure: `language_to_use`'s last arm
+    # reaches this line too, so a break that matches the wrong family answers
+    # the resolver's family cases with the wrong language or with a language
+    # where it wanted none.
+    "service::spellcheck::tests::test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another",
+    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
+    "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11333,10 +11369,14 @@ red = [
     "service::spellcheck::tests::test_a_real_windows_list_is_used_instead_of_the_fallback",
     "service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback",
     "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
+    # Added 2026-09-16 by 09-02's re-measure: the resolver's test that hands
+    # `choices_from` a real list of three reads the fallback six instead under
+    # this break, and none of the six is en-US.
+    "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11346,20 +11386,34 @@ before = """            available: language.code == "en","""
 after = """            available: language.code != "en","""
 red = ["service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
+# Until 2026-09-16 this record was "the first regional variant Windows offers
+# shares the language, not differs from it", breaking `find_regional_variant`.
+# That function took the first of the family Windows listed for a bare stored
+# tag, and on an en-US machine the first English Windows lists is the
+# Caribbean (#21). It is retired; the family fallback is now the last arm of
+# `language_to_use`, reached only when the machine's own region is not in
+# the stored tag's family, and this is that arm taken out. The test asking
+# for `None` for a language nothing offers stays green under the break on
+# purpose: `None` is what it wanted either way.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
 [[guard]]
-name = "the first regional variant Windows offers shares the language, not differs from it"
+name = "a bare stored language on a machine set to another falls to the first of its family, not to nothing"
 file = "src/service/spellcheck/mod.rs"
-before = """        .find(|candidate| short_code(candidate) == short_code(tag))"""
-after = """        .find(|candidate| short_code(candidate) != short_code(tag))"""
+before = """    first_available_in_the_family_of(&stored, offered)
+}"""
+after = """    None
+}"""
 red = [
-    "service::spellcheck::tests::test_a_bare_language_matches_the_first_regional_variant_windows_offers",
-    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another",
+    "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11369,7 +11423,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written + 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11379,7 +11433,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written * 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: how a source and a spelling summary describe themselves ────
@@ -11398,7 +11452,7 @@ before = """        match self {
 after = """        "xyzzy""""
 red = ["service::spellcheck::tests::test_every_source_describes_itself_honestly"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11408,7 +11462,7 @@ before = """        count if count <= NAMED => format!("""
 after = """        count if count < NAMED => format!("""
 red = ["service::spellcheck::tests::test_exactly_three_words_are_all_named_without_an_and_zero_others"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: the Speller trait, reached through a trait object ──────────
@@ -11425,7 +11479,7 @@ after = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11439,7 +11493,7 @@ before = """        Err(Error::Other(
 after = """        Ok(())"""
 red = ["service::spellcheck::tests::test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11453,7 +11507,7 @@ after = """    fn language(&self) -> &str {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_reports_its_real_language"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: SpellChecker's own methods ──────────────────────────────────
@@ -11466,7 +11520,7 @@ after = """        let _ = &self.backend;
         false"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_checks_against_the_data_it_was_given"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11477,7 +11531,7 @@ after = """        let _ = &self.backend;
         true"""
 red = ["service::spellcheck::tests::test_a_plain_checker_without_a_real_dictionary_says_so"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11491,7 +11545,7 @@ after = """        let alphabet = supported_languages()
             .find(|l| l.code != lang_code)"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11509,7 +11563,7 @@ after = """                let w = line.trim().to_lowercase();
                 }"""
 red = ["service::spellcheck::tests::test_load_dictionary_file_adds_every_nonblank_line"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11522,7 +11576,7 @@ red = [
     "service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11532,7 +11586,7 @@ before = """        base + self.custom_words.len()"""
 after = """        base - self.custom_words.len()"""
 red = ["service::spellcheck::tests::test_word_count_includes_words_added_this_session"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11546,7 +11600,7 @@ before = """    } else if cfg!(target_os = "windows")
 after = """    }"""
 red = ["service::spellcheck::tests::test_default_dict_search_paths_includes_the_windows_location"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11560,7 +11614,7 @@ after = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
     }"""
 red = ["service::spellcheck::tests::test_dict_search_paths_reports_what_this_checker_actually_searched"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11592,7 +11646,7 @@ after = """    let _ = (hunspell_name, search_paths);
     None"""
 red = ["service::spellcheck::tests::test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11602,7 +11656,7 @@ before = """    if s.is_empty() || s.len() <= 1 {"""
 after = """    if s.is_empty() {"""
 red = ["service::spellcheck::tests::test_a_single_letter_is_too_short_to_be_worth_checking"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11612,7 +11666,7 @@ before = """    if lower.contains('@') && lower.contains('.') {"""
 after = """    if lower.contains('@') || lower.contains('.') {"""
 red = ["service::spellcheck::tests::test_a_dot_alone_is_not_treated_as_an_email"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: document locale and i18n ────────────────────────────────────
@@ -11626,7 +11680,7 @@ before = """    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
 after = """    let _ = code;"""
 red = ["service::spellcheck::tests::test_set_document_locale_writes_the_code_for_reading_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11636,7 +11690,7 @@ before = """        let count = map.len();"""
 after = """        let count = 0;"""
 red = ["service::spellcheck::tests::test_load_translations_file_reads_every_entry_in_the_table"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11646,7 +11700,7 @@ before = """        self.active_locale = Locale::from_code(code);"""
 after = """        let _ = code;"""
 red = ["service::spellcheck::tests::test_set_locale_changes_which_language_is_read_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11661,7 +11715,7 @@ after = """        let _ = args;
         template"""
 red = ["service::spellcheck::tests::test_tf_fills_in_its_placeholders"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: windows_speller.rs, the parts that are not COM ─────────────
@@ -13628,8 +13682,8 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -13939,7 +13993,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/mod.rs", tests = 23 },
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
 # ── A narrowed search not paying for a coverage figure it cannot use ────────
@@ -13972,7 +14026,7 @@ red = [
     "presentation::managers::tests::test_a_search_that_reads_no_message_text_is_offered_no_fetch",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/searching.rs", tests = 25 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -15011,7 +15065,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -15091,7 +15145,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -15131,7 +15185,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 43 },
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -22785,4 +22839,130 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/installer.rs", tests = 20 },
+]
+
+# The middle arm of `language_to_use`, which is the whole of the fix for #21:
+# a bare stored "en" on a machine set to English (United States) resolves to
+# en-US rather than to the first English Windows lists, which is the
+# Caribbean. The break is the shape the old code had: the machine's own
+# region is found and the first of the family is taken anyway. The exact
+# stored tag, the machine set to another language, and a language nothing
+# offers all stay green under it, because none of them reaches this arm.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "a bare stored language resolves to the region this machine is set to, not to the first Windows lists"
+file = "src/service/spellcheck/mod.rs"
+before = """        return Some(own_region);"""
+after = """        return first_available_in_the_family_of(&stored, offered);"""
+red = [
+    "service::spellcheck::tests::test_a_bare_stored_language_resolves_to_the_region_this_machine_is_set_to",
+    "service::spellcheck::tests::test_a_bare_stored_language_follows_the_machine_to_whichever_region_it_has",
+    "service::spellcheck::tests::test_the_stored_tag_and_the_machines_tag_are_matched_without_regard_to_case",
+    "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
+]
+tests_last_seen = [
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+]
+
+# The settings screen's language row, put back the way it was: a stored tag
+# that matches no row selects row 0. On a machine set to English (United
+# States) row 0 in Windows' order is English (Caribbean), and a profile from
+# before 2026-09-03 stores a bare "en" that matched no row, which is what the
+# tester saw (#21). The break keeps the resolver's answer and loses only the
+# fallback, so the "en" case stays right on this machine and the tag nothing
+# offers is what goes red; on a runner with no spell checking the built-in
+# list has "en" at row 0 and only the same case can redden.
+#
+# `suite` names the target that builds the screen, which couples the target
+# to this file for `check.sh --suites-for`, and `wx_settings.rs` holds no
+# unit tests of its own.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, `cargo test --test the_language_the_screen_shows_is_the_one_used`.
+[[guard]]
+name = "the settings screen shows a stored language nothing offers as itself, not as row 0"
+file = "src/presentation/wx_settings.rs"
+suite = "the_language_the_screen_shows_is_the_one_used"
+before = """        .or_else(|| row_of(stored));"""
+after = """        .or(Some(0));"""
+red = [
+    "test_the_language_the_screen_shows_is_the_one_the_checker_uses",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_language_the_screen_shows_is_the_one_used.rs", tests = 1 },
+]
+
+# The snippet of an HTML-only body taken from the markup as it is rather than
+# through the reader the message goes through, which is the shape of #32 one
+# step cruder: the stylesheet, the script and the tags themselves all reach
+# the column the list reads aloud on every row. The pass that puts stored
+# snippets right derives through the same function, so its rows come out
+# wrong the same way and its test reddens with the save's. So does the index
+# test, which the first draft of this list did not name and the runner did:
+# the index row carries the snippet column, and a snippet holding the
+# stylesheet is findable by `padding` whatever the body column holds.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "a snippet of an HTML-only body is its words through the reader, not the markup as it is"
+file = "src/data/message_cache/bodies.rs"
+before = """        .or_else(|| body.body_html.as_deref().map(long_text::words_of_markup));"""
+after = """        .or_else(|| body.body_html.as_deref().map(str::to_string));"""
+red = [
+    "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
+    "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
+    "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
+]
+
+# The index row for an HTML-only body taking the markup as it is, so a search
+# for a word inside a stylesheet finds every newsletter, which is the second
+# half of #32 and the one the issue did not name. The pass that puts stored
+# snippets right rebuilds each row's index entry through this arm, so its
+# search for `padding` finds the newsletter again under the break.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "the index takes an HTML-only body as its words through the reader, not as the markup"
+file = "src/data/message_cache/searching.rs"
+before = """                (None, Some(html)) => crate::application::long_text::words_of_markup(&html),"""
+after = """                (None, Some(html)) => html,"""
+red = [
+    "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
+    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/searching.rs", tests = 26 },
+]
+
+# The pass recording itself as done under a name nothing asks about, which is
+# the marker never written in the shape a real slip would take: the second
+# open reads every HTML-only body again, and the test that plants a second
+# wrong row after the first pass finds it put right when it should have been
+# left alone. The first pass's own test stays green, because a first pass
+# does not read the marker.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "the snippet pass records itself as done, not under a name nothing asks about"
+file = "src/data/message_cache/bodies.rs"
+before = """                rusqlite::params![SNIPPETS_PUT_RIGHT, now()],"""
+after = """                rusqlite::params!["never", now()],"""
+red = [
+    "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 47 },
 ]

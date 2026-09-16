@@ -155,7 +155,7 @@ impl WindowsSpeller {
     /// project's control and different on every machine, including whether
     /// the COM factory exists at all. `mod.rs` already tests the pure
     /// decision layered on top of this (`choices_from`, `best_available_match`,
-    /// `find_regional_variant`) against lists it makes up itself, which is
+    /// `language_to_use`) against lists it makes up itself, which is
     /// what actually needed pinning; this is the live data feeding it.
     pub fn supported_languages() -> Vec<String> {
         match Self::what_this_machine_offers() {

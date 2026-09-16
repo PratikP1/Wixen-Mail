@@ -23,6 +23,40 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: no `1.0.0-alpha.1` has been published. Cutting the first alpha is a dispatch
   of the Release workflow, done on purpose, and has not happened.
 
+### Fixed
+
+- **A computer set to English (United States) had its spelling checked in English (Caribbean),
+  and Settings said so.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#21). The cause
+  was a stored value read wrongly: a profile made before 2026-09-03 stores the bare language `en`,
+  which was the default for everybody then, and both the checker and the Settings list read a bare
+  `en` as the first English Windows lists, which on an English (United States) computer is the
+  Caribbean. Windows lists nineteen kinds of English on such a computer and the United States is
+  seventeenth. A stored language that names no region now resolves to the region this computer is
+  set to when it is in the same family, so `en` on an English (United States) computer is checked
+  as English (United States), and the Settings list shows the language that is really used rather
+  than whichever row came first. A language you chose yourself is kept exactly as you chose it,
+  and a stored language this computer cannot check is shown as itself, marked as having no
+  dictionary, rather than as something else.
+  Known limitations: the stored value is rewritten to the resolved language only when you press OK
+  in Settings. Until then the file still says `en`, and every start resolves it the same way.
+
+- **The first line of a newsletter read its stylesheet aloud, starting `#outlook a { padding: 0;
+  }`, and a search for a word from a stylesheet found the newsletter.** Reported on 2026-09-15
+  from build `0.125.1+g3e633252` (#32). The snippet on every message row, which is what a screen
+  reader says first as you arrow through a folder, was derived for a message with no plain-text
+  part by a stripper of its own that kept everything between tags, and most marketing mail opens
+  its head with a stylesheet. The search index took the same text, so its copy of the message held
+  the stylesheet too. A snippet now comes through the same reader the message itself does, which
+  drops stylesheets, scripts and the page title and keeps the words, and so does the text the
+  search index holds, so a search no longer finds a newsletter by a word in its stylesheet.
+  Snippets already stored for messages with no plain-text part are put right once, on the first
+  start after this build. What that costs: each such message's stored text is read once, its
+  snippet rewritten where it differs, and its row in the search index rebuilt; the log says how
+  many and how long it took, and nothing is read on later starts. If the first start is stopped
+  before the pass finishes, the next start finishes it.
+  Known limitations: a message whose text was never fetched has no snippet to put right, as
+  before; it gains one when its text arrives.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
