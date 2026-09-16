@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 445
+open_count: 453
 waived_count: 0
 fixed_count: 26
-total_count: 471
-last_updated: 2026-09-16T02:33:25.593Z
+total_count: 479
+last_updated: 2026-09-16T06:53:09.266Z
 ---
 
 # Broken Windows Ledger
@@ -486,6 +486,14 @@ last_updated: 2026-09-16T02:33:25.593Z
 | 469 | 08 | todo | src/application/caldav_sync.rs |  | 08-07 task 3: the seen_uids insert of the compound id at the top of one_caldav_day_kept_out_of_its_series is redundant, because the loop over the server's answer already marks the changed day's stored identity seen before the day is folded; taking it out reddens nothing on the runners or here. Its record now breaks the marking that holds the rule; the insert is a dead-code candidate to remove with a reading that says why | open |  | 2026-09-16T01:54:08.175Z |  |
 | 470 | 08 | deviation | guards/guards.toml |  | 08-07 task 3: two records are right on this machine and blind on a runner, and are left as written. An hour with no zone means an hour here: the runner's clock is UTC, so a break that sends the local hour as UTC changes nothing there. The walk into Windows own chain structures really happens: the runner has no chain to walk. A runner sweep reports both as a named test staying green; read them as measured here, or give each a fixture that does not depend on the machine | open |  | 2026-09-16T01:54:08.848Z |  |
 | 471 | 08 | unmet-truth | src/application/caldav_sync.rs |  | 08-07 task 3: the rule that a changed day of a CalDAV series is marked seen before the removal pass can run has no test that would notice it broken: taking out either seen_uids marking leaves test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it green, measured on the runners and here. The record of 2026-08-14 that named it was renamed to the one fact the break really guards. What keeps the moved day now was not reconstructed; a test that breaks when the marking goes is the answer | open |  | 2026-09-16T02:33:25.593Z |  |
+| 472 | 08 | deviation | src/service/protocols/imap.rs |  | 08-08 mutation run survivor, untested behaviour: imap.rs:494:9 replace ImapStream::into_plain with None survived; the one caller is the STARTTLS upgrade, which no loopback test reaches because no test server here speaks TLS; needs a loopback server with a certificate | open |  | 2026-09-16T06:53:05.804Z |  |
+| 473 | 08 | deviation | src/service/protocols/imap.rs |  | 08-08 mutation run survivor, untested behaviour: imap.rs:527:9 replace poll_flush with Poll::from(Ok(())) survived; equivalent on the plain stream, where tokio's TcpStream::poll_flush is always ready, and untested on the TLS stream, where a skipped flush leaves the record layer's buffer unsent | open |  | 2026-09-16T06:53:06.311Z |  |
+| 474 | 08 | deviation | src/service/protocols/imap.rs |  | 08-08 mutation run survivor, untested behaviour: imap.rs:534:9 replace poll_shutdown with Poll::from(Ok(())) survived; a skipped shutdown is invisible to a loopback test that drops the socket and matters on TLS, where the close-notify never goes out | open |  | 2026-09-16T06:53:06.819Z |  |
+| 475 | 08 | deviation | src/service/protocols/pop3.rs |  | 08-08 mutation run survivor, untested behaviour: pop3.rs:99:9 replace Pop3Stream::into_plain with None survived; the STLS upgrade, the same gap as IMAP's, needing a loopback server that speaks TLS | open |  | 2026-09-16T06:53:07.322Z |  |
+| 476 | 08 | deviation | src/service/protocols/pop3.rs |  | 08-08 mutation run survivor, untested behaviour: pop3.rs:132:9 replace poll_flush with Poll::from(Ok(())) survived; equivalent on the plain stream and untested on TLS, the same as IMAP's | open |  | 2026-09-16T06:53:07.799Z |  |
+| 477 | 08 | deviation | src/service/protocols/pop3.rs |  | 08-08 mutation run survivor, untested behaviour: pop3.rs:139:9 replace poll_shutdown with Poll::from(Ok(())) survived; the same as IMAP's | open |  | 2026-09-16T06:53:08.277Z |  |
+| 478 | 08 | deviation | src/service/caldav.rs |  | 08-08 mutation run survivor, untested behaviour and the runner shape of ledger 470: caldav.rs:202:9 replace CalDavClient::for_account with Default::default() survived; the constructor reads this machine's stored settings through ConfigManager::load_stored, so a test asserting the allowed client passes where the settings allow it and reads wrong on a runner with no settings file; the constructor wants its answer as an argument before it can be pinned | open |  | 2026-09-16T06:53:08.779Z |  |
+| 479 | 08 | deviation | docs/plans/20260915-whole-tree-mutation-run.md |  | 08-08 mutation run, six survivors recorded as equivalent with the reason on the page rather than killed: mailbox_name.rs:193:5 and 251:30, caldav.rs:1097:20, 1687:18, 1789:25 and 1812:35; two of them are equivalences the code's own comments already claimed and the run has now confirmed; recorded so the next round does not triage them again from scratch | open |  | 2026-09-16T06:53:09.266Z |  |
 
 ````json
 [
@@ -6139,6 +6147,102 @@ last_updated: 2026-09-16T02:33:25.593Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T02:33:25.593Z",
+    "resolved_at": null
+  },
+  {
+    "id": 472,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: imap.rs:494:9 replace ImapStream::into_plain with None survived; the one caller is the STARTTLS upgrade, which no loopback test reaches because no test server here speaks TLS; needs a loopback server with a certificate",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:05.804Z",
+    "resolved_at": null
+  },
+  {
+    "id": 473,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: imap.rs:527:9 replace poll_flush with Poll::from(Ok(())) survived; equivalent on the plain stream, where tokio's TcpStream::poll_flush is always ready, and untested on the TLS stream, where a skipped flush leaves the record layer's buffer unsent",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:06.311Z",
+    "resolved_at": null
+  },
+  {
+    "id": 474,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: imap.rs:534:9 replace poll_shutdown with Poll::from(Ok(())) survived; a skipped shutdown is invisible to a loopback test that drops the socket and matters on TLS, where the close-notify never goes out",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:06.819Z",
+    "resolved_at": null
+  },
+  {
+    "id": 475,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/pop3.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: pop3.rs:99:9 replace Pop3Stream::into_plain with None survived; the STLS upgrade, the same gap as IMAP's, needing a loopback server that speaks TLS",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:07.322Z",
+    "resolved_at": null
+  },
+  {
+    "id": 476,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/pop3.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: pop3.rs:132:9 replace poll_flush with Poll::from(Ok(())) survived; equivalent on the plain stream and untested on TLS, the same as IMAP's",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:07.799Z",
+    "resolved_at": null
+  },
+  {
+    "id": 477,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/protocols/pop3.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour: pop3.rs:139:9 replace poll_shutdown with Poll::from(Ok(())) survived; the same as IMAP's",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:08.277Z",
+    "resolved_at": null
+  },
+  {
+    "id": 478,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "src/service/caldav.rs",
+    "line": null,
+    "description": "08-08 mutation run survivor, untested behaviour and the runner shape of ledger 470: caldav.rs:202:9 replace CalDavClient::for_account with Default::default() survived; the constructor reads this machine's stored settings through ConfigManager::load_stored, so a test asserting the allowed client passes where the settings allow it and reads wrong on a runner with no settings file; the constructor wants its answer as an argument before it can be pinned",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:08.779Z",
+    "resolved_at": null
+  },
+  {
+    "id": 479,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "docs/plans/20260915-whole-tree-mutation-run.md",
+    "line": null,
+    "description": "08-08 mutation run, six survivors recorded as equivalent with the reason on the page rather than killed: mailbox_name.rs:193:5 and 251:30, caldav.rs:1097:20, 1687:18, 1789:25 and 1812:35; two of them are equivalences the code's own comments already claimed and the run has now confirmed; recorded so the next round does not triage them again from scratch",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T06:53:09.266Z",
     "resolved_at": null
   }
 ]

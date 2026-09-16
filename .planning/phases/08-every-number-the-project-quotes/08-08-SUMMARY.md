@@ -1,7 +1,7 @@
 ---
 phase: 08-every-number-the-project-quotes
 plan: 08
-status: partial
+status: complete
 subsystem: testing
 tags: [mutants, shards, measurements, rate, tooling, checkpoint]
 
@@ -19,12 +19,13 @@ provides:
   - "`--file GLOB` on `--shard` and `--shards`, recorded in `conditions.txt`, the merger refusing two shards whose globs differ; `.github/workflows/mutants.yml` dispatchable from the Actions tab, `mode=diff` against a named ref or `mode=shards` over a range, one runner per shard; `ci.yml`'s Test Suite job checking out the whole history; readings in `tests/house_style.rs` holding all three"
   - "Both worktrees, `../wixen-mail-sweep` and `../wixen-mail-mutants`, at `main` as it stands after the third merge, `abf3e24c`, built and clean"
   - "Pratik's answer of 2026-09-15 recorded below with the terms it was put in, and the two ways to start the scoped run, on a runner and on this machine"
-affects: [08-08 tasks 3 and 4, 08-07 task 3, 08-09]
+  - "The two runs read whole by the merger and `docs/plans/20260915-whole-tree-mutation-run.md`: 870 mutants, 56 survivors, 43 killed by tests shown red by hand with 20 guard records, 6 equivalent with the reason, 7 queued as untested behaviour; the four timeouts re-run and named; six runner rows on the measurements page; criterion 4 revised in the roadmap"
+affects: [08-09]
 
 actuals:
-  tokens: 21500
-  tasks: 2
-  commits: 12
+  tokens: 38500
+  tasks: 4
+  commits: 17
 
 tech-stack:
   added: []
@@ -102,19 +103,30 @@ coverage:
         ref: "tests/house_style.rs#test_the_mutation_workflow_dispatch_hands_the_script_flags_it_accepts, #test_every_job_that_runs_the_tests_checks_out_the_whole_history, and their two companions; 87 doctest examples in 64 items"
         status: pass
       - kind: other
-        ref: "two scoped shards merged and a third without the filter refused, on the stand-in crate; no dispatch has run and no shard has run on a runner"
+        ref: "two scoped shards merged and a third without the filter refused, on the stand-in crate; then the two real dispatches, 35 shards on runners, read whole"
+        status: pass
+    human_judgment: false
+  - id: D5
+    description: "The two runs' reports read after every shard exited, the four timeouts re-run by name, and every survivor killed with a test shown red by hand or recorded with its reason on the run page"
+    requirement: PERF-07
+    verification:
+      - kind: other
+        ref: "python scripts/mutants_report.py --shards target/runner-mutants-protocols 18 and --shards target/runner-mutants-caldav 17, both accepted; cargo mutants --in-place -f ... --re ... over the four timeouts, 4 timeouts again"
+        status: pass
+      - kind: unit
+        ref: "src/service/protocols/imap.rs, pop3.rs and src/service/caldav.rs, the 21 tests at 96ade665, each applied against its mutant by hand and red; 20 records in guards/guards.toml measured with exactly the test named red"
         status: pass
     human_judgment: false
 
-duration: 6h50min
-completed: 2026-09-15
+duration: 13h30min
+completed: 2026-09-16
 ---
 
 # Phase 8 Plan 08: A mutation run in shards a person can start, stop and read as one Summary
 
-**A whole-tree mutation run is now a set of shards on one commit: `scripts/mutants.sh --shards n` runs them in turn, skips the complete ones, waits for a quiet machine, and a kill loses one shard; `scripts/mutants_report.py --shards DIR n` reads every shard as one run and refuses a missing, partial, moved or differently committed shard by name. The rate was measured on one shard of 25 mutants under both suite shapes, four runs in a worktree, and the products are 17.5 days for the library at eight threads and 19.8 days for every target, both in place, both on `docs/development/measurements.md` as two terms. Pratik answered on 2026-09-15: not the whole tree this milestone; the guard sweep first, then one scoped run over `src/service/protocols/**`, 450 mutants in 18 shards, on GitHub's runners through a workflow anybody can dispatch from the Actions tab, with this machine as the fallback; criterion 4 revised under criterion 6. The scoping flag, the dispatchable workflow, and a fix to CI's checkout depth found by the morning's push are merged. Nothing has been dispatched and nothing has been started.**
+**A whole-tree mutation run is now a set of shards on one commit: `scripts/mutants.sh --shards n` runs them in turn, skips the complete ones, waits for a quiet machine, and a kill loses one shard; `scripts/mutants_report.py --shards DIR n` reads every shard as one run and refuses a missing, partial, moved or differently committed shard by name. The rate was measured on one shard of 25 mutants under both suite shapes, four runs in a worktree, and the products are 17.5 days for the library at eight threads and 19.8 days for every target, both in place, both on `docs/development/measurements.md` as two terms. Pratik answered on 2026-09-15: not the whole tree this milestone; the guard sweep first, then one scoped run over `src/service/protocols/**`, 450 mutants in 18 shards, on GitHub's runners through a workflow anybody can dispatch from the Actions tab, with this machine as the fallback; criterion 4 revised under criterion 6. The scoping flag, the dispatchable workflow, and a fix to CI's checkout depth found by the morning's push are merged. Pratik dispatched two runs, the protocols and CalDAV, on 2026-09-15 at `3e633252`; both were read whole by the merger, 870 mutants, and every one of the 56 survivors is on `docs/plans/20260915-whole-tree-mutation-run.md` with what became of it: 43 killed by tests shown red by hand against their mutants, 6 equivalent with the reason, 7 queued as untested behaviour. The four timeouts were re-run here and are the mutants' own doing. Criterion 4 is revised in the roadmap with the real results.**
 
-Tasks 1 and 2 of 4. Tasks 3 and 4 wait on the run.
+All four tasks. Task 1 and the answer are above; tasks 3 and 4 are under "The runs, read" and "The survivors" below.
 
 ## Performance
 
@@ -232,9 +244,16 @@ Branch `a-shard-can-be-scoped-to-one-area` from `main` at `0fa393ba`, for the an
 12. **Green:** `b81d4dd8` feat(08-08), `mutants.yml` with `workflow_dispatch`, `ci.yml`'s Test Suite checkout at `fetch-depth: 0`, three records measured and one corrected, the changelog. A change under `.github/workflows/` answers `all`, so the hook ran the whole gate on this commit: 7,750 passed and none failed over 58 result lines, 325 s.
 13. **Merge:** `abf3e24c`, `Merge 08-08 task 2, the answer`.
 
-`scripts/check.sh all` on each of the three branches, exit 0 on its first run each time: 329 s, 323 s and 323 s; 7,746 passed on the first two and 7,750 on the third, none failed, 58 result lines; on each merge, 308 s, 327 s and 330 s, the same. Ledger 374's keyring race was not met. Every commit went through `git commit` or `git merge` with the hook on; nothing was piped; the gate's output went to a file and its exit status was read directly; no `.git/index.lock` was left. Nothing is pushed and nothing is dispatched.
+Branch `every-survivor-killed-or-given-its-reason` from `main` at `0fa42bfc`, for tasks 3 and 4, after 08-07 had merged:
 
-**Plan metadata:** two commits, `0fa393ba` after the first two merges and the one carrying this version of the summary after the third, each with 08-07's corrected summary, `STATE.md`, `ROADMAP.md` and `WINDOWS.md`.
+14. **Tests and records:** `96ade665` test(08-08), the 21 tests and their 20 records with the re-measured 65. Green on the tree by design: each test's red was taken by hand against its mutant, and a commit whose named tests pass is not a red commit under the gate, so these carry no trailer and the commit's body says how the reds were taken.
+15. **Documents:** `3ae2b5f1` docs(08-08), the run page, the six rows, the status paragraph, the changelog entry, the timeout comment.
+16. **A guard's marker:** `7a7a2d74` test(08-08), the `\Flagged` line of the attribute test marked as the folder attribute, after the whole gate's `tests/flag_names.rs` refused it.
+17. **Merge:** `e02d2bd4`, `Merge 08-08 tasks 3 and 4`.
+
+`scripts/check.sh all` on each of the first three branches, exit 0 on its first run each time: 329 s, 323 s and 323 s; 7,746 passed on the first two and 7,750 on the third, none failed, 58 result lines; on each merge, 308 s, 327 s and 330 s, the same. On the fourth branch, exit 101 on the first run in 262 s, `test_an_imap_flag_name_is_spelled_in_one_place` naming the new test's line, which is a real guard and not ledger 374's race; exit 0 on the second in 340 s, 7,779 passed and none failed over 60 result lines, and on the merge, 350 s, the same. The keyring race was not met on any run. Every commit went through `git commit` or `git merge` with the hook on; nothing was piped; the gate's output went to a file and its exit status was read directly; no `.git/index.lock` was left. Nothing is pushed.
+
+**Plan metadata:** three commits, `0fa393ba` after the first two merges, `b611ed82` after the third, and the one carrying this version of the summary after the fourth, each with `STATE.md`, `ROADMAP.md` and `WINDOWS.md`.
 
 ## The checkpoint, answered
 
@@ -386,6 +405,67 @@ Any other ending means start again: `Shard k of 496 did not complete, so this st
 
 **If you choose option 3 or 4, say so before starting anything**, and the executor adds `--file GLOB` to the shard modes and comes back with the exact line.
 
+## The runs, read (task 3)
+
+Pratik dispatched two runs on 2026-09-15 from `main` at `3e633252`, confirmed with `gh run view <id> --json headSha`: the protocols, run 34979540954, `mode=shards file=src/service/protocols/** shards=18 first=0 last=17`, 18 shard jobs of which 7 green and 11 red by `gh run view --json jobs`; and CalDAV, the second area the decision named, run 34979543954, `file=src/service/caldav.rs shards=17 first=0 last=16`, 17 shard jobs, 9 green and 8 red. A red job is the script exiting 1 on a survivor or a timeout, and every shard's own verdict block was read. The mutants worktree was moved to `3e633252` with `git -C ../wixen-mail-mutants checkout --detach 3e633252`, and both runs were downloaded with `gh run download <id> --dir target/runner-mutants-<area>` there, 18 and 17 `shard-k-of-N` directories each holding `conditions.txt`, `timing.txt` and `mutants.out/`.
+
+**The merger's verdicts**, both accepted, every shard present, complete, and at one commit:
+
+```
+python scripts/mutants_report.py --shards target/runner-mutants-protocols 18
+[41 mutants listed under "Nothing was watching this", 2 under "The suite never finished against"]
+450 mutants: 316 caught, 41 nothing noticed, 91 the compiler rejected, 2 timed out.
+357 of the 450 mutants got an answer from the suite.
+91 the compiler rejected, 2 timed out: 21 percent of this run asked nothing.
+
+python scripts/mutants_report.py --shards target/runner-mutants-caldav 17
+[15 and 2]
+420 mutants: 378 caught, 15 nothing noticed, 25 the compiler rejected, 2 timed out.
+393 of the 420 mutants got an answer from the suite.
+25 the compiler rejected, 2 timed out: 6 percent of this run asked nothing.
+```
+
+No mutant never started in either run. The run page quotes the two verdicts and lists every name.
+
+**The four timeouts, re-run.** In the worktree at `3e633252`, `-F` on its own was found to leave 241 "delete field" mutants in any listing whatever the pattern, a quirk of 27.1.0, so the re-run was scoped with `-f` per file and `--re` over the four names, listed first to exactly four:
+
+```
+cargo mutants --in-place -f src/service/protocols/imap.rs -f src/service/caldav.rs --re '1081:16: replace \+= with \*=|2872:12: replace -= with /=|520:9.*Poll::from\(Ok\(1\)\)|778:38' -o target/rerun-timeouts -- --all-targets
+ok       Unmutated baseline in 0s build + 118s test
+ INFO Auto-set test timeout to 594s
+TIMEOUT  src/service/caldav.rs:1081:16: replace += with *= in events_in in 56s build + 594s test
+TIMEOUT  src/service/caldav.rs:2872:12: replace -= with /= in fits_in in 63s build + 594s test
+TIMEOUT  src/service/protocols/imap.rs:520:9: replace <impl AsyncWrite for ImapStream>::poll_write -> Poll<std::io::Result<usize>> with Poll::from(Ok(1)) in 87s build + 594s test
+TIMEOUT  src/service/protocols/imap.rs:778:38: replace == with != in ImapSession::read_command in 73s build + 594s test
+4 mutants tested in 46m: 4 timeouts
+```
+
+Quiet machine, `tasklist` finding no `cargo.exe` or `rustc.exe` before the start. So none was the runner's load, the `imap.rs:520:9` one included. Each was then applied by hand to one test: `at *= 1` and `at /= 1` are loops that never advance (`test_parse_ical_vevent` and `test_a_character_that_takes_more_than_one_octet_is_not_cut_in_half_by_a_break` under `timeout`, exit 124 both); `poll_write` returning `Ok(1)` and `read_command` never matching its tag each fail `test_a_folder_that_really_holds_nothing_still_comes_back_empty` in 10 s with "the server never finished the sign-in exchange", so every test that opens a connection fails against them and about ninety such tests at ten seconds outlast the 594 s budget. Neither kind is a survivor of the tests, and neither is counted as caught, because the report's rule is that a timeout is neither. `.cargo/mutants.toml`'s comment carries the four, dated; neither setting moved.
+
+**The rows.** Six on `docs/development/measurements.md`, dated 2026-09-15 at `3e633252`: the runner's rate per area, protocols median 372 s a mutant and mean 353 s over 18 shards (152 to 432), CalDAV median 405 and mean 415 over 17 (329 to 489), against 130 s on this machine, about 2.9 times where the checkpoint guessed three; the per-shard fixed cost, protocols median 1,250 s from a cold cache (750 to 1,070 s build), CalDAV median 626 s because nine of its shards found the workflow's shared cache already filled; and each run's wall clock (4.7 h and 8.1 h from dispatch, the CalDAV shards having queued behind the protocols run), runner time (50.2 h and 52.4 h) and counts by outcome with how much asked a question. The status page's mutation section has a paragraph pointing at the run page. `docs/changelog.md` has the entry with four Known limitations.
+
+## The survivors (task 4)
+
+Every one of the 56 is on `docs/plans/20260915-whole-tree-mutation-run.md` by file with one disposition. The count of lines equals the reports' missed counts: 27 in `imap.rs`, 12 in `pop3.rs`, 2 in `mailbox_name.rs`, 15 in `caldav.rs`.
+
+**43 killed**, by 21 tests at `96ade665`, one per survivor or family, in the files' own test modules against their existing loopback harnesses (`a_server_answering` and `conversing` for IMAP and POP3, `answering` for CalDAV):
+
+| File | Survivors | Tests |
+|---|---|---|
+| `imap.rs` | 24: the nine `attribute_name` arms, `selected_folder` x3, `uids_above` x3, `folder_counts`, the HIGHESTMODSEQ arm, `list_folders`'s leaf filter, `may_change`, `introduce_ourselves`, `require_selected`, `IDLE_WINDOW` x2, `ImapIdleHandle::stop` | 11 |
+| `pop3.rs` | 9: `stat` x4, `listing`, `read_text_data` x3, `reset` | 3, the listing test killing `read_text_data`'s three as well |
+| `caldav.rs` | 10: `discover_calendars`'s `&&`, `list_events`'s `!=`, `journal_entries_in` x3, `names_a_collection` x3, `normalize_ical_datetime` at 1816, `put_back_together`'s guard | 7 |
+
+Each test was shown red by hand: the mutant applied with the editor, the test run, the file put back with `git checkout -- <file>`, which restores the staged version and so keeps the tests. 21 such reds, one per record, quoted on the run page as which mutant each family was shown with. One test passed against its mutant the first time: `ImapIdleHandle::stop` replaced by `Ok(())` still ended the watch, because dropping the handle drops the stop sender and the task reads a dropped sender as a stop; what the mutant loses is the wait for the connection to close, so the test now asserts the server has been told LOGOUT by the time `stop` returns, and was red three runs out of three. The first `git checkout` of the session restored the whole file from an index that did not yet hold the tests and took them with the mutant; they were re-added and staged, and every later checkout kept them.
+
+**20 guard records**, each with the mutant as its `after`, measured through `scripts/guards.sh --remeasure` on the whole library, detached with `--log --wait-until-quiet`: 20 of 20 with a verdict, 19 "the one test named went red, and nothing else did" and one "all 2 tests named", the journal record. Before them, the count check named the 65 records whose `tests_last_seen` names the three files, `imap.rs` having gone from 91 tests to 102, `pop3.rs` 7 to 10 and `caldav.rs` 163 to 170; the remedy ran detached over them for 1 h 36 min, 65 of 65 agreeing, and wrote the counts. 825 records by the parser, 805 before; census 802 + 23.
+
+**6 equivalent**, with the reason on the page beside each: `mailbox_name.rs` 193:5 (a separator is ASCII by the module's own doc, so `len_utf8` is 1) and 251:30 (the slice is empty either way); `caldav.rs` 1097:20 (`closed + 1` against `closed * 1`, the code's own comment says the two are not distinguishable) and 1687:18 (a `debug_assert_ne!` two lines above says the two byte positions can never be equal), 1789:25 (an RFC 5545 value holds neither `-` nor `:` and the extended form holds both) and 1812:35 (the slice end is never read past index 15). Ledger 479 holds the six together so the next round does not triage them again.
+
+**7 untested behaviour, queued**, ledger 472 to 478: `into_plain`, `poll_flush` and `poll_shutdown` in both `imap.rs` and `pop3.rs`, which are the STARTTLS and STLS upgrades and the TLS half of the stream shims, unreachable from a loopback test because no test server here speaks TLS (the flush and shutdown are equivalent on the plain stream, where tokio's `TcpStream` answers ready to both, and matter on TLS); and `CalDavClient::for_account`, which reads this machine's stored settings through `ConfigManager::load_stored`, so a test asserting the allowed client would pass here and read wrong on a runner with no settings file, ledger 470's shape. Nothing was found to be dead code: every survivor's function has a non-test caller.
+
+**Criterion 4** is revised in `.planning/ROADMAP.md` in place, dated, with what was run, what was not with the count, the rate and the product, and that the whole tree stays available; PERF-07 is 08-09's to tick or revise against it.
+
 ## What the tree contradicted in the plan
 
 1. **The every-target shape cannot run in a scratch copy.** The tool copies the tree without `.git`; `test_the_share_of_history_before_red_green_is_computed_and_printed` runs `git merge-base` and fails; the baseline is refused. The plan's first rate run, "no pass-through" in a copy, was made and refused, and its 439 s fixed term is on the page as the copy's cost. The shape was measured in place with `-- --all-targets`, which is the suite as the gate runs it; the tool's own default with nothing after `--` also builds and runs every doctest, which the gate does not. Ledger 458.
@@ -420,6 +500,8 @@ Otherwise the plan's task 1 was executed as written. No package installed, `Carg
 
 Four added, each measured on the target through `scripts/guards.sh --remeasure` with exactly the one test named red and nothing else: "shards from two commits are not read as one run" (task 1); "shards over two file filters are not read as one run", "a dispatched shard hands the mutation script a flag it accepts" (`file = .github/workflows/mutants.yml`, the break misspelling `--in-place`) and "a CI job that runs the tests checks out the whole history" (`file = .github/workflows/ci.yml`, the break `fetch-depth: 1`), all three for the answer. One corrected: "the compiler a workflow names is really read out of the workflow" gained `test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept`, found by the remedy, re-measured with all three red. 802 by the parser after, 798 before; census 192 + 610. `tests/house_style.rs` went from 70 test functions to 74 by `grep -cE '^\s*#\[(test|tokio::test)\]\s*$'`, so the count check printed its remedy on both reds of the answer's branch; it was run once at green over the 24 records it named plus the CI record, 196 s, 25 of 25 with a verdict, and wrote 74 into each.
 
+For tasks 3 and 4: 20 added, each holding the mutant it kills as its break, measured on the whole library, 19 with the one test named red and one with both, above under "The survivors"; 65 re-measured first, all agreeing, 1 h 36 min detached. 825 by the parser after, 805 before; census 802 + 23 at `guards/guards.toml:83-84`, where 08-07's sweep left the two numbers.
+
 ## Ledger
 
 `.planning/WINDOWS.md` 457 before, 460 after, both halves of each entry written by `gsd-tools windows append`, checked by `grep -c "| 458 |\|| 459 |\|| 460 |"` and `grep -c '"id": 458\|"id": 459\|"id": 460'`, three and three; no backslash in the added lines, `grep -cF '\'` over the diff's added lines 0; no carriage return.
@@ -435,13 +517,20 @@ For the answer, 460 before and 464 after, checked the same way, four and four, n
 - 463, deviation, `scripts/guards.sh`: the guard sweep could be sharded onto runners the same way and is not.
 - 464, deviation, `.github/workflows/ci.yml`: the checkout depth, found by the push of `main` at `0fa393ba`, fixed at `abf3e24c`, unconfirmed on a runner until the next push.
 
+For tasks 3 and 4, 471 before and 479 after, checked the same way, eight and eight, no backslash, no carriage return:
+
+- 472, 473, 474, deviation, `src/service/protocols/imap.rs`: `into_plain`, `poll_flush` and `poll_shutdown` survived; the STARTTLS upgrade and the TLS half of the shim, unreachable without a loopback server that speaks TLS.
+- 475, 476, 477, deviation, `src/service/protocols/pop3.rs`: the same three for POP3.
+- 478, deviation, `src/service/caldav.rs`: `for_account` survived; it reads the machine's settings and would read wrong on a runner, ledger 470's shape, the one thing the runner environment shaped here.
+- 479, deviation, `docs/plans/20260915-whole-tree-mutation-run.md`: the six equivalents together, so the next round does not triage them again.
+
 ## Issues Encountered
 
-The first rate run's baseline refused, above, which was the finding and not a fault. The launcher's `|| true` was never written, because `test_no_mutation_run_has_its_failure_swallowed` forbids it; the shard's report status is captured into a variable instead. The page's reading refused the two product rows once for command cells with no backticked token. For the answer: the remedy found one record short, corrected above; rustfmt's diff over the new readings was applied by hand rather than by the tool; clippy asked for `trim_end_matches` over an array rather than a closure. Nothing else stopped anything; the gate passed on every commit through the hook and `scripts/check.sh all` passed on its first run on all three branches.
+The first rate run's baseline refused, above, which was the finding and not a fault. The launcher's `|| true` was never written, because `test_no_mutation_run_has_its_failure_swallowed` forbids it; the shard's report status is captured into a variable instead. The page's reading refused the two product rows once for command cells with no backticked token. For the answer: the remedy found one record short, corrected above; rustfmt's diff over the new readings was applied by hand rather than by the tool; clippy asked for `trim_end_matches` over an array rather than a closure. For tasks 3 and 4: `cargo mutants -F` on its own kept 241 "delete field" mutants in every listing whatever the pattern, so the re-run was scoped with `-f` per file and `--re`; the first hand red's `git checkout` restored the file from an index without the tests, and the tests were re-added and staged; the stop test passed against its mutant once and was rewritten; and the whole gate's first run on the last branch was refused by `tests/flag_names.rs`, fixed with the marker the source line carries. Nothing else stopped anything; the gate passed on every commit through the hook.
 
 ## Known Stubs
 
-None. Every flag is reachable from `scripts/mutants.sh`, exercised on the stand-in crate and, for `--shard` and `--in-place`, on the real tree; `--shards` ran end to end, was killed by removing a shard's record, and restarted, on the stand-in only, because a real restart is a 55-minute shard; `--file` ran two scoped shards there and refused a third without the filter. The dispatchable workflow has never been dispatched and no shard has ever run on a runner; it is held by a reading of its text, which is structure and not experience, and the summary says so where the inputs are given. The protocols run is not a stub; it is the answer, and the answer says it has not started.
+None. Every flag is reachable from `scripts/mutants.sh`, exercised on the stand-in crate and, for `--shard` and `--in-place`, on the real tree, and `--shards` with `--file` ran for real on the runners, 35 shards, read whole. The seven survivors queued as untested behaviour are not stubs: each function has a non-test caller and runs in the product; what is missing is a test that can reach the TLS half, and the run page and ledger say so.
 
 ## Threat Flags
 
@@ -453,13 +542,13 @@ Otherwise none. `git status`, `git rev-parse` and `tasklist` are read; the run w
 
 ## Self-Check: PASSED
 
-`scripts/mutants_report.py` holds `def conditions_from`, `def why_these_shards_are_not_one_run`, `def one_run_from`, `def a_shard_is_complete`, `def timing_of`, `def the_timing_line`, `def timeout_for_a_skipped_baseline`, `def why_an_in_place_shard_is_refused` and `def files_in_words`, checked by `grep -c`; `scripts/mutants.sh` holds `--shards`, `--tree-is-clean` and `--file`; `.github/workflows/mutants.yml` holds `workflow_dispatch:` and `ci.yml`'s Test Suite job holds `fetch-depth: 0`; `tests/house_style.rs` holds the four new tests; `docs/development/measurements.md` holds "A whole-tree mutation run, every target, in place"; `guards/guards.toml` holds the four record names above; the commits `6dd3e85e`, `2847391c`, `6497d610`, `99682439`, `d6ef92e9`, `9bcad4af`, `1401e4d3`, `0fa393ba`, `0edfccd9`, `0e89d7c5`, `7fc822af`, `e84efde0`, `b81d4dd8` and `abf3e24c` are in `git log --all`; both worktrees exist at `abf3e24c` with `target/` built; `main` is ahead of `origin/main` and nothing was pushed.
+`scripts/mutants_report.py` holds `def conditions_from`, `def why_these_shards_are_not_one_run`, `def one_run_from`, `def a_shard_is_complete`, `def timing_of`, `def the_timing_line`, `def timeout_for_a_skipped_baseline`, `def why_an_in_place_shard_is_refused` and `def files_in_words`, checked by `grep -c`; `scripts/mutants.sh` holds `--shards`, `--tree-is-clean` and `--file`; `.github/workflows/mutants.yml` holds `workflow_dispatch:` and `ci.yml`'s Test Suite job holds `fetch-depth: 0`; `tests/house_style.rs` holds the four new tests; `docs/development/measurements.md` holds "A whole-tree mutation run, every target, in place"; `guards/guards.toml` holds the four record names above; the commits `6dd3e85e`, `2847391c`, `6497d610`, `99682439`, `d6ef92e9`, `9bcad4af`, `1401e4d3`, `0fa393ba`, `0edfccd9`, `0e89d7c5`, `7fc822af`, `e84efde0`, `b81d4dd8`, `abf3e24c`, `96ade665`, `3ae2b5f1`, `7a7a2d74` and `e02d2bd4` are in `git log --all`; `docs/plans/20260915-whole-tree-mutation-run.md` exists and holds 38 survivor rows covering all 56, families on one row, and no `<` placeholder; `src/service/protocols/imap.rs` holds `fn test_stopping_a_watch_ends_it_and_says_so`, `pop3.rs` `fn test_the_listing_pairs_every_message_with_its_size_and_its_identifier`, `caldav.rs` `fn test_a_journal_listing_the_server_refuses_says_which_status_it_refused_with`; `guards/guards.toml` holds "stopping a watch waits for the connection to sign out"; the mutants worktree is at `3e633252` with both downloads under `target/`; `main` is ahead of `origin/main` and nothing was pushed.
 
 ## Status
 
-`partial`. Tasks 1 and 2 of four. Task 1 merged alone into `main` in two halves, `99682439` and `1401e4d3`; task 2, the checkpoint, answered by Pratik on 2026-09-15 and its work merged alone at `abf3e24c`. Tasks 3 and 4 were not attempted and must not be until every shard of the protocols run is complete, on the runners or here.
+`complete`. All four tasks. Task 1 merged alone into `main` in two halves, `99682439` and `1401e4d3`; task 2, the checkpoint, answered by Pratik on 2026-09-15 and its work merged alone at `abf3e24c`; tasks 3 and 4, the two runs read and every survivor killed or given its reason, merged alone at `e02d2bd4` on 2026-09-16.
 
-Criterion 4 does not close as written and is revised above for 08-09: the protocols run has not started, and the whole tree is not this milestone's. PERF-07's first clause, the rate and the products, is on the page; the rest waits on the run.
+Criterion 4 is revised in the roadmap with the real results and closes as revised: one run in shards on one commit, read after the last shard exited, its timeouts re-run by name, every survivor killed or reasoned. PERF-07 is 08-09's to tick or revise against it; the whole tree outside the two areas has not been through a run since August, and the page says what it would cost.
 
 ---
 *Phase: 08-every-number-the-project-quotes*
