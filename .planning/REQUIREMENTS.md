@@ -2348,8 +2348,17 @@ cause-known defects an hour to a day each. The README in `.planning/phases/09-wh
 names the remaining five groups and the issues in each, so the next planner adds their
 requirements to a later phase's section rather than here.
 
-- [ ] **FOUND-01**: The next build is `1.0.0-alpha.1`, and the versioning rule says how a
+- [x] **FOUND-01**: The next build is `1.0.0-alpha.1`, and the versioning rule says how a
   version moves inside a prerelease.
+  - **Closed 2026-09-16 by 09-01, merged at `c0606807`, on the tree side.** The four `[D]`
+    lines below each have a name: `test_the_version_the_tree_carries_is_at_least_one_point_oh`
+    and `test_the_step_from_the_last_0_x_version_to_1_0_0_is_ordered_both_ways` for the first;
+    `test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it`
+    for the second; `test_the_release_workflow_can_publish_the_version_the_tree_already_carries`
+    for the third; `test_a_saved_settings_file_names_the_build_that_wrote_it` for the fourth;
+    and the four pages, each keeping its old wording dated, for the fifth. The `[S]` line is
+    untouched: nothing has been dispatched, and ledger 483 records the `as-is` level as never
+    run.
   - Evidence: `grep -n '^version' Cargo.toml` -> `0.125.1` on 2026-09-16 at `524ff24f`;
     `Cargo.lock:6805` carries the same number and nothing else in the tree does
     (`grep -rn '0\.125\.1'` over `*.toml`, `*.lock`, `*.rs`, `*.md`, `*.iss`, `*.sh`, `*.yml`,
@@ -2795,7 +2804,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PERF-05 | Phase 8 | Complete |
 | PERF-06 | Phase 8 | Complete |
 | PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
-| FOUND-01 | Phase 9 | Pending |
+| FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Pending |
 | FOUND-03 | Phase 9 | Pending |
 | FOUND-04 | Phase 9 | Pending |
