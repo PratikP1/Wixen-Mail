@@ -1082,6 +1082,68 @@ mod tests {
     }
 
     #[test]
+    fn test_a_saved_settings_file_names_the_build_that_wrote_it() {
+        // The stamp used to name the build that created the profile: `load`
+        // read it back and `save` wrote it out unchanged, so a tester's
+        // profile written on 2026-09-15 by 0.125.1 still said 0.7.7, and a
+        // settings file sent with a bug report could not say which build it
+        // came from. Found on 2026-09-16 reading his profile for #21.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+
+        let from_an_older_build = AppConfig {
+            version: "0.7.7".to_string(),
+            date_wording: "numeric".to_string(),
+            working_day_starts: 6,
+            ..AppConfig::default()
+        };
+        fs::write(
+            config_dir.join("app_config.json"),
+            serde_json::to_string_pretty(&from_an_older_build).expect("the settings as JSON"),
+        )
+        .expect("a settings file stamped by an older build");
+
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.load().expect("the older file to be read");
+        assert_eq!(
+            manager.app_config().version,
+            "0.7.7",
+            "load keeps the stamp as it was"
+        );
+        manager.save().expect("the settings to be written");
+
+        let written = fs::read_to_string(config_dir.join("app_config.json"))
+            .expect("the settings file this build wrote");
+        let stamped: AppConfig = serde_json::from_str(&written).expect("the written settings");
+        assert_eq!(
+            stamped.version,
+            env!("CARGO_PKG_VERSION"),
+            "a file this build wrote still names the build that created the profile"
+        );
+        assert_eq!(stamped.date_wording, "numeric");
+        assert_eq!(stamped.working_day_starts, 6);
+    }
+
+    #[test]
+    fn test_a_settings_file_this_build_created_keeps_its_own_stamp() {
+        // The other half: the stamp is written by `save` and not rewritten
+        // by `load`. A file this build created already carries this build's
+        // version, and a save changes nothing about it.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        assert_eq!(manager.app_config().version, env!("CARGO_PKG_VERSION"));
+
+        manager.save().expect("the settings to be written");
+
+        let written = fs::read_to_string(config_dir.join("app_config.json"))
+            .expect("the settings file this build wrote");
+        let stamped: AppConfig = serde_json::from_str(&written).expect("the written settings");
+        assert_eq!(stamped.version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
     fn test_config_manager() {
         let dir = tempfile::TempDir::new().unwrap();
         let manager = ConfigManager::in_dir(dir.path().join("config"));

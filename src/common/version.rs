@@ -462,6 +462,23 @@ mod tests {
     }
 
     #[test]
+    fn test_the_step_from_the_last_0_x_version_to_1_0_0_is_ordered_both_ways() {
+        // The step this project made on 2026-09-16 (#46): `0.125.1` was the
+        // last plain `0.x` version, the builds that follow are the alpha,
+        // beta and release-candidate stages of `1.0.0`, and `1.0.0` closes
+        // the round. The update check has to see each of those as newer
+        // than the one before, so the exact numbers are named here rather
+        // than left to the general tests above. Green on arrival, because
+        // the ordering was right already; the break for it is in
+        // `guards/guards.toml`.
+        assert_eq!(compare("1.0.0-alpha.1", "0.125.1"), Compared::Newer);
+        assert_eq!(compare("0.125.1", "1.0.0-alpha.1"), Compared::Older);
+        assert_eq!(compare("1.0.0", "1.0.0-alpha.1"), Compared::Newer);
+        assert_eq!(compare("1.0.0-alpha.1", "1.0.0"), Compared::Older);
+        assert_eq!(compare("1.0.0-alpha.2", "1.0.0-alpha.1"), Compared::Newer);
+    }
+
+    #[test]
     fn test_the_three_prerelease_words_sort_in_the_order_the_workflow_makes_them() {
         // alpha, beta and rc are the three levels
         // `.github/workflows/release.yml` offers, in that order.
