@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 26 records have arrived since and have not been through it.
+# 27 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -20267,7 +20267,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 17 },
+    { file = "tests/installer.rs", tests = 20 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -20562,7 +20562,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 17 },
+    { file = "tests/installer.rs", tests = 20 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -20591,7 +20591,7 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 17 },
+    { file = "tests/installer.rs", tests = 20 },
 ]
 
 # ── 07-08 ─────────────────────────────────────────────────────────────────
@@ -20633,7 +20633,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 17 },
+    { file = "tests/installer.rs", tests = 20 },
 ]
 
 # The break is the half-fix, not the deletion. Taking the publisher comparison
@@ -22758,5 +22758,31 @@ red = [
     "test_the_four_field_version_follows_the_scripts_own_table",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 17 },
+    { file = "tests/installer.rs", tests = 20 },
+]
+
+# The form no longer offering the level, in the shape that would really
+# happen: the line is still there and spelled wrong, so the dispatch form
+# offers a word the step does not branch on and cargo-release does not know.
+# Without the level, from a tree at 1.0.0-alpha.1 the workflow can publish
+# -alpha.2 and never -alpha.1. The companion beside the test splices the real
+# line out and is the same absence taken the other way.
+#
+# `file` is not a Rust file, so the count check skips the count for it and
+# takes the counts off the red list instead, which with `suite` set resolves
+# to tests/installer.rs.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, `cargo test --test installer`.
+[[guard]]
+name = "the release workflow offers a level that publishes the version as it stands"
+file = ".github/workflows/release.yml"
+suite = "installer"
+before = '          - as-is'
+after = '          - as_is'
+red = [
+    "test_the_release_workflow_can_publish_the_version_the_tree_already_carries",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 20 },
 ]
