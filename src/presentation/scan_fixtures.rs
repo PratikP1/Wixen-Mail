@@ -18,7 +18,9 @@ use crate::application::calendar::{WhatTheCalendarAllows, WhereAChangeGoes};
 use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
 use crate::application::destinations::{Branch, Destination};
 use crate::application::due::Due;
+use crate::application::saved_searches::Question;
 use crate::presentation::wx_folder_choice::FolderRow;
+use crate::presentation::wx_managers::{ContactEntry, FilterRule, SignatureEntry};
 use crate::presentation::wx_thread_view::ThreadNode;
 
 /// A conversation with a reply in it, so the tree has a second level.
@@ -146,9 +148,145 @@ pub fn repeating_event() -> RepeatingEvent {
     }
 }
 
+/// A contact with something on every list, for the contact editor.
+///
+/// The editor opens on nothing, so no property decides whether the window
+/// appears; what the scan meets is the point. Opened on a stored contact the
+/// editor is "Edit Contact" with every field filled and a row on each of its
+/// four lists, which is the shape somebody editing a real contact meets, and
+/// the shape the tester met the unnamed checkbox in (#40).
+pub fn contact() -> ContactEntry {
+    ContactEntry {
+        id: "scan-contact".to_string(),
+        name: "Scan Target".to_string(),
+        given_name: "Scan".to_string(),
+        family_name: "Target".to_string(),
+        nickname: "Scan".to_string(),
+        company: "Example".to_string(),
+        department: "Scanning".to_string(),
+        job_title: "Fixture".to_string(),
+        emails: Vec::new(),
+        phones: Vec::new(),
+        addresses: Vec::new(),
+        birthday: "2000-01-01".to_string(),
+        website: "https://example.com".to_string(),
+        relationship: "Colleague".to_string(),
+        notes: "Opened for the accessibility scan.".to_string(),
+        custom_fields: Vec::new(),
+        avatar_url: String::new(),
+        favorite: true,
+    }
+}
+
+/// A stored condition the condition editor can be opened on.
+///
+/// The editor refuses, before it is built, a stored condition whose field or
+/// way of matching it has no words for, so the fixture has to name ones it
+/// does, or the scan meets a refusal box rather than the editor.
+pub fn condition() -> Question {
+    Question {
+        field: String::new(),
+        match_type: String::new(),
+        pattern: "scan target".to_string(),
+        case_sensitive: true,
+    }
+}
+
+/// A stored filter rule the filter editor can be opened on, with the same
+/// refusal to get past as the condition above.
+pub fn filter() -> FilterRule {
+    FilterRule {
+        id: "scan-filter".to_string(),
+        name: "Scan target".to_string(),
+        field: String::new(),
+        match_type: String::new(),
+        pattern: "scan target".to_string(),
+        case_sensitive: true,
+        action_type: "add_tag".to_string(),
+        action_value: "scanned".to_string(),
+        enabled: true,
+    }
+}
+
+/// A stored signature the signature editor can be opened on, the default
+/// one, so the checkbox the tester met unnamed (#42) is scanned ticked and
+/// the walk reads its state as well as its name.
+pub fn signature() -> SignatureEntry {
+    SignatureEntry {
+        id: "scan-signature".to_string(),
+        name: "Scan target".to_string(),
+        content_plain: "Sent from the accessibility scan.".to_string(),
+        content_html: None,
+        is_default: false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presentation::manager_words;
+    use crate::presentation::wx_managers::what_stops_this_being_shown;
+
+    #[test]
+    fn test_the_contact_has_a_row_on_every_list() {
+        // The editor's three other tabs are four lists with Add and Remove
+        // beside each. A contact with nothing on them is scanned as four empty
+        // lists, and an empty list is the state that says nothing about its
+        // rows.
+        let contact = contact();
+
+        for (what, rows) in [
+            ("emails", contact.emails.len()),
+            ("phones", contact.phones.len()),
+            ("addresses", contact.addresses.len()),
+            ("custom fields", contact.custom_fields.len()),
+        ] {
+            assert!(
+                rows > 0,
+                "the contact has no {what}, so that list is scanned empty"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_condition_is_one_the_editor_agrees_to_show() {
+        // `show_rule_edit` refuses before building, so a fixture the editor
+        // cannot show is a refusal box scanned in place of the editor.
+        let condition = condition();
+
+        assert_eq!(
+            what_stops_this_being_shown(
+                manager_words::CONDITION,
+                &condition.field,
+                &condition.match_type
+            ),
+            None,
+            "the editor would refuse this condition before opening"
+        );
+    }
+
+    #[test]
+    fn test_the_filter_is_one_the_editor_agrees_to_show() {
+        // The same refusal, made by `show_filter_edit`.
+        let filter = filter();
+
+        assert_eq!(
+            what_stops_this_being_shown(manager_words::FILTER, &filter.field, &filter.match_type),
+            None,
+            "the editor would refuse this filter before opening"
+        );
+    }
+
+    #[test]
+    fn test_the_signature_is_the_default_so_the_checkbox_is_scanned_ticked() {
+        // The checkbox the tester met is "Default signature". Ticked, the
+        // walk reads a state as well as a name; unticked it reads only the
+        // absence of one.
+        assert!(
+            signature().is_default,
+            "the signature is not the default, so the checkbox is scanned unticked"
+        );
+    }
 
     #[test]
     fn test_the_conversation_has_a_reply_under_its_first_message() {

@@ -347,6 +347,11 @@ mod tests {
         // name here is a window somebody meets, counted from the tree rather
         // than from the plan, and a name missing from this list is a window
         // the scan has never looked at.
+        //
+        // The five editors arrived on 2026-09-16 (#42, #40): each opens only
+        // from inside a manager, behind Add or Edit, so the manager targets
+        // never reached them, and two testers met an unnamed checkbox in two
+        // of them on the first day of testing.
         for name in [
             "columns",
             "which-copy",
@@ -368,6 +373,11 @@ mod tests {
             "reminders-module",
             "tasks-module",
             "notes-module",
+            "contact-editor",
+            "condition-editor",
+            "filter-editor",
+            "signature-editor",
+            "account-editor",
         ] {
             named(name)
                 .unwrap_or_else(|e| panic!("{name} is not a window the scan can ask for: {e}"));
