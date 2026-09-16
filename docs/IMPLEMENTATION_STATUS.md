@@ -220,10 +220,26 @@ predates that commit is computed and printed on every commit by
 `test_the_share_of_history_before_red_green_is_computed_and_printed` in
 `tests/every_number_carries_its_command_and_its_date.rs`: 8.9% on 2026-09-14,
 where this line gave two absolutes that came to 53% when it was written on
-2026-07-29. A test written that way describes what the
-code does rather than specifying what it should do, and cannot fail for the bug
-it was written alongside. Mutation testing measures the difference: it alters
-the code and reruns the suite, and reports anything nothing caught.
+2026-07-29. Until 2026-09-16 this paragraph gave that share as the reason to
+run mutation testing: a test written after its code describes what the code
+does rather than specifying what it should do, and cannot fail for the bug it
+was written alongside. The share is under a tenth now and the reason to run it
+has not weakened, because every run so far has found the same kind of thing
+whatever the age of the tests. The run of 2026-07-26 found a survivor that
+was dead code nobody called. The sweep of 2026-08-01, in
+`docs/plans/20260801-mutation-sweep.md`, found whole families of untested
+behaviour behind green suites: four of the fields a filter rule can name, six
+of its eleven ways to match and five of its actions, each family with one
+member tested and the rest not. The two runs of 2026-09-15 over the mail
+protocols and CalDAV, in `docs/plans/20260915-whole-tree-mutation-run.md`,
+found 56 survivors among 870 mutants, and 43 of them were behaviour no test
+held: a session that could report the wrong folder as open, a listing that
+could pair sizes with the wrong identifiers, a refused REPORT read as an
+empty calendar, each killed afterwards by a test shown red against it. That
+is what mutation testing is for here: it alters the code and reruns the
+suite, and reports anything nothing caught, and what nothing caught has so
+far been untested behaviour and dead code, not the order the tests were
+written in.
 
 Run it with `scripts/mutants.sh <dir>`. A whole-tree run costs a rate times a
 count. The count is a row on `docs/development/measurements.md`: `cargo mutants
