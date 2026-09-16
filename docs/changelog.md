@@ -444,6 +444,35 @@ Versioning follows [SemVer](https://semver.org/). Development happens on plain `
 
 ### Changed
 
+- **Every guard record has been through one sweep, on one commit, and the
+  31 it found short are corrected.** A developer-facing change, not one in
+  the program. The sweep ran on GitHub's Windows runners on 2026-09-15 at
+  `df3437a1`, 41 shards over the 803 records `guards/guards.toml` held, in
+  4 h 7 min of wall clock and 64.7 hours of runner time; every shard's log
+  was kept and the logs read back as one. 772 records still redden exactly
+  the tests they name. 31 did not, and each was measured again on a machine
+  before anything was edited: 24 named too few, because a test written after
+  the record reaches the same rule, and those tests are now named; 2 named
+  a test that had stopped reaching the break, and those names are taken
+  off with the reason dated on the record; 1 had its break on the wrong
+  line and 1 named a rule no code now holds, both rewritten to what the
+  break really reddens; 1 reddened nothing and is retired with a comment
+  where it stood; 2 are right on a machine and blind on a runner, whose
+  clock is UTC and which has no certificate chain, and are left as they
+  are. Every corrected record was measured again afterwards and agreed. The
+  census at the top of the file says 802 swept at `df3437a1` and 3 arrived
+  since, and the rows on `docs/development/measurements.md` carry the
+  sweep's wall clock, its counts and the runner's per-record rate beside
+  this machine's.
+
+  **Known limitations.** A record is a measurement with a date, and this
+  sweep judged the tree at one commit; anything that lands after it is
+  covered only by the per-commit checks, which cannot see a test added in a
+  file a record never named, and 21 of the 24 short records were exactly
+  that. Two rules the sweep found unguarded, a gate in the contacts sync
+  and a marking in the CalDAV sync, are on the ledger rather than fixed,
+  because the tests that would notice belong in files many records name.
+
 - **One method for counting guard records, and one place for the sweep's
   cost.** `CLAUDE.md` prescribed an awk for counting the records in
   `guards/guards.toml` that name a file, as the correction to a grep that
