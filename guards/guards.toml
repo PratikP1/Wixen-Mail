@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 28 records have arrived since and have not been through it.
+# 29 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -22841,4 +22841,33 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/spellcheck/mod.rs", tests = 63 },
+]
+
+# The settings screen's language row, put back the way it was: a stored tag
+# that matches no row selects row 0. On a machine set to English (United
+# States) row 0 in Windows' order is English (Caribbean), and a profile from
+# before 2026-09-03 stores a bare "en" that matched no row, which is what the
+# tester saw (#21). The break keeps the resolver's answer and loses only the
+# fallback, so the "en" case stays right on this machine and the tag nothing
+# offers is what goes red; on a runner with no spell checking the built-in
+# list has "en" at row 0 and only the same case can redden.
+#
+# `suite` names the target that builds the screen, which couples the target
+# to this file for `check.sh --suites-for`, and `wx_settings.rs` holds no
+# unit tests of its own.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, `cargo test --test the_language_the_screen_shows_is_the_one_used`.
+[[guard]]
+name = "the settings screen shows a stored language nothing offers as itself, not as row 0"
+file = "src/presentation/wx_settings.rs"
+suite = "the_language_the_screen_shows_is_the_one_used"
+before = """        .or_else(|| row_of(stored));"""
+after = """        .or(Some(0));"""
+red = [
+    "test_the_language_the_screen_shows_is_the_one_the_checker_uses",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_language_the_screen_shows_is_the_one_used.rs", tests = 1 },
 ]
