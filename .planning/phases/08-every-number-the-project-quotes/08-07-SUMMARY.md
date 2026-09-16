@@ -1,7 +1,7 @@
 ---
 phase: 08-every-number-the-project-quotes
 plan: 07
-status: partial
+status: complete
 subsystem: testing
 tags: [guards, sweep, resume, measurements, tooling]
 
@@ -20,9 +20,9 @@ provides:
 affects: [08-07 task 3, 08-08, 08-09]
 
 actuals:
-  tokens: 23882
-  tasks: 1
-  commits: 9
+  tokens: 35858
+  tasks: 3
+  commits: 13
 
 tech-stack:
   added: []
@@ -92,23 +92,112 @@ coverage:
         status: pass
     human_judgment: false
   - id: D4
-    description: "The one guard sweep of the milestone, every record on one commit"
+    description: "The one guard sweep of the milestone, every record on one commit, and every record it found short corrected by hand and measured again"
     requirement: PERF-06
     verification:
-      - kind: manual_procedural
-        ref: "the checkpoint below; Pratik dispatches it"
-        status: unknown
-    human_judgment: true
+      - kind: other
+        ref: "run 34965790937 at df3437a1; bash scripts/guards.sh --log sweep.log --resume --stop-after 0 in the worktree printing 'Every record selected has a verdict: 803 of 803'; scripts/guards.sh --remeasure over the 28 corrected records, 27 agreed in one run and the renamed one on its own"
+        status: pass
+      - kind: integration
+        ref: "tests/house_style.rs#test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it, #test_every_guard_record_says_how_many_tests_the_files_it_names_held"
+        status: pass
+    human_judgment: false
 
-duration: 1h20min, then 40min for the answer
+duration: 1h20min for task 1, 40min for the answer, 2h50min for task 3
 completed: 2026-09-15
 ---
 
 # Phase 8 Plan 07: A sweep that can be stopped and picked up Summary
 
-**The guard runner can be started detached, stopped at any record, and picked up from its own log measuring only what the log holds no verdict for; it refuses to resume over a tree a killed run left broken and prints the `git checkout` that cleans it; it waits before each record until no other cargo is building and marks a record contended when one was alive as its run returned. Every one of those was run, not read. And since Pratik widened the checkpoint, it runs on GitHub's runners in shards: `--shard K/N` takes one contiguous block of the file's records, `.github/workflows/guards.yml` fans the sweep out over Windows runners at the dispatched commit and keeps every shard's log, and the logs concatenate into one that `--resume --stop-after 0` reads back as complete or not. Nothing is dispatched: the checkpoint below is Pratik's, with the Actions-tab inputs, the download-and-merge lines, and the local start kept as the fallback.**
+**The one guard sweep of the milestone is done: every one of the 803 records `guards/guards.toml` held at `df3437a1` has a verdict, taken on GitHub's Windows runners in 41 shards in 4 h 7 min of wall clock, and the 31 records it found not to be what they say are corrected by hand and measured again. 772 agreed. Of the 31, 24 named too few because a test written after the record reaches the same rule, 21 of those in a file the record had never named; 2 named a test that had stopped reaching the break; 1 had its break on the wrong line; 1 named a rule no code now holds and is renamed to what its break guards; 1 reddened nothing and is retired; 2 are right on a machine and blind on a runner and are left as they are. On the way there the runner learned to be stopped and picked up from its own log, to wait for a quiet machine, and to take one shard of the file, and the sweep moved from twenty hours on Pratik's machine to four on the runners after he widened the checkpoint: "Go for running the guard sweep via CI as well."**
 
-Task 1 of 3, then the answer to the checkpoint. Task 2 is the checkpoint, widened and not yet dispatched. Task 3 is not attempted.
+Task 1, the checkpoint widened and answered, the sweep dispatched by Pratik, and task 3. Criterion 5 closes on the count of records the log holds a verdict for.
+
+## Task 3: the log read after it was complete, and every short record corrected
+
+**The run.** `gh run view 34965790937 --json headSha` answers `df3437a1077bb3c49675d742efe326ff28285f14`, `main`'s head when Pratik dispatched "Would each guard still go red" on 2026-09-15 with `shards=41 first=0 last=40`. 42 jobs: the generator and 41 shards, 26 green and 15 red, a red shard being one that exited 1 because a record was not what it says. The first shard started 11:56:37Z and the last finished 16:04:09Z, 4 h 7 min 32 s of wall clock in two waves of twenty; the 41 jobs' own timestamps sum to 64.7 hours of runner time. Every shard's log was uploaded and every one ends with its `Every record selected has a verdict` line, checked one by one, so no shard was killed at the six-hour cap and no second dispatch was needed.
+
+**The merge.** The sweep worktree was moved to the run's commit, `git -C ../wixen-mail-sweep checkout --detach df3437a1`; `gh run download 34965790937 --dir target/runner-sweep` inside it laid out 41 directories; the 41 logs concatenated in shard order into `sweep.log`, 3,066 lines, 3,066 carriage returns, one per line, as the runner's Python writes them; 803 `-- ` blocks, no `contended:` line, no `could not be measured`. The read-back, the plan's precondition for this task:
+
+```
+Resuming from sweep.log: 803 of 803 already measured, 0 to go
+
+31 guards are not what the record says they are:
+    [the 31 names]
+
+31 of those 31 verdicts came from the log.
+[...]
+Every record selected has a verdict: 803 of 803, 803 from the log and 0 from this run.
+```
+
+`git status --porcelain` in the worktree named only `?? sweep.log`; the download sits under `target/`, which is ignored. The merged log is the plan's artifact at `.planning/phases/08-every-number-the-project-quotes/sweep.log`, re-made from the 41 shard logs alone after the first copy was found to carry the read-back's own 44 lines, which `--log sweep.log` had appended to the worktree's file: 3,066 lines and 3,066 carriage returns by `tr -cd '\r' | wc -c`, kept as written. The phase directory's Markdown checks walk `.planning` for `.md` and do not read it.
+
+**Every one of the 31 was measured again on this machine before any record was edited**, through `scripts/guards.sh --remeasure` with the 31 names, logged: 29 came out exactly as the runner found them, and 2 agreed here. The first attempt at that run passed the names with their carriage returns from the file they were read out of, and the runner refused all 31 as "No record is named exactly"; stripped with `tr -d '\r'`, the run took about 50 minutes. Because a runner is not this machine, a record that stayed green there was not corrected on the runner's word alone.
+
+**The runner's rate**, off the 803 `timed:` lines that follow a `-- ` line in the log: median 260 s a record, rebuild 144 s and run 111 s; mean 234 s, lower because records naming an integration target rebuild and run in seconds. This machine's rate row says 92 s. The first shard to finish, 8, took 72 minutes for 20 records with 17 of them its first build, which is the four minutes a record the coordinator read off it.
+
+### The findings, by cause
+
+**A test written after the record reaches the same rule, in a file the record had never named: 21 records.** This is the limit `CLAUDE.md` names as the one the count check cannot see, and it is most of what the sweep found. Each record now names the tests, with the date they were written and the note that the file was one it had never named.
+
+| Record | Written | Tests added, where and when |
+|---|---|---|
+| a count and the thing it counts agree in number | 2026-08-07 | 2, in `notes_sync.rs` (2026-09-10) and `note_folder_tree.rs` (2026-09-11) |
+| one change waiting is not read out in the plural | 2026-08-07 | 1, `tasks_sync.rs` (2026-09-09) |
+| an edit written here and then lost is still counted and said | 2026-08-07 | 1, `carddav_sync.rs` (2026-09-10) |
+| a deletion made here leaves a note for the address books that knew her | 2026-08-08 | 1, `carddav_sync.rs` (2026-09-10) |
+| the read asks who was deleted, not only what is still owed | 2026-08-09 | 1, `carddav_sync.rs` (2026-09-10) |
+| an address book that took a deletion is remembered, not dropped | 2026-08-09 | 1, `carddav_sync.rs` (2026-09-10) |
+| only a deletion a provider took is let go of by the clock | 2026-08-09 | 6, `carddav_sync.rs` and `notes_sync.rs` (2026-09-10 and 11) |
+| a moment written with a T is one the reader knows | 2026-08-09 | 2, `wx_reminder_alert.rs` (2026-09-14) |
+| a flag the mail server refused is not reported as set | 2026-08-11 | 4, `flag_changes_waiting.rs` (2026-09-05) and `mail_across_accounts.rs` (2026-09-08) |
+| a connection that closed mid answer is not an answer that finished | 2026-08-11 | 3, `mail_session.rs` (2026-09-04) |
+| a message the server hands over is not reported as one that is not there | 2026-08-11 | 19, `mail_across_accounts.rs` (2026-09-07 and 08); a record naming two said nothing about nineteen for a week |
+| a task or event body written as html is read as the structure it carries | 2026-08-13 | 3, `onenote_notes.rs` (2026-09-11) |
+| an exact language match has to be available, not merely spelled the same | 2026-08-22 | 1, `data/config.rs` (2026-09-03) |
+| the exact language match has to spell the tag the same, not differently | 2026-08-22 | the same test |
+| a family language match has to be available, not merely share the family | 2026-08-22 | the same test |
+| a family language match has to share the family, not differ from it | 2026-08-22 | the same test; a fifth spellcheck record was found short by this very test on 2026-09-13, the finding written on it alone, and the four beside it with the same break site were not measured again |
+| the form a signed message arrived in is really kept | 2026-08-28 | 1, `how_it_arrived.rs` (2026-09-06) |
+| a folder with folders inside it is deleted deepest first | 2026-08-30 | 1, `emptying.rs`, the same day |
+| a change to a page is built from the read immediately before it | 2026-09-11 | 1, `onenote_notes.rs`, the same day |
+| a build identifier is not part of the version | 2026-09-12 | 1, `update_check.rs`, the same day |
+| an event cannot be done | 2026-09-14 | 2, `wx_reminder_alert.rs`, the same day, by 06-09's task 2 after task 1 wrote the record |
+
+**A test written after the record, in a file the record names, stamped over by the recount: 3 records.** The tests arrived between the record and 2026-09-02, when `--recount-everything` wrote every record's counts without measuring, so the count check had nothing to compare against.
+
+| Record | Written | Test added |
+|---|---|---|
+| a change in a calendar no account holds is said | 2026-08-08 | `test_two_calendars_that_share_a_reason_are_still_said_separately`, `calendar.rs`, 2026-08-19 |
+| a name the timezone database does not know writes no rules | 2026-08-09 | 10 tests, 2026-08-11 to 13, one in `caldav_sync.rs` which it names and nine in `calendar.rs` and `managers.rs` which it did not |
+| a zone that follows no yearly rule lists its days rather than guessing | 2026-08-09 | `test_listed_blocks_keeps_each_pair_of_offsets_in_its_own_block`, `vtimezone.rs`, 2026-08-19 |
+
+**A named test that no longer reaches the break: 2 records.** The name is taken off with the reason on the record.
+
+- **folding two address books counts one person once**: `test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice` stayed green, 8 of 9 red. `ce3e89ba` of 2026-09-05 rewrote its scenario so the edit is held for somebody to choose and the second address book is offered nothing, so the fold this break doubles is not on its path. Eight remain.
+- **a settings file written before reading was a setting still loads**: `test_a_command_that_names_a_different_folder_opens_that_one_first` stayed green, 1 of 2. It is the test `scripts/guards.py` records as failing only in company; it was red in company when the record was written on 2026-08-31 and is not about a settings file. The one test that is remains.
+
+**A break on the wrong line: 1 record.** **a note's body comes back from a document the bytes it went out as** broke the title's reading while its two tests are about the body, and no fixture's title ends in a space, so the break was one nothing could see; its own comment says it was measured red on 2026-09-10, and how is not reconstructed. The break is now the body's line, and both tests go red. The title's reading is guarded by nothing, said on the record.
+
+**A rule no code now holds: 1 record renamed.** **a changed day of a CalDAV series is marked seen before the removal pass can run** took out the `seen_uids` insert at the top of `one_caldav_day_kept_out_of_its_series` and its one test stayed green. The break was moved to the other marking, where the loop over the server's answer marks whatever identity a row was stored under, on the reading that the rule had moved there; measured, that break reddens exactly one test, `test_an_event_stored_under_half_an_identifier_keeps_what_was_typed_on_it`, and still not the moved-day test. So neither marking is what keeps a moved day now, and what does was not reconstructed. The record is renamed to the fact its break guards, "a row stored under the identity the server named is not taken for one it dropped", measured on its own and agreed; the unguarded rule is ledger 471 and the redundant insert ledger 469.
+
+**A break that reddens nothing: 1 record retired.** **the other setting is named only while the change is somebody's work** took the `the_copy_here_was_written_here` gate off a `note` call, and its one test stayed green on the runners and here, with nothing else red. The same `ce3e89ba` moved that test's scenario off the gate. A record naming no test is one the runner refuses, so it is retired with a comment where it stood, and the gate, which the tree still holds and nothing tests, is ledger 468; the test that would notice belongs in `contacts_sync.rs`, which 77 records name.
+
+**Right here, blind on a runner: 2 records left as they are.** **an hour with no zone means an hour here, to Outlook as well as to Google**: both named tests red here, both green on the runner, whose clock is UTC, so a break that sends the local hour as UTC changes nothing there. **the walk into Windows own chain structures really happens**: red here, green on a runner with no certificate chain to walk. Ledger 470 says a runner sweep will report both this way again.
+
+**Re-measured after correction.** The 28 corrected records through one `--remeasure` run: 27 agreed and had their counts written, the renamed CalDAV record disagreed with its first rewrite, was rewritten to what the run found, and agreed on its own run. The four record checks pass: the census header, the count check (which had named 23 records whose new tests lived in files never counted, until the counts were written), the exists check and the one-place check.
+
+**The census header** now opens with the sweep of 2026-09-15: 802 swept that day and 3 arrived since, 805 records; 802 rather than 803 because one of the 803 was retired the same day, and the 3 arrived with the theme_reach fix on 2026-09-15, each measured when written. The 2026-08-12 section is kept below it as the record of that sweep, its two count lines reworded so the reading finds the new pair first.
+
+**Commits, all through the hook, on branch `every-record-the-sweep-found-short-corrected` from `main` at `3e633252`:** records `66d8b73d`, documents `5a888378`; `scripts/check.sh all` on the branch exit 0 on its first run, 303 s, 7,758 passed and none failed over 60 result lines; merged at `a52db2fc` on the gate's second run, the first refused by ledger 374's `keyring` race in `test_a_note_filed_into_a_folder_made_here_has_nothing_to_be_sent`, the test that entry names, and the second green in 303 s with 7,758 passed. `git merge` left `MERGE_HEAD` staged after the refusal and `git commit -F` completed it. Nothing pushed.
+
+**The gate per file**, by `scripts/which-checks.sh every-record-the-sweep-found-short-corrected <file>`: `guards/guards.toml` `affected`, read by the seven `house_style` tests as tree guards; `docs/development/measurements.md` and `docs/changelog.md` `docs_only`, the page's reading passing with 25.
+
+**Ledger** 467 before, 471 after: 468 unmet-truth, the untested gate in `contacts_sync.rs`; 469 todo, the redundant insert in `caldav_sync.rs`; 470 deviation, the two records blind on a runner; 471 unmet-truth, the changed-day rule no marking holds. Both halves of each, no backslash, no carriage return. 463 was closed by the answer.
+
+**Rows on the page**, all dated 2026-09-15 at `df3437a1`: the runners' wall clock, 4 h 7 min 32 s against the 20 hours predicted for one machine, with 64.7 hours of runner time behind it; 803 measured, 772 agreed, 31 not, 0 contended, 0 unmeasurable; the 31 by direction, 24 named too few and 5 named a test that stayed green, 0 whose break no longer applied; the runner's rate, 260 s a record median against 92 s here. `every_number_carries_its_command_and_its_date` accepts them, 25 passed.
+
+**What the coordinator's message said that the tree did not.** "15 shards failure" and "27 green": the run's jobs say 15 red and 26 green among the 41 shards, with the generator the 42nd job. "`3e633252` added 3 guard records" and `main` at `b611ed82`-era metadata: `main` was at `3e633252` when this started, holding 806 records, the 803 of `df3437a1` plus 3. Both are counts re-taken rather than quoted.
 
 ## The checkpoint, answered
 
@@ -432,7 +521,7 @@ The runaway run, above, killed during its pre-read with nothing broken. `git mer
 
 ## Known Stubs
 
-None. Every flag is reachable from `scripts/guards.sh`, exercised in this session, and documented in its usage block; the workflow is reachable from the Actions tab and held by a reading and a record. The sweep is not a stub; it is the checkpoint, and the checkpoint says it has not run and nothing has been dispatched.
+None. Every flag is reachable from `scripts/guards.sh`, exercised in this session, and documented in its usage block; the workflow is reachable from the Actions tab, held by a reading and a record, and has run once to completion. Two rules the sweep found unguarded are ledgered, not stubbed: the tests that would notice belong in files many records name.
 
 ## Threat Flags
 
@@ -444,14 +533,16 @@ None. Every flag is reachable from `scripts/guards.sh`, exercised in this sessio
 
 ## Self-Check: PASSED
 
-`scripts/guards.py` holds `def verdicts_in`, `def foreign_builds_in`, `def is_quiet`, `def why_a_resume_is_refused`, `def the_resume_command`, `def the_closing_line`, `def the_shard_asked_for`, `def the_records_in_shard`, `def the_header_for` and `class Logged`, checked by `grep -c`; `scripts/guards.sh` holds `--wait-until-quiet` and `--shard`; `.github/workflows/guards.yml` and `tests/the_guard_sweep_runs_on_runners.rs` exist; `scripts/check.sh`'s list holds `the_guard_sweep_runs_on_runners`; `docs/changelog.md` holds "The guard sweep can be stopped and picked up from its own log" and Pratik's words, which wrap across a line there so `grep -c "Go for running the guard sweep via" docs/changelog.md` is the grep that finds them, 1; the commits `812241ea`, `bbd1f28d`, `1837f93b`, `ef2f5346`, `a9220a25`, `930cb991`, `9032b9be`, `6cf50cdb` and `bd8c2832` are in `git log --all`; `../wixen-mail-sweep` exists with `target/` built; `main` is ahead of `origin/main` and nothing was pushed; `gh run list --workflow guards.yml` answers 404, because the workflow is not on `origin/main` yet, so nothing can have been dispatched.
+`scripts/guards.py` holds `def verdicts_in`, `def foreign_builds_in`, `def is_quiet`, `def why_a_resume_is_refused`, `def the_resume_command`, `def the_closing_line`, `def the_shard_asked_for`, `def the_records_in_shard`, `def the_header_for` and `class Logged`, checked by `grep -c`; `scripts/guards.sh` holds `--wait-until-quiet` and `--shard`; `.github/workflows/guards.yml` and `tests/the_guard_sweep_runs_on_runners.rs` exist; `scripts/check.sh`'s list holds `the_guard_sweep_runs_on_runners`; `docs/changelog.md` holds "The guard sweep can be stopped and picked up from its own log" and Pratik's words, which wrap across a line there so `grep -c "Go for running the guard sweep via" docs/changelog.md` is the grep that finds them, 1; the commits `812241ea`, `bbd1f28d`, `1837f93b`, `ef2f5346`, `a9220a25`, `930cb991`, `9032b9be`, `6cf50cdb`, `bd8c2832`, `66d8b73d`, `5a888378` and `a52db2fc` are in `git log --all`; `../wixen-mail-sweep` exists at `df3437a1` with `sweep.log` and the download under `target/`; `.planning/phases/08-every-number-the-project-quotes/sweep.log` holds 3,066 lines, 3,066 carriage returns and 803 `-- ` blocks; `guards/guards.toml` parses to 805 records and its census reads 802 and 3; `main` is ahead of `origin/main` and nothing was pushed by this executor. The earlier sentence here, that `gh run list --workflow guards.yml` answered 404, was true when written and is not now: Pratik pushed and dispatched, and the run is 34965790937.
 
 ## Status
 
-`partial`. Task 1 of three, merged alone into `main` at `1837f93b`; the checkpoint's answer, the runner sweep, merged alone at `bd8c2832`. Task 2 is the checkpoint, widened by Pratik to the runners, and the dispatch is his. Task 3 was not attempted and must not be until the merged log's read-back prints that nothing remains.
+`complete`. Task 1 merged alone into `main` at `1837f93b`; the checkpoint's answer, the runner sweep, merged alone at `bd8c2832`; the sweep dispatched by Pratik, run 34965790937 at `df3437a1`; task 3 merged at `a52db2fc`. The plan's three verify commands pass: `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`, `test_every_guard_record_says_how_many_tests_the_files_it_names_held`, and `every_number_carries_its_command_and_its_date` with 25.
 
-Criterion 5 does not close: the runner and the workflow exist and the sweep has not run.
+Criterion 5 closes on the count of records the log holds a verdict for: 803 of the 803 the file held at the sweep's commit, every one it reported short corrected by hand and measured again, and the two it reported short in error named as the runner's blindness rather than corrected.
+
+The checkpoint section above is kept as it was written, as the record of how the dispatch was to be made; the paragraph "When it is done" is what task 3 did, with `sweep.log` at the worktree root named as `?? sweep.log` in the status as it said.
 
 ---
 *Phase: 08-every-number-the-project-quotes*
-*Task 1 completed: 2026-09-15*
+*Completed: 2026-09-15*

@@ -1,0 +1,3066 @@
+== 19 guards, shard 0/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 924 s, run 128 s, 1052 s in all
+-- the Google merge asks what the whole contact is owed
+   timed: rebuild 142 s, run 144 s, 286 s in all
+   all 4 tests named went red, and nothing else did
+-- the Microsoft merge asks what the whole contact is owed
+   timed: rebuild 147 s, run 144 s, 291 s in all
+   all 2 tests named went red, and nothing else did
+-- Google turning a change down for an old marker is read as one
+   timed: rebuild 144 s, run 128 s, 272 s in all
+   all 4 tests named went red, and nothing else did
+-- Outlook turning a change down for an old marker is read as one
+   timed: rebuild 153 s, run 123 s, 276 s in all
+   all 3 tests named went red, and nothing else did
+-- a push that failed at the network is read as one
+   timed: rebuild 158 s, run 132 s, 290 s in all
+   all 2 tests named went red, and nothing else did
+-- a network failure is kept for Google's push, not only Outlook's
+   timed: rebuild 166 s, run 131 s, 297 s in all
+   the one test named went red, and nothing else did
+-- a network failure is kept for Outlook's push, not only Google's
+   timed: rebuild 151 s, run 124 s, 275 s in all
+   the one test named went red, and nothing else did
+-- a change that could not be sent again is not replaced by the read
+   timed: rebuild 150 s, run 125 s, 275 s in all
+   all 3 tests named went red, and nothing else did
+-- a change sent over a newer copy is said and not only counted
+   timed: rebuild 185 s, run 131 s, 316 s in all
+   all 3 tests named went red, and nothing else did
+-- a deletion by one address book leaves a person the other still has
+   timed: rebuild 171 s, run 139 s, 310 s in all
+   all 5 tests named went red, and nothing else did
+-- a deletion asks Outlook as well as Google what is owed
+   timed: rebuild 141 s, run 125 s, 266 s in all
+   the one test named went red, and nothing else did
+-- a deletion asks Google as well as Outlook what is owed
+   timed: rebuild 144 s, run 126 s, 270 s in all
+   all 2 tests named went red, and nothing else did
+-- a deletion asks the address books, not the contact's own flag
+   timed: rebuild 141 s, run 124 s, 265 s in all
+   the one test named went red, and nothing else did
+-- a task kept on this computer is said
+   timed: rebuild 141 s, run 124 s, 265 s in all
+   all 2 tests named went red, and nothing else did
+-- what went up to the provider is said
+   timed: rebuild 142 s, run 126 s, 268 s in all
+   all 4 tests named went red, and nothing else did
+-- the tasks nobody touched are said
+   timed: rebuild 142 s, run 125 s, 267 s in all
+   all 2 tests named went red, and nothing else did
+-- nothing removed is not read out as a removal
+   timed: rebuild 137 s, run 128 s, 265 s in all
+   all 4 tests named went red, and nothing else did
+-- a task refusal is said as a problem
+   timed: rebuild 146 s, run 125 s, 271 s in all
+   all 4 tests named went red, and nothing else did
+-- the calendar summary says how many events went
+   timed: rebuild 139 s, run 126 s, 265 s in all
+   all 3 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 1/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 908 s, run 120 s, 1028 s in all
+-- a clause is joined without a space of its own
+   timed: rebuild 152 s, run 113 s, 265 s in all
+   the one test named went red, and nothing else did
+-- a count and the thing it counts agree in number
+   timed: rebuild 155 s, run 122 s, 277 s in all
+   2 tests went red that this record does not name:
+       application::notes_sync::tests::test_the_summary_names_the_setting_only_when_something_was_really_held
+       presentation::note_folder_tree::tests::test_the_branch_says_what_is_under_it_even_when_it_is_one_or_none
+
+-- folding two address books counts one person once
+   timed: rebuild 153 s, run 112 s, 265 s in all
+   1 of 9 named tests stayed green with the guard broken:
+       application::contacts_sync::tests::test_one_edit_to_one_contact_both_books_hold_is_said_once_and_not_twice
+
+-- unchanged means nothing happened to that contact
+   timed: rebuild 148 s, run 113 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a person who arrived this sync is not also counted as changed
+   timed: rebuild 150 s, run 112 s, 262 s in all
+   all 2 tests named went red, and nothing else did
+-- a person this sync removed is not also counted as changed
+   timed: rebuild 152 s, run 111 s, 263 s in all
+   the one test named went red, and nothing else did
+-- a change the other setting holds back is noted on the way past
+   timed: rebuild 146 s, run 110 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- the other setting is named only while the change is somebody's work
+   timed: rebuild 148 s, run 115 s, 263 s in all
+   1 of 1 named test stayed green with the guard broken:
+       application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work
+
+-- one change waiting is not read out in the plural
+   timed: rebuild 154 s, run 113 s, 267 s in all
+   1 test went red that this record does not name:
+       application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting
+
+-- one removal waiting is not read out in the plural
+   timed: rebuild 150 s, run 112 s, 262 s in all
+   the one test named went red, and nothing else did
+-- folding two results keeps the other setting's count
+   timed: rebuild 150 s, run 113 s, 263 s in all
+   all 2 tests named went red, and nothing else did
+-- a contact changed in both places is held rather than written over
+   timed: rebuild 153 s, run 114 s, 267 s in all
+   all 7 tests named went red, and nothing else did
+-- only work typed here is held for a choice
+   timed: rebuild 156 s, run 112 s, 268 s in all
+   the one test named went red, and nothing else did
+-- a contact held for a choice is offered to nobody
+   timed: rebuild 152 s, run 114 s, 266 s in all
+   all 3 tests named went red, and nothing else did
+-- a contact held for a choice is left alone by a later read
+   timed: rebuild 148 s, run 110 s, 258 s in all
+   the one test named went red, and nothing else did
+-- an edit written here and then lost is still counted and said
+   timed: rebuild 164 s, run 179 s, 343 s in all
+   1 test went red that this record does not name:
+       application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose
+
+-- only work typed here is sent again over Google's newer copy
+   timed: rebuild 200 s, run 172 s, 372 s in all
+   the one test named went red, and nothing else did
+-- only work typed here is sent again over Outlook's newer copy
+   timed: rebuild 158 s, run 110 s, 268 s in all
+   the one test named went red, and nothing else did
+-- a change no setting let out is kept, not replaced
+   timed: rebuild 148 s, run 112 s, 260 s in all
+   all 10 tests named went red, and nothing else did
+-- only work somebody typed here is kept against an address book
+   timed: rebuild 154 s, run 113 s, 267 s in all
+   the one test named went red, and nothing else did
+
+5 guards are not what the record says they are:
+    a count and the thing it counts agree in number
+    folding two address books counts one person once
+    the other setting is named only while the change is somebody's work
+    one change waiting is not read out in the plural
+    an edit written here and then lost is still counted and said
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 2/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 944 s, run 119 s, 1063 s in all
+-- a change this sync stopped waiting is not a change waiting here
+   timed: rebuild 152 s, run 122 s, 274 s in all
+   the one test named went red, and nothing else did
+-- Allow Changes is one of the two settings that keeps a change
+   timed: rebuild 164 s, run 102 s, 266 s in all
+   all 7 tests named went red, and nothing else did
+-- how far a change goes is the other of the two settings that keeps it
+   timed: rebuild 163 s, run 101 s, 264 s in all
+   the one test named went red, and nothing else did
+-- a deletion made here leaves a note for the address books that knew her
+   timed: rebuild 162 s, run 106 s, 268 s in all
+   1 test went red that this record does not name:
+       application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down
+
+-- the Google read does not write back somebody deleted here
+   timed: rebuild 164 s, run 101 s, 265 s in all
+   all 4 tests named went red, and nothing else did
+-- the read asks who was deleted, not only what is still owed
+   timed: rebuild 159 s, run 106 s, 265 s in all
+   1 test went red that this record does not name:
+       application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down
+
+-- the Outlook read does not write back somebody deleted here
+   timed: rebuild 176 s, run 116 s, 292 s in all
+   all 3 tests named went red, and nothing else did
+-- an address book that took a deletion is remembered, not dropped
+   timed: rebuild 151 s, run 102 s, 253 s in all
+   1 test went red that this record does not name:
+       application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down
+
+-- the Google calendar read does not write back an event deleted here
+   timed: rebuild 153 s, run 115 s, 268 s in all
+   all 6 tests named went red, and nothing else did
+-- the Outlook calendar read does not write back an event deleted here
+   timed: rebuild 147 s, run 103 s, 250 s in all
+   all 2 tests named went red, and nothing else did
+-- a calendar deletion the provider took is remembered, not forgotten
+   timed: rebuild 144 s, run 101 s, 245 s in all
+   all 2 tests named went red, and nothing else did
+-- the calendar server read does not write back an event deleted here
+   timed: rebuild 149 s, run 100 s, 249 s in all
+   all 4 tests named went red, and nothing else did
+-- the feed refresh does not write back an event deleted here
+   timed: rebuild 148 s, run 102 s, 250 s in all
+   the one test named went red, and nothing else did
+-- the tasks read does not write back a task deleted here
+   timed: rebuild 147 s, run 102 s, 249 s in all
+   all 5 tests named went red, and nothing else did
+-- forgetting a calendar deletion a provider could still hand back is refused
+   timed: rebuild 143 s, run 102 s, 245 s in all
+   all 7 tests named went red, and nothing else did
+-- a calendar deletion no provider ever held still drains
+   timed: rebuild 144 s, run 102 s, 246 s in all
+   all 3 tests named went red, and nothing else did
+-- forgetting a task deletion a provider could still hand back is refused
+   timed: rebuild 146 s, run 103 s, 249 s in all
+   all 5 tests named went red, and nothing else did
+-- a task deletion no provider ever held still drains
+   timed: rebuild 147 s, run 101 s, 248 s in all
+   all 3 tests named went red, and nothing else did
+-- a deletion whose list has gone stops being sent to the provider
+   timed: rebuild 144 s, run 103 s, 247 s in all
+   the one test named went red, and nothing else did
+
+3 guards are not what the record says they are:
+    a deletion made here leaves a note for the address books that knew her
+    the read asks who was deleted, not only what is still owed
+    an address book that took a deletion is remembered, not dropped
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 3/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 682 s, run 109 s, 791 s in all
+-- only a deletion a provider took is let go of by the clock
+   timed: rebuild 120 s, run 120 s, 240 s in all
+   6 tests went red that this record does not name:
+       application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down
+       application::notes_sync::tests::test_a_deletion_the_backend_has_taken_is_still_remembered
+       application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it
+       application::notes_sync::tests::test_a_note_deleted_here_is_offered_to_the_backend_for_deletion
+       application::notes_sync::tests::test_a_removal_is_only_offered_to_the_container_the_note_was_in
+       application::notes_sync::tests::test_a_removal_waits_for_the_copy_a_move_is_making
+
+-- a sync lets go of what it has remembered long enough
+   timed: rebuild 121 s, run 114 s, 235 s in all
+   the one test named went red, and nothing else did
+-- an address book that says she is gone is not asked to delete her
+   timed: rebuild 119 s, run 110 s, 229 s in all
+   the one test named went red, and nothing else did
+-- a deletion a setting held back is kept, not forgotten
+   timed: rebuild 121 s, run 115 s, 236 s in all
+   all 4 tests named went red, and nothing else did
+-- a deletion the address book refused is kept, not forgotten
+   timed: rebuild 133 s, run 111 s, 244 s in all
+   the one test named went red, and nothing else did
+-- a deletion the address book never took is not counted as one it took
+   timed: rebuild 135 s, run 97 s, 232 s in all
+   the one test named went red, and nothing else did
+-- a contact the address book never held is said, not passed over
+   timed: rebuild 133 s, run 104 s, 237 s in all
+   all 3 tests named went red, and nothing else did
+-- folding two results keeps the contacts an address book never held
+   timed: rebuild 136 s, run 109 s, 245 s in all
+   the one test named went red, and nothing else did
+-- a deletion that reached the address book is said
+   timed: rebuild 133 s, run 136 s, 269 s in all
+   all 3 tests named went red, and nothing else did
+-- folding two results keeps the deletions that went out
+   timed: rebuild 136 s, run 117 s, 253 s in all
+   all 2 tests named went red, and nothing else did
+-- the deletion question asks about the container, not its kind
+   timed: rebuild 140 s, run 133 s, 273 s in all
+   all 3 tests named went red, and nothing else did
+-- the deletion question is handed the container it is about
+   timed: rebuild 135 s, run 107 s, 242 s in all
+   the one test named went red, and nothing else did
+-- where a calendar came from is read off its row
+   timed: rebuild 122 s, run 111 s, 233 s in all
+   the one test named went red, and nothing else did
+-- where a task list came from is read off its identifier
+   timed: rebuild 123 s, run 111 s, 234 s in all
+   the one test named went red, and nothing else did
+-- a change in a calendar that can only be read is said
+   timed: rebuild 119 s, run 115 s, 234 s in all
+   all 2 tests named went red, and nothing else did
+-- a change in a calendar no account holds is said
+   timed: rebuild 122 s, run 108 s, 230 s in all
+   1 test went red that this record does not name:
+       application::calendar::tests::test_two_calendars_that_share_a_reason_are_still_said_separately
+
+-- a calendar with a pass of its own is not warned about twice
+   timed: rebuild 119 s, run 113 s, 232 s in all
+   the one test named went red, and nothing else did
+-- what a feed cannot save is counted by asking the calendar
+   timed: rebuild 124 s, run 108 s, 232 s in all
+   all 3 tests named went red, and nothing else did
+-- a calendar that can only be read is left out of the chooser
+   timed: rebuild 119 s, run 132 s, 251 s in all
+   all 2 tests named went red, and nothing else did
+-- a move into a calendar that can only be read is refused where it is written
+   timed: rebuild 120 s, run 110 s, 230 s in all
+   the one test named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    only a deletion a provider took is let go of by the clock
+    a change in a calendar no account holds is said
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 4/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 884 s, run 118 s, 1002 s in all
+-- a refusal names the kind with the article that belongs with it
+   timed: rebuild 149 s, run 124 s, 273 s in all
+   the one test named went red, and nothing else did
+-- a save that changed nothing leaves the row alone
+   timed: rebuild 151 s, run 109 s, 260 s in all
+   all 3 tests named went red, and nothing else did
+-- a repeating event is saved against the day that was opened
+   timed: rebuild 152 s, run 111 s, 263 s in all
+   all 3 tests named went red, and nothing else did
+-- one day taken off a series joins the days it had already taken off
+   timed: rebuild 155 s, run 117 s, 272 s in all
+   all 23 tests named went red, and nothing else did
+-- a day called off is written the way the start it came from is written
+   timed: rebuild 153 s, run 110 s, 263 s in all
+   all 3 tests named went red, and nothing else did
+-- the question about which days focuses the answer it ticks
+   timed: rebuild 153 s, run 108 s, 261 s in all
+   the one test named went red, and nothing else did
+-- Enter does not answer the question about which days
+   timed: rebuild 169 s, run 116 s, 285 s in all
+   the one test named went red, and nothing else did
+-- an edited event's times come from the record, not from the two boxes
+   timed: rebuild 143 s, run 106 s, 249 s in all
+   all 17 tests named went red, and nothing else did
+-- a box nobody typed in keeps the moment the provider sent
+   timed: rebuild 143 s, run 107 s, 250 s in all
+   all 3 tests named went red, and nothing else did
+-- a clock face somebody moved keeps the zone the event was in
+   timed: rebuild 157 s, run 109 s, 266 s in all
+   all 6 tests named went red, and nothing else did
+-- a zone named on the event beats an offset frozen on another date
+   timed: rebuild 142 s, run 108 s, 250 s in all
+   the one test named went red, and nothing else did
+-- an empty zone name on an edited event names nothing
+   timed: rebuild 147 s, run 109 s, 256 s in all
+   the one test named went red, and nothing else did
+-- an hour with no zone means an hour here, to Outlook as well as to Google
+   timed: rebuild 142 s, run 107 s, 249 s in all
+   2 of 2 named tests stayed green with the guard broken:
+       application::calendar::tests::test_a_zone_name_that_names_nothing_sends_both_providers_the_same_hour
+       application::calendar::tests::test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads
+
+-- a moment written with a T is one the reader knows
+   timed: rebuild 142 s, run 106 s, 248 s in all
+   2 tests went red that this record does not name:
+       presentation::wx_reminder_alert::tests::test_one_row_is_said_as_its_own_sentence_exactly_as_before
+       presentation::wx_reminder_alert::tests::test_several_rows_are_said_as_a_count_then_each_then_how_many_more
+
+-- a whole day goes to a calendar server as a day
+   timed: rebuild 142 s, run 107 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a zone name of no letters names no zone
+   timed: rebuild 143 s, run 109 s, 252 s in all
+   all 8 tests named went red, and nothing else did
+-- an address is matched however it is spelled
+   timed: rebuild 143 s, run 106 s, 249 s in all
+   all 4 tests named went red, and nothing else did
+-- every address a contact holds is hers
+   timed: rebuild 141 s, run 105 s, 246 s in all
+   all 6 tests named went red, and nothing else did
+-- the address the other copy keeps second is asked about too
+   timed: rebuild 142 s, run 106 s, 248 s in all
+   the one test named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    an hour with no zone means an hour here, to Outlook as well as to Google
+    a moment written with a T is one the reader knows
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 5/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 889 s, run 150 s, 1039 s in all
+-- the sync asks the same question about an address as the import
+   timed: rebuild 156 s, run 142 s, 298 s in all
+   all 3 tests named went red, and nothing else did
+-- an imported card is queued for the address books that hold her
+   timed: rebuild 159 s, run 140 s, 299 s in all
+   all 6 tests named went red, and nothing else did
+-- an import that changed nothing is not queued
+   timed: rebuild 153 s, run 138 s, 291 s in all
+   all 5 tests named went red, and nothing else did
+-- an address with no list beside it is the address it is
+   timed: rebuild 163 s, run 158 s, 321 s in all
+   all 2 tests named went red, and nothing else did
+-- a card adds an address and takes none away
+   timed: rebuild 137 s, run 138 s, 275 s in all
+   all 10 tests named went red, and nothing else did
+-- an address she already holds is not written down again
+   timed: rebuild 138 s, run 137 s, 275 s in all
+   all 12 tests named went red, and nothing else did
+-- an address the card names twice is added once
+   timed: rebuild 139 s, run 138 s, 277 s in all
+   the one test named went red, and nothing else did
+-- an address the card adds keeps the label the card gave it
+   timed: rebuild 142 s, run 138 s, 280 s in all
+   the one test named went red, and nothing else did
+-- a row with no address list still brings its own address to the join
+   timed: rebuild 140 s, run 139 s, 279 s in all
+   all 2 tests named went red, and nothing else did
+-- the first-run screen focuses the answer it ticks
+   timed: rebuild 143 s, run 138 s, 281 s in all
+   the one test named went red, and nothing else did
+-- an import says how many contacts are on their way out
+   timed: rebuild 140 s, run 138 s, 278 s in all
+   all 2 tests named went red, and nothing else did
+-- the contacts on their way out are counted as they are written
+   timed: rebuild 141 s, run 138 s, 279 s in all
+   all 2 tests named went red, and nothing else did
+-- two cards that are one card but for the address are one person
+   timed: rebuild 142 s, run 137 s, 279 s in all
+   all 2 tests named went red, and nothing else did
+-- the contacts list finds a person by any address she holds
+   timed: rebuild 141 s, run 140 s, 281 s in all
+   all 2 tests named went red, and nothing else did
+-- a deletion that cannot be undone does not let Enter answer Yes
+   timed: rebuild 138 s, run 138 s, 276 s in all
+   the one test named went red, and nothing else did
+-- what each first-run answer costs rides on the button
+   timed: rebuild 139 s, run 137 s, 276 s in all
+   the one test named went red, and nothing else did
+-- a composer opens with no signature when somebody asked for none
+   timed: rebuild 138 s, run 239 s, 377 s in all
+   all 2 tests named went red, and nothing else did
+-- a whole day is spoken as a date under the relative style
+   timed: rebuild 184 s, run 202 s, 386 s in all
+   all 7 tests named went red, and nothing else did
+-- the out-of-hours note judges the hour the cell speaks
+   timed: rebuild 157 s, run 135 s, 292 s in all
+   all 2 tests named went red, and nothing else did
+-- a reminder for a day is not called overdue during that day
+   timed: rebuild 148 s, run 139 s, 287 s in all
+   all 2 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 6/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 901 s, run 110 s, 1011 s in all
+-- a task deletion held by Allow Changes is a wait, not a problem
+   timed: rebuild 140 s, run 123 s, 263 s in all
+   the one test named went red, and nothing else did
+-- a task change held by Allow Changes is a wait, not a problem
+   timed: rebuild 146 s, run 125 s, 271 s in all
+   all 4 tests named went red, and nothing else did
+-- the waiting count survives the two providers being folded together
+   timed: rebuild 141 s, run 109 s, 250 s in all
+   the one test named went red, and nothing else did
+-- the waiting count is said as a sentence naming the setting
+   timed: rebuild 153 s, run 114 s, 267 s in all
+   all 4 tests named went red, and nothing else did
+-- cancelled days go out grouped by what each value says
+   timed: rebuild 157 s, run 113 s, 270 s in all
+   all 5 tests named went red, and nothing else did
+-- a whole property line is told from a list of values before either is split
+   timed: rebuild 162 s, run 119 s, 281 s in all
+   all 2 tests named went red, and nothing else did
+-- a day already called off is recognised by its clock face and its zone
+   timed: rebuild 147 s, run 107 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a row written out again keeps the zone each day it names arrived under
+   timed: rebuild 141 s, run 108 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a cancelled day arriving in another zone is moved into the meeting's own
+   timed: rebuild 138 s, run 109 s, 247 s in all
+   all 12 tests named went red, and nothing else did
+-- a cancelled day this program cannot move keeps the zone it arrived in
+   timed: rebuild 151 s, run 108 s, 259 s in all
+   all 6 tests named went red, and nothing else did
+-- a cancelled day carrying its own zone goes out under that zone
+   timed: rebuild 140 s, run 107 s, 247 s in all
+   all 6 tests named went red, and nothing else did
+-- a document built from nothing defines every zone it names
+   timed: rebuild 140 s, run 109 s, 249 s in all
+   all 10 tests named went red, and nothing else did
+-- a change into a document that defines no zone adds the rules
+   timed: rebuild 140 s, run 109 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a zone already defined in the document is not defined again
+   timed: rebuild 140 s, run 107 s, 247 s in all
+   the one test named went red, and nothing else did
+-- the zones defined are the document's own, never the zone column
+   timed: rebuild 141 s, run 108 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a zone the document leaves undefined is reported before anything is sent
+   timed: rebuild 139 s, run 109 s, 248 s in all
+   all 12 tests named went red, and nothing else did
+-- a name the timezone database does not know writes no rules
+   timed: rebuild 140 s, run 108 s, 248 s in all
+   10 tests went red that this record does not name:
+       application::caldav_sync::tests::test_a_day_whose_replacement_cannot_be_created_is_not_taken_off_the_series_at_the_server
+       application::caldav_sync::tests::test_a_new_event_whose_cancelled_day_names_a_zone_we_cannot_describe_stays_waiting
+       application::calendar::tests::test_no_refusal_said_before_anything_is_written_describes_a_write_that_was_tried
+       application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed
+       application::calendar::tests::test_the_editor_and_the_sync_say_the_same_thing_about_a_zone_they_cannot_write
+       application::calendar::tests::test_the_one_day_answer_does_not_promise_a_calendar_server_a_zone_it_cannot_be_told
+       application::calendar::tests::test_the_refusal_check_can_tell_a_good_sentence_from_a_bad_one
+       application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words
+       presentation::managers::changing_one_day_of_a_series::test_a_day_cut_out_of_an_outlook_zone_series_is_refused_and_neither_half_is_written
+       presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors
+
+-- a zone that follows no yearly rule lists its days rather than guessing
+   timed: rebuild 140 s, run 108 s, 248 s in all
+   1 test went red that this record does not name:
+       service::vtimezone::tests::test_listed_blocks_keeps_each_pair_of_offsets_in_its_own_block
+
+-- the offsets written are the zone's own
+   timed: rebuild 138 s, run 109 s, 247 s in all
+   all 4 tests named went red, and nothing else did
+-- the counted weekday of a change rule is the one the zone changes on
+   timed: rebuild 139 s, run 108 s, 247 s in all
+   the one test named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    a name the timezone database does not know writes no rules
+    a zone that follows no yearly rule lists its days rather than guessing
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 7/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 875 s, run 183 s, 1058 s in all
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 9 s, run 8 s, 17 s in all
+-- a sweeping refusal is read without any word dating it
+   timed: rebuild 7 s, run 8 s, 15 s in all
+   the one test named went red, and nothing else did
+-- every accessor handing out a path is one the pages have to name
+   timed: rebuild 141 s, run 147 s, 288 s in all
+   the one test named went red, and nothing else did
+-- a page cannot promise the Windows warning will go away
+   timed: rebuild 50 s, run 9 s, 59 s in all
+   the one test named went red, and nothing else did
+-- a word that opens a sweep is a word the reading finds a refusal in
+   timed: rebuild 7 s, run 9 s, 16 s in all
+   the one test named went red, and nothing else did
+-- a withdrawal answer is read out of the chain rather than invented
+   timed: rebuild 141 s, run 125 s, 266 s in all
+   all 8 tests named went red, and nothing else did
+-- the walk into Windows own chain structures really happens
+   timed: rebuild 153 s, run 122 s, 275 s in all
+   1 of 1 named test stayed green with the guard broken:
+       service::signed_mail::tests::test_the_withdrawal_question_really_reaches_windows_own_answer
+
+-- the compiler a workflow names is really read out of the workflow
+   timed: rebuild 56 s, run 8 s, 64 s in all
+   all 3 tests named went red, and nothing else did
+-- the components the pin file installs are really read out of the pin file
+   timed: rebuild 7 s, run 8 s, 15 s in all
+   all 2 tests named went red, and nothing else did
+-- a break that could be applied in two places is refused rather than guessed at
+   timed: rebuild 7 s, run 7 s, 14 s in all
+   the one test named went red, and nothing else did
+-- a break whose text has gone is not passed off as one that still points somewhere
+   timed: rebuild 7 s, run 10 s, 17 s in all
+   all 2 tests named went red, and nothing else did
+-- a flag the mail server refused is not reported as set
+   timed: rebuild 148 s, run 124 s, 272 s in all
+   4 tests went red that this record does not name:
+       application::flag_changes_waiting::tests::test_a_server_that_answers_no_is_read_as_a_refusal_and_still_puts_the_change_back
+       application::flag_changes_waiting::tests::test_a_server_that_drops_the_connection_is_read_as_never_having_been_asked
+       application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places
+       application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind
+
+-- a message the mail server would not remove is not reported as removed
+   timed: rebuild 157 s, run 129 s, 286 s in all
+   all 4 tests named went red, and nothing else did
+-- a draft only flagged for removal is not counted as removed
+   timed: rebuild 147 s, run 120 s, 267 s in all
+   all 3 tests named went red, and nothing else did
+-- a blind copy reaches the server and never the message
+   timed: rebuild 161 s, run 134 s, 295 s in all
+   the one test named went red, and nothing else did
+-- a delete opens the folder it names before it removes anything
+   timed: rebuild 142 s, run 129 s, 271 s in all
+   all 4 tests named went red, and nothing else did
+-- saving a copy does not change which folder is open
+   timed: rebuild 138 s, run 118 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- a mutation result is read from the record, not from the lists written for people
+   timed: rebuild 49 s, run 8 s, 57 s in all
+   the one test named went red, and nothing else did
+-- the mutation script and the pull request check ask what a change touched the same way
+   timed: rebuild 1 s, run 7 s, 8 s in all
+   the one test named went red, and nothing else did
+-- a mutation run that failed is not passed off as one that finished
+   timed: rebuild 1 s, run 7 s, 8 s in all
+   the one test named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    the walk into Windows own chain structures really happens
+    a flag the mail server refused is not reported as set
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 8/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 898 s, run 123 s, 1021 s in all
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 9 s, run 5 s, 14 s in all
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 8 s, run 8 s, 16 s in all
+-- a mutation run that never reached the tests is not a result
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a mutation run the suite never finished against is not a result
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a mutant the suite never finished against is not summed up as one it caught
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a mutation run the suite never finished against does not pass
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a mutation report says how much of the run asked a question
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a reason a server already punctuated is not punctuated again in the draft path
+   timed: rebuild 148 s, run 101 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a reason a server already punctuated is not punctuated again in the sent path
+   timed: rebuild 152 s, run 107 s, 259 s in all
+   the one test named went red, and nothing else did
+-- the connection a queue of outgoing mail opens is let go of
+   timed: rebuild 158 s, run 103 s, 261 s in all
+   the one test named went red, and nothing else did
+-- an answer about somebody's mail is read rather than thrown away
+   timed: rebuild 54 s, run 7 s, 61 s in all
+   the one test named went red, and nothing else did
+-- not knowing where the trash is does not read as having nowhere to put it
+   timed: rebuild 163 s, run 113 s, 276 s in all
+   all 4 tests named went red, and nothing else did
+-- the delete step says why it did nothing rather than deleting anyway
+   timed: rebuild 137 s, run 99 s, 236 s in all
+   all 2 tests named went red, and nothing else did
+-- the arm that found no trash stops rather than carrying on
+   timed: rebuild 137 s, run 98 s, 235 s in all
+   all 2 tests named went red, and nothing else did
+-- the arm that knows no folders yet stops rather than carrying on
+   timed: rebuild 137 s, run 100 s, 237 s in all
+   all 2 tests named went red, and nothing else did
+-- a removal the server refused does not read as a move that never happened
+   timed: rebuild 147 s, run 109 s, 256 s in all
+   all 3 tests named went red, and nothing else did
+-- a message the server still holds unflagged keeps its row in the list
+   timed: rebuild 137 s, run 99 s, 236 s in all
+   the one test named went red, and nothing else did
+-- the copy is confirmed before the original is touched
+   timed: rebuild 138 s, run 99 s, 237 s in all
+   all 6 tests named went red, and nothing else did
+-- the newer draft is on the server before the older one is taken away
+   timed: rebuild 137 s, run 98 s, 235 s in all
+   all 5 tests named went red, and nothing else did
+-- a draft the server would not take is said rather than logged
+   timed: rebuild 48 s, run 4 s, 52 s in all
+   the one test named went red, and nothing else did
+-- the move handler asks one place what to say and what to do with the row
+   timed: rebuild 48 s, run 4 s, 52 s in all
+   the one test named went red, and nothing else did
+-- a read the mail server refused is not a folder with nothing in it
+   timed: rebuild 136 s, run 99 s, 235 s in all
+   all 7 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 9/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test a_whole_folder_moves_both_bounds, before anything is broken.
+   timed: rebuild 849 s, run 1 s, 850 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 104 s, run 110 s, 214 s in all
+-- a connection that closed mid answer is not an answer that finished
+   timed: rebuild 156 s, run 130 s, 286 s in all
+   3 tests went red that this record does not name:
+       application::mail_session::tests::test_a_connection_the_server_dropped_is_signed_in_again_and_the_work_finishes
+       application::mail_session::tests::test_a_reconnect_that_fails_too_is_refused_in_plain_words
+       application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more
+
+-- a whole-folder request moves both of the bounds and not one of them
+   timed: rebuild 56 s, run 1 s, 57 s in all
+   the one test named went red, and nothing else did
+-- a folder is compared against the whole mailbox often enough to notice a deletion
+   timed: rebuild 155 s, run 109 s, 264 s in all
+   all 3 tests named went red, and nothing else did
+-- the sync asks the chosen way rather than naming the comparison
+   timed: rebuild 149 s, run 108 s, 257 s in all
+   the one test named went red, and nothing else did
+-- a folder that was synced before is not asked what it holds all over again
+   timed: rebuild 156 s, run 106 s, 262 s in all
+   all 3 tests named went red, and nothing else did
+-- a mailbox the server counted and then would not list is not one that emptied
+   timed: rebuild 149 s, run 108 s, 257 s in all
+   all 2 tests named went red, and nothing else did
+-- a message the server copied rather than moved is not counted as filed
+   timed: rebuild 150 s, run 106 s, 256 s in all
+   the one test named went red, and nothing else did
+-- a subscription the server lists reaches the folder it is about
+   timed: rebuild 157 s, run 113 s, 270 s in all
+   the one test named went red, and nothing else did
+-- a message the server hands over is not reported as one that is not there
+   timed: rebuild 158 s, run 108 s, 266 s in all
+   19 tests went red that this record does not name:
+       application::mail_across_accounts::tests::test_a_copy_across_accounts_says_nothing_to_the_source_that_changes_it
+       application::mail_across_accounts::tests::test_a_destination_that_refuses_the_append_leaves_the_source_untouched
+       application::mail_across_accounts::tests::test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards
+       application::mail_across_accounts::tests::test_a_message_that_was_already_there_is_not_read_as_the_one_just_sent
+       application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves
+       application::mail_across_accounts::tests::test_a_move_that_crosses_never_sends_a_copy_or_a_move_to_the_source
+       application::mail_across_accounts::tests::test_a_refusal_is_an_answer_so_a_message_already_there_is_not_read_as_an_arrival
+       application::mail_across_accounts::tests::test_a_source_that_cannot_remove_one_message_says_it_is_here_and_marked
+       application::mail_across_accounts::tests::test_a_source_that_will_not_mark_the_message_leaves_it_in_both_places
+       application::mail_across_accounts::tests::test_an_account_this_program_may_not_write_to_refuses_at_its_own_session
+       application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing
+       application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_found_afterwards_is_removed_at_the_source
+       application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing
+       application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind
+       application::mail_across_accounts::tests::test_nothing_is_said_to_the_source_that_changes_it_until_the_append_has_gone_out
+       application::mail_across_accounts::tests::test_the_destination_is_told_to_append_into_the_folder_that_was_chosen
+       application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out
+       application::mail_across_accounts::tests::test_the_message_reaches_one_server_and_leaves_the_other
+       application::mail_across_accounts::tests::test_the_message_the_destination_is_given_is_the_one_the_source_handed_over
+
+-- a POP removal refused by the setting says nothing to the server
+   timed: rebuild 150 s, run 106 s, 256 s in all
+   all 5 tests named went red, and nothing else did
+-- a POP removal held by Allow Changes is a wait, not a failed check
+   timed: rebuild 180 s, run 117 s, 297 s in all
+   the one test named went red, and nothing else did
+-- a subscription change refused by the setting says nothing to the server
+   timed: rebuild 148 s, run 104 s, 252 s in all
+   all 4 tests named went red, and nothing else did
+-- a sent message carries an identifier of its own
+   timed: rebuild 141 s, run 105 s, 246 s in all
+   all 3 tests named went red, and nothing else did
+-- one queued message keeps one identifier
+   timed: rebuild 143 s, run 106 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a confirmed delete that finds nothing to delete still says so
+   timed: rebuild 141 s, run 106 s, 247 s in all
+   the one test named went red, and nothing else did
+-- one day taken off a series is not called a deletion
+   timed: rebuild 141 s, run 109 s, 250 s in all
+   all 3 tests named went red, and nothing else did
+-- nothing the calendar window has written down is said as though it happened
+   timed: rebuild 144 s, run 104 s, 248 s in all
+   the one test named went red, and nothing else did
+-- both exits after a confirmed delete say the row has gone
+   timed: rebuild 150 s, run 105 s, 255 s in all
+   the one test named went red, and nothing else did
+-- what goes to the status bar is said as well as shown
+   timed: rebuild 150 s, run 107 s, 257 s in all
+   all 2 tests named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    a connection that closed mid answer is not an answer that finished
+    a message the server hands over is not reported as one that is not there
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 10/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 824 s, run 105 s, 929 s in all
+-- a refusal is said as well as shown
+   timed: rebuild 143 s, run 113 s, 256 s in all
+   all 3 tests named went red, and nothing else did
+-- a series that is still there is not reported as deleted
+   timed: rebuild 142 s, run 99 s, 241 s in all
+   the one test named went red, and nothing else did
+-- the two doors say one sentence about a day taken off
+   timed: rebuild 150 s, run 113 s, 263 s in all
+   the one test named went red, and nothing else did
+-- one owner for the words about a day taken off
+   timed: rebuild 156 s, run 115 s, 271 s in all
+   the one test named went red, and nothing else did
+-- a calendar window that did nothing says nothing
+   timed: rebuild 150 s, run 98 s, 248 s in all
+   the one test named went red, and nothing else did
+-- the sync button in the calendar window really starts a sync
+   timed: rebuild 149 s, run 99 s, 248 s in all
+   the one test named went red, and nothing else did
+-- the calendar window asks whether an answer can be carried out before it queues it
+   timed: rebuild 160 s, run 113 s, 273 s in all
+   the one test named went red, and nothing else did
+-- a calendar answer that was refused is not queued anyway
+   timed: rebuild 143 s, run 100 s, 243 s in all
+   the one test named went red, and nothing else did
+-- the calendar window says what is waiting rather than what is done
+   timed: rebuild 137 s, run 100 s, 237 s in all
+   the one test named went red, and nothing else did
+-- every answer a window gives on a line of text is said out loud
+   timed: rebuild 137 s, run 110 s, 247 s in all
+   all 4 tests named went red, and nothing else did
+-- signing in failing on the account screen is said, not only shown
+   timed: rebuild 138 s, run 100 s, 238 s in all
+   all 2 tests named went red, and nothing else did
+-- deleting from a manager window says which item went
+   timed: rebuild 138 s, run 98 s, 236 s in all
+   the one test named went red, and nothing else did
+-- how many task lists arrived is said, not only shown
+   timed: rebuild 138 s, run 99 s, 237 s in all
+   the one test named went red, and nothing else did
+-- the offline mode change is spoken by the sentence sent ahead of it
+   timed: rebuild 138 s, run 99 s, 237 s in all
+   the one test named went red, and nothing else did
+-- the outbox queue count is covered by the flush result sent before it
+   timed: rebuild 139 s, run 100 s, 239 s in all
+   the one test named went red, and nothing else did
+-- switching module is said where the switch happens
+   timed: rebuild 139 s, run 99 s, 238 s in all
+   the one test named went red, and nothing else did
+-- the day cut out of a series is stored naming the series it came from
+   timed: rebuild 137 s, run 99 s, 236 s in all
+   the one test named went red, and nothing else did
+-- a day is not taken off a series until the appointment kept for it has really arrived
+   timed: rebuild 139 s, run 100 s, 239 s in all
+   all 2 tests named went red, and nothing else did
+-- a day cut out of a series is offered to the server before the series it came from
+   timed: rebuild 138 s, run 100 s, 238 s in all
+   all 3 tests named went red, and nothing else did
+-- reading the calendar back keeps which series an appointment was cut out of
+   timed: rebuild 137 s, run 99 s, 236 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 11/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 803 s, run 11 s, 814 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 106 s, run 124 s, 230 s in all
+-- one day of a series is refused before either half is written when the zone cannot be sent
+   timed: rebuild 149 s, run 143 s, 292 s in all
+   all 2 tests named went red, and nothing else did
+-- a one-day change on a calendar kept here is not refused over its zone
+   timed: rebuild 154 s, run 143 s, 297 s in all
+   all 2 tests named went red, and nothing else did
+-- the question and the refusal about one day are one answer
+   timed: rebuild 153 s, run 126 s, 279 s in all
+   all 3 tests named went red, and nothing else did
+-- cutting a day fresh out of a series is not refused the way an existing exception is
+   timed: rebuild 155 s, run 123 s, 278 s in all
+   all 5 tests named went red, and nothing else did
+-- a refusal said before anything is written does not describe a write that failed
+   timed: rebuild 157 s, run 132 s, 289 s in all
+   all 2 tests named went red, and nothing else did
+-- the day cut out of a series carries none of the days the series calls off
+   timed: rebuild 163 s, run 127 s, 290 s in all
+   the one test named went red, and nothing else did
+-- one place words what a move or a copy did
+   timed: rebuild 161 s, run 122 s, 283 s in all
+   the one test named went red, and nothing else did
+-- nothing this window words for itself is a delete sentence
+   timed: rebuild 166 s, run 133 s, 299 s in all
+   all 2 tests named went red, and nothing else did
+-- the delete path says what the one owner of that sentence gave it
+   timed: rebuild 167 s, run 135 s, 302 s in all
+   the one test named went red, and nothing else did
+-- one place words a row that has gone
+   timed: rebuild 52 s, run 7 s, 59 s in all
+   the one test named went red, and nothing else did
+-- a command that failed says what it was and what to try
+   timed: rebuild 171 s, run 135 s, 306 s in all
+   the one test named went red, and nothing else did
+-- a delete is not described as an edit that keeps a second appointment
+   timed: rebuild 143 s, run 126 s, 269 s in all
+   the one test named went red, and nothing else did
+-- the calendar window asks about the day before it writes either half
+   timed: rebuild 146 s, run 125 s, 271 s in all
+   the one test named went red, and nothing else did
+-- the refusal about a day that cannot be kept stops the write
+   timed: rebuild 147 s, run 125 s, 272 s in all
+   the one test named went red, and nothing else did
+-- a task identifier is escaped before it becomes part of an address
+   timed: rebuild 144 s, run 124 s, 268 s in all
+   all 4 tests named went red, and nothing else did
+-- a task identifier loses this application's prefix before it becomes part of an address
+   timed: rebuild 149 s, run 125 s, 274 s in all
+   all 11 tests named went red, and nothing else did
+-- the task forwarders really reach the client rather than answering themselves
+   timed: rebuild 147 s, run 123 s, 270 s in all
+   all 2 tests named went red, and nothing else did
+-- the Google address book forwarder really sends a deletion
+   timed: rebuild 144 s, run 124 s, 268 s in all
+   the one test named went red, and nothing else did
+-- the Outlook address book forwarder really sends a deletion
+   timed: rebuild 149 s, run 127 s, 276 s in all
+   the one test named went red, and nothing else did
+-- mail waiting to go sits where the tree order says
+   timed: rebuild 161 s, run 127 s, 288 s in all
+   all 2 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 12/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 933 s, run 114 s, 1047 s in all
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 10 s, run 8 s, 18 s in all
+-- a draft filed at the server is filed as a draft
+   timed: rebuild 161 s, run 126 s, 287 s in all
+   the one test named went red, and nothing else did
+-- the removal names the copies the search found
+   timed: rebuild 162 s, run 104 s, 266 s in all
+   all 6 tests named went red, and nothing else did
+-- the copy of a sent message is flagged read at the server
+   timed: rebuild 165 s, run 108 s, 273 s in all
+   the one test named went red, and nothing else did
+-- the outbound census reads the whole shipped half of a file
+   timed: rebuild 166 s, run 121 s, 287 s in all
+   the one test named went red, and nothing else did
+-- a machinery name in a page a person reads is still recognised
+   timed: rebuild 60 s, run 10 s, 70 s in all
+   the one test named went red, and nothing else did
+-- a new meeting tells Google how it repeats
+   timed: rebuild 168 s, run 119 s, 287 s in all
+   all 5 tests named went red, and nothing else did
+-- the days a new series has already called off go up with its rule
+   timed: rebuild 170 s, run 115 s, 285 s in all
+   the one test named went red, and nothing else did
+-- a Google calendar is asked for the series rather than for its days
+   timed: rebuild 178 s, run 117 s, 295 s in all
+   all 2 tests named went red, and nothing else did
+-- a rule that already carries its property name does not get a second one
+   timed: rebuild 158 s, run 109 s, 267 s in all
+   all 2 tests named went red, and nothing else did
+-- a new meeting tells Outlook how it repeats
+   timed: rebuild 166 s, run 106 s, 272 s in all
+   all 8 tests named went red, and nothing else did
+-- the day a new meeting repeats from is the day it is sent on
+   timed: rebuild 153 s, run 105 s, 258 s in all
+   all 4 tests named went red, and nothing else did
+-- a repeat Outlook cannot say is refused rather than rounded to a near one
+   timed: rebuild 147 s, run 109 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- a repeat Outlook sends is stored as a rule and not as its own shape
+   timed: rebuild 150 s, run 106 s, 256 s in all
+   the one test named went red, and nothing else did
+-- the days of a series held here do not arrive from Outlook a second time
+   timed: rebuild 149 s, run 105 s, 254 s in all
+   all 5 tests named went red, and nothing else did
+-- a status typed here survives a read from Outlook
+   timed: rebuild 147 s, run 105 s, 252 s in all
+   all 5 tests named went red, and nothing else did
+-- a repeat Outlook could not be told is said out loud
+   timed: rebuild 148 s, run 106 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a repeat Outlook sends that means other days is refused rather than read
+   timed: rebuild 151 s, run 107 s, 258 s in all
+   the one test named went red, and nothing else did
+-- the outbound census sees a socket brought in beside something else
+   timed: rebuild 156 s, run 106 s, 262 s in all
+   the one test named went red, and nothing else did
+-- the check on the guard sweep header can still read the header
+   timed: rebuild 55 s, run 8 s, 63 s in all
+   all 2 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 13/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 907 s, run 119 s, 1026 s in all
+-- the folder tree is put in order after it is read rather than left as it was written
+   timed: rebuild 153 s, run 134 s, 287 s in all
+   all 4 tests named went red, and nothing else did
+-- each way of sorting the message list really puts it in that order
+   timed: rebuild 158 s, run 112 s, 270 s in all
+   the one test named went red, and nothing else did
+-- sorting by unread brings the unread ones to the top
+   timed: rebuild 155 s, run 114 s, 269 s in all
+   the one test named went red, and nothing else did
+-- the contacts search box narrows within the sidebar's group filter rather than replacing it
+   timed: rebuild 161 s, run 118 s, 279 s in all
+   the one test named went red, and nothing else did
+-- a task priority nothing understands is refused rather than quietly changed
+   timed: rebuild 162 s, run 119 s, 281 s in all
+   all 3 tests named went red, and nothing else did
+-- a choice the form never asked for falls back to the one it would have offered
+   timed: rebuild 160 s, run 112 s, 272 s in all
+   all 4 tests named went red, and nothing else did
+-- a change to a Google task carries no claim about whether it was deleted
+   timed: rebuild 166 s, run 113 s, 279 s in all
+   all 2 tests named went red, and nothing else did
+-- a Google task tombstone still arrives after the claim stopped being sent
+   timed: rebuild 162 s, run 111 s, 273 s in all
+   the one test named went red, and nothing else did
+-- a contact sent to Google carries no name Google works out for itself
+   timed: rebuild 194 s, run 125 s, 319 s in all
+   all 3 tests named went red, and nothing else did
+-- the name Google works out still arrives after it stopped being sent
+   timed: rebuild 156 s, run 112 s, 268 s in all
+   the one test named went red, and nothing else did
+-- nothing fills in the name Google computes on the way out
+   timed: rebuild 150 s, run 111 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a contact whose whole name is on one line is not read as nameless
+   timed: rebuild 147 s, run 111 s, 258 s in all
+   all 2 tests named went red, and nothing else did
+-- a postal address Google holds is kept here rather than dropped
+   timed: rebuild 150 s, run 112 s, 262 s in all
+   all 4 tests named went red, and nothing else did
+-- every number Outlook holds is kept here rather than all but one dropped
+   timed: rebuild 150 s, run 111 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a postal address held at Google reaches a contact already known here
+   timed: rebuild 151 s, run 112 s, 263 s in all
+   all 3 tests named went red, and nothing else did
+-- a postal address held at Outlook reaches a contact already known here
+   timed: rebuild 151 s, run 110 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a phone list held at Outlook reaches a contact already known here
+   timed: rebuild 148 s, run 111 s, 259 s in all
+   all 3 tests named went red, and nothing else did
+-- an event filed under two categories at Outlook goes back under two
+   timed: rebuild 147 s, run 111 s, 258 s in all
+   the one test named went red, and nothing else did
+-- a Google series is read before the days of it that changed
+   timed: rebuild 149 s, run 111 s, 260 s in all
+   all 12 tests named went red, and nothing else did
+-- the days a Google series already calls off survive a read naming only the series
+   timed: rebuild 148 s, run 113 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 14/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 929 s, run 144 s, 1073 s in all
+-- a day of a Google series this computer deleted is not written back
+   timed: rebuild 154 s, run 117 s, 271 s in all
+   the one test named went red, and nothing else did
+-- a Google day moved and then cancelled loses its appointment as well as its place
+   timed: rebuild 164 s, run 100 s, 264 s in all
+   the one test named went red, and nothing else did
+-- a Google read that calls a day off leaves a change waiting here still waiting
+   timed: rebuild 160 s, run 101 s, 261 s in all
+   the one test named went red, and nothing else did
+-- a day of a Google series whose series is not held here is kept as the meeting it is
+   timed: rebuild 170 s, run 104 s, 274 s in all
+   the one test named went red, and nothing else did
+-- what Google says about one day of a series is never sent back
+   timed: rebuild 164 s, run 101 s, 265 s in all
+   all 5 tests named went red, and nothing else did
+-- who took the day out decides whether the series is still waiting to be sent
+   timed: rebuild 178 s, run 110 s, 288 s in all
+   all 2 tests named went red, and nothing else did
+-- a day changed on this computer leaves the series waiting to be sent
+   timed: rebuild 146 s, run 102 s, 248 s in all
+   the one test named went red, and nothing else did
+-- a day changed at Google leaves the series owing Google nothing
+   timed: rebuild 154 s, run 100 s, 254 s in all
+   all 3 tests named went red, and nothing else did
+-- a day of a Google series already called off is not counted as a deletion again
+   timed: rebuild 149 s, run 101 s, 250 s in all
+   the one test named went red, and nothing else did
+-- a structured address sent to Google carries no empty formattedValue key
+   timed: rebuild 156 s, run 103 s, 259 s in all
+   all 2 tests named went red, and nothing else did
+-- an address with no recorded label carries no type key to Google
+   timed: rebuild 148 s, run 102 s, 250 s in all
+   the one test named went red, and nothing else did
+-- an address Google holds only as a composed line is kept rather than read as nothing
+   timed: rebuild 154 s, run 103 s, 257 s in all
+   all 2 tests named went red, and nothing else did
+-- a postal address stored before the lists existed still reaches Google, and a blank row does not
+   timed: rebuild 155 s, run 106 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a postal address stored before the lists existed still reaches Microsoft, and a blank row does not
+   timed: rebuild 151 s, run 103 s, 254 s in all
+   all 2 tests named went red, and nothing else did
+-- the name Outlook keeps beside an address is read in rather than left blank
+   timed: rebuild 152 s, run 104 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- the name recorded for an address is sent back rather than the contact's own name
+   timed: rebuild 149 s, run 103 s, 252 s in all
+   the one test named went red, and nothing else did
+-- a Google sync keeps the name Outlook gave for an address Google also lists
+   timed: rebuild 149 s, run 100 s, 249 s in all
+   the one test named went red, and nothing else did
+-- an edit made here keeps the name Outlook gave for an address it does not show
+   timed: rebuild 148 s, run 101 s, 249 s in all
+   the one test named went red, and nothing else did
+-- the address Google calls primary is put first here, not read in whatever order Google listed it
+   timed: rebuild 150 s, run 101 s, 251 s in all
+   the one test named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 15/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 888 s, run 134 s, 1022 s in all
+-- the email Google calls primary is shown first here, not read in whatever order Google listed it
+   timed: rebuild 152 s, run 136 s, 288 s in all
+   the one test named went red, and nothing else did
+-- a task or event body written as html is read as the structure it carries, not sanitized and flattened
+   timed: rebuild 153 s, run 119 s, 272 s in all
+   3 tests went red that this record does not name:
+       service::onenote_notes::tests::test_a_note_is_its_title_from_the_resource_and_its_body_from_the_document
+       service::onenote_notes::tests::test_a_note_made_here_reaches_onenote_as_a_page_in_the_section_it_was_given
+       service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out
+
+-- the progress word Outlook holds a task under is kept, not folded to completed or not started
+   timed: rebuild 158 s, run 119 s, 277 s in all
+   the one test named went red, and nothing else did
+-- a Microsoft task's completion time is trusted only when Graph labelled it universal time
+   timed: rebuild 165 s, run 132 s, 297 s in all
+   the one test named went red, and nothing else did
+-- a mailbox write asks the gate before it reaches the session
+   timed: rebuild 163 s, run 120 s, 283 s in all
+   all 4 tests named went red, and nothing else did
+-- every mailbox write named measured is really on the mail wire list
+   timed: rebuild 152 s, run 116 s, 268 s in all
+   the one test named went red, and nothing else did
+-- a WebDAV read cannot carry a changing verb
+   timed: rebuild 175 s, run 125 s, 300 s in all
+   all 3 tests named went red, and nothing else did
+-- a Google merge keeps the category typed here and takes Google's status
+   timed: rebuild 142 s, run 115 s, 257 s in all
+   the one test named went red, and nothing else did
+-- an Outlook merge takes Outlook's category and keeps the status set here
+   timed: rebuild 141 s, run 126 s, 267 s in all
+   all 2 tests named went red, and nothing else did
+-- the days an Outlook series already calls off survive a read naming only the event
+   timed: rebuild 144 s, run 113 s, 257 s in all
+   the one test named went red, and nothing else did
+-- a Google merge of one changed day keeps the category typed here and takes Google's status
+   timed: rebuild 145 s, run 114 s, 259 s in all
+   the one test named went red, and nothing else did
+-- an Outlook merge of one changed day takes Outlook's category and keeps the status set here
+   timed: rebuild 146 s, run 113 s, 259 s in all
+   the one test named went red, and nothing else did
+-- a missing OAuth credential is reported through the shared sentence, not a wording of its own
+   timed: rebuild 146 s, run 115 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- the account manager's edit path reports missing credentials through the shared sentence
+   timed: rebuild 150 s, run 116 s, 266 s in all
+   the one test named went red, and nothing else did
+-- a manager window's delete sentence names its kind and does not collide with mail
+   timed: rebuild 145 s, run 116 s, 261 s in all
+   all 4 tests named went red, and nothing else did
+-- the password box's description carries the app password advice for the right addresses
+   timed: rebuild 143 s, run 117 s, 260 s in all
+   the one test named went red, and nothing else did
+-- a changed day of a CalDAV series is marked seen before the removal pass can run
+   timed: rebuild 144 s, run 113 s, 257 s in all
+   1 of 1 named test stayed green with the guard broken:
+       application::caldav_sync::tests::test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it
+
+-- a SASL response is withheld from the transcript, and an empty one is not
+   timed: rebuild 143 s, run 112 s, 255 s in all
+   the one test named went red, and nothing else did
+-- an XOAUTH2 retry answers empty rather than resending the credential
+   timed: rebuild 142 s, run 115 s, 257 s in all
+   all 2 tests named went red, and nothing else did
+-- capability is asked for once at sign-in, not again on every connect
+   timed: rebuild 148 s, run 115 s, 263 s in all
+   the one test named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    a task or event body written as html is read as the structure it carries, not sanitized and flattened
+    a changed day of a CalDAV series is marked seen before the removal pass can run
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 16/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 942 s, run 129 s, 1071 s in all
+-- a second SELECT of an already-open folder still asks the server
+   timed: rebuild 146 s, run 146 s, 292 s in all
+   the one test named went red, and nothing else did
+-- a CalDAV exception row shares its series' address without needing the series
+   timed: rebuild 148 s, run 147 s, 295 s in all
+   all 3 tests named went red, and nothing else did
+-- an occurrence exception is located by UID and RECURRENCE-ID, not taken as the first VEVENT
+   timed: rebuild 152 s, run 125 s, 277 s in all
+   all 8 tests named went red, and nothing else did
+-- an occurrence is read off the document by UID and RECURRENCE-ID, not taken as the first VEVENT
+   timed: rebuild 157 s, run 127 s, 284 s in all
+   all 5 tests named went red, and nothing else did
+-- editing or deleting a CalDAV exception is allowed exactly as narrowly as intended
+   timed: rebuild 162 s, run 132 s, 294 s in all
+   all 3 tests named went red, and nothing else did
+-- POP's leave-on-server checkbox keeps its spoken consequence
+   timed: rebuild 164 s, run 125 s, 289 s in all
+   the one test named went red, and nothing else did
+-- POP's local-delete checkbox keeps its spoken consequence
+   timed: rebuild 165 s, run 132 s, 297 s in all
+   the one test named went red, and nothing else did
+-- a calendar server that never answers is still given up on
+   timed: rebuild 164 s, run 126 s, 290 s in all
+   the one test named went red, and nothing else did
+-- a recipient copied from a message is split the quote-aware way, name and address both
+   timed: rebuild 183 s, run 125 s, 308 s in all
+   all 10 tests named went red, and nothing else did
+-- a name written back out is quoted when it needs to be
+   timed: rebuild 165 s, run 131 s, 296 s in all
+   all 20 tests named went red, and nothing else did
+-- a week-start day other than Monday is refused only where it could move the answer
+   timed: rebuild 172 s, run 144 s, 316 s in all
+   all 3 tests named went red, and nothing else did
+-- months_apart counts a year crossed as twelve months, not one
+   timed: rebuild 149 s, run 125 s, 274 s in all
+   the one test named went red, and nothing else did
+-- the block count days_stepping_from reports is actually counted, not stuck at zero
+   timed: rebuild 147 s, run 128 s, 275 s in all
+   the one test named went red, and nothing else did
+-- blocks reads a bare text node with no tag around it
+   timed: rebuild 148 s, run 125 s, 273 s in all
+   all 4 tests named went red, and nothing else did
+-- blocks joins a p or div's inline content into one line
+   timed: rebuild 149 s, run 128 s, 277 s in all
+   all 13 tests named went red, and nothing else did
+-- blocks turns a ul's items into a bulleted list
+   timed: rebuild 155 s, run 130 s, 285 s in all
+   all 11 tests named went red, and nothing else did
+-- blocks counts an ol's items instead of bulleting them
+   timed: rebuild 154 s, run 126 s, 280 s in all
+   all 4 tests named went red, and nothing else did
+-- blocks still bullets a li with no list around it
+   timed: rebuild 150 s, run 124 s, 274 s in all
+   the one test named went red, and nothing else did
+-- blocks quotes a blockquote's paragraphs
+   timed: rebuild 146 s, run 125 s, 271 s in all
+   all 2 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 17/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 917 s, run 115 s, 1032 s in all
+-- blocks reads a bare line break between blocks as a newline
+   timed: rebuild 147 s, run 125 s, 272 s in all
+   the one test named went red, and nothing else did
+-- blocks silently drops a script or style reaching the block walk directly
+   timed: rebuild 148 s, run 106 s, 254 s in all
+   all 2 tests named went red, and nothing else did
+-- blocks does not paint whitespace-only text as a paragraph
+   timed: rebuild 151 s, run 114 s, 265 s in all
+   all 5 tests named went red, and nothing else did
+-- list's numbered counter increments, not decrements, after each item
+   timed: rebuild 153 s, run 105 s, 258 s in all
+   all 4 tests named went red, and nothing else did
+-- list's numbered counter increases by exactly one, not scaled, after each item
+   timed: rebuild 163 s, run 115 s, 278 s in all
+   all 4 tests named went red, and nothing else did
+-- quote is a real walk of the blockquote's paragraphs, not a stub
+   timed: rebuild 172 s, run 111 s, 283 s in all
+   all 2 tests named went red, and nothing else did
+-- quote only counts a p element as one of the blockquote's paragraphs
+   timed: rebuild 173 s, run 120 s, 293 s in all
+   the one test named went red, and nothing else did
+-- quote only falls back to quoting the whole node when it saw no paragraph
+   timed: rebuild 155 s, run 108 s, 263 s in all
+   all 2 tests named went red, and nothing else did
+-- inline reads a bare line break as a space
+   timed: rebuild 165 s, run 108 s, 273 s in all
+   all 5 tests named went red, and nothing else did
+-- inline contributes an image's alt text
+   timed: rebuild 149 s, run 106 s, 255 s in all
+   all 4 tests named went red, and nothing else did
+-- inline silently drops a script or style reaching it directly
+   timed: rebuild 148 s, run 108 s, 256 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held replaces a stale name, not just an empty one
+   timed: rebuild 151 s, run 108 s, 259 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's given_name over a stale one
+   timed: rebuild 150 s, run 108 s, 258 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's family_name over a stale one
+   timed: rebuild 148 s, run 107 s, 255 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's phone over a stale one
+   timed: rebuild 147 s, run 107 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's website over a stale one
+   timed: rebuild 152 s, run 108 s, 260 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's address over a stale one
+   timed: rebuild 148 s, run 108 s, 256 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's birthday over a stale one
+   timed: rebuild 146 s, run 106 s, 252 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's avatar_url over a stale one
+   timed: rebuild 148 s, run 106 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's inline photo over a stale one
+   timed: rebuild 147 s, run 106 s, 253 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 18/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 940 s, run 128 s, 1068 s in all
+-- a card over what is held carries the card's vcard_raw over a stale one
+   timed: rebuild 145 s, run 137 s, 282 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's nickname over a stale one
+   timed: rebuild 146 s, run 115 s, 261 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's department over a stale one
+   timed: rebuild 152 s, run 117 s, 269 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's relationship over a stale one
+   timed: rebuild 160 s, run 124 s, 284 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's phones_json over a stale one
+   timed: rebuild 162 s, run 115 s, 277 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's addresses_json over a stale one
+   timed: rebuild 154 s, run 116 s, 270 s in all
+   the one test named went red, and nothing else did
+-- a card over what is held carries the card's custom_fields_json over a stale one
+   timed: rebuild 170 s, run 134 s, 304 s in all
+   the one test named went red, and nothing else did
+-- a department survives export even with no company recorded
+   timed: rebuild 159 s, run 122 s, 281 s in all
+   the one test named went red, and nothing else did
+-- a leading indented line with nothing above it stands on its own rather than vanishing
+   timed: rebuild 148 s, run 117 s, 265 s in all
+   the one test named went red, and nothing else did
+-- a card the database refuses is counted upward, not downward
+   timed: rebuild 149 s, run 116 s, 265 s in all
+   the one test named went red, and nothing else did
+-- a card the database refuses is counted by one, not left at zero
+   timed: rebuild 147 s, run 118 s, 265 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule rejects a year whose onset breaks the pattern on the year itself
+   timed: rebuild 147 s, run 118 s, 265 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule rejects a year whose onset breaks the pattern on the month
+   timed: rebuild 147 s, run 120 s, 267 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule rejects a year whose onset breaks the pattern on the time or weekday
+   timed: rebuild 146 s, run 117 s, 263 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule rejects a year whose offsets do not match the rest
+   timed: rebuild 148 s, run 116 s, 264 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule's is_last is a day-count comparison, not one that never trips early
+   timed: rebuild 150 s, run 116 s, 266 s in all
+   the one test named went red, and nothing else did
+-- one_yearly_rule's is_last adds seven days, rather than scaling the day of month
+   timed: rebuild 150 s, run 115 s, 265 s in all
+   the one test named went red, and nothing else did
+-- listed_blocks keeps each pair of offsets in its own block
+   timed: rebuild 148 s, run 117 s, 265 s in all
+   the one test named went red, and nothing else did
+-- days_in_month is a real computation, not a stub returning nought
+   timed: rebuild 151 s, run 111 s, 262 s in all
+   all 2 tests named went red, and nothing else did
+-- days_in_month is a real computation, not a stub returning one
+   timed: rebuild 145 s, run 111 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 19/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 909 s, run 114 s, 1023 s in all
+-- days_in_month's December check is month == 12, not != 12
+   timed: rebuild 148 s, run 125 s, 273 s in all
+   the one test named went red, and nothing else did
+-- days_in_month's non-December branch looks at next month, not the month before
+   timed: rebuild 154 s, run 107 s, 261 s in all
+   the one test named went red, and nothing else did
+-- days_in_month's non-December branch adds a month, rather than multiplying it
+   timed: rebuild 154 s, run 107 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- as_outlook_says_it carries the start date on an end-date range, not just the never-ending one
+   timed: rebuild 156 s, run 108 s, 264 s in all
+   the one test named went red, and nothing else did
+-- as_outlook_says_it carries the start date on a numbered range, not just the never-ending one
+   timed: rebuild 157 s, run 111 s, 268 s in all
+   the one test named went red, and nothing else did
+-- zone_left_undefined counts entering a timezone block, not scaling the count
+   timed: rebuild 155 s, run 101 s, 256 s in all
+   the one test named went red, and nothing else did
+-- zone_left_undefined only skips a parameter while still inside a timezone block
+   timed: rebuild 158 s, run 103 s, 261 s in all
+   the one test named went red, and nothing else did
+-- a marker is refused unless what follows it is a clean single word
+   timed: rebuild 153 s, run 102 s, 255 s in all
+   the one test named went red, and nothing else did
+-- ical_duration's one_unit refuses a run of digits that is empty or carries a non-digit
+   timed: rebuild 199 s, run 114 s, 313 s in all
+   the one test named went red, and nothing else did
+-- ical_duration's seconds unit adds onto the running total, not subtracts
+   timed: rebuild 148 s, run 101 s, 249 s in all
+   the one test named went red, and nothing else did
+-- ical_duration's seconds unit adds onto the running total, not multiplies it
+   timed: rebuild 143 s, run 101 s, 244 s in all
+   the one test named went red, and nothing else did
+-- a property name ending in more than one octet does not move the delimiter mid character
+   timed: rebuild 148 s, run 102 s, 250 s in all
+   the one test named went red, and nothing else did
+-- a cancelled day is a whole day only at exactly eight digits
+   timed: rebuild 148 s, run 103 s, 251 s in all
+   the one test named went red, and nothing else did
+-- the occurrence change has to come back out of its own VEVENT, not be assumed
+   timed: rebuild 145 s, run 102 s, 247 s in all
+   the one test named went red, and nothing else did
+-- deletions_waiting counts only this calendar's own notes still owed
+   timed: rebuild 145 s, run 102 s, 247 s in all
+   the one test named went red, and nothing else did
+-- a cancelled caldav day only counts as deleted when something about it really changed, not always
+   timed: rebuild 148 s, run 102 s, 250 s in all
+   the one test named went red, and nothing else did
+-- a cancelled caldav day is counted deleted when it really left the series, not when it did not
+   timed: rebuild 147 s, run 103 s, 250 s in all
+   the one test named went red, and nothing else did
+-- fetch_flags reads the FLAGS a server sends back on its CONDSTORE path
+   timed: rebuild 145 s, run 102 s, 247 s in all
+   the one test named went red, and nothing else did
+-- fetch_flags reads the FLAGS a server sends back on its batched path
+   timed: rebuild 144 s, run 102 s, 246 s in all
+   the one test named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 20/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 742 s, run 134 s, 876 s in all
+-- removal only reports falling back to flag-and-leave when something was actually asked for
+   timed: rebuild 134 s, run 143 s, 277 s in all
+   the one test named went red, and nothing else did
+-- removal only reports falling back to flag-and-leave when both conditions hold, not either
+   timed: rebuild 136 s, run 178 s, 314 s in all
+   the one test named went red, and nothing else did
+-- removal only reports falling back to flag-and-leave when the server really lacks UIDPLUS
+   timed: rebuild 140 s, run 132 s, 272 s in all
+   the one test named went red, and nothing else did
+-- a FETCH reply's Gmail message id reaches the message the server sent
+   timed: rebuild 139 s, run 126 s, 265 s in all
+   the one test named went red, and nothing else did
+-- a FETCH reply's Gmail labels reach the message the server sent
+   timed: rebuild 142 s, run 124 s, 266 s in all
+   the one test named went red, and nothing else did
+-- flags_from_attributes is a real computation, not a stub answering nothing
+   timed: rebuild 140 s, run 144 s, 284 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with no flags
+   timed: rebuild 148 s, run 184 s, 332 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with one blank flag
+   timed: rebuild 144 s, run 129 s, 273 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 0 with a made-up flag
+   timed: rebuild 139 s, run 143 s, 282 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with no flags
+   timed: rebuild 149 s, run 127 s, 276 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with one blank flag
+   timed: rebuild 139 s, run 128 s, 267 s in all
+   all 2 tests named went red, and nothing else did
+-- flags_from_attributes pairs the real uid with the real flags, not a canned uid 1 with a made-up flag
+   timed: rebuild 154 s, run 147 s, 301 s in all
+   all 2 tests named went red, and nothing else did
+-- a bad status says the server did not understand, rather than a generic refusal
+   timed: rebuild 131 s, run 138 s, 269 s in all
+   the one test named went red, and nothing else did
+-- as_one_short_line leaves exactly the bound alone and cuts one more
+   timed: rebuild 130 s, run 133 s, 263 s in all
+   the one test named went red, and nothing else did
+-- post_token_request reads a refusal status as a refusal, not as success
+   timed: rebuild 128 s, run 124 s, 252 s in all
+   all 2 tests named went red, and nothing else did
+-- changes_nothing_can_send counts two calendars sharing a reason separately, not together
+   timed: rebuild 128 s, run 130 s, 258 s in all
+   the one test named went red, and nothing else did
+-- EditMeans::spoken is the label with its keyboard letter taken off, not a stub returning nothing
+   timed: rebuild 131 s, run 152 s, 283 s in all
+   the one test named went red, and nothing else did
+-- EditMeans::spoken is the label with its keyboard letter taken off, not a canned word
+   timed: rebuild 133 s, run 145 s, 278 s in all
+   the one test named went red, and nothing else did
+-- WhereAChangeGoes::named says which calendar it is, not a canned word for all five
+   timed: rebuild 130 s, run 146 s, 276 s in all
+   the one test named went red, and nothing else did
+-- further_off_for's extra sentence is a real warning, not a stub returning nothing
+   timed: rebuild 132 s, run 135 s, 267 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 21/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 945 s, run 139 s, 1084 s in all
+-- further_off_for's extra sentence is a real warning, not a canned word for every calendar
+   timed: rebuild 150 s, run 105 s, 255 s in all
+   the one test named went red, and nothing else did
+-- further_off_for's extra sentence is said only for a calendar this program can only read, not for none
+   timed: rebuild 154 s, run 107 s, 261 s in all
+   the one test named went red, and nothing else did
+-- what_one_day_will_do never promises a sync for a calendar kept only on this computer
+   timed: rebuild 147 s, run 103 s, 250 s in all
+   the one test named went red, and nothing else did
+-- the Google address book a contacts sync uses really reads one contact back
+   timed: rebuild 156 s, run 106 s, 262 s in all
+   the one test named went red, and nothing else did
+-- the Outlook address book a contacts sync uses really reads one contact back
+   timed: rebuild 156 s, run 116 s, 272 s in all
+   the one test named went red, and nothing else did
+-- a contacts sync really lets go of a deletion it has remembered long enough, not a stub that does nothing
+   timed: rebuild 157 s, run 111 s, 268 s in all
+   the one test named went red, and nothing else did
+-- a tasks sync really lets go of a deletion it has remembered long enough, not a stub that does nothing
+   timed: rebuild 161 s, run 106 s, 267 s in all
+   the one test named went red, and nothing else did
+-- forgetting a deletion that removed no row reports that nothing was there, not that something was
+   timed: rebuild 169 s, run 119 s, 288 s in all
+   the one test named went red, and nothing else did
+-- a recorded name carried over has to match the address and have one, not either alone
+   timed: rebuild 149 s, run 104 s, 253 s in all
+   the one test named went red, and nothing else did
+-- TaskProgress::stored reads notStarted back to NotStarted, the word Graph actually sends
+   timed: rebuild 152 s, run 108 s, 260 s in all
+   the one test named went red, and nothing else did
+-- every node registered at startup carries enabled, not just two of the three
+   timed: rebuild 140 s, run 103 s, 243 s in all
+   the one test named went red, and nothing else did
+-- the folder tree is registered enabled, not left to the state default
+   timed: rebuild 142 s, run 103 s, 245 s in all
+   the one test named went red, and nothing else did
+-- every module panel is registered enabled, not left to the state default
+   timed: rebuild 142 s, run 106 s, 248 s in all
+   the one test named went red, and nothing else did
+-- update_node_state really reaches the tree and tells the bridge, not a stub returning Ok
+   timed: rebuild 145 s, run 104 s, 249 s in all
+   the one test named went red, and nothing else did
+-- feedback_settings reports what was just stored, not the type's default
+   timed: rebuild 146 s, run 105 s, 251 s in all
+   the one test named went red, and nothing else did
+-- live_region_update really notifies the tree and announces the text, not a stub returning Ok
+   timed: rebuild 145 s, run 105 s, 250 s in all
+   the one test named went red, and nothing else did
+-- AutomationStore::update_state really replaces the stored state, not a stub returning Ok
+   timed: rebuild 147 s, run 105 s, 252 s in all
+   all 2 tests named went red, and nothing else did
+-- a Channel displays as its stored key, not an empty default
+   timed: rebuild 158 s, run 104 s, 262 s in all
+   the one test named went red, and nothing else did
+-- putting an event back to the default removes the override rather than emptying it
+   timed: rebuild 145 s, run 101 s, 246 s in all
+   all 3 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 22/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 554 s, run 234 s, 788 s in all
+Reading what already fails with --test every_event_has_a_control, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+-- the one control standing for words names braille as well as speech
+   timed: rebuild 90 s, run 183 s, 273 s in all
+   the one test named went red, and nothing else did
+-- moving the event picker writes down what is on screen before painting over it
+   timed: rebuild 30 s, run 1 s, 31 s in all
+   the one test named went red, and nothing else did
+-- pressing OK writes the answers the panel holds rather than rebuilding from the stored value
+   timed: rebuild 31 s, run 1 s, 32 s in all
+   the one test named went red, and nothing else did
+-- the screen says whose decision speech or braille is
+   timed: rebuild 33 s, run 1 s, 34 s in all
+   the one test named went red, and nothing else did
+-- the button putting an event back to the default removes its answer rather than emptying it
+   timed: rebuild 31 s, run 1 s, 32 s in all
+   the one test named went red, and nothing else did
+-- the first row becomes current only without a selection, not with one too
+   timed: rebuild 87 s, run 225 s, 312 s in all
+   the one test named went red, and nothing else did
+-- the first row becomes current only when a row exists, not when the count is exactly zero
+   timed: rebuild 84 s, run 237 s, 321 s in all
+   the one test named went red, and nothing else did
+-- the first row becomes current only when a row exists, not when the count is negative
+   timed: rebuild 90 s, run 254 s, 344 s in all
+   the one test named went red, and nothing else did
+-- the first row becomes current only when a row exists, not whenever the count is non-negative
+   timed: rebuild 92 s, run 204 s, 296 s in all
+   the one test named went red, and nothing else did
+-- a nonzero UI Automation client count means something is listening, not only a nonpositive read
+   timed: rebuild 90 s, run 216 s, 306 s in all
+   the one test named went red, and nothing else did
+-- a failed live-region registration is logged as a warning, not routine info
+   timed: rebuild 88 s, run 245 s, 333 s in all
+   all 2 tests named went red, and nothing else did
+-- registering with something waiting logs how many were waiting, not silence either way
+   timed: rebuild 85 s, run 210 s, 295 s in all
+   all 2 tests named went red, and nothing else did
+-- the oauth.toml path names the file it reads, not nothing
+   timed: rebuild 96 s, run 195 s, 291 s in all
+   the one test named went red, and nothing else did
+-- the oauth.toml path names the real file, not a made-up default
+   timed: rebuild 87 s, run 170 s, 257 s in all
+   the one test named went red, and nothing else did
+-- an unrecognised OAuth provider never has credentials, not always
+   timed: rebuild 91 s, run 186 s, 277 s in all
+   the one test named went red, and nothing else did
+-- the security key path names the file the service reads and writes, not a made-up default
+   timed: rebuild 93 s, run 216 s, 309 s in all
+   the one test named went red, and nothing else did
+-- a stored key decodes back to its real bytes, not nothing
+   timed: rebuild 91 s, run 214 s, 305 s in all
+   the one test named went red, and nothing else did
+-- a stored key decodes back to its real bytes, not an all-zero one
+   timed: rebuild 98 s, run 207 s, 305 s in all
+   all 3 tests named went red, and nothing else did
+-- a stored key decodes back to its real bytes, not a made-up one
+   timed: rebuild 97 s, run 197 s, 294 s in all
+   all 3 tests named went red, and nothing else did
+-- the Safe Browsing environment key is trimmed and blank is not a key
+   timed: rebuild 96 s, run 207 s, 303 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 23/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 703 s, run 118 s, 821 s in all
+-- the Safe Browsing toml key is trimmed and blank is not a key
+   timed: rebuild 113 s, run 114 s, 227 s in all
+   the one test named went red, and nothing else did
+-- an update response is matched to its list by name, not by whichever name it is not
+   timed: rebuild 121 s, run 131 s, 252 s in all
+   the one test named went red, and nothing else did
+-- two links that collide on the same prefix are asked about once, not twice
+   timed: rebuild 125 s, run 131 s, 256 s in all
+   the one test named went red, and nothing else did
+-- check_links really says nothing before a fetch and after no collision, not a made-up verdict
+   timed: rebuild 117 s, run 111 s, 228 s in all
+   all 2 tests named went red, and nothing else did
+-- a list update request asks for the state this copy already holds, not another list's
+   timed: rebuild 121 s, run 116 s, 237 s in all
+   the one test named went red, and nothing else did
+-- a confirmed unwanted-software hash is named, not silently dropped
+   timed: rebuild 120 s, run 116 s, 236 s in all
+   the one test named went red, and nothing else did
+-- a confirmed potentially-harmful-application hash is named, not silently dropped
+   timed: rebuild 121 s, run 112 s, 233 s in all
+   the one test named went red, and nothing else did
+-- only a scheme starting with a letter counts as one, not any alphanumeric run
+   timed: rebuild 121 s, run 109 s, 230 s in all
+   the one test named went red, and nothing else did
+-- a hash that arrives percent-encoded is escaped back, not let through
+   timed: rebuild 132 s, run 121 s, 253 s in all
+   the one test named went red, and nothing else did
+-- a non-IP-shaped host is not folded by the octal check, not treated as one anyway
+   timed: rebuild 131 s, run 110 s, 241 s in all
+   all 2 tests named went red, and nothing else did
+-- a host part that only looks numeric is not folded into an address, not treated as one anyway
+   timed: rebuild 131 s, run 109 s, 240 s in all
+   the one test named went red, and nothing else did
+-- a real heading is found and placed correctly in the text, not an empty page
+   timed: rebuild 142 s, run 108 s, 250 s in all
+   all 2 tests named went red, and nothing else did
+-- the cursor after a heading moves forward by the label's length, not backward
+   timed: rebuild 131 s, run 124 s, 255 s in all
+   the one test named went red, and nothing else did
+-- the cursor after a heading moves forward by the label's length, not by its product
+   timed: rebuild 115 s, run 107 s, 222 s in all
+   the one test named went red, and nothing else did
+-- a heading's offset is the page's start plus where it sits, not minus
+   timed: rebuild 111 s, run 106 s, 217 s in all
+   all 2 tests named went red, and nothing else did
+-- a heading's offset is the page's start plus where it sits, not their product
+   timed: rebuild 118 s, run 107 s, 225 s in all
+   all 2 tests named went red, and nothing else did
+-- a heading's level is two below a page marker's, not two below subtracted
+   timed: rebuild 112 s, run 112 s, 224 s in all
+   all 2 tests named went red, and nothing else did
+-- a heading's level is two below a page marker's, not their product
+   timed: rebuild 112 s, run 106 s, 218 s in all
+   the one test named went red, and nothing else did
+-- language_of_this_machine really asks the machine, not a stub answering None
+   timed: rebuild 110 s, run 105 s, 215 s in all
+   the one test named went red, and nothing else did
+-- an exact language match has to be available, not merely spelled the same
+   timed: rebuild 117 s, run 108 s, 225 s in all
+   1 test went red that this record does not name:
+       data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose
+
+
+1 guard is not what the record says it is:
+    an exact language match has to be available, not merely spelled the same
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 24/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 553 s, run 130 s, 683 s in all
+-- the exact language match has to spell the tag the same, not differently
+   timed: rebuild 87 s, run 131 s, 218 s in all
+   1 test went red that this record does not name:
+       data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose
+
+-- a family language match has to be available, not merely share the family
+   timed: rebuild 83 s, run 133 s, 216 s in all
+   1 test went red that this record does not name:
+       data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose
+
+-- a family language match has to share the family, not differ from it
+   timed: rebuild 85 s, run 164 s, 249 s in all
+   1 test went red that this record does not name:
+       data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose
+
+-- a real Windows language list is used instead of the built-in fallback, not the other way round
+   timed: rebuild 90 s, run 137 s, 227 s in all
+   all 4 tests named went red, and nothing else did
+-- only English is offered as available in the built-in fallback, not every language but English
+   timed: rebuild 88 s, run 122 s, 210 s in all
+   the one test named went red, and nothing else did
+-- the first regional variant Windows offers shares the language, not differs from it
+   timed: rebuild 84 s, run 118 s, 202 s in all
+   all 2 tests named went red, and nothing else did
+-- the locale Windows reports keeps every code unit GetLocaleInfoW wrote, not one extra
+   timed: rebuild 94 s, run 118 s, 212 s in all
+   the one test named went red, and nothing else did
+-- the locale Windows reports drops the terminator, not keeps the whole buffer
+   timed: rebuild 96 s, run 122 s, 218 s in all
+   the one test named went red, and nothing else did
+-- each spelling source describes itself honestly, not with one canned sentence
+   timed: rebuild 99 s, run 120 s, 219 s in all
+   the one test named went red, and nothing else did
+-- exactly three misspelled words are all named, not one named and two counted as others
+   timed: rebuild 95 s, run 120 s, 215 s in all
+   the one test named went red, and nothing else did
+-- the trait object's suggest really calls the inherent method, not a stub returning nothing
+   timed: rebuild 95 s, run 119 s, 214 s in all
+   the one test named went red, and nothing else did
+-- the built-in checker really refuses to learn a word through the trait, not a stub claiming success
+   timed: rebuild 90 s, run 124 s, 214 s in all
+   the one test named went red, and nothing else did
+-- the trait object's language really reports the checker's own, not an empty string
+   timed: rebuild 96 s, run 123 s, 219 s in all
+   the one test named went red, and nothing else did
+-- has_hunspell says yes for a checker really built from hunspell data, not always no
+   timed: rebuild 94 s, run 121 s, 215 s in all
+   the one test named went red, and nothing else did
+-- has_hunspell says no for the plain built-in checker, not always yes
+   timed: rebuild 110 s, run 117 s, 227 s in all
+   the one test named went red, and nothing else did
+-- the alphabet picked for hunspell data matches the language asked for, not any other
+   timed: rebuild 111 s, run 124 s, 235 s in all
+   the one test named went red, and nothing else did
+-- loading a dictionary file adds every nonblank line, not only the blank ones
+   timed: rebuild 107 s, run 120 s, 227 s in all
+   the one test named went red, and nothing else did
+-- a built-in suggestion is filtered down to real dictionary words, not left as every edit
+   timed: rebuild 111 s, run 123 s, 234 s in all
+   all 2 tests named went red, and nothing else did
+-- word_count adds this session's custom words, not subtracts them
+   timed: rebuild 107 s, run 119 s, 226 s in all
+   the one test named went red, and nothing else did
+
+3 guards are not what the record says they are:
+    the exact language match has to spell the tag the same, not differently
+    a family language match has to be available, not merely share the family
+    a family language match has to share the family, not differ from it
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 25/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 534 s, run 4 s, 538 s in all
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 4 s, run 2 s, 6 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 59 s, run 162 s, 221 s in all
+-- the default dictionary search paths include the Windows location, not skip it
+   timed: rebuild 89 s, run 143 s, 232 s in all
+   the one test named went red, and nothing else did
+-- a checker reports the search paths it actually searched, not a permanently empty slice
+   timed: rebuild 90 s, run 163 s, 253 s in all
+   the one test named went red, and nothing else did
+-- try_load_spellbook really finds a dictionary sitting on its path, not a stub answering None
+   timed: rebuild 90 s, run 188 s, 278 s in all
+   the one test named went red, and nothing else did
+-- a single letter is too short to be worth checking, not only an empty string
+   timed: rebuild 89 s, run 172 s, 261 s in all
+   the one test named went red, and nothing else did
+-- both an @ and a dot have to be there to read as an email, not either alone
+   timed: rebuild 95 s, run 179 s, 274 s in all
+   the one test named went red, and nothing else did
+-- set_document_locale really writes the code for reading back, not a no-op
+   timed: rebuild 95 s, run 186 s, 281 s in all
+   the one test named went red, and nothing else did
+-- loading a translations file counts every entry in the table, not zero
+   timed: rebuild 85 s, run 172 s, 257 s in all
+   the one test named went red, and nothing else did
+-- set_locale really changes which language is read back, not a no-op
+   timed: rebuild 95 s, run 201 s, 296 s in all
+   the one test named went red, and nothing else did
+-- tf really fills in its placeholders, not a stub returning the template unfilled
+   timed: rebuild 103 s, run 198 s, 301 s in all
+   the one test named went red, and nothing else did
+-- a wide string's PCWSTR points at its own buffer, not a null pointer
+   timed: rebuild 102 s, run 175 s, 277 s in all
+   the one test named went red, and nothing else did
+-- display_name really asks Windows for the locale's own name, not a canned word
+   timed: rebuild 94 s, run 207 s, 301 s in all
+   the one test named went red, and nothing else did
+-- display_name really asks Windows for the locale's own name, not the tag it was given back
+   timed: rebuild 105 s, run 154 s, 259 s in all
+   the one test named went red, and nothing else did
+-- a picture leaves the body before the message is sent
+   timed: rebuild 103 s, run 192 s, 295 s in all
+   all 12 tests named went red, and nothing else did
+-- the plain half of a message says what its pictures were
+   timed: rebuild 98 s, run 183 s, 281 s in all
+   all 3 tests named went red, and nothing else did
+-- forwarding takes the original's pictures with it
+   timed: rebuild 98 s, run 209 s, 307 s in all
+   the one test named went red, and nothing else did
+-- raising the window takes it out of the taskbar
+   timed: rebuild 34 s, run 3 s, 37 s in all
+   the one test named went red, and nothing else did
+-- Cut and Copy ask the box what is selected
+   timed: rebuild 30 s, run 2 s, 32 s in all
+   the one test named went red, and nothing else did
+-- a sentence carrying the source indentation is found
+   timed: rebuild 32 s, run 4 s, 36 s in all
+   the one test named went red, and nothing else did
+-- a second copy hands over rather than running alongside the first
+   timed: rebuild 33 s, run 2 s, 35 s in all
+   the one test named went red, and nothing else did
+-- every item list is drawn in the font that was chosen
+   timed: rebuild 34 s, run 3 s, 37 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 26/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 966 s, run 129 s, 1095 s in all
+-- words beside a signature are checked against those words
+   timed: rebuild 150 s, run 121 s, 271 s in all
+   the one test named went red, and nothing else did
+-- the form a signed message arrived in is really kept
+   timed: rebuild 154 s, run 118 s, 272 s in all
+   1 test went red that this record does not name:
+       data::message_cache::how_it_arrived::tests::test_the_one_call_still_keeps_the_bytes_a_signed_message_arrived_in
+
+-- signed mail brought in from a file keeps the bytes its signature is over
+   timed: rebuild 160 s, run 124 s, 284 s in all
+   all 2 tests named went red, and nothing else did
+-- a sign-in the credential store would not keep is refused rather than reported as authorized
+   timed: rebuild 156 s, run 117 s, 273 s in all
+   the one test named went red, and nothing else did
+-- an account whose password or tokens will not go is not deleted
+   timed: rebuild 159 s, run 117 s, 276 s in all
+   all 2 tests named went red, and nothing else did
+-- a calendar whose sign-in could not be kept is not added
+   timed: rebuild 171 s, run 133 s, 304 s in all
+   the one test named went red, and nothing else did
+-- a read or flagged state the database refused is put back on the row and said
+   timed: rebuild 159 s, run 122 s, 281 s in all
+   the one test named went red, and nothing else did
+-- a refused move is said on the refusal channel rather than the status line
+   timed: rebuild 141 s, run 118 s, 259 s in all
+   the one test named went red, and nothing else did
+-- a password left in the database by an older version is cleared on every load, not once
+   timed: rebuild 144 s, run 118 s, 262 s in all
+   the one test named went red, and nothing else did
+-- the reason a command did nothing does not go out as a status line
+   timed: rebuild 142 s, run 117 s, 259 s in all
+   the one test named went red, and nothing else did
+-- nothing but the seam and the uninstall sweep opens a credential entry of its own
+   timed: rebuild 144 s, run 117 s, 261 s in all
+   the one test named went red, and nothing else did
+-- a mailbox name that is not ASCII reaches the server encoded
+   timed: rebuild 141 s, run 118 s, 259 s in all
+   all 2 tests named went red, and nothing else did
+-- creating a folder on a server asks the gate before it builds a command
+   timed: rebuild 141 s, run 119 s, 260 s in all
+   all 5 tests named went red, and nothing else did
+-- the column that says which conversation a message is in has a writer
+   timed: rebuild 144 s, run 120 s, 264 s in all
+   all 42 tests named went red, and nothing else did
+-- a message stored by a sync and the same message filed after sending get one conversation id
+   timed: rebuild 142 s, run 119 s, 261 s in all
+   the one test named went red, and nothing else did
+-- the conversation backfill fills only the messages that have none, so it can never write over one
+   timed: rebuild 140 s, run 118 s, 258 s in all
+   all 3 tests named went red, and nothing else did
+-- a local folder name containing the nesting separator survives being stored and read back
+   timed: rebuild 142 s, run 119 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- the hierarchy separator is read per mailbox rather than assumed for the server
+   timed: rebuild 143 s, run 118 s, 261 s in all
+   all 2 tests named went red, and nothing else did
+-- a folder with folders inside it is deleted deepest first
+   timed: rebuild 139 s, run 115 s, 254 s in all
+   1 test went red that this record does not name:
+       application::emptying::tests::test_the_reach_on_takes_the_folder_and_everything_under_it_deepest_first
+
+
+2 guards are not what the record says they are:
+    the form a signed message arrived in is really kept
+    a folder with folders inside it is deleted deepest first
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 27/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 931 s, run 127 s, 1058 s in all
+-- deleting a folder on a server asks the gate before it builds a command
+   timed: rebuild 144 s, run 143 s, 287 s in all
+   all 4 tests named went red, and nothing else did
+-- the row on screen is found by the words above it and not by its own
+   timed: rebuild 149 s, run 136 s, 285 s in all
+   all 5 tests named went red, and nothing else did
+-- no row in the folder tree hangs data off the control
+   timed: rebuild 151 s, run 126 s, 277 s in all
+   the one test named went red, and nothing else did
+-- a stored setting that no screen offers is caught
+   timed: rebuild 154 s, run 126 s, 280 s in all
+   the one test named went red, and nothing else did
+-- moving an account never reaches a server
+   timed: rebuild 155 s, run 127 s, 282 s in all
+   the one test named went red, and nothing else did
+-- the merge never puts away a folder that still holds mail
+   timed: rebuild 158 s, run 130 s, 288 s in all
+   all 2 tests named went red, and nothing else did
+-- a moved message is renumbered for the folder it lands in
+   timed: rebuild 156 s, run 119 s, 275 s in all
+   all 6 tests named went red, and nothing else did
+-- a renamed folder keeps its pin because the database moves it
+   timed: rebuild 157 s, run 127 s, 284 s in all
+   the one test named went red, and nothing else did
+-- a folder that is really gone takes its pin with it
+   timed: rebuild 167 s, run 128 s, 295 s in all
+   all 2 tests named went red, and nothing else did
+-- a pinned folder is still in its own account branch
+   timed: rebuild 168 s, run 137 s, 305 s in all
+   all 3 tests named went red, and nothing else did
+-- pinning a folder never reaches a server
+   timed: rebuild 141 s, run 123 s, 264 s in all
+   the one test named went red, and nothing else did
+-- emptying asks the one function that decides what deleting means
+   timed: rebuild 141 s, run 126 s, 267 s in all
+   all 3 tests named went red, and nothing else did
+-- the count in front of the confirmation comes from this computer and makes no round trip
+   timed: rebuild 143 s, run 125 s, 268 s in all
+   all 10 tests named went red, and nothing else did
+-- nothing is removed for a folder the server stopped listing until somebody has answered
+   timed: rebuild 143 s, run 121 s, 264 s in all
+   all 4 tests named went red, and nothing else did
+-- one question is asked about every folder waiting rather than one per folder
+   timed: rebuild 142 s, run 124 s, 266 s in all
+   all 4 tests named went red, and nothing else did
+-- a conversation column's display and its sort come from the same enum arm
+   timed: rebuild 143 s, run 121 s, 264 s in all
+   all 3 tests named went red, and nothing else did
+-- a folder holding a copy of every message is left out of a conversation count
+   timed: rebuild 141 s, run 121 s, 262 s in all
+   all 7 tests named went red, and nothing else did
+-- the message list is told how many conversations it is showing
+   timed: rebuild 143 s, run 121 s, 264 s in all
+   the one test named went red, and nothing else did
+-- switching the view back selects the messages that were selected, not their whole conversations
+   timed: rebuild 139 s, run 121 s, 260 s in all
+   all 2 tests named went red, and nothing else did
+-- a merged conversation settles on the same name whatever order its messages arrived in
+   timed: rebuild 141 s, run 125 s, 266 s in all
+   all 3 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 28/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 928 s, run 129 s, 1057 s in all
+Reading what already fails with --test manager_dialog_labels, before anything is broken.
+   timed: rebuild 10 s, run 3 s, 13 s in all
+-- a merge reaches the losing conversation in every folder it is filed in
+   timed: rebuild 149 s, run 121 s, 270 s in all
+   all 2 tests named went red, and nothing else did
+-- a merge stays inside one account
+   timed: rebuild 143 s, run 104 s, 247 s in all
+   the one test named went red, and nothing else did
+-- an arrival repaints the rows that changed and not the ones that did not
+   timed: rebuild 144 s, run 104 s, 248 s in all
+   all 3 tests named went red, and nothing else did
+-- moving between accounts is a selection and not a rebuild
+   timed: rebuild 152 s, run 104 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- a body fetch asks whether this account may read
+   timed: rebuild 158 s, run 113 s, 271 s in all
+   all 3 tests named went red, and nothing else did
+-- the constant that changes nothing still reads mail
+   timed: rebuild 150 s, run 104 s, 254 s in all
+   all 6 tests named went red, and nothing else did
+-- a settings file written before reading was a setting still loads
+   timed: rebuild 157 s, run 105 s, 262 s in all
+   1 of 2 named tests stayed green with the guard broken:
+       application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first
+
+-- what a saved search covers is said, not merely worked out
+   timed: rebuild 159 s, run 113 s, 272 s in all
+   the one test named went red, and nothing else did
+-- evicting a message's text leaves it findable by the search box
+   timed: rebuild 169 s, run 118 s, 287 s in all
+   all 8 tests named went red, and nothing else did
+-- choosing the offer starts the backfill and says what it did
+   timed: rebuild 172 s, run 105 s, 277 s in all
+   the one test named went red, and nothing else did
+-- the filter dialog offers what the engine answers rather than a list of its own
+   timed: rebuild 49 s, run 1 s, 50 s in all
+   the one test named went red, and nothing else did
+-- a saved search keeps the question set the In box was narrowed to
+   timed: rebuild 142 s, run 108 s, 250 s in all
+   all 3 tests named went red, and nothing else did
+-- a saved search that asks nothing takes nothing, whichever way it joins
+   timed: rebuild 139 s, run 104 s, 243 s in all
+   all 2 tests named went red, and nothing else did
+-- one heading holds every saved search, however it was made
+   timed: rebuild 139 s, run 104 s, 243 s in all
+   all 4 tests named went red, and nothing else did
+-- a saved search takes its account from its row and not from the one last looked at
+   timed: rebuild 141 s, run 103 s, 244 s in all
+   all 2 tests named went red, and nothing else did
+-- a database written before the coverage column is told what its index holds
+   timed: rebuild 142 s, run 104 s, 246 s in all
+   all 2 tests named went red, and nothing else did
+-- a search that reads no message text is not asked what message text is here
+   timed: rebuild 144 s, run 104 s, 248 s in all
+   all 3 tests named went red, and nothing else did
+-- the layer that wires the search box does not word its coverage sentence itself
+   timed: rebuild 139 s, run 104 s, 243 s in all
+   the one test named went red, and nothing else did
+-- the fetch says what it is doing before it opens a connection
+   timed: rebuild 140 s, run 105 s, 245 s in all
+   the one test named went red, and nothing else did
+
+1 guard is not what the record says it is:
+    a settings file written before reading was a setting still loads
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 29/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 784 s, run 4 s, 788 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 101 s, run 102 s, 203 s in all
+Reading what already fails with --test tree_dialogs_resolve_the_row_somebody_is_on, before anything is broken.
+   timed: rebuild 6 s, run 2 s, 8 s in all
+Reading what already fails with --test checkbox_labels, before anything is broken.
+   timed: rebuild 6 s, run 3 s, 9 s in all
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 7 s, run 8 s, 15 s in all
+Reading what already fails with --test tree_rows_leave_no_registry_entry, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+Reading what already fails with --test manager_delete_stays_open, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+-- the main window is read whole rather than cut at its first test module
+   timed: rebuild 6 s, run 4 s, 10 s in all
+   the one test named went red, and nothing else did
+-- a comment claiming a test cannot build a window is still refused
+   timed: rebuild 51 s, run 8 s, 59 s in all
+   the one test named went red, and nothing else did
+-- a check box carries its own label rather than borrowing the text beside it
+   timed: rebuild 52 s, run 2 s, 54 s in all
+   the one test named went red, and nothing else did
+-- a check box on the settings screen carries its own label too
+   timed: rebuild 49 s, run 2 s, 51 s in all
+   the one test named went red, and nothing else did
+-- a delete says how many rows are left rather than how many there were
+   timed: rebuild 52 s, run 1 s, 53 s in all
+   the one test named went red, and nothing else did
+-- the conversation view hangs its message ids off the control
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   the one test named went red, and nothing else did
+-- the destination picker hangs its folder identifiers off the control
+   timed: rebuild 54 s, run 1 s, 55 s in all
+   the one test named went red, and nothing else did
+-- an account row in the destination picker answers with a folder
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   the one test named went red, and nothing else did
+-- the conversation view answers with the row after the one chosen
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   the one test named went red, and nothing else did
+-- the message view ranks safety by how bad it is rather than by the alphabet
+   timed: rebuild 155 s, run 104 s, 259 s in all
+   all 5 tests named went red, and nothing else did
+-- every writer of a message identifier writes one spelling of it
+   timed: rebuild 155 s, run 102 s, 257 s in all
+   all 5 tests named went red, and nothing else did
+-- the identifier backfill selects only the rows that need it
+   timed: rebuild 156 s, run 113 s, 269 s in all
+   all 4 tests named went red, and nothing else did
+-- the identifier backfill is reached when a database is opened
+   timed: rebuild 154 s, run 111 s, 265 s in all
+   the one test named went red, and nothing else did
+-- the conversation lookup asks what a message named, not only what it is called
+   timed: rebuild 158 s, run 103 s, 261 s in all
+   the one test named went red, and nothing else did
+-- the conversations stored apart are joined when the database is opened
+   timed: rebuild 166 s, run 117 s, 283 s in all
+   all 3 tests named went red, and nothing else did
+-- the vanished-folders question is put at a moment that is free
+   timed: rebuild 58 s, run 5 s, 63 s in all
+   the one test named went red, and nothing else did
+-- a one-letter forward marker is read as a forward marker
+   timed: rebuild 150 s, run 105 s, 255 s in all
+   all 4 tests named went red, and nothing else did
+-- a row that is not a folder is not offered a folder's commands
+   timed: rebuild 137 s, run 105 s, 242 s in all
+   all 5 tests named went red, and nothing else did
+-- a condition this build cannot show is refused rather than opened and emptied
+   timed: rebuild 141 s, run 103 s, 244 s in all
+   all 5 tests named went red, and nothing else did
+-- a server that gives no numbering at all has not renumbered anything
+   timed: rebuild 143 s, run 104 s, 247 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 30/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test the_conflict_choice_can_be_heard, before anything is broken.
+   timed: rebuild 833 s, run 1 s, 834 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 102 s, run 112 s, 214 s in all
+Reading what already fails with --test one_sign_in_per_piece_of_work, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+Reading what already fails with --test nothing_leaves_the_outbox_unasked, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+-- the count of sign-ins that go round the helper is read from the tree
+   timed: rebuild 50 s, run 1 s, 51 s in all
+   the one test named went red, and nothing else did
+-- one sign-in serves every piece of work for an account
+   timed: rebuild 148 s, run 124 s, 272 s in all
+   all 2 tests named went red, and nothing else did
+-- a dropped connection is tried once more and not twice
+   timed: rebuild 154 s, run 106 s, 260 s in all
+   the one test named went red, and nothing else did
+-- a folder listing reads no message text
+   timed: rebuild 159 s, run 108 s, 267 s in all
+   the one test named went red, and nothing else did
+-- the inline body migration moves every row it found
+   timed: rebuild 157 s, run 110 s, 267 s in all
+   all 5 tests named went red, and nothing else did
+-- a sync writes no attachment for a message nobody has opened
+   timed: rebuild 160 s, run 119 s, 279 s in all
+   the one test named went red, and nothing else did
+-- the migration that runs on every open reads an index rather than every message
+   timed: rebuild 165 s, run 121 s, 286 s in all
+   all 2 tests named went red, and nothing else did
+-- nothing remembers that the inline body migration has been done
+   timed: rebuild 160 s, run 121 s, 281 s in all
+   all 2 tests named went red, and nothing else did
+-- which end of a folder's numbering a filed row takes
+   timed: rebuild 156 s, run 105 s, 261 s in all
+   all 5 tests named went red, and nothing else did
+-- nothing new asks for the counting-up numbering without going through the dispatcher
+   timed: rebuild 167 s, run 142 s, 309 s in all
+   all 2 tests named went red, and nothing else did
+-- mail archived with no label counts toward its conversation
+   timed: rebuild 154 s, run 107 s, 261 s in all
+   all 5 tests named went red, and nothing else did
+-- the two conversation queries decide which messages exist with one text
+   timed: rebuild 145 s, run 107 s, 252 s in all
+   all 3 tests named went red, and nothing else did
+-- a message with no identity of its own is only ever itself
+   timed: rebuild 142 s, run 106 s, 248 s in all
+   the one test named went red, and nothing else did
+-- a copy is recognised by the sender's message identifier when the server gives none
+   timed: rebuild 142 s, run 109 s, 251 s in all
+   all 2 tests named went red, and nothing else did
+-- the send path reads what the window believes about the network
+   timed: rebuild 50 s, run 1 s, 51 s in all
+   the one test named went red, and nothing else did
+-- the network is spoken about when it changes, not when it is asked
+   timed: rebuild 141 s, run 108 s, 249 s in all
+   all 4 tests named went red, and nothing else did
+-- the network coming back offers rather than sending
+   timed: rebuild 49 s, run 1 s, 50 s in all
+   all 2 tests named went red, and nothing else did
+-- every control in the choosing window is named where a screen reader reads
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   all 2 tests named went red, and nothing else did
+-- the choosing window can be reached from the menu
+   timed: rebuild 47 s, run 1 s, 48 s in all
+   the one test named went red, and nothing else did
+-- a calendar item both sides changed is held rather than dropped
+   timed: rebuild 143 s, run 107 s, 250 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 31/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test an_encrypted_message_is_not_left_unexplained, before anything is broken.
+   timed: rebuild 757 s, run 19 s, 776 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 100 s, run 114 s, 214 s in all
+Reading what already fails with --test nothing_sends_a_flag_change_unasked, before anything is broken.
+   timed: rebuild 1 s, run 1 s, 2 s in all
+Reading what already fails with --test the_list_warning_reads_the_message, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+-- a lost connection is told apart from a server that said no
+   timed: rebuild 141 s, run 102 s, 243 s in all
+   all 4 tests named went red, and nothing else did
+-- the network coming back starts nothing that reaches a server
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   the one test named went red, and nothing else did
+-- a description the sender gave survives the boundary
+   timed: rebuild 151 s, run 105 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- an attachment nobody described says so rather than trailing off
+   timed: rebuild 156 s, run 109 s, 265 s in all
+   all 2 tests named went red, and nothing else did
+-- the sender's own description of a picture outranks a borrowed one
+   timed: rebuild 155 s, run 106 s, 261 s in all
+   the one test named went red, and nothing else did
+-- a borrowed description comes from the picture that names that part
+   timed: rebuild 160 s, run 102 s, 262 s in all
+   all 2 tests named went red, and nothing else did
+-- what a message said about leaving a list survives the parse
+   timed: rebuild 164 s, run 117 s, 281 s in all
+   all 5 tests named went red, and nothing else did
+-- the header fetch asks a server for the header the warning is built on
+   timed: rebuild 53 s, run 1 s, 54 s in all
+   the one test named went red, and nothing else did
+-- the block handler asks the message rather than a constant
+   timed: rebuild 48 s, run 1 s, 49 s in all
+   the one test named went red, and nothing else did
+-- a mailing list found over IMAP reaches the row with its way out on
+   timed: rebuild 142 s, run 112 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a mailing list downloaded over POP reaches the row with its way out on
+   timed: rebuild 142 s, run 102 s, 244 s in all
+   the one test named went red, and nothing else did
+-- what a message says about its own form is read from the message rather than answered ordinary
+   timed: rebuild 139 s, run 102 s, 241 s in all
+   all 14 tests named went red, and nothing else did
+-- the reader folds what a message said about its form into the bar rather than dropping it
+   timed: rebuild 47 s, run 3 s, 50 s in all
+   the one test named went red, and nothing else did
+-- the fold is handed what the message said rather than a named variant
+   timed: rebuild 47 s, run 3 s, 50 s in all
+   the one test named went red, and nothing else did
+-- the reading gate admits text and still refuses what it cannot read
+   timed: rebuild 140 s, run 100 s, 240 s in all
+   the one test named went red, and nothing else did
+-- a picture nobody described says so rather than leaving the line blank
+   timed: rebuild 140 s, run 101 s, 241 s in all
+   all 2 tests named went red, and nothing else did
+-- a picture is refused on the size it declares, before anything decodes it
+   timed: rebuild 138 s, run 101 s, 239 s in all
+   the one test named went red, and nothing else did
+-- a picture that could not be read does not say there was never one
+   timed: rebuild 139 s, run 102 s, 241 s in all
+   the one test named went red, and nothing else did
+-- a rule about the verdict reads the message's own, not a constant
+   timed: rebuild 140 s, run 102 s, 242 s in all
+   all 3 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 32/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 630 s, run 195 s, 825 s in all
+Reading what already fails with --test every_way_a_file_goes_on_a_message, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 4 s, run 2 s, 6 s in all
+Reading what already fails with --test a_picture_is_only_decorative_because_somebody_said_so, before anything is broken.
+   timed: rebuild 4 s, run 1 s, 5 s in all
+-- this program's own reading names itself in the bar
+   timed: rebuild 88 s, run 195 s, 283 s in all
+   all 5 tests named went red, and nothing else did
+-- what this program found is one sentence rather than one each
+   timed: rebuild 85 s, run 218 s, 303 s in all
+   the one test named went red, and nothing else did
+-- landing on a misspelling offers more than one thing to try
+   timed: rebuild 80 s, run 201 s, 281 s in all
+   all 2 tests named went red, and nothing else did
+-- the two walk keys are inverses of each other
+   timed: rebuild 85 s, run 195 s, 280 s in all
+   all 4 tests named went red, and nothing else did
+-- one path that cannot go on does not take the rest of the batch with it
+   timed: rebuild 84 s, run 202 s, 286 s in all
+   all 3 tests named went red, and nothing else did
+-- every route that attaches a file goes through the one model
+   timed: rebuild 29 s, run 1 s, 30 s in all
+   the one test named went red, and nothing else did
+-- a file dropped on the message is turned away rather than opened
+   timed: rebuild 82 s, run 166 s, 248 s in all
+   all 2 tests named went red, and nothing else did
+-- a picture's description survives the trip from the composer to the page
+   timed: rebuild 83 s, run 178 s, 261 s in all
+   all 15 tests named went red, and nothing else did
+-- an empty description does not become a decorative mark
+   timed: rebuild 93 s, run 164 s, 257 s in all
+   the one test named went red, and nothing else did
+-- the decorative question is not offered over a photograph
+   timed: rebuild 94 s, run 163 s, 257 s in all
+   all 4 tests named went red, and nothing else did
+-- enter does not mark a picture decorative
+   timed: rebuild 33 s, run 1 s, 34 s in all
+   the one test named went red, and nothing else did
+-- a reader who asked for silence about decorative pictures gets it
+   timed: rebuild 83 s, run 172 s, 255 s in all
+   the one test named went red, and nothing else did
+-- a message on its way out does not pick up this reader's own words
+   timed: rebuild 89 s, run 186 s, 275 s in all
+   all 3 tests named went red, and nothing else did
+-- an owner of credential store entries that uninstalling never names
+   timed: rebuild 86 s, run 215 s, 301 s in all
+   all 3 tests named went red, and nothing else did
+-- an encrypted message that nothing ever recognised as encrypted
+   timed: rebuild 93 s, run 199 s, 292 s in all
+   all 4 tests named went red, and nothing else did
+-- an encrypted message whose body still says it may not have been downloaded
+   timed: rebuild 87 s, run 158 s, 245 s in all
+   all 3 tests named went red, and nothing else did
+-- a PGP private key somebody can import
+   timed: rebuild 32 s, run 2 s, 34 s in all
+   all 3 tests named went red, and nothing else did
+-- a PGP message the reader window never offers to the key
+   timed: rebuild 29 s, run 2 s, 31 s in all
+   the one test named went red, and nothing else did
+-- the reasons a PGP message did not open stay four different sentences
+   timed: rebuild 88 s, run 195 s, 283 s in all
+   all 2 tests named went red, and nothing else did
+-- the composer's Send hands the queue the hold it worked out
+   timed: rebuild 36 s, run 3 s, 39 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 33/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test one_hierarchy_two_views, before anything is broken.
+   timed: rebuild 590 s, run 1 s, 591 s in all
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 5 s, run 3 s, 8 s in all
+Reading what already fails with --test columns_belong_to_the_folder_they_were_arranged_in, before anything is broken.
+   timed: rebuild 5 s, run 1 s, 6 s in all
+Reading what already fails with --test a_key_is_documented_where_the_surface_that_binds_it_is, before anything is broken.
+   timed: rebuild 5 s, run 1 s, 6 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 83 s, run 97 s, 180 s in all
+-- the clock lets held mail go rather than only working out that it may
+   timed: rebuild 40 s, run 3 s, 43 s in all
+   the one test named went red, and nothing else did
+-- a time that has gone is refused rather than quietly moved to now
+   timed: rebuild 117 s, run 111 s, 228 s in all
+   all 3 tests named went red, and nothing else did
+-- the type on an outgoing part is worked out from the document, not read off the name
+   timed: rebuild 114 s, run 89 s, 203 s in all
+   the one test named went red, and nothing else did
+-- an answer worked out for the calendar is really put on the calendar
+   timed: rebuild 126 s, run 94 s, 220 s in all
+   all 13 tests named went red, and nothing else did
+-- the version answered is written against the row the calendar already holds
+   timed: rebuild 129 s, run 105 s, 234 s in all
+   the one test named went red, and nothing else did
+-- the count of held-back pictures reaches the reader
+   timed: rebuild 125 s, run 93 s, 218 s in all
+   all 3 tests named went red, and nothing else did
+-- the composer asks for the renderer that does not name a sender
+   timed: rebuild 123 s, run 102 s, 225 s in all
+   the one test named went red, and nothing else did
+-- an ordinary message grows nothing where the count would be
+   timed: rebuild 126 s, run 94 s, 220 s in all
+   the one test named went red, and nothing else did
+-- unblocking one address never takes the domain block over it
+   timed: rebuild 119 s, run 95 s, 214 s in all
+   the one test named went red, and nothing else did
+-- unblocking a domain never takes the address block under it
+   timed: rebuild 135 s, run 101 s, 236 s in all
+   the one test named went red, and nothing else did
+-- the direction a page sends is read rather than posted and dropped
+   timed: rebuild 114 s, run 122 s, 236 s in all
+   the one test named went red, and nothing else did
+-- restore defaults in the columns dialog asks the layout which folder it is in
+   timed: rebuild 114 s, run 98 s, 212 s in all
+   the one test named went red, and nothing else did
+-- a change of folder kind restores the layout rather than rebuilding it
+   timed: rebuild 41 s, run 1 s, 42 s in all
+   the one test named went red, and nothing else did
+-- the reader of documented keys still sees a plain function key
+   timed: rebuild 47 s, run 3 s, 50 s in all
+   the one test named went red, and nothing else did
+-- delete on the attachments list still takes a file off the message
+   timed: rebuild 40 s, run 1 s, 41 s in all
+   the one test named went red, and nothing else did
+-- the settings screen asks about smooth scrolling with the setting somebody has
+   timed: rebuild 118 s, run 94 s, 212 s in all
+   the one test named went red, and nothing else did
+-- the move window gives every folder a depth of nought
+   timed: rebuild 39 s, run 1 s, 40 s in all
+   all 2 tests named went red, and nothing else did
+-- the move window decides for itself what an account is called
+   timed: rebuild 39 s, run 1 s, 40 s in all
+   the one test named went red, and nothing else did
+-- every folder the move window offers lands in the first account's branch
+   timed: rebuild 40 s, run 1 s, 41 s in all
+   all 8 tests named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 34/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test tree_dialogs_resolve_the_row_somebody_is_on, before anything is broken.
+   timed: rebuild 812 s, run 1 s, 813 s in all
+Reading what already fails with --test wired, before anything is broken.
+   timed: rebuild 6 s, run 4 s, 10 s in all
+Reading what already fails with --test a_moved_day_is_shown_once, before anything is broken.
+   timed: rebuild 6 s, run 6 s, 12 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 105 s, run 115 s, 220 s in all
+Reading what already fails with --test a_copy_leaves_the_original_where_it_was, before anything is broken.
+   timed: rebuild 6 s, run 7 s, 13 s in all
+Reading what already fails with --test one_hierarchy_two_views, before anything is broken.
+   timed: rebuild 6 s, run 1 s, 7 s in all
+-- the move window draws its folders as a list under a heading
+   timed: rebuild 54 s, run 1 s, 55 s in all
+   the one test named went red, and nothing else did
+-- the move window builds its folder list from the account on screen
+   timed: rebuild 54 s, run 4 s, 58 s in all
+   the one test named went red, and nothing else did
+-- the move window stops asking where the last one went
+   timed: rebuild 159 s, run 143 s, 302 s in all
+   the one test named went red, and nothing else did
+-- the crossing decision compares nothing and every destination is the same account
+   timed: rebuild 158 s, run 111 s, 269 s in all
+   the one test named went red, and nothing else did
+-- the move window offers only the account the message is in
+   timed: rebuild 57 s, run 1 s, 58 s in all
+   all 3 tests named went red, and nothing else did
+-- the destination window opens every account rather than one
+   timed: rebuild 58 s, run 1 s, 59 s in all
+   the one test named went red, and nothing else did
+-- the source is told to give the message up before the destination has it
+   timed: rebuild 159 s, run 106 s, 265 s in all
+   all 7 tests named went red, and nothing else did
+-- an append the destination never answered is counted as one that landed
+   timed: rebuild 167 s, run 106 s, 273 s in all
+   all 8 tests named went red, and nothing else did
+-- a move finished on a later run appends without asking the destination
+   timed: rebuild 168 s, run 120 s, 288 s in all
+   all 5 tests named went red, and nothing else did
+-- a move that reached an ending leaves its message on the disk
+   timed: rebuild 169 s, run 106 s, 275 s in all
+   the one test named went red, and nothing else did
+-- a day moved out of a series is still shown on the date it left
+   timed: rebuild 63 s, run 1 s, 64 s in all
+   the one test named went red, and nothing else did
+-- a row stops knowing it is a day of a series that was changed on its own
+   timed: rebuild 182 s, run 117 s, 299 s in all
+   all 2 tests named went red, and nothing else did
+-- the clause about a day changed on its own goes quiet
+   timed: rebuild 196 s, run 135 s, 331 s in all
+   all 5 tests named went red, and nothing else did
+-- a day moved out of a series is still shown on the date it left, seen from the library
+   timed: rebuild 165 s, run 111 s, 276 s in all
+   all 7 tests named went red, and nothing else did
+-- the step to the week before and after answers the week it is already on
+   timed: rebuild 157 s, run 116 s, 273 s in all
+   all 2 tests named went red, and nothing else did
+-- the month step counts thirty days instead of going to the month next door
+   timed: rebuild 155 s, run 117 s, 272 s in all
+   the one test named went red, and nothing else did
+-- the month after December is taken as January of the same year
+   timed: rebuild 153 s, run 112 s, 265 s in all
+   all 2 tests named went red, and nothing else did
+-- a copy makes a new row rather than writing over the one it read
+   timed: rebuild 52 s, run 2 s, 54 s in all
+   all 5 tests named went red, and nothing else did
+-- a copied task is given an identifier of its own
+   timed: rebuild 51 s, run 2 s, 53 s in all
+   all 3 tests named went red, and nothing else did
+-- the copy line is on exactly the menus whose command accepts one
+   timed: rebuild 152 s, run 119 s, 271 s in all
+   all 2 tests named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 35/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test a_contact_moved_between_groups, before anything is broken.
+   timed: rebuild 815 s, run 2 s, 817 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 107 s, run 119 s, 226 s in all
+Reading what already fails with --test a_reminder_moved_to_another_account, before anything is broken.
+   timed: rebuild 6 s, run 6 s, 12 s in all
+Reading what already fails with --test a_half_finished_task_move, before anything is broken.
+   timed: rebuild 6 s, run 2 s, 8 s in all
+Reading what already fails with --test a_copy_leaves_the_original_where_it_was, before anything is broken.
+   timed: rebuild 6 s, run 3 s, 9 s in all
+-- a contact is not left in the group it was moving to when the move did not happen
+   timed: rebuild 50 s, run 3 s, 53 s in all
+   the one test named went red, and nothing else did
+-- the groups a contact can leave are the ones it is in
+   timed: rebuild 151 s, run 129 s, 280 s in all
+   all 2 tests named went red, and nothing else did
+-- the question about which group a contact is leaving is asked of the groups it is in
+   timed: rebuild 54 s, run 2 s, 56 s in all
+   the one test named went red, and nothing else did
+-- a reminder's move writes the account rather than every column but the account
+   timed: rebuild 52 s, run 2 s, 54 s in all
+   all 3 tests named went red, and nothing else did
+-- the write that moves a reminder is not the upsert that cannot
+   timed: rebuild 159 s, run 109 s, 268 s in all
+   the one test named went red, and nothing else did
+-- the second question before a move is written is asked as well as the first
+   timed: rebuild 159 s, run 114 s, 273 s in all
+   the one test named went red, and nothing else did
+-- a deletion the provider refused is not written down as taken
+   timed: rebuild 163 s, run 119 s, 282 s in all
+   the one test named went red, and nothing else did
+-- a task a provider holds is not refused a move
+   timed: rebuild 158 s, run 115 s, 273 s in all
+   all 10 tests named went red, and nothing else did
+-- the clause about the account is said only where something really is waiting
+   timed: rebuild 162 s, run 111 s, 273 s in all
+   all 4 tests named went red, and nothing else did
+-- nothing is waiting when nothing was going to be sent
+   timed: rebuild 161 s, run 111 s, 272 s in all
+   the one test named went red, and nothing else did
+-- a move of a task the provider holds that did not happen leaves neither half behind
+   timed: rebuild 49 s, run 2 s, 51 s in all
+   the one test named went red, and nothing else did
+-- a note's body is stored the bytes it was typed as
+   timed: rebuild 172 s, run 124 s, 296 s in all
+   all 2 tests named went red, and nothing else did
+-- a stored form this build did not write survives being read
+   timed: rebuild 153 s, run 111 s, 264 s in all
+   the one test named went red, and nothing else did
+-- a stored form this build did not write survives being written back
+   timed: rebuild 148 s, run 111 s, 259 s in all
+   all 2 tests named went red, and nothing else did
+-- the note folder menu offers a sync exactly where the seam says one exists
+   timed: rebuild 140 s, run 111 s, 251 s in all
+   all 2 tests named went red, and nothing else did
+-- where a new note is filed and what its menu offers come from one answer
+   timed: rebuild 143 s, run 112 s, 255 s in all
+   all 5 tests named went red, and nothing else did
+-- the settings sentence says where the notes really go
+   timed: rebuild 138 s, run 109 s, 247 s in all
+   all 2 tests named went red, and nothing else did
+-- the settings sentence about notes reaches both windows accessibility channels
+   timed: rebuild 139 s, run 109 s, 248 s in all
+   the one test named went red, and nothing else did
+-- a note changed by the writer that bypasses the upsert is still sent
+   timed: rebuild 143 s, run 112 s, 255 s in all
+   the one test named went red, and nothing else did
+-- a copied note makes a second note at the backend rather than overwriting the first
+   timed: rebuild 48 s, run 2 s, 50 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 36/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 885 s, run 122 s, 1007 s in all
+Reading what already fails with --test the_notes_seam_takes_a_second_kind_of_backend, before anything is broken.
+   timed: rebuild 9 s, run 9 s, 18 s in all
+-- a note deleted here is not written back down while the backend still names it
+   timed: rebuild 140 s, run 143 s, 283 s in all
+   the one test named went red, and nothing else did
+-- a note that moved in two places is held rather than written over
+   timed: rebuild 150 s, run 135 s, 285 s in all
+   all 2 tests named went red, and nothing else did
+-- a note's body comes back from a document the bytes it went out as
+   timed: rebuild 153 s, run 117 s, 270 s in all
+   2 of 2 named tests stayed green with the guard broken:
+       service::note_document::tests::test_a_body_long_enough_to_be_broken_across_lines_is_put_back_together
+       service::note_document::tests::test_a_note_written_as_a_document_comes_back_the_bytes_it_went_in_as
+
+-- changing a note keeps what the server has that this program does not own
+   timed: rebuild 155 s, run 121 s, 276 s in all
+   all 2 tests named went red, and nothing else did
+-- asking for a notes sync reaches the sync rather than reporting one
+   timed: rebuild 153 s, run 123 s, 276 s in all
+   the one test named went red, and nothing else did
+-- a change nobody has sent is not written over by the read
+   timed: rebuild 58 s, run 8 s, 66 s in all
+   all 2 tests named went red, and nothing else did
+-- a note the backend no longer holds is made again rather than reported for ever
+   timed: rebuild 56 s, run 6 s, 62 s in all
+   all 2 tests named went red, and nothing else did
+-- the sync hands a container back exactly as it was given
+   timed: rebuild 56 s, run 8 s, 64 s in all
+   all 10 tests named went red, and nothing else did
+-- what a backend could not keep is written down rather than reported as taken
+   timed: rebuild 57 s, run 7 s, 64 s in all
+   all 4 tests named went red, and nothing else did
+-- what a backend kept is compared on bytes and on nothing parsed
+   timed: rebuild 161 s, run 124 s, 285 s in all
+   the one test named went red, and nothing else did
+-- the file export and a card sent to a server are written by one writer
+   timed: rebuild 154 s, run 116 s, 270 s in all
+   the one test named went red, and nothing else did
+-- a folder that is not an address book is not offered as one
+   timed: rebuild 150 s, run 124 s, 274 s in all
+   the one test named went red, and nothing else did
+-- a card from a server is read by the reader a file import uses, not here
+   timed: rebuild 152 s, run 115 s, 267 s in all
+   the one test named went red, and nothing else did
+-- two address books on one account that are one address book to the merge
+   timed: rebuild 163 s, run 128 s, 291 s in all
+   all 2 tests named went red, and nothing else did
+-- an address book's copy written over a contact somebody edited here
+   timed: rebuild 136 s, run 113 s, 249 s in all
+   all 2 tests named went red, and nothing else did
+-- a second answer to whose copy of a contact wins, written in the CardDAV sync
+   timed: rebuild 142 s, run 111 s, 253 s in all
+   all 2 tests named went red, and nothing else did
+-- an address book added by a screen that never asked a server what was there
+   timed: rebuild 135 s, run 114 s, 249 s in all
+   the one test named went red, and nothing else did
+-- a page is checked against the elements OneNote names
+   timed: rebuild 136 s, run 115 s, 251 s in all
+   the one test named went red, and nothing else did
+-- a page's body is taken out of its divs before it is read
+   timed: rebuild 136 s, run 115 s, 251 s in all
+   all 11 tests named went red, and nothing else did
+
+1 guard is not what the record says it is:
+    a note's body comes back from a document the bytes it went out as
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 37/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 884 s, run 150 s, 1034 s in all
+Reading what already fails with --test the_notes_seam_takes_a_second_kind_of_backend, before anything is broken.
+   timed: rebuild 14 s, run 7 s, 21 s in all
+Reading what already fails with --test installer, before anything is broken.
+   timed: rebuild 2 s, run 1 s, 3 s in all
+Reading what already fails with --test a_copy_leaves_the_original_where_it_was, before anything is broken.
+   timed: rebuild 6 s, run 2 s, 8 s in all
+Reading what already fails with --test a_note_moves_between_folders, before anything is broken.
+   timed: rebuild 6 s, run 2 s, 8 s in all
+-- a note a backend holds is copied into the new folder rather than moved in place
+   timed: rebuild 49 s, run 2 s, 51 s in all
+   all 2 tests named went red, and nothing else did
+-- a note moved between folders gives up the name the old container knew it by
+   timed: rebuild 49 s, run 2 s, 51 s in all
+   the one test named went red, and nothing else did
+-- a onenote page is made through the gated transport rather than a client of its own
+   timed: rebuild 147 s, run 122 s, 269 s in all
+   all 2 tests named went red, and nothing else did
+-- a walk of a notebook stops at the bound and says it stopped
+   timed: rebuild 148 s, run 106 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a change to a page is built from the read immediately before it
+   timed: rebuild 149 s, run 123 s, 272 s in all
+   1 test went red that this record does not name:
+       service::onenote_notes::tests::test_the_marker_handed_back_after_a_change_is_the_one_the_page_carries_afterwards
+
+-- what a onenote page could not keep is read off the page rather than off a model of it
+   timed: rebuild 150 s, run 119 s, 269 s in all
+   all 4 tests named went red, and nothing else did
+-- two copies of a note that say the same thing are not held for anybody to choose
+   timed: rebuild 55 s, run 6 s, 61 s in all
+   all 2 tests named went red, and nothing else did
+-- a note renamed at both ends is still two copies that disagree
+   timed: rebuild 54 s, run 6 s, 60 s in all
+   all 2 tests named went red, and nothing else did
+-- a consumer gmail account's notes stay on this computer after all three backends ship
+   timed: rebuild 153 s, run 113 s, 266 s in all
+   all 5 tests named went red, and nothing else did
+-- the icon a shortcut names is the one the installer really put there
+   timed: rebuild 55 s, run 1 s, 56 s in all
+   all 2 tests named went red, and nothing else did
+-- the disclosure names both halves of the accessibility bridge
+   timed: rebuild 154 s, run 122 s, 276 s in all
+   all 2 tests named went red, and nothing else did
+-- the startup line says nothing on a build whose accessibility bridge is whole
+   timed: rebuild 147 s, run 107 s, 254 s in all
+   the one test named went red, and nothing else did
+-- a build identifier is not part of the version
+   timed: rebuild 162 s, run 148 s, 310 s in all
+   1 test went red that this record does not name:
+       service::update_check::tests::test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest
+
+-- the public channel never offers a prerelease
+   timed: rebuild 139 s, run 107 s, 246 s in all
+   the one test named went red, and nothing else did
+-- a fresh installation asks nobody about new versions
+   timed: rebuild 136 s, run 109 s, 245 s in all
+   the one test named went red, and nothing else did
+-- nothing published does not read as being up to date
+   timed: rebuild 137 s, run 108 s, 245 s in all
+   the one test named went red, and nothing else did
+-- a published glob still matches a name the release really writes
+   timed: rebuild 46 s, run 1 s, 47 s in all
+   all 2 tests named went red, and nothing else did
+-- a release still happens only when somebody asks for one
+   timed: rebuild 1 s, run 1 s, 2 s in all
+   the one test named went red, and nothing else did
+-- the census still sees every kind of file that has to be signed
+   timed: rebuild 1 s, run 1 s, 2 s in all
+   the one test named went red, and nothing else did
+-- an installer is refused unless this project signed it
+   timed: rebuild 137 s, run 109 s, 246 s in all
+   all 3 tests named went red, and nothing else did
+
+2 guards are not what the record says they are:
+    a change to a page is built from the read immediately before it
+    a build identifier is not part of the version
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 19 guards, shard 38/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 891 s, run 112 s, 1003 s in all
+-- nothing but the check can make a checked installer
+   timed: rebuild 153 s, run 117 s, 270 s in all
+   the one test named went red, and nothing else did
+-- the shape the person chose decides the picture
+   timed: rebuild 144 s, run 103 s, 247 s in all
+   all 49 tests named went red, and nothing else did
+-- a sentence out of the catalogue carries no isolation mark
+   timed: rebuild 155 s, run 106 s, 261 s in all
+   all 17 tests named went red, and nothing else did
+-- a count reaches the catalogue as a number and not as a string
+   timed: rebuild 153 s, run 114 s, 267 s in all
+   all 10 tests named went red, and nothing else did
+-- a number inside a sentence is written by Windows
+   timed: rebuild 159 s, run 109 s, 268 s in all
+   the one test named went red, and nothing else did
+-- a sentence the catalogue could not say is an error and not a sentence
+   timed: rebuild 156 s, run 104 s, 260 s in all
+   the one test named went red, and nothing else did
+-- a locale name that cannot be read asks for English by name
+   timed: rebuild 164 s, run 112 s, 276 s in all
+   all 2 tests named went red, and nothing else did
+-- every message the code can ask for is in the English catalogue
+   timed: rebuild 164 s, run 104 s, 268 s in all
+   all 4 tests named went red, and nothing else did
+-- a repeat-series sentence names its days the way this computer does
+   timed: rebuild 177 s, run 122 s, 299 s in all
+   all 2 tests named went red, and nothing else did
+-- a signature sentence writes its date the way this computer does
+   timed: rebuild 166 s, run 102 s, 268 s in all
+   all 2 tests named went red, and nothing else did
+-- day names are counted from Monday, which is where Windows starts them
+   timed: rebuild 147 s, run 104 s, 251 s in all
+   all 5 tests named went red, and nothing else did
+-- the rule about opening a modal does not answer free while somebody is typing
+   timed: rebuild 149 s, run 104 s, 253 s in all
+   all 2 tests named went red, and nothing else did
+-- the reminder tone does not come back once focus has reached the window
+   timed: rebuild 152 s, run 105 s, 257 s in all
+   all 2 tests named went red, and nothing else did
+-- a window the program can open for the scan is one the workflow asks for
+   timed: rebuild 150 s, run 106 s, 256 s in all
+   the one test named went red, and nothing else did
+-- the scanner's checksum is compared with a number written down and not with itself
+   timed: rebuild 1 s, run 104 s, 105 s in all
+   the one test named went red, and nothing else did
+-- the coverage page cannot say a criterion is unjudged while the code says the scan judges it
+   timed: rebuild 1 s, run 105 s, 106 s in all
+   all 2 tests named went red, and nothing else did
+-- a due row says its kind before its title
+   timed: rebuild 150 s, run 106 s, 256 s in all
+   all 2 tests named went red, and nothing else did
+-- the same id under two kinds is two identities
+   timed: rebuild 148 s, run 104 s, 252 s in all
+   all 2 tests named went red, and nothing else did
+-- an event whose end has passed is not raised
+   timed: rebuild 150 s, run 105 s, 255 s in all
+   the one test named went red, and nothing else did
+
+All 19 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 19 of 19, 0 from the log and 19 from this run.
+== 20 guards, shard 39/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --test the_due_window_holds_every_kind, before anything is broken.
+   timed: rebuild 878 s, run 3 s, 881 s in all
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 115 s, run 144 s, 259 s in all
+Reading what already fails with --test no_label_is_only_a_space, before anything is broken.
+   timed: rebuild 1 s, run 1 s, 2 s in all
+-- a held thing is not due until its hold runs out
+   timed: rebuild 164 s, run 133 s, 297 s in all
+   the one test named went red, and nothing else did
+-- an event cannot be done
+   timed: rebuild 193 s, run 121 s, 314 s in all
+   2 tests went red that this record does not name:
+       presentation::wx_reminder_alert::tests::test_done_is_refused_on_an_event_row_and_taken_on_a_task_row
+       presentation::wx_reminder_alert::tests::test_mark_done_and_details_say_why_they_are_unavailable
+
+-- the future wording chooses hours where the past one would
+   timed: rebuild 165 s, run 120 s, 285 s in all
+   all 2 tests named went red, and nothing else did
+-- no status line is built with a label that is only a space
+   timed: rebuild 58 s, run 1 s, 59 s in all
+   the one test named went red, and nothing else did
+-- a hold held again replaces its moment rather than keeping the first
+   timed: rebuild 166 s, run 128 s, 294 s in all
+   the one test named went red, and nothing else did
+-- a hold that ended is let go and one that has not is kept
+   timed: rebuild 172 s, run 123 s, 295 s in all
+   the one test named went red, and nothing else did
+-- a hold under a kind word this build does not know survives a read
+   timed: rebuild 176 s, run 124 s, 300 s in all
+   the one test named went red, and nothing else did
+-- the same id under two kinds is two holds in the table
+   timed: rebuild 180 s, run 132 s, 312 s in all
+   all 5 tests named went red, and nothing else did
+-- completing a task already done changes nothing
+   timed: rebuild 178 s, run 140 s, 318 s in all
+   the one test named went red, and nothing else did
+-- a due row's text is its sentence and not its title
+   timed: rebuild 53 s, run 1 s, 54 s in all
+   the one test named went red, and nothing else did
+-- mark done is unavailable on an event row and its label says so
+   timed: rebuild 150 s, run 124 s, 274 s in all
+   the one test named went red, and nothing else did
+-- snooze all answers for every row still listed and not only one
+   timed: rebuild 154 s, run 122 s, 276 s in all
+   the one test named went red, and nothing else did
+-- closing the due window dismisses whatever is still listed
+   timed: rebuild 151 s, run 121 s, 272 s in all
+   the one test named went red, and nothing else did
+-- done on an event row is refused by the bookkeeping itself
+   timed: rebuild 155 s, run 120 s, 275 s in all
+   the one test named went red, and nothing else did
+-- a day of a series is its own due thing and not the series
+   timed: rebuild 152 s, run 122 s, 274 s in all
+   the one test named went red, and nothing else did
+-- an event stored as off is never given the default lead
+   timed: rebuild 148 s, run 124 s, 272 s in all
+   the one test named went red, and nothing else did
+-- an event nobody said anything about is given the default lead
+   timed: rebuild 150 s, run 123 s, 273 s in all
+   the one test named went red, and nothing else did
+-- microsofts pull stores off when the reminder is off
+   timed: rebuild 156 s, run 122 s, 278 s in all
+   all 2 tests named went red, and nothing else did
+-- googles pull stores off only when google said the event never alerts
+   timed: rebuild 151 s, run 120 s, 271 s in all
+   all 2 tests named went red, and nothing else did
+-- the editor stores off when the last alert is taken away
+   timed: rebuild 150 s, run 126 s, 276 s in all
+   the one test named went red, and nothing else did
+
+1 guard is not what the record says it is:
+    an event cannot be done
+
+A named test that stayed green is a test whose name still promises
+something it no longer checks. A test that went red and is not named is
+a guard nobody wrote down, and a record shorter than the truth is what
+this file exists to stop. Either way: measure it by hand and write down
+what it really does now.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.
+== 20 guards, shard 40/41 of 803 records, one build and one run each ==
+
+Reading what already fails with --lib, before anything is broken.
+   timed: rebuild 978 s, run 132 s, 1110 s in all
+Reading what already fails with --test the_guard_sweep_runs_on_runners, before anything is broken.
+   timed: rebuild 9 s, run 1 s, 10 s in all
+Reading what already fails with --test every_number_carries_its_command_and_its_date, before anything is broken.
+   timed: rebuild 8 s, run 2 s, 10 s in all
+Reading what already fails with --test house_style, before anything is broken.
+   timed: rebuild 8 s, run 9 s, 17 s in all
+Reading what already fails with --test the_list_reads_only_memory, before anything is broken.
+   timed: rebuild 7 s, run 2 s, 9 s in all
+Reading what already fails with --test the_numbers_the_targets_ask_for, before anything is broken.
+   timed: rebuild 8 s, run 2 s, 10 s in all
+Reading what already fails with --test the_list_at_two_hundred_thousand_rows, before anything is broken.
+   timed: rebuild 7 s, run 3 s, 10 s in all
+-- a figure on the measurements page cannot lose its date
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 5 tests named went red, and nothing else did
+-- a figure on a page cannot lose the date it was taken
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 5 tests named went red, and nothing else did
+-- the word target is the only thing excusing a figure from its date
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 5 tests named went red, and nothing else did
+-- a test count on a page is the value of a row on the measurements page
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 2 tests named went red, and nothing else did
+-- no site states the share of history before red/green as two absolutes
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 3 tests named went red, and nothing else did
+-- a page cannot restate a constant with a figure the code does not hold
+   timed: rebuild 1 s, run 2 s, 3 s in all
+   all 3 tests named went red, and nothing else did
+-- a constant cannot move away from the page that restates it
+   timed: rebuild 62 s, run 2 s, 64 s in all
+   all 3 tests named went red, and nothing else did
+-- the usable line keeps the shape the harness parses
+   timed: rebuild 172 s, run 103 s, 275 s in all
+   all 2 tests named went red, and nothing else did
+-- the usable line is said once per process
+   timed: rebuild 182 s, run 118 s, 300 s in all
+   the one test named went red, and nothing else did
+-- the measurement profile keeps the body size its definition gives
+   timed: rebuild 64 s, run 2 s, 66 s in all
+   the one test named went red, and nothing else did
+-- the harness can still parse the line the application writes
+   timed: rebuild 63 s, run 2 s, 65 s in all
+   the one test named went red, and nothing else did
+-- the module the window opens on is filled at startup
+   timed: rebuild 58 s, run 2 s, 60 s in all
+   the one test named went red, and nothing else did
+-- the function the list paints with cannot open the cache
+   timed: rebuild 62 s, run 1 s, 63 s in all
+   all 5 tests named went red, and nothing else did
+-- the message list's closure calls the function rather than painting for itself
+   timed: rebuild 62 s, run 2 s, 64 s in all
+   all 5 tests named went red, and nothing else did
+-- the rows the scale harness prints keep the page's six columns
+   timed: rebuild 59 s, run 3 s, 62 s in all
+   the one test named went red, and nothing else did
+-- shards from two commits are not read as one run
+   timed: rebuild 8 s, run 8 s, 16 s in all
+   the one test named went red, and nothing else did
+-- shards over two file filters are not read as one run
+   timed: rebuild 1 s, run 8 s, 9 s in all
+   the one test named went red, and nothing else did
+-- a dispatched shard hands the mutation script a flag it accepts
+   timed: rebuild 1 s, run 10 s, 11 s in all
+   the one test named went red, and nothing else did
+-- a CI job that runs the tests checks out the whole history
+   timed: rebuild 1 s, run 11 s, 12 s in all
+   the one test named went red, and nothing else did
+-- the guard sweep's shard step hands the runner a flag it accepts
+   timed: rebuild 2 s, run 1 s, 3 s in all
+   the one test named went red, and nothing else did
+
+All 20 guards redden exactly the tests their records name.
+
+Every record selected has a verdict: 20 of 20, 0 from the log and 20 from this run.

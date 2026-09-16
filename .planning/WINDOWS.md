@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 441
+open_count: 445
 waived_count: 0
 fixed_count: 26
-total_count: 467
-last_updated: 2026-09-15T12:50:16.261Z
+total_count: 471
+last_updated: 2026-09-16T02:33:25.593Z
 ---
 
 # Broken Windows Ledger
@@ -482,6 +482,10 @@ last_updated: 2026-09-15T12:50:16.261Z
 | 465 | 08 | deviation | .github/workflows/guards.yml |  | 08-07, the answer: WIXEN_TEST_THREADS is left at the script's default of 8 on a 4-core runner, unmeasured, so the runner's timing lines and the rate row on docs/development/measurements.md read against each other at one setting; the thread curve on CLAUDE.md was taken on 24 cores and says nothing about 4, and verdicts are what the sweep is for. Re-take the curve on a runner if the shards run slower than the sizing guess | open |  | 2026-09-15T11:45:40.600Z |  |
 | 466 | 08 | deviation | src/presentation/wx_app.rs |  | debug theme-reach-crashes-on-runner, 2026-09-15: wxWidgets 3.3.2 (wxdragon 0.9.17) delivers WebView2 creation completions to a destroyed control (wxWidgets #26491, fixed upstream for the unreleased 3.3.4). presentation::browser_ready now holds Compose and Preview Before Send until their browsers report. The main window's preview pane (wx_app.rs preview WebView) and the conversation-as-headings frame are destroyed only at application exit; an exit inside the creation moment, about 250 ms warm and seconds after a runtime update, ends the process with 0xc000041d after the window is gone and nothing else is wrong. Left as it is until a wxdragon release vendors 3.3.4, at which point browser_ready can be retired | open |  | 2026-09-15T12:50:15.759Z |  |
 | 467 | 08 | unrun-verify | tests/theme_reach.rs |  | debug theme-reach-crashes-on-runner, 2026-09-15: the crash of theme_reach on GitHub's runners (runs 34956059032 and 34961574447, exit 0xc000041d) was reproduced here only through a scratch case tearing a WebView down at once, never through theme_reach itself, whose two browsers finish in a quarter of a second on this machine. The wait added to theme_reach and the child-process test in closing_a_window_before_its_browser_exists are unconfirmed on a runner until the next push of main; the CI Test Suite job is the confirmation | open |  | 2026-09-15T12:50:16.261Z |  |
+| 468 | 08 | unmet-truth | src/application/contacts_sync.rs |  | 08-07 task 3: the gate the_copy_here_was_written_here on the note call in the read that skips a contact the setting holds back is covered by no test since ce3e89ba of 2026-09-05 rewrote the one test that reached it; the record named for it reddened nothing on the runners and here and was retired. A test that notices belongs in contacts_sync.rs, which 77 records name, so it waits for somebody prepared to re-measure those | open |  | 2026-09-16T01:54:07.526Z |  |
+| 469 | 08 | todo | src/application/caldav_sync.rs |  | 08-07 task 3: the seen_uids insert of the compound id at the top of one_caldav_day_kept_out_of_its_series is redundant, because the loop over the server's answer already marks the changed day's stored identity seen before the day is folded; taking it out reddens nothing on the runners or here. Its record now breaks the marking that holds the rule; the insert is a dead-code candidate to remove with a reading that says why | open |  | 2026-09-16T01:54:08.175Z |  |
+| 470 | 08 | deviation | guards/guards.toml |  | 08-07 task 3: two records are right on this machine and blind on a runner, and are left as written. An hour with no zone means an hour here: the runner's clock is UTC, so a break that sends the local hour as UTC changes nothing there. The walk into Windows own chain structures really happens: the runner has no chain to walk. A runner sweep reports both as a named test staying green; read them as measured here, or give each a fixture that does not depend on the machine | open |  | 2026-09-16T01:54:08.848Z |  |
+| 471 | 08 | unmet-truth | src/application/caldav_sync.rs |  | 08-07 task 3: the rule that a changed day of a CalDAV series is marked seen before the removal pass can run has no test that would notice it broken: taking out either seen_uids marking leaves test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it green, measured on the runners and here. The record of 2026-08-14 that named it was renamed to the one fact the break really guards. What keeps the moved day now was not reconstructed; a test that breaks when the marking goes is the answer | open |  | 2026-09-16T02:33:25.593Z |  |
 
 ````json
 [
@@ -6087,6 +6091,54 @@ last_updated: 2026-09-15T12:50:16.261Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-15T12:50:16.261Z",
+    "resolved_at": null
+  },
+  {
+    "id": 468,
+    "kind": "unmet-truth",
+    "phase": "08",
+    "file": "src/application/contacts_sync.rs",
+    "line": null,
+    "description": "08-07 task 3: the gate the_copy_here_was_written_here on the note call in the read that skips a contact the setting holds back is covered by no test since ce3e89ba of 2026-09-05 rewrote the one test that reached it; the record named for it reddened nothing on the runners and here and was retired. A test that notices belongs in contacts_sync.rs, which 77 records name, so it waits for somebody prepared to re-measure those",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T01:54:07.526Z",
+    "resolved_at": null
+  },
+  {
+    "id": 469,
+    "kind": "todo",
+    "phase": "08",
+    "file": "src/application/caldav_sync.rs",
+    "line": null,
+    "description": "08-07 task 3: the seen_uids insert of the compound id at the top of one_caldav_day_kept_out_of_its_series is redundant, because the loop over the server's answer already marks the changed day's stored identity seen before the day is folded; taking it out reddens nothing on the runners or here. Its record now breaks the marking that holds the rule; the insert is a dead-code candidate to remove with a reading that says why",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T01:54:08.175Z",
+    "resolved_at": null
+  },
+  {
+    "id": 470,
+    "kind": "deviation",
+    "phase": "08",
+    "file": "guards/guards.toml",
+    "line": null,
+    "description": "08-07 task 3: two records are right on this machine and blind on a runner, and are left as written. An hour with no zone means an hour here: the runner's clock is UTC, so a break that sends the local hour as UTC changes nothing there. The walk into Windows own chain structures really happens: the runner has no chain to walk. A runner sweep reports both as a named test staying green; read them as measured here, or give each a fixture that does not depend on the machine",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T01:54:08.848Z",
+    "resolved_at": null
+  },
+  {
+    "id": 471,
+    "kind": "unmet-truth",
+    "phase": "08",
+    "file": "src/application/caldav_sync.rs",
+    "line": null,
+    "description": "08-07 task 3: the rule that a changed day of a CalDAV series is marked seen before the removal pass can run has no test that would notice it broken: taking out either seen_uids marking leaves test_syncing_a_caldav_moved_day_twice_does_not_duplicate_it_or_delete_it green, measured on the runners and here. The record of 2026-08-14 that named it was renamed to the one fact the break really guards. What keeps the moved day now was not reconstructed; a test that breaks when the marking goes is the answer",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T02:33:25.593Z",
     "resolved_at": null
   }
 ]
