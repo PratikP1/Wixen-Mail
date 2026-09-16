@@ -312,6 +312,12 @@ fn best_available_match(wanted: &str, choices: &[LanguageChoice]) -> Option<Stri
     {
         return Some(exact.tag.clone());
     }
+    first_available_in_the_family_of(wanted, choices)
+}
+
+/// The first of `choices` that shares `wanted`'s language and is available,
+/// in the order the choices were given, which is Windows' own.
+fn first_available_in_the_family_of(wanted: &str, choices: &[LanguageChoice]) -> Option<String> {
     let family = wanted.split('-').next().unwrap_or_default().to_string();
     if family.is_empty() {
         return None;
@@ -326,12 +332,47 @@ fn best_available_match(wanted: &str, choices: &[LanguageChoice]) -> Option<Stri
 
 /// The language to use for a stored tag, given what this machine is set to
 /// and what it offers.
+///
+/// The one answer to a question two readers used to answer for themselves:
+/// the checker, choosing which dictionary to open, and the settings screen,
+/// choosing which row to show. They agreed only by accident of Windows' list
+/// order, and on an en-US machine the accident was English (Caribbean).
+///
+/// A stored tag that is offered and available is used exactly as stored: a
+/// person who chose English (Australia) chose it. A bare or unlisted tag,
+/// which is what every profile written before 2026-09-03 holds, is resolved
+/// within its family, and the machine's own region wins over Windows' first.
+/// Windows lists a family in its own order, and on a machine set to English
+/// (United States) that order begins with the Caribbean and reaches the
+/// United States seventeenth, which is how #21 happened. Only when the
+/// machine is set to some other language does the first offered member
+/// stand, as the best guess left. `None` when nothing offered shares the
+/// family, and then the caller says so rather than guessing.
+///
+/// Case is ignored on both sides, as [`best_available_match`] already does:
+/// Windows spells a tag `en-US`, a hand-edited file may not.
 pub fn language_to_use(
     stored: &str,
-    _this_machine: Option<&str>,
+    this_machine: Option<&str>,
     offered: &[LanguageChoice],
 ) -> Option<String> {
-    best_available_match(&stored.to_ascii_lowercase(), offered)
+    let stored = stored.to_ascii_lowercase();
+    let usable = |candidate: &str| {
+        offered
+            .iter()
+            .find(|choice| choice.available && choice.tag.eq_ignore_ascii_case(candidate))
+            .map(|choice| choice.tag.clone())
+    };
+    if let Some(exact) = usable(&stored) {
+        return Some(exact);
+    }
+    if let Some(machine) = this_machine
+        && short_code(machine).eq_ignore_ascii_case(short_code(&stored))
+        && let Some(own_region) = usable(machine)
+    {
+        return Some(own_region);
+    }
+    first_available_in_the_family_of(&stored, offered)
 }
 
 /// The language tag Windows says this machine is set to.
@@ -502,20 +543,31 @@ pub fn before_sending(errors: &[SpellError]) -> Option<String> {
 pub fn for_language(tag: &str) -> Box<dyn Speller> {
     #[cfg(windows)]
     {
-        if let Some(windows) = windows_speller::WindowsSpeller::for_language(tag) {
+        // Resolved before Windows is asked about the tag as stored, so the
+        // checker opens the language the settings screen shows and not a
+        // relative of it. Everybody who set this before the picker offered
+        // real tags has a bare "en" stored, and Windows lists "en-GB", "en-US"
+        // and a dozen more; which of them a bare tag means is
+        // [`language_to_use`]'s decision, shared with the screen. This used to
+        // try the bare tag with Windows first and fall back to the first of
+        // the family Windows listed, on the belief that Windows leads with the
+        // machine's own region. Neither half held: on a machine set to English
+        // (United States) the first English Windows lists is the Caribbean,
+        // and Windows accepts a bare "en" outright and checks whatever it
+        // takes that to mean, while the screen showed the Caribbean (#21).
+        let resolved = language_to_use(tag, system_language().as_deref(), &available_languages());
+        if let Some(resolved) = resolved.as_deref()
+            && let Some(windows) = windows_speller::WindowsSpeller::for_language(resolved)
+        {
+            if !resolved.eq_ignore_ascii_case(tag) {
+                tracing::info!("Spell checking {} as {}", tag, resolved);
+            }
             return Box::new(windows);
         }
-        // A bare language where Windows wants a region. Everybody who set this
-        // before the picker offered real tags has "en" stored, and Windows
-        // lists "en-GB", "en-US" and a dozen more; taking the first it offers
-        // for that language is what stops those people silently dropping to the
-        // built-in word list on upgrade. Windows lists them in its own
-        // preference order, so the first is the one this machine leans towards.
-        if let Some(regional) =
-            find_regional_variant(tag, &windows_speller::WindowsSpeller::supported_languages())
-            && let Some(windows) = windows_speller::WindowsSpeller::for_language(&regional)
-        {
-            tracing::info!("Spell checking {} as {}", tag, regional);
+        // Nothing offered shares the stored tag's family. Windows may still
+        // accept the tag as given, which is worth asking before dropping to
+        // the built-in word list.
+        if let Some(windows) = windows_speller::WindowsSpeller::for_language(tag) {
             return Box::new(windows);
         }
         tracing::info!(
@@ -533,19 +585,6 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
 /// than the fallback being asked a question it cannot answer.
 fn short_code(tag: &str) -> &str {
     tag.split(['-', '_']).next().unwrap_or(tag)
-}
-
-/// The first of Windows' supported tags that shares `tag`'s language, if any.
-///
-/// Taken as a plain list rather than asking Windows directly, so the rule for
-/// which regional variant wins is checkable without a real spell checking
-/// feature installed on the machine running the test.
-#[cfg(windows)]
-fn find_regional_variant(tag: &str, supported: &[String]) -> Option<String> {
-    supported
-        .iter()
-        .find(|candidate| short_code(candidate) == short_code(tag))
-        .cloned()
 }
 
 impl Speller for SpellChecker {
@@ -1639,27 +1678,33 @@ mod tests {
         assert_eq!(short_code("de"), "de");
     }
 
-    #[cfg(windows)]
     #[test]
-    fn test_a_bare_language_matches_the_first_regional_variant_windows_offers() {
-        let supported = vec![
-            "fr-CA".to_string(),
-            "en-GB".to_string(),
-            "en-US".to_string(),
-        ];
+    fn test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first() {
+        // What `find_regional_variant` used to pin, turned round. It took the
+        // first of the family Windows listed, en-GB here, on the belief that
+        // Windows leads with the machine's own region. It leads with the
+        // Caribbean on an en-US machine, and the setting read as English
+        // (Caribbean) for a person who had set nothing (#21).
+        let offered = choices_from(vec![
+            ("fr-CA".to_string(), "French (Canada)".to_string()),
+            ("en-GB".to_string(), "English (United Kingdom)".to_string()),
+            ("en-US".to_string(), "English (United States)".to_string()),
+        ]);
 
         assert_eq!(
-            find_regional_variant("en", &supported),
-            Some("en-GB".to_string())
+            language_to_use("en", Some("en-US"), &offered),
+            Some("en-US".to_string())
         );
     }
 
-    #[cfg(windows)]
     #[test]
     fn test_a_language_windows_does_not_support_at_all_matches_nothing() {
-        let supported = vec!["fr-CA".to_string(), "en-GB".to_string()];
+        let offered = choices_from(vec![
+            ("fr-CA".to_string(), "French (Canada)".to_string()),
+            ("en-GB".to_string(), "English (United Kingdom)".to_string()),
+        ]);
 
-        assert_eq!(find_regional_variant("de", &supported), None);
+        assert_eq!(language_to_use("de", Some("en-US"), &offered), None);
     }
 
     // ── A stored tag, resolved against this machine ─────────────────────

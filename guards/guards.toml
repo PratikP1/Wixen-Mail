@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 27 records have arrived since and have not been through it.
+# 28 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -11243,7 +11243,7 @@ before = """    let wanted = system_language()?.to_ascii_lowercase();
 after = """    None"""
 red = ["service::spellcheck::tests::test_the_machines_language_is_exactly_the_best_match_for_its_real_locale"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11264,7 +11264,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11279,7 +11279,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11292,10 +11292,15 @@ red = [
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
     # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+    # Added 2026-09-16 by 09-02's re-measure: the family arm moved into
+    # `first_available_in_the_family_of` and `language_to_use`'s last arm
+    # reaches it too, so two of the resolver's tests redden under this break.
+    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11307,10 +11312,18 @@ red = [
     "service::spellcheck::tests::test_an_unavailable_exact_match_does_not_win_over_an_available_family_member",
     # Added 2026-09-15 by 08-07's sweep; see the first record of the four.
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
+    # Added 2026-09-16 by 09-02's re-measure: `language_to_use`'s last arm
+    # reaches this line too, so a break that matches the wrong family answers
+    # the resolver's family cases with the wrong language or with a language
+    # where it wanted none.
+    "service::spellcheck::tests::test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another",
+    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_stored_language_nothing_offers_resolves_to_nothing",
+    "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11333,10 +11346,14 @@ red = [
     "service::spellcheck::tests::test_a_real_windows_list_is_used_instead_of_the_fallback",
     "service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback",
     "data::config::permission_tests::test_a_language_this_machine_can_check_is_the_one_it_checks_in",
+    # Added 2026-09-16 by 09-02's re-measure: the resolver's test that hands
+    # `choices_from` a real list of three reads the fallback six instead under
+    # this break, and none of the six is en-US.
+    "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11346,20 +11363,34 @@ before = """            available: language.code == "en","""
 after = """            available: language.code != "en","""
 red = ["service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
+# Until 2026-09-16 this record was "the first regional variant Windows offers
+# shares the language, not differs from it", breaking `find_regional_variant`.
+# That function took the first of the family Windows listed for a bare stored
+# tag, and on an en-US machine the first English Windows lists is the
+# Caribbean (#21). It is retired; the family fallback is now the last arm of
+# `language_to_use`, reached only when the machine's own region is not in
+# the stored tag's family, and this is that arm taken out. The test asking
+# for `None` for a language nothing offers stays green under the break on
+# purpose: `None` is what it wanted either way.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
 [[guard]]
-name = "the first regional variant Windows offers shares the language, not differs from it"
+name = "a bare stored language on a machine set to another falls to the first of its family, not to nothing"
 file = "src/service/spellcheck/mod.rs"
-before = """        .find(|candidate| short_code(candidate) == short_code(tag))"""
-after = """        .find(|candidate| short_code(candidate) != short_code(tag))"""
+before = """    first_available_in_the_family_of(&stored, offered)
+}"""
+after = """    None
+}"""
 red = [
-    "service::spellcheck::tests::test_a_bare_language_matches_the_first_regional_variant_windows_offers",
-    "service::spellcheck::tests::test_a_language_windows_does_not_support_at_all_matches_nothing",
+    "service::spellcheck::tests::test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another",
+    "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11369,7 +11400,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written + 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11379,7 +11410,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written * 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: how a source and a spelling summary describe themselves ────
@@ -11398,7 +11429,7 @@ before = """        match self {
 after = """        "xyzzy""""
 red = ["service::spellcheck::tests::test_every_source_describes_itself_honestly"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11408,7 +11439,7 @@ before = """        count if count <= NAMED => format!("""
 after = """        count if count < NAMED => format!("""
 red = ["service::spellcheck::tests::test_exactly_three_words_are_all_named_without_an_and_zero_others"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: the Speller trait, reached through a trait object ──────────
@@ -11425,7 +11456,7 @@ after = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11439,7 +11470,7 @@ before = """        Err(Error::Other(
 after = """        Ok(())"""
 red = ["service::spellcheck::tests::test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11453,7 +11484,7 @@ after = """    fn language(&self) -> &str {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_reports_its_real_language"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: SpellChecker's own methods ──────────────────────────────────
@@ -11466,7 +11497,7 @@ after = """        let _ = &self.backend;
         false"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_checks_against_the_data_it_was_given"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11477,7 +11508,7 @@ after = """        let _ = &self.backend;
         true"""
 red = ["service::spellcheck::tests::test_a_plain_checker_without_a_real_dictionary_says_so"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11491,7 +11522,7 @@ after = """        let alphabet = supported_languages()
             .find(|l| l.code != lang_code)"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11509,7 +11540,7 @@ after = """                let w = line.trim().to_lowercase();
                 }"""
 red = ["service::spellcheck::tests::test_load_dictionary_file_adds_every_nonblank_line"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11522,7 +11553,7 @@ red = [
     "service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11532,7 +11563,7 @@ before = """        base + self.custom_words.len()"""
 after = """        base - self.custom_words.len()"""
 red = ["service::spellcheck::tests::test_word_count_includes_words_added_this_session"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11546,7 +11577,7 @@ before = """    } else if cfg!(target_os = "windows")
 after = """    }"""
 red = ["service::spellcheck::tests::test_default_dict_search_paths_includes_the_windows_location"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11560,7 +11591,7 @@ after = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
     }"""
 red = ["service::spellcheck::tests::test_dict_search_paths_reports_what_this_checker_actually_searched"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11592,7 +11623,7 @@ after = """    let _ = (hunspell_name, search_paths);
     None"""
 red = ["service::spellcheck::tests::test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11602,7 +11633,7 @@ before = """    if s.is_empty() || s.len() <= 1 {"""
 after = """    if s.is_empty() {"""
 red = ["service::spellcheck::tests::test_a_single_letter_is_too_short_to_be_worth_checking"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11612,7 +11643,7 @@ before = """    if lower.contains('@') && lower.contains('.') {"""
 after = """    if lower.contains('@') || lower.contains('.') {"""
 red = ["service::spellcheck::tests::test_a_dot_alone_is_not_treated_as_an_email"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: document locale and i18n ────────────────────────────────────
@@ -11626,7 +11657,7 @@ before = """    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
 after = """    let _ = code;"""
 red = ["service::spellcheck::tests::test_set_document_locale_writes_the_code_for_reading_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11636,7 +11667,7 @@ before = """        let count = map.len();"""
 after = """        let count = 0;"""
 red = ["service::spellcheck::tests::test_load_translations_file_reads_every_entry_in_the_table"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11646,7 +11677,7 @@ before = """        self.active_locale = Locale::from_code(code);"""
 after = """        let _ = code;"""
 red = ["service::spellcheck::tests::test_set_locale_changes_which_language_is_read_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -11661,7 +11692,7 @@ after = """        let _ = args;
         template"""
 red = ["service::spellcheck::tests::test_tf_fills_in_its_placeholders"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 56 },
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
 
 # ── spellcheck: windows_speller.rs, the parts that are not COM ─────────────
@@ -22785,4 +22816,29 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/installer.rs", tests = 20 },
+]
+
+# The middle arm of `language_to_use`, which is the whole of the fix for #21:
+# a bare stored "en" on a machine set to English (United States) resolves to
+# en-US rather than to the first English Windows lists, which is the
+# Caribbean. The break is the shape the old code had: the machine's own
+# region is found and the first of the family is taken anyway. The exact
+# stored tag, the machine set to another language, and a language nothing
+# offers all stay green under it, because none of them reaches this arm.
+#
+# Measured 2026-09-16 through `--remeasure` on the branch the record was
+# written on, the whole library at the default eight threads.
+[[guard]]
+name = "a bare stored language resolves to the region this machine is set to, not to the first Windows lists"
+file = "src/service/spellcheck/mod.rs"
+before = """        return Some(own_region);"""
+after = """        return first_available_in_the_family_of(&stored, offered);"""
+red = [
+    "service::spellcheck::tests::test_a_bare_stored_language_resolves_to_the_region_this_machine_is_set_to",
+    "service::spellcheck::tests::test_a_bare_stored_language_follows_the_machine_to_whichever_region_it_has",
+    "service::spellcheck::tests::test_the_stored_tag_and_the_machines_tag_are_matched_without_regard_to_case",
+    "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
+]
+tests_last_seen = [
+    { file = "src/service/spellcheck/mod.rs", tests = 63 },
 ]
