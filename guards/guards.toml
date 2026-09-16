@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 32 records have arrived since and have not been through it.
+# 34 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -22965,4 +22965,68 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 47 },
+]
+
+# Undo Send taken off the Edit menu, which is the shape the tester met on
+# 2026-09-15 (#44): the one undo this program has was on Tools, between the
+# address book commands and Flush Outbox, and Edit opened on Cut. The break
+# removes the item and the separator after it, so the chain still builds and
+# the first item on Edit is Cut again. The reading goes red on that, and both
+# companions go red with it, because each plants by finding the item's call
+# and there is no call to find.
+#
+# `suite` names the target that reads the menu chains, which couples the
+# target to this file for `check.sh --suites-for`; `tests/wired.rs` holds the
+# item to its handler by id and says nothing about the menu.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on,
+# `cargo test --test undo_send_is_where_somebody_looks`.
+[[guard]]
+name = "Undo Send is first on the Edit menu, not off it and back where the tester found it"
+file = "src/presentation/wx_app.rs"
+suite = "undo_send_is_where_somebody_looks"
+before = '''            .append_item(
+                ID_UNDO_SEND,
+                "&Undo Send\tCtrl+Shift+Z",
+                "Take back the message you just sent, while it is still being held",
+            )
+            .append_separator()
+            // The four every Windows program has.'''
+after = '''            // The four every Windows program has.'''
+red = [
+    "test_undo_send_is_the_first_item_on_the_edit_menu_and_not_on_tools",
+    "test_the_reading_complains_when_undo_send_is_put_back_on_tools",
+    "test_the_reading_complains_when_undo_send_is_offered_on_both_menus",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 5 },
+]
+
+# The composer's schedule routine described as reached by Alt+E, which is what
+# its doc comment said from the day the key was Alt+H until #56 read it. A
+# comment is where the next person learns which key to test, so a wrong one
+# sends them to a key that does nothing. The break puts the stale key back;
+# the reading goes red on it, and the companion goes red because its plant of
+# the same stale key then changes nothing.
+#
+# `suite` names the target that reads the comment, which couples the target
+# to this file, so the reading runs on the commits that could edit the comment
+# and not only on the ones that edit the reading.
+#
+# Measured 2026-09-16 by hand on the branch the record was written on,
+# `cargo test --test undo_send_is_where_somebody_looks`.
+[[guard]]
+name = "the schedule routine's comment names Alt+H, the key that reaches it, not Alt+E"
+file = "src/presentation/wx_compose.rs"
+suite = "undo_send_is_where_somebody_looks"
+before = """/// One routine for both ways in, the toolbar button and Alt+H out of the"""
+after = """/// One routine for both ways in, the toolbar button and Alt+E out of the"""
+red = [
+    "test_the_schedule_routines_comment_names_the_key_that_reaches_it",
+    "test_the_reading_complains_when_the_comment_names_a_key_that_does_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 5 },
 ]

@@ -6099,14 +6099,44 @@ impl WxMailApp {
         file.prepend_separator();
         file.prepend_submenu(new_sub, "&New", "Create a new item");
 
-        // One item, and that is the right number. Find has lived under Edit on
-        // this platform for thirty years, so somebody who has used any other
-        // Windows application already knows where it is. Marking a task done
-        // and pinning a note used to be here too, which put two commands that
-        // are not edits in any sense under a heading that promised they were.
-        // They are on the Action menu with the rest of what acts on the thing
-        // in front of you.
+        // Undo, the clipboard four, and Find: what Edit holds on every Windows
+        // program, so somebody who has used any other already knows where each
+        // is. Marking a task done and pinning a note used to be here too, which
+        // put two commands that are not edits in any sense under a heading that
+        // promised they were. They are on the Action menu with the rest of what
+        // acts on the thing in front of you.
         let edit = Menu::builder()
+            // First, where Undo sits on every Edit menu on this platform. This
+            // is the one undo the program has, and it lived on Tools between
+            // the address book commands and Flush Outbox until the first day
+            // of testing, when the tester said "undo send should be in the
+            // edit menu" (#44). Somebody working by ear opens Edit, hears the
+            // clipboard commands and Search, and cannot tell a command they
+            // walked past from one that is not there.
+            //
+            // It is the command the countdown names. Pressing Send says
+            // "Sending in 10 seconds. Undo Send takes it back", and the Outbox
+            // row for a held message says the same, so this is the door those
+            // sentences point at.
+            //
+            // Both halves of that have been false in turn, which is why it is
+            // written out. First there was no Undo Send at all: no menu item,
+            // no key, no button, while the countdown's words already named it.
+            // Then this item existed and nothing ever showed the countdown,
+            // because nothing production ever held a message, so the command
+            // refused every time it was pressed and the sentence above was
+            // said to nobody. 04.2-01 made both true at once.
+            //
+            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
+            // would mean a key that puts characters back in one window and
+            // stops a message in another. `tests/undo_send_is_where_somebody_looks.rs`
+            // holds it here, first, and off Tools.
+            .append_item(
+                ID_UNDO_SEND,
+                "&Undo Send\tCtrl+Shift+Z",
+                "Take back the message you just sent, while it is still being held",
+            )
+            .append_separator()
             // The four every Windows program has. They were missing entirely,
             // and Ctrl+A was worse than missing: it opened the Account Manager,
             // so the key that means Select All everywhere else put a dialog in
@@ -6884,27 +6914,8 @@ impl WxMailApp {
                  tried for real",
             )
             .append_separator()
-            // The command the countdown names. Pressing Send says "Sending in
-            // 10 seconds. Undo Send takes it back", and the Outbox row for a
-            // held message says the same, so this is the door those sentences
-            // point at.
-            //
-            // Both halves of that have been false in turn, which is why it is
-            // written out. First there was no Undo Send at all: no menu item,
-            // no key, no button, while the countdown's words already named it.
-            // Then this item existed and nothing ever showed the countdown,
-            // because nothing production ever held a message, so the command
-            // refused every time it was pressed and the sentence above was
-            // said to nobody. 04.2-01 made both true at once.
-            //
-            // Ctrl+Shift+Z, because Ctrl+Z is the editor's undo and taking that
-            // would mean a key that puts characters back in one window and
-            // stops a message in another.
-            .append_item(
-                ID_UNDO_SEND,
-                "&Undo Send\tCtrl+Shift+Z",
-                "Take back the message you just sent, while it is still being held",
-            )
+            // Undo Send was here, before Flush Outbox, until #44 moved it to
+            // the top of Edit, where an undo is looked for.
             .append_item(
                 ID_FLUSH_OUTBOX,
                 "Flush &Outbox",

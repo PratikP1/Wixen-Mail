@@ -57,6 +57,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: a message whose text was never fetched has no snippet to put right, as
   before; it gains one when its text arrives.
 
+- **Undo Send is first on the Edit menu.** Reported on 2026-09-15 from build
+  `0.125.1+g3e633252` (#44), in the tester's words: "undo send should be in the edit menu." It
+  was on the Tools menu, between the address book commands and Flush Outbox, and Edit held no
+  undo of any kind, so somebody looking for the one undo this program has opened Edit and found
+  Cut. It is the first item on Edit now, with the same key, `Ctrl+Shift+Z`, and does the same
+  thing: takes back the message you just sent while it is still being held. The shortcuts page
+  says which menu.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

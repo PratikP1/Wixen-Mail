@@ -64,8 +64,8 @@
 //! when Send is pressed, through [`what_send_did`], and again on the Outbox row
 //! through [`Readiness::spoken`]. [`what_send_does`] is the description under
 //! the hold's setting on the Compose tab. [`take_back`] and
-//! [`what_undo_send_takes_back`] are asked by Undo Send on the Tools menu and
-//! on `Ctrl+Shift+Z`.
+//! [`what_undo_send_takes_back`] are asked by Undo Send, first on the Edit
+//! menu and on `Ctrl+Shift+Z`.
 //!
 //! [`schedule`] is asked by the Schedule window in the composer, which is
 //! `Alt+H` and a button on the toolbar. It answers about the text five
