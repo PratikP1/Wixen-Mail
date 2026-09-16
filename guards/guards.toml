@@ -23140,8 +23140,9 @@ tests_last_seen = [
 # break plants that neighbour back: a static labelled "Write the month as:"
 # built straight before "Then by", so it is no longer the tab stop after the
 # sort and the month setting is behind it again. Not the plan's break, which
-# was to build it into the date section again: `date_sec` is declared 250
-# lines below the new site, so that edit does not compile as one replacement.
+# was to build it into the date section again: `date_sec` is declared well
+# below the new site, in the Dates and Times section, so that edit does not
+# compile as one replacement.
 #
 # `suite` names the target that builds the dialog and walks the panel's
 # children, which couples the target to this file for `check.sh --suites-for`.

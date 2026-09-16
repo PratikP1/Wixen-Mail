@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 458
+open_count: 460
 waived_count: 0
 fixed_count: 28
-total_count: 486
-last_updated: 2026-09-16T18:19:35.079Z
+total_count: 488
+last_updated: 2026-09-16T19:36:44.529Z
 ---
 
 # Broken Windows Ledger
@@ -501,6 +501,8 @@ last_updated: 2026-09-16T18:19:35.079Z
 | 484 | 09 | unrun-verify | src/service/spellcheck/mod.rs | 349 | Whether a profile created before 2026-09-03, holding the bare en every profile got then, now shows English (United States) in Settings and is checked in it without a hand change is a run on such a profile; the tester's own profile has held a hand-set en-US since 2026-09-15, which the resolver leaves as stored, so his machine cannot show the fix and only a profile still holding the bare value can. 09-02 proved it on this machine through the real General tab built in a test, not on a profile | open |  | 2026-09-16T17:19:56.885Z |  |
 | 485 | 09 | unrun-verify | src/data/message_cache/bodies.rs | 690 | The once-only pass that puts stored snippets right has run against a temp profile holding one HTML-only message (1 row in 3 ms, log line quoted in 09-02's summary) and never against the tester's 20 MB cache of 12,872 messages; how many of his rows it rewrites, how long his first start takes, and whether his rows then read as words are his first open of the next build to answer, and the log line says the first two | open |  | 2026-09-16T17:19:57.441Z |  |
 | 486 | 09 | deviation | src/application/answered_meetings.rs | 162 | 09-03: a meeting answer is filed on the calendar the moment Accept, Tentative or Decline is pressed, while the reply is still held for ten seconds like any other message. Undo Send inside the hold takes the reply back and leaves the meeting on the calendar as answered; answering the same meeting again replaces the entry, so somebody who undoes and answers differently ends with the calendar right, and somebody who undoes and does not answer has an entry the organiser never heard about. Filing only when the queue drains needs the send loop to reach back to the calendar, which nothing does, and is a feature of its own. Said in the changelog under Known limitations. Ledger 155's listening question, whether anything spoken after a mistaken Accept points at Undo Send, stays open: the sentence now says Undo Send takes it back, and nobody has heard it. | open |  | 2026-09-16T18:19:35.079Z |  |
+| 487 | 09 | unrun-verify | src/presentation/wx_app.rs | 14212 | 09-04: the look the plan asked for at the running program, sort by sender from View, Sort and then by date from a column header and open the submenu, was not made. tests/one_sort_is_checked_on_a_live_menu.rs asks a real menu bar the same question by id, one group answers one tick and the old shape four from the moment it is built, and tests/one_sort_is_checked.rs holds the application's chain to one group; what neither reaches is the application's own menu after a real header click through sync_sort_menu, which is the next build's View, Sort to answer, and it is a look rather than a listening pass | open |  | 2026-09-16T19:36:32.825Z |  |
+| 488 | 09 | unrun-verify | src/presentation/wx_settings.rs | 1264 | 09-04: whether the Reading tab now reads as one group by ear, Default sort order and then Then by as consecutive tab stops under NVDA, is FOUND-06's listening line and has not been listened to. tests/the_sort_controls_sit_together.rs builds the real dialog and reads the sibling chain, which is the order Tab moves in, and finds only Then by's own label between the two; that is structure present, and the tester who reported #36 is the one who can say whether it is experience good, along with whether Cc and Bcc lines is where he would look for it on the Compose tab | open |  | 2026-09-16T19:36:44.529Z |  |
 
 ````json
 [
@@ -6334,6 +6336,30 @@ last_updated: 2026-09-16T18:19:35.079Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T18:19:35.079Z",
+    "resolved_at": null
+  },
+  {
+    "id": 487,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/wx_app.rs",
+    "line": 14212,
+    "description": "09-04: the look the plan asked for at the running program, sort by sender from View, Sort and then by date from a column header and open the submenu, was not made. tests/one_sort_is_checked_on_a_live_menu.rs asks a real menu bar the same question by id, one group answers one tick and the old shape four from the moment it is built, and tests/one_sort_is_checked.rs holds the application's chain to one group; what neither reaches is the application's own menu after a real header click through sync_sort_menu, which is the next build's View, Sort to answer, and it is a look rather than a listening pass",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T19:36:32.825Z",
+    "resolved_at": null
+  },
+  {
+    "id": 488,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/wx_settings.rs",
+    "line": 1264,
+    "description": "09-04: whether the Reading tab now reads as one group by ear, Default sort order and then Then by as consecutive tab stops under NVDA, is FOUND-06's listening line and has not been listened to. tests/the_sort_controls_sit_together.rs builds the real dialog and reads the sibling chain, which is the order Tab moves in, and finds only Then by's own label between the two; that is structure present, and the tester who reported #36 is the one who can say whether it is experience good, along with whether Cc and Bcc lines is where he would look for it on the Compose tab",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T19:36:44.529Z",
     "resolved_at": null
   }
 ]
