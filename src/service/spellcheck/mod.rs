@@ -324,6 +324,16 @@ fn best_available_match(wanted: &str, choices: &[LanguageChoice]) -> Option<Stri
         .map(|c| c.tag.clone())
 }
 
+/// The language to use for a stored tag, given what this machine is set to
+/// and what it offers.
+pub fn language_to_use(
+    stored: &str,
+    _this_machine: Option<&str>,
+    offered: &[LanguageChoice],
+) -> Option<String> {
+    best_available_match(&stored.to_ascii_lowercase(), offered)
+}
+
 /// The language tag Windows says this machine is set to.
 ///
 /// Public because it answers a second question as well as the spelling one:
@@ -1650,6 +1660,114 @@ mod tests {
         let supported = vec!["fr-CA".to_string(), "en-GB".to_string()];
 
         assert_eq!(find_regional_variant("de", &supported), None);
+    }
+
+    // ── A stored tag, resolved against this machine ─────────────────────
+    //
+    // What Windows offers, in Windows' own order, on a machine set to English
+    // (United States): nineteen English tags beginning with the Caribbean and
+    // reaching the United States seventeenth. A stored bare "en" read as "the
+    // first of the family" is Caribbean on that machine, which is #21.
+
+    fn offered_in_windows_order() -> Vec<LanguageChoice> {
+        [
+            ("en-029", "English (Caribbean)"),
+            ("en-AU", "English (Australia)"),
+            ("en-GB", "English (United Kingdom)"),
+            ("fr-FR", "French (France)"),
+            ("en-US", "English (United States)"),
+            ("en-ZA", "English (South Africa)"),
+        ]
+        .into_iter()
+        .map(|(tag, name)| LanguageChoice {
+            tag: tag.to_string(),
+            name: name.to_string(),
+            available: true,
+        })
+        .collect()
+    }
+
+    #[test]
+    fn test_a_stored_tag_that_is_offered_is_used_exactly_as_stored() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(
+            language_to_use("en-AU", Some("en-US"), &offered),
+            Some("en-AU".to_string())
+        );
+        assert_eq!(
+            language_to_use("en-AU", None, &offered),
+            Some("en-AU".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_bare_stored_language_resolves_to_the_region_this_machine_is_set_to() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(
+            language_to_use("en", Some("en-US"), &offered),
+            Some("en-US".to_string()),
+            "a bare en on an en-US machine landed somewhere other than the \
+             machine's own region"
+        );
+    }
+
+    #[test]
+    fn test_a_bare_stored_language_follows_the_machine_to_whichever_region_it_has() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(
+            language_to_use("en", Some("en-GB"), &offered),
+            Some("en-GB".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(
+            language_to_use("en", Some("fr-FR"), &offered),
+            Some("en-029".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_stored_language_nothing_offers_resolves_to_nothing() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(language_to_use("de", Some("de-DE"), &offered), None);
+    }
+
+    #[test]
+    fn test_the_stored_tag_and_the_machines_tag_are_matched_without_regard_to_case() {
+        let offered = offered_in_windows_order();
+
+        assert_eq!(
+            language_to_use("EN", Some("en-us"), &offered),
+            Some("en-US".to_string())
+        );
+        assert_eq!(
+            language_to_use("EN-gb", Some("en-US"), &offered),
+            Some("en-GB".to_string())
+        );
+    }
+
+    #[test]
+    fn test_the_machines_own_region_wins_only_when_it_is_available() {
+        let mut offered = offered_in_windows_order();
+        offered
+            .iter_mut()
+            .find(|choice| choice.tag == "en-US")
+            .expect("the list holds en-US")
+            .available = false;
+
+        assert_eq!(
+            language_to_use("en", Some("en-US"), &offered),
+            Some("en-029".to_string()),
+            "a region nothing can check was chosen over one something can"
+        );
     }
 
     // ── The Speller trait, called through a trait object ────────────────
