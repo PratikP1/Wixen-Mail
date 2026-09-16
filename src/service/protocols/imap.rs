@@ -2596,7 +2596,7 @@ mod tests {
             (NameAttribute::All, "\\All"),
             (NameAttribute::Archive, "\\Archive"),
             (NameAttribute::Drafts, "\\Drafts"),
-            (NameAttribute::Flagged, "\\Flagged"),
+            (NameAttribute::Flagged, "\\Flagged"), // not a message flag
             (NameAttribute::Junk, "\\Junk"),
             (NameAttribute::Sent, "\\Sent"),
             (NameAttribute::Trash, "\\Trash"),
