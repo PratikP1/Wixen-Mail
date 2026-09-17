@@ -2217,6 +2217,14 @@ fn protocol_error(doing: &'static str) -> impl Fn(async_imap::error::Error) -> E
     }
 }
 
+/// How a timeout's error begins.
+///
+/// Named so that `application::mail_sync::WhyTheServerStopped` can tell a
+/// server that took too long from a connection that went, both of which are
+/// `Error::Network`, by a phrase this program wrote rather than by anything
+/// the server sent.
+pub(crate) const THE_SERVER_STOPPED_RESPONDING: &str = "The mail server stopped responding while";
+
 /// Bound an operation, and say which one gave up.
 ///
 /// A message that names the step is the difference between an error somebody
@@ -2228,7 +2236,7 @@ async fn with_timeout<F: std::future::Future>(
 ) -> Result<F::Output> {
     tokio::time::timeout(limit, operation)
         .await
-        .map_err(|_| Error::Network(format!("The mail server stopped responding while {doing}")))
+        .map_err(|_| Error::Network(format!("{THE_SERVER_STOPPED_RESPONDING} {doing}")))
 }
 
 #[cfg(test)]

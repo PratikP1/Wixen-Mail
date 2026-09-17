@@ -35,13 +35,12 @@
 //! why it is not the topic every other status line shares.
 
 /// How much of a folder is on this computer after a chunk landed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HowMuchIsHere {
-    /// How many of the folder's messages this computer now holds.
-    pub held: usize,
-    /// How many the server says the folder holds.
-    pub total_on_server: usize,
-}
+///
+/// Moved to `bringing_everything_down` on 2026-09-17, where the download of
+/// everything decides from it; re-exported here because the window's
+/// whole-folder request still builds one, and that request retires with
+/// this loop (10-05) rather than moving first.
+pub use crate::application::bringing_everything_down::HowMuchIsHere;
 
 /// Why a whole-folder request ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,12 +137,11 @@ pub fn until_the_whole_folder_is_here(
         if here.held >= here.total_on_server {
             break HowTheRequestEnded::TheWholeFolderIsHere { held: here.held };
         }
-        // Nothing new came down, so asking again would ask forever. Checked
-        // after the completeness test rather than before it, because a folder
-        // whose last chunk finished it also brings nothing new to the next one,
-        // and reporting that as a server that stopped would turn every
-        // successful request into a failed one.
-        if held_before == Some(here.held) {
+        // Nothing new came down, so asking again would ask forever. The rule
+        // lives with the download of everything now, which asks the same
+        // question of every folder, and this loop asks it there rather than
+        // keeping a second copy.
+        if crate::application::bringing_everything_down::stopped_coming_down(held_before, here) {
             break HowTheRequestEnded::ItStoppedComingDown {
                 held: here.held,
                 total_on_server: here.total_on_server,

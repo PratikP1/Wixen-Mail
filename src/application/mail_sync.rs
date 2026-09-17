@@ -31,12 +31,20 @@ pub fn more_to_fetch(held: usize, total_on_server: usize) -> bool {
     held < total_on_server
 }
 
-/// How many messages a first look at a folder brings down.
+/// How many messages one chunk of a download asks a folder for.
 ///
-/// Enough that somebody opening their inbox sees a full screen and can keep
-/// arrowing for a long time; small enough that the first sync of an old
-/// mailbox finishes rather than appearing to hang. The rest arrive when the
-/// list is asked to go further back.
+/// A first look at a folder brings down this many, and so does every chunk
+/// after it: `bringing_everything_down::HEADERS_PER_CHUNK` is this constant
+/// by name, and the download of everything asks chunk after chunk until the
+/// folder is here. Enough that somebody opening their inbox sees a full
+/// screen at once; small enough that one ask of an old mailbox finishes
+/// rather than appearing to hang.
+///
+/// Until 2026-09-17 this read "How many messages a first look at a folder
+/// brings down... The rest arrive when the list is asked to go further
+/// back", and a first look was the whole of what came down unless a person
+/// asked for more. It is no longer the whole of anything: it is the size of
+/// one step.
 pub const INITIAL_FETCH_LIMIT: usize = 500;
 
 /// What one folder's sync did.
@@ -1719,6 +1727,82 @@ pub enum Ending {
     /// arrive: carrying on would ask the server for the rest and be refused
     /// once per message, and report hundreds of failures for one setting.
     ReadingWasTurnedOff(String),
+    /// The caller asked it to stop, and it stopped before the next message.
+    ///
+    /// `after` is how many messages of the chunk had been attempted.
+    Stopped { after: usize },
+    /// The server stopped answering: this many fetches in a row failed with
+    /// something that was not the gate's refusal, so the rest of the chunk
+    /// was not asked for.
+    ///
+    /// `after` is how many messages had been attempted before the run of
+    /// failures began. `because` is this program's reading of the failure's
+    /// kind, never the server's words.
+    TheServerStoppedAnswering {
+        after: usize,
+        because: WhyTheServerStopped,
+    },
+}
+
+/// How many fetches in a row have to fail before the server is taken to
+/// have stopped answering.
+///
+/// Three is a decision of 2026-09-17, not a measurement. One refusal can be
+/// one bad message: a body the server cannot render, which ledger 11 lists
+/// nothing like but the shape exists. Three in a row is the server, and
+/// asking it for the rest of a chunk of fifty would be asking forty-seven
+/// more times for the same answer. A provider observed doing something else
+/// would move it; nothing has observed one.
+pub const REFUSALS_THAT_MEAN_THE_SERVER_HAS_STOPPED: usize = 3;
+
+/// Why a server stopped answering, in this program's words.
+///
+/// Classified from the kind of the error and never from its text, because a
+/// sentence built from `format!("{e}")` would read a server-controlled string
+/// aloud. The server's text goes to the log line and nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhyTheServerStopped {
+    /// The server answered and said no.
+    Refused,
+    /// The connection went while it was being asked.
+    ConnectionLost,
+    /// The server did not answer within the time allowed.
+    TimedOut,
+    /// A failure of some other kind.
+    SomethingElse,
+}
+
+impl WhyTheServerStopped {
+    /// This program's reading of a failure, from its kind alone.
+    ///
+    /// A timeout and a dropped connection are both `Error::Network`; they
+    /// are told apart by the phrase the IMAP layer writes on a timeout,
+    /// which is this program's and never the server's.
+    pub fn from_the_kind_of(error: &crate::common::Error) -> Self {
+        use crate::common::Error;
+        match error {
+            Error::Protocol(_) | Error::Authentication(_) => Self::Refused,
+            Error::Network(said)
+                if said.starts_with(
+                    crate::service::protocols::imap::THE_SERVER_STOPPED_RESPONDING,
+                ) =>
+            {
+                Self::TimedOut
+            }
+            Error::Network(_) => Self::ConnectionLost,
+            _ => Self::SomethingElse,
+        }
+    }
+
+    /// The clause a person hears, one per arm.
+    fn as_a_clause(self) -> &'static str {
+        match self {
+            Self::Refused => "it refused",
+            Self::ConnectionLost => "the connection was lost",
+            Self::TimedOut => "it took too long to answer",
+            Self::SomethingElse => "something went wrong",
+        }
+    }
 }
 
 /// What the read gate is told this fetch is doing, for its refusal sentence.
@@ -1784,7 +1868,10 @@ pub const NOTHING_TO_FETCH: &str = "Every message in this account already has it
      nothing to fetch.";
 
 /// How many messages arrived, as a clause.
-fn arrived(count: usize) -> String {
+///
+/// Shared with `bringing_everything_down`, whose text report is the same two
+/// clauses, so the two runs cannot come to word the same fact two ways.
+pub(crate) fn arrived(count: usize) -> String {
     match count {
         0 => "No message text arrived".to_string(),
         1 => "The text of 1 message arrived".to_string(),
@@ -1797,7 +1884,7 @@ fn arrived(count: usize) -> String {
 /// Said even when it is none, because a run that gives only its successes
 /// reads as complete, and a person cannot tell a run that fetched twelve of
 /// twelve from one that fetched twelve of two hundred.
-fn did_not_arrive(count: usize) -> String {
+pub(crate) fn did_not_arrive(count: usize) -> String {
     match count {
         0 => "nothing failed".to_string(),
         1 => "1 message could not be fetched".to_string(),
@@ -1814,6 +1901,16 @@ pub fn what_the_fetch_did(outcome: &Backfill) -> String {
             let stopped = match &done.ended {
                 Ending::WentThroughTheWholeList => String::new(),
                 Ending::ReadingWasTurnedOff(why) => format!(" {why}"),
+                Ending::Stopped { after } => format!(
+                    " Stopped after {}, as you asked.",
+                    crate::service::caldav::how_many(*after, "message")
+                ),
+                Ending::TheServerStoppedAnswering { after, because } => format!(
+                    " The mail server stopped answering after {}: {}. It will be asked again \
+                     later.",
+                    crate::service::caldav::how_many(*after, "message"),
+                    because.as_a_clause()
+                ),
             };
             format!(
                 "{}, and {}.{stopped}",
@@ -1831,8 +1928,9 @@ pub fn what_the_fetch_did(outcome: &Backfill) -> String {
 ///
 /// Not generic, deliberately. [`Mailbox`] is the seam that lets the routine be
 /// tested without a server, and a caller has a real controller and should not
-/// have to know the seam is there. The work is in [`fetch_over_a_mailbox`]
-/// just below.
+/// have to know the seam is there. The work is in
+/// [`fetch_all_the_missing_text`] just below, which hands the list over to
+/// [`fetch_over_a_mailbox`] a chunk at a time.
 pub async fn fetch_the_missing_message_text(
     controller: &MailController,
     cache: &MessageCache,
@@ -1840,13 +1938,20 @@ pub async fn fetch_the_missing_message_text(
     allowed: crate::application::allowed::Allowed,
     say: &dyn Fn(&str),
 ) -> Result<Backfill> {
-    fetch_over_a_mailbox(controller, cache, account_id, allowed, say).await
+    fetch_all_the_missing_text(controller, cache, account_id, allowed, say).await
 }
 
-/// The backfill, against anything that answers like a mailbox.
+/// The whole backfill, against anything that answers like a mailbox.
 ///
-/// Where the work is, and where every test of it runs.
-pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
+/// Reads the whole list itself, hands it over in chunks of
+/// [`crate::application::bringing_everything_down::TEXT_PER_CHUNK_MESSAGES`],
+/// never stops, and folds the chunk endings into one [`Backfill`]: a chunk
+/// that went through is followed by the next, and a chunk that ended for any
+/// other reason ends the run with that reason. The one entry point the window
+/// has, kept as it was for it; the download of everything (10-05) asks
+/// [`fetch_over_a_mailbox`] for one chunk at a time instead and decides the
+/// next chunk itself.
+pub(crate) async fn fetch_all_the_missing_text<M: Mailbox>(
     server: &M,
     cache: &MessageCache,
     account_id: &str,
@@ -1882,9 +1987,71 @@ pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
         could_not: 0,
         ended: Ending::WentThroughTheWholeList,
     };
-    for (attempted, message) in wanted.iter().enumerate() {
+    let never_stop = || false;
+    let mut done_before = 0usize;
+    for chunk in
+        wanted.chunks(crate::application::bringing_everything_down::TEXT_PER_CHUNK_MESSAGES)
+    {
+        let after_each = |attempted_in_this_chunk: usize| {
+            let attempted = done_before + attempted_in_this_chunk;
+            if says_where_it_is(attempted, total) {
+                say(&how_far_the_fetch_has_got(attempted, total));
+            }
+        };
+        let this_chunk = fetch_over_a_mailbox(server, cache, chunk, &never_stop, &after_each).await;
+        done.fetched += this_chunk.fetched;
+        done.could_not += this_chunk.could_not;
+        done_before += chunk.len();
+        if this_chunk.ended != Ending::WentThroughTheWholeList {
+            done.ended = this_chunk.ended;
+            break;
+        }
+    }
+
+    let outcome = Backfill::Ran(done);
+    say(&what_the_fetch_did(&outcome));
+    Ok(outcome)
+}
+
+/// One chunk of the text pass, against anything that answers like a mailbox.
+///
+/// Asks for each message in `chunk` in turn, asks `stop` between messages
+/// and stops before the next one when it answers yes, and reads the server's
+/// answer to the chunk rather than only to each message: a run of
+/// [`REFUSALS_THAT_MEAN_THE_SERVER_HAS_STOPPED`] failures that are not the
+/// gate's refusal ends the chunk, so a provider that has started refusing is
+/// asked three more times and not fifty. `after_each` is told how many of
+/// the chunk have been attempted so far, which is what a progress line needs.
+///
+/// One chunk is one call. The caller asks what to do next and calls again,
+/// so the loop over a mailbox lives with whoever decides its order and not
+/// here.
+pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
+    server: &M,
+    cache: &MessageCache,
+    chunk: &[crate::data::message_cache::bodies::MessageToFetch],
+    stop: &dyn Fn() -> bool,
+    after_each: &dyn Fn(usize),
+) -> Backfilled {
+    let mut done = Backfilled {
+        fetched: 0,
+        could_not: 0,
+        ended: Ending::WentThroughTheWholeList,
+    };
+    let mut failures_in_a_row = 0usize;
+    for (attempted, message) in chunk.iter().enumerate() {
+        // Between messages, so the one being fetched finishes and the next is
+        // not started. Asked before the first as well, because a stop that
+        // arrived while the previous chunk was ending is still a stop.
+        if stop() {
+            done.ended = Ending::Stopped { after: attempted };
+            break;
+        }
         match fetch_and_store_one(server, cache, message).await {
-            Ok(()) => done.fetched += 1,
+            Ok(()) => {
+                done.fetched += 1;
+                failures_in_a_row = 0;
+            }
             // Told apart from an ordinary failure by the one function that
             // answers that question. Somebody turning reading off while this
             // runs is not hundreds of messages that would not arrive: going on
@@ -1905,16 +2072,24 @@ pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
                 // reason.
                 tracing::warn!("Could not fetch the text of message {}: {e}", message.uid);
                 done.could_not += 1;
+                failures_in_a_row += 1;
+                // The server's answer to the chunk, read here rather than
+                // counted once per message: a run of failures this long is
+                // the server and not a message, and the rest of the chunk
+                // would be the same answer forty-seven more times.
+                if failures_in_a_row >= REFUSALS_THAT_MEAN_THE_SERVER_HAS_STOPPED {
+                    done.ended = Ending::TheServerStoppedAnswering {
+                        after: attempted + 1 - failures_in_a_row,
+                        because: WhyTheServerStopped::from_the_kind_of(&e),
+                    };
+                    after_each(attempted + 1);
+                    break;
+                }
             }
         }
-        if says_where_it_is(attempted + 1, total) {
-            say(&how_far_the_fetch_has_got(attempted + 1, total));
-        }
+        after_each(attempted + 1);
     }
-
-    let outcome = Backfill::Ran(done);
-    say(&what_the_fetch_did(&outcome));
-    Ok(outcome)
+    done
 }
 
 /// Fetch one message, read it, and store its text.
@@ -2368,6 +2543,11 @@ mod tests {
         /// first fetch" is a claim about the order of two different kinds of
         /// event, and two lists cannot be interleaved after the fact.
         happened: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        /// A server that answers the first fetches and then refuses every
+        /// one from this fetch on, counting from one. What a provider that
+        /// has had enough of a run looks like from in here, as against
+        /// `bodies`, which is about one message.
+        refuses_from_the_nth_fetch: Option<usize>,
     }
 
     /// How a scripted server answers a request for one message's whole text.
@@ -2399,6 +2579,7 @@ mod tests {
                 answers_a_move_with: crate::service::protocols::imap::Moved::Moved,
                 bodies: std::collections::HashMap::new(),
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+                refuses_from_the_nth_fetch: None,
             }
         }
     }
@@ -2506,6 +2687,20 @@ mod tests {
 
         async fn fetch_message_body(&self, _folder: &str, uid: u32) -> Result<Vec<u8>> {
             self.happened.borrow_mut().push(format!("fetched {uid}"));
+            let this_fetch = self
+                .happened
+                .borrow()
+                .iter()
+                .filter(|line| line.starts_with("fetched"))
+                .count();
+            if self
+                .refuses_from_the_nth_fetch
+                .is_some_and(|from| this_fetch >= from)
+            {
+                return Err(crate::common::Error::Protocol(
+                    "The mail server refused while fetching a message.".to_string(),
+                ));
+            }
             match self.bodies.get(&uid) {
                 Some(AnswersABodyWith::AFailure) => Err(crate::common::Error::Protocol(
                     "The mail server would not hand that message over.".to_string(),
@@ -2586,10 +2781,296 @@ mod tests {
         let outcome = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
-            .block_on(fetch_over_a_mailbox(server, cache, "acct", allowed, &say))
+            .block_on(fetch_all_the_missing_text(
+                server, cache, "acct", allowed, &say,
+            ))
             .expect("the backfill answers");
         let log = happened.borrow().clone();
         (outcome, log)
+    }
+
+    /// Ask for one chunk of everything the account is missing, handing back
+    /// what it came to and how many times the server was asked.
+    fn one_chunk(
+        server: &Scripted,
+        cache: &MessageCache,
+        stop: &dyn Fn() -> bool,
+    ) -> (Backfilled, usize) {
+        let chunk = cache
+            .messages_with_no_text_here("acct")
+            .expect("the messages with no text here");
+        let done = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(fetch_over_a_mailbox(server, cache, &chunk, stop, &|_| {}));
+        let asked = server
+            .happened
+            .borrow()
+            .iter()
+            .filter(|line| line.starts_with("fetched"))
+            .count();
+        (done, asked)
+    }
+
+    #[test]
+    fn test_a_server_that_refuses_three_in_a_row_ends_the_chunk_after_six_asks_and_not_ten() {
+        // The provider's answer read per chunk rather than per message. A
+        // server that starts refusing after three is asked three more times,
+        // which is the bound, and not for the other four.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 10);
+        let server = Scripted {
+            refuses_from_the_nth_fetch: Some(4),
+            ..Default::default()
+        };
+
+        let (done, asked) = one_chunk(&server, &cache, &|| false);
+
+        assert_eq!(
+            done,
+            Backfilled {
+                fetched: 3,
+                could_not: 3,
+                ended: Ending::TheServerStoppedAnswering {
+                    after: 3,
+                    because: WhyTheServerStopped::Refused,
+                },
+            }
+        );
+        assert_eq!(asked, 6, "the server was asked for the rest of the chunk");
+    }
+
+    #[test]
+    fn test_two_refusals_in_a_row_and_then_an_answer_do_not_end_the_chunk() {
+        // The boundary of the bound: two bad messages are two bad messages,
+        // and the third being answered means the server is still there.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 4);
+        let mut server = Scripted::default();
+        // Newest first, so the second and third asked for are uids 3 and 2.
+        server.bodies.insert(3, AnswersABodyWith::AFailure);
+        server.bodies.insert(2, AnswersABodyWith::AFailure);
+
+        let (done, asked) = one_chunk(&server, &cache, &|| false);
+
+        assert_eq!(
+            done,
+            Backfilled {
+                fetched: 2,
+                could_not: 2,
+                ended: Ending::WentThroughTheWholeList,
+            }
+        );
+        assert_eq!(asked, 4);
+    }
+
+    #[test]
+    fn test_a_chunk_stops_before_the_next_message_when_asked_to() {
+        // What Pause will hand in. Asked between messages, so the one being
+        // fetched finishes and the next is not started.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 5);
+        let server = Scripted::default();
+        let asked_so_far = std::rc::Rc::clone(&server.happened);
+        let stop_after_two = move || {
+            asked_so_far
+                .borrow()
+                .iter()
+                .filter(|line| line.starts_with("fetched"))
+                .count()
+                >= 2
+        };
+
+        let (done, asked) = one_chunk(&server, &cache, &stop_after_two);
+
+        assert_eq!(
+            done,
+            Backfilled {
+                fetched: 2,
+                could_not: 0,
+                ended: Ending::Stopped { after: 2 },
+            }
+        );
+        assert_eq!(asked, 2, "it went on asking after being told to stop");
+    }
+
+    #[test]
+    fn test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message()
+     {
+        // The kept entry point folds the chunk endings: a server that has
+        // stopped ends the run, so twelve thousand messages are not twelve
+        // thousand refusals counted one at a time.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 120);
+        let server = Scripted {
+            refuses_from_the_nth_fetch: Some(4),
+            ..Default::default()
+        };
+
+        let (outcome, log) = backfill(&server, &cache, true);
+
+        let Backfill::Ran(done) = &outcome else {
+            panic!("the run did not start: {outcome:?}");
+        };
+        assert_eq!(done.fetched, 3);
+        assert_eq!(done.could_not, 3);
+        assert!(
+            matches!(done.ended, Ending::TheServerStoppedAnswering { .. }),
+            "the run did not end on the server stopping: {:?}",
+            done.ended
+        );
+        assert_eq!(
+            log.iter()
+                .filter(|line| line.starts_with("fetched"))
+                .count(),
+            6,
+            "the run went on asking a server that had stopped"
+        );
+    }
+
+    #[test]
+    fn test_the_whole_list_run_hands_the_list_over_in_chunks_and_reaches_the_end_of_it() {
+        // More than one chunk, all answered, so a run folded from chunks
+        // fetches exactly as much as the one long loop did.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 120);
+        let server = Scripted::default();
+
+        let (outcome, _) = backfill(&server, &cache, true);
+
+        assert_eq!(
+            outcome,
+            Backfill::Ran(Backfilled {
+                fetched: 120,
+                could_not: 0,
+                ended: Ending::WentThroughTheWholeList,
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_said_no_is_read_as_a_refusal() {
+        let refused = crate::common::Error::Protocol("NO [SERVERBUG] whatever it said".into());
+        let no_sign_in = crate::common::Error::Authentication("whatever it said".into());
+
+        assert_eq!(
+            WhyTheServerStopped::from_the_kind_of(&refused),
+            WhyTheServerStopped::Refused
+        );
+        assert_eq!(
+            WhyTheServerStopped::from_the_kind_of(&no_sign_in),
+            WhyTheServerStopped::Refused
+        );
+    }
+
+    #[test]
+    fn test_a_connection_that_went_is_read_as_lost() {
+        let went = crate::common::Error::Network(
+            "The connection to the mail server failed while fetching: reset by peer".into(),
+        );
+
+        assert_eq!(
+            WhyTheServerStopped::from_the_kind_of(&went),
+            WhyTheServerStopped::ConnectionLost
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_took_too_long_is_read_as_timed_out_by_this_programs_own_phrase() {
+        // Both a timeout and a dropped connection are Error::Network. They
+        // are told apart by the phrase the IMAP layer writes on a timeout,
+        // which is this program's and not the server's.
+        let slow = crate::common::Error::Network(format!(
+            "{} fetching a message",
+            crate::service::protocols::imap::THE_SERVER_STOPPED_RESPONDING
+        ));
+
+        assert_eq!(
+            WhyTheServerStopped::from_the_kind_of(&slow),
+            WhyTheServerStopped::TimedOut
+        );
+    }
+
+    #[test]
+    fn test_any_other_failure_is_read_as_something_else() {
+        let other = crate::common::Error::Other("could not parse".into());
+
+        assert_eq!(
+            WhyTheServerStopped::from_the_kind_of(&other),
+            WhyTheServerStopped::SomethingElse
+        );
+    }
+
+    #[test]
+    fn test_the_server_stopping_is_worded_by_us_with_one_clause_per_reason() {
+        let report = |because| {
+            what_the_fetch_did(&Backfill::Ran(Backfilled {
+                fetched: 3,
+                could_not: 3,
+                ended: Ending::TheServerStoppedAnswering { after: 3, because },
+            }))
+        };
+
+        assert_eq!(
+            report(WhyTheServerStopped::Refused),
+            "The text of 3 messages arrived, and 3 messages could not be fetched. The mail \
+             server stopped answering after 3 messages: it refused. It will be asked again \
+             later."
+        );
+        for (because, clause) in [
+            (
+                WhyTheServerStopped::ConnectionLost,
+                "the connection was lost",
+            ),
+            (WhyTheServerStopped::TimedOut, "it took too long to answer"),
+            (WhyTheServerStopped::SomethingElse, "something went wrong"),
+        ] {
+            let said = report(because);
+            assert!(
+                said.contains(&format!("after 3 messages: {clause}.")),
+                "{because:?} was not worded as \"{clause}\": {said}"
+            );
+            assert!(
+                said.ends_with("It will be asked again later."),
+                "{because:?} does not say what happens next: {said}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_stop_somebody_asked_for_is_said_as_theirs() {
+        let said = what_the_fetch_did(&Backfill::Ran(Backfilled {
+            fetched: 3,
+            could_not: 0,
+            ended: Ending::Stopped { after: 3 },
+        }));
+
+        assert_eq!(
+            said,
+            "The text of 3 messages arrived, and nothing failed. Stopped after 3 messages, as \
+             you asked."
+        );
+    }
+
+    #[test]
+    fn test_no_sentence_about_the_server_stopping_carries_a_string_the_server_sent() {
+        // The error's text goes to the log line and nowhere else. A server
+        // whose refusal text is unmistakable is asked for a chunk, and the
+        // sentence a person hears is checked for it.
+        let (cache, folder_id, _) = a_cache();
+        an_account_with_no_message_text(&cache, folder_id, 4);
+        let server = Scripted {
+            refuses_from_the_nth_fetch: Some(1),
+            ..Default::default()
+        };
+
+        let (done, _) = one_chunk(&server, &cache, &|| false);
+
+        let said = what_the_fetch_did(&Backfill::Ran(done));
+        assert!(
+            !said.contains("refused while fetching a message"),
+            "the sentence carries the server's own words: {said}"
+        );
     }
 
     #[test]
