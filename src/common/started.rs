@@ -115,9 +115,26 @@ pub fn usable_line(rows: usize, since_start: Duration) -> String {
     )
 }
 
+/// Word the line the window writes when the Settings dialog is built and
+/// about to be shown.
+///
+/// Not written yet: the red half of 09-09, which names the shape the
+/// harness will parse.
+pub fn settings_built_line(_building: Duration) -> String {
+    String::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_the_settings_built_line_is_held_byte_for_byte() {
+        assert_eq!(
+            settings_built_line(Duration::from_millis(321)),
+            "settings built in 321 ms"
+        );
+    }
 
     #[test]
     fn test_nothing_has_elapsed_before_the_mark_and_something_has_after() {
