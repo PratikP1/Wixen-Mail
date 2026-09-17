@@ -41,6 +41,10 @@ pub struct MessageToFetch {
     pub folder_path: String,
     /// The server's own number for this message inside that folder.
     pub uid: u32,
+    /// How big the message is, as the server said when its headers came
+    /// down, so a run can bound a chunk by bytes before asking. Nought for a
+    /// row stored before sizes were kept.
+    pub size_bytes: u64,
 }
 
 /// A stored message body.
@@ -630,6 +634,7 @@ impl MessageCache {
                 message_id: row.get(0)?,
                 folder_path: row.get(1)?,
                 uid: row.get(2)?,
+                size_bytes: 0,
             })
         })
         .map_err(|e| Error::Other(format!("Failed to list the mail with no text: {}", e)))?
@@ -1670,6 +1675,53 @@ mod tests {
             listed(&cache, "a2"),
             vec![theirs],
             "the list crossed accounts the other way"
+        );
+    }
+
+    /// The sizes the list answers, newest first, beside each uid.
+    fn listed_sizes(cache: &MessageCache) -> Vec<(u32, u64)> {
+        cache
+            .messages_with_no_text_here("a1")
+            .expect("the messages with no text here")
+            .iter()
+            .map(|message| (message.uid, message.size_bytes))
+            .collect()
+    }
+
+    #[test]
+    fn test_a_listed_message_carries_the_size_the_server_gave_it() {
+        // The size arrives with the headers and is stored beside them, so a
+        // download of everything can bound a chunk by bytes before it asks
+        // and say how much is still to come.
+        let cache = body_test_cache();
+        let sized = cache.save_message(&cached(2, "With a size")).unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE messages SET size_bytes = 2048 WHERE id = ?1",
+                rusqlite::params![sized],
+            )
+            .unwrap();
+
+        assert_eq!(
+            listed_sizes(&cache),
+            vec![(2, 2048)],
+            "the list does not carry the row's size"
+        );
+    }
+
+    #[test]
+    fn test_a_row_stored_before_sizes_were_kept_is_listed_with_a_size_of_nought() {
+        // A row written before sizes were kept has none, and nought is the
+        // honest answer for it: a chunk bounded by bytes then takes it as
+        // free, which errs towards asking rather than towards skipping.
+        let cache = body_test_cache();
+        cache.save_message(&cached(1, "From before sizes")).unwrap();
+
+        assert_eq!(
+            listed_sizes(&cache),
+            vec![(1, 0)],
+            "a row with no size was not listed as nought"
         );
     }
 

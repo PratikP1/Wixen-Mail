@@ -35,13 +35,12 @@
 //! why it is not the topic every other status line shares.
 
 /// How much of a folder is on this computer after a chunk landed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HowMuchIsHere {
-    /// How many of the folder's messages this computer now holds.
-    pub held: usize,
-    /// How many the server says the folder holds.
-    pub total_on_server: usize,
-}
+///
+/// Moved to `bringing_everything_down` on 2026-09-17, where the download of
+/// everything decides from it; re-exported here because the window's
+/// whole-folder request still builds one, and that request retires with
+/// this loop (10-05) rather than moving first.
+pub use crate::application::bringing_everything_down::HowMuchIsHere;
 
 /// Why a whole-folder request ended.
 #[derive(Debug, Clone, PartialEq, Eq)]

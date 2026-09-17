@@ -14,6 +14,7 @@ pub mod attaching;
 pub mod autosave;
 pub mod blocking;
 pub mod body_safety;
+pub mod bringing_everything_down;
 pub mod caldav_sync;
 pub mod calendar;
 pub mod calendar_conflict;
