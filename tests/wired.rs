@@ -4084,19 +4084,30 @@ fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
     );
 }
 
-/// A PGP message is opened before the reader's document is built.
+/// Every surface that shows a message asks what it shows and says, and folds
+/// the answer in.
 ///
 /// Two halves and both are needed. The armour has to be handed to the opener,
 /// and the reason it did not open has to reach the bar. Wiring the first alone
 /// decrypts messages nobody sees the result of; wiring the second alone leaves
 /// every message saying the general sentence.
 ///
+/// Six surfaces, in [`THE_SURFACES`]. Until 2026-09-16 this named two, the
+/// two that worked, and stayed green while the default reader, both
+/// conversation readings and the preview pane bypassed the key (#51). A guard
+/// that names the surfaces it was written against is green for exactly as
+/// long as no other surface exists, which is the reading the table replaces.
+///
 /// The order matters too and is not checked here: the words replace the armour
 /// before `single_message` reads the body, which is what stops the reader
-/// saying both. `presentation::reader_text` measures that.
+/// saying both, and the envelope goes in before the signature so it is spoken.
+/// `application::reading_a_message` and `presentation::reader_text` measure
+/// those.
 ///
-/// What this cannot see: whether the message really opens.
-/// `service::pgp::keys` measures that.
+/// What this cannot see: whether the message really opens, which
+/// `service::pgp::keys` measures; whether the fold reaches the screen, which
+/// `presentation::reader_text` measures; and a seventh surface that is not in
+/// the table.
 #[test]
 fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -4111,15 +4122,16 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
          offers a PGP message to the key on this computer"
     );
 
-    for opening in ["fn open_in_the_text_reader(", "fn read_the_whole_message("] {
-        let body = body_of(&app, opening);
-        assert!(
-            body.contains("what_a_message_shows_and_says("),
-            "{opening} builds a message without ever offering its armour to the \
-             private key on this computer, so a PGP message never opens there"
-        );
-    }
+    let bypassing = surfaces_that_bypass_the_composition(&app);
+    assert!(
+        bypassing.is_empty(),
+        "these surfaces show a message without offering its armour to the private key \
+         on this computer, so a PGP message never opens there and nothing says what \
+         its envelope or its signature was worth:\n{}",
+        bypassing.join("\n")
+    );
 
+    // The fold, on the two surfaces that compose a document in the window.
     assert!(
         body_of(&app, "fn whole_message_reading(").contains("with_what_is_said("),
         "reading a message aloud never says why a PGP message did not open, so the \
@@ -4129,6 +4141,27 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
         body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
         "the reader never says why a PGP message did not open, so all four reasons \
          arrive as the one general sentence"
+    );
+
+    // And on the composer the other four go through, which folds for one
+    // message and says each finding where it begins for several.
+    let composers = fs::read_to_string("src/presentation/reader_text.rs").expect("the composers");
+    let conversation = body_of(&composers, "pub fn conversation(");
+    assert!(
+        conversation.contains("with_what_is_said("),
+        "the page's composer never folds in what is said about one message, so the \
+         Formatted reader and the preview open a PGP message saying nothing"
+    );
+    assert!(
+        conversation.contains("one_of_several("),
+        "the page's composer never says a finding where one message of several \
+         begins, so a PGP message inside a conversation shows its armour with nothing \
+         said, on the page and in the text reader alike"
+    );
+    assert!(
+        body_of(&composers, "pub fn preview_html(").contains("render_thread_under_a_bar("),
+        "the preview's page is rendered with no bar, so a signed message previews as \
+         unsigned"
     );
 }
 
@@ -4188,9 +4221,19 @@ const THE_SURFACES: [(&str, &[&str], &str); 6] = [
 /// not a bypass, so a renamed function is a broken guard rather than a quiet
 /// pass.
 fn surfaces_that_bypass_the_composition(app: &str) -> Vec<String> {
-    // Not yet built: the red half. Nothing is read.
-    let _ = app;
-    Vec::new()
+    THE_SURFACES
+        .iter()
+        .filter_map(|(opener, calls, surface)| {
+            let body = body_of(app, opener);
+            let missing: Vec<&str> = calls
+                .iter()
+                .copied()
+                .filter(|call| !body.contains(call))
+                .collect();
+            (!missing.is_empty())
+                .then(|| format!("{surface}: {opener} never calls {}", missing.join(" or ")))
+        })
+        .collect()
 }
 
 /// The reading can see a surface that stopped asking.

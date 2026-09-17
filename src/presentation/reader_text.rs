@@ -1769,7 +1769,7 @@ impl ReaderDocument {
     /// [`with_smime_envelope`](Self::with_smime_envelope), then
     /// [`with_signature`](Self::with_signature). The order is the load-bearing
     /// part and it is written here once: a signature verdict puts
-    /// [`HOW_IT_WAS_CHECKED`] into the bar and [`said_before_the_message`] cuts
+    /// `HOW_IT_WAS_CHECKED` into the bar and [`said_before_the_message`] cuts
     /// there, so a sentence folded in after one is on screen and never spoken.
     /// Two surfaces got that order right by each carrying the comment; four
     /// never folded anything at all (#51). A surface asks

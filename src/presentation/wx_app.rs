@@ -11243,22 +11243,6 @@ fn whole_message_reading(
     with_conversation_count(in_conversation, &reading)
 }
 
-/// Read a module's records out of the cache and send them to the UI.
-///
-/// Every panel outside mail was built, wired to a `UIUpdate` variant, and then
-/// left with nothing that ever sent one, so five of the six modules rendered
-/// empty in a running build no matter what was stored. This is the path that
-/// closes that gap: it runs when a module is opened and pushes what the cache
-/// holds into the panel that displays it.
-///
-/// Failures are announced rather than swallowed. A panel that is empty because
-/// the read failed looks exactly like a panel that is empty because there is
-/// nothing to show, and those are not the same thing to someone who cannot see
-/// the window.
-///
-/// Runs on the UI thread rather than in a task: `MessageCache` wraps a rusqlite
-/// connection and is not `Sync`. The channel is unbounded, so sending never
-/// blocks.
 /// Every account whose folders belong in the tree, in the order they are drawn.
 ///
 /// `load_accounts` sorts by the ordinal D-14 stores, so moving an account with
@@ -12080,6 +12064,21 @@ pub(crate) fn persist_default_account(id: Option<&str>) {
 
 /// Read one module's stored rows and send them to the panel.
 ///
+/// Every panel outside mail was built, wired to a `UIUpdate` variant, and then
+/// left with nothing that ever sent one, so five of the six modules rendered
+/// empty in a running build no matter what was stored. This is the path that
+/// closes that gap: it runs when a module is opened and pushes what the cache
+/// holds into the panel that displays it.
+///
+/// Failures are announced rather than swallowed. A panel that is empty because
+/// the read failed looks exactly like a panel that is empty because there is
+/// nothing to show, and those are not the same thing to someone who cannot see
+/// the window.
+///
+/// Runs on the UI thread rather than in a task: `MessageCache` wraps a rusqlite
+/// connection and is not `Sync`. The channel is unbounded, so sending never
+/// blocks.
+///
 /// `showing` is which window the calendar is to be read for. It is a parameter
 /// rather than something worked out here for the same reason `account_id` is:
 /// this runs off the state and does not hold it, and every caller already
@@ -12674,37 +12673,6 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
     }
 }
 
-/// Read a folder's messages out of the cache and send them to the list.
-///
-/// Runs on the UI thread for the same reason `load_module_data` does:
-/// `MessageCache` wraps a rusqlite connection and is not `Sync`. The channel
-/// is unbounded, so sending never blocks.
-///
-/// `limit` bounds the read the same way [`ALL_INBOXES_LIMIT`] bounds the
-/// combined list: a folder that has grown into the tens of thousands of
-/// messages this module already plans for is read for one screen at a time
-/// rather than in full on every open. Callers pass
-/// [`WxUIState::message_list_limit`], which starts at
-/// [`FOLDER_LIST_PAGE_SIZE`] and grows when Get Older Messages asks for more.
-///
-/// Bring a mailbox in from a file, keeping the folders it was in.
-///
-/// The picker and the handing over, and nothing else. Where each folder lands
-/// is [`crate::application::import_tree`]'s answer, reading and writing the
-/// file is `service::mailbox_archive`'s, and what to say is
-/// [`crate::application::importing_messages`]'s.
-///
-/// Handed to a worker rather than done here, and that is not a nicety. This
-/// window has one helper that draws, answers the keyboard, and replies to the
-/// screen reader when it asks what is under the cursor. An archive of forty
-/// thousand messages done on that helper stops all three: arrow keys do
-/// nothing because the key press waits behind the import, nothing already
-/// queued to be spoken is spoken, and Escape does not cancel because it is in
-/// the same queue. To somebody who cannot see the screen that is silence, and
-/// silence is what a program that has died sounds like.
-///
-/// The first version of this command did the work here. It is the one shape
-/// the rest of this program goes out of its way to avoid.
 /// Read a PGP private key in from a file and put it in the credential store.
 ///
 /// Everything about the file stops at [`crate::service::pgp`]. This reads the
@@ -12713,9 +12681,11 @@ fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &
 /// message**, which is why the outcomes it matches on carry no words except the
 /// credential store's own reason.
 ///
-/// Said aloud as well as put in the status bar. Importing a key is a one-off
-/// somebody does deliberately and then wants to know the answer to, and a
-/// status bar nobody is looking at is not an answer.
+/// Said aloud, and only that. Importing a key is a one-off somebody does
+/// deliberately and then wants to know the answer to. Until 2026-09-16 this
+/// comment said the outcome was put in the status bar as well, and the body
+/// never did; a visible line to match the spoken one is owed and is in the
+/// ledger, on [`import_a_mailbox`]'s pattern, which does both.
 fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
     use crate::presentation::accessibility::announcements::Priority;
     use crate::service::pgp::{self, WhatImportingAKeyFound};
@@ -12771,6 +12741,24 @@ fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
     let _ = a11y.announce(&said, Priority::High);
 }
 
+/// Bring a mailbox in from a file, keeping the folders it was in.
+///
+/// The picker and the handing over, and nothing else. Where each folder lands
+/// is [`crate::application::import_tree`]'s answer, reading and writing the
+/// file is `service::mailbox_archive`'s, and what to say is
+/// [`crate::application::importing_messages`]'s.
+///
+/// Handed to a worker rather than done here, and that is not a nicety. This
+/// window has one helper that draws, answers the keyboard, and replies to the
+/// screen reader when it asks what is under the cursor. An archive of forty
+/// thousand messages done on that helper stops all three: arrow keys do
+/// nothing because the key press waits behind the import, nothing already
+/// queued to be spoken is spoken, and Escape does not cancel because it is in
+/// the same queue. To somebody who cannot see the screen that is silence, and
+/// silence is what a program that has died sounds like.
+///
+/// The first version of this command did the work here. It is the one shape
+/// the rest of this program goes out of its way to avoid.
 fn import_a_mailbox(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -13459,6 +13447,19 @@ fn a_folder_on_this_computer(cache: &MessageCache, account: &str, path: &str) ->
     Some(id)
 }
 
+/// Read a folder's messages out of the cache and send them to the list.
+///
+/// Runs on the UI thread for the same reason `load_module_data` does:
+/// `MessageCache` wraps a rusqlite connection and is not `Sync`. The channel
+/// is unbounded, so sending never blocks.
+///
+/// `limit` bounds the read the same way [`ALL_INBOXES_LIMIT`] bounds the
+/// combined list: a folder that has grown into the tens of thousands of
+/// messages this module already plans for is read for one screen at a time
+/// rather than in full on every open. Callers pass
+/// [`WxUIState::message_list_limit`], which starts at
+/// [`FOLDER_LIST_PAGE_SIZE`] and grows when Get Older Messages asks for more.
+///
 /// A read failure is announced rather than swallowed. An empty list because
 /// the query failed sounds exactly like an empty folder, and those are not the
 /// same thing to someone who cannot see the window.

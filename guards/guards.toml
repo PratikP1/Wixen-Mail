@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 49 records have arrived since and have not been through it.
+# 50 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4416,7 +4416,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -4438,7 +4438,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11875,7 +11875,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11891,7 +11891,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11935,7 +11935,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -14119,7 +14119,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -14648,7 +14648,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -16979,7 +16979,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -17016,10 +17016,13 @@ after = '''    let shown = crate::application::reading_a_message::WhatAMessageSh
     // The list row does not carry the attachments, only whether there are any,'''
 red = [
     "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
+    # Since the guard's companion arrived the same day: it reads the tree
+    # before splicing and refuses to splice over a real bypass.
+    "test_a_surface_that_stopped_asking_the_composition_is_named",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -17086,7 +17089,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17113,7 +17116,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17588,7 +17591,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17825,7 +17828,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -23501,4 +23504,36 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 125 },
+]
+
+# The guard that names every surface. It named two of six until 2026-09-16,
+# which is how four surfaces came to bypass the key while it stayed green
+# (#51); it reads a table of six now, each with the call its function has to
+# make. The break takes the composition out of the preview's function and
+# hands it the answer for nothing said, which is the bypass the preview had,
+# and the guard names the preview pane. Its companion, which splices the
+# same bypass in memory, goes red with it: it reads the tree first and
+# refuses to splice over a real bypass, because then it could not tell its
+# own break from the tree's. Written down as "unmoved" when the record was
+# first drafted and corrected by the first measurement. `suite` names the
+# target, which couples it to this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+[[guard]]
+name = "a surface that shows a message without asking the composition is named"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """    let shown = what_a_message_shows_and_says(cache, &message, body.clone());"""
+after = """    let shown = crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        body: body.clone(),
+        said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+    };"""
+red = [
+    "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
+    "test_a_surface_that_stopped_asking_the_composition_is_named",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
