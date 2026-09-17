@@ -263,6 +263,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   it now feels immediate on the tester's machine is his to say. The dialog writes one line to
   the log on every open, `settings built in N ms`, so a profile's log carries the number.
 
+- **Every checkbox on every Settings tab reads as a check box again, and says its new state
+  when you press Space.** Reported on 2026-09-17 from build `1.0.0-alpha.1+g7d57cd49` (#67):
+  "every checkbox on every tab except General is read as a button. Pressing one does not
+  appear to change its state." The change in that build that made Settings open faster
+  painted the six pages after General with the theme before they had any controls, and a
+  checkbox created under an already painted panel is drawn by wxWidgets instead of by
+  Windows, which strips it of its check-box role: NVDA heard "button", and Space said nothing.
+  Each page is now painted when it is built, so a checkbox is created first and painted after,
+  the order the build before alpha.1 had. Measured over the channel NVDA uses for these
+  controls, from a test that builds the real dialog and reaches each tab the way the arrow
+  keys do: every checkbox on Compose, Reading, Permissions, Feedback and Advanced answers as a
+  check box and toggles on a click, in the default and dark themes, where alpha.1 had 20 per
+  theme answering as a button.
+  One thing to know if you tested alpha.1: a checkbox on one of those tabs that you pressed
+  Space on did change and was saved, even though nothing was said. So a Permissions choice
+  made while testing may not be what it seems, and each box there is worth reading once on the
+  fixed build before trusting it.
+  Known limitations: four other windows, the Account Manager, Compose, the item editor and the
+  managers, both paint themselves with the theme and build checkboxes, and none has been read
+  for the same order. A checkbox in one of them may read as a button under NVDA if it is
+  created after its panel is painted. A reading across every window is separate work.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

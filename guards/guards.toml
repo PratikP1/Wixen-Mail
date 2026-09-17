@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 75 records have arrived since and have not been through it.
+# 76 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -24198,4 +24198,42 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 147 },
+]
+
+# ── Every Settings check box stays a check box (#67) ──────────────────────────
+#
+# A later Settings panel is painted at the end of its own build, after its
+# controls exist. From 09-09 (`8162ef57`) until 10-01.1 the six empty panels
+# were painted when the dialog was built, and every checkbox created on one
+# later inherited its text colour at creation and was made owner-drawn by
+# wxWidgets, which Windows' accessible object reports as a push button with
+# no checked state: the probe that diagnosed #67 read 45 owner-drawn rows at
+# `7d57cd49` (both build paths and a re-read of Compose in one run) and 57
+# check boxes at `3e633252`; the target reads 20 later-page check boxes per
+# theme. The break puts one later panel, Compose, back into the dialog's
+# paint, so its three check boxes are created under a painted panel again and
+# answer ROLE_SYSTEM_PUSHBUTTON with a state that does not move, which
+# reddens the Compose rows of both readings in both themes. `suite` names the
+# target, which is what lets `check.sh --suites-for` find it for a commit to
+# this file; the file has no unit tests of its own.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built`.
+[[guard]]
+name = "a later Settings panel is painted after its controls exist, so its check boxes stay check boxes"
+file = "src/presentation/wx_settings.rs"
+suite = "every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built"
+before = """        theme::paint(&general_panel, palette.main_surface());
+        theme::paint(&font_size, palette.main_surface());"""
+after = """        theme::paint(&general_panel, palette.main_surface());
+        theme::paint(&later.compose.panel, palette.main_surface());
+        theme::paint(&font_size, palette.main_surface());"""
+red = [
+    "test_every_checkbox_on_a_later_page_answers_check_button_after_set_selection",
+    "test_bm_click_toggles_the_checked_state_on_every_later_page",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs", tests = 3 },
 ]

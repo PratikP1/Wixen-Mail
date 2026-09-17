@@ -341,49 +341,76 @@ impl LaterPages {
         }
     }
 
+    // Each accessor paints its page's panel after `build_*_tab` returns and
+    // before the controls are handed back, inside `built`, so the panel is
+    // painted exactly once, on the first build, on both paths: the tab row's
+    // page-changed handler through `build_the_page_for`, and a caller of the
+    // public accessors. The order is the whole point: a child created under
+    // a panel that already carries a foreground colour inherits it at
+    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // which Windows' accessible object reports as a push button with no
+    // checked state. Painted after its controls exist, a panel hands its
+    // colour to nothing (#67, found 2026-09-17 in `1.0.0-alpha.1`).
+
     fn compose(&self) -> &ComposeTabControls {
-        self.compose
-            .built(|panel| build_compose_tab(panel, &self.config))
+        self.compose.built(|panel| {
+            let controls = build_compose_tab(panel, &self.config);
+            self.paint(&self.compose.panel);
+            controls
+        })
     }
 
     fn reading(&self) -> &ReadingTabControls {
-        self.reading
-            .built(|panel| build_reading_tab(panel, &self.config))
+        self.reading.built(|panel| {
+            let controls = build_reading_tab(panel, &self.config);
+            self.paint(&self.reading.panel);
+            controls
+        })
     }
 
     fn permissions(&self) -> &PermissionsTabControls {
-        self.permissions
-            .built(|panel| build_permissions_tab(panel, &self.config))
+        self.permissions.built(|panel| {
+            let controls = build_permissions_tab(panel, &self.config);
+            self.paint(&self.permissions.panel);
+            controls
+        })
     }
 
     fn calendar_and_pim(&self) -> &CalendarPimTabControls {
         self.calendar_and_pim.built(|panel| {
             let controls =
                 build_calendar_pim_tab(panel, &self.config, &self.accounts, self.a_calendar_server);
+            self.paint(&self.calendar_and_pim.panel);
             self.paint(&controls.default_reminder);
             controls
         })
     }
 
     fn feedback(&self) -> &FeedbackTabControls {
-        self.feedback
-            .built(|panel| build_feedback_tab(panel, &self.config, &self.a11y))
+        self.feedback.built(|panel| {
+            let controls = build_feedback_tab(panel, &self.config, &self.a11y);
+            self.paint(&self.feedback.panel);
+            controls
+        })
     }
 
     fn advanced(&self) -> &AdvancedTabControls {
         self.advanced.built(|panel| {
             let controls = build_advanced_tab(panel, &self.config);
+            self.paint(&self.advanced.panel);
             self.paint(&controls.download_folder);
             controls
         })
     }
 
-    /// Paint a field the way the dialog was painted when it was built. The
-    /// text fields are the controls whose colour the theme sets by hand;
-    /// `None` means Windows decides and nothing is set.
-    fn paint(&self, field: &TextCtrl) {
+    /// Paint a window the way the dialog was painted when it was built: a
+    /// page's panel once its controls exist, and the text fields, which are
+    /// the controls whose colour the theme sets by hand. `None` means Windows
+    /// decides and nothing is set.
+    fn paint(&self, window: &(impl WxWidget + ?Sized)) {
         if let Some(palette) = self.palette {
-            theme::paint(field, palette.main_surface());
+            theme::paint(window, palette.main_surface());
         }
     }
 }
@@ -622,24 +649,20 @@ pub fn build_settings_dialog(
         }
     });
 
-    // Painted after the page that is built has populated its controls; a
-    // page built later paints its own fields the same way, from the same
-    // palette, in `LaterPages`. The panels are painted now, built or not,
-    // because they are the surface a page's controls sit on.
+    // General is painted here because it was built here, after its controls
+    // exist. A page built later is painted at the end of its own build in
+    // `LaterPages`, after its controls exist, and not before: a child created
+    // under a panel that already carries a foreground colour inherits it at
+    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // which Windows' accessible object reports as a push button with no
+    // checked state. From 09-09 until 10-01.1 the six empty panels were
+    // painted here, and every checkbox built on them later read as a button
+    // under NVDA (#67, found 2026-09-17 in `1.0.0-alpha.1`).
     if let Some(palette) = palette {
         theme::paint(&dlg, palette.main_surface());
         theme::paint(&notebook, palette.main_surface());
-        for panel in [
-            &general_panel,
-            &later.compose.panel,
-            &later.reading.panel,
-            &later.permissions.panel,
-            &later.calendar_and_pim.panel,
-            &later.feedback.panel,
-            &later.advanced.panel,
-        ] {
-            theme::paint(panel, palette.main_surface());
-        }
+        theme::paint(&general_panel, palette.main_surface());
         theme::paint(&font_size, palette.main_surface());
     }
 
