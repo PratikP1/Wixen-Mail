@@ -578,6 +578,15 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
     Box::new(SpellChecker::with_language(short_code(tag)))
 }
 
+/// Which source [`for_language`] would hand back for this tag, decided the
+/// same way and without building a checker.
+///
+/// Not written yet: the red half of 09-09, which names the answer the
+/// settings screen will word its sentence from.
+pub fn source_for_language(_tag: &str) -> Source {
+    Source::Builtin
+}
+
 /// The language half of a tag: `en-GB` is English.
 ///
 /// Windows wants a full BCP 47 tag and the checker in this crate is keyed by
@@ -1203,6 +1212,29 @@ impl Default for I18n {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report() {
+        // The settings screen says which checker will check spelling. It used
+        // to build one to find out, and letting go of a Windows checker costs
+        // about a fifth of a second (#34), so the answer is decided the same
+        // way without building one. The two must agree on every kind of
+        // machine: Windows here, the built-in list on a runner with no spell
+        // checking feature, and a tag nobody has anywhere.
+        for tag in [
+            super::language_of_this_machine().unwrap_or_else(|| "en-US".to_string()),
+            "en".to_string(),
+            "zz-ZZ".to_string(),
+        ] {
+            let built = super::for_language(&tag).source();
+
+            assert_eq!(
+                super::source_for_language(&tag),
+                built,
+                "for {tag}, the source named without a checker differs from the one a checker built for it reports"
+            );
+        }
+    }
 
     #[test]
     fn test_the_machines_language_is_one_something_can_check() {

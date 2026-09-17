@@ -280,6 +280,7 @@ mod windows_of {
     const WM_CLOSE: u32 = 0x0010;
     const WM_COMMAND: u32 = 0x0111;
     const MF_BYPOSITION: u32 = 0x0400;
+    const GW_CHILD: u32 = 5;
 
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -293,6 +294,14 @@ mod windows_of {
         fn GetMenuItemID(menu: Hmenu, at: i32) -> u32;
         fn GetMenuStringW(menu: Hmenu, item: u32, text: *mut u16, most: i32, by: u32) -> i32;
         fn PostMessageW(window: Hwnd, message: u32, w: usize, l: isize) -> i32;
+        fn GetWindow(window: Hwnd, which: u32) -> Hwnd;
+    }
+
+    /// Whether the window has any child window at all, which is what a page
+    /// with controls on it has and an empty panel has not.
+    pub fn has_a_child(window: Hwnd) -> bool {
+        // Safe: a query on a handle the toolkit gave us.
+        unsafe { GetWindow(window, GW_CHILD) != 0 }
     }
 
     /// Every visible top-level window of one process, with its title.
@@ -598,5 +607,165 @@ fn test_a_figure_line_carries_its_unit_and_parses_back() {
         parse_a_figure_line(&line),
         Some(("available_languages".to_string(), 50, 30)),
         "and the summary can read it back"
+    );
+}
+
+// ── What the before rows justified, held on every commit ────────────────────
+//
+// The rows of 2026-09-16 said the three lists cost a millisecond each and the
+// pages of controls cost the rest, so the change is to the build and not to
+// the lists: the dialog is frozen while it is built, the spelling sentence is
+// worded without building a checker, and only the first page is built before
+// the dialog is shown. The tests below hold each of those.
+
+/// Which page of the notebook is which, by the order the dialog adds them.
+const THE_READING_PAGE: usize = 2;
+
+#[cfg(windows)]
+#[test]
+fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown()
+ {
+    use std::sync::Mutex;
+
+    let wrong: Arc<Mutex<Vec<String>>> = Arc::default();
+    let result = {
+        let wrong = wrong.clone();
+        wxdragon::main(move |app| {
+            let mut wrong = wrong.lock().expect("the findings");
+            let frame = Frame::builder().build();
+            let a11y = Arc::new(Accessibility::new().expect("accessibility"));
+            // A stored answer on a page nobody visits, so what OK writes
+            // back for that page is visible.
+            let config = AppConfig {
+                default_sort_order: "sender_az".to_string(),
+                ..AppConfig::default()
+            };
+            let widgets = wx_settings::build_settings_dialog(&frame, &config, &[], false, &a11y);
+
+            if widgets.notebook.get_page_count() != 7 {
+                wrong.push(format!(
+                    "the tab row holds {} tabs and there are seven pages, so a setting is off the screen",
+                    widgets.notebook.get_page_count()
+                ));
+            }
+            let reading = widgets.reading_panel.get_handle() as isize;
+            if windows_of::has_a_child(reading) {
+                wrong.push(
+                    "the Reading page has controls on it before its tab was ever shown, so it was built up front"
+                        .to_string(),
+                );
+            }
+            let never_shown = wx_settings::read_settings(&widgets, &config);
+            if never_shown.default_sort_order != "sender_az" {
+                wrong.push(format!(
+                    "OK on a dialog whose Reading tab was never shown wrote {:?} over the stored sender_az",
+                    never_shown.default_sort_order
+                ));
+            }
+
+            widgets.notebook.set_selection(THE_READING_PAGE);
+            if !windows_of::has_a_child(reading) {
+                wrong.push(
+                    "the Reading tab was shown and its page still has no controls on it"
+                        .to_string(),
+                );
+            }
+            widgets.sort_order.set_selection(0);
+            let after_a_change = wx_settings::read_settings(&widgets, &config);
+            if after_a_change.default_sort_order != "date_newest" {
+                wrong.push(format!(
+                    "the sort order was changed on the shown Reading page and OK wrote {:?}",
+                    after_a_change.default_sort_order
+                ));
+            }
+
+            widgets.dialog.destroy();
+            drop(wrong);
+            wxdragon::call_after(Box::new(move || {
+                app.exit_main_loop();
+            }));
+        })
+    };
+    assert!(result.is_ok(), "wxdragon::main returned {result:?}");
+
+    let wrong = wrong.lock().expect("the findings");
+    assert!(
+        wrong.is_empty(),
+        "the pages after the first are not built when their tab is first shown:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+/// The window layer's source, for the two readings below.
+fn the_settings_source() -> String {
+    std::fs::read_to_string("src/presentation/wx_settings.rs")
+        .expect("src/presentation/wx_settings.rs is read from the repository root")
+}
+
+/// The body of one function in a source file: from its `fn name(` to the
+/// next line that is exactly `}`.
+fn body_of<'a>(source: &'a str, name: &str) -> &'a str {
+    let opening = format!("fn {name}(");
+    let from = source
+        .find(&opening)
+        .unwrap_or_else(|| panic!("{opening} is not in the source"));
+    let rest = &source[from..];
+    let to = rest
+        .find("\n}\n")
+        .unwrap_or_else(|| panic!("{opening} has no closing brace on a line of its own"));
+    &rest[..to]
+}
+
+#[test]
+fn test_the_dialog_and_each_later_page_are_built_frozen() {
+    // `wxChoice::DoInsertItems` resizes the control after every item it is
+    // handed unless the control is frozen, and a child added under a frozen
+    // window is frozen with it. Measured on 2026-09-16: the typeface list
+    // alone cost about a second of the build with the window shown, and a
+    // tenth of that frozen. So the dialog is frozen before the first page is
+    // built and thawed after the last, and a page built later on its own
+    // panel is frozen the same way.
+    let source = the_settings_source();
+    let build = body_of(&source, "build_settings_dialog");
+
+    let frozen_at = build.find("dlg.freeze();");
+    let first_page_at = build.find("notebook.add_page(");
+    let thawed_at = build.find("dlg.thaw();");
+    let laid_out_at = build.find("dlg.set_sizer(");
+    assert!(
+        matches!((frozen_at, first_page_at), (Some(frozen), Some(page)) if frozen < page),
+        "build_settings_dialog does not freeze the dialog before its first page is built"
+    );
+    assert!(
+        matches!((laid_out_at, thawed_at), (Some(laid_out), Some(thawed)) if laid_out < thawed),
+        "build_settings_dialog does not thaw the dialog after it is laid out"
+    );
+
+    let later = body_of(&source, "build_the_page_for");
+    assert!(
+        later.find("panel.freeze();").is_some_and(|frozen| {
+            later
+                .find("panel.thaw();")
+                .is_some_and(|thawed| frozen < thawed)
+        }),
+        "a page built when its tab is first shown is not built frozen and thawed after"
+    );
+}
+
+#[test]
+fn test_the_spelling_sentence_is_worded_without_building_a_checker() {
+    // Letting go of a Windows spell checker costs about a fifth of a second
+    // (measured 2026-09-16), and the sentence "Spelling is checked by ..."
+    // only needs to know which checker would be built.
+    let source = the_settings_source();
+    let language = body_of(&source, "add_language_and_spelling");
+
+    assert!(
+        language.contains("spellcheck::source_for_language("),
+        "the spelling sentence is not worded from source_for_language"
+    );
+    assert!(
+        !language.contains("spellcheck::for_language("),
+        "add_language_and_spelling still builds a checker to say which one it is"
     );
 }
