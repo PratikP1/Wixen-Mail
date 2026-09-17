@@ -2931,8 +2931,26 @@ and it takes the `FOUND` id because that is where the version rule lives (FOUND-
 is the installer's signing and its updates, not what a build is called. Every evidence line was
 re-taken against `main` at `c5ee5085` on 2026-09-17 with the command in the plan.
 
-- [ ] **FOUND-15**: All Inboxes, a label view and a saved search's results are read in the
+- [x] **FOUND-15**: All Inboxes, a label view and a saved search's results are read in the
   sort that was chosen, the way a folder is, and keep it when the view is reopened.
+  - **Closed 2026-09-17 by 10-02.1, merged at `c0505f68`.** The first `[D]` line by
+    `tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs`
+    (`test_all_inboxes_answers_in_the_order_it_is_handed`,
+    `test_a_label_view_answers_in_the_order_it_is_handed`,
+    `test_what_a_saved_search_found_answers_in_the_order_it_is_handed`,
+    `test_the_sort_the_menu_stores_is_read_back_into_the_order_the_cache_takes`, with
+    `test_all_inboxes_handed_no_order_is_newest_first_as_before` for the default) and the
+    guard `test_no_query_a_folder_listing_runs_reads_message_text_or_a_table_it_may_not`
+    widened to the three listings in every order; the second by
+    `test_the_window_reads_all_inboxes_a_label_and_a_search_in_the_sort_that_was_chosen` with
+    `test_the_reading_would_see_a_loader_that_forgot_the_sort`, and the four records with
+    `suite = "all_inboxes_reads_in_the_sort_that_was_chosen"`, one per file, measured; the
+    third by `test_every_all_inboxes_row_has_the_pages_shape_and_names_its_order` and the
+    ten rows named "All Inboxes in a chosen sort after 10-02.1" dated 2026-09-17 at
+    `b39a7409` on `docs/development/measurements.md`. One thing the first line's test found
+    beyond the requirement: the menu's Unread First stored read first, corrected with
+    `test_unread_first_from_the_menu_puts_unread_rows_first_and_newest_beneath` in
+    `message_columns.rs`. The last `[S]` line stays (ledger 516).
   - Evidence: a folder is read through `get_message_list_sorted` with the stored sort in the
     query (`load_folder_messages`, `wx_app.rs:13716`, asking `the_sort_as` at `:13784`);
     All Inboxes is `load_every_inbox` (`:7050`) calling `unified_inbox(None)`, whose query
@@ -3304,7 +3322,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
-| FOUND-15 | Phase 10 | Pending, 10-02.1; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
+| FOUND-15 | Phase 10 | Complete, 10-02.1 at `c0505f68`; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
 | FOUND-16 | Phase 10 | Pending, 10-02.2; whether the next installer orders above the alpha.1 build is settled by a build, which is Pratik's |
 | MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
 | MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
