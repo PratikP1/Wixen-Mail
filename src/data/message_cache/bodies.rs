@@ -6,7 +6,9 @@
 //!
 //! They live here instead: written when a message is opened, read back only when
 //! one is displayed, and evicted least-recently-read once the cache passes a
-//! budget. A message with no cached body is a normal state, not an error. It
+//! budget, if the person chose one: since 2026-09-17 how much text stays is a
+//! setting on the Permissions tab (#23), and its default, all of it, evicts
+//! nothing. A message with no cached body is a normal state, not an error. It
 //! means the body has not been fetched yet or has been evicted since, and either
 //! way the fix is to fetch it again.
 //!
@@ -273,20 +275,26 @@ impl ForStorage {
     }
 }
 
-/// How much message text the cache keeps before it drops the least recently
-/// read.
+/// How much message text a cache opened with no setting keeps before it
+/// drops the least recently read.
+///
+/// Since 2026-09-17 this is not what runs for anybody: how much text stays
+/// is a setting on the Permissions tab (#23), default all of it, and every
+/// cache the sync workers open is handed it through
+/// [`MessageCache::keeping_bodies_under`]. This is the `UpTo` a cache built
+/// without that call gets, which is every cache the window opens for itself,
+/// and none of those ever asks for an eviction: `keep_bodies_within_budget`
+/// has one caller, the end of a folder sync.
 ///
 /// Half a gigabyte. There is no measurement that says this is the right
-/// number, and saying so is more useful than a false justification: it is
+/// number, and saying so is more useful than a false justification: it was
 /// chosen to be large enough that ordinary reading never evicts anything, and
 /// small enough that a mailbox cannot quietly fill a disk. At two hundred
 /// thousand messages with bodies of the size real mail runs to, unbounded
-/// meant several gigabytes.
-///
-/// A number rather than a setting, because a setting has to be shown,
-/// named for a screen reader, documented and explained, and nobody has asked
-/// for one. [`MessageCache::keeping_bodies_under`] is the seam a setting would
-/// use if that changes.
+/// meant several gigabytes. Until 2026-09-17 this comment said "a number
+/// rather than a setting, because a setting has to be shown, named for a
+/// screen reader, documented and explained, and nobody has asked for one",
+/// and named the seam a setting would use. The tester asked.
 pub const BODY_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
 /// How many characters of a snippet are kept.
@@ -474,10 +482,15 @@ impl MessageCache {
     /// matters: that is a worker thread with its own connection, and eviction
     /// deletes rows, so running it from the interface would be a write on the
     /// thread that has to stay answering.
+    ///
+    /// Under `All`, which is the default (#23), nothing is evicted and no row
+    /// is read: the person chose to keep every message's text, and the
+    /// download of everything would otherwise be undone by the next folder's
+    /// sync on any mailbox larger than a bound. Under a size, the rule that
+    /// ran before there was a setting runs at that size.
     pub fn keep_bodies_within_budget(&self) -> Result<i64> {
         match self.body_budget {
-            // The red stub of 10-03's task 2; the green makes All keep everything.
-            TextBudget::All => self.evict_bodies_over(0),
+            TextBudget::All => Ok(0),
             TextBudget::UpTo(bytes) => {
                 self.evict_bodies_over(i64::try_from(bytes).unwrap_or(i64::MAX))
             }

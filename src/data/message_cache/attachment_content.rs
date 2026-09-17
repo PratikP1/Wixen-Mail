@@ -53,11 +53,13 @@ pub const LARGEST_ATTACHMENT_KEPT_BYTES: i64 = 25 * 1024 * 1024;
 /// How much attachment content the cache keeps before it drops the least
 /// recently read.
 ///
-/// Half a gigabyte, the same as [`super::bodies::BODY_CACHE_BUDGET_BYTES`], so
-/// the whole cache stays around a gigabyte and either half can be described in
-/// one sentence. Not measured: chosen large enough that ordinary reading never
-/// drops anything and small enough that a mailbox full of photographs cannot
-/// quietly fill a disk.
+/// Half a gigabyte, the same number as [`super::bodies::BODY_CACHE_BUDGET_BYTES`].
+/// Not measured: chosen large enough that ordinary reading never drops
+/// anything and small enough that a mailbox full of photographs cannot
+/// quietly fill a disk. Until 2026-09-17 this said the two halves kept the
+/// whole cache around a gigabyte; since then how much message text stays is a
+/// setting on the Permissions tab (#23) whose default keeps all of it, and
+/// this is the only half still bounded by a number.
 ///
 /// [`MessageCache::keeping_attachments_under`] is the seam a setting would use
 /// if anyone ever asks for one.
