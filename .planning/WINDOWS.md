@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 487
+open_count: 488
 waived_count: 0
 fixed_count: 28
-total_count: 515
-last_updated: 2026-09-17T16:10:00.000Z
+total_count: 516
+last_updated: 2026-09-17T18:50:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -530,6 +530,7 @@ last_updated: 2026-09-17T16:10:00.000Z
 | 513 | 10 | unrun-verify | src/presentation/wx_settings.rs |  | What only the tester's ear settles for #67 and #68, both fixed by 10-01.1 and measured over MSAA and GetFocus() from a test that builds the real dialog: that a later-page Settings checkbox is spoken as check box with its state, that Space says the new state, that the state reads back after Tab away and back, that OK keeps it, that Settings still opens at once, that an arrow on the tab row still says each tab once, and that Ctrl+Tab from a General control speaks a named control and nothing before it. The listening lines belong to 10-07's page; the issue-close comments carry them until then. | open |  | 2026-09-17T14:05:00.000Z |  |
 | 514 | 10 | unrun-verify | src/presentation/theme.rs |  | Four files both paint a window with theme::paint and build checkboxes on it, and none has been read for whether the paint comes before or after the build: wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_managers.rs. A checkbox created under an already painted panel inherits its text colour, is made owner-drawn by wxWidgets, and reads as a push button under NVDA, which is what #67 was on the Settings pages. A tree-wide reading that no built wxCheckBox is BS_OWNERDRAW, on the shape of tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs, is separate work; said in the changelog's Known limitations for #67. | open |  | 2026-09-17T14:05:00.000Z |  |
 | 515 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #24, fixed by 10-02 and measured by the harness at his size and at 200,000: whether his folder of 12,872 messages opens and reads as one list with his screen reader on his machine, and whether the list still answers keys at once after a folder change, which is MAIL-02's last line. Nobody has opened a folder of 200,000 in the running program, only the harness has read one, and the first open of one that size pays under a second on the interface thread by the rows named The list's own read path after 10-02 on docs/development/measurements.md, dated 2026-09-17; moving that read off the interface thread is later work and the page says what it would buy. | open |  | 2026-09-17T16:10:00.000Z |  |
+| 516 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #69, fixed by 10-02.1: whether, with All Inboxes open, choosing Oldest first from View, Sort Messages, arrowing to a folder and back to All Inboxes reads the oldest first with his screen reader, and the same for a label view and after running a saved search; and whether Unread First from the menu, which was saved as read first until 10-02.1, now puts the unread rows first on the next read of a folder. The composed run through load_every_inbox is held by three links and not by one test: the cache answers in the order it is handed, the sort the menu stores reads back into that clause, and the window's three readers are held to asking for it by a reading of the source, because the loaders and the_sort_as are private to the window and its own test module reads the machine's profile. | open |  | 2026-09-17T18:50:00.000Z |  |
 
 ````json
 [
@@ -6711,6 +6712,18 @@ last_updated: 2026-09-17T16:10:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T16:10:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 516,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "What only the tester settles for #69, fixed by 10-02.1: whether, with All Inboxes open, choosing Oldest first from View, Sort Messages, arrowing to a folder and back to All Inboxes reads the oldest first with his screen reader, and the same for a label view and after running a saved search; and whether Unread First from the menu, which was saved as read first until 10-02.1, now puts the unread rows first on the next read of a folder. The composed run through load_every_inbox is held by three links and not by one test: the cache answers in the order it is handed, the sort the menu stores reads back into that clause, and the window's three readers are held to asking for it by a reading of the source, because the loaders and the_sort_as are private to the window and its own test module reads the machine's profile.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T18:50:00.000Z",
     "resolved_at": null
   }
 ]

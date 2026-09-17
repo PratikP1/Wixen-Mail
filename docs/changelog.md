@@ -338,7 +338,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the order the setting of the same name has always meant.
   What was measured: each of the three views answers in every sort the menu offers, both ways,
   held by a test on the cache; the saved choice read back the way the window reads it gives
-  that order; and the window's three readers are held to asking for it.
+  that order; and the window's three readers are held to asking for it. What a chosen sort
+  costs All Inboxes, on the rows named "All Inboxes in a chosen sort after 10-02.1" dated
+  2026-09-17 on `docs/development/measurements.md`: at your folder's size, 12,872 messages,
+  every order read in between 21 and 24 milliseconds, the fixed order among them; at 200,000
+  messages the fixed order read in 500 milliseconds and the chosen orders in 500 to 571,
+  because reading every row is most of the cost and the sort adds a little on top.
   Known limitations: whether the order survives leaving and returning has been proved link by
   link and not heard in the running program, which is your check on the next build: with All
   Inboxes open, choose Oldest first, arrow to a folder and back, and the first row should be the

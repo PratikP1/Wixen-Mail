@@ -3264,6 +3264,12 @@ impl MessageCache {
             // is the other one, where the walk has to go furthest to fill a
             // screen because little of the mail is in an inbox at all, and
             // that is 276 ms against 3.07 ms. Both are worth having.
+            //
+            // Those were reads with a LIMIT. This index serves the fixed
+            // order only; since 2026-09-17 (#69) All Inboxes is read in the
+            // chosen sort, which no index serves, and what that costs with
+            // no LIMIT is measured under "All Inboxes in a chosen sort after
+            // 10-02.1" on docs/development/measurements.md.
             "CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC, uid DESC)",
             // What makes the inline-body migration free on a database that has
             // already been through it. `migrate_inline_bodies` runs on every

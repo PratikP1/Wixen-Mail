@@ -419,7 +419,10 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
 /// message in every inbox. What that costs is on
 /// `docs/development/measurements.md` under "All Inboxes in a chosen sort
 /// after 10-02.1", at the tester's 12,872 rows and at 200,000, beside the
-/// fixed order it replaces.
+/// fixed order it replaces: at 200,000 rows with no `LIMIT`, the fixed
+/// order 500.31 ms and Date newest 511.84 ms, taken 2026-09-17, because
+/// reading every row is most of the cost and the sort adds a few percent
+/// on top of it.
 pub(super) fn unified_inbox_query(order: &str, limit: Option<usize>) -> String {
     format!(
         "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
