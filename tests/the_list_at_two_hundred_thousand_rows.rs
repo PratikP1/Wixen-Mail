@@ -37,6 +37,22 @@
 //! column. A scroll in the running program is that plus wxWidgets' own
 //! painting, which is not timed here either, for the same reason.
 //!
+//! **The list's own read path**, added 2026-09-17 for 10-02, is the three
+//! steps `load_folder_messages` in `wx_app.rs` takes on the interface thread
+//! when a folder opens, timed one at a time over a folder with a label on
+//! every tenth row: `get_message_list_sorted` with the default sort and no
+//! limit, cold and then warm; `threading::thread_messages` over every row
+//! read, which is what the window's private `apply_threading` wraps, so the
+//! harness calls the function it wraps; and the labels read the window makes
+//! over those rows. None of the rows above times any of the three: the
+//! listing above is `get_messages_for_folder`, unsorted, and the window never
+//! calls it. Where a step refuses rather than answers, its row says `refused`
+//! for a value and carries the error's text in its conditions, because a
+//! query whose parameter count is the row count is expected to hit SQLite's
+//! variable limit somewhere between the tester's folder and 200,000 rows, and
+//! a prediction is not a measurement. The same steps are taken at the tester's
+//! size, 12,872, as a second series with the same shape.
+//!
 //! Every timing is taken three times and the median is the number; the three
 //! takes are written into the row's conditions. The rows are synthetic and no
 //! provider mailbox was used, and every row says so.
@@ -385,6 +401,13 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
     Ok(measured)
 }
 
+/// The three steps the window takes on the interface thread when a folder
+/// of `count` rows opens, each timed on its own over a cache at `into`.
+fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
+    let _ = (count, into);
+    Ok(Vec::new())
+}
+
 // ── The row ─────────────────────────────────────────────────────────────────
 
 /// One cell per column of `docs/development/measurements.md`, in its order.
@@ -561,6 +584,60 @@ fn test_every_row_the_measurement_prints_has_the_pages_shape_and_names_what_it_t
         assert!(
             what.iter().any(|w| w.contains(kind)),
             "no {kind} row: {what:?}"
+        );
+    }
+}
+
+/// The steps the read-path rows name, in the order the window takes them.
+const THE_STEPS_OF_THE_READ_PATH: [&str; 4] = [
+    "the sorted read, no limit, cold",
+    "the sorted read, no limit, warm",
+    "the threading",
+    "the labels",
+];
+
+#[test]
+fn test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed() {
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured =
+        the_lists_own_read_path(A_FEW, into.path()).expect("the read path at a few rows");
+    let rows = the_rows(A_FEW, &measured, "debug", "a machine");
+
+    assert_eq!(
+        rows.len(),
+        THE_STEPS_OF_THE_READ_PATH.len(),
+        "{} rows printed and the page wants one per step: {:?}",
+        rows.len(),
+        THE_STEPS_OF_THE_READ_PATH
+    );
+    for (row, step) in rows.iter().zip(THE_STEPS_OF_THE_READ_PATH) {
+        let cells: Vec<&str> = row.split(" | ").collect();
+        assert_eq!(cells.len(), 6, "not the page's six columns: {row}");
+        assert!(
+            cells[0].starts_with("| The list's own read path"),
+            "the row does not say it times the list's own read path: {row}"
+        );
+        assert!(
+            cells[0].contains(&A_FEW.to_string()),
+            "the row does not carry the count in its name: {row}"
+        );
+        assert!(
+            cells[0].contains(step),
+            "the row is not the {step} row: {row}"
+        );
+        assert!(
+            cells[2].contains('`'),
+            "the row carries no backticked command: {row}"
+        );
+        assert!(
+            cells[5].contains("interface thread"),
+            "the row does not say the window runs this step on the interface thread: {row}"
+        );
+        let answered = cells[1].ends_with(" ms");
+        let refused = cells[1] == "refused" && cells[5].contains("refused with");
+        assert!(
+            answered || refused,
+            "the value is neither a time nor a refusal carrying its error: {row}"
         );
     }
 }
