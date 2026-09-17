@@ -203,21 +203,6 @@ pub enum TextBudget {
     UpTo(u64),
 }
 
-impl TextBudget {
-    /// The bytes for a seam that still takes a number: `UpTo`'s bytes, and
-    /// `when_all` for `All`.
-    ///
-    /// Here for one task of 10-03: `MessageCache::keeping_bodies_under` takes
-    /// an `i64` until task 2 types it, and the sync workers are handed the
-    /// setting in task 1. Task 2 deletes this.
-    pub fn as_bytes_or(self, when_all: i64) -> i64 {
-        match self {
-            TextBudget::All => when_all,
-            TextBudget::UpTo(bytes) => i64::try_from(bytes).unwrap_or(i64::MAX),
-        }
-    }
-}
-
 /// The text an account is still missing, and how much it already keeps.
 ///
 /// Both from the cache: the list is

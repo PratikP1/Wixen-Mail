@@ -3424,7 +3424,9 @@ mod tests {
         let dir = tempfile::tempdir().expect("a temporary folder");
         let cache = MessageCache::new(dir.path().to_path_buf(), None)
             .expect("a cache")
-            .keeping_bodies_under(60);
+            .keeping_bodies_under(
+                crate::application::bringing_everything_down::TextBudget::UpTo(60),
+            );
         let folder_id = cache
             .save_folder(&CachedFolder {
                 id: 0,

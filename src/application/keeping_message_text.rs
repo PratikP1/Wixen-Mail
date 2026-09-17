@@ -237,16 +237,4 @@ mod tests {
         assert_eq!(offered_index("1500000000"), 0);
         assert_eq!(offered_index("garbled"), 0);
     }
-
-    #[test]
-    fn test_until_the_seam_is_typed_all_hands_it_the_old_constant_and_a_size_hands_its_bytes() {
-        // Task 1 of 10-03 hands the sync workers' caches a number, because
-        // `keeping_bodies_under` still takes one; task 2 types the seam and
-        // deletes this helper with this test.
-        assert_eq!(TextBudget::All.as_bytes_or(512), 512);
-        assert_eq!(
-            TextBudget::UpTo(5 * GIGABYTE).as_bytes_or(512),
-            5_000_000_000
-        );
-    }
 }

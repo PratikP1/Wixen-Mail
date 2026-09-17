@@ -22,6 +22,7 @@
 //! design rather than what ran.
 
 use super::MessageCache;
+use crate::application::bringing_everything_down::TextBudget;
 use crate::application::long_text;
 use crate::common::{Error, Result};
 use rusqlite::OptionalExtension;
@@ -286,7 +287,7 @@ impl ForStorage {
 /// named for a screen reader, documented and explained, and nobody has asked
 /// for one. [`MessageCache::keeping_bodies_under`] is the seam a setting would
 /// use if that changes.
-pub const BODY_CACHE_BUDGET_BYTES: i64 = 512 * 1024 * 1024;
+pub const BODY_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 
 /// How many characters of a snippet are kept.
 ///
@@ -474,7 +475,13 @@ impl MessageCache {
     /// deletes rows, so running it from the interface would be a write on the
     /// thread that has to stay answering.
     pub fn keep_bodies_within_budget(&self) -> Result<i64> {
-        self.evict_bodies_over(self.body_budget)
+        match self.body_budget {
+            // The red stub of 10-03's task 2; the green makes All keep everything.
+            TextBudget::All => self.evict_bodies_over(0),
+            TextBudget::UpTo(bytes) => {
+                self.evict_bodies_over(i64::try_from(bytes).unwrap_or(i64::MAX))
+            }
+        }
     }
 
     /// Total bytes of body text currently cached.
@@ -1482,6 +1489,72 @@ mod tests {
             cache.get_message_body(ids[2]).unwrap().is_some(),
             "the most recently stored body should be the one kept"
         );
+    }
+
+    /// The test cache, keeping as much message text as the setting says.
+    fn body_test_cache_keeping(budget: TextBudget) -> TempHome<MessageCache> {
+        let cache = TempHome::named("wixen_bodies_", |dir| {
+            MessageCache::new(dir.to_path_buf(), None)
+                .expect("cache")
+                .keeping_bodies_under(budget)
+        });
+        cache
+            .conn
+            .execute(
+                "INSERT INTO folders (id, account_id, name, path, folder_type)
+                 VALUES (1, 'a1', 'INBOX', 'INBOX', 'inbox')",
+                [],
+            )
+            .expect("seed folder");
+        cache
+    }
+
+    /// Three bodies of ten bytes each, stored into `cache`.
+    fn three_bodies_in(cache: &MessageCache) -> Vec<i64> {
+        (1..=3)
+            .map(|n| {
+                let id = cache.save_message(&cached(n, "Body")).unwrap();
+                cache
+                    .save_message_body(id, Some("aaaaaaaaaa"), None)
+                    .unwrap();
+                id
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size() {
+        // #23. How much message text stays is the person's choice, and the
+        // default is all of it, so a download of everything's text is not
+        // undone by the next folder's sync. The budget arrives through the
+        // seam the sync workers open their cache with, and the end of a
+        // folder sync asks this, so this is the call that has to read it.
+        let kept = body_test_cache_keeping(TextBudget::All);
+        let ids = three_bodies_in(&kept);
+        assert_eq!(kept.cached_body_bytes().unwrap(), 30);
+
+        assert_eq!(
+            kept.keep_bodies_within_budget().unwrap(),
+            0,
+            "under All the end of a sync evicted something"
+        );
+        for id in &ids {
+            assert!(
+                kept.get_message_body(*id).unwrap().is_some(),
+                "under All a body was evicted"
+            );
+        }
+
+        // The other arm is the rule that ran before there was a setting,
+        // at the size chosen rather than at the constant.
+        let bounded = body_test_cache_keeping(TextBudget::UpTo(15));
+        let ids = three_bodies_in(&bounded);
+        assert_eq!(bounded.keep_bodies_within_budget().unwrap(), 20);
+        let still_here = ids
+            .iter()
+            .filter(|id| bounded.get_message_body(**id).unwrap().is_some())
+            .count();
+        assert_eq!(still_here, 1, "fifteen bytes hold one body of ten");
     }
 
     #[test]

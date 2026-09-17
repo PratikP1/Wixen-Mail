@@ -21608,11 +21608,7 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
         // handed how much text may stay; the window's cache is not.
         let text_kept = how_much_message_text_stays();
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-            Ok(cache) => cache.keeping_bodies_under(
-                text_kept
-                    .budget()
-                    .as_bytes_or(crate::data::message_cache::bodies::BODY_CACHE_BUDGET_BYTES),
-            ),
+            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
                 say(UIUpdate::CommandRefused(format!("Cache error: {e}")));
                 return;
@@ -21745,11 +21741,7 @@ fn spawn_mail_sync(
         // it is handed how much text may stay; the window's cache is not.
         let text_kept = how_much_message_text_stays();
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-            Ok(cache) => cache.keeping_bodies_under(
-                text_kept
-                    .budget()
-                    .as_bytes_or(crate::data::message_cache::bodies::BODY_CACHE_BUDGET_BYTES),
-            ),
+            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
                 fail(format!("Cache error: {}", e));
                 return;

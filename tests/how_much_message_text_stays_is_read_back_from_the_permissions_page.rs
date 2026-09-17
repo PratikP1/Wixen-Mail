@@ -14,6 +14,16 @@
 //! nobody showed leaves the stored size alone, because the page's controls
 //! do not exist to be read.
 //!
+//! The other end of the setting is read from the source: the eviction has
+//! one caller, the end of a folder sync, and the folder sync has two callers
+//! in the window, the check and the whole-folder request, so those two are
+//! the workers that evict and each has to open its cache through
+//! `keeping_bodies_under` with the setting. The guard that requires a reader
+//! outside the settings files sees the field's name anywhere in the window's
+//! shipping half and cannot tell a worker's cache line from the helper that
+//! reads the file, so a worker that stopped handing its cache the setting
+//! would leave it green; this reads each worker's body.
+//!
 //! The budget is one `wxdragon::main` per process (`tests/theme_reach.rs`
 //! records the "initializing twice?" hang a second one produced), so the two
 //! dialogs are built once inside a `OnceLock` by whichever test asks first,
@@ -228,6 +238,75 @@ fn test_the_dialog_offers_all_of_it_first_and_the_default_writes_all_back() {
     }
     complain(
         "All of it should be offered first and be what an untouched dialog writes back",
+        &wrong,
+    );
+}
+
+/// The shipping half of one source file, read from the repository root.
+fn what_ships_in(path: &str) -> String {
+    let source = std::fs::read_to_string(path)
+        .unwrap_or_else(|why| panic!("{path} could not be read: {why}"));
+    wixen_mail::common::what_ships::what_ships(&source)
+}
+
+/// The body of one function: from its `fn name(` to the next line that is
+/// exactly `}`, the shape `tests/the_settings_dialog_opens_in.rs` reads with.
+fn body_of<'a>(source: &'a str, name: &str) -> &'a str {
+    let opening = format!("fn {name}(");
+    let from = source
+        .find(&opening)
+        .unwrap_or_else(|| panic!("{opening} is not in the source"));
+    let rest = &source[from..];
+    let to = rest
+        .find("\n}\n")
+        .unwrap_or_else(|| panic!("{opening} has no closing brace on a line of its own"));
+    &rest[..to]
+}
+
+#[test]
+fn test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts() {
+    let sync = what_ships_in("src/application/mail_sync.rs");
+    let window = what_ships_in("src/presentation/wx_app.rs");
+    let mut wrong = Vec::new();
+
+    // The eviction has one caller, the end of a folder sync, so the caches
+    // that evict are the caches a folder sync runs on.
+    let evictions = sync.matches("keep_bodies_within_budget()").count();
+    if evictions != 1 {
+        wrong.push(format!(
+            "keep_bodies_within_budget() is called {evictions} times in mail_sync.rs, not once at \
+             the end of sync_folder, so the workers that evict are no longer the two read below"
+        ));
+    }
+
+    // The folder sync has two callers in the window, and each opens its
+    // cache with the setting, read once before the cache is built.
+    let workers = ["spawn_mail_sync", "spawn_whole_folder_fetch"];
+    let callers = window.matches("mail_sync::sync_folder(").count();
+    if callers != workers.len() {
+        wrong.push(format!(
+            "sync_folder is called {callers} times in the window's shipping half, and the two \
+             workers read below are {}",
+            workers.len()
+        ));
+    }
+    for worker in workers {
+        let body = body_of(&window, worker);
+        for expected in [
+            "mail_sync::sync_folder(",
+            "how_much_message_text_stays()",
+            ".keeping_bodies_under(",
+            "text_kept.budget()",
+        ] {
+            if !body.contains(expected) {
+                wrong.push(format!("{worker} does not contain {expected:?}"));
+            }
+        }
+    }
+
+    complain(
+        "the two workers that evict should each open their cache with how much text stays, and \
+         nothing else should evict",
         &wrong,
     );
 }
