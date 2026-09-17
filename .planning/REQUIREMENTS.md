@@ -2407,8 +2407,17 @@ requirements to a later phase's section rather than here.
   - [S] Whether `1.0.0-alpha.1` is published through the Release workflow is a dispatch, and a
     dispatch is Pratik's. This requirement bumps the tree and makes the dispatch possible.
 
-- [ ] **FOUND-02**: A machine set to English (United States) checks spelling in English
+- [x] **FOUND-02**: A machine set to English (United States) checks spelling in English
   (United States), and the settings screen shows the language that will be used.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-02, merged 2026-09-16 at
+    `a3554483`.** The two `[D]` lines each have a name:
+    `spellcheck::tests::test_a_bare_stored_language_resolves_to_the_region_this_machine_is_set_to`
+    and `test_a_bare_stored_language_takes_the_first_offered_when_the_machine_speaks_another`
+    for the first, one resolver asked by the checker and the screen;
+    `tests/the_language_the_screen_shows_is_the_one_used.rs` for the second, the real screen
+    built with `en` stored and the selection read back. The last `[S]` line stays: his profile
+    holds a hand-set `en-US` the resolver leaves as stored, so his machine cannot show the fix
+    (ledger 484).
   - Evidence: a scratch test on 2026-09-16 at `524ff24f`, run with `--nocapture` and then
     removed with `git checkout`, printed `system_language() = Some("en-US")`,
     `what_this_machine_offers()` as `TheseLanguages` with nineteen English tags beginning
@@ -2453,9 +2462,19 @@ requirements to a later phase's section rather than here.
     a profile created before 2026-09-03 now shows English (United States) without a hand
     change is a test on such a profile, and his own no longer holds the bare value.
 
-- [ ] **FOUND-03**: A snippet of an HTML-only message is the first words of its text, never
+- [x] **FOUND-03**: A snippet of an HTML-only message is the first words of its text, never
   its stylesheet, and so is the text the search index holds for it; snippets and index rows
   already stored are put right.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-02, merged 2026-09-16 at
+    `a3554483`.** The first `[D]` line by
+    `bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet`,
+    `searching::tests::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet`
+    and `long_text::tests::test_the_words_of_markup_are_the_words_alone_without_markers_or_stylesheets`,
+    with `strip_markup` gone from `src/`; the second by
+    `test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included` and
+    `test_snippets_are_put_right_once_and_a_second_call_reads_no_body`, and a run of the
+    binary against a temp profile that logged one row put right. The last `[S]` line stays:
+    his 12,872-message cache has not been opened by this build (ledger 485).
   - Evidence: `src/data/message_cache/bodies.rs`, `strip_markup` at `:317` on 2026-09-16,
     keeps everything between tags, `<style>` content included; `save_message_body` derives
     the snippet through it when there is no plain part, and `searching.rs:360`,
@@ -2484,7 +2503,11 @@ requirements to a later phase's section rather than here.
   - [S] Whether the tester's rows now read as words is a test on his profile after the
     first open of the new build.
 
-- [ ] **FOUND-04**: Undo Send is on the Edit menu.
+- [x] **FOUND-04**: Undo Send is on the Edit menu.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-03, merged 2026-09-16 at
+    `f58b9271`.** The one `[D]` line by `tests/undo_send_is_where_somebody_looks.rs`, three
+    readings: first on Edit and not on Tools, and two companions that put it back on Tools
+    and on both menus.
   - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: the Edit menu is built at `:6109`
     with Cut, Copy, Paste, Select All, Search and Save This Search; `ID_UNDO_SEND`'s item is
     appended inside the Tools menu at `:6904` with `Ctrl+Shift+Z`; `docs/KEYBOARD_SHORTCUTS.md:413`
@@ -2495,8 +2518,18 @@ requirements to a later phase's section rather than here.
     Tools; a reading holds the Edit menu's first item to `ID_UNDO_SEND`; the shortcuts page
     says which menu.
 
-- [ ] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
+- [x] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
   the organiser has been told only once it has gone.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-03, merged 2026-09-16 at
+    `f58b9271`.** The first `[D]` line by
+    `answering::tests::test_a_held_answer_says_which_answer_went_and_the_countdown_every_send_says`,
+    `test_an_answer_with_the_hold_off_says_it_is_sending_and_not_that_anybody_has_heard` and
+    `test_an_answer_queued_while_offline_says_it_waits_for_a_network`, with "has been told" in
+    no production line and `HowItWent::Sent` retired for a variant whose comment says what
+    happened on this machine; the second by
+    `test_the_schedule_routines_comment_names_the_key_that_reaches_it` and
+    `grep -c 'Alt+E' src/presentation/wx_compose.rs` at 0. The last `[S]` line stays: ledger
+    155's listening question, and nobody has heard the sentence.
   - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: `send_the_answer` at `:13129`
     queues the reply through `queue_for_sending`, which returns a `GoAfter` and holds the
     message like any other; on `Ok` it answers `HowItWent::Sent`, whose doc comment in
@@ -2522,8 +2555,13 @@ requirements to a later phase's section rather than here.
   - [S] Ledger 155's question, whether anything spoken after pressing Accept by mistake
     points at Undo Send, is a listening pass and stays open until somebody hears it.
 
-- [ ] **FOUND-06**: The two sort controls on the Reading tab sit together, and a compose
+- [x] **FOUND-06**: The two sort controls on the Reading tab sit together, and a compose
   setting is on the Compose tab.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-04, merged 2026-09-16 at
+    `c928cae4`.** The first `[D]` line by `tests/the_sort_controls_sit_together.rs`, the real
+    tab built and the order read back; the second by
+    `config::tests::test_every_setting_somebody_can_change_is_offered_by_a_screen` green with
+    the control inside `build_compose_tab`. The last `[S]` line stays (ledger 487).
   - Evidence: `src/presentation/wx_settings.rs` on 2026-09-16: "Default sort order" is built
     by hand into `list_sec`, the Message List section, at `:1142-1176`; "Then by" is
     `labelled_choice(panel, &date_sec, ...)` at `:1516-1523`, inside the Dates and Times
@@ -2545,7 +2583,12 @@ requirements to a later phase's section rather than here.
     `test_every_setting_somebody_can_change_is_offered_by_a_screen` stays green.
   - [S] Whether the tab now reads as one group by ear is a listening pass.
 
-- [ ] **FOUND-07**: Exactly one item in the View menu's Sort submenu is checked.
+- [x] **FOUND-07**: Exactly one item in the View menu's Sort submenu is checked.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-04, merged 2026-09-16 at
+    `c928cae4`.** The one `[D]` line by `tests/one_sort_is_checked.rs`, the chain read as one
+    radio group with no separator and `sync_sort_menu` following every sort, and by
+    `tests/one_sort_is_checked_on_a_live_menu.rs`, a real menu bar showing one tick. Whether
+    the running program shows one tick after a header click is ledger 488.
   - Evidence: `src/presentation/wx_app.rs:6160-6197` on 2026-09-16: seven `append_radio_item`
     calls in four runs with `append_separator` at `:6171`, `:6182` and `:6193` between them.
     wxWidgets ends a radio group at a separator, so those are four groups. `sync_sort_menu`
@@ -2560,6 +2603,16 @@ requirements to a later phase's section rather than here.
 - [ ] **FOUND-08**: Every checkbox in the editors is named on the channel NVDA reads, no
   empty static text sits before a control as a spacer, and the check that refuses a
   whitespace label refuses that shape too.
+  - **Read 2026-09-17 by the phase's closing read in 09-10; 09-05, merged 2026-09-16 at
+    `165fd811`; left open on its second `[D]` line.** The first `[D]` line by
+    `scan_target::tests::test_every_window_a_fresh_profile_can_reach_has_a_name` and
+    `test_the_workflow_asks_for_every_target`, each of the five started here on a throwaway
+    profile; the naming half of the second by `tests/checkbox_labels.rs`; the third by
+    `tests/no_label_is_only_a_space.rs` and its companion. The walk half of the second line is
+    open: `scripts/msaa-names.ps1` left with -1073740791 on every run here, before and after,
+    and the Accessibility workflow has not run since, because nothing has been pushed (ledger
+    390, 489). It closes when CI has walked the five editors and reported a name for every
+    checkbox; whoever reads that run ticks this. The last `[S]` line stays (ledger 490).
   - Evidence: `grep -rn 'with_label("")' src/presentation/*.rs` finds 22 on 2026-09-16, the
     issue's count. Read one by one: eleven are status or problem lines something fills later
     or names outright, and eleven are spacers nothing ever fills. The five the issue names in
@@ -2601,6 +2654,16 @@ requirements to a later phase's section rather than here.
     listening pass.
 
 - [ ] **FOUND-09**: Arrowing through the Settings tab row says each tab once.
+  - **Read 2026-09-17 by the phase's closing read in 09-10; 09-06, merged 2026-09-16 at
+    `de58771a`; left open on its third `[D]` line.** The first `[D]` line by
+    `scripts/uia-events.ps1` and the capture quoted in 09-06's summary, 42 events over six
+    presses before anything changed; the second by
+    `tests/the_settings_tab_row_says_each_tab_once.rs`, a real `WM_KEYDOWN` sent to the built
+    dialog and one focus event counted, and the capture taken again afterwards showing one per
+    press. The third is open: `nvda-tests/tests/settings-tabs-read-once.test.js` is written and
+    syntax-checked and has not run, because it runs only on the NVDA workflow at a push of
+    `main` and nothing has been pushed (ledger 492). It closes when that run holds each tab to
+    once; whoever reads that run ticks this. The last `[S]` line stays.
   - Evidence: `src/presentation/wx_settings.rs` on 2026-09-16 builds a `Notebook` with seven
     pages and announces nothing on a page change (`grep -n announce` finds save and validation
     only). Accessibility Insights for Windows is not installed on this machine
@@ -2621,8 +2684,20 @@ requirements to a later phase's section rather than here.
     each tab name once; it runs on CI at the next push.
   - [S] Whether the tab is now heard once is a listening pass on the tester's machine.
 
-- [ ] **FOUND-10**: Every surface that shows a message tries the PGP key, states the S/MIME
+- [x] **FOUND-10**: Every surface that shows a message tries the PGP key, states the S/MIME
   envelope and carries the signature bar, from one path.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-07, merged 2026-09-17 at
+    `f990d023`.** The first `[D]` line by four tests in `application::reading_a_message`
+    (`test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words`,
+    `test_an_armoured_message_with_no_key_here_says_why_and_keeps_its_armour`,
+    `test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence`,
+    `test_the_envelope_is_folded_in_before_the_signature_so_it_is_spoken`) and by
+    `tests/wired.rs`'s `test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open`
+    over six surfaces; the second by five `encryption_tests` in `presentation::reader_text`;
+    the third by `THE_SURFACES` in `tests/wired.rs` with its companion
+    `test_a_surface_that_stopped_asking_the_composition_is_named`, and
+    `grep -c 'Corrected on 2026-09-16' docs/changelog.md` at 3. The last `[S]` line stays
+    (ledger 495).
   - Evidence: `src/presentation/wx_app.rs` on 2026-09-16: `opening_pgp::for_body` is called
     at `:11195` (Shift+Space, `read_the_whole_message`) and `:12464`
     (`open_in_the_text_reader`); `envelope_check_for` at `:11184` and `:12478`;
@@ -2651,9 +2726,23 @@ requirements to a later phase's section rather than here.
   - [S] Nothing here has met a real correspondent's key or a real signed message; that is
     the standing condition and stays.
 
-- [ ] **FOUND-11**: Mail import and export do what their commands and documents say: the
+- [x] **FOUND-11**: Mail import and export do what their commands and documents say: the
   Outlook data file reader is reached from the picker, Save As writes a file, and a folder
   can be chosen.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-08, merged 2026-09-17 at
+    `06fdc9b7`, and 09-10, merged 2026-09-17 at `8eba6a38`.** The first `[D]` line by
+    `import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader`, five tests in
+    `application::importing_an_outlook_data_file` and `tests/wired.rs`'s
+    `test_importing_mail_sends_each_kind_of_file_to_its_own_reader`; the second by four
+    `importing_messages` tests, three `export_tree` tests and the two `wired.rs` readings of
+    Save As; the third by `tests/wired.rs`'s
+    `test_a_folder_of_messages_can_be_chosen_and_goes_to_the_import_worker` with its companion
+    `test_the_reading_of_the_folder_import_can_see_the_hand_over_taken_out`, the dated sentence
+    on the changelog's import entry, and the Known limitations line naming `.sbd` and `.msf`;
+    the fourth by the four dated sentences quoted in 09-10's summary and the guide's Import and
+    Export section. Both `[S]` lines stay: points 4 to 6 are later work with the issue open
+    (ledger 510 for the Thunderbird layout), and no real Outlook data file has been read
+    (ledger 499); nobody has run the folder item by hand (ledger 509).
   - Evidence: `src/service/outlook_data_file.rs` is 3,608 lines with 38 tests, referenced
     only by `pub mod` in `service/mod.rs:28` (`grep -rn outlook_data_file src` less itself
     -> one line), and named by no guard record; it yields
@@ -2700,7 +2789,16 @@ requirements to a later phase's section rather than here.
     fourth `[D]` line.
   - [S] No real Outlook data file has ever been read here, and the changelog keeps saying so.
 
-- [ ] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
+- [x] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
+  - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-09, merged 2026-09-17 at
+    `a8b26596`.** The first `[D]` line by `tests/the_settings_dialog_opens_in.rs` at
+    `d169df71`, the five rows dated 2026-09-16 and the line held by
+    `started::tests::test_the_settings_built_line_is_held_byte_for_byte`; the second by its
+    "built when its tab is first shown" arm,
+    `test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown`,
+    `test_the_dialog_and_each_later_page_are_built_frozen`, the six after rows dated
+    2026-09-17, and `test_every_setting_somebody_can_change_is_offered_by_a_screen` green. The
+    last `[S]` line stays (ledger 504, 507).
   - Evidence: `build_settings_dialog` (`wx_settings.rs:209`) builds seven pages before
     `show_modal`; `available_languages()` at `:638` creates the Windows spell-checker factory
     and asks `GetLocaleInfoEx` per tag; `fonts::installed_families()` at `:762` walks
@@ -2805,17 +2903,17 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PERF-06 | Phase 8 | Complete |
 | PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
-| FOUND-02 | Phase 9 | Pending |
-| FOUND-03 | Phase 9 | Pending |
-| FOUND-04 | Phase 9 | Pending |
-| FOUND-05 | Phase 9 | Pending |
-| FOUND-06 | Phase 9 | Pending |
-| FOUND-07 | Phase 9 | Pending |
-| FOUND-08 | Phase 9 | Pending |
-| FOUND-09 | Phase 9 | Pending |
-| FOUND-10 | Phase 9 | Pending |
-| FOUND-11 | Phase 9 | Pending |
-| FOUND-12 | Phase 9 | Pending |
+| FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
+| FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271` |
+| FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
+| FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
+| FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
+| FOUND-08 | Phase 9 | Open on its second `[D]` line, 09-05 at `165fd811`: the MSAA walk waits for the Accessibility workflow at the next push (ledger 489) |
+| FOUND-09 | Phase 9 | Open on its third `[D]` line, 09-06 at `de58771a`: the NVDA case waits for the NVDA workflow at the next push (ledger 492) |
+| FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
+| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
+| FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 
 **Coverage:**
 

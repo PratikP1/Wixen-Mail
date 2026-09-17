@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 480
+open_count: 483
 waived_count: 0
 fixed_count: 28
-total_count: 508
-last_updated: 2026-09-17T06:19:32.442Z
+total_count: 511
+last_updated: 2026-09-17T07:17:23.479Z
 ---
 
 # Broken Windows Ledger
@@ -523,6 +523,9 @@ last_updated: 2026-09-17T06:19:32.442Z
 | 506 | 09 | todo | src/presentation/wx_settings.rs |  | With the window shown and NVDA running, every control in the Settings dialog costs about twice what it costs on a hidden frame, and a Choice control costs 10 to 60 ms each, the language list's 19 names in many scripts 24 ms hidden and 61 ms shown. That is what is left in the release binary's 397 ms after 09-09: the General page's controls under the screen reader's in-process hooks, plus the configuration read. Found by a scratch run of 2026-09-16 that showed the harness's frame and matched the release binary within three percent; the mechanism is inferred from that and not diagnosed further, because stopping the tester's NVDA to take the number without it was not asked for. Fewer Choice controls on General, or a build off the interface thread, would move it; neither was done. | open |  | 2026-09-17T06:19:18.152Z |  |
 | 507 | 09 | todo | src/presentation/wx_settings.rs |  | Since 09-09 a Settings page after General is built the first time its tab is reached, so the first Right arrow onto Reading pays that page's build: 156 ms on a hidden frame in the test process (the row of 2026-09-17), about twice that under NVDA by the scratch run's factor. The other five are under a tenth of a second hidden. Whether a pause on the first visit of Reading is felt, and whether filling the pages after the dialog shows with the control saying so would be better, is the tester's to say; the plan allowed either shape and this one was chosen because a page is never seen empty. | open |  | 2026-09-17T06:19:18.744Z |  |
 | 508 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-09-PLAN.md |  | 09-09 executed with four departures. The fix is not either shape the plan named: the rows said the three lists cost a millisecond each and the pages the rest, and a scratch timing of each page, reverted, found a spell checker built for one sentence and released (210 ms) and an unfrozen typeface list resizing itself per item (1,090 ms with the window shown), so the change is a frozen build, a source named without a checker, and pages built when their tab is first shown, the last being the shape the plan and FOUND-12 offered for a page cost. The harness drives the release binary itself, posting the Settings menu command to a window it started, rather than a person pressing Ctrl+, on a real profile of this machine, so no run touched the tester's profile and the number is repeatable. The dialog is timed five times in the test process rather than once, and a sixth build times each tab's first visit. Task 1's line is written in show_settings_dialog beside show_modal, from an Instant handle_settings is handed, rather than in handle_settings itself, because show_modal lives there. | open |  | 2026-09-17T06:19:32.442Z |  |
+| 509 | 09 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has run File, Import a Folder of Messages by hand since 09-10 added it, and no Thunderbird profile folder has been read through it. The folder walk is proven by mailbox_archive's own tests over folders its tests make and by the wired.rs readings that hold the item to a DirDialog and the hand-over to the worker; what a real folder of somebody's saved mail becomes, and what a Thunderbird profile becomes (one folder per mailbox file, each .msf refused and counted, the .sbd nesting one level out of place), is written in the changelog and the guide from reading the walk, not from running it. FOUND-11's third [D] line; #53 point 3. | open |  | 2026-09-17T07:17:05.342Z |  |
+| 510 | 09 | todo | src/service/mailbox_archive.rs |  | The folder import does not recognise Thunderbird's layout: a mailbox file with no ending beside a .msf index and a .sbd folder of subfolders. Read as loose files, a profile's mail directory becomes one folder per mailbox file, each .msf a refused non-mail file counted in the sentence, and the folders inside Inbox.sbd landing under a folder called Inbox.sbd beside Inbox rather than inside it. Recognising the layout means treating name.sbd as the children of the mailbox file name and skipping .msf without counting it. Said in the changelog and the guide since 09-10 (#53 point 3); later work with points 4 to 6. | open |  | 2026-09-17T07:17:22.879Z |  |
+| 511 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-10-PLAN.md |  | 09-10 executed with four departures. The item's letter is O, not the plan's F, which Fetch Missing Message Text already has on the File menu; test_no_two_items_on_one_menu_claim_the_same_letter would have refused the plan's spelling, and the green commit wrongly said no check read menus, corrected in the next commit. The shortcuts page had no row for Import Mailbox beside which to add one, so four rows were added: Import Mailbox, Import a Folder of Messages, Export Mailbox and Import PGP Private Key. The import handler was split into an_account_to_import_into, refuse_to_import and mail_brought_in_from so the two pickers share the readiness check and the worker start, and the older wired.rs reading of the worker's shape was re-pointed at the shared function and named in the red trailer. The changelog's gathered Known limitations paragraph for issue 53's points 4 to 6 went in with task 2, as the plan said, after being drafted and withdrawn during task 1 so task 1's commit carried only its own words. | open |  | 2026-09-17T07:17:23.479Z |  |
 
 ````json
 [
@@ -6620,6 +6623,42 @@ last_updated: 2026-09-17T06:19:32.442Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T06:19:32.442Z",
+    "resolved_at": null
+  },
+  {
+    "id": 509,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nobody has run File, Import a Folder of Messages by hand since 09-10 added it, and no Thunderbird profile folder has been read through it. The folder walk is proven by mailbox_archive's own tests over folders its tests make and by the wired.rs readings that hold the item to a DirDialog and the hand-over to the worker; what a real folder of somebody's saved mail becomes, and what a Thunderbird profile becomes (one folder per mailbox file, each .msf refused and counted, the .sbd nesting one level out of place), is written in the changelog and the guide from reading the walk, not from running it. FOUND-11's third [D] line; #53 point 3.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T07:17:05.342Z",
+    "resolved_at": null
+  },
+  {
+    "id": 510,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/service/mailbox_archive.rs",
+    "line": null,
+    "description": "The folder import does not recognise Thunderbird's layout: a mailbox file with no ending beside a .msf index and a .sbd folder of subfolders. Read as loose files, a profile's mail directory becomes one folder per mailbox file, each .msf a refused non-mail file counted in the sentence, and the folders inside Inbox.sbd landing under a folder called Inbox.sbd beside Inbox rather than inside it. Recognising the layout means treating name.sbd as the children of the mailbox file name and skipping .msf without counting it. Said in the changelog and the guide since 09-10 (#53 point 3); later work with points 4 to 6.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T07:17:22.879Z",
+    "resolved_at": null
+  },
+  {
+    "id": 511,
+    "kind": "deviation",
+    "phase": "09",
+    "file": ".planning/phases/09-what-the-first-day-of-testing-found/09-10-PLAN.md",
+    "line": null,
+    "description": "09-10 executed with four departures. The item's letter is O, not the plan's F, which Fetch Missing Message Text already has on the File menu; test_no_two_items_on_one_menu_claim_the_same_letter would have refused the plan's spelling, and the green commit wrongly said no check read menus, corrected in the next commit. The shortcuts page had no row for Import Mailbox beside which to add one, so four rows were added: Import Mailbox, Import a Folder of Messages, Export Mailbox and Import PGP Private Key. The import handler was split into an_account_to_import_into, refuse_to_import and mail_brought_in_from so the two pickers share the readiness check and the worker start, and the older wired.rs reading of the worker's shape was re-pointed at the shared function and named in the red trailer. The changelog's gathered Known limitations paragraph for issue 53's points 4 to 6 went in with task 2, as the plan said, after being drafted and withdrawn during task 1 so task 1's commit carried only its own words.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T07:17:23.479Z",
     "resolved_at": null
   }
 ]
