@@ -382,6 +382,41 @@ pub fn file_one_imported_message(
     WhetherItWasWrittenDown::ItIsInTheFolder
 }
 
+/// The folder imported mail lands in, made if it is not there yet.
+///
+/// Two steps rather than one. A folder saved without being told it has no
+/// server behind it is one the next check for mail tries to open at a provider
+/// that has never heard of it.
+///
+/// Here rather than in the window, beside the one function that files a
+/// message, because three imports make folders this way now: an archive's
+/// folders, the folder one saved file goes into, and an Outlook data file's
+/// folders. Three copies of two steps is how one of them comes to skip the
+/// second.
+pub fn a_folder_for_imported_mail(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &str,
+    path: &str,
+) -> Option<i64> {
+    if let Ok(Some(already)) = cache.get_folder(account, path) {
+        return Some(already.id);
+    }
+    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+    let id = cache
+        .save_folder(&crate::data::message_cache::CachedFolder {
+            id: 0,
+            account_id: account.to_string(),
+            name,
+            path: path.to_string(),
+            folder_type: FolderType::Custom.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .ok()?;
+    let _ = cache.set_folder_server_facts(id, false, true);
+    Some(id)
+}
+
 // ── Saying what the import did ──────────────────────────────────────────────
 
 /// What bringing a file of mail into a folder did.

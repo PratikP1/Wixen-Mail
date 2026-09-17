@@ -97,11 +97,14 @@ use std::rc::Rc;
 
 /// How every Outlook data file begins, whichever of the two kinds it is.
 ///
-/// Only ever asked once opening one has already failed, and only to choose
-/// between two sentences: a file that never was an Outlook file, and one that
-/// is and stops partway through. Those ask different things of the person in
-/// front of the screen.
-const HOW_ONE_BEGINS: &[u8] = b"!BDN";
+/// Asked in two places. Here, only once opening one has already failed, and
+/// only to choose between two sentences: a file that never was an Outlook
+/// file, and one that is and stops partway through. Those ask different
+/// things of the person in front of the screen. And in
+/// [`crate::application::import_tree::what_was_chosen`], before anything is
+/// opened, to send a chosen file to this reader rather than to the archive's,
+/// which is why it is public.
+pub const HOW_ONE_BEGINS: &[u8] = b"!BDN";
 
 /// What Outlook writes a little further in to say which of its files this is.
 ///

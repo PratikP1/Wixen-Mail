@@ -170,6 +170,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   its own for that sentence. Nobody has heard the preview's bar or a conversation's per-message
   sentences with a screen reader.
 
+- **File, Import Mailbox takes an Outlook data file.** Found on 2026-09-15 in build
+  `0.125.1+g3e633252` by the audit of what still separates this program from Outlook (#53, point
+  1). The reader for Outlook's `.pst` files had been in the tree since 2026-09-05, with its own
+  tests, and nothing called it: the picker did not list `.pst`, and a data file chosen through All
+  files was told it was not a mailbox archive. Its entry further down this page said the reader
+  had never met a real file, which was true, and not that nothing could reach it, which was the
+  larger fact. Now the picker lists `.pst` beside the archives, and a chosen data file is read on
+  the worker the archive import uses. Its mail lands under Imported in the folders the file kept
+  it in, filed the same way a saved message is, so the next check for mail leaves it alone. Its
+  appointments go into the calendar imported files share, and its contacts, tasks and notes onto
+  this computer, under the local account rather than any provider's, so no sync offers them to a
+  server as things you made there. The closing sentence counts each kind, says what stayed in the
+  file (things the file would not give up, things that were none of the five kinds, attachments,
+  and repeating appointments, which arrive as the single appointment each first was), says whether
+  the file had a password Outlook would have asked for and this program did not need, and ends by
+  saying that no real Outlook data file has been through this program before.
+  Known limitations: that last sentence is the truth. Neither this program nor the library
+  underneath it can write an Outlook data file, so what is tested is everything but the walk
+  through a real one: each kind of item the reader hands over lands where it should and is
+  counted, and the reader's own tests cover what it makes of each kind. Reading a real file is
+  unproven, and the folder names inside it may come out wrong from the older kind of file. The
+  calendar, contacts, tasks and notes show what arrived when you next open them. Attachments stay
+  in the file. A folder the file names in a way this computer cannot write keeps its mail, and the
+  sentence says so.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
@@ -4857,6 +4882,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
   **This has never been run against a real Outlook file.** There is no way to
   make one to test against, so the reading of a real file is unproven.
+
+  **Corrected on 2026-09-16:** from the day this entry was written until the
+  build that carries #53's fix, nothing in the program called this reader. The
+  picker did not list `.pst`, and a data file chosen through All files was
+  refused as not a mailbox archive. "Can be read" was true of the code and not
+  of anything you could do. File, Import Mailbox reaches it now, and the
+  sentence above is still true: no real Outlook file has been through it.
 
 - **A mailbox larger than a gigabyte can be imported.** It is read a piece at
   a time, so what it costs to import does not grow with how much mail somebody

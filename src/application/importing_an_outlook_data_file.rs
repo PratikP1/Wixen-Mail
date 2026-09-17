@@ -39,10 +39,19 @@
 //! reader's own iterators and has never met a real file, and the closing
 //! sentence says so to whoever runs it.
 
-use crate::application::importing_messages::MessagesImported;
+use crate::application::import_tree;
+use crate::application::importing_messages::{
+    MessagesImported, ReadAs, WhatToDoWithIt, WhetherItWasWrittenDown, a_folder_for_imported_mail,
+    each_message_in, file_one_imported_message,
+};
+use crate::application::opening::{IMPORTED_CALENDAR, WHERE_IMPORTED_THINGS_GO};
+use crate::application::summing_up::SummingUp;
 use crate::common::Result;
 use crate::data::message_cache::MessageCache;
-use crate::service::outlook_data_file::{ItemInTheDataFile, WhatStayedBehind};
+use crate::service::outlook_data_file::{
+    self, ItemInTheDataFile, WhatStayedBehind, WhereItIsGoing,
+};
+use std::collections::HashSet;
 use std::path::Path;
 
 /// What bringing a data file in did, for the sentence at the end.
@@ -86,8 +95,98 @@ pub struct WhatCameAcross {
 /// the reader's; everything the walk hands over goes through
 /// [`one_folder_filed`], which is the half a test can reach.
 pub fn brought_in(cache: &MessageCache, account: &str, at: &Path, so_far: &dyn Fn(&str)) -> String {
-    let _ = (cache, account, at, so_far);
-    String::new()
+    let mut file = match outlook_data_file::opened(at) {
+        Ok(file) => file,
+        Err(why) => return as_it_was_worded(&why),
+    };
+    let mut came = WhatCameAcross {
+        a_password_is_on_it: file.has_a_password_on_it(),
+        ..WhatCameAcross::default()
+    };
+    // Each name once. Outlook lets two folders in one place carry one name,
+    // and the reader hands both over under the first, so asking for the
+    // second would read the same mail twice and file none of it.
+    let mut asked_for: HashSet<String> = HashSet::new();
+    let named: Vec<String> = file
+        .what_it_holds()
+        .iter()
+        .map(|folder| folder.named.clone())
+        .collect();
+    for folder in named {
+        if !asked_for.insert(folder.clone()) {
+            continue;
+        }
+        let going_to = WhereItIsGoing {
+            account: WHERE_IMPORTED_THINGS_GO,
+        };
+        match file.each_item_in(&folder, going_to) {
+            Ok(items) => one_folder_filed(cache, account, &folder, items, &mut came),
+            Err(why) => came.refused.push(as_it_was_worded(&why)),
+        }
+        // Under one subject and at the lowest urgency, so a count climbing
+        // through forty thousand is heard at its latest value rather than
+        // forty thousand times.
+        so_far(&format!(
+            "{} messages imported so far.",
+            came.mail.brought_in
+        ));
+    }
+    // Asked at the end rather than at the start, because the reader counts
+    // what stayed behind as it reads.
+    came.stayed_behind = file.what_stayed_behind();
+    what_the_data_file_import_did(&came)
+}
+
+/// The mail folder one folder of the data file goes into, worked out once.
+///
+/// Not asked for until the first message needs it, so a folder of nothing but
+/// contacts leaves no empty mail folder behind.
+enum TheMailFolder {
+    /// No message has arrived yet.
+    NotAskedFor,
+    /// Made, with the identifiers of the mail it already held.
+    Made {
+        id: i64,
+        already_here: HashSet<String>,
+    },
+    /// The file gives it a name this computer will not write, so its mail
+    /// stays in the file. Counted once, when it was found out.
+    Refused,
+    /// The folder could not be made here, so its mail is counted as read and
+    /// not saved, message by message, the way any other message that will not
+    /// save is.
+    CouldNotBeMade,
+}
+
+impl TheMailFolder {
+    /// The folder, made if this is the first message to need it.
+    fn for_mail(
+        &mut self,
+        cache: &MessageCache,
+        account: &str,
+        folder_in_the_file: &str,
+        came: &mut WhatCameAcross,
+    ) -> &mut Self {
+        if matches!(self, Self::NotAskedFor) {
+            *self = match import_tree::where_a_folder_of_the_data_file_lands(folder_in_the_file) {
+                None => {
+                    came.folders_refused += 1;
+                    Self::Refused
+                }
+                Some(path) => match a_folder_for_imported_mail(cache, account, &path) {
+                    Some(id) => {
+                        came.folders_of_mail += 1;
+                        Self::Made {
+                            id,
+                            already_here: cache.message_ids_in_folder(id).unwrap_or_default(),
+                        }
+                    }
+                    None => Self::CouldNotBeMade,
+                },
+            };
+        }
+        self
+    }
 }
 
 /// File everything out of one folder of the data file.
@@ -97,6 +196,10 @@ pub fn brought_in(cache: &MessageCache, account: &str, at: &Path, so_far: &dyn F
 /// contacts does not leave an empty mail folder behind. Everything else goes
 /// under the local account. Each thing moves exactly one count, so the counts
 /// add up to what the folder held.
+///
+/// A refusal from the reader is the last thing it hands over, and it is kept
+/// for the closing sentence rather than ending the import: what was filed
+/// before it is good, and the next folder is still there to be read.
 pub fn one_folder_filed(
     cache: &MessageCache,
     account: &str,
@@ -104,8 +207,111 @@ pub fn one_folder_filed(
     items: impl Iterator<Item = Result<ItemInTheDataFile>>,
     came: &mut WhatCameAcross,
 ) {
-    let _ = (cache, account, folder_in_the_file, came);
-    for _ in items {}
+    let mut mail_folder = TheMailFolder::NotAskedFor;
+    for item in items {
+        match item {
+            Ok(ItemInTheDataFile::Mail(bytes)) => {
+                match mail_folder.for_mail(cache, account, folder_in_the_file, came) {
+                    TheMailFolder::Made { id, already_here } => {
+                        one_message_filed(cache, &bytes, *id, already_here, &mut came.mail);
+                    }
+                    TheMailFolder::CouldNotBeMade => {
+                        came.mail.count_one(WhatToDoWithIt::BringItIn);
+                        came.mail
+                            .count_one_written(WhetherItWasWrittenDown::ItCouldNotBeSavedHere);
+                    }
+                    TheMailFolder::Refused | TheMailFolder::NotAskedFor => {}
+                }
+            }
+            Ok(ItemInTheDataFile::Appointment(mut event)) => {
+                event.account_id = WHERE_IMPORTED_THINGS_GO.to_string();
+                // The calendar every imported file's events go in, so they
+                // are found where the other importer already puts them.
+                event.calendar_id = Some(IMPORTED_CALENDAR.to_string());
+                one_saved(
+                    cache.save_calendar_event(&event).is_ok(),
+                    &mut came.appointments,
+                    &mut came.could_not_be_saved_here,
+                );
+            }
+            Ok(ItemInTheDataFile::Contact(mut contact)) => {
+                contact.account_id = WHERE_IMPORTED_THINGS_GO.to_string();
+                one_saved(
+                    cache.save_contact(&contact).is_ok(),
+                    &mut came.contacts,
+                    &mut came.could_not_be_saved_here,
+                );
+            }
+            Ok(ItemInTheDataFile::Task(mut task)) => {
+                task.account_id = WHERE_IMPORTED_THINGS_GO.to_string();
+                one_saved(
+                    cache.save_task(&task).is_ok(),
+                    &mut came.tasks,
+                    &mut came.could_not_be_saved_here,
+                );
+            }
+            Ok(ItemInTheDataFile::Note(mut note)) => {
+                note.account_id = WHERE_IMPORTED_THINGS_GO.to_string();
+                one_saved(
+                    cache.save_note(&note).is_ok(),
+                    &mut came.notes,
+                    &mut came.could_not_be_saved_here,
+                );
+            }
+            Err(why) => came.refused.push(as_it_was_worded(&why)),
+        }
+    }
+}
+
+/// The reader's refusal, as the sentence it wrote.
+///
+/// Every refusal the reader makes is a sentence written to be heard, and it
+/// carries it in the variant whose display puts "Error:" in front, which a
+/// screen reader says first. The words are taken out here so the closing
+/// sentence reads as the reader wrote it. Moving the reader onto the variant
+/// that arrives as itself is a change to the reader wanting a red of its own.
+fn as_it_was_worded(why: &crate::common::Error) -> String {
+    match why {
+        crate::common::Error::Other(said) | crate::common::Error::InPlainWords(said) => {
+            said.clone()
+        }
+        other => other.to_string(),
+    }
+}
+
+/// One message out of the file, filed the way one saved `.eml` is.
+///
+/// The bytes already hold one message, composed by the reader through the
+/// same writer Save As uses, so they are read as one and go through the one
+/// place that files an imported message and marks the row as filed here.
+fn one_message_filed(
+    cache: &MessageCache,
+    bytes: &[u8],
+    folder_id: i64,
+    already_here: &mut HashSet<String>,
+    counted: &mut MessagesImported,
+) {
+    for read in each_message_in(bytes, ReadAs::OneMessage) {
+        let what = WhatToDoWithIt::for_one_read(&read, already_here);
+        if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
+            counted.count_one_written(file_one_imported_message(cache, message, folder_id));
+            // So a message the file holds twice in one folder is filed once,
+            // the way a second import of the file would find it.
+            if let Some(identifier) = message.message.message_id.as_deref() {
+                already_here.insert(identifier.trim().to_string());
+            }
+        }
+        counted.count_one(what);
+    }
+}
+
+/// Count one thing this computer saved, or one it would not.
+fn one_saved(saved: bool, kind: &mut usize, could_not_be_saved_here: &mut usize) {
+    if saved {
+        *kind += 1;
+    } else {
+        *could_not_be_saved_here += 1;
+    }
 }
 
 /// What the import did, in the words somebody hears.
@@ -115,8 +321,136 @@ pub fn one_folder_filed(
 /// something somebody has to decide what to do about. The last sentence is
 /// always the same: no real Outlook data file has been through this yet.
 pub fn what_the_data_file_import_did(came: &WhatCameAcross) -> String {
-    let _ = came;
-    String::new()
+    let arrived =
+        came.mail.brought_in + came.appointments + came.contacts + came.tasks + came.notes;
+    let mut said = SummingUp::opening(if arrived == 0 {
+        "Nothing was imported from the data file".to_string()
+    } else {
+        match came.mail.brought_in {
+            0 => "Imported no messages".to_string(),
+            many => format!(
+                "Imported {} into {}",
+                counted("message", many),
+                counted("folder", came.folders_of_mail)
+            ),
+        }
+    });
+    for (kind, how_many) in [
+        ("appointment", came.appointments),
+        ("contact", came.contacts),
+        ("task", came.tasks),
+        ("note", came.notes),
+    ] {
+        if how_many > 0 {
+            said.count(counted(kind, how_many));
+        }
+    }
+    // Two sentences written out rather than one built from parts, wherever
+    // several words have to agree in number: a sentence assembled from
+    // fragments reads like one.
+    if came.mail.already_here > 0 {
+        said.sentence(match came.mail.already_here {
+            1 => "1 message was already here and was left as it is".to_string(),
+            many => format!("{many} messages were already here and were left as they are"),
+        });
+    }
+    if came.mail.could_not_be_read > 0 {
+        said.sentence(match came.mail.could_not_be_read {
+            1 => "1 message in the file could not be read, because there was nothing in it a \
+                  mail program recognises"
+                .to_string(),
+            many => format!(
+                "{many} messages in the file could not be read, because there was nothing in \
+                 them a mail program recognises"
+            ),
+        });
+    }
+    if came.mail.not_written_down > 0 {
+        said.sentence(match came.mail.not_written_down {
+            1 => "1 message was read from the file and could not be saved on this computer"
+                .to_string(),
+            many => format!(
+                "{many} messages were read from the file and could not be saved on this computer"
+            ),
+        });
+    }
+    if came.could_not_be_saved_here > 0 {
+        said.sentence(match came.could_not_be_saved_here {
+            1 => {
+                "1 thing was read from the file and could not be saved on this computer".to_string()
+            }
+            many => format!(
+                "{many} things were read from the file and could not be saved on this computer"
+            ),
+        });
+    }
+    if came.folders_refused > 0 {
+        said.sentence(match came.folders_refused {
+            1 => "1 folder was left in the file, because the file gives it a name that cannot \
+                  be used on this computer"
+                .to_string(),
+            many => format!(
+                "{many} folders were left in the file, because the file gives them names that \
+                 cannot be used on this computer"
+            ),
+        });
+    }
+    let behind = &came.stayed_behind;
+    if behind.could_not_be_read > 0 {
+        said.sentence(match behind.could_not_be_read {
+            1 => "1 thing in the file could not be read and was left in it".to_string(),
+            many => format!("{many} things in the file could not be read and were left in it"),
+        });
+    }
+    if behind.not_one_of_these_kinds > 0 {
+        said.sentence(match behind.not_one_of_these_kinds {
+            1 => "1 thing in the file was none of mail, an appointment, a contact, a task or a \
+                  note, and was left in it"
+                .to_string(),
+            many => format!(
+                "{many} things in the file were none of mail, an appointment, a contact, a task \
+                 or a note, and were left in it"
+            ),
+        });
+    }
+    if behind.things_that_carried_files > 0 {
+        said.sentence(match behind.things_that_carried_files {
+            1 => "1 thing carried a file, and the file stayed in the data file".to_string(),
+            many => format!("{many} things carried files, and the files stayed in the data file"),
+        });
+    }
+    if behind.appointments_that_repeat > 0 {
+        said.sentence(match behind.appointments_that_repeat {
+            1 => "1 appointment repeats, and came across as the single appointment it first was"
+                .to_string(),
+            many => format!(
+                "{many} appointments repeat, and each came across as the single appointment it \
+                 first was"
+            ),
+        });
+    }
+    for refusal in &came.refused {
+        said.sentence(refusal.clone());
+    }
+    if came.a_password_is_on_it {
+        said.sentence(
+            "The file has a password on it, which Outlook asks for and nothing in the file is \
+             locked by, so it was not needed here",
+        );
+    }
+    said.sentence(
+        "No real Outlook data file has been through this program before, so check what arrived \
+         against Outlook",
+    );
+    said.spoken()
+}
+
+/// A count with the thing it counts, in the number the count needs.
+fn counted(thing: &str, how_many: usize) -> String {
+    match how_many {
+        1 => format!("1 {thing}"),
+        many => format!("{many} {thing}s"),
+    }
 }
 
 #[cfg(test)]

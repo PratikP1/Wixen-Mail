@@ -6068,7 +6068,8 @@ impl WxMailApp {
             .append_item(
                 ID_IMPORT_MESSAGES,
                 "&Import Mailbox...",
-                "Read mail in from a file or an archive, keeping the folders it was in",
+                "Read mail in from a file, an archive or an Outlook data file, keeping the \
+                 folders it was in",
             )
             .append_item(
                 ID_EXPORT_MESSAGES,
@@ -12746,7 +12747,9 @@ fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
 /// The picker and the handing over, and nothing else. Where each folder lands
 /// is [`crate::application::import_tree`]'s answer, reading and writing the
 /// file is `service::mailbox_archive`'s, and what to say is
-/// [`crate::application::importing_messages`]'s.
+/// [`crate::application::importing_messages`]'s. An Outlook data file is
+/// `service::outlook_data_file`'s to read and
+/// [`crate::application::importing_an_outlook_data_file`]'s to file and say.
 ///
 /// Handed to a worker rather than done here, and that is not a nicety. This
 /// window has one helper that draws, answers the keyboard, and replies to the
@@ -12788,7 +12791,8 @@ fn import_a_mailbox(
     let picker = FileDialog::builder(frame)
         .with_message("Import a mailbox from a file")
         .with_wildcard(
-            "Mailbox archives (*.zip;*.eml;*.mbox)|*.zip;*.eml;*.mbox|All files (*.*)|*.*",
+            "Mailboxes and Outlook data files (*.zip;*.eml;*.mbox;*.pst)|\
+             *.zip;*.eml;*.mbox;*.pst|All files (*.*)|*.*",
         )
         .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
         .build();
@@ -12865,14 +12869,24 @@ fn fill_folders_from(
         MessagesImported, WhatToDoWithIt, file_one_imported_message,
     };
 
-    // One saved message and a whole archive are two different readers, and
-    // each refuses what the other takes. Which one this is comes from how the
-    // file begins rather than from what it is called.
+    // One saved message, a whole archive and an Outlook data file are three
+    // different readers, and each refuses what the others take. Which one
+    // this is comes from how the file begins rather than from what it is
+    // called.
     let opens_with = a_look_at_the_start_of(at);
-    if import_tree::what_was_chosen(at.is_dir(), &opens_with)
-        == import_tree::WhatWasChosen::MailInOneFile
-    {
-        return one_file_of_mail_brought_in(cache, account, at);
+    match import_tree::what_was_chosen(at.is_dir(), &opens_with) {
+        import_tree::WhatWasChosen::MailInOneFile => {
+            return one_file_of_mail_brought_in(cache, account, at);
+        }
+        import_tree::WhatWasChosen::AnOutlookDataFile => {
+            return crate::application::importing_an_outlook_data_file::brought_in(
+                cache,
+                account,
+                at,
+                &|so_far| say(UIUpdate::StatusUpdated(so_far.to_string())),
+            );
+        }
+        import_tree::WhatWasChosen::AnArchive => {}
     }
 
     let mut archive = match crate::service::mailbox_archive::opened(at) {
@@ -12884,7 +12898,11 @@ fn fill_folders_from(
     let mut brought_in = MessagesImported::default();
 
     for folder in &plan.folders {
-        let Some(folder_id) = a_folder_on_this_computer(cache, account, &folder.path) else {
+        let Some(folder_id) = crate::application::importing_messages::a_folder_for_imported_mail(
+            cache,
+            account,
+            &folder.path,
+        ) else {
             continue;
         };
         let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
@@ -13396,7 +13414,9 @@ fn one_file_of_mail_brought_in(
         return "That file could not be read, so nothing was imported.".to_string();
     };
     let path = import_tree::where_imported_folders_go();
-    let Some(folder_id) = a_folder_on_this_computer(cache, account, &path) else {
+    let Some(folder_id) =
+        crate::application::importing_messages::a_folder_for_imported_mail(cache, account, &path)
+    else {
         return "The folder imported mail goes into could not be made, so nothing \
                 was imported."
             .to_string();
@@ -13418,33 +13438,6 @@ fn one_file_of_mail_brought_in(
         brought_in.count_one(what);
     }
     crate::application::importing_messages::what_the_mail_import_did(&brought_in)
-}
-
-/// The folder an archive's folder lands in, made if it is not there yet.
-///
-/// Two steps rather than one. A folder saved without being told it has no
-/// server behind it is one the next check for mail tries to open at a provider
-/// that has never heard of it.
-fn a_folder_on_this_computer(cache: &MessageCache, account: &str, path: &str) -> Option<i64> {
-    if let Ok(Some(already)) = cache.get_folder(account, path) {
-        return Some(already.id);
-    }
-    let name = path.rsplit('/').next().unwrap_or(path).to_string();
-    let id = cache
-        .save_folder(&crate::data::message_cache::CachedFolder {
-            id: 0,
-            account_id: account.to_string(),
-            name,
-            path: path.to_string(),
-            folder_type: crate::common::types::FolderType::Custom
-                .as_str()
-                .to_string(),
-            unread_count: 0,
-            total_count: 0,
-        })
-        .ok()?;
-    let _ = cache.set_folder_server_facts(id, false, true);
-    Some(id)
 }
 
 /// Read a folder's messages out of the cache and send them to the list.

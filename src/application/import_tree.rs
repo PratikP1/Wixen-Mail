@@ -511,9 +511,14 @@ pub enum WhatWasChosen {
 /// folder, a device, or a character Windows will not take is refused rather
 /// than repaired, and the mail in that folder stays in the file with a count
 /// saying so.
+///
+/// Read as a whole folder rather than as a saved message, so every part of the
+/// name is kept. The one thing that road does to a last part, taking a
+/// mailbox file's ending off it, is harmless here and is left as it is: a
+/// folder Outlook called `Old.mbox` arrives as Old.
 pub fn where_a_folder_of_the_data_file_lands(named: &str) -> Option<String> {
-    let _ = named;
-    None
+    the_folder_named_by(named, ReadAs::OneAtATimeFromAnArchive)
+        .map(|parts| the_path_under_the_import_area(&parts))
 }
 
 /// Which of the three this is, decided from how it begins.
@@ -522,13 +527,18 @@ pub fn where_a_folder_of_the_data_file_lands(named: &str) -> Option<String> {
 /// and holds here for the same reason: mail is saved with every ending there
 /// is and with none, and a zip somebody renamed is still a zip.
 ///
-/// This exists because the two readers refuse each other. A single saved
-/// message handed to the archive reader is a file that does not begin the way
-/// a zip begins, so it comes back as not an archive, which is true and is not
-/// what somebody who picked one message needs to hear.
+/// This exists because the readers refuse each other. A single saved message
+/// handed to the archive reader is a file that does not begin the way a zip
+/// begins, so it comes back as not an archive, which is true and is not what
+/// somebody who picked one message needs to hear; an Outlook data file handed
+/// to it was told it was not a mailbox archive, which sent somebody looking for
+/// a different file when the one they chose was the one they wanted.
 pub fn what_was_chosen(a_folder: bool, opens_with: &[u8]) -> WhatWasChosen {
     if a_folder {
         return WhatWasChosen::AnArchive;
+    }
+    if opens_with.starts_with(crate::service::outlook_data_file::HOW_ONE_BEGINS) {
+        return WhatWasChosen::AnOutlookDataFile;
     }
     match message_files::what_the_file_holds(opens_with) {
         FileHolds::NotMail => WhatWasChosen::AnArchive,
