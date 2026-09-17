@@ -4132,6 +4132,105 @@ fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
     );
 }
 
+/// The six surfaces that show a message, each with the function it goes
+/// through and the call that function has to make to be asking the
+/// composition.
+///
+/// Six, as of 2026-09-16 (#51). The issue counted five and the plan check
+/// found the sixth, the whole conversation opened in the text reader; the
+/// guard above named two, which is how four came to bypass the key while it
+/// stayed green. A seventh surface arriving is a seventh row here, and a
+/// surface built without going through one of these functions is what this
+/// table cannot see.
+///
+/// `open_conversation` is held to two calls, because building the parts and
+/// folding their findings into the document are two halves: a surface that
+/// built every part through the composition and then composed the document
+/// from the bodies alone would open the words and say nothing.
+const THE_SURFACES: [(&str, &[&str], &str); 6] = [
+    (
+        "fn open_in_the_text_reader(",
+        &["what_a_message_shows_and_says("],
+        "the text reader",
+    ),
+    (
+        "fn read_the_whole_message(",
+        &["what_a_message_shows_and_says("],
+        "Shift+Space, reading the message aloud",
+    ),
+    (
+        "fn open_single_message(",
+        &["what_a_message_shows_and_says("],
+        "the Formatted reader, which is the default",
+    ),
+    (
+        "fn conversation_parts(",
+        &["what_a_message_shows_and_says("],
+        "the conversation window as headings",
+    ),
+    (
+        "fn open_conversation(",
+        &["conversation_parts(", "reader_text::conversation("],
+        "the whole conversation in the text reader",
+    ),
+    (
+        "fn the_preview_of(",
+        &["what_a_message_shows_and_says(", "preview_html("],
+        "the preview pane",
+    ),
+];
+
+/// The surfaces in `app`, the main window's source, that show a message
+/// without asking the composition: each named so the failure says which way
+/// of opening mail would bypass the key.
+///
+/// Empty on a tree where every surface asks. A missing opener is a panic and
+/// not a bypass, so a renamed function is a broken guard rather than a quiet
+/// pass.
+fn surfaces_that_bypass_the_composition(app: &str) -> Vec<String> {
+    // Not yet built: the red half. Nothing is read.
+    let _ = app;
+    Vec::new()
+}
+
+/// The reading can see a surface that stopped asking.
+///
+/// A source read that reports nothing on a clean tree reads exactly like one
+/// that reports nothing because it cannot see, so each surface's call is
+/// spliced out of the window's text in memory, one at a time, and the reading
+/// has to name that surface and no other.
+#[test]
+fn test_a_surface_that_stopped_asking_the_composition_is_named() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    assert!(
+        surfaces_that_bypass_the_composition(&app).is_empty(),
+        "the tree itself has a surface bypassing the composition, so the splice \
+         below cannot tell its own break from the tree's"
+    );
+
+    for (opener, calls, surface) in THE_SURFACES {
+        let body = body_of(&app, opener);
+        let bypassed = body.replacen(calls[0], "bypassed(", 1);
+        assert_ne!(
+            body, bypassed,
+            "{opener} never makes the call to splice out"
+        );
+        let spliced = app.replacen(&body, &bypassed, 1);
+
+        let named = surfaces_that_bypass_the_composition(&spliced);
+        assert_eq!(
+            named.len(),
+            1,
+            "with {surface} spliced to bypass the composition the reading named {named:?}"
+        );
+        assert!(
+            named[0].contains(surface),
+            "the reading names {:?} for a bypass in {surface}",
+            named[0]
+        );
+    }
+}
+
 /// Blocking says what it will do before it writes the rule, and what it did
 /// after.
 ///
