@@ -289,32 +289,35 @@ impl LaterPages {
             return;
         }
         panel.freeze();
-        match tab {
-            THE_COMPOSE_TAB => {
-                self.compose();
-            }
-            THE_READING_TAB => {
-                self.reading();
-            }
-            THE_PERMISSIONS_TAB => {
-                self.permissions();
-            }
-            THE_CALENDAR_AND_PIM_TAB => {
-                self.calendar_and_pim();
-            }
-            THE_FEEDBACK_TAB => {
-                self.feedback();
-            }
-            THE_ADVANCED_TAB => {
-                self.advanced();
-            }
-            _ => {}
-        }
+        let first_control: Option<&dyn WxWidget> = match tab {
+            THE_COMPOSE_TAB => Some(self.compose().first_in_tab_order()),
+            THE_READING_TAB => Some(self.reading().first_in_tab_order()),
+            THE_PERMISSIONS_TAB => Some(self.permissions().first_in_tab_order()),
+            THE_CALENDAR_AND_PIM_TAB => Some(self.calendar_and_pim().first_in_tab_order()),
+            THE_FEEDBACK_TAB => Some(self.feedback().first_in_tab_order()),
+            THE_ADVANCED_TAB => Some(self.advanced().first_in_tab_order()),
+            _ => None,
+        };
         // The panel already has the size the notebook gave it, so its new
         // controls are placed now rather than at the dialog's next layout,
         // which may never come.
         panel.layout();
         panel.thaw();
+        // `wxNotebook::SetSelection` gives the reached page focus before it
+        // sends the event this runs on, when the tab row does not hold focus
+        // (Ctrl+Tab from inside a page, `src/msw/notebook.cpp:364-391`). The
+        // page was empty then, so the focus landed on the panel itself and a
+        // screen reader spoke an unnamed pane (#68, 2026-09-17). Asking the
+        // panel to move it on is refused, because the panel already has it
+        // (`src/common/containr.cpp:110-150`), so the page names its first
+        // control. When the row holds focus nothing is touched, which is
+        // what keeps #33's single focus event. Asked after the thaw, so the
+        // answer is about the window as it will be shown.
+        if panel.has_focus()
+            && let Some(first) = first_control
+        {
+            first.set_focus();
+        }
     }
 
     fn panel_of(&self, tab: usize) -> Option<&Panel> {
@@ -1237,6 +1240,17 @@ pub struct ComposeTabControls {
     add_signature_automatically: CheckBox,
 }
 
+impl ComposeTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        &self.copy_lines
+    }
+}
+
 /// Compose settings: the compose window, sending, drafts, signature.
 fn build_compose_tab(panel: &Panel, config: &AppConfig) -> ComposeTabControls {
     use crate::application::sending_later::{Hold, what_send_does};
@@ -1457,6 +1471,17 @@ pub struct ReadingTabControls {
     pub sort_then: Choice,
 }
 
+impl ReadingTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        &self.sort_order
+    }
+}
+
 /// The controls `build_permissions_tab` lays out: what may be changed at a
 /// server, and how a contact edit travels.
 pub struct PermissionsTabControls {
@@ -1464,6 +1489,17 @@ pub struct PermissionsTabControls {
     allow_pim: CheckBox,
     allow_message_text: CheckBox,
     send_contact_changes_everywhere: CheckBox,
+}
+
+impl PermissionsTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        &self.allow_pim
+    }
 }
 
 /// The controls `build_calendar_pim_tab` lays out. The reminder field is
@@ -1475,6 +1511,17 @@ pub struct CalendarPimTabControls {
     calendar_view: Choice,
 }
 
+impl CalendarPimTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        &self.calendar_view
+    }
+}
+
 /// The controls `build_advanced_tab` lays out. The download folder is public
 /// for the same reason the reminder field above is.
 pub struct AdvancedTabControls {
@@ -1482,6 +1529,17 @@ pub struct AdvancedTabControls {
     pub download_folder: TextCtrl,
     look_at_message_contents: CheckBox,
     check_links_with_google: CheckBox,
+}
+
+impl AdvancedTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        &self.log_level
+    }
 }
 
 /// Reading settings: how the list is sorted, how a message opens, dates.
@@ -2678,6 +2736,20 @@ pub struct FeedbackTabControls {
     pub event: Choice,
     pub per_event: PerEventControls,
     pub sound_scheme: Choice,
+}
+
+impl FeedbackTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands: the first of the three boxes that answer for
+    /// every event, or the event picker if there were none. The reading in
+    /// `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    /// holds it to the first tab-stop child of the page, so moving a control
+    /// ahead of it is a change here too.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        self.global
+            .first()
+            .map_or(&self.event as &dyn WxWidget, |(_, checkbox)| checkbox)
+    }
 }
 
 /// Feedback channels: how the application tells you something happened.
