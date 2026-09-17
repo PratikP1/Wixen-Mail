@@ -501,6 +501,10 @@ fn the_refusal_without_the_statement(error: &str) -> String {
 /// read over those rows, timed if it answers and recorded if it refuses.
 fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
     const ON_THE_INTERFACE_THREAD: &str = "The window runs this step on the interface thread, where it answers no keys until the step ends; the harness has no window.";
+    // "after 10-02" in the name, because the page refuses a row whose name
+    // and date repeat, and the rows taken before the page came off carry the
+    // same date under the name without it; the same shape 09-09's rows took.
+    const THE_SERIES: &str = "The list's own read path after 10-02";
     let mut measured = Vec::new();
 
     let folder_id = a_cache_of(count, into)?;
@@ -527,7 +531,7 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
         ));
     }
     measured.push(Measured::timed(
-        format!("The list's own read path, {count} rows: the sorted read, no limit, cold"),
+        format!("{THE_SERIES}, {count} rows: the sorted read, no limit, cold"),
         vec![cold],
         format!(
             "One take: the first `get_message_list_sorted` on a connection opened after the rows were written, `ORDER BY {order}`, the default sort of an inbox, and no `LIMIT`, {} rows returned. {ON_THE_INTERFACE_THREAD}",
@@ -541,7 +545,7 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
     });
     let rows_read = read.map_err(|e| e.to_string())?;
     measured.push(Measured::timed(
-        format!("The list's own read path, {count} rows: the sorted read, no limit, warm"),
+        format!("{THE_SERIES}, {count} rows: the sorted read, no limit, warm"),
         takes,
         format!(
             "The `get_message_list_sorted` reads after the cold one on the same connection, the same order and no `LIMIT`, {rows_read} rows returned each time. {ON_THE_INTERFACE_THREAD}"
@@ -558,7 +562,7 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
         black_box(threads.len())
     });
     measured.push(Measured::timed(
-        format!("The list's own read path, {count} rows: the threading"),
+        format!("{THE_SERIES}, {count} rows: the threading"),
         takes,
         format!(
             "`thread_messages` over every row read, with the inputs built from the rows inside the timing as the window's `apply_threading` builds them, {conversations} conversations found each take. The generated rows carry no `References`, so every message is a conversation of one, which is the cheapest shape the threading has; a folder of replies costs more. {ON_THE_INTERFACE_THREAD}"
@@ -577,14 +581,14 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
     });
     measured.push(match labels {
         Ok(rows_with_a_label) => Measured::timed(
-            format!("The list's own read path, {count} rows: the labels"),
+            format!("{THE_SERIES}, {count} rows: the labels"),
             takes,
             format!(
                 "`tags_by_message_in_folder` over the folder, one bound parameter however many rows it holds, as the window's `attach_labels` asks it; {rows_with_a_label} rows carry a label, one row in {ONE_ROW_IN} having been given one ({labelled} in all). {ON_THE_INTERFACE_THREAD}"
             ),
         ),
         Err(refusal) => Measured {
-            what: format!("The list's own read path, {count} rows: the labels"),
+            what: format!("{THE_SERIES}, {count} rows: the labels"),
             outcome: Outcome::Refused(the_refusal_without_the_statement(&refusal.to_string())),
             detail: format!(
                 "`tags_by_message_in_folder` over the folder, as the window's `attach_labels` asks it. The window's `attach_labels` logs the error and sends the list with no labels, so a folder this size shows none. {labelled} rows had been given a label. {ON_THE_INTERFACE_THREAD}"
