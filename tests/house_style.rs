@@ -4619,8 +4619,8 @@ fn the_jobs_of(workflow: &str) -> Vec<(String, String)> {
     jobs
 }
 
-/// Which jobs run `cargo test` on a checkout without the history, one line
-/// each, empty when none does.
+/// Which jobs run `cargo test` or the installer build script on a checkout
+/// without the history, one line each, empty when none does.
 ///
 /// `test_the_share_of_history_before_red_green_is_computed_and_printed` runs
 /// `git merge-base --is-ancestor 18a02454 HEAD`, and on a checkout of one
@@ -4628,17 +4628,31 @@ fn the_jobs_of(workflow: &str) -> Vec<(String, String)> {
 /// `0fa393ba` on 2026-09-15 failed its Test Suite job on exactly that, with
 /// 7,263 library tests green beside it, because `actions/checkout` fetches
 /// one commit unless told otherwise.
+///
+/// Widened on 2026-09-17 to jobs that run `scripts/build-installer.sh`: the
+/// script counts the commits since the version was set, stamps the count
+/// into the build, and refuses a checkout without them, so the Build job
+/// on one commit would stop rather than build.
 fn jobs_that_run_the_tests_without_the_history(workflow: &str) -> Vec<String> {
     the_jobs_of(workflow)
         .into_iter()
-        .filter(|(_, text)| text.contains("cargo test"))
         .filter(|(_, text)| !text.lines().any(|line| line.trim() == "fetch-depth: 0"))
-        .map(|(name, _)| {
-            format!(
-                "the {name} job runs cargo test on a checkout without the history, so the test \
-                 that reads the share of history before red/green cannot compute it; give its \
-                 checkout fetch-depth: 0"
-            )
+        .filter_map(|(name, text)| {
+            if text.contains("cargo test") {
+                Some(format!(
+                    "the {name} job runs cargo test on a checkout without the history, so the \
+                     test that reads the share of history before red/green cannot compute it; \
+                     give its checkout fetch-depth: 0"
+                ))
+            } else if text.contains("scripts/build-installer.sh") {
+                Some(format!(
+                    "the {name} job runs the installer build script on a checkout without the \
+                     history, and the script counts the commits since the version was set and \
+                     refuses a checkout without them; give its checkout fetch-depth: 0"
+                ))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -4680,6 +4694,25 @@ fn test_the_history_reading_can_see_a_job_with_one_commit() {
     assert!(
         wrong.len() == 1 && wrong[0].contains("the test job"),
         "a job whose checkout says nothing about depth was not named: {wrong:?}"
+    );
+
+    // A job that runs the installer build script is held the same way: on
+    // one commit it is named, with the reason the script has, and over the
+    // whole history it is not.
+    let builds_on_one_commit = "jobs:\n  build:\n    steps:\n    - uses: actions/checkout@v4\n    - run: bash scripts/build-installer.sh\n";
+    let wrong = jobs_that_run_the_tests_without_the_history(builds_on_one_commit);
+    assert!(
+        wrong.len() == 1
+            && wrong[0].contains("the build job")
+            && wrong[0].contains("counts the commits since the version was set"),
+        "a job running the build script on one commit was not named, or not for the \
+         script's reason: {wrong:?}"
+    );
+
+    let builds_over_the_history = "jobs:\n  build:\n    steps:\n    - uses: actions/checkout@v4\n      with:\n        fetch-depth: 0\n    - run: bash scripts/build-installer.sh\n";
+    assert!(
+        jobs_that_run_the_tests_without_the_history(builds_over_the_history).is_empty(),
+        "a job running the build script over the whole history was named"
     );
 }
 
@@ -4751,16 +4784,52 @@ fn test_the_installer_says_how_far_back_the_version_was_set() {
          looks exactly like one carrying a version set in the commit before it."
     );
 
-    // Both answers, because they are different answers and a build has to be
-    // able to tell them apart. A shallow clone has no history to search, and
-    // reporting that as "set 0 commits ago" would read as "just bumped",
-    // which is the most reassuring thing it could possibly say and the one
-    // thing it does not know.
+    // A clone that cannot count is refused, not built. Since 2026-09-17 the
+    // count is part of what a build carries (`1.0.0-alpha.1+42.g59c5b6a4`,
+    // the commits since the version was set, then the commit), so that two
+    // builds of one version can be put in order by reading them. A shallow
+    // clone has no history to search, and a build made from one could not
+    // say its order, which is the one thing the counter exists to say. Until
+    // 2026-09-17 the script printed "unknown" and built; this asked for that
+    // word, and asks now for the refusal in its place.
+    let refusal = does
+        .split_once("if [ -z \"$VERSION_SET_AT\" ]")
+        .and_then(|(_, rest)| rest.split_once("\nfi"))
+        .map(|(block, _)| block)
+        .unwrap_or_else(|| {
+            panic!(
+                "the installer script has no branch for not being able to work out when \
+                 the version was set. In a shallow clone the search finds nothing, and a \
+                 build that cannot say its order must be refused rather than made."
+            )
+        });
     assert!(
-        does.contains("LAG=\"unknown\"") || does.contains("LAG=unknown"),
-        "the installer script has no answer for not being able to work out \
-         when the version was set. In a shallow clone the search finds \
-         nothing, and a count it does not have must not come out as a number."
+        refusal.contains("exit 1"),
+        "the branch for a clone without the version's commit does not stop the build, so \
+         a build that cannot say its order would be made anyway:\n{refusal}"
+    );
+    assert!(
+        refusal.contains("does not hold the commit that set"),
+        "the refusal does not say what the clone is missing, so the person building would \
+         read a stop with no reason:\n{refusal}"
+    );
+
+    // The count is part of the build identifier, so it has to exist before
+    // the identifier is composed. Read by position in the code half: the
+    // line that sets VERSION_SET_AT comes before the first line that sets
+    // BUILD.
+    let position_of = |starts_with: &str| {
+        does.lines()
+            .position(|line| line.trim_start().starts_with(starts_with))
+            .unwrap_or_else(|| panic!("no line of the installer script starts with {starts_with}"))
+    };
+    let counted_at = position_of("VERSION_SET_AT=");
+    let composed_at = position_of("BUILD=");
+    assert!(
+        counted_at < composed_at,
+        "the installer script composes the build identifier (line {composed_at} of its code \
+         half) before it counts the commits since the version was set (line {counted_at}), \
+         so the counter cannot be part of the identifier"
     );
 }
 
