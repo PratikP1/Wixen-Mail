@@ -105,6 +105,7 @@ pub mod tasks_sync;
 pub mod the_network_coming_and_going;
 pub mod thread_identity;
 pub mod threading;
+pub mod trying_again;
 pub mod when_people_are_free;
 pub mod who_is_coming;
 pub mod words;
