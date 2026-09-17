@@ -119,7 +119,7 @@ const THE_TABS_AFTER_GENERAL: [&str; 6] = [
 fn the_first_visits_line(visits: &[(String, Duration)]) -> String {
     let each = visits
         .iter()
-        .map(|(name, took)| format!("{name} {}", took.as_millis()))
+        .map(|(name, took)| format!("{name} {} ms", took.as_millis()))
         .collect::<Vec<_>>()
         .join(", ");
     format!("first visit of each later tab: {each}")

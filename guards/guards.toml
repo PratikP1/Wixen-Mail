@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 64 records have arrived since and have not been through it.
+# 65 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -22088,7 +22088,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/started.rs", tests = 7 },
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # Every figure the harness prints carries its unit. The summary and the page
@@ -22110,7 +22110,28 @@ red = [
     "test_a_figure_line_carries_its_unit_and_parses_back",
 ]
 tests_last_seen = [
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# The same rule for the line that says what the first visit of each later
+# tab costs, which is where the cost of the open went. The break drops the
+# unit. One goes red: the test that builds the line from two tabs, one with
+# spaces in its name, and reads both back.
+#
+# Measured on 2026-09-17 against the target: exactly this one failed and
+# nothing else did.
+
+[[guard]]
+name = "the first-visits line the settings harness prints carries its units"
+file = "tests/the_settings_dialog_opens_in.rs"
+suite = "the_settings_dialog_opens_in"
+before = """        .map(|(name, took)| format!("{name} {} ms", took.as_millis()))"""
+after = """        .map(|(name, took)| format!("{name} {}", took.as_millis()))"""
+red = [
+    "test_the_first_visits_line_carries_its_units_and_parses_back",
+]
+tests_last_seen = [
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # ── What the before rows justified (#34, 09-09) ──────────────────────────────
@@ -22166,7 +22187,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # The dialog is frozen while it is built. `wxChoice` resizes itself after
@@ -22194,7 +22215,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # The six pages after General are built when their tab is first shown, and
@@ -22230,7 +22251,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # A page nobody showed is written back as it was stored. `read_settings`
@@ -22257,7 +22278,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/the_settings_dialog_opens_in.rs", tests = 6 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # The window fills the module it opens on at startup. Found on 2026-09-14 by
