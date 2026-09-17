@@ -302,7 +302,9 @@ on this project, so the factor is taken by hand from the files and said here.
    and the phase closes them, on 09-10's pattern.
 6. **The ledger.** Each plan adds entries by hand for what it could not
    settle, both halves; 10-06 closes 446 and corrects 447; 10-05 closes 12
-   and 13 with the offer panel.
+   with the offer panel (13 has been `fixed` since 2026-09-01); 10-07
+   corrects 11, 64, 65 and 72 by addition and re-points 72 at the module
+   that holds the loop now.
 7. **The four pages.** 10-05 writes `docs/KEYBOARD_SHORTCUTS.md`; 10-07 writes
    `docs/ALPHA_TESTING.md`, `docs/privacy.md`, `docs/USER_GUIDE.md` and
    `docs/manual-accessibility-pass.md`.
