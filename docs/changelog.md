@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-Versioning follows [SemVer](https://semver.org/). The version the tree carries is the next build to go to testers, and since 2026-09-16 that is a stage of `1.0.0`: `1.0.0-alpha.1` first, then beta and release candidate, then `1.0.0` when the round closes. After a build is cut, the first behaviour change moves the prerelease counter once, in the commit that makes it, and later changes before the next cut leave it alone, because the version names the next build rather than counting commits. A build handed to somebody between releases carries the commit it came from, as `1.0.0-alpha.1+g64c73dd`; everything after the `+` is build metadata and is ignored when comparing versions. Until 2026-09-16 this paragraph said development happened on plain `0.x.y`, with a suffix like `0.6.0-alpha.1` only for a release about to go to testers; a build went to a tester on 2026-09-15, and that rule was written for the day it did.
+Versioning follows [SemVer](https://semver.org/). The version the tree carries is the next build to go to testers, and since 2026-09-16 that is a stage of `1.0.0`: `1.0.0-alpha.1` first, then beta and release candidate, then `1.0.0` when the round closes. After a build is cut, the first behaviour change moves the prerelease counter once, in the commit that makes it, and later changes before the next cut leave it alone, because the version names the next build rather than counting commits. A build handed to somebody between releases carries, since 2026-09-17, how many commits it is past the point the version was set and then the commit it came from, as `1.0.0-alpha.1+42.g59c5b6a4`; everything after the `+` is build metadata and is ignored when comparing versions, so the counter puts two builds of one version in order without moving the version. Until 2026-09-17 a build carried the commit alone, as `1.0.0-alpha.1+g64c73dd`, which told two builds apart and did not say which was later. Until 2026-09-16 this paragraph said development happened on plain `0.x.y`, with a suffix like `0.6.0-alpha.1` only for a release about to go to testers; a build went to a tester on 2026-09-15, and that rule was written for the day it did.
 
 ## [Unreleased]
 
@@ -22,6 +22,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   save.
   Known limitations: no `1.0.0-alpha.1` has been published. Cutting the first alpha is a dispatch
   of the Release workflow, done on purpose, and has not happened.
+- **A build you are given now says how far along it is.** `1.0.0-alpha.1+88.g59c5b6a4` is the
+  eighty-eighth commit past the point the version was set, and
+  Apps and Features puts a later build above an earlier one. The builds of 2026-09-17 read
+  `1.0.0-alpha.1+g7d57cd49` and
+  `1.0.0-alpha.1+g59c5b6a4`, and no number on either said which was later; in Apps and Features
+  both showed the same file version, `1.0.0.1001`. Since 2026-09-17 the installer's file name, the
+  version in Apps and Features, `--version`, About and the first line of the log carry the count in
+  front of the commit, and the Windows file version ends in the same count, so installing a later
+  build over an earlier one is read as an upgrade. The number is how many commits the build is past
+  the commit that set its version. It is not a build number anybody assigns: two builds made from
+  one commit share it, and the commit after the `g` tells them apart. The version itself has not
+  moved and still moves only by the rule at the top of this file.
+  Known limitations: the Windows file version holds the count to 999 and the prerelease step to
+  12, and a build past either says so on the console when it is built while the version string
+  keeps the true number. A build from a clone without the full history is refused rather than
+  made. No build carrying the count has been handed to anybody yet.
 
 ### Fixed
 

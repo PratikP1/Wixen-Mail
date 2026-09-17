@@ -8,8 +8,12 @@
 //! Which leaves a question somebody has to be able to answer. A bug report
 //! arrives with a log saying "Starting Wixen Mail v0.5.0", and if six builds
 //! said that, the report cannot be matched to the code it came from. So a
-//! build made by `scripts/build-installer.sh` carries the commit it was built
-//! from, and says so everywhere the version appears.
+//! build made by `scripts/build-installer.sh` carries how many commits it is
+//! past the commit that set its version, and then the commit it was built
+//! from, as `1.0.0-alpha.1+42.g59c5b6a4`, and says so everywhere the version
+//! appears. The number before the `g` is what puts two builds of one version
+//! in order (Pratik's decision of 2026-09-17); until then a build carried the
+//! commit alone, `0.5.0+g64c73dd`, tellable apart and not orderable.
 //!
 //! Ordinary `cargo build` gets nothing extra, and that is deliberate: reading
 //! the commit at compile time would mean relinking after every `git add`, for
@@ -52,10 +56,12 @@ const TAG_PREFIX: &str = "v";
 
 /// What to call this build, wherever a person or a log will see it.
 ///
-/// `0.5.0` from a plain build, `0.5.0+g64c73dd` from one the installer script
-/// made. The `+` is deliberate: everything after it is build metadata, which
-/// version ordering ignores, so two builds of the same version stay equal
-/// while remaining tellable apart.
+/// `1.0.0-alpha.1` from a plain build, `1.0.0-alpha.1+42.g59c5b6a4` from one
+/// the installer script made: the number before the `g` is how many commits
+/// the build is past the commit that set its version, so two builds of one
+/// version can be put in order by reading them. The `+` is deliberate:
+/// everything after it is build metadata, which version ordering ignores, so
+/// two builds of the same version stay equal while remaining tellable apart.
 pub fn current() -> String {
     describe(NUMBER, BUILD)
 }

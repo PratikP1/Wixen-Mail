@@ -15,38 +15,6 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-# Which commit this build came from.
-#
-# The version moves when the software changes, not when a build is handed to
-# somebody, so several builds share a version. Without this they would share a
-# file name too, and a bug report against 0.5.0 could not be matched to the
-# code it came from.
-#
-# Nothing is added at a tag: that build is the release, and the release is the
-# version. Everywhere else the commit goes on after a "+", which is build
-# metadata, so version ordering ignores it and two builds of one version stay
-# equal while remaining tellable apart.
-if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
-  BUILD=""
-else
-  commit=$(git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
-  # A build made from edits nobody has committed cannot be matched to
-  # anything, and saying so is better than naming a commit it is not.
-  if ! git diff --quiet HEAD 2>/dev/null; then
-    commit="$commit.dirty"
-  fi
-  BUILD="g$commit"
-fi
-
-if [ -n "$BUILD" ]; then
-  FULL_VERSION="$VERSION+$BUILD"
-else
-  FULL_VERSION="$VERSION"
-fi
-# Read by build.rs, so the running program and its log say which build they
-# are, not only the file it was installed from.
-export WIXEN_BUILD="$BUILD"
-
 # How far back the version being stamped was last moved.
 #
 # This project's rule is that a new feature, a schema change or a behaviour
@@ -62,32 +30,106 @@ export WIXEN_BUILD="$BUILD"
 # person. Several builds sharing a version is normal and expected; sixteen
 # commits of feature work sharing one is the thing worth seeing.
 #
+# Since 2026-09-17 the number is also part of what the build carries, which
+# is why it is computed here, before the build identifier below: two builds
+# of one version are put in order by it, so it has to exist first.
+#
 # `git log -S` searches history for the commit that changed how many times
 # this exact line appears, which is the commit that set the current number.
 VERSION_SET_AT=$(git log --format=%H -S"version = \"$VERSION\"" -- Cargo.toml 2>/dev/null | head -1)
-if [ -n "$VERSION_SET_AT" ]; then
-  LAG=$(git rev-list --count "$VERSION_SET_AT..HEAD" 2>/dev/null || echo unknown)
+if [ -z "$VERSION_SET_AT" ]; then
+  # A build that cannot say its order is refused rather than made. The count
+  # exists so that two builds of one version can be put in order by reading
+  # them (Pratik's decision of 2026-09-17), and a build stamped without it
+  # would be exactly the build nobody can place. Until 2026-09-17 this printed
+  # "unknown" and built anyway. A shallow clone has no history to search, and
+  # saying "0 commits ago" would read as "just bumped", which is the most
+  # reassuring answer available and the one thing this does not know.
+  echo "This clone does not hold the commit that set $VERSION, so the build cannot say how many commits it is past it." >&2
+  echo "A shallow clone has no history to search; fetch the whole history and build again." >&2
+  exit 1
+fi
+# The count itself. Nothing catches a failure here: under `set -e` a count
+# that cannot be taken stops the script, which is the refusal above by another
+# route, rather than reaching the arithmetic below as a word.
+LAG=$(git rev-list --count "$VERSION_SET_AT..HEAD")
+
+# Which commit this build came from, and how far past its version it is.
+#
+# The version moves when the software changes, not when a build is handed to
+# somebody, so several builds share a version. Without this they would share a
+# file name too, and a bug report against 0.5.0 could not be matched to the
+# code it came from. Since 2026-09-17 the number of commits since the version
+# was set goes in front of the commit, so two builds of one version can be put
+# in order by reading them: 1.0.0-alpha.1+42.g59c5b6a4 is later than
+# 1.0.0-alpha.1+40.gabcdef12, where a hash alone orders nothing. The same
+# number goes into the file version below, so Apps and Features orders the
+# builds the same way.
+#
+# Nothing is added at a tag: that build is the release, and the release is the
+# version. Everywhere else the counter and the commit go on after a "+", which
+# is build metadata, so version ordering ignores it and two builds of one
+# version stay equal while remaining tellable apart. The file version keeps
+# the counter at a tag even so, for the reason given at the table below.
+if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+  BUILD=""
 else
-  # A shallow clone has no history to search. Saying "0 commits ago" here
-  # would read as "just bumped", which is the most reassuring answer available
-  # and the one thing this does not know.
-  LAG="unknown"
+  # No fallback to the word unknown here, since 2026-09-17: a clone where
+  # HEAD cannot be named has already been refused above, where the version's
+  # commit could not be found, so a failure here stops the script under
+  # `set -e` rather than stamping a word into the file name.
+  commit=$(git rev-parse --short=8 HEAD)
+  # A build made from edits nobody has committed cannot be matched to
+  # anything, and saying so is better than naming a commit it is not.
+  if ! git diff --quiet HEAD 2>/dev/null; then
+    commit="$commit.dirty"
+  fi
+  BUILD="$LAG.g$commit"
 fi
 
+if [ -n "$BUILD" ]; then
+  FULL_VERSION="$VERSION+$BUILD"
+else
+  FULL_VERSION="$VERSION"
+fi
+# Read by build.rs, so the running program and its log say which build they
+# are, not only the file it was installed from.
+export WIXEN_BUILD="$BUILD"
+
 # The Windows file version field holds four numbers and nothing else, so a
-# prerelease has to be encoded rather than carried. Ordinary development
-# versions are plain and land on 4000, which is above every prerelease of
-# themselves, and that is the order Windows should see.
+# prerelease and the build counter have to be encoded rather than carried.
+# The fourth field weighs the stage, the step and the counter so that every
+# later build reads higher than every earlier one, which is the order Windows
+# should see when one build is installed over another:
 #
-#     0.5.0           ->  0.5.0.4000
-#     0.6.0-alpha.1   ->  0.6.0.1001
-#     0.6.0-beta.2    ->  0.6.0.2002
-#     0.6.0-rc.1      ->  0.6.0.3001
-#     0.6.0           ->  0.6.0.4000
+#     1.0.0-alpha.1+70.g7d57cd49   ->  1.0.0.14070
+#     1.0.0-alpha.1+88.g59c5b6a4   ->  1.0.0.14088
+#     1.0.0-alpha.2 (just set)     ->  1.0.0.15000
+#     1.0.0-beta.1                 ->  1.0.0.27000
+#     1.0.0-rc.1                   ->  1.0.0.40000
+#     1.0.0 at its tag             ->  1.0.0.52000
+#     1.0.0+3.gabcdef12            ->  1.0.0.52003
+#     0.5.0 (plain, nothing since) ->  0.5.0.52000
 #
-# The build identifier is not in here. It is metadata rather than a version,
-# there is no field for it, and squeezing a commit into a number would only
-# produce a number nobody can read back.
+# Why these weights. Windows allows 65535 in a field, and five stages (an
+# unrecognised prerelease, alpha, beta, rc, plain) under that leave 13107
+# each, so the stage weighs 13000. The step weighs a thousand so that a
+# counter under a thousand can never read as the next step, and with the
+# step held to 12 a step can never read as the next stage: 12 * 1000 + 999 is
+# 12999, under 13000. The largest value is then 4 * 13000 + 12 * 1000 + 999,
+# which is 64999. A weight of 10000 for the stage, which was considered, puts
+# rc.11 at 41000 above a release at 40000, so the order it exists for breaks
+# at the eleventh release candidate; the weight here is what keeps it.
+#
+# The caps are where the arithmetic would otherwise lie, and each says so out
+# loud when it bites rather than producing a quietly wrong number. The
+# version string still carries the true number in both cases.
+#
+# A build at a tag omits the counter from the string, as above, and keeps it
+# here: the release then sits above the tester builds made before it and
+# below those after. A counter of zero there would order the release below
+# every build that staged it, and Apps and Features would read installing the
+# release over the last release candidate as a downgrade.
 IFS='.' read -r major minor patch _ <<<"${VERSION%%-*}"
 case "$VERSION" in
   *-alpha.*) stage=1 ;;
@@ -100,11 +142,20 @@ case "$VERSION" in
 esac
 step=$(printf '%s' "$VERSION" | sed -nE 's/.*-(alpha|beta|rc)\.([0-9]+)$/\2/p')
 step=${step:-0}
-# Each field is capped at 65535 by Windows, and a step of 1000 would read as
-# the next stage. Neither has ever been close, and a wrong version number is
-# not worth finding out the hard way.
-[ "$step" -gt 999 ] && step=999
-VERSION_INFO="${major:-0}.${minor:-0}.${patch:-0}.$((stage * 1000 + step))"
+counter=$LAG
+if [ "$step" -gt 12 ]; then
+  echo "== the step is $step and the file version holds it to 12 =="
+  echo "   Apps and Features cannot order this build against another past the"
+  echo "   cap; the version string still carries the true number."
+  step=12
+fi
+if [ "$counter" -gt 999 ]; then
+  echo "== the build counter is $LAG and the file version holds it to 999 =="
+  echo "   Apps and Features cannot order this build against another past the"
+  echo "   cap; the version string still carries the true number."
+  counter=999
+fi
+VERSION_INFO="${major:-0}.${minor:-0}.${patch:-0}.$((stage * 13000 + step * 1000 + counter))"
 
 find_iscc() {
   if command -v iscc >/dev/null 2>&1; then
@@ -138,11 +189,6 @@ if [ -z "$ISCC" ]; then
 fi
 
 case "$LAG" in
-  unknown)
-    echo "== $VERSION was set at a commit this clone does not have =="
-    echo "   Cannot say how much has changed since. A shallow clone has no"
-    echo "   history to search."
-    ;;
   0)
     echo "== $VERSION was set in this very commit =="
     ;;

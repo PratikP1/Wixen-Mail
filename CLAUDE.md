@@ -998,10 +998,28 @@ version number and learns that sending mail has never touched a real server. The
 the Allowed Changes settings, the end of `--help` and `docs/ALPHA_TESTING.md` say it in sentences.
 
 **Bump when the software changes, not when a build changes hands.** Several builds share a version,
-so `scripts/build-installer.sh` appends the commit it built from: `0.5.0+g64c73dd`, in the file name,
-in Apps and Features, in `--version` and in the first line of the log. After a `+` because that is
-build metadata, which version ordering ignores. Nothing is appended at a tag, since that build is
-the release. See `src/common/version.rs`.
+so `scripts/build-installer.sh` appends, since 2026-09-17, how many commits the build is past the
+commit that set its version and then the commit it was built from: `1.0.0-alpha.1+42.g59c5b6a4`, in
+the file name, in Apps and Features, in `--version` and in the first line of the log. The same
+counter goes into the last part of the Windows file version, under the stage and the step, so Apps
+and Features orders the builds the way the counter does. After a `+` because that is build
+metadata, which version ordering ignores: the counter moves nothing in the version, and the update
+check reads `1.0.0-alpha.1+42.g59c5b6a4` as `1.0.0-alpha.1`. Nothing is appended at a tag, since
+that build is the release, and the file version keeps the counter there so the release sits above
+the candidates that staged it. See `src/common/version.rs`.
+
+Why the counter: Pratik decided on 2026-09-17, holding two builds of `1.0.0-alpha.1` that no number
+could put in order, that the round's name stays and the order goes after the plus. Two shapes were
+declined. A counter inside the prerelease, `alpha.1.2`, which `version::parse` refuses, which
+cargo-release's `alpha` level would count on from, and which is the version-as-build-counter the
+rule above warns against. And a release per tester build. Until 2026-09-17 the script appended the
+commit alone, `0.5.0+g64c73dd`, and two builds of one version were tellable apart and not orderable.
+
+Two caps, because a Windows file version field holds 65535 at most: the step is held to 12 and the
+counter to 999 in the file version, and a build past either says so on the console when it is built
+and keeps the true number in the string. A clone that does not hold the commit that set the version
+cannot count and is refused with a sentence rather than built; CI's Build job checks out the whole
+history for that reason.
 
 A bug fix or a docs pass does not need a bump. A new feature, a schema change, or a behaviour change
 does, in the same commit as the change rather than in a jump at release time. Inside a prerelease

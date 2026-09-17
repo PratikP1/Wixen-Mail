@@ -1150,16 +1150,88 @@ fn the_stage_table(script: &str) -> Result<StageTable, String> {
     })
 }
 
-/// The four numbers Windows shows for a version, computed the way the script
-/// computes them: the three numbers as they are, and a fourth of
-/// `stage * 1000 + step`, with the step capped at 999 so it can never read as
-/// the next stage.
+/// What the script puts in the fourth field, read off its own arithmetic: the
+/// weight of the stage, the weight of the step, and the two caps that keep a
+/// step from reading as the next stage and a build counter from reading as
+/// the next step.
+#[derive(Debug, PartialEq, Eq)]
+struct FourthField {
+    stage_weight: u64,
+    step_weight: u64,
+    step_cap: u64,
+    counter_cap: u64,
+}
+
+/// The whole number that follows `after` in `text`, up to the first character
+/// that is not a digit, or `None` when `after` is not there or no digit
+/// follows it.
+fn the_number_after<'a>(text: &'a str, after: &str) -> Option<(u64, &'a str)> {
+    let (_, rest) = text.split_once(after)?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let number = digits.parse().ok()?;
+    Some((number, &rest[digits.len()..]))
+}
+
+/// The fourth-field rule, read off the code half of the script, and the name
+/// of the first part of it that is missing.
+///
+/// Read rather than copied, for the reason `the_stage_table` gives: a second
+/// copy of the arithmetic held to nothing is two versions of one rule that
+/// agree until one of them is edited. The expression is read as
+/// `$((stage * A + step * B + counter))` and the caps as `[ "$step" -gt N ]`
+/// and `[ "$counter" -gt N ]`, so a script that dropped the counter from the
+/// expression, or dropped either cap, is named here by the part that went.
+fn the_fourth_field_rule(script: &str) -> Result<FourthField, String> {
+    let does = script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let expression = || {
+        "no `$((stage * A + step * B + counter))` expression was read off \
+         scripts/build-installer.sh, so the fourth field is no longer the stage, the step \
+         and the build counter weighed together"
+            .to_string()
+    };
+    let (stage_weight, rest) = the_number_after(&does, "$((stage * ").ok_or_else(expression)?;
+    let (step_weight, rest) = the_number_after(rest, " + step * ").ok_or_else(expression)?;
+    if !rest.starts_with(" + counter))") {
+        return Err(expression());
+    }
+    let cap = |name: &str| {
+        the_number_after(&does, &format!("[ \"${name}\" -gt "))
+            .map(|(number, _)| number)
+            .ok_or_else(|| {
+                format!(
+                    "no `[ \"${name}\" -gt N ]` line was read off scripts/build-installer.sh, so \
+                     the {name} is no longer held under the weight above it and a large one \
+                     would read as the next stage or the next step"
+                )
+            })
+    };
+    Ok(FourthField {
+        stage_weight,
+        step_weight,
+        step_cap: cap("step")?,
+        counter_cap: cap("counter")?,
+    })
+}
+
+/// The four numbers Windows shows for a build, computed the way the script
+/// computes them: the three numbers as they are, and a fourth that weighs the
+/// stage, the step and the build counter by the rule read off the script,
+/// with the step and the counter each held to its cap.
 ///
 /// Ordered by the derived `Ord` on the array, which compares the four fields
 /// as numbers left to right. That is the order Windows applies to a file
 /// version, so a comparison of two of these is a comparison of the two
 /// installs as Apps and Features would rank them.
-fn windows_file_version(table: &StageTable, version: &str) -> [u64; 4] {
+fn windows_file_version(
+    table: &StageTable,
+    rule: &FourthField,
+    version: &str,
+    counter: u64,
+) -> [u64; 4] {
     let (numbers, prerelease) = match version.split_once('-') {
         Some((numbers, prerelease)) => (numbers, Some(prerelease)),
         None => (version, None),
@@ -1173,73 +1245,160 @@ fn windows_file_version(table: &StageTable, version: &str) -> [u64; 4] {
     let (stage, step) = match prerelease {
         None => (table.plain, 0),
         Some(prerelease) => {
-            let (word, counter) = prerelease
+            let (word, step) = prerelease
                 .split_once('.')
-                .expect("a prerelease word, a dot and a counter");
+                .expect("a prerelease word, a dot and a step");
             let stage = match word {
                 "alpha" => table.alpha,
                 "beta" => table.beta,
                 "rc" => table.rc,
                 other => panic!("{other} is not a prerelease word the script names"),
             };
-            let step: u64 = counter
+            let step: u64 = step
                 .parse()
                 .expect("a whole number after the prerelease word");
-            (stage, step.min(999))
+            (stage, step.min(rule.step_cap))
         }
     };
-    [major, minor, patch, stage * 1000 + step]
+    let fourth =
+        stage * rule.stage_weight + step * rule.step_weight + counter.min(rule.counter_cap);
+    [major, minor, patch, fourth]
 }
 
 /// The encoding here agrees with the script's own comment table, and with the
-/// two versions this project moved between on 2026-09-16.
+/// builds this project has handed out and the stages ahead of it.
 ///
 /// The table is the one at `scripts/build-installer.sh` above the `case`, and
-/// this holds the reading to it row by row. The stage numbers come off the
-/// script; the multiplier and the cap are asserted to still be in it, so a
-/// script that stopped multiplying by a thousand, or stopped capping the
-/// step, fails here by name rather than by a number that quietly disagrees.
+/// this holds the reading to it row by row. The stage numbers, the weights and
+/// the caps all come off the script, and the weights and caps are asserted by
+/// value, so a script that stopped weighing the stage at 13000, or held the
+/// counter to something other than 999, fails here by name rather than by a
+/// number that quietly disagrees. The counter is the number of commits since
+/// the version was set (Pratik's decision of 2026-09-17), so two builds of one
+/// version are ordered by it, and it is in the string too: the script composes
+/// `BUILD` as the counter, a dot and the commit, and puts it after the plus.
 #[test]
 fn test_the_four_field_version_follows_the_scripts_own_table() {
     let script = the_installer_build_script();
     let table = the_stage_table(&script).unwrap_or_else(|missing| panic!("{missing}"));
+    let rule = the_fourth_field_rule(&script).unwrap_or_else(|missing| panic!("{missing}"));
 
+    assert_eq!(
+        rule,
+        FourthField {
+            stage_weight: 13000,
+            step_weight: 1000,
+            step_cap: 12,
+            counter_cap: 999,
+        },
+        "the fourth field's weights or caps moved, so the rows below, and the order they \
+         hold, are about a rule the script no longer applies"
+    );
+    let does = script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        script.contains("$((stage * 1000 + step))"),
-        "the fourth field is no longer stage * 1000 + step, so the reading here is a copy \
-         of arithmetic the script no longer does"
+        does.contains(r#"BUILD="$LAG.g$commit""#),
+        "the build identifier no longer starts with the counter, so the version string \
+         cannot say which of two builds of one version is later"
     );
     assert!(
-        script.contains(r#"[ "$step" -gt 999 ] && step=999"#),
-        "the step is no longer capped at 999, so a step of 1000 would read as the next stage"
+        does.contains(r#"FULL_VERSION="$VERSION+$BUILD""#),
+        "the build identifier is no longer put after a plus, so it would read as part of \
+         the version rather than as build metadata"
     );
 
-    let encoded = |version: &str| windows_file_version(&table, version);
-    assert_eq!(encoded("0.5.0"), [0, 5, 0, 4000]);
-    assert_eq!(encoded("0.6.0-alpha.1"), [0, 6, 0, 1001]);
-    assert_eq!(encoded("0.6.0-beta.2"), [0, 6, 0, 2002]);
-    assert_eq!(encoded("0.6.0-rc.1"), [0, 6, 0, 3001]);
-    assert_eq!(encoded("0.6.0"), [0, 6, 0, 4000]);
+    let encoded =
+        |version: &str, counter: u64| windows_file_version(&table, &rule, version, counter);
+    assert_eq!(encoded("0.5.0", 0), [0, 5, 0, 52000]);
+    assert_eq!(encoded("1.0.0-alpha.1", 70), [1, 0, 0, 14070]);
+    assert_eq!(encoded("1.0.0-alpha.1", 88), [1, 0, 0, 14088]);
+    assert_eq!(encoded("1.0.0-alpha.2", 0), [1, 0, 0, 15000]);
+    assert_eq!(encoded("1.0.0-beta.1", 0), [1, 0, 0, 27000]);
+    assert_eq!(encoded("1.0.0-rc.1", 0), [1, 0, 0, 40000]);
+    assert_eq!(encoded("1.0.0", 0), [1, 0, 0, 52000]);
+    assert_eq!(encoded("1.0.0", 3), [1, 0, 0, 52003]);
+    assert_eq!(encoded("0.125.1", 0), [0, 125, 1, 52000]);
 
-    assert_eq!(encoded("1.0.0-alpha.1"), [1, 0, 0, 1001]);
-    assert_eq!(encoded("0.125.1"), [0, 125, 1, 4000]);
+    // The two caps, each biting: a counter past 999 and a step past 12 are
+    // held, so neither can read as the next step or the next stage.
+    assert_eq!(encoded("1.0.0-alpha.1", 1500), [1, 0, 0, 14999]);
+    assert_eq!(encoded("1.0.0-alpha.13", 0), [1, 0, 0, 25000]);
+}
+
+/// A later build orders above an earlier one, and below the next stage.
+///
+/// The builds in the order they would be made, from the first alpha through
+/// the two the tester had on 2026-09-17 (`+70` and `+88`), a counter at its
+/// cap, the next alpha, the last alpha the rule allows, beta, release
+/// candidate, the release at its tag, a build past the release, and the first
+/// alpha of the next patch. Every one has to rank above the one before it,
+/// or Apps and Features would read an upgrade as a downgrade somewhere along
+/// the line. And the largest fourth field the rule can produce, the highest
+/// stage with the step and the counter at their caps, has to fit the sixteen
+/// bits Windows gives each field.
+#[test]
+fn test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage() {
+    let script = the_installer_build_script();
+    let table = the_stage_table(&script).unwrap_or_else(|missing| panic!("{missing}"));
+    let rule = the_fourth_field_rule(&script).unwrap_or_else(|missing| panic!("{missing}"));
+
+    let in_the_order_they_are_made = [
+        ("1.0.0-alpha.1", 0),
+        ("1.0.0-alpha.1", 70),
+        ("1.0.0-alpha.1", 88),
+        ("1.0.0-alpha.1", 999),
+        ("1.0.0-alpha.2", 0),
+        ("1.0.0-alpha.12", 999),
+        ("1.0.0-beta.1", 0),
+        ("1.0.0-rc.1", 0),
+        ("1.0.0", 0),
+        ("1.0.0", 3),
+        ("1.0.1-alpha.1", 0),
+    ];
+    let encoded: Vec<[u64; 4]> = in_the_order_they_are_made
+        .iter()
+        .map(|(version, counter)| windows_file_version(&table, &rule, version, *counter))
+        .collect();
+    for (earlier, later) in encoded.iter().zip(encoded.iter().skip(1)) {
+        assert!(
+            earlier < later,
+            "Windows would not rank {later:?} above {earlier:?}, so a later build would \
+             read as a downgrade of an earlier one:\n  {encoded:?}"
+        );
+    }
+
+    let highest_stage = [table.alpha, table.beta, table.rc, table.plain]
+        .into_iter()
+        .max()
+        .expect("four stages");
+    let largest =
+        highest_stage * rule.stage_weight + rule.step_cap * rule.step_weight + rule.counter_cap;
+    assert!(
+        largest <= 65535,
+        "the largest fourth field the rule can produce is {largest}, past the 65535 Windows \
+         allows a field, so a build at the caps would carry a number Windows cannot hold"
+    );
 }
 
 /// The first alpha of 1.0.0 is above the last 0.x version the way Windows
 /// orders an upgrade.
 ///
-/// Not obvious from the fourth field alone: a plain version lands on 4000 and
-/// an alpha on 1001, so on that field the old version is the higher one. The
-/// major decides first, which is what makes the step from `0.125.1` to
+/// Not obvious from the fourth field alone: a plain version lands on 52000
+/// and an alpha on 14000, so on that field the old version is the higher one.
+/// The major decides first, which is what makes the step from `0.125.1` to
 /// `1.0.0-alpha.1` an upgrade in Apps and Features rather than a downgrade
 /// the installer would refuse to make.
 #[test]
 fn test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it() {
     let script = the_installer_build_script();
     let table = the_stage_table(&script).unwrap_or_else(|missing| panic!("{missing}"));
+    let rule = the_fourth_field_rule(&script).unwrap_or_else(|missing| panic!("{missing}"));
 
-    let first_alpha = windows_file_version(&table, "1.0.0-alpha.1");
-    let last_of_0_x = windows_file_version(&table, "0.125.1");
+    let first_alpha = windows_file_version(&table, &rule, "1.0.0-alpha.1", 0);
+    let last_of_0_x = windows_file_version(&table, &rule, "0.125.1", 0);
 
     assert!(
         first_alpha[3] < last_of_0_x[3],
@@ -1299,6 +1458,97 @@ fn test_the_version_the_tree_carries_is_at_least_one_point_oh() {
         major >= 1,
         "Cargo.toml says {version}, and the builds going to testers are the stages of 1.0.0"
     );
+}
+
+/// The reading can see a fourth-field rule that is gone.
+///
+/// The companion the table test and the ordering test cannot do without.
+/// They read one script, and while that script carries the expression and
+/// both caps they pass whether the reading works or has been narrowed until
+/// it finds a number anywhere. So the reading is shown a snippet with all
+/// three and must answer the four numbers, the same snippet with the counter
+/// cap gone and must name the counter, and the same with `+ counter` gone
+/// from the expression and must name the expression.
+#[test]
+fn test_the_reading_can_see_a_fourth_field_rule_that_is_gone() {
+    const WHOLE: &str = "# the caps\nif [ \"$step\" -gt 12 ]; then\n  step=12\nfi\nif [ \"$counter\" -gt 999 ]; then\n  counter=999\nfi\nVERSION_INFO=\"$major.$minor.$patch.$((stage * 13000 + step * 1000 + counter))\"\n";
+
+    assert_eq!(
+        the_fourth_field_rule(WHOLE),
+        Ok(FourthField {
+            stage_weight: 13000,
+            step_weight: 1000,
+            step_cap: 12,
+            counter_cap: 999,
+        })
+    );
+
+    let no_counter_cap =
+        WHOLE.replace("if [ \"$counter\" -gt 999 ]; then\n  counter=999\nfi\n", "");
+    let missing = the_fourth_field_rule(&no_counter_cap)
+        .expect_err("a script with no counter cap has to be refused");
+    assert!(missing.contains("counter"), "{missing}");
+
+    let no_counter = WHOLE.replace(" + counter))", "))");
+    let missing = the_fourth_field_rule(&no_counter)
+        .expect_err("a script that drops the counter from the expression has to be refused");
+    assert!(
+        missing.contains("$((stage * A + step * B + counter))"),
+        "{missing}"
+    );
+
+    let only_a_comment = format!("# {}", WHOLE.replace('\n', "\n# "));
+    let missing = the_fourth_field_rule(&only_a_comment)
+        .expect_err("a rule that is only in a comment has to be refused");
+    assert!(missing.contains("expression"), "{missing}");
+}
+
+/// A build carrying the counter is the same version as the bare number.
+///
+/// The counter is build metadata, after the plus, and `version::without_build`
+/// drops everything after the first plus before two versions are compared. So
+/// the update check reads `1.0.0-alpha.1+42.g59c5b6a4` as `1.0.0-alpha.1`,
+/// and a build with a counter is older than the next alpha, not newer than
+/// its own version. Green before the script stamped the counter and after,
+/// because the comparison never changed; held here beside the four-field
+/// tests because this file is about what a build carries and how Windows and
+/// the update check read it.
+#[test]
+fn test_a_build_with_a_counter_is_the_same_version_as_the_bare_number() {
+    use wixen_mail::common::version::{Compared, compare};
+
+    assert_eq!(
+        compare("1.0.0-alpha.1+42.g59c5b6a4", "1.0.0-alpha.1"),
+        Compared::Same
+    );
+    assert_eq!(
+        compare("1.0.0-alpha.1+42.g59c5b6a4", "1.0.0-alpha.1+70.g7d57cd49"),
+        Compared::Same
+    );
+    assert_eq!(
+        compare("1.0.0-alpha.1+42.g59c5b6a4", "1.0.0-alpha.2"),
+        Compared::Older
+    );
+}
+
+/// The running build's shape, with a counter after it, still reads.
+///
+/// `version::current()` is whatever this test run was built as, a bare
+/// number under `cargo test`, and with the counter and commit the script
+/// appends it has to compare as the same version and not as something the
+/// program cannot read.
+#[test]
+fn test_the_running_builds_shape_with_a_counter_still_reads() {
+    use wixen_mail::common::version::{Compared, compare, current};
+
+    let with_a_counter = format!("{}+42.g59c5b6a4", current());
+    let compared = compare(&with_a_counter, &current());
+    assert_ne!(
+        compared,
+        Compared::CouldNotRead,
+        "{with_a_counter} is not a version the program can read"
+    );
+    assert_eq!(compared, Compared::Same);
 }
 
 // ---------------------------------------------------------------------------

@@ -249,7 +249,16 @@ jobs:
 
     steps:
     - name: Checkout code
+      # The whole history, because the build script counts it. Since
+      # 2026-09-17 scripts/build-installer.sh counts the commits since the
+      # version was set, stamps the count into the build after the plus and
+      # into the Windows file version, and refuses a checkout that does not
+      # hold the commit that set the version. On one commit this job would
+      # stop there. The Test Suite job's checkout above says why the history
+      # is cheap enough to fetch on every push.
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.98.1
