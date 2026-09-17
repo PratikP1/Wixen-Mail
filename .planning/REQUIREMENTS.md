@@ -8,7 +8,9 @@ from nothing else" was true until the first day of manual testing. Phases 1 to 8
 and merged, and the milestone's verification is the testing Pratik began on 2026-09-15 with
 build `0.125.1+g3e633252`, which produced 44 GitHub issues, #20 to #63, in one day. Phase 9's
 requirements, `FOUND-01` to `FOUND-12`, are drawn from those issues and from nothing else; the
-section "What the first day of testing found" says which issue each one comes from.
+section "What the first day of testing found" says which issue each one comes from. Phase 10's,
+`MAIL-01` to `MAIL-05`, added 2026-09-17, are five more of the same issues, the third of the
+seven groups; the section "All the mail, and what is said while it comes" names each.
 
 ## How to read the acceptance criteria
 
@@ -2346,7 +2348,8 @@ had moved the evidence line says which way.
 this one.** The order has seven groups and phase 9 is the first two: the version, and the
 cause-known defects an hour to a day each. The README in `.planning/phases/09-what-the-first-day-of-testing-found/`
 names the remaining five groups and the issues in each, so the next planner adds their
-requirements to a later phase's section rather than here.
+requirements to a later phase's section rather than here. Added 2026-09-17: group 3 is phase
+10, `MAIL-01` to `MAIL-05`, in the section after this one; groups 4 to 7 are still later phases.
 
 - [x] **FOUND-01**: The next build is `1.0.0-alpha.1`, and the versioning rule says how a
   version moves inside a prerelease.
@@ -2829,6 +2832,215 @@ why the day's log is empty. No settings defect and no log defect. What the read 
 that a settings file's `version` stamp is copied through by `save` and names the build that
 created the profile, so FOUND-01 gains the line that `save` re-stamps it.
 
+### All the mail, and what is said while it comes
+
+Added 2026-09-17 for phase 10, the third of the seven groups Pratik agreed on 2026-09-16.
+Every requirement here is one GitHub issue from the same first day of testing, in the
+tester's words on its `[S]` lines, with the `[D]` lines written on 2026-09-17 by the planner
+as proposals in the sense the top of this file gives. Every evidence line was re-taken against
+`main` at `7d57cd49` on 2026-09-17, after phase 9's ten plans moved most of the lines the
+issues cite, and where a premise moved the evidence line says which way. The five share one
+download and one progress story, which is why they are one phase; the plans are in
+`.planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/README.md`.
+
+Nothing here has met a real provider except through the tester's Gmail account, which the
+download and the watch will meet unasked on the first check after the build. Each requirement's
+last `[S]` line says what only that account can settle; the caveat at the top of this file
+binds every `[D]` line: a loopback server proves the shape, and no criterion claims what a
+provider does.
+
+- [ ] **MAIL-01**: Every message of every kept folder comes down on its own, without a
+  person asking for the rest.
+  - Evidence: `grep -n 'pub const INITIAL_FETCH_LIMIT' src/application/mail_sync.rs` ->
+    `40: 500` on 2026-09-17 at `7d57cd49`; `uids_to_fetch` (`mail_sync.rs:307`) takes the
+    newest `limit` uids the cache lacks and `fetch_headers` (`imap.rs:1156`) asks for them by
+    uid in batches of at most 1,024 characters of set. Three things start a sync
+    (`grep -n 'spawn_mail_sync(' src/presentation/wx_app.rs | grep -v 'fn '` -> F9 at 4489,
+    Get Older Messages at 4614, the watch's `MailboxChanged` at 18302) and each syncs the
+    active account only (`wx_app.rs:21706-21712`). The whole-folder request
+    (`spawn_whole_folder_fetch`, `wx_app.rs:21594`) is the runner's shape already, one
+    folder at a time, with no stop, driven by `asking_for_a_whole_folder::until_the_whole_folder_is_here`.
+    The body cache evicts above 512 MiB at the end of every folder sync
+    (`bodies.rs:285`, `mail_sync.rs:1467`). POP already fetches everything not held, with its
+    text, in one pass (`pop_sync.rs:128-140`). No retry rule exists for a server that refused
+    (`grep -rn -i 'backoff\|try_again' src --include='*.rs'` -> nothing); the one reconnect is
+    a single immediate sign-in (`mail_session.rs:37-41`, ledger 64).
+  - [S] #20, the tester on 2026-09-15: "Right now, only 500 messages are downloaded per
+    folder. All email should be downloaded."
+  - [S] `src/application/asking_for_a_whole_folder.rs:10-16`, the header: "`mail_sync::INITIAL_FETCH_LIMIT`
+    bounds what comes down from the server. `wx_app::FOLDER_LIST_PAGE_SIZE` bounds what is
+    read out of the cache into the list. They are separate numbers that happen to be the same,
+    and moving one alone appears to do nothing."
+  - [D] A pure decision in `application::bringing_everything_down` says what comes next for
+    one account from the cache's own facts, held messages against the server's total per
+    folder and the messages with no text here, so a run picks up where it was after a
+    restart with no state file; the order is the folder on screen, then the inbox, then the
+    kept folders in tree order, newest first inside each; a chunk of headers is the existing
+    constant by name and not a second number; tested against the scripted mailbox.
+  - [D] After every check for mail the download runs for every enabled IMAP account, chunk by
+    chunk on the account's own session, sends the list each chunk as it lands, and can be
+    paused and carried on from Pause Downloading on the Tools menu; Shift+F9 carries it on
+    with this folder first; Download This Whole Folder is gone with its warning because this
+    is what it did, and one sentence on the Pause item says the download has never met a real
+    provider.
+  - [D] A provider that refuses, throttles or drops the connection ends the run, and the run
+    is tried again after a wait that grows from 30 seconds to a cap of 30 minutes and resets
+    on success, through one rule in `application::trying_again` that the inbox watch asks
+    too; a folder whose chunk brought nothing new is asked once more and then reported as
+    the server having stopped sending it, which is the existing rule kept.
+  - [S] Whether Gmail, the one provider anything here will meet, tolerates 12,872 messages
+    coming down chunk after chunk is the tester's account's to show, and ledger 72 stays open
+    until it has.
+
+- [ ] **MAIL-02**: The message list holds every message the folder holds on this computer,
+  and a message arriving adds a row and removes none.
+  - Evidence: `grep -n 'const FOLDER_LIST_PAGE_SIZE\|const ALL_INBOXES_LIMIT' src/presentation/wx_app.rs`
+    -> `7061: 500`, `7050: 500` on 2026-09-17 at `7d57cd49`; `message_list_limit` starts at
+    the page (`:471`), is reset to it on every folder change (`:2867`) and grown by Get Older
+    Messages (`:4579`) and by a whole-folder chunk arriving (`:18320`); `load_folder_messages`
+    (`:13754`) passes `Some(limit)` to `get_message_list_sorted`, which takes `Option<usize>`
+    and writes no `LIMIT` for `None` (`messages.rs:2159-2171`); `unified_inbox` and
+    `messages_with_label` take a bare `usize`. 08-04's harness timed `get_messages_for_folder`,
+    unsorted and unbounded (`tests/the_list_at_two_hundred_thousand_rows.rs:213,231`), and not
+    the sorted query, the threading or the labels the window runs on the interface thread
+    (`wx_app.rs:13774-13790`, `12668`, `10281`). `get_tags_for_messages` sends one bound
+    parameter per row (`tags.rs:232-235`) and the bundled SQLite (`libsqlite3-sys 0.38.1`,
+    `Cargo.lock:3145`) refuses more than 32,766, so the labels read is expected to fail above
+    that count, which is a prediction until 10-02 runs it.
+  - [S] #24, the tester on 2026-09-15: "When new messages arrive, older messages are no
+    longer available in the message list. Only 500 messages are shown."
+  - [S] `docs/development/measurements.md`, rows dated 2026-09-14 at `5cf04528`: listing
+    200,000 rows 351 ms cold and 371 ms warm, sorts 61 ms to 260 ms, the page paint 0.09 ms.
+  - [D] The list's own read path, the sorted query with no limit, the threading and the
+    labels, is measured at 12,872 rows and at 200,000 before the page is dropped and again
+    after, and the rows are on the measurements page with their commands and dates.
+  - [D] `load_folder_messages` passes no limit, `message_list_limit`, `FOLDER_LIST_PAGE_SIZE`
+    and `ALL_INBOXES_LIMIT` are gone, All Inboxes is unbounded too, the labels of a folder are
+    read by folder in one query with no parameter per row and proved at 40,000 rows, and a
+    reading with companions in a target coupled to `wx_app.rs` holds the window to it.
+  - [S] Whether a folder of 12,872 messages opens and reads as one list on the tester's
+    machine with his screen reader is his.
+
+- [ ] **MAIL-03**: Message text comes down with the mail unless a person has forbidden it,
+  and stays unless a person has chosen a size.
+  - Evidence: `Allowed.reading` is on by default (`allowed.rs:57-82`) and offered as
+    "Fetch the text of a message from the server when it is not already stored" under
+    Message Text on the Permissions tab (`allowed.rs:206,224`; `wx_settings.rs:2095-2118`),
+    read at `read_the_permissions_page` (`wx_settings.rs:3174-3179`). The text pass
+    (`fetch_over_a_mailbox`, `mail_sync.rs:1858-1930`) asks one message at a time for every
+    message in the account with no chunk bound and no stop but the reading gate, counting a
+    refusal per message and never reading a run of refusals as the server's answer; it says at
+    most ten progress lines (`AT_MOST_THIS_MANY_PROGRESS_LINES`, `:1739`). Two entry points,
+    the menu item `ID_FETCH_MISSING_TEXT` (`wx_app.rs:4499`) and the offer button above the list
+    (`:1925`), and five tests inside `wx_app.rs` read them (`:30080-30230`). The sizes arrive
+    with the headers and are stored (`imap.rs:2046`, `mail_sync.rs:579`). `BODY_CACHE_BUDGET_BYTES`
+    is a constant whose doc comment says a setting would plug into `keeping_bodies_under`
+    (`bodies.rs:276-285`, `mod.rs:1528`).
+  - [S] #23, the tester on 2026-09-15: "Unless explicitly forbidden, message text should be
+    downloaded along with mail."
+  - [S] `src/application/allowed.rs:363-369`, `FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL`: "Asking
+    your provider for hundreds of whole messages one after another is something they are
+    entitled to refuse, to slow down, or to disconnect you for, and nothing here can find out
+    which yours will do."
+  - [D] The text pass asks in chunks of at most 50 messages or 16 MiB, ends a chunk after three
+    refusals in a row and says the server stopped answering, stops between messages when
+    asked, and answers how it ended; the download asks for text only when the Message Text
+    box is on and only while the size chosen has not been reached, newest first, and says
+    how much is kept and how many older messages will be fetched when opened.
+  - [D] How much message text stays on this computer is a choice under Message Text on the
+    Permissions tab, All of it by default and three sizes, stored as a string with a default
+    that an older settings file falls back to, read by the eviction, which evicts nothing
+    under All, and handed to every cache the sync workers open;
+    `test_every_setting_somebody_can_change_is_offered_by_a_screen` is what fails on arrival.
+  - [D] Fetch Missing Message Text and the offer above the list are gone, because the download
+    does what they did and under a chosen size the offer would fetch beyond it; the text of a
+    message opened before its turn is fetched on opening as before.
+  - [S] Whether Gmail tolerates the text of 12,872 messages coming down in chunks is the
+    tester's account's to show, and ledger 11 stays open until it has.
+
+- [ ] **MAIL-04**: Mail keeps arriving on its own for as long as the program runs.
+  - Evidence: one watch, on the active account's inbox, started only at the end of a check
+    (`grep -n 'MailboxWatchRequested' src/presentation/wx_app.rs` -> `18288` the arm, `21975`
+    the one sender, on 2026-09-17 at `7d57cd49`); nothing checks at startup (the three
+    starters under MAIL-01); on `ImapIdleEvent::Stopped` the arm says "New mail will not
+    appear on its own. Use Refresh to check for it." and breaks, under the comment "Nothing
+    starts another watch from here" (`wx_app.rs:20126-20131`); the IDLE window renews itself
+    (`imap.rs:1723,1793-1815,1856`), so only a real end reaches the arm and a dead socket is
+    noticed at the next window at the latest. `act_on_what_the_network_did`
+    (`wx_app.rs:10228`) sends a sentence and an offer on the network's return and starts
+    nothing; offline mode is asked only by the send paths (`reachability_of`, `:14705`).
+    `Account.check_interval_minutes` is stored (`accounts.rs:26,46,117`), built and read on
+    the account editor (`wx_account_manager.rs:1244,1329,1624,1830`, "Check &Interval (min):",
+    default 5, clamped 1 to 60) and read by nothing that checks mail
+    (`grep -rn 'check_interval' src/presentation/wx_app.rs src/application/*.rs` -> nothing);
+    `Account::mark_synced` (`account.rs:326`) is called by its own test only. The main timer's
+    arms run on stated intervals (`wx_app.rs:5560-5720`; the network every 10 s, the due look
+    every 60 s). The doc comments for `spawn_mail_watch` and `say_the_watch_is_off` sit above
+    `fn say_the_link_was_refused` (`wx_app.rs:19985-20019`).
+  - [S] #37, the tester on 2026-09-15: "After running a few hours, automatic mail fetching is
+    switched off. The user has to manually fetch mail."
+  - [S] `src/presentation/wx_app.rs:20126-20131`: "Nothing starts another watch from here. A
+    fresh one begins only after mail arrives and the folder is read again, and mail arriving
+    on its own is exactly what has stopped."
+  - [D] A watch that ends for any reason but mail arriving or somebody stopping it is started
+    again after the wait rule of MAIL-01's third `[D]` line, the network coming back starts
+    one at once and a check for every due account, every enabled IMAP account has a watch of
+    its own, and the decision is a pure function over the reason the IMAP module gives, tested
+    per reason.
+  - [D] Where a watch cannot cover, a server without IDLE or one that refused the watch three
+    times, a POP account, and the kept folders that are not the inbox, mail is checked on a
+    schedule whose interval is the account editor's Check Interval made true, from an arm on
+    the main timer; a start checks every enabled account once without a keystroke; the check
+    calls `mark_synced`; and the account editor says under the field what it does.
+  - [D] The status line says which of watching, checking every N minutes, or waiting to try
+    again is true, and the sentence that new mail will not appear on its own exists nowhere;
+    the cold-start and idle rows are re-taken on a start that dials the harness's refusable
+    account once, and ledger 446 closes on the refusal being read.
+  - [S] Whether Gmail drops an IDLE connection, after how long, whether the restart carries
+    mail over hours, and whether two connections per account are welcome are the tester's
+    account's to show (ledger 64, 65, 67).
+
+- [ ] **MAIL-05**: How much is said while mail and the other modules are fetched is the
+  person's choice, and by default only what arrived is said.
+  - Evidence: the `StatusUpdated` arm writes the status bar and announces at Low under the
+    topic "status" (`wx_app.rs:17576-17590` on 2026-09-17 at `7d57cd49`); the queue keeps one
+    entry per topic and four a second (`announcements.rs:20-26,178-190`); 43 `StatusUpdated`
+    sends in `wx_app.rs` and 116 `send_status` calls under `src/`; a mail check writes
+    Connecting, the folder count, "Checking X..." and the folder's sentence per folder, and
+    "Mail check finished" (`wx_app.rs:21767,21811,21912,21941,21967`); the modules write
+    "sync requested" and "Syncing tasks..." (`:4172-4184,5062-5129`); "Settings saved" rides
+    the same channel (`:16928`); `FeedbackEvent::NewMail` fires in the `MailboxChanged` arm
+    before the folder is re-read, whether or not anything arrives, and never on a check
+    started by F9 (`:18299`); the two module completions signal `SyncComplete` with the sync's
+    sentence as the detail (`:17930,18012`); the routing settings live on `Accessibility`
+    behind a mutex, set at startup and on save (`accessibility.rs:279`; `handle_settings`).
+    A test inside `wx_app.rs` already tells two progress openings from refusals
+    (`PROGRESS`, `:26288`) and another refuses an arm that shows and never says without a
+    reason (`:25811`).
+  - [S] #38, the tester on 2026-09-15: "When fetching mail and other items, the announcements
+    are too verbose. Only folders and items with new mail or items should be announced." And
+    the same day: "Or make this user-configurable. Let the user decide how much to announce
+    while fetching items."
+  - [S] `src/presentation/wx_app.rs:17581-17584`, the handler's comment: "everything written
+    there was written to nobody."
+  - [D] A choice under a While fetching section on the Feedback tab offers Say what arrived,
+    Say every step and Errors only, default Say what arrived, stored as a string with a
+    default an older settings file falls back to, held on `Accessibility` beside the feedback
+    settings, set at startup and on save; `test_every_setting_somebody_can_change_is_offered_by_a_screen`
+    is what fails on arrival.
+  - [D] A progress line is its own update kind, shown on the status bar and spoken only under
+    Say every step; what arrived is one sentence per check naming each folder or module with
+    something new and its count, spoken once at Normal under the two levels that say results
+    and never when nothing arrived; an error is spoken under every level; the new-mail sound
+    fires once at the end of a check that found mail on the channel its own per-event row
+    gives; and a reading in a target coupled to `wx_app.rs` holds every sync path's lines to
+    one kind, with companions.
+  - [D] What remains on the status update, the answers to a key such as Settings saved, Draft
+    saved and Refreshed, is announced at Normal so it is heard above a running check.
+  - [S] What a check of the tester's 50 folders sounds like under each level, and which
+    sentence is a step and which a result by ear, is a listening pass and his (ledger 10, 73,
+    78).
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -2914,12 +3126,22 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
 | FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
+| MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
+| MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
+| MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
+| MAIL-04 | Phase 10 | Pending, 10-01 and 10-06; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's |
+| MAIL-05 | Phase 10 | Pending, 10-04; what each level sounds like is a listening pass and the tester's |
 
 **Coverage:**
 
-- v1 requirements: 56 total
-- Mapped to phases: 56
+- v1 requirements: 61 total
+- Mapped to phases: 61
 - Unmapped: 0
+
+**Re-taken 2026-09-17.** This block said 56 and 56 from 2026-09-16 until phase 10 was planned.
+Counted with the same command as below, which gives 61 at `7d57cd49` plus this edit with the
+five `MAIL` requirements in, and the traceability table above has 61 rows. The five come from
+the same first day of testing as the twelve `FOUND` ones; "Where these came from" says so.
 
 **Re-taken 2026-09-16.** This block said 44 and 44 from 2026-09-04 until phase 9 was planned.
 Counted with the same command as below, `grep -c '^- \[[ x]\] \*\*[A-Z]\+-[0-9]\+\*\*'
@@ -2970,6 +3192,9 @@ among #20 to #63, filed on 2026-09-15 from Pratik's first day of testing build
 `0.125.1+g3e633252` and from the audit of the 2026-08-27 Outlook gap report made the same day.
 The issue number is in each requirement's `[S]` line. The 44 above are unchanged; the total
 is 56.
+
+**Added 2026-09-17.** `MAIL-01` to `MAIL-05` trace to one GitHub issue each, #20, #24, #23,
+#37 and #38, from the same day; the third of Pratik's seven groups. The total is 61.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
