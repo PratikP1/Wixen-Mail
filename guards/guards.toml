@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 83 records have arrived since and have not been through it.
+# 86 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -20391,7 +20391,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -20686,7 +20686,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -20715,7 +20715,7 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
 ]
 
 # ── 07-08 ─────────────────────────────────────────────────────────────────
@@ -20757,7 +20757,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
 ]
 
 # The break is the half-fix, not the deletion. Taking the publisher comparison
@@ -22557,13 +22557,54 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-15 against `house_style` with the break
 # applied: exactly this one test failed.
+#
+# Re-anchored 2026-09-17 on the last line of the Test Suite job's own comment,
+# because the Build job's checkout gained the same `fetch-depth: 0` that day
+# and a break has to name one place. Re-measured through `--remeasure`.
 
 [[guard]]
 name = "a CI job that runs the tests checks out the whole history"
 file = ".github/workflows/ci.yml"
 suite = "house_style"
-before = """        fetch-depth: 0"""
-after = """        fetch-depth: 1"""
+before = """      # other test green. mutants.yml already checks out this way and says why.
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0"""
+after = """      # other test green. mutants.yml already checks out this way and says why.
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1"""
+red = [
+    "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
+]
+
+# ── A CI job that runs the build script on a checkout of one commit ──────────
+#
+# Since 2026-09-17 `scripts/build-installer.sh` counts the commits since the
+# version was set, stamps the count into the build, and refuses a checkout
+# that does not hold the version's commit. The Build job runs the script on
+# every push and checked out one commit until that day; the reading above was
+# widened to jobs that run the script, and this is the break for that half of
+# it: the Build job's checkout back to the depth the action would have used.
+#
+# Measured 2026-09-17 through `--remeasure` on the branch the record was
+# written on, `cargo test --test house_style`.
+
+[[guard]]
+name = "the CI job that builds the installer checks out the whole history"
+file = ".github/workflows/ci.yml"
+suite = "house_style"
+before = """      # is cheap enough to fetch on every push.
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0"""
+after = """      # is cheap enough to fetch on every push.
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1"""
 red = [
     "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
 ]
@@ -23109,17 +23150,20 @@ tests_last_seen = [
 # The reading in tests/installer.rs is a second copy of the script's
 # arithmetic, and this is what holds it to the first: the stage numbers come
 # off the script's own `case` arms, so a script whose alpha arm says 2 makes
-# the reading say 0.6.0.2001 for 0.6.0-alpha.1 and the table test fails by
-# row. The ordering test stays green under it on purpose, because 1.0.0.2001
-# is still above 0.125.1.4000 by the first field, which is the only field
-# that test is about.
+# the reading say 1.0.0.27070 for 1.0.0-alpha.1+70 and the table test fails
+# by row. Since 2026-09-17 the ordering test reads the same arms and goes red
+# beside it: with alpha weighed as beta, the last alpha at its caps (38999)
+# ranks above the first beta (27000). The first-alpha test stays green under
+# it on purpose, because 1.0.0.27000 is still above 0.125.1.52000 by the
+# first field, which is the only field that test is about.
 #
 # `file` is not a Rust file, so the count check skips the count for it and
 # takes the counts off the red list instead, which with `suite` set resolves
 # to tests/installer.rs.
 #
 # Measured 2026-09-16 through `--remeasure` on the branch the record was
-# written on, `cargo test --test installer`.
+# written on, `cargo test --test installer`; re-measured 2026-09-17 when the
+# table test was rewritten for the counter and the ordering test arrived.
 [[guard]]
 name = "the installer's alpha arm is the first stage"
 file = "scripts/build-installer.sh"
@@ -23128,9 +23172,63 @@ before = '  *-alpha.*) stage=1 ;;'
 after = '  *-alpha.*) stage=2 ;;'
 red = [
     "test_the_four_field_version_follows_the_scripts_own_table",
+    "test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
+]
+
+# ── The build counter reaches the file version ───────────────────────────────
+#
+# Since 2026-09-17 the fourth field is `stage * 13000 + step * 1000 +
+# counter`, the counter being the commits since the version was set, so Apps
+# and Features orders two builds of one version the way the string does. The
+# reading takes the expression off the script, and this break drops the
+# counter from it: the reading then names the expression as missing, and the
+# three tests that go through it (the table, the ordering and the first-alpha
+# test) all fail on that sentence. The reader's companion reads a snippet of
+# its own and stays green.
+#
+# Measured 2026-09-17 through `--remeasure` on the branch the record was
+# written on, `cargo test --test installer`.
+[[guard]]
+name = "the build counter reaches the Windows file version"
+file = "scripts/build-installer.sh"
+suite = "installer"
+before = 'VERSION_INFO="${major:-0}.${minor:-0}.${patch:-0}.$((stage * 13000 + step * 1000 + counter))"'
+after = 'VERSION_INFO="${major:-0}.${minor:-0}.${patch:-0}.$((stage * 13000 + step * 1000))"'
+red = [
+    "test_the_four_field_version_follows_the_scripts_own_table",
+    "test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage",
+    "test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 24 },
+]
+
+# ── A clone that cannot count is refused ─────────────────────────────────────
+#
+# The refusal is the `exit 1` inside the branch for an empty VERSION_SET_AT;
+# without it the two sentences print and the build goes on, stamping a build
+# that cannot say its order, which is what the counter exists to prevent.
+# The installer test in house_style reads the branch and asks for the exit.
+#
+# Measured 2026-09-17 through `--remeasure` on the branch the record was
+# written on, `cargo test --test house_style`.
+[[guard]]
+name = "a clone without the commit that set the version is refused a build"
+file = "scripts/build-installer.sh"
+suite = "house_style"
+before = '''  echo "A shallow clone has no history to search; fetch the whole history and build again." >&2
+  exit 1
+fi'''
+after = '''  echo "A shallow clone has no history to search; fetch the whole history and build again." >&2
+fi'''
+red = [
+    "test_the_installer_says_how_far_back_the_version_was_set",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
 ]
 
 # The form no longer offering the level, in the shape that would really
@@ -23156,7 +23254,7 @@ red = [
     "test_the_release_workflow_can_publish_the_version_the_tree_already_carries",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 20 },
+    { file = "tests/installer.rs", tests = 24 },
 ]
 
 # The middle arm of `language_to_use`, which is the whole of the fix for #21:
