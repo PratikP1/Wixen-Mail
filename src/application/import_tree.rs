@@ -498,9 +498,25 @@ pub enum WhatWasChosen {
     AnArchive,
     /// One file holding mail, which is a folder of one.
     MailInOneFile,
+    /// The file Outlook keeps somebody's mail, appointments, contacts, tasks
+    /// and notes in, read by [`crate::service::outlook_data_file`].
+    AnOutlookDataFile,
 }
 
-/// Which of the two this is, decided from how it begins.
+/// Where a folder out of an Outlook data file lands on this computer, or
+/// nothing when the file gives it a name this program will not write.
+///
+/// The same rules an archive's folder names go through, because a data file
+/// is a stranger's file in the same way: a name carrying a step out of a
+/// folder, a device, or a character Windows will not take is refused rather
+/// than repaired, and the mail in that folder stays in the file with a count
+/// saying so.
+pub fn where_a_folder_of_the_data_file_lands(named: &str) -> Option<String> {
+    let _ = named;
+    None
+}
+
+/// Which of the three this is, decided from how it begins.
 ///
 /// From the bytes rather than the name, which is this module's rule throughout
 /// and holds here for the same reason: mail is saved with every ending there
@@ -556,6 +572,39 @@ mod tests {
             what_was_chosen(false, &[0x89, b'P', b'N', b'G']),
             WhatWasChosen::AnArchive
         );
+    }
+
+    #[test]
+    fn test_an_outlook_data_file_goes_to_its_own_reader() {
+        // Every Outlook data file begins `!BDN`, whichever of the two kinds it
+        // is. Before this arm existed one chosen through All files fell to the
+        // archive reader and was told it was not a mailbox archive, which is
+        // true and sends somebody looking for a different file when the one
+        // they chose is the one they wanted.
+        assert_eq!(
+            what_was_chosen(false, b"!BDN\0\0\0\0SM\0\0the rest of a data file"),
+            WhatWasChosen::AnOutlookDataFile
+        );
+        // A folder is still an archive, whatever a file inside it begins with.
+        assert_eq!(what_was_chosen(true, b"!BDN"), WhatWasChosen::AnArchive);
+    }
+
+    #[test]
+    fn test_a_folder_of_the_data_file_lands_under_imported_by_the_archives_rules() {
+        // Outlook's folder names travel the same road an archive's do: under
+        // Imported, nested the way the file nested them, and refused rather
+        // than repaired where the name cannot be written on this computer.
+        assert_eq!(
+            where_a_folder_of_the_data_file_lands("Inbox/Work").as_deref(),
+            Some("\u{1}Local/Imported/Inbox/Work")
+        );
+        assert_eq!(
+            where_a_folder_of_the_data_file_lands("Deleted Items").as_deref(),
+            Some("\u{1}Local/Imported/Deleted Items")
+        );
+        // A step out of a folder is a name the mail stays in the file under.
+        assert_eq!(where_a_folder_of_the_data_file_lands("Inbox/.."), None);
+        assert_eq!(where_a_folder_of_the_data_file_lands(""), None);
     }
 
     /// One ordinary message, as a file saved from a mail program holds it.
