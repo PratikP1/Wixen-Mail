@@ -64,11 +64,20 @@ impl WaitBeforeTryingAgain {
     /// Counts the failure, so the next answer is longer than this one until
     /// the cap.
     pub fn next_wait(&mut self) -> Duration {
+        // Doubled per failure after the first, and saturating rather than
+        // wrapping, because a watch left running for a week would otherwise
+        // shift past the width of the number and start again from nothing.
+        let doublings = self.failures_in_a_row.min(31);
+        self.failures_in_a_row = self.failures_in_a_row.saturating_add(1);
         FIRST_WAIT
+            .saturating_mul(1u32 << doublings)
+            .min(LONGEST_WAIT)
     }
 
     /// The server answered, so the next wait starts from the beginning again.
-    pub fn tell_it_worked(&mut self) {}
+    pub fn tell_it_worked(&mut self) {
+        self.failures_in_a_row = 0;
+    }
 
     /// How many times in a row the server has not answered.
     ///
@@ -86,11 +95,36 @@ impl WaitBeforeTryingAgain {
 /// 120 seconds". No protocol vocabulary, because the person hearing this did
 /// not choose IMAP and cannot do anything about it.
 pub fn what_to_say_before_waiting(wait: Duration, failures_in_a_row: u32) -> String {
-    let _ = failures_in_a_row;
+    // The first failure is one sentence. A run of them says how long the run
+    // is, because "still cannot be reached" and "could not be reached, once"
+    // want different decisions from the person hearing them.
+    let what_happened = match failures_in_a_row {
+        0 | 1 => "The mail server could not be reached.".to_string(),
+        times => format!("The mail server could not be reached {times} times in a row."),
+    };
     format!(
-        "The mail server could not be reached. Trying again in {} seconds.",
-        wait.as_secs()
+        "{what_happened} Trying again in {}.",
+        said_as_a_person_says_it(wait)
     )
+}
+
+/// A length of time in the words a person uses for one.
+///
+/// Whole minutes as minutes, anything shorter as seconds, and a wait that is
+/// both as both. Never a bare count of seconds above a minute, which is a
+/// number somebody has to divide in their head.
+fn said_as_a_person_says_it(wait: Duration) -> String {
+    let seconds = wait.as_secs();
+    let (minutes, rest) = (seconds / 60, seconds % 60);
+    match (minutes, rest) {
+        (0, seconds) => crate::service::caldav::how_many(seconds as usize, "second"),
+        (minutes, 0) => crate::service::caldav::how_many(minutes as usize, "minute"),
+        (minutes, seconds) => format!(
+            "{} {}",
+            crate::service::caldav::how_many(minutes as usize, "minute"),
+            crate::service::caldav::how_many(seconds as usize, "second")
+        ),
+    }
 }
 
 #[cfg(test)]

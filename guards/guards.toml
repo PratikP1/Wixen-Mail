@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 66 records have arrived since and have not been through it.
+# 68 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -23982,4 +23982,52 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/wired.rs", tests = 77 },
+]
+
+# The wait before asking a mail server again grows with each failure. The
+# break answers the first wait every time, which is a client that asks a
+# server that has said no every thirty seconds for as long as the program
+# runs: the reconnect storm the rule exists to prevent. The test that lists
+# the whole shape reddens, and so does the one holding the seventh answer
+# to the cap.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the wait before asking a mail server again grows with each failure"
+file = "src/application/trying_again.rs"
+before = """        FIRST_WAIT
+            .saturating_mul(1u32 << doublings)
+            .min(LONGEST_WAIT)"""
+after = """        let _ = doublings;
+        FIRST_WAIT"""
+red = [
+    "application::trying_again::tests::test_each_failure_doubles_the_wait_until_the_cap",
+    "application::trying_again::tests::test_the_wait_never_goes_past_thirty_minutes",
+]
+tests_last_seen = [
+    { file = "src/application/trying_again.rs", tests = 9 },
+]
+
+# The wait before asking a mail server again never goes past thirty
+# minutes. The break drops the cap, so the seventh failure waits thirty-two
+# minutes, the tenth over four hours, and a watch that failed overnight is
+# next tried some time next week. The test that lists the whole shape
+# reddens on the seventh answer, and the one that asks a hundred times
+# reddens on the first answer past the cap.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the wait before asking a mail server again never goes past thirty minutes"
+file = "src/application/trying_again.rs"
+before = """            .saturating_mul(1u32 << doublings)
+            .min(LONGEST_WAIT)"""
+after = """            .saturating_mul(1u32 << doublings)"""
+red = [
+    "application::trying_again::tests::test_each_failure_doubles_the_wait_until_the_cap",
+    "application::trying_again::tests::test_the_wait_never_goes_past_thirty_minutes",
+]
+tests_last_seen = [
+    { file = "src/application/trying_again.rs", tests = 9 },
 ]
