@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 82 records have arrived since and have not been through it.
+# 83 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -24385,7 +24385,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
-    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
 # ── A label view is read in the sort that was chosen (#69) ───────────────────
@@ -24413,7 +24413,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/tags.rs", tests = 10 },
-    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
 # ── What a saved search found is listed in the sort that was chosen (#69) ────
@@ -24443,5 +24443,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/saved_searches.rs", tests = 27 },
-    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
+]
+
+# ── The window asks the three listings for the sort that was chosen (#69) ────
+#
+# The cache taking an order is half of it; the other half is the window
+# asking for one. `load_every_inbox`, `load_messages_with_label` and
+# `run_a_saved_search` each ask `the_sort_as(view_state::Showing::Messages)`
+# and pass it where their read takes it, as `load_folder_messages` has since
+# the layout carried a sort. The reading in the target holds all three
+# loaders and the folder loader to asking and passing; the break takes one,
+# `load_every_inbox` passing `None` in place of `order.as_deref()`, because
+# a record applies one edit, and the reading names each loader separately
+# so a break in any of the three would be named. One test goes red out of
+# the seven in the target; the companion plants into a snippet and the five
+# cache tests do not read the window. `suite` names the target, which
+# couples it to `wx_app.rs` for `check.sh --suites-for`, the thirteenth
+# target coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# all_inboxes_reads_in_the_sort_that_was_chosen`.
+[[guard]]
+name = "the window asks All Inboxes, a label view and a saved search for the sort that was chosen"
+file = "src/presentation/wx_app.rs"
+suite = "all_inboxes_reads_in_the_sort_that_was_chosen"
+before = """    match cache.unified_inbox(order.as_deref(), None) {"""
+after = """    match cache.unified_inbox(None, None) {"""
+red = [
+    "test_the_window_reads_all_inboxes_a_label_and_a_search_in_the_sort_that_was_chosen",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]

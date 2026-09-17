@@ -7001,7 +7001,10 @@ const PRESS_ENTER_TO_RUN: &str = "Press Enter to run this saved search.";
 /// labels on each row, because it is the same list showing the same messages
 /// and a second shape would mean a label view missing what every other view
 /// of those messages shows. Every message carrying the label, since
-/// 2026-09-17, for the reason `load_folder_messages` gives.
+/// 2026-09-17, for the reason `load_folder_messages` gives, and in the stored
+/// sort, as a folder is, since the same day (#69): until then choosing a sort
+/// with a label view open re-sorted the rows on screen and saved the choice,
+/// and every return to the row read the fixed order the query carried.
 fn load_messages_with_label(
     cache: &Option<Arc<MessageCache>>,
     state: &Arc<StdMutex<WxUIState>>,
@@ -7015,7 +7018,8 @@ fn load_messages_with_label(
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
         return;
     };
-    match cache.messages_with_label(&account_id, tag_id, None, None) {
+    let order = the_sort_as(view_state::Showing::Messages);
+    match cache.messages_with_label(&account_id, tag_id, order.as_deref(), None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
@@ -7046,13 +7050,17 @@ fn load_messages_with_label(
 /// this list reaches the right server rather than whichever account happens to
 /// be open. The whole of every inbox, since 2026-09-17, for the reason
 /// `load_folder_messages` gives: the newest 500 it read until then was the
-/// same page, in the combined view.
+/// same page, in the combined view. And in the stored sort, as a folder is,
+/// since the same day (#69): until then choosing a sort with All Inboxes open
+/// re-sorted the rows on screen and saved the choice, and every return to the
+/// row read the fixed newest-first order the query carried.
 fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
     let Some(cache) = cache.as_ref() else {
         let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
         return;
     };
-    match cache.unified_inbox(None, None) {
+    let order = the_sort_as(view_state::Showing::Messages);
+    match cache.unified_inbox(order.as_deref(), None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
@@ -7357,7 +7365,11 @@ fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSe
             .take(MOST_RESULTS_SHOWN)
             .map(|message| message.id)
             .collect();
-        let rows = match cache.message_rows_for(&ids, None) {
+        // The cut is the search's; the order the cut is shown in is the
+        // person's, the stored sort a folder is read in, since 2026-09-17
+        // (#69). Read here, where the listing is built, on the worker.
+        let order = the_sort_as(view_state::Showing::Messages);
+        let rows = match cache.message_rows_for(&ids, order.as_deref()) {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::error!("What a saved search found could not be listed: {e}");
@@ -13774,8 +13786,11 @@ fn load_folder_messages(
 ///
 /// The stored column layout carries the sort, so a folder opens in the order
 /// somebody arranged rather than always by date. Read here rather than passed
-/// in, because both readers run on a background thread and the layout lives
-/// with the settings.
+/// in, because the readers run on a background thread and the layout lives
+/// with the settings. Five readers ask: the folder's messages and its
+/// conversations, every inbox, a label, and a saved search's results, the
+/// last three since 2026-09-17 (#69), when they read a fixed order of their
+/// own and forgot the choice on every return.
 ///
 /// D-12 is why one function answers for both views. The sort is the same
 /// `Sort`, and only the expression each column contributes changes, so there is
