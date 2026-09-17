@@ -2574,18 +2574,22 @@ fn test_cut_and_copy_ask_the_box_rather_than_indexing_its_value() {
 /// nothing read, and taking one day off a repeating meeting leaving by a path
 /// that skipped the reload. A guard was written after the second, and it
 /// watches one command in another file, so it does not cover this one.
+///
+/// Two commands pick what to import, a file and a folder, and both hand what
+/// was chosen to one function that starts the worker; that function is what
+/// this reads, after checking the picker of a file reaches it. A second
+/// picker with its own worker would be a second place for this to go wrong.
 #[test]
 fn test_importing_mail_reads_the_list_back_before_it_finishes() {
-    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let app =
+        what_ships(&fs::read_to_string("src/presentation/wx_app.rs").expect("the main window"));
 
-    let importing = app
-        .find("fn import_a_mailbox")
-        .unwrap_or_else(|| panic!("the import command has been renamed or removed"));
-    let ends = app[importing..]
-        .find("\nfn ")
-        .map(|at| importing + at)
-        .unwrap_or(app.len());
-    let body = &app[importing..ends];
+    assert!(
+        body_of(&app, "fn import_a_mailbox(").contains("mail_brought_in_from("),
+        "Import Mailbox no longer hands the chosen file to the function that starts the \
+         worker, so what is read below is not what that command does"
+    );
+    let body = body_of(&app, "fn mail_brought_in_from(");
 
     // The tree rather than the message list, because an import makes folders
     // and puts the mail in them: the folder somebody is looking at does not
@@ -4552,5 +4556,119 @@ fn test_the_reading_of_save_as_can_see_the_stub_put_back() {
         !what_save_as_does(&writer_gone).writes_through_the_exporter,
         "the exporter's writer was taken out of the handler and the reading still said it \
          was used"
+    );
+}
+
+/// What the main window's Import a Folder of Messages does, read off its source.
+///
+/// The changelog promised "a folder you point it at" from the day the mailbox
+/// import was written, and the archive reader has had a branch for a folder
+/// the whole time. The one picker was a file dialog that must be given a file,
+/// which cannot answer with a folder, so the branch was reached by nothing
+/// until #53 (point 3). A folder wants a picker of its own, and this reads
+/// that the picker is there and that what it answers goes to the same worker
+/// a chosen file goes to.
+#[derive(Debug, PartialEq, Eq)]
+struct WhatTheFolderImportDoes {
+    /// The item is on a menu, so somebody can reach it.
+    is_on_a_menu: bool,
+    /// The handler arm reaches a function rather than nothing.
+    the_arm_reaches_the_handler: bool,
+    /// The handler opens a picker that answers with a folder, not a file.
+    opens_a_folder_picker: bool,
+    /// The handler hands the chosen folder to the function that starts the
+    /// worker, the same one Import Mailbox hands a chosen file to.
+    hands_the_folder_to_the_worker: bool,
+}
+
+/// The reading itself, over the text of the main window.
+///
+/// Panics when the handler is gone, through `body_of`, so a rename fails
+/// loudly rather than reading nothing and passing.
+fn what_the_folder_import_does(app: &str) -> WhatTheFolderImportDoes {
+    let squashed = without_whitespace(app);
+    let arm_starts = app
+        .find("_ if id == ID_IMPORT_A_FOLDER_OF_MESSAGES =>")
+        .unwrap_or_else(|| panic!("the Import a Folder of Messages arm is not in the main window"));
+    let arm_ends = app[arm_starts + 1..]
+        .find("_ if id == ")
+        .map_or(app.len(), |at| arm_starts + 1 + at);
+    let arm = &app[arm_starts..arm_ends];
+    let handler = body_of(app, "fn import_a_folder_of_messages(");
+    WhatTheFolderImportDoes {
+        is_on_a_menu: squashed.contains("append_item(ID_IMPORT_A_FOLDER_OF_MESSAGES,"),
+        the_arm_reaches_the_handler: arm.contains("import_a_folder_of_messages("),
+        opens_a_folder_picker: handler.contains("DirDialog::builder("),
+        hands_the_folder_to_the_worker: handler.contains("mail_brought_in_from(")
+            && body_of(app, "fn import_a_mailbox(").contains("mail_brought_in_from("),
+    }
+}
+
+/// What the reading answers when the window does all four things.
+const A_FOLDER_CAN_BE_CHOSEN: WhatTheFolderImportDoes = WhatTheFolderImportDoes {
+    is_on_a_menu: true,
+    the_arm_reaches_the_handler: true,
+    opens_a_folder_picker: true,
+    hands_the_folder_to_the_worker: true,
+};
+
+/// File, Import a Folder of Messages picks a folder and imports it.
+///
+/// What this cannot see: whether the picker opens, or what the folder's files
+/// become. The walk over a folder is measured in `service::mailbox_archive`
+/// and where its folders land in `application::import_tree`; this only says
+/// the window has a picker that can answer with a folder and hands the answer
+/// to the worker those two sit behind.
+#[test]
+fn test_a_folder_of_messages_can_be_chosen_and_goes_to_the_import_worker() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert_eq!(
+        what_the_folder_import_does(&what_ships(&app)),
+        A_FOLDER_CAN_BE_CHOSEN,
+        "a folder of messages cannot be chosen, or is chosen and goes nowhere: the changelog \
+         promises a folder you point at and the archive reader has a branch for one"
+    );
+}
+
+/// The reading above can see the hand-over taken out.
+///
+/// A reading that answered yes whatever the file held would keep the guard
+/// green over a picker that opens and hands its answer to nothing. This reads
+/// the tree first, so a real break cannot be mistaken for the splice, then
+/// takes each half out in memory and asks the reading again.
+#[test]
+fn test_the_reading_of_the_folder_import_can_see_the_hand_over_taken_out() {
+    let app =
+        what_ships(&fs::read_to_string("src/presentation/wx_app.rs").expect("the main window"));
+    assert_eq!(
+        what_the_folder_import_does(&app),
+        A_FOLDER_CAN_BE_CHOSEN,
+        "the tree holds a real break, so nothing spliced here could be told from it"
+    );
+
+    // From the handler onward, so the call replaced is the handler's own and
+    // not Import Mailbox's, which sits above it and hands over the same way.
+    let handler_starts = app
+        .find("fn import_a_folder_of_messages(")
+        .expect("the reading above found the handler");
+    let (above, from_the_handler) = app.split_at(handler_starts);
+    let hand_over_gone = format!(
+        "{above}{}",
+        from_the_handler.replacen("mail_brought_in_from(", "never_reached(", 1)
+    );
+    assert!(
+        !what_the_folder_import_does(&hand_over_gone).hands_the_folder_to_the_worker,
+        "the hand-over was taken out of the handler and the reading still said the folder \
+         reaches the worker"
+    );
+
+    let a_file_picker_instead = format!(
+        "{above}{}",
+        from_the_handler.replacen("DirDialog::builder(", "FileDialog::builder(", 1)
+    );
+    assert!(
+        !what_the_folder_import_does(&a_file_picker_instead).opens_a_folder_picker,
+        "the folder picker was swapped for a file picker and the reading did not see it"
     );
 }

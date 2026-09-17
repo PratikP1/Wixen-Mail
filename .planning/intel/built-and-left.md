@@ -53,6 +53,7 @@ parsing or loopback servers.
 | Windows installer (Inno Setup) | `installer/` | backlog marks it Done |
 | Spell check on send, using Windows' own checker on Windows | `src/application/spell_session.rs`, `src/service/spellcheck/` | roadmap Phase 4, marked partial |
 | Outlook PST/OST import into a non-server-backed Imported area | `src/service/outlook_data_file.rs`, `src/application/importing_messages.rs` | changelog line 674 onward |
+| Corrected 2026-09-17: the row above was in the wrong table when it was written. On 2026-08-29 the reader was in the tree with its tests and reached from no non-test path, which is this page's own definition of "built but unproven"; the picker did not list `.pst` and a data file chosen through All files was refused as not an archive. It became reachable with 09-08's merge, `06fdc9b7` on 2026-09-17, through File, Import Mailbox and `src/application/importing_an_outlook_data_file.rs`, and no real Outlook data file has been through it. The row stays as it was written, by this page's rule of correction by addition | `src/application/importing_an_outlook_data_file.rs`, `tests/wired.rs` (`test_importing_mail_sends_each_kind_of_file_to_its_own_reader`) | issue 53 point 1; `09-08-SUMMARY.md` |
 | CI quality gates: rustfmt, clippy `-D warnings`, tests, release build, plus Axe.Windows and MSAA scans and a real-NVDA workflow | `scripts/check.sh`, `.github/workflows/ci.yml`, `accessibility.yml`, `nvda.yml`, `mutants.yml` | IMPLEMENTATION_STATUS "Quality gates" |
 
 ## Built but unproven

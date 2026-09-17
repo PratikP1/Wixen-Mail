@@ -56,6 +56,7 @@
 - Attachment content cached in SQLite (`src/data/message_cache/attachment_content.rs`), not stored as loose files
 - Sound-scheme packs imported from `.zip` archives (`sound-schemes/`, `src/service/` earcon code)
 - Outlook `.pst` files read directly from disk for one-time import (`src/service/outlook_data_file.rs`, `outlook-pst` crate)
+  - Corrected 2026-09-17: from the day this line was written until 09-08's merge (`06fdc9b7`, 2026-09-17) no command reached that reader, so the line described code and not an integration anybody could use. It is reached since then from File, Import Mailbox through `src/application/importing_an_outlook_data_file.rs`, and no real Outlook data file has been through it. A folder of saved messages is chosen through File, Import a Folder of Messages since 09-10; the one picker before it could not answer with a folder (issue 53, points 1 and 3)
 
 **Caching:**
 - The SQLite message cache described above is the primary cache layer for mail, calendar, contacts, and tasks synced from remote accounts. No external cache service (Redis, etc.) is used.

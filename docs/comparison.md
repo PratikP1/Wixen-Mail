@@ -103,6 +103,16 @@ mbox files, single messages, folders inside zip archives and Outlook data
 files, keeping whatever folder structure it arrived with, and goes out the
 same way.
 
+Corrected on 2026-09-17: "Outlook data files" above described a reader that
+no command could reach. It was in the tree with its own tests from 2026-09-05,
+and nothing called it until the build of 2026-09-17 that carries the fix for
+issue 53. File, Import Mailbox reaches it since then, and no real Outlook data
+file has been through it yet, because neither this program nor the library it
+reads with can write one to test against. A folder of saved messages is chosen
+through File, Import a Folder of Messages since the same build; before it the
+only picker could not answer with a folder. Goes out "the same way" is still
+generous: export writes one zip of mbox files, and nothing else.
+
 Saved searches have since been built too. A search you run in the morning can be
 kept under a name, and it sits in the folder tree under Saved Searches. Press
 Enter on the row and it runs again and says how much it found.

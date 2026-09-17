@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 65 records have arrived since and have not been through it.
+# 66 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4416,7 +4416,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -4438,7 +4438,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11886,7 +11886,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -11902,7 +11902,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -11932,7 +11932,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -11946,7 +11946,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -14137,7 +14137,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -14666,7 +14666,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -16997,7 +16997,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -17040,7 +17040,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -17107,7 +17107,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -17134,7 +17134,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -17609,7 +17609,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -17846,7 +17846,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 [[guard]]
@@ -23792,7 +23792,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # Mail out of an Outlook data file goes through the one place that files an
@@ -23919,7 +23919,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
 
 # The import worker hands an Outlook data file to the module that reads
@@ -23948,5 +23948,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 75 },
+    { file = "tests/wired.rs", tests = 77 },
+]
+
+# The folder import's picker answers with a folder and the handler hands it
+# to the worker. The break keeps the item, the arm and the folder picker and
+# drops the hand-over, so a folder is chosen and imported by nothing, which
+# is the shape a menu item that opens a dialog and does nothing has: the
+# most convincing kind of stub. The reading that asks the handler for the
+# call reddens, and so does its companion, which reads the tree before it
+# splices and refuses a tree that already holds a break.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+[[guard]]
+name = "a chosen folder of messages is handed to the import worker"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """    let Some(chosen) = picker.get_path() else {
+        refuse_to_import(ui_tx, runtime, a11y, "No folder was chosen.");
+        return;
+    };
+    mail_brought_in_from(chosen, account, ui_tx, runtime, a11y);"""
+after = """    let Some(_chosen) = picker.get_path() else {
+        refuse_to_import(ui_tx, runtime, a11y, "No folder was chosen.");
+        return;
+    };
+    let _ = account;"""
+red = [
+    "test_a_folder_of_messages_can_be_chosen_and_goes_to_the_import_worker",
+    "test_the_reading_of_the_folder_import_can_see_the_hand_over_taken_out",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 77 },
 ]

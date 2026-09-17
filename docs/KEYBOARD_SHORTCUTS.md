@@ -484,10 +484,15 @@ dialog once you have more than one.
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save the message you are on as a `.eml` file, named after its subject. To save an attachment, open the message and use the reader's own Save Attachment command (`Ctrl+S` there) |
 | Check Mail | `F9` | Check for new messages |
+| Import Mailbox | (none) | Read mail in from one file: a zip of mailbox files, a single saved message, a mailbox file, or an Outlook data file. Everything lands under Imported, on this computer, in the folders it was in |
+| Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
+| Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |
+| Import PGP Private Key | (none) | Read a private key in from a file so PGP mail can be opened. Experimental, and the menu says so |
 | Quit | `Ctrl+Q` | Exit the application |
 
-File holds making, saving and fetching. Anything that acts on the message,
-event, task, note or contact you are on is on the Action menu instead.
+File holds making, saving, fetching and moving mail in and out. Anything that
+acts on the message, event, task, note or contact you are on is on the Action
+menu instead.
 
 ### Edit Menu
 

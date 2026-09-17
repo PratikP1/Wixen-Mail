@@ -86,7 +86,10 @@ nothing about it.
 This applies only to mail that says it is signed, which is a small share of most mailboxes.
 Ordinary mail is stored once, as it always was. It applies however the message reached this
 computer: fetched from an IMAP server, collected over POP, or brought in from a saved message,
-a mailbox archive or an Outlook data file.
+a mailbox archive or an Outlook data file. Corrected on 2026-09-17: the last of those was true
+of the code and not of anything you could do until the build of 2026-09-17 that carries the fix
+for issue 53, because no command reached the Outlook data file reader before it. File, Import
+Mailbox reaches it since then, and no real Outlook data file has been through it yet.
 
 The second copy is dropped when a signed message is larger than 25 MB, and when the space these
 copies use passes 128 MB, the ones read longest ago going first. Two kinds of mail are never
