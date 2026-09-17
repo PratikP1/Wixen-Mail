@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 466
+open_count: 470
 waived_count: 0
 fixed_count: 28
-total_count: 494
-last_updated: 2026-09-16T22:44:35.707Z
+total_count: 498
+last_updated: 2026-09-17T01:02:02.964Z
 ---
 
 # Broken Windows Ledger
@@ -509,6 +509,10 @@ last_updated: 2026-09-16T22:44:35.707Z
 | 492 | 09 | unrun-verify | nvda-tests/tests/settings-tabs-read-once.test.js | 1 | 09-06: whether each Settings tab is heard once along the tab row is FOUND-09's listening line and has not been heard. What is held: the native tab control's own arrow handler raised EVENT_OBJECT_FOCUS twice on the reached tab per key (scripts/uia-events.ps1, 2026-09-16, before) and raises it once now that the row answers its arrows through SetSelection (the same script, after); tests/the_settings_tab_row_says_each_tab_once.rs sends a real WM_KEYDOWN to the built dialog and counts one, which is structure present. What NVDA says about one event is the NVDA case's to answer, on CI at the next push of main, which is Pratik's, and the tester's ear after; neither has run. Roadmap criterion 6's transcript clause and FOUND-09's third [D] line stay open until that run | open |  | 2026-09-16T22:44:18.512Z |  |
 | 493 | 09 | deviation | scripts/uia-events.ps1 | 1 | 09-06: the plan prescribed a UI Automation event logger and read a capture of one event per key as meaning the second reading was NVDA's own; the managed UI Automation client did show exactly one ElementSelected per key and nothing else, and it is blind to what NVDA reads for a native SysTabControl32, which is MSAA and win events. The logger logs both channels, the win-event hook reading class, text and child id only and never an IAccessible (ledger 390). Two conditions of the capture: the session was locked (the focused element was the Lock Screen, pid 16028), so SendInput answered ERROR_ACCESS_DENIED and SendKeys threw, keys were posted as WM_KEYDOWN to the tab control's own window, and no window could take foreground focus, so the page-panel candidate is judged from the in-thread focus events (the row took focus at open, both captures) and wxWidgets' UpdateSelection giving the page focus only when the notebook has none, not from a foreground run; and NVDA was running and not stopped. The fix also takes the numpad's arrows, found because the test's first key lacked the extended bit and wxWidgets read VK_RIGHT as WXK_NUMPAD_RIGHT | open |  | 2026-09-16T22:44:35.134Z |  |
 | 494 | 09 | todo | nvda-tests/README.md | 60 | 09-06: the README's What is in here table lists two test files and the directory holds five (calendar-immediate-actions, filter-manager-delete and settings-tabs-read-once are not in it), and its prose says two tests where the workflow runs five. A table that is read as the inventory and is short by three is a check nobody reads; bring it to the directory, or have a reading hold it there | open |  | 2026-09-16T22:44:35.707Z |  |
+| 495 | 09 | unrun-verify | src/presentation/reader_text.rs |  | Whether the preview pane's bar and a conversation's per-message sentences read well by ear has been heard by nobody: preview_html renders the top of the bar as a region named Security warning above the message, and one_of_several says why a PGP message did not open under its own heading on the page and in the text reader. Both are held by tests against a key and a message GnuPG made and a signed message OpenSSL made; whether they sound right with NVDA, and whether a real correspondent's key opens anything, is FOUND-10's last [S] line, the tester's (09-07, #51). | open |  | 2026-09-17T01:01:46.443Z |  |
+| 496 | 09 | todo | src/presentation/wx_app.rs |  | import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6). | open |  | 2026-09-17T01:02:01.809Z |  |
+| 497 | 09 | todo | src/presentation/reader_text.rs |  | A PGP signature inside a conversation of several messages is still not mentioned there: SIGNED_AND_NOT_CHECKED_HERE is folded by with_encryption for one message only, and one_of_several says the PGP opening reason and the S/MIME envelope but nothing about a clearsigned part. Opening the message on its own says it; the changelog's dated correction on the armour entry says so (09-07). | open |  | 2026-09-17T01:02:02.382Z |  |
+| 498 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-07-PLAN.md |  | 09-07 executed with four departures: the wired.rs guards were edited in task 1 rather than task 3 because body_of panics on the moved fn line and task 1 could not compile its verify otherwise; task 2's second guard record went on reader_text's behaviour (the reason dropped from one_of_several) rather than on a call-site bypass, and task 3's record covers the call site; three stray rustdoc blocks moved home rather than one, the folder loader's and the module loader's beside the mailbox import's; and a third changelog entry, the armour entry's thread limitation, was dated beside the two the plan named. The key import's status-bar sentence was corrected in the comment, not built, because the task's one red was spent (ledger todo beside this). | open |  | 2026-09-17T01:02:02.964Z |  |
 
 ````json
 [
@@ -6438,6 +6442,54 @@ last_updated: 2026-09-16T22:44:35.707Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T22:44:35.707Z",
+    "resolved_at": null
+  },
+  {
+    "id": 495,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "Whether the preview pane's bar and a conversation's per-message sentences read well by ear has been heard by nobody: preview_html renders the top of the bar as a region named Security warning above the message, and one_of_several says why a PGP message did not open under its own heading on the page and in the text reader. Both are held by tests against a key and a message GnuPG made and a signed message OpenSSL made; whether they sound right with NVDA, and whether a real correspondent's key opens anything, is FOUND-10's last [S] line, the tester's (09-07, #51).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T01:01:46.443Z",
+    "resolved_at": null
+  },
+  {
+    "id": 496,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T01:02:01.809Z",
+    "resolved_at": null
+  },
+  {
+    "id": 497,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "A PGP signature inside a conversation of several messages is still not mentioned there: SIGNED_AND_NOT_CHECKED_HERE is folded by with_encryption for one message only, and one_of_several says the PGP opening reason and the S/MIME envelope but nothing about a clearsigned part. Opening the message on its own says it; the changelog's dated correction on the armour entry says so (09-07).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T01:02:02.382Z",
+    "resolved_at": null
+  },
+  {
+    "id": 498,
+    "kind": "deviation",
+    "phase": "09",
+    "file": ".planning/phases/09-what-the-first-day-of-testing-found/09-07-PLAN.md",
+    "line": null,
+    "description": "09-07 executed with four departures: the wired.rs guards were edited in task 1 rather than task 3 because body_of panics on the moved fn line and task 1 could not compile its verify otherwise; task 2's second guard record went on reader_text's behaviour (the reason dropped from one_of_several) rather than on a call-site bypass, and task 3's record covers the call site; three stray rustdoc blocks moved home rather than one, the folder loader's and the module loader's beside the mailbox import's; and a third changelog entry, the armour entry's thread limitation, was dated beside the two the plan named. The key import's status-bar sentence was corrected in the comment, not built, because the task's one red was spent (ledger todo beside this).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T01:02:02.964Z",
     "resolved_at": null
   }
 ]
