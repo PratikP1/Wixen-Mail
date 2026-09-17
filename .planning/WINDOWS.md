@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 483
+open_count: 484
 waived_count: 0
 fixed_count: 28
-total_count: 511
-last_updated: 2026-09-17T07:17:23.479Z
+total_count: 512
+last_updated: 2026-09-17T11:50:58.000Z
 ---
 
 # Broken Windows Ledger
@@ -526,6 +526,7 @@ last_updated: 2026-09-17T07:17:23.479Z
 | 509 | 09 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has run File, Import a Folder of Messages by hand since 09-10 added it, and no Thunderbird profile folder has been read through it. The folder walk is proven by mailbox_archive's own tests over folders its tests make and by the wired.rs readings that hold the item to a DirDialog and the hand-over to the worker; what a real folder of somebody's saved mail becomes, and what a Thunderbird profile becomes (one folder per mailbox file, each .msf refused and counted, the .sbd nesting one level out of place), is written in the changelog and the guide from reading the walk, not from running it. FOUND-11's third [D] line; #53 point 3. | open |  | 2026-09-17T07:17:05.342Z |  |
 | 510 | 09 | todo | src/service/mailbox_archive.rs |  | The folder import does not recognise Thunderbird's layout: a mailbox file with no ending beside a .msf index and a .sbd folder of subfolders. Read as loose files, a profile's mail directory becomes one folder per mailbox file, each .msf a refused non-mail file counted in the sentence, and the folders inside Inbox.sbd landing under a folder called Inbox.sbd beside Inbox rather than inside it. Recognising the layout means treating name.sbd as the children of the mailbox file name and skipping .msf without counting it. Said in the changelog and the guide since 09-10 (#53 point 3); later work with points 4 to 6. | open |  | 2026-09-17T07:17:22.879Z |  |
 | 511 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-10-PLAN.md |  | 09-10 executed with four departures. The item's letter is O, not the plan's F, which Fetch Missing Message Text already has on the File menu; test_no_two_items_on_one_menu_claim_the_same_letter would have refused the plan's spelling, and the green commit wrongly said no check read menus, corrected in the next commit. The shortcuts page had no row for Import Mailbox beside which to add one, so four rows were added: Import Mailbox, Import a Folder of Messages, Export Mailbox and Import PGP Private Key. The import handler was split into an_account_to_import_into, refuse_to_import and mail_brought_in_from so the two pickers share the readiness check and the worker start, and the older wired.rs reading of the worker's shape was re-pointed at the shared function and named in the red trailer. The changelog's gathered Known limitations paragraph for issue 53's points 4 to 6 went in with task 2, as the plan said, after being drafted and withdrawn during task 1 so task 1's commit carried only its own words. | open |  | 2026-09-17T07:17:23.479Z |  |
+| 512 | 10 | deviation | .planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-01-PLAN.md |  | 10-01 executed with five departures, so 10-05 reads the signatures it will call from the tree and not from the plan. what_to_do_next takes TextStillMissing { messages, kept_bytes } where the plan had the list alone, because a budget on bytes kept needs the bytes kept as an input and the plan's signature had no place for them. The sentences write bare numbers, 3500 of 12872, as every counted sentence in the tree does, where the plan's examples grouped thousands; grouping is one helper and every counted sentence if Pratik hears the bare form as harder. The whole-list run is fetch_all_the_missing_text, generic over Mailbox, with fetch_the_missing_message_text delegating to it as before, because the fold has to be tested against the scripted mailbox and the entry point takes a real controller. The IMAP timeout phrase is imap::THE_SERVER_STOPPED_RESPONDING, read by the classifier, because a timeout and a dropped connection are both Error::Network and kind alone cannot tell them apart; pop3.rs still writes the same phrase as a literal. The stopped-coming-down rule was re-pointed at green rather than red, because the red stub answers false and the old loop's test would have run forever under it. | open |  | 2026-09-17T11:50:58.000Z |  |
 
 ````json
 [
@@ -6659,6 +6660,18 @@ last_updated: 2026-09-17T07:17:23.479Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T07:17:23.479Z",
+    "resolved_at": null
+  },
+  {
+    "id": 512,
+    "kind": "deviation",
+    "phase": "10",
+    "file": ".planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-01-PLAN.md",
+    "line": null,
+    "description": "10-01 executed with five departures, so 10-05 reads the signatures it will call from the tree and not from the plan. what_to_do_next takes TextStillMissing { messages, kept_bytes } where the plan had the list alone, because a budget on bytes kept needs the bytes kept as an input and the plan's signature had no place for them. The sentences write bare numbers, 3500 of 12872, as every counted sentence in the tree does, where the plan's examples grouped thousands; grouping is one helper and every counted sentence if Pratik hears the bare form as harder. The whole-list run is fetch_all_the_missing_text, generic over Mailbox, with fetch_the_missing_message_text delegating to it as before, because the fold has to be tested against the scripted mailbox and the entry point takes a real controller. The IMAP timeout phrase is imap::THE_SERVER_STOPPED_RESPONDING, read by the classifier, because a timeout and a dropped connection are both Error::Network and kind alone cannot tell them apart; pop3.rs still writes the same phrase as a literal. The stopped-coming-down rule was re-pointed at green rather than red, because the red stub answers false and the old loop's test would have run forever under it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T11:50:58.000Z",
     "resolved_at": null
   }
 ]
