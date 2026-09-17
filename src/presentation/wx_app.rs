@@ -6102,8 +6102,8 @@ impl WxMailApp {
                  folders it was in",
             )
             // Alt+O rather than Alt+F, which Fetch Missing Message Text has on
-            // this menu; the collision check in tests/wired.rs reads dialogs
-            // and not menus, so this was found by reading the menu.
+            // this menu. Found by reading the menu; the letter check in
+            // tests/wired.rs would have refused the commit otherwise.
             .append_item(
                 ID_IMPORT_A_FOLDER_OF_MESSAGES,
                 "Import a F&older of Messages...",
