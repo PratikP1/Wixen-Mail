@@ -179,7 +179,13 @@ from a refusal to 103.45 ms at 200,000 and from 6.64 ms to 5.05 ms at
 processor load read 2 to 5 percent, the clock its nominal 2000 MHz, and
 nothing was building, checked with `tasklist` before each run. The 14:47Z
 rows stay on the page as taken, because they are the rows the page was
-dropped against and the day's fastest reading of the same code.
+dropped against and the day's fastest reading of the same code. What moving
+the three steps off the interface thread would buy is the sum of the three
+"after 10-02" rows at a count, and nothing else: 817 ms of answered keys on
+the first open of a folder of 200,000 (464.94 + 248.73 + 103.45, taken
+2026-09-17 at `760a4d87` by the command above), and 39 ms at the tester's
+12,872 (23.89 + 10.31 + 5.05), which is under the time a key takes to be
+pressed and released.
 
 Every one of these rows is over synthetic rows and no provider mailbox, and
 each says so in its conditions.
