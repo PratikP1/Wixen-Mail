@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 72 records have arrived since and have not been through it.
+# 75 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -634,12 +634,17 @@ red = [
     # files this record had never named, so the count check could not see them.
     "application::notes_sync::tests::test_the_summary_names_the_setting_only_when_something_was_really_held",
     "presentation::note_folder_tree::tests::test_the_branch_says_what_is_under_it_even_when_it_is_one_or_none",
+    # Added 2026-09-17 by 10-01, found by --remeasure rather than predicted:
+    # the sentence at the end of a download of everything counts folders and
+    # messages through `how_many`, in a file this record had never named.
+    "application::bringing_everything_down::tests::test_the_whole_account_is_said_in_one_sentence_with_both_counts",
 ]
 tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 23 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
@@ -4592,7 +4597,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -4629,7 +4634,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -4681,7 +4686,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -4737,7 +4742,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4770,7 +4775,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -14832,7 +14837,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -15130,7 +15135,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -15970,7 +15975,7 @@ red = [
     "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 135 },
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]
 
 [[guard]]
@@ -24120,4 +24125,77 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 49 },
+]
+
+# A chunk of the text pass stops before the next message when it is asked
+# to. The break asks and ignores the answer, which is a Pause item that
+# does nothing until the chunk is over, and a chunk of fifty messages with
+# photos in them is minutes. The test that stops after two reddens.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a chunk of the text pass stops when it is asked to"
+file = "src/application/mail_sync.rs"
+before = """        if stop() {
+            done.ended = Ending::Stopped { after: attempted };
+            break;
+        }"""
+after = """        let _ = stop();"""
+red = [
+    "application::mail_sync::tests::test_a_chunk_stops_before_the_next_message_when_asked_to",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 147 },
+]
+
+# Three failures in a row that are not the gate's refusal end the chunk,
+# which is the provider's answer read per chunk rather than per message.
+# The break counts them and never ends the chunk, so a server that has
+# started refusing is asked for every message in it and each refusal is
+# reported as one message that could not be fetched, which is the shape
+# the text pass had until 2026-09-17. The six-asks test reddens, and so
+# does the whole-list run's, which folds the chunk endings and so goes on
+# asking too.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "three refusals in a row end the chunk rather than being counted one at a time"
+file = "src/application/mail_sync.rs"
+before = """                if failures_in_a_row >= REFUSALS_THAT_MEAN_THE_SERVER_HAS_STOPPED {"""
+after = """                if failures_in_a_row > chunk.len() {"""
+red = [
+    "application::mail_sync::tests::test_a_server_that_refuses_three_in_a_row_ends_the_chunk_after_six_asks_and_not_ten",
+    "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 147 },
+]
+
+# What a person hears when the server stops answering is this program's
+# clause for the kind of failure, never the server's text. The break ends
+# the chunk through the other early ending, the one that carries a
+# sentence, with the error's own text in it, so a server-controlled string
+# is read aloud, which is T-10-03's mirror on the spoken side. The test
+# that asks a refusing server for a chunk and reads the sentence reddens,
+# and so do the two that hold the ending's shape.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "no sentence about the server stopping carries a string the server sent"
+file = "src/application/mail_sync.rs"
+before = """                    done.ended = Ending::TheServerStoppedAnswering {
+                        after: attempted + 1 - failures_in_a_row,
+                        because: WhyTheServerStopped::from_the_kind_of(&e),
+                    };"""
+after = """                    done.ended = Ending::ReadingWasTurnedOff(e.to_string());"""
+red = [
+    "application::mail_sync::tests::test_no_sentence_about_the_server_stopping_carries_a_string_the_server_sent",
+    "application::mail_sync::tests::test_a_server_that_refuses_three_in_a_row_ends_the_chunk_after_six_asks_and_not_ten",
+    "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 147 },
 ]

@@ -1774,9 +1774,34 @@ pub enum WhyTheServerStopped {
 
 impl WhyTheServerStopped {
     /// This program's reading of a failure, from its kind alone.
+    ///
+    /// A timeout and a dropped connection are both `Error::Network`; they
+    /// are told apart by the phrase the IMAP layer writes on a timeout,
+    /// which is this program's and never the server's.
     pub fn from_the_kind_of(error: &crate::common::Error) -> Self {
-        let _ = error;
-        Self::SomethingElse
+        use crate::common::Error;
+        match error {
+            Error::Protocol(_) | Error::Authentication(_) => Self::Refused,
+            Error::Network(said)
+                if said.starts_with(
+                    crate::service::protocols::imap::THE_SERVER_STOPPED_RESPONDING,
+                ) =>
+            {
+                Self::TimedOut
+            }
+            Error::Network(_) => Self::ConnectionLost,
+            _ => Self::SomethingElse,
+        }
+    }
+
+    /// The clause a person hears, one per arm.
+    fn as_a_clause(self) -> &'static str {
+        match self {
+            Self::Refused => "it refused",
+            Self::ConnectionLost => "the connection was lost",
+            Self::TimedOut => "it took too long to answer",
+            Self::SomethingElse => "something went wrong",
+        }
     }
 }
 
@@ -1876,7 +1901,16 @@ pub fn what_the_fetch_did(outcome: &Backfill) -> String {
             let stopped = match &done.ended {
                 Ending::WentThroughTheWholeList => String::new(),
                 Ending::ReadingWasTurnedOff(why) => format!(" {why}"),
-                Ending::Stopped { .. } | Ending::TheServerStoppedAnswering { .. } => String::new(),
+                Ending::Stopped { after } => format!(
+                    " Stopped after {}, as you asked.",
+                    crate::service::caldav::how_many(*after, "message")
+                ),
+                Ending::TheServerStoppedAnswering { after, because } => format!(
+                    " The mail server stopped answering after {}: {}. It will be asked again \
+                     later.",
+                    crate::service::caldav::how_many(*after, "message"),
+                    because.as_a_clause()
+                ),
             };
             format!(
                 "{}, and {}.{stopped}",
@@ -1999,15 +2033,25 @@ pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
     stop: &dyn Fn() -> bool,
     after_each: &dyn Fn(usize),
 ) -> Backfilled {
-    let _ = stop;
     let mut done = Backfilled {
         fetched: 0,
         could_not: 0,
         ended: Ending::WentThroughTheWholeList,
     };
+    let mut failures_in_a_row = 0usize;
     for (attempted, message) in chunk.iter().enumerate() {
+        // Between messages, so the one being fetched finishes and the next is
+        // not started. Asked before the first as well, because a stop that
+        // arrived while the previous chunk was ending is still a stop.
+        if stop() {
+            done.ended = Ending::Stopped { after: attempted };
+            break;
+        }
         match fetch_and_store_one(server, cache, message).await {
-            Ok(()) => done.fetched += 1,
+            Ok(()) => {
+                done.fetched += 1;
+                failures_in_a_row = 0;
+            }
             // Told apart from an ordinary failure by the one function that
             // answers that question. Somebody turning reading off while this
             // runs is not hundreds of messages that would not arrive: going on
@@ -2028,6 +2072,19 @@ pub(crate) async fn fetch_over_a_mailbox<M: Mailbox>(
                 // reason.
                 tracing::warn!("Could not fetch the text of message {}: {e}", message.uid);
                 done.could_not += 1;
+                failures_in_a_row += 1;
+                // The server's answer to the chunk, read here rather than
+                // counted once per message: a run of failures this long is
+                // the server and not a message, and the rest of the chunk
+                // would be the same answer forty-seven more times.
+                if failures_in_a_row >= REFUSALS_THAT_MEAN_THE_SERVER_HAS_STOPPED {
+                    done.ended = Ending::TheServerStoppedAnswering {
+                        after: attempted + 1 - failures_in_a_row,
+                        because: WhyTheServerStopped::from_the_kind_of(&e),
+                    };
+                    after_each(attempted + 1);
+                    break;
+                }
             }
         }
         after_each(attempted + 1);
