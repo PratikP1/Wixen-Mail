@@ -8,6 +8,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **How much is said while mail and the other modules are fetched is your choice.** Reported on
+  2026-09-15 from build `0.125.1+g3e633252` (#38): "When fetching mail and other items, the
+  announcements are too verbose. Only folders and items with new mail or items should be
+  announced," and, the same day, "Or make this user-configurable. Let the user decide how much
+  to announce while fetching items." A new choice sits at the end of the Feedback tab under
+  While fetching, "While mail and the other modules are fetched, say:", with three answers: Say
+  what arrived, Say every step, Errors only. Say what arrived is the default, and a settings file
+  from before this existed answers the same. The choice is read when the program starts and
+  again when you press OK, so the next check speaks as much as you just chose.
+  Known limitations: the choice is stored and held by the program, and the lines a check says
+  are being sorted into steps, results and errors so that it governs them; until that lands in
+  the same change, every line is still spoken as before. Nobody has heard any of this.
 - **The version is `1.0.0-alpha.1`.** It was `0.125.1`. Pratik decided on 2026-09-15, testing
   build `0.125.1+g3e633252`, that the builds going to testers are the alpha, beta and
   release-candidate stages of 1.0.0, so the number moved once, by hand, and every fix that follows

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 90 records have arrived since and have not been through it.
+# 92 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -10475,7 +10475,7 @@ after = """            description: Some("Primary application window".to_string(
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10488,7 +10488,7 @@ after = """            description: Some("Folder navigation".to_string()),
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10499,7 +10499,7 @@ before = """                state: automation::AutomationState {
 after = """                state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10515,7 +10515,7 @@ after = """        let _ = (node_id, state);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10525,7 +10525,7 @@ before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"
 after = """        Default::default()"""
 red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10541,7 +10541,7 @@ after = """        let _ = (region_id, text);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10565,7 +10565,7 @@ red = [
     "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
     { file = "src/presentation/accessibility/automation.rs", tests = 2 },
 ]
 
@@ -10683,15 +10683,18 @@ tests_last_seen = [
 # The break moved with the code on 2026-09-17, when 09-09 made the Feedback
 # page one that is built when its tab is first shown and read back only then;
 # the same rebuild-from-stored break, inside that `if let`, measured again.
+# It moved a second time the same day, when 10-04 took the block out of
+# `read_settings` into `read_the_feedback_page`, where the stored value is
+# `cfg`'s before the write; the same break, on the new lines, measured again.
 [[guard]]
 name = "pressing OK writes the answers the panel holds rather than rebuilding from the stored value"
 file = "src/presentation/wx_settings.rs"
 suite = "every_event_has_a_control"
-before = """        page.per_event.remember_what_is_on_screen();
-        {
-            let mut feedback = page.per_event.working.borrow_mut();"""
-after = """        {
-            let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);"""
+before = """    w.per_event.remember_what_is_on_screen();
+    {
+        let mut feedback = w.per_event.working.borrow_mut();"""
+after = """    {
+        let mut feedback = FeedbackSettings::from_stored(&cfg.feedback_channels);"""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
@@ -24705,4 +24708,61 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs", tests = 4 },
+]
+
+# ── A step is not spoken under Say what arrived (#38) ───────────────────────
+#
+# The setting's whole point is the cell of the table that says a progress
+# line is silent under the default: a check of fifty folders speaks fifty
+# lines without it. The break widens the Progress row so a step is spoken
+# under everything but Errors only, which is today's verbosity with a
+# setting in front of it. One test goes red, the cell itself; the other
+# eleven cells and the stored forms answer the same either way.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, whole library.
+[[guard]]
+name = "a step is not spoken under Say what arrived"
+file = "src/application/what_is_said_while_fetching.rs"
+before = """            Kind::Progress => self == HowMuchToSay::EveryStep,"""
+after = """            Kind::Progress => self != HowMuchToSay::ErrorsOnly,"""
+red = [
+    "application::what_is_said_while_fetching::tests::test_under_what_arrived_a_step_is_not_spoken",
+]
+tests_last_seen = [
+    { file = "src/application/what_is_said_while_fetching.rs", tests = 19 },
+]
+
+# ── The level chosen on the Feedback page is what OK writes back (#38) ──────
+#
+# The same shape as the Permissions record above it: the two settings guards
+# in `config.rs` see `announce_while_fetching` named in the settings screen
+# and in a file that acts on it, and cannot tell the line that builds the
+# choice from the line that reads it back, so a `read_the_feedback_page`
+# that stopped writing the field would leave both green and every level
+# chosen would be saved as whatever was stored before. The break replaces the
+# write with a read of the control that writes nothing. The target has one
+# test, which builds the real dialog and asks every reading of the Feedback
+# page inside it, so that one goes red. `suite` names the target, which is
+# already coupled to `wx_settings.rs` by the four records above it.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test every_event_has_a_control`.
+[[guard]]
+name = "the level chosen on the Feedback page is what OK writes back"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """    cfg.announce_while_fetching =
+        crate::application::what_is_said_while_fetching::HowMuchToSay::ALL
+            .get(sel(&w.announce_while_fetching) as usize)
+            .copied()
+            .unwrap_or_default()
+            .as_stored();"""
+after = """    let _ = &w.announce_while_fetching;"""
+red = [
+    "test_every_event_is_reachable_and_keeps_what_it_was_given",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
 ]

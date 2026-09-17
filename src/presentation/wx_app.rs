@@ -1181,6 +1181,18 @@ impl WxMailApp {
                     ),
                 );
             }
+            // How much is said while things are fetched, kept in the same
+            // place as the channels, so the arms that speak a fetch's lines
+            // ask one layer for every routing choice. Set whether or not a
+            // file was read: an unreadable file answers the default, which
+            // is what arrived.
+            a11y.set_how_much_to_say(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::from_stored(
+                    stored_config
+                        .as_ref()
+                        .map_or("", |c| c.announce_while_fetching.as_str()),
+                ),
+            );
 
             // Which sound plays is a separate choice from which channels an
             // event reaches, so it is resolved the same way but kept apart:
@@ -16861,6 +16873,13 @@ fn handle_settings(
             a11y.set_feedback_settings(
                 crate::presentation::accessibility::feedback::FeedbackSettings::from_stored(
                     &new_config.feedback_channels,
+                ),
+            );
+            // The same for how much is said while things are fetched: the
+            // next check after OK speaks as much as was just chosen.
+            a11y.set_how_much_to_say(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::from_stored(
+                    &new_config.announce_while_fetching,
                 ),
             );
             // Applied the same way and for the same reason: a scheme

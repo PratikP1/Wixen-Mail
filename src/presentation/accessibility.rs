@@ -305,8 +305,10 @@ impl Accessibility {
 
     /// Read how much is said while things are fetched.
     pub fn how_much_to_say(&self) -> crate::application::what_is_said_while_fetching::HowMuchToSay {
-        // Red half: the default, whatever was set.
-        crate::application::what_is_said_while_fetching::HowMuchToSay::default()
+        self.how_much_to_say
+            .lock()
+            .map(|level| *level)
+            .unwrap_or_default()
     }
 
     /// Replace how much is said while things are fetched.

@@ -21,13 +21,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HowMuchToSay {
     /// Which folders and modules received something, with counts, once per
-    /// check. The default, and the tester's shape from #38.
+    /// check. The default, and the tester's shape from #38: it is what an
+    /// older settings file with no such key answers.
+    #[default]
     WhatArrived,
     /// Every step as well: connecting, each folder checked, each chunk. What
     /// every check said until 2026-09-17.
-    // Red half: the loudest choice as the default, which is today's
-    // behaviour and not the tester's.
-    #[default]
     EveryStep,
     /// Nothing but what went wrong.
     ErrorsOnly,
@@ -61,48 +60,72 @@ impl HowMuchToSay {
     /// The choices offered, in the order they are offered: the default
     /// first, then more, then less.
     pub const ALL: [HowMuchToSay; 3] = [
-        HowMuchToSay::ErrorsOnly,
-        HowMuchToSay::EveryStep,
         HowMuchToSay::WhatArrived,
+        HowMuchToSay::EveryStep,
+        HowMuchToSay::ErrorsOnly,
     ];
 
-    /// What the choice is called: what will be heard, in plain words.
+    /// What the choice is called: what will be heard, in plain words. None
+    /// names a mechanism, because the person choosing is choosing what to
+    /// hear and not how the queue works.
     pub fn label(self) -> &'static str {
-        // Red half: answers nothing for every choice.
-        let _ = self;
-        ""
-    }
-
-    /// How it is written in the settings file.
-    pub fn as_stored(self) -> String {
-        // Red half: writes a number no reader can answer for.
         match self {
-            HowMuchToSay::WhatArrived => "0".to_string(),
-            HowMuchToSay::EveryStep => "1".to_string(),
-            HowMuchToSay::ErrorsOnly => "2".to_string(),
+            HowMuchToSay::WhatArrived => "Say what arrived",
+            HowMuchToSay::EveryStep => "Say every step",
+            HowMuchToSay::ErrorsOnly => "Errors only",
         }
     }
 
+    /// How it is written in the settings file: words a person could read
+    /// there, hyphenated as the other string-valued settings are.
+    pub fn as_stored(self) -> String {
+        match self {
+            HowMuchToSay::WhatArrived => "what-arrived",
+            HowMuchToSay::EveryStep => "every-step",
+            HowMuchToSay::ErrorsOnly => "errors-only",
+        }
+        .to_string()
+    }
+
     /// Read the stored setting.
+    ///
+    /// Anything unreadable is what arrived, because the other two answers
+    /// each cost more: every step puts somebody back to the verbosity #38
+    /// was filed about, and errors only silences arrivals. What arrived
+    /// loses neither the counts nor the errors.
     pub fn from_stored(value: &str) -> Self {
-        // Red half: answers the quietest choice for everything.
-        let _ = value;
-        HowMuchToSay::ErrorsOnly
+        match value.trim() {
+            "every-step" => HowMuchToSay::EveryStep,
+            "errors-only" => HowMuchToSay::ErrorsOnly,
+            _ => HowMuchToSay::WhatArrived,
+        }
     }
 
     /// Whether a line of this kind is spoken under this choice.
+    ///
+    /// An error and the answer to a key are spoken whatever was chosen: the
+    /// choice is about what a fetch says on the way, and neither of those
+    /// is that. A result is spoken unless nothing but errors was asked for.
+    /// A step is spoken only when every step was.
     pub fn is_spoken(self, kind: Kind) -> bool {
-        // Red half: nothing is ever spoken.
-        let _ = (self, kind);
-        false
+        match kind {
+            Kind::Error | Kind::Answer => true,
+            Kind::Result => self != HowMuchToSay::ErrorsOnly,
+            Kind::Progress => self == HowMuchToSay::EveryStep,
+        }
     }
 }
 
 /// Which entry of the offered list a stored choice selects.
+///
+/// A garbled stored value reads as the default, so the entry it selects is
+/// the default's, and saving that back writes the default.
 pub fn offered_index(stored: &str) -> usize {
-    // Red half: the first entry, whatever was stored.
-    let _ = stored;
-    0
+    let wanted = HowMuchToSay::from_stored(stored);
+    HowMuchToSay::ALL
+        .iter()
+        .position(|choice| *choice == wanted)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
