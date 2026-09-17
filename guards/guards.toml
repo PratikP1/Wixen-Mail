@@ -22436,13 +22436,17 @@ tests_last_seen = [
 # and the format-holding test at 2,000 rows runs the same code on every
 # commit and holds each row to the page's six columns. The break merges two
 # cells with a semicolon, which is what a tidy-up of the format string looks
-# like, and a row with five cells is a row the page's reading refuses. One
-# goes red: the format test. The plan's other candidate, halving the batch
-# size, reddens nothing, because chunks of any size write every row.
+# like, and a row with five cells is a row the page's reading refuses. Two
+# go red: the format test over the scale rows, and since 2026-09-17 the
+# format test over the read-path rows, which 10-02 added and which walks the
+# same `the_row`. The plan's other candidate, halving the batch size, reddens
+# nothing, because chunks of any size write every row.
 #
 # Measured by hand on 2026-09-14 against the target,
 # `cargo test --test the_list_at_two_hundred_thousand_rows`: 4 passed and
-# exactly this one failed.
+# exactly this one failed. Measured again on 2026-09-17 through
+# `--remeasure` after the read-path test arrived: it came out one short, the
+# new test was added here, and the run after that reddened exactly the two.
 
 [[guard]]
 name = "the rows the scale harness prints keep the page's six columns"
@@ -22452,9 +22456,10 @@ before = """        "| {} | {} | {} | {} | {} | {} |","""
 after = """        "| {} | {} | {} | {} | {}; {} |","""
 red = [
     "test_every_row_the_measurement_prints_has_the_pages_shape_and_names_what_it_timed",
+    "test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed",
 ]
 tests_last_seen = [
-    { file = "tests/the_list_at_two_hundred_thousand_rows.rs", tests = 6 },
+    { file = "tests/the_list_at_two_hundred_thousand_rows.rs", tests = 9 },
 ]
 
 # ── Shards from two commits, read as one run ─────────────────────────────────

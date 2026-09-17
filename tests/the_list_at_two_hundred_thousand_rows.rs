@@ -60,27 +60,33 @@
 //! # Running it
 //!
 //! ```text
-//! cargo test --release --test the_list_at_two_hundred_thousand_rows -- --ignored --nocapture
+//! cargo test --release --test the_list_at_two_hundred_thousand_rows -- --ignored --nocapture --test-threads=1
 //! ```
 //!
 //! On a machine doing nothing else: check `tasklist` for `cargo.exe` and
 //! `rustc.exe` first. A debug build is refused, because a debug figure is a
-//! figure about a binary nobody ships.
+//! figure about a binary nobody ships. One test thread, because there are
+//! two ignored tests now and a timing taken while the other test writes
+//! 200,000 rows is a timing of the disk.
 
+use std::collections::HashSet;
 use std::hint::black_box;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use wixen_mail::application::threading::{ThreadInput, thread_messages};
 use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
-use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, WhereToSearch};
+use wixen_mail::data::message_cache::{
+    CachedFolder, IncomingMessage, MessageCache, MessageListRow, Tag, WhereToSearch,
+};
 use wixen_mail::presentation::date_display::DateSettings;
 use wixen_mail::presentation::mail_sort::sort_messages;
 use wixen_mail::presentation::message_columns::{ColumnLayout, FolderKind, MessageColumn};
 use wixen_mail::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
 use wixen_mail::presentation::ui_types::{MailSortOption, MessageItem};
-use wixen_mail::presentation::view_state::Showing;
+use wixen_mail::presentation::view_state::{self, Showing};
 use wixen_mail::presentation::virtual_rows::{Listed, text_for};
 use wixen_mail::service::safety::Verdict;
 
@@ -206,13 +212,30 @@ fn the_takes(takes: &[Duration]) -> String {
         .join(", ")
 }
 
+/// What a step did when it was asked: answered, in which case the takes
+/// are the timing, or refused, in which case the error is the finding.
+enum Outcome {
+    Timed(Vec<Duration>),
+    Refused(String),
+}
+
 /// One timing as the harness reports it, before it is worded as a row.
 struct Measured {
     what: String,
-    takes: Vec<Duration>,
+    outcome: Outcome,
     /// What the rows returned, the counts, cold or warm: the rest of the
     /// conditions cell.
     detail: String,
+}
+
+impl Measured {
+    fn timed(what: String, takes: Vec<Duration>, detail: String) -> Self {
+        Self {
+            what,
+            outcome: Outcome::Timed(takes),
+            detail,
+        }
+    }
 }
 
 /// Every timing over a cache of `count` rows at `into` and the same rows in
@@ -236,29 +259,29 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
             listed.len()
         ));
     }
-    measured.push(Measured {
-        what: format!("Listing {count} rows from the cache, cold"),
-        takes: vec![cold],
-        detail: format!(
+    measured.push(Measured::timed(
+        format!("Listing {count} rows from the cache, cold"),
+        vec![cold],
+        format!(
             "One take: the first `get_messages_for_folder` on a connection opened after the rows \
              were written, {} rows returned. The file was warm in the operating system's cache \
              because this process had just written it.",
             listed.len()
         ),
-    });
+    ));
     let (takes, listed) = taken(|| {
         cache
             .get_messages_for_folder(folder_id, THE_ACCOUNT)
             .map(|rows| rows.len())
     });
     let rows_listed = listed.map_err(|e| e.to_string())?;
-    measured.push(Measured {
-        what: format!("Listing {count} rows from the cache, warm"),
+    measured.push(Measured::timed(
+        format!("Listing {count} rows from the cache, warm"),
         takes,
-        detail: format!(
+        format!(
             "The `get_messages_for_folder` reads after the cold one on the same connection, {rows_listed} rows returned each time."
         ),
-    });
+    ));
 
     // The filter, at the search box's own limit, under every folder and
     // under the narrowest answer the In list offers for that kind of word.
@@ -292,13 +315,13 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
                     .map(|rows| rows.len())
             });
             let rows_found = found.map_err(|e| e.to_string())?;
-            measured.push(Measured {
-                what: format!("Filter {count} rows for `{word}`, {what}, {looking_in_name}"),
+            measured.push(Measured::timed(
+                format!("Filter {count} rows for `{word}`, {what}, {looking_in_name}"),
                 takes,
-                detail: format!(
+                format!(
                     "`search_messages` at the search box's limit of {THE_SEARCH_BOXES_LIMIT}, {rows_found} rows returned each time; the rows carry no message text, so the index holds subjects and senders only."
                 ),
-            });
+            ));
         }
     }
     // Once with no limit, so the page says how many rows the word matches
@@ -314,15 +337,13 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
             .map(|rows| rows.len())
     });
     let rows_found = found.map_err(|e| e.to_string())?;
-    measured.push(Measured {
-        what: format!(
-            "Filter {count} rows for `{A_WORD_IN_ONE_SUBJECT_IN_FIVE}`, every match, All Folders"
-        ),
+    measured.push(Measured::timed(
+        format!("Filter {count} rows for `{A_WORD_IN_ONE_SUBJECT_IN_FIVE}`, every match, All Folders"),
         takes,
-        detail: format!(
+        format!(
             "`search_messages` with the limit raised to {count}, which the search box never does, {rows_found} rows returned each time: the cost of every match rather than the first page of them."
         ),
-    });
+    ));
 
     // The sort, each order on a fresh clone of the rows in memory.
     let rows = sample_mailbox(count);
@@ -343,13 +364,13 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
             takes.push(started.elapsed());
             black_box(&fresh);
         }
-        measured.push(Measured {
-            what: format!("Sort {count} rows in memory, {name}"),
+        measured.push(Measured::timed(
+            format!("Sort {count} rows in memory, {name}"),
             takes,
-            detail: String::from(
+            String::from(
                 "`sort_messages` over the generated rows, a fresh clone each take, the clone outside the timing. In the running program this runs off the interface thread and the list control taking the result was not timed, because there is no window.",
             ),
-        });
+        ));
     }
 
     // The scroll: one page of every visible column, then every row of one.
@@ -372,13 +393,13 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
         }
         black_box(characters)
     });
-    measured.push(Measured {
-        what: format!("Page paint: `text_for` over {page} rows and {} columns", columns.len()),
+    measured.push(Measured::timed(
+        format!("Page paint: `text_for` over {page} rows and {} columns", columns.len()),
         takes,
-        detail: format!(
+        format!(
             "One page of the messages view, every visible column of an inbox, {painted} characters of cell text each take. A scroll in the running program is this plus wxWidgets' own painting, which was not timed, because there is no window."
         ),
-    });
+    ));
     let subject = columns
         .iter()
         .position(|c| *c == MessageColumn::Subject)
@@ -390,22 +411,184 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
         }
         black_box(characters)
     });
-    measured.push(Measured {
-        what: format!("Full pass: `text_for` over {count} rows, one column"),
+    measured.push(Measured::timed(
+        format!("Full pass: `text_for` over {count} rows, one column"),
         takes,
-        detail: format!(
+        format!(
             "Every row of the messages view, the subject column, {painted} characters of cell text each take: what painting the whole list once would cost the callback, which no scroll does."
         ),
-    });
+    ));
 
     Ok(measured)
 }
 
-/// The three steps the window takes on the interface thread when a folder
-/// of `count` rows opens, each timed on its own over a cache at `into`.
+// ── The list's own read path ────────────────────────────────────────────────
+
+/// The tester's folder: 12,872 messages in one Gmail account, read from his
+/// profile on 2026-09-16 through a Python process, as the phase 10 README
+/// records it. Quoted from that reading and not re-read here: no shell this
+/// harness starts reads his profile, and a `tempfile` cache of this many
+/// generated rows is what the list's own read path is timed over.
+const THE_TESTERS_FOLDER: usize = 12_872;
+/// One row in this many carries a label in the read-path series, so the
+/// labels step answers something rather than matching nothing.
+const ONE_ROW_IN: usize = 10;
+/// The label those rows carry.
+const THE_LABEL: &str = "scale-label";
+
+/// Put one label on every `ONE_ROW_IN`th row of the folder, in `messages.id`
+/// order, and answer how many rows carry it.
+fn a_label_on_one_row_in(cache: &MessageCache, folder_id: i64) -> Result<usize, String> {
+    cache
+        .create_tag(&Tag {
+            id: THE_LABEL.to_string(),
+            account_id: THE_ACCOUNT.to_string(),
+            name: "Measured".to_string(),
+            color: "#000000".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            keyword: None,
+        })
+        .map_err(|e| e.to_string())?;
+    let rows = cache
+        .get_message_list(folder_id, THE_ACCOUNT)
+        .map_err(|e| e.to_string())?;
+    let mut labelled = 0;
+    for row in rows.iter().step_by(ONE_ROW_IN) {
+        cache
+            .add_tag_to_message(row.id, THE_LABEL)
+            .map_err(|e| e.to_string())?;
+        labelled += 1;
+    }
+    Ok(labelled)
+}
+
+/// What the window's `apply_threading` builds for each row before it asks
+/// `thread_messages`: the id, the `Message-ID` and the `References`.
+fn as_thread_input(row: &MessageListRow) -> ThreadInput {
+    ThreadInput {
+        id: row.id,
+        message_id: row.message_id.clone(),
+        references: row
+            .refs_header
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .map(|r| r.to_string())
+            .collect(),
+        server_thread_id: None,
+    }
+}
+
+/// A refusal as a row can carry it: rusqlite writes the whole statement
+/// after the reason, and over 200,000 placeholders that is more than a
+/// megabyte on one cell, so the statement is cut off at the word that
+/// introduces it and the cut is said.
+fn the_refusal_without_the_statement(error: &str) -> String {
+    let first_line = error.lines().next().unwrap_or(error);
+    match first_line.find(" in SELECT") {
+        Some(at) => format!(
+            "{}, followed by the statement's text, cut here",
+            &first_line[..at]
+        ),
+        None => first_line.to_string(),
+    }
+}
+
+/// The three steps `load_folder_messages` takes on the interface thread when
+/// a folder of `count` rows opens, each timed on its own over a cache at
+/// `into` with a label on one row in `ONE_ROW_IN`: the sorted read with no
+/// limit, cold and warm; the threading over every row read; and the labels
+/// read over those rows, timed if it answers and recorded if it refuses.
 fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
-    let _ = (count, into);
-    Ok(Vec::new())
+    const ON_THE_INTERFACE_THREAD: &str = "The window runs this step on the interface thread, where it answers no keys until the step ends; the harness has no window.";
+    let mut measured = Vec::new();
+
+    let folder_id = a_cache_of(count, into)?;
+    let labelled = {
+        let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
+        a_label_on_one_row_in(&cache, folder_id)?
+    };
+    // Reopened, so the first sorted read is the first read on its connection.
+    let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
+    let order = view_state::order_by(
+        Showing::Messages,
+        &ColumnLayout::defaults_for(FolderKind::Inbox).sort,
+    );
+
+    let started = Instant::now();
+    let rows = cache
+        .get_message_list_sorted(folder_id, THE_ACCOUNT, Some(&order), None)
+        .map_err(|e| e.to_string())?;
+    let cold = started.elapsed();
+    if rows.len() != count {
+        return Err(format!(
+            "the sorted read answered {} rows of the {count} written",
+            rows.len()
+        ));
+    }
+    measured.push(Measured::timed(
+        format!("The list's own read path, {count} rows: the sorted read, no limit, cold"),
+        vec![cold],
+        format!(
+            "One take: the first `get_message_list_sorted` on a connection opened after the rows were written, `ORDER BY {order}`, the default sort of an inbox, and no `LIMIT`, {} rows returned. {ON_THE_INTERFACE_THREAD}",
+            rows.len()
+        ),
+    ));
+    let (takes, read) = taken(|| {
+        cache
+            .get_message_list_sorted(folder_id, THE_ACCOUNT, Some(&order), None)
+            .map(|rows| rows.len())
+    });
+    let rows_read = read.map_err(|e| e.to_string())?;
+    measured.push(Measured::timed(
+        format!("The list's own read path, {count} rows: the sorted read, no limit, warm"),
+        takes,
+        format!(
+            "The `get_message_list_sorted` reads after the cold one on the same connection, the same order and no `LIMIT`, {rows_read} rows returned each time. {ON_THE_INTERFACE_THREAD}"
+        ),
+    ));
+
+    let (takes, conversations) = taken(|| {
+        let inputs: Vec<ThreadInput> = rows.iter().map(as_thread_input).collect();
+        let placements = thread_messages(&inputs);
+        let mut threads: HashSet<&str> = HashSet::new();
+        for placement in &placements {
+            threads.insert(placement.thread_id.as_str());
+        }
+        black_box(threads.len())
+    });
+    measured.push(Measured::timed(
+        format!("The list's own read path, {count} rows: the threading"),
+        takes,
+        format!(
+            "`thread_messages` over every row read, with the inputs built from the rows inside the timing as the window's `apply_threading` builds them, {conversations} conversations found each take. The generated rows carry no `References`, so every message is a conversation of one, which is the cheapest shape the threading has; a folder of replies costs more. {ON_THE_INTERFACE_THREAD}"
+        ),
+    ));
+
+    let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+    let (takes, labels) = taken(|| {
+        cache
+            .get_tags_for_messages(&ids)
+            .map(|by_message| by_message.len())
+    });
+    measured.push(match labels {
+        Ok(rows_with_a_label) => Measured::timed(
+            format!("The list's own read path, {count} rows: the labels"),
+            takes,
+            format!(
+                "`get_tags_for_messages` over the {count} ids read, one bound parameter per id, as the window's `attach_labels` asks it; {rows_with_a_label} rows carry a label, one row in {ONE_ROW_IN} having been given one ({labelled} in all). {ON_THE_INTERFACE_THREAD}"
+            ),
+        ),
+        Err(refusal) => Measured {
+            what: format!("The list's own read path, {count} rows: the labels"),
+            outcome: Outcome::Refused(the_refusal_without_the_statement(&refusal.to_string())),
+            detail: format!(
+                "`get_tags_for_messages` over the {count} ids read, one bound parameter per id, as the window's `attach_labels` asks it. The window's `attach_labels` drops the error and sends the list with no labels, so a folder this size shows none. {labelled} rows had been given a label. {ON_THE_INTERFACE_THREAD}"
+            ),
+        },
+    });
+
+    Ok(measured)
 }
 
 // ── The row ─────────────────────────────────────────────────────────────────
@@ -437,8 +620,13 @@ fn the_row(row: &Row<'_>) -> String {
 
 /// The command the rows carry, backticked because the page's reading refuses
 /// a row whose command cell holds no backticked token.
-const THE_COMMAND: &str =
-    "`cargo test --release --test the_list_at_two_hundred_thousand_rows -- --ignored --nocapture`";
+///
+/// `--test-threads=1` since 2026-09-17, when the target gained a second
+/// ignored test: the harness runs ignored tests in one process and, left to
+/// itself, at once, so the tester's-size series was timed while the 200,000
+/// rows were being written beside it. The rows taken before that day carry
+/// the command without the flag, and were taken under one test.
+const THE_COMMAND: &str = "`cargo test --release --test the_list_at_two_hundred_thousand_rows -- --ignored --nocapture --test-threads=1`";
 
 /// The date, the commit and the version, for the rows.
 fn today_commit_and_version() -> (String, String, String) {
@@ -477,18 +665,33 @@ fn the_rows(count: usize, measured: &[Measured], build: &str, machine: &str) -> 
     measured
         .iter()
         .map(|m| {
+            let (value, the_takes_taken) = match &m.outcome {
+                Outcome::Timed(takes) => (
+                    milliseconds(median(takes)),
+                    format!(
+                        "The {}: {}.",
+                        if takes.len() == 1 {
+                            "one take"
+                        } else {
+                            "takes, the median being the value"
+                        },
+                        the_takes(takes)
+                    ),
+                ),
+                Outcome::Refused(error) => (
+                    String::from("refused"),
+                    format!("No take: the step refused with: {error}. The refusal is the finding."),
+                ),
+            };
             let conditions = format!(
                 "{version} at {commit}, {build} build, {machine}, `WIXEN_TEST_THREADS` unset and one test running. \
-                 {} synthetic rows from `sample_mailbox` and no provider mailbox; the cache rows in a `tempfile` directory. \
-                 The {}: {}. {}",
-                count,
-                if m.takes.len() == 1 { "one take" } else { "takes, the median being the value" },
-                the_takes(&m.takes),
+                 {count} synthetic rows from `sample_mailbox` and no provider mailbox; the cache rows in a `tempfile` directory. \
+                 {the_takes_taken} {}",
                 m.detail
             );
             the_row(&Row {
                 what: &m.what,
-                value: &milliseconds(median(&m.takes)),
+                value: &value,
                 command: THE_COMMAND,
                 date: &date,
                 commit: &commit,
@@ -515,9 +718,29 @@ fn refuse_a_debug_build() -> Result<(), String> {
 #[ignore = "writes 200,000 rows and times them; run by hand on a quiet machine with --release"]
 fn test_the_list_at_two_hundred_thousand_rows() {
     refuse_a_debug_build().expect("a release build");
+    let machine = the_machine();
     let into = tempfile::tempdir().expect("a folder to leave nothing in");
     let measured = measure(SAMPLE_MAILBOX_SIZE, into.path()).expect("the measurement");
-    for row in the_rows(SAMPLE_MAILBOX_SIZE, &measured, "release", &the_machine()) {
+    for row in the_rows(SAMPLE_MAILBOX_SIZE, &measured, "release", &machine) {
+        println!("{row}");
+    }
+    // A second cache, so the read path's cold read is cold on its own
+    // connection and the label on one row in ten is not in the rows above.
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured =
+        the_lists_own_read_path(SAMPLE_MAILBOX_SIZE, into.path()).expect("the read path");
+    for row in the_rows(SAMPLE_MAILBOX_SIZE, &measured, "release", &machine) {
+        println!("{row}");
+    }
+}
+
+#[test]
+#[ignore = "writes 12,872 rows, the tester's folder, and times the list's own read path; run by hand on a quiet machine with --release"]
+fn test_the_lists_own_read_path_at_the_testers_size() {
+    refuse_a_debug_build().expect("a release build");
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured = the_lists_own_read_path(THE_TESTERS_FOLDER, into.path()).expect("the read path");
+    for row in the_rows(THE_TESTERS_FOLDER, &measured, "release", &the_machine()) {
         println!("{row}");
     }
 }
@@ -640,6 +863,20 @@ fn test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed() {
             "the value is neither a time nor a refusal carrying its error: {row}"
         );
     }
+}
+
+#[test]
+fn test_a_refusal_row_carries_the_reason_and_not_the_statement() {
+    let as_rusqlite_words_it = "Error: Failed to prepare statement: variable number must be between ?1 and ?32766 in SELECT mt.message_id\n                 FROM tags t\n                 WHERE mt.message_id IN (?1, ?2)";
+
+    assert_eq!(
+        the_refusal_without_the_statement(as_rusqlite_words_it),
+        "Error: Failed to prepare statement: variable number must be between ?1 and ?32766, followed by the statement's text, cut here"
+    );
+    assert_eq!(
+        the_refusal_without_the_statement("Error: no such table: tags"),
+        "Error: no such table: tags"
+    );
 }
 
 #[test]
