@@ -296,6 +296,26 @@ pub fn added_to_the_archive(
     }
 }
 
+/// One stored message as the file a mail program saves a single message in.
+///
+/// What Save As writes. The same three decisions the archive makes about one
+/// message, made the same way: nothing for a message whose text was never
+/// downloaded, because a file of headers with nothing under them is a file
+/// that looks saved and is not; the bytes it arrived as where they were kept,
+/// because a signature survives nothing else; and otherwise the message put
+/// back together from the columns with the files this computer has. Written
+/// without an archive's separator lines, so the file is one message and reads
+/// back as one.
+pub fn one_message_written_out(
+    stored: &MessageListRow,
+    text: Option<&MessageBody>,
+    files: &[AttachmentWithContent],
+    arrived_as: &SignedOriginal,
+) -> Option<Vec<u8>> {
+    let _ = (stored, text, files, arrived_as);
+    None
+}
+
 /// What an export can write of one message's files, and what it cannot.
 struct TheFilesOnIt {
     /// The ones this computer has, in the order the message carries them.
@@ -1633,6 +1653,69 @@ mod tests {
             written.contains(&String::from_utf8_lossy(&arrived).into_owned()),
             "the message was rebuilt rather than written as it arrived, so its \
              signature is now about bytes nobody has:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_one_message_saved_as_a_file_reads_back_with_its_files_and_no_separator() {
+        // What Save As writes: the message put back together from what is
+        // stored, with the file this computer has on it, as one message with
+        // no archive separator in front of it, so the file this program's
+        // own reader takes as one message is one message.
+        let files = [a_file_kept("engine.txt", Some(b"The engine."))];
+
+        let written = one_message_written_out(
+            &a_stored_message(),
+            Some(&some_text()),
+            &files,
+            &SignedOriginal::NotSigned,
+        )
+        .expect("a message with its text is written");
+
+        assert!(
+            !written.starts_with(b"From "),
+            "a single saved message was written with an archive's separator in front of it"
+        );
+        let read = message_files::read_one_message(&written).unwrap_or_else(|refused| {
+            panic!(
+                "what Save As wrote would not read back as one message: {refused}\n{}",
+                String::from_utf8_lossy(&written)
+            )
+        });
+        assert_eq!(read.subject, "Notes on the engine");
+        assert_eq!(
+            read.body_plain.as_deref(),
+            Some("The engine weaves algebraic patterns.")
+        );
+        assert_eq!(read.attachments.len(), 1, "{:?}", read.attachments);
+        assert_eq!(read.attachments[0].filename.as_deref(), Some("engine.txt"));
+    }
+
+    #[test]
+    fn test_one_message_saved_as_a_file_is_written_exactly_as_it_arrived_when_that_was_kept() {
+        // A signature is a statement about bytes, and rebuilding the message
+        // makes it a statement about bytes nobody has. Where the bytes were
+        // kept, the file is those bytes and nothing else.
+        let arrived = as_a_signed_message_arrived();
+
+        let written = one_message_written_out(
+            &a_stored_message(),
+            Some(&some_text()),
+            &[],
+            &SignedOriginal::Kept(arrived.clone()),
+        )
+        .expect("a signed message is written");
+
+        assert_eq!(written, arrived);
+    }
+
+    #[test]
+    fn test_one_message_saved_as_a_file_is_not_written_when_its_text_was_never_downloaded() {
+        // A file of headers with nothing under them looks saved and is not,
+        // and the answer says so rather than writing it.
+        assert_eq!(
+            one_message_written_out(&a_stored_message(), None, &[], &SignedOriginal::NotSigned),
+            None
         );
     }
 

@@ -590,6 +590,40 @@ pub fn writing_out(how_many: usize) -> WritingOut {
     }
 }
 
+// ── Save As ─────────────────────────────────────────────────────────────────
+
+/// What to say when Save As is asked for and no message is chosen.
+///
+/// Said as a refusal, because the alternative is what the command did from the
+/// day it was added until #53: one status line, whatever was selected.
+pub const CHOOSE_THE_MESSAGE_TO_SAVE: &str =
+    "Choose the message to save first. Select one message in the list.";
+
+/// What Save As will do with the message under the cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SavingAs {
+    /// Nothing, and this is what to say.
+    Refused(&'static str),
+    /// Write it as one saved message, offering this name.
+    AsAFile {
+        /// The subject made into a file name, ending in `.eml`.
+        named: String,
+    },
+}
+
+/// What Save As does with the message under the cursor, from its subject.
+///
+/// The name offered in the save dialog is the subject with everything a path
+/// could be made of taken out. A subject is a stranger's words, and a file
+/// dialog handed something that looks like a path will use it as one, so a
+/// slash or a backslash becomes an underscore before the name goes anywhere
+/// near a folder somebody chose. The rest of what Windows will not take in a
+/// name goes the same way, through the one function that already knows.
+pub fn saving_as(the_subject_under_the_cursor: Option<&str>) -> SavingAs {
+    let _ = the_subject_under_the_cursor;
+    SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE)
+}
+
 /// What writing a file of messages out did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MessagesExported {
@@ -1081,6 +1115,62 @@ mod tests {
         assert_eq!(writing_out(1), WritingOut::OneMessage);
         assert_eq!(writing_out(2), WritingOut::AnArchive);
         assert_eq!(writing_out(4000), WritingOut::AnArchive);
+    }
+
+    #[test]
+    fn test_save_as_offers_the_subject_as_the_file_name_ending_in_eml() {
+        assert_eq!(
+            saving_as(Some("Notes on the engine")),
+            SavingAs::AsAFile {
+                named: "Notes on the engine.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name() {
+        // A subject is a stranger's words, and a file dialog handed something
+        // that looks like a path uses it as one. The whole subject is kept,
+        // with each separator made harmless, rather than the last segment
+        // alone: "Invoices/March" is one subject and not a folder and a file.
+        assert_eq!(
+            saving_as(Some("Invoices/March")),
+            SavingAs::AsAFile {
+                named: "Invoices_March.eml".to_string()
+            }
+        );
+        assert_eq!(
+            saving_as(Some("..\\..\\Windows\\notes: \"Re: the engine?\"")),
+            SavingAs::AsAFile {
+                named: ".._.._Windows_notes_ _Re_ the engine__.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_calls_a_message_with_no_subject_something() {
+        // A file named `.eml` is a file with no name, which Windows hides
+        // behind the ending and a screen reader reads as nothing.
+        assert_eq!(
+            saving_as(Some("")),
+            SavingAs::AsAFile {
+                named: "message.eml".to_string()
+            }
+        );
+        assert_eq!(
+            saving_as(Some("   ")),
+            SavingAs::AsAFile {
+                named: "message.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_with_no_message_chosen_says_so_rather_than_saving_nothing() {
+        assert_eq!(
+            saving_as(None),
+            SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE)
+        );
     }
 
     #[test]

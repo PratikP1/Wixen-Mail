@@ -4375,3 +4375,132 @@ fn test_the_blocked_senders_list_is_opened_by_something() {
         "the window never asks who is blocked, so it lists nothing"
     );
 }
+
+/// What the main window's Save As does, read off its source.
+///
+/// Four questions, each of which the stub the command was for a year answers
+/// no to. It sent "Save As: no message selected" whatever was selected, from
+/// the day the item was added until #53, while the menu item and the shortcuts
+/// page promised a saved message.
+#[derive(Debug, PartialEq, Eq)]
+struct WhatSaveAsDoes {
+    /// The handler arm reaches a function rather than sending a status line.
+    the_arm_reaches_the_handler: bool,
+    /// The handler asks the one decision about what to save and what to call it.
+    asks_the_decision: bool,
+    /// The handler writes the message through the exporter's own writer.
+    writes_through_the_exporter: bool,
+    /// The status line the stub sent is gone from the file.
+    the_stub_is_gone: bool,
+    /// The handler has no branch for an attachment. The attachment list is in
+    /// the reader window, whose own Save Attachment command is that case, and
+    /// a branch here for it would be a branch nothing reaches.
+    has_no_attachment_branch: bool,
+}
+
+/// The reading itself, over the text of the main window.
+///
+/// Panics when the handler is gone, through `body_of`, so a rename fails
+/// loudly rather than reading nothing and passing.
+fn what_save_as_does(app: &str) -> WhatSaveAsDoes {
+    let arm_starts = app
+        .find("_ if id == ID_SAVE_AS =>")
+        .unwrap_or_else(|| panic!("the Save As arm is no longer in the main window"));
+    let arm_ends = app[arm_starts + 1..]
+        .find("_ if id == ")
+        .map_or(app.len(), |at| arm_starts + 1 + at);
+    let arm = &app[arm_starts..arm_ends];
+    let handler = body_of(app, "fn save_the_message_as(");
+    WhatSaveAsDoes {
+        the_arm_reaches_the_handler: arm.contains("save_the_message_as("),
+        asks_the_decision: handler.contains("saving_as("),
+        writes_through_the_exporter: handler.contains("one_message_written_out("),
+        the_stub_is_gone: !app.contains("\"Save As: no message selected\""),
+        has_no_attachment_branch: !handler.contains("save_attachment(")
+            && !handler.contains("ID_SAVE_ATTACHMENT"),
+    }
+}
+
+/// What the reading answers when the window does all five things.
+const SAVE_AS_SAVES: WhatSaveAsDoes = WhatSaveAsDoes {
+    the_arm_reaches_the_handler: true,
+    asks_the_decision: true,
+    writes_through_the_exporter: true,
+    the_stub_is_gone: true,
+    has_no_attachment_branch: true,
+};
+
+/// File, Save As saves the message under the cursor rather than sending a line.
+///
+/// What this cannot see: whether the dialog opens, whether the file lands where
+/// somebody said, or what the saved file holds. The name offered is measured in
+/// `application::importing_messages` and the bytes written in
+/// `application::export_tree`; this only says the window asks those two rather
+/// than deciding for itself or, as it did, deciding nothing.
+#[test]
+fn test_save_as_writes_the_chosen_message_rather_than_sending_a_status_line() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert_eq!(
+        what_save_as_does(&what_ships(&app)),
+        SAVE_AS_SAVES,
+        "Save As is a stub again, or writes its own way: a menu item that promises a saved \
+         message and sends a status line instead"
+    );
+}
+
+/// The reading above can see the stub put back.
+///
+/// A reading that answered yes to everything whatever the file held would keep
+/// the guard green over the very stub it was written against. This reads the
+/// tree first and refuses to splice over a real stub, because then it could not
+/// tell its own break from the tree's; then it puts each half of the stub back
+/// in memory and asks the reading again.
+#[test]
+fn test_the_reading_of_save_as_can_see_the_stub_put_back() {
+    let app =
+        what_ships(&fs::read_to_string("src/presentation/wx_app.rs").expect("the main window"));
+    assert_eq!(
+        what_save_as_does(&app),
+        SAVE_AS_SAVES,
+        "the tree holds a real stub, so nothing spliced here could be told from it"
+    );
+
+    // From the arm onward, so the first call replaced is the arm's own and
+    // not a mention of the handler somewhere above it.
+    let arm_starts = app
+        .find("_ if id == ID_SAVE_AS =>")
+        .expect("the reading above found the arm");
+    let (above, from_the_arm) = app.split_at(arm_starts);
+    let arm_stubbed = format!(
+        "{above}{}",
+        from_the_arm.replacen(
+            "save_the_message_as(",
+            "send_status(&ui_tx, &runtime, \"Save As: no message selected\"); never_reached(",
+            1,
+        )
+    );
+    let read = what_save_as_does(&arm_stubbed);
+    assert!(
+        !read.the_arm_reaches_the_handler,
+        "the arm was made to send the stub's line and the reading still said it reaches \
+         the handler: {read:?}"
+    );
+    assert!(
+        !read.the_stub_is_gone,
+        "the stub's line was put back and the reading did not see it: {read:?}"
+    );
+
+    let decision_gone = app.replace("saving_as(", "a_name_made_up_here(");
+    assert!(
+        !what_save_as_does(&decision_gone).asks_the_decision,
+        "the decision was taken out of the handler and the reading still said it was asked"
+    );
+
+    let writer_gone = app.replace("one_message_written_out(", "written_some_other_way(");
+    assert!(
+        !what_save_as_does(&writer_gone).writes_through_the_exporter,
+        "the exporter's writer was taken out of the handler and the reading still said it \
+         was used"
+    );
+}
