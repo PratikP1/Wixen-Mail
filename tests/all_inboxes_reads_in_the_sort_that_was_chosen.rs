@@ -72,7 +72,10 @@
 //! named by its own records, whose `suite` couples it to the three cache
 //! files and to `wx_app.rs`, so it runs on the commits that could break it.
 
+use std::fs;
+
 use wixen_mail::common::types::FolderType;
+use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::config::ConfigManager;
 use wixen_mail::data::message_cache::{
     CachedFolder, IncomingMessage, MessageCache, MessageListRow, Tag,
@@ -501,5 +504,216 @@ fn test_the_sort_the_menu_stores_is_read_back_into_the_order_the_cache_takes() {
         hand_sorted(&the_inboxes, MailSortOption::DateOldestFirst),
         "the sort the menu stored, `{clause}`, read back the way the window reads it, \
          did not put the oldest arrival first"
+    );
+}
+
+// ── The window half ─────────────────────────────────────────────────────────
+
+const THE_WINDOW: &str = "src/presentation/wx_app.rs";
+const ASKING_FOR_THE_SORT: &str = "the_sort_as(view_state::Showing::Messages)";
+
+/// The source with each `//` comment taken off the end of its line.
+fn without_comments(source: &str) -> String {
+    source
+        .lines()
+        .map(|line| line.find("//").map_or(line, |at| &line[..at]))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The body of the item at the left margin that starts with `starts`, up to
+/// the next item at the left margin.
+fn the_item_starting_with(source: &str, starts: &str) -> Option<String> {
+    let mut lines = source.lines().skip_while(|line| !line.starts_with(starts));
+    let first = lines.next()?;
+    let rest: Vec<&str> = lines
+        .take_while(|line| {
+            line.is_empty()
+                || line.starts_with(' ')
+                || line.starts_with('}')
+                || line.starts_with(')')
+        })
+        .collect();
+    Some(format!("{first}\n{}", rest.join("\n")))
+}
+
+/// The text between the `(` that ends `anchor` and the `)` that closes it.
+fn the_argument_after<'a>(source: &'a str, anchor: &str) -> Option<&'a str> {
+    let start = source.find(anchor)? + anchor.len();
+    let mut open = 1usize;
+    for (at, c) in source[start..].char_indices() {
+        match c {
+            '(' => open += 1,
+            ')' => {
+                open -= 1;
+                if open == 0 {
+                    return Some(&source[start..start + at]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The arguments of the call to `anchor` inside `item`, each with its
+/// whitespace collapsed.
+fn the_arguments_of(item: &str, anchor: &str) -> Option<Vec<String>> {
+    Some(
+        the_argument_after(item, anchor)?
+            .split(',')
+            .map(|argument| argument.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect(),
+    )
+}
+
+/// One loader, the call its read goes through, and what that call must
+/// carry, so the reading can say which argument it read.
+struct ALoader {
+    item_starts: &'static str,
+    /// The call, anchored on its dot, because `messages_with_label(` is also
+    /// the tail of `fn load_messages_with_label(` and a reading anchored on
+    /// the bare name found the definition's parameters where it wanted the
+    /// call's arguments.
+    call: &'static str,
+    /// The arguments the call must carry, in order, with the sort among them.
+    arguments: &'static [&'static str],
+}
+
+/// The three loaders #69 is about, and the folder loader beside them, each
+/// held to asking for the stored sort and passing it where its read takes it.
+const THE_LOADERS: [ALoader; 4] = [
+    ALoader {
+        item_starts: "fn load_every_inbox(",
+        call: ".unified_inbox(",
+        arguments: &["order.as_deref()", "None"],
+    },
+    ALoader {
+        item_starts: "fn load_messages_with_label(",
+        call: ".messages_with_label(",
+        arguments: &["&account_id", "tag_id", "order.as_deref()", "None"],
+    },
+    ALoader {
+        item_starts: "fn run_a_saved_search(",
+        call: ".message_rows_for(",
+        arguments: &["&ids", "order.as_deref()"],
+    },
+    ALoader {
+        item_starts: "fn load_folder_messages(",
+        call: ".get_message_list_sorted(",
+        arguments: &["folder_id", "&account_id", "order.as_deref()", "None"],
+    },
+];
+
+/// Everything wrong with the window's source, as sentences; nothing when
+/// every loader asks for the stored sort and passes it.
+fn what_is_wrong_with(window_source: &str) -> Vec<String> {
+    let window = without_comments(&what_ships(window_source));
+    let mut wrong = Vec::new();
+
+    for loader in THE_LOADERS {
+        let Some(item) = the_item_starting_with(&window, loader.item_starts) else {
+            wrong.push(format!(
+                "{THE_WINDOW} has no item starting `{}`",
+                loader.item_starts
+            ));
+            continue;
+        };
+        if !item.contains(ASKING_FOR_THE_SORT) {
+            wrong.push(format!(
+                "`{}` does not ask `{ASKING_FOR_THE_SORT}`, so it reads in whatever order \
+                 its query carries rather than the one that was chosen",
+                loader.item_starts
+            ));
+        }
+        match the_arguments_of(&item, loader.call) {
+            None => wrong.push(format!(
+                "`{}` no longer calls `{}`",
+                loader.item_starts, loader.call
+            )),
+            Some(arguments) if arguments == loader.arguments => {}
+            Some(arguments) => wrong.push(format!(
+                "`{}` calls `{}` with ({}) rather than ({}): the stored sort does not \
+                 reach the query",
+                loader.item_starts,
+                loader.call,
+                arguments.join(", "),
+                loader.arguments.join(", ")
+            )),
+        }
+    }
+
+    wrong
+}
+
+fn the_window() -> String {
+    fs::read_to_string(THE_WINDOW).expect("the main window")
+}
+
+#[test]
+fn test_the_window_reads_all_inboxes_a_label_and_a_search_in_the_sort_that_was_chosen() {
+    let wrong = what_is_wrong_with(&the_window());
+
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A window written the way the reading wants it, small enough to plant in.
+const A_WINDOW_THAT_ASKS_FOR_THE_SORT: &str = "\
+fn load_folder_messages(cache: &MessageCache) {
+    let order = the_sort_as(view_state::Showing::Messages);
+    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), None) {}
+}
+
+fn load_every_inbox(cache: &MessageCache) {
+    let order = the_sort_as(view_state::Showing::Messages);
+    match cache.unified_inbox(order.as_deref(), None) {}
+}
+
+fn load_messages_with_label(cache: &MessageCache) {
+    let order = the_sort_as(view_state::Showing::Messages);
+    match cache.messages_with_label(&account_id, tag_id, order.as_deref(), None) {}
+}
+
+fn run_a_saved_search(tx: &Sender<UIUpdate>) {
+    rt.spawn(async move {
+        let order = the_sort_as(view_state::Showing::Messages);
+        let rows = match cache.message_rows_for(&ids, order.as_deref()) {};
+    });
+}
+";
+
+#[test]
+fn test_the_reading_would_see_a_loader_that_forgot_the_sort() {
+    // Proving the reading before believing it, over a window small enough to
+    // plant in: a reading that stopped finding the call would pass the test
+    // above by finding nothing. The same window as written is clean, so each
+    // complaint is about the plant and not about the shape.
+    assert_eq!(
+        what_is_wrong_with(A_WINDOW_THAT_ASKS_FOR_THE_SORT),
+        Vec::<String>::new()
+    );
+
+    let a_label_view_passing_none = A_WINDOW_THAT_ASKS_FOR_THE_SORT.replacen(
+        "messages_with_label(&account_id, tag_id, order.as_deref(), None)",
+        "messages_with_label(&account_id, tag_id, None, None)",
+        1,
+    );
+    let wrong = what_is_wrong_with(&a_label_view_passing_none);
+    assert_eq!(wrong.len(), 1, "{wrong:?}");
+    assert!(
+        wrong[0].starts_with("`fn load_messages_with_label(` calls `.messages_with_label(` with"),
+        "the reading did not name the loader that passed None: {wrong:?}"
+    );
+
+    let a_search_that_never_asked = A_WINDOW_THAT_ASKS_FOR_THE_SORT.replacen(
+        "        let order = the_sort_as(view_state::Showing::Messages);\n        let rows",
+        "        let rows",
+        1,
+    );
+    let wrong = what_is_wrong_with(&a_search_that_never_asked);
+    assert_eq!(wrong.len(), 1, "{wrong:?}");
+    assert!(
+        wrong[0].starts_with("`fn run_a_saved_search(` does not ask"),
+        "the reading did not name the loader that never asked: {wrong:?}"
     );
 }
