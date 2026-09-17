@@ -193,7 +193,7 @@ fn test_the_labels_of_a_folder_are_read_by_folder() {
     );
 
     let by_message: HashMap<i64, Vec<Tag>> = cache
-        .tags_for_folder(folder_id)
+        .tags_by_message_in_folder(folder_id)
         .expect("the labels by folder");
 
     assert_eq!(
@@ -224,7 +224,7 @@ fn test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_
     let labelled = a_label_on_one_row_in(&cache, &rows);
 
     let by_message = cache
-        .tags_for_folder(folder_id)
+        .tags_by_message_in_folder(folder_id)
         .expect("the labels of a folder above 32,766 rows, read by folder");
 
     assert_eq!(
@@ -343,7 +343,7 @@ fn what_is_wrong_with(window_source: &str) -> Vec<String> {
         &mut wrong,
     );
     if let Some(item) = the_item_starting_with(&window, "fn load_folder_messages(")
-        && !item.contains(".tags_for_folder(")
+        && !item.contains(".tags_by_message_in_folder(")
     {
         wrong.push(String::from(
             "`fn load_folder_messages(` does not read the labels by folder, so a folder above \
@@ -381,7 +381,7 @@ fn test_the_window_asks_for_the_whole_folder() {
 const A_WINDOW_THAT_ASKS_FOR_EVERYTHING: &str = "\
 fn load_folder_messages(cache: &MessageCache) {
     match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), None) {
-        Ok(rows) => attach_labels(&mut items, cache.tags_for_folder(folder_id)),
+        Ok(rows) => attach_labels(&mut items, cache.tags_by_message_in_folder(folder_id)),
     }
 }
 

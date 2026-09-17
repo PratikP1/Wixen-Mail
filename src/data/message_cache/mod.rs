@@ -4498,8 +4498,11 @@ mod storage_shape {
         // only a tenth of it is, which is the shape that has to walk furthest
         // to fill a screen.
         let cache = fresh("all_inboxes_does_not_sort");
-        let plan =
-            how_it_will_be_answered(&cache.conn, &super::messages::unified_inbox_query(100), []);
+        let plan = how_it_will_be_answered(
+            &cache.conn,
+            &super::messages::unified_inbox_query(Some(100)),
+            [],
+        );
 
         assert!(
             !plan.iter().any(|step| step.contains("TEMP B-TREE")),

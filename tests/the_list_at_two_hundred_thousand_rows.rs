@@ -565,10 +565,14 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
         ),
     ));
 
-    let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+    // The read by folder, since 2026-09-17: the rows before that date on the
+    // page were taken through `get_tags_for_messages` over every id read,
+    // one bound parameter per id, which refused at 200,000 and went with the
+    // change. The refusal branch stays, because a step that refuses is a
+    // finding and not a crash.
     let (takes, labels) = taken(|| {
         cache
-            .get_tags_for_messages(&ids)
+            .tags_by_message_in_folder(folder_id)
             .map(|by_message| by_message.len())
     });
     measured.push(match labels {
@@ -576,14 +580,14 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
             format!("The list's own read path, {count} rows: the labels"),
             takes,
             format!(
-                "`get_tags_for_messages` over the {count} ids read, one bound parameter per id, as the window's `attach_labels` asks it; {rows_with_a_label} rows carry a label, one row in {ONE_ROW_IN} having been given one ({labelled} in all). {ON_THE_INTERFACE_THREAD}"
+                "`tags_by_message_in_folder` over the folder, one bound parameter however many rows it holds, as the window's `attach_labels` asks it; {rows_with_a_label} rows carry a label, one row in {ONE_ROW_IN} having been given one ({labelled} in all). {ON_THE_INTERFACE_THREAD}"
             ),
         ),
         Err(refusal) => Measured {
             what: format!("The list's own read path, {count} rows: the labels"),
             outcome: Outcome::Refused(the_refusal_without_the_statement(&refusal.to_string())),
             detail: format!(
-                "`get_tags_for_messages` over the {count} ids read, one bound parameter per id, as the window's `attach_labels` asks it. The window's `attach_labels` drops the error and sends the list with no labels, so a folder this size shows none. {labelled} rows had been given a label. {ON_THE_INTERFACE_THREAD}"
+                "`tags_by_message_in_folder` over the folder, as the window's `attach_labels` asks it. The window's `attach_labels` logs the error and sends the list with no labels, so a folder this size shows none. {labelled} rows had been given a label. {ON_THE_INTERFACE_THREAD}"
             ),
         },
     });

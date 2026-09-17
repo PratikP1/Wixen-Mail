@@ -1,19 +1,19 @@
 //! Asking for a whole folder, and hearing about it once.
 //!
-//! A folder view holds five hundred messages and a first sync brings down five
-//! hundred, so somebody with a forty thousand message inbox who wants all of it
-//! presses Get Older Messages eighty times. This is the request that asks once
-//! and keeps going.
+//! A first sync brings down five hundred messages, so somebody with a forty
+//! thousand message inbox who wants all of it presses Get Older Messages
+//! eighty times. This is the request that asks once and keeps going.
 //!
-//! # Two bounds, and both of them have to move
+//! # One bound, where there were two
 //!
 //! `mail_sync::INITIAL_FETCH_LIMIT` bounds what comes down from the server.
-//! `wx_app::FOLDER_LIST_PAGE_SIZE` bounds what is read out of the cache into
-//! the list. They are separate numbers that happen to be the same, and moving
-//! one alone appears to do nothing, because the other still binds: mail arrives
-//! and is not shown, or the list asks for rows that were never fetched. Each
-//! carries a comment naming the other for that reason, and so does this
-//! paragraph.
+//! Until 2026-09-17 a second number in the window bounded what was read out of
+//! the cache into the list, the same five hundred, and moving one alone
+//! appeared to do nothing, because the other still bound: mail arrived and was
+//! not shown, or the list asked for rows that were never fetched. 10-02 took
+//! the second bound off for #24, so the list holds everything the folder
+//! holds here and a chunk arriving is shown when the window re-reads the
+//! folder.
 //!
 //! # What stops it
 //!

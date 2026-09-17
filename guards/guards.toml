@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 77 records have arrived since and have not been through it.
+# 79 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4513,47 +4513,53 @@ tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
-# ── A whole-folder request that moves one bound and not the other ────────────
+# ── A chunk of a whole-folder request that lands and is not shown ────────────
 #
-# SCALE-03. There are two five hundreds and they are separate decisions.
-# `mail_sync::INITIAL_FETCH_LIMIT` bounds what comes down from the server and
-# `wx_app::FOLDER_LIST_PAGE_SIZE` bounds what is read out of the cache into the
-# list. Moving one alone appears to do nothing, because the other still binds:
-# either mail arrives and is never shown, or the list asks for rows that were
-# never fetched. That is written into the phase research as the thing the next
-# person will hit, so it gets a record rather than a comment.
+# SCALE-03, and #24. Until 2026-09-17 there were two five hundreds and they
+# were separate decisions: `mail_sync::INITIAL_FETCH_LIMIT` bounded what came
+# down from the server and `wx_app::FOLDER_LIST_PAGE_SIZE` bounded what was
+# read out of the cache into the list, and this record held the arm the
+# request sends once per chunk to moving the second one. 10-02 took the second
+# bound off, because it hid every message past the newest 500 and pushed the
+# oldest shown off the end as mail arrived, which is what the tester reported.
+# So the record was rewritten on that day onto the new break rather than
+# re-measured: its old `before` was the block that grew the limit, which no
+# longer exists, and its old `red` named a test that was renamed. What it
+# guards now is the other half of the same failure: a chunk landing in the
+# cache and the open folder not being read again, so what the chunk brought
+# stays off the list.
 #
-# The break takes the view bound out of the arm the request sends once per
-# chunk, leaving the fetch to bring mail down that nothing shows. One test goes
-# red out of the six in this target.
+# The break takes the re-read out of the arm, leaving the chunk in the cache
+# and the list as it was. One test goes red out of the eight in this target;
+# the companion that plants the old arm is over a snippet and stays green.
 #
 # This record does the second job as well: it is what couples the target to
 # `wx_app.rs`, so a census living under `tests/` runs on the commits that could
 # change the answer rather than only on the commits that change the census. The
 # target is under `tests/` rather than beside the code for a cost reason. The
 # handler needs a window, a frame and a running event loop to reach, so it is a
-# source read either way, and thirty-four guard records fingerprint the number
-# of tests in `wx_app.rs`, which at one build and one full library run each is
-# hours for one test.
+# source read either way, and 57 guard records fingerprint the number of tests
+# in `wx_app.rs` on 2026-09-17 (thirty-four when this was first written on
+# 2026-09-04), which at one build and one full library run each is hours for
+# one test.
 #
-# Measured by hand on 2026-09-04.
+# Measured by hand on 2026-09-04 as first written; rewritten and measured
+# through `--remeasure` on 2026-09-17.
 
 [[guard]]
-name = "a whole-folder request moves both of the bounds and not one of them"
+name = "a chunk of a whole-folder request that lands is shown, and no limit grows"
 file = "src/presentation/wx_app.rs"
 suite = "a_whole_folder_moves_both_bounds"
-before = """            {
-                let mut s = lock_state(state);
-                s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
-            }
+before = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
             reread_folder_if_open(state, message_cache, *folder_id, tx);"""
-after = """            reread_folder_if_open(state, message_cache, *folder_id, tx);"""
+after = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
+            let _ = folder_id;"""
 red = [
-    "test_the_whole_folder_request_moves_the_bound_on_what_the_list_shows",
+    "test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_whole_folder_moves_both_bounds.rs", tests = 7 },
+    { file = "tests/a_whole_folder_moves_both_bounds.rs", tests = 8 },
 ]
 
 # ── A deletion that stops being noticed because nobody looks any more ────────
@@ -24277,4 +24283,71 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs", tests = 3 },
+]
+
+# ── The list holds everything the folder holds (#24) ─────────────────────────
+#
+# Until 2026-09-17 `load_folder_messages` read a folder through
+# `get_message_list_sorted` with a `LIMIT` of 500 that reset on every folder
+# change, so the list showed the newest 500 and a message arriving pushed the
+# oldest shown off the end. 10-02 took the page off against the rows on
+# `docs/development/measurements.md` named "The list's own read path". The
+# reading in `tests/the_list_holds_everything_the_folder_holds.rs` holds the
+# shipping half of `wx_app.rs` to passing `None`, to reading the labels by
+# folder, and to naming none of the three identifiers the page lived in. The
+# break puts `Some(500)` back into the call. One test goes red out of the
+# five in the target; the companion plants into a snippet and stays green,
+# and the three cache tests do not read the window. `suite` names the target,
+# which is what couples it to `wx_app.rs` for `check.sh --suites-for`.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# the_list_holds_everything_the_folder_holds`.
+[[guard]]
+name = "the message list asks the cache for the whole folder and not a page of it"
+file = "src/presentation/wx_app.rs"
+suite = "the_list_holds_everything_the_folder_holds"
+before = """    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), None) {"""
+after = """    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), Some(500)) {"""
+red = [
+    "test_the_window_asks_for_the_whole_folder",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
+]
+
+# ── The labels of a folder are read by folder, all of them ───────────────────
+#
+# The old labels read sent one bound parameter per row the list held, and
+# the bundled SQLite refuses more than 32,766 of them, so a folder past that
+# size showed no labels; the row that refused, at 200,000, is on the
+# measurements page. `tags_by_message_in_folder` reads them through one
+# query joined on `messages.folder_id`, and its two siblings by account and
+# across every inbox share the query. The break puts a `LIMIT 100` on the
+# shared query, so a folder of 12,872 with a label on one row in ten answers
+# 100 labelled rows rather than 1,288, and the 40,000-row read answers 100
+# rather than 4,000. Two tests go red out of the five in the target; the
+# unit tests in `tags.rs` label two messages and cannot see a limit of 100.
+# `file` is `tags.rs` and `suite` names the target, so a commit to the
+# query runs the target through `check.sh --suites-for`.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# the_list_holds_everything_the_folder_holds`.
+[[guard]]
+name = "the labels of a folder are read by folder, every one of them"
+file = "src/data/message_cache/tags.rs"
+suite = "the_list_holds_everything_the_folder_holds"
+before = """                 WHERE {narrowed_to} AND m.deleted = 0
+                 ORDER BY mt.message_id, t.name\""""
+after = """                 WHERE {narrowed_to} AND m.deleted = 0
+                 ORDER BY mt.message_id, t.name LIMIT 100\""""
+red = [
+    "test_the_labels_of_a_folder_are_read_by_folder",
+    "test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
 ]

@@ -204,48 +204,75 @@ impl MessageCache {
         Ok(tags)
     }
 
-    /// Every one of these messages' tags, in one query.
+    /// The labels of every message in a folder, by message id.
     ///
-    /// What `attach_labels` calls instead of asking [`Self::get_tags_for_message`]
-    /// once per row: a page of five hundred messages was five hundred
-    /// prepared statements to answer a question most of them answer with
-    /// "none". Grouped here in Rust rather than in SQL, because a message id
-    /// repeats as a key across several rows and SQLite has no map type to
-    /// build one into directly.
-    ///
-    /// A message with no tag at all is simply absent from the map, so a
-    /// caller reads `by_message.get(&id)` and treats `None` the same as an
-    /// empty list.
-    pub fn get_tags_for_messages(
+    /// One query joined through `messages.folder_id`, with one bound
+    /// parameter however many rows the folder holds. What `attach_labels`
+    /// asks since 2026-09-17. Before that it asked `get_tags_for_messages`
+    /// over every id the list had read, which sent one parameter per row
+    /// through an `IN (?1, ?2, ...)`, and the bundled SQLite refuses more
+    /// than 32,766 of them, so a folder past that size showed no labels at
+    /// all; the row that refused, at 200,000, is on
+    /// `docs/development/measurements.md`. That read had no caller left and
+    /// went with the change. A message with no label is absent from the map,
+    /// so a caller reads `by_message.get(&id)` and treats `None` as an empty
+    /// list.
+    pub fn tags_by_message_in_folder(
         &self,
-        message_ids: &[i64],
+        folder_id: i64,
     ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
-        let mut by_message: std::collections::HashMap<i64, Vec<Tag>> =
-            std::collections::HashMap::new();
-        if message_ids.is_empty() {
-            return Ok(by_message);
-        }
+        self.tags_by_message_where("m.folder_id = ?1", params![folder_id])
+    }
 
-        // Placeholders only, never the ids themselves: what goes into the
-        // query text is a count of `?N` markers, and the values still travel
-        // through `params_from_iter` like any other bound parameter.
-        let placeholders = (1..=message_ids.len())
-            .map(|n| format!("?{n}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+    /// The labels of every message in an account, by message id.
+    ///
+    /// The same shape as [`Self::tags_by_message_in_folder`], for the label view,
+    /// which lists one account's mail across its folders.
+    pub fn tags_by_message_in_account(
+        &self,
+        account_id: &str,
+    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        self.tags_by_message_where("f.account_id = ?1", params![account_id])
+    }
+
+    /// The labels of every message in every inbox, by message id.
+    ///
+    /// The same shape again, for All Inboxes, which spans every account and
+    /// so cannot ask [`Self::tags_by_message_in_account`]; the `WHERE` is the one
+    /// `unified_inbox` lists by.
+    pub fn tags_by_message_in_every_inbox(
+        &self,
+    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        self.tags_by_message_where("f.folder_type = 'Inbox'", params![])
+    }
+
+    /// Every label on every message the clause selects, grouped by message.
+    ///
+    /// `narrowed_to` must be one of the fixed strings the three readers above
+    /// pass; nothing a user typed reaches it, which is what makes writing it
+    /// into the query safe. Grouped here in Rust rather than in SQL, because
+    /// a message id repeats as a key across several rows and SQLite has no
+    /// map type to build one into directly.
+    fn tags_by_message_where(
+        &self,
+        narrowed_to: &str,
+        bound: impl rusqlite::Params,
+    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
         let mut stmt = self
             .conn
             .prepare_cached(&format!(
                 "SELECT mt.message_id, t.id, t.account_id, t.name, t.color, t.created_at, t.keyword
-                 FROM tags t
-                 INNER JOIN message_tags mt ON t.id = mt.tag_id
-                 WHERE mt.message_id IN ({placeholders})
+                 FROM message_tags mt
+                 INNER JOIN tags t ON t.id = mt.tag_id
+                 INNER JOIN messages m ON m.id = mt.message_id
+                 INNER JOIN folders f ON f.id = m.folder_id
+                 WHERE {narrowed_to} AND m.deleted = 0
                  ORDER BY mt.message_id, t.name"
             ))
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
         let rows = stmt
-            .query_map(rusqlite::params_from_iter(message_ids), |row| {
+            .query_map(bound, |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     Tag {
@@ -262,31 +289,24 @@ impl MessageCache {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect message tags: {}", e)))?;
 
+        let mut by_message: std::collections::HashMap<i64, Vec<Tag>> =
+            std::collections::HashMap::new();
         for (message_id, tag) in rows {
             by_message.entry(message_id).or_default().push(tag);
         }
         Ok(by_message)
     }
 
-    /// The labels of every message in a folder, by message id.
-    ///
-    /// The red half of 10-02: answers nothing until the green commit
-    /// writes the query by folder.
-    pub fn tags_for_folder(
-        &self,
-        folder_id: i64,
-    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
-        let _ = folder_id;
-        Ok(std::collections::HashMap::new())
-    }
-
-    /// Get all messages with a specific tag
     /// The messages carrying a label, as the list draws them.
     ///
     /// The same row a folder listing produces, and deliberately so: the mail
     /// list has one shape, and a second one would mean a label view missing
     /// the snippet, the size and the attachment marker that every other view
     /// of the same messages shows.
+    ///
+    /// `None` is every message carrying the label, which is what the window
+    /// asks for since 2026-09-17; it asked for the newest 500 until then, the
+    /// same page the folder list read through (#24).
     ///
     /// Replaced `get_messages_by_tag`, which answered with a different shape,
     /// read body text out of the columns it stopped being written to, and had
@@ -296,7 +316,7 @@ impl MessageCache {
         &self,
         account_id: &str,
         tag_id: &str,
-        limit: usize,
+        limit: Option<usize>,
     ) -> Result<Vec<super::MessageListRow>> {
         let query = format!(
             "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
@@ -309,9 +329,8 @@ impl MessageCache {
              INNER JOIN message_tags mt ON m.id = mt.message_id
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE mt.tag_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-             ORDER BY m.date DESC, m.uid DESC
-             LIMIT {}",
-            limit as i64
+             ORDER BY m.date DESC, m.uid DESC{}",
+            super::messages::limit_clause(limit)
         );
         let mut stmt = self
             .conn
@@ -624,7 +643,7 @@ mod tests {
         assert_eq!(message_tags.len(), 2);
 
         let messages = cache
-            .messages_with_label("test@example.com", "tag-important", 50)
+            .messages_with_label("test@example.com", "tag-important", None)
             .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Message");
@@ -634,7 +653,7 @@ mod tests {
         // another's mail even if the ids were ever to collide.
         assert!(
             cache
-                .messages_with_label("someone@else.example", "tag-important", 50)
+                .messages_with_label("someone@else.example", "tag-important", Some(50))
                 .unwrap()
                 .is_empty(),
             "a label listing reached another account's mail"
@@ -649,9 +668,10 @@ mod tests {
     }
 
     #[test]
-    fn test_a_batched_fetch_returns_the_right_tags_per_message() {
-        // `attach_labels` used to call `get_tags_for_message` once per row.
-        // This is the one query it should use instead, and the map it
+    fn test_the_labels_of_a_folder_keep_each_messages_own_apart() {
+        // `attach_labels` used to call `get_tags_for_message` once per row,
+        // then one query over every id, which SQLite refuses above 32,766 of
+        // them. This is the read by folder it asks now, and the map it
         // builds has to keep each message's own tags separate from its
         // neighbours' rather than merging or swapping them.
         let temp_dir = tempfile::tempdir().expect("a temporary folder");
@@ -719,9 +739,7 @@ mod tests {
             .unwrap();
         // untagged_msg is left with nothing on purpose.
 
-        let by_message = cache
-            .get_tags_for_messages(&[work_msg, personal_msg, untagged_msg])
-            .unwrap();
+        let by_message = cache.tags_by_message_in_folder(folder_id).unwrap();
 
         let names = |id: i64| -> Vec<String> {
             by_message
@@ -745,12 +763,30 @@ mod tests {
     }
 
     #[test]
-    fn test_a_batched_fetch_of_no_messages_asks_nothing_and_returns_nothing() {
+    fn test_a_folder_nobody_has_labelled_answers_an_empty_map() {
         let temp_dir = tempfile::tempdir().expect("a temporary folder");
         let cache = MessageCache::new(temp_dir.path().to_path_buf(), None).unwrap();
+        let folder_id = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "test@example.com".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .unwrap();
 
-        let by_message = cache.get_tags_for_messages(&[]).unwrap();
+        let by_message = cache.tags_by_message_in_folder(folder_id).unwrap();
 
         assert!(by_message.is_empty());
+        assert!(cache.tags_by_message_in_every_inbox().unwrap().is_empty());
+        assert!(
+            cache
+                .tags_by_message_in_account("test@example.com")
+                .unwrap()
+                .is_empty()
+        );
     }
 }
