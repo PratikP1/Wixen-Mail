@@ -616,7 +616,7 @@ impl MessageCache {
         let mut stmt = self
             .conn
             .prepare_cached(&format!(
-                "SELECT m.id, f.path, m.uid
+                "SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)
                  FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
                  LEFT JOIN message_bodies b ON b.message_id = m.id
@@ -634,7 +634,10 @@ impl MessageCache {
                 message_id: row.get(0)?,
                 folder_path: row.get(1)?,
                 uid: row.get(2)?,
-                size_bytes: 0,
+                // Stored signed, because the column was; a negative size is
+                // nothing a server sends and reads as nought rather than as
+                // an error a whole run would stop on.
+                size_bytes: row.get::<_, i64>(3)?.try_into().unwrap_or(0),
             })
         })
         .map_err(|e| Error::Other(format!("Failed to list the mail with no text: {}", e)))?

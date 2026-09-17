@@ -137,12 +137,11 @@ pub fn until_the_whole_folder_is_here(
         if here.held >= here.total_on_server {
             break HowTheRequestEnded::TheWholeFolderIsHere { held: here.held };
         }
-        // Nothing new came down, so asking again would ask forever. Checked
-        // after the completeness test rather than before it, because a folder
-        // whose last chunk finished it also brings nothing new to the next one,
-        // and reporting that as a server that stopped would turn every
-        // successful request into a failed one.
-        if held_before == Some(here.held) {
+        // Nothing new came down, so asking again would ask forever. The rule
+        // lives with the download of everything now, which asks the same
+        // question of every folder, and this loop asks it there rather than
+        // keeping a second copy.
+        if crate::application::bringing_everything_down::stopped_coming_down(held_before, here) {
             break HowTheRequestEnded::ItStoppedComingDown {
                 held: here.held,
                 total_on_server: here.total_on_server,

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 68 records have arrived since and have not been through it.
+# 72 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -7635,7 +7635,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/long_text.rs", tests = 60 },
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
@@ -13703,7 +13703,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -15086,7 +15086,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -15166,7 +15166,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -15206,7 +15206,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -23218,7 +23218,7 @@ red = [
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -23240,7 +23240,7 @@ red = [
     "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -23262,7 +23262,7 @@ red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 47 },
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
 ]
 
 # Undo Send taken off the Edit menu, which is the shape the tester met on
@@ -24030,4 +24030,94 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/trying_again.rs", tests = 9 },
+]
+
+# A download of everything brings the folder on screen down first, then the
+# inbox, then the rest in the tree's order. The break sorts by the tree's
+# order first and by what is on screen second, so the inbox comes before
+# the folder somebody is looking at, which is a person watching an empty
+# list while mail lands somewhere else. The test that reads the whole order
+# reddens; the one with nothing on screen does not, because the two keys
+# agree when nothing is on screen.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the folder on screen comes down before the inbox"
+file = "src/application/bringing_everything_down.rs"
+before = """    (not_on_screen, kind, name)"""
+after = """    (kind, not_on_screen, name)"""
+red = [
+    "application::bringing_everything_down::tests::test_the_folder_on_screen_comes_first_then_the_inbox_then_the_tree_order",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+]
+
+# A text budget somebody chose ends the text run when the next chunk would
+# take the kept text past it. The break ignores the bound, so a choice of
+# one gigabyte fetches without limit, which is T-10-04: the bound is in the
+# settings screen and not in the run. The test that ends a run on the
+# budget reddens, and so does the one that shrinks the last chunk to fit.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a text budget somebody chose ends the text run"
+file = "src/application/bringing_everything_down.rs"
+before = """        TextBudget::UpTo(bytes) => bytes.saturating_sub(text.kept_bytes),"""
+after = """        TextBudget::UpTo(_) => u64::MAX,"""
+red = [
+    "application::bringing_everything_down::tests::test_the_budget_ends_a_text_run_and_says_what_it_would_have_needed",
+    "application::bringing_everything_down::tests::test_a_chunk_of_text_shrinks_to_what_the_budget_still_allows",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+]
+
+# A folder is reported as stopped only when a chunk brought nothing new.
+# The break reports it as stopped after any chunk at all, so a folder
+# that is coming down is left at its second chunk and said to have
+# stopped, which is a server that answered being reported as one that did
+# not. The pure test of the rule reddens on the case where the count
+# moved, and the old whole-folder loop, which asks the same rule, stops at
+# its second chunk and so reddens its carry-on test and its last-thing-said
+# test.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a folder is reported as stopped only when a chunk brought nothing new"
+file = "src/application/bringing_everything_down.rs"
+before = """    here.held < here.total_on_server && held_before_the_last_chunk == Some(here.held)"""
+after = """    here.held < here.total_on_server && held_before_the_last_chunk.is_some()"""
+red = [
+    "application::bringing_everything_down::tests::test_a_finished_folder_brings_nothing_new_and_is_not_a_server_that_stopped",
+    "application::asking_for_a_whole_folder::tests::test_the_request_carries_on_past_the_first_chunk_without_being_asked_again",
+    "application::asking_for_a_whole_folder::tests::test_the_last_thing_said_is_a_count_rather_than_another_progress_line",
+]
+tests_last_seen = [
+    { file = "src/application/asking_for_a_whole_folder.rs", tests = 7 },
+    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+]
+
+# The list of messages with no text here carries each row's size, so a
+# chunk can be bounded by bytes before a fetch. The break selects nought
+# for every row, which is every message reading as free and the byte bound
+# never met, and the run can say nothing about how much is still to come.
+# The test that stores a size and reads it back reddens; the one about a
+# row from before sizes were kept does not, because nought is its answer.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the list of messages with no text here carries each row's size"
+file = "src/data/message_cache/bodies.rs"
+before = """                "SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)"""
+after = """                "SELECT m.id, f.path, m.uid, 0"""
+red = [
+    "data::message_cache::bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 49 },
 ]

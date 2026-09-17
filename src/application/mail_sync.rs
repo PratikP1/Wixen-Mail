@@ -31,12 +31,20 @@ pub fn more_to_fetch(held: usize, total_on_server: usize) -> bool {
     held < total_on_server
 }
 
-/// How many messages a first look at a folder brings down.
+/// How many messages one chunk of a download asks a folder for.
 ///
-/// Enough that somebody opening their inbox sees a full screen and can keep
-/// arrowing for a long time; small enough that the first sync of an old
-/// mailbox finishes rather than appearing to hang. The rest arrive when the
-/// list is asked to go further back.
+/// A first look at a folder brings down this many, and so does every chunk
+/// after it: `bringing_everything_down::HEADERS_PER_CHUNK` is this constant
+/// by name, and the download of everything asks chunk after chunk until the
+/// folder is here. Enough that somebody opening their inbox sees a full
+/// screen at once; small enough that one ask of an old mailbox finishes
+/// rather than appearing to hang.
+///
+/// Until 2026-09-17 this read "How many messages a first look at a folder
+/// brings down... The rest arrive when the list is asked to go further
+/// back", and a first look was the whole of what came down unless a person
+/// asked for more. It is no longer the whole of anything: it is the size of
+/// one step.
 pub const INITIAL_FETCH_LIMIT: usize = 500;
 
 /// What one folder's sync did.
@@ -1784,7 +1792,10 @@ pub const NOTHING_TO_FETCH: &str = "Every message in this account already has it
      nothing to fetch.";
 
 /// How many messages arrived, as a clause.
-fn arrived(count: usize) -> String {
+///
+/// Shared with `bringing_everything_down`, whose text report is the same two
+/// clauses, so the two runs cannot come to word the same fact two ways.
+pub(crate) fn arrived(count: usize) -> String {
     match count {
         0 => "No message text arrived".to_string(),
         1 => "The text of 1 message arrived".to_string(),
@@ -1797,7 +1808,7 @@ fn arrived(count: usize) -> String {
 /// Said even when it is none, because a run that gives only its successes
 /// reads as complete, and a person cannot tell a run that fetched twelve of
 /// twelve from one that fetched twelve of two hundred.
-fn did_not_arrive(count: usize) -> String {
+pub(crate) fn did_not_arrive(count: usize) -> String {
     match count {
         0 => "nothing failed".to_string(),
         1 => "1 message could not be fetched".to_string(),

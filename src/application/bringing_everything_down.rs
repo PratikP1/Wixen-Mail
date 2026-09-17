@@ -94,8 +94,7 @@ pub struct HowMuchIsHere {
 /// a server that stopped would turn every finished folder into a failed one.
 /// The rule `asking_for_a_whole_folder` was written with, kept here for both.
 pub fn stopped_coming_down(held_before_the_last_chunk: Option<usize>, here: HowMuchIsHere) -> bool {
-    let _ = (held_before_the_last_chunk, here);
-    false
+    here.held < here.total_on_server && held_before_the_last_chunk == Some(here.held)
 }
 
 /// One folder of an account, as the cache knows it.
@@ -132,8 +131,64 @@ pub enum WhereAFolderStands {
 
 /// Where a folder stands, from what the cache holds.
 pub fn where_a_folder_stands(folder: &FolderHere) -> WhereAFolderStands {
-    let _ = folder;
-    WhereAFolderStands::IsAllHere
+    if folder.here.held >= folder.here.total_on_server {
+        WhereAFolderStands::IsAllHere
+    } else if stopped_coming_down(folder.held_before_the_last_chunk, folder.here) {
+        WhereAFolderStands::StoppedComingDown
+    } else {
+        WhereAFolderStands::NeedsMoreHeaders
+    }
+}
+
+/// Where a folder goes in the order everything comes down.
+///
+/// The folder on screen first, then the inbox, then the rest as the tree
+/// shows them, which is [`crate::common::types::tree_position`]: what the
+/// folder is for, then its name.
+fn place_in_the_order(folder: &FolderHere, on_screen: Option<i64>) -> (u8, u8, String) {
+    let not_on_screen = u8::from(on_screen != Some(folder.folder_id));
+    let (kind, name) = crate::common::types::tree_position(folder.kind, &folder.name);
+    (not_on_screen, kind, name)
+}
+
+/// The next chunk of text, bounded by count, by bytes, and by the budget.
+///
+/// At least one message whatever its size, because a bound that skipped a
+/// large message would leave it missing forever; the budget is the one bound
+/// that can refuse the first message, and then the run ends on it.
+fn the_next_chunk_of_text(text: &TextStillMissing<'_>, budget: TextBudget) -> WhatToDoNext {
+    let room_under_the_budget = match budget {
+        TextBudget::All => u64::MAX,
+        TextBudget::UpTo(bytes) => bytes.saturating_sub(text.kept_bytes),
+    };
+    let mut chunk = Vec::new();
+    let mut bytes = 0u64;
+    for message in text.messages.iter().take(TEXT_PER_CHUNK_MESSAGES) {
+        let with_this_one = bytes.saturating_add(message.size_bytes);
+        if with_this_one > room_under_the_budget {
+            break;
+        }
+        if !chunk.is_empty() && with_this_one > TEXT_PER_CHUNK_BYTES {
+            break;
+        }
+        chunk.push(message.clone());
+        bytes = with_this_one;
+    }
+    if chunk.is_empty() {
+        let would_need = text.messages.iter().fold(text.kept_bytes, |sum, message| {
+            sum.saturating_add(message.size_bytes)
+        });
+        return WhatToDoNext::EverythingIsHere {
+            why: Why::TextStoppedAtTheBudget {
+                kept: text.kept_bytes,
+                would_need,
+            },
+        };
+    }
+    WhatToDoNext::TheNextChunkOfText {
+        messages: chunk,
+        bytes,
+    }
 }
 
 /// How much message text stays on this computer.
@@ -202,10 +257,27 @@ pub fn what_to_do_next(
     on_screen: Option<i64>,
     reading_allowed: bool,
 ) -> WhatToDoNext {
-    let _ = (folders, text, budget, on_screen, reading_allowed);
-    WhatToDoNext::EverythingIsHere {
-        why: Why::ItIsAllHere,
+    let next_folder = folders
+        .iter()
+        .filter(|folder| where_a_folder_stands(folder) == WhereAFolderStands::NeedsMoreHeaders)
+        .min_by_key(|folder| place_in_the_order(folder, on_screen));
+    if let Some(folder) = next_folder {
+        return WhatToDoNext::TheNextChunkOfHeaders {
+            folder_id: folder.folder_id,
+            path: folder.path.clone(),
+        };
     }
+    if text.messages.is_empty() {
+        return WhatToDoNext::EverythingIsHere {
+            why: Why::ItIsAllHere,
+        };
+    }
+    if !reading_allowed {
+        return WhatToDoNext::EverythingIsHere {
+            why: Why::ReadingIsOff,
+        };
+    }
+    the_next_chunk_of_text(&text, budget)
 }
 
 /// How the download of one folder ended.
@@ -230,8 +302,11 @@ pub enum HowTheRunEnded {
 /// want different decisions from the person hearing them. The count is a noun
 /// phrase at the end so no verb has to agree with it.
 pub fn how_far_the_download_has_got(folder: &str, here: HowMuchIsHere) -> String {
-    let _ = (folder, here);
-    String::new()
+    format!(
+        "Downloading {folder}: {} of {}.",
+        here.held,
+        crate::service::caldav::how_many(here.total_on_server, "message")
+    )
 }
 
 /// What to say when one folder's download has ended.
@@ -242,8 +317,27 @@ pub fn how_far_the_download_has_got(folder: &str, here: HowMuchIsHere) -> String
 /// as downloaded: a folder that says "downloaded" and is not is a folder
 /// somebody searches and gets a shorter answer from than they should.
 pub fn what_the_folder_download_came_to(folder: &str, ended: &HowTheRunEnded) -> String {
-    let _ = (folder, ended);
-    String::new()
+    match ended {
+        HowTheRunEnded::TheWholeFolderIsHere { held } => format!(
+            "{folder} is downloaded: {} on this computer.",
+            crate::service::caldav::how_many(*held, "message")
+        ),
+        HowTheRunEnded::ItStoppedComingDown {
+            held,
+            total_on_server,
+        } => format!(
+            "The mail server stopped sending {folder}. {held} of {total_on_server} are on this \
+             computer. It will be asked again."
+        ),
+        HowTheRunEnded::AChunkFailed {
+            held,
+            total_on_server,
+            because,
+        } => format!(
+            "Downloading {folder} stopped: {because} {held} of {total_on_server} are on this \
+             computer."
+        ),
+    }
 }
 
 /// What the text pass of one run came to.
@@ -275,14 +369,42 @@ pub struct StoppedAtTheBudget {
 /// budget ended it, one more sentence says what is kept, which budget that is,
 /// and what happens to the rest.
 pub fn what_the_text_download_came_to(done: &TextDownload) -> String {
-    let _ = done;
-    String::new()
+    let counts = format!(
+        "{}, and {}.",
+        super::mail_sync::arrived(done.fetched),
+        super::mail_sync::did_not_arrive(done.could_not)
+    );
+    match done.stopped_at_the_budget {
+        None => counts,
+        Some(budget) => format!(
+            "{counts} The text of {} newer {} is kept, which is the {} you chose; {} older {} \
+             will be fetched when they are opened.",
+            budget.kept_messages,
+            messages(budget.kept_messages),
+            crate::presentation::reader_text::human_size(budget.budget_bytes as usize),
+            budget.older_messages,
+            messages(budget.older_messages),
+        ),
+    }
+}
+
+/// The noun for a count of messages, so a clause with an adjective between
+/// the number and the noun still agrees.
+fn messages(count: usize) -> &'static str {
+    if count == 1 { "message" } else { "messages" }
 }
 
 /// The one sentence said at the end of a run over a whole account.
+///
+/// Two counts, because they are two different facts: how many folders are
+/// whole, and how many messages have their text here to read and to search.
 pub fn what_a_whole_account_came_to(folders_done: usize, text_done: usize) -> String {
-    let _ = (folders_done, text_done);
-    String::new()
+    let folders = crate::service::caldav::how_many(folders_done, "folder");
+    let are = if folders_done == 1 { "is" } else { "are" };
+    format!(
+        "{folders} {are} downloaded, and the text of {} is on this computer.",
+        crate::service::caldav::how_many(text_done, "message")
+    )
 }
 
 #[cfg(test)]
