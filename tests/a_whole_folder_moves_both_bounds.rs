@@ -1,22 +1,30 @@
-//! The whole-folder request moves both of the numbers that bound a folder.
+//! The whole-folder request moves the number that bounds what a folder
+//! fetches, and a chunk arriving re-reads the folder without growing anything.
 //!
-//! There are two five hundreds and they are separate decisions.
+//! There were two five hundreds and they were separate decisions.
 //! `application::mail_sync::INITIAL_FETCH_LIMIT` bounds what comes down from
-//! the server. `presentation::wx_app::FOLDER_LIST_PAGE_SIZE` bounds what is
-//! read out of the cache into the list. A request that moves one and not the
-//! other appears to do nothing, because the other still binds: either mail
-//! arrives and is never shown, or the list asks for rows that were never
-//! fetched. Get Older Messages already moves both, and the whole-folder request
-//! has to as well.
+//! the server, and still does. Until 2026-09-17 a second one,
+//! `presentation::wx_app::FOLDER_LIST_PAGE_SIZE`, bounded what was read out of
+//! the cache into the list, and a request that moved one and not the other
+//! appeared to do nothing, because the other still bound: either mail arrived
+//! and was never shown, or the list asked for rows that were never fetched.
+//! 10-02 took the second bound off for #24, because it hid every message
+//! past the newest 500 and pushed the oldest shown off the end as mail
+//! arrived. So the arm that once grew it is held here to the opposite: a chunk
+//! arriving re-reads the folder if it is open and names no limit, because
+//! there is none to grow. The fetch bound, the experimental sentence and the
+//! loop are as they were, until 10-05 retires the command.
 //!
 //! # Why this lives here rather than beside the code
 //!
 //! The handler is in `src/presentation/wx_app.rs`, which needs a window, a
 //! frame and a running event loop to reach, so this is a source read. It is an
 //! integration target rather than a test inside that file for a cost reason
-//! that is worth writing down: thirty-four guard records fingerprint the number
-//! of tests in `wx_app.rs`, so one test added there is thirty-four builds and
-//! thirty-four full library runs at the next commit. None fingerprint this file.
+//! that is worth writing down: when this was written, thirty-four guard
+//! records fingerprinted the number of tests in `wx_app.rs` (57 on 2026-09-17
+//! by the TOML reader), so one test added there is that many builds and that
+//! many full library runs at the next commit. One record fingerprints this
+//! file.
 //!
 //! `guards/guards.toml` couples this target to `wx_app.rs`, so it runs on the
 //! commits that could break it rather than only on the commits that change it.
@@ -99,32 +107,77 @@ fn test_the_whole_folder_request_moves_the_bound_on_what_is_fetched() {
     );
 }
 
+/// The words a limit on the list would be written in, none of which the arm
+/// may name now that there is no limit to grow.
+const THE_WORDS_OF_A_LIMIT: [&str; 3] = ["message_list_limit", "FOLDER_LIST_PAGE_SIZE", "+="];
+
+/// What is wrong with the arm a chunk's arrival reaches, as sentences;
+/// nothing when it re-reads the folder and grows no limit.
+fn what_is_wrong_with_the_arm(arm: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    if !arm.contains("reread_folder_if_open(") {
+        wrong.push(format!(
+            "the arm a chunk's arrival reaches does not re-read the folder, so what the chunk \
+             brought stays in the cache and off the list: {arm}"
+        ));
+    }
+    for word in THE_WORDS_OF_A_LIMIT {
+        if arm.contains(word) {
+            wrong.push(format!(
+                "the arm a chunk's arrival reaches names `{word}`: a limit on what the list shows \
+                 is back, and the list holds everything the folder holds only while there is \
+                 none: {arm}"
+            ));
+        }
+    }
+    wrong
+}
+
 #[test]
-fn test_the_whole_folder_request_moves_the_bound_on_what_the_list_shows() {
-    // The view side. Without it the mail arrives and stays hidden behind a
-    // limit the list still reads through, which looks exactly like a request
-    // that did nothing.
-    //
-    // Asked of two places rather than one, and that is the shape of the answer
-    // rather than a weakening of the question. The request runs on a worker
-    // thread and the view's limit lives on the interface thread, so the request
-    // cannot move that bound itself: it sends `MoreOfTheFolderArrived` once per
-    // chunk and the arm for that update moves it. Both halves are checked,
-    // because either one alone is a bound that never moves.
+fn test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit() {
+    // The view side, the other way round from before 2026-09-17. The request
+    // runs on a worker thread and sends `MoreOfTheFolderArrived` once per
+    // chunk; the arm for that update used to grow the list's limit by a page
+    // and then re-read the folder. There is no limit now, so the arm re-reads
+    // and does nothing else, and a limit written back into it is the page
+    // returning under another name.
     let source = the_window_itself();
     let handler = the_item_starting_with(&source, THE_HANDLER);
 
     assert!(
         handler.contains("MoreOfTheFolderArrived"),
         "the whole-folder request tells nobody that another chunk landed, so \
-         nothing moves the bound the list reads through"
+         nothing re-reads the folder it lands in"
     );
 
-    let arm = the_arm_for(&source, "MoreOfTheFolderArrived");
+    let wrong = what_is_wrong_with_the_arm(&the_arm_for(&source, "MoreOfTheFolderArrived"));
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_limit_grown_again() {
+    // Proving the reading before believing it: the old arm, with the page
+    // grown before the re-read, planted whole.
+    let the_old_arm = "(folder_id) => {\n\
+                       \x20           {\n\
+                       \x20               let mut s = lock_state(state);\n\
+                       \x20               s.message_list_limit += FOLDER_LIST_PAGE_SIZE;\n\
+                       \x20           }\n\
+                       \x20           reread_folder_if_open(state, message_cache, *folder_id, tx);\n\
+                       \x20       }\n";
+    let wrong = what_is_wrong_with_the_arm(the_old_arm);
+
+    assert_eq!(
+        wrong.len(),
+        THE_WORDS_OF_A_LIMIT.len(),
+        "the reading did not see every word of the limit grown again: {wrong:?}"
+    );
+
+    let an_arm_that_forgot_to_reread = "(folder_id) => {\n    let _ = folder_id;\n}\n";
+    let wrong = what_is_wrong_with_the_arm(an_arm_that_forgot_to_reread);
     assert!(
-        arm.contains("FOLDER_LIST_PAGE_SIZE"),
-        "the update the request sends does not move the bound on what the list \
-         shows, so what it fetches stays hidden: {arm}"
+        wrong.iter().any(|w| w.contains("does not re-read")),
+        "the reading did not see the re-read taken out: {wrong:?}"
     );
 }
 

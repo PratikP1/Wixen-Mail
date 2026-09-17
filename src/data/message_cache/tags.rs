@@ -268,6 +268,18 @@ impl MessageCache {
         Ok(by_message)
     }
 
+    /// The labels of every message in a folder, by message id.
+    ///
+    /// The red half of 10-02: answers nothing until the green commit
+    /// writes the query by folder.
+    pub fn tags_for_folder(
+        &self,
+        folder_id: i64,
+    ) -> Result<std::collections::HashMap<i64, Vec<Tag>>> {
+        let _ = folder_id;
+        Ok(std::collections::HashMap::new())
+    }
+
     /// Get all messages with a specific tag
     /// The messages carrying a label, as the list draws them.
     ///
