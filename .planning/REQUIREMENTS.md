@@ -2823,6 +2823,77 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     stays green.
   - [S] Whether it feels at once on the tester's machine is his to say.
 
+**Added 2026-09-17: two regressions of FOUND-12's second `[D]` line, found by the tester in
+`1.0.0-alpha.1` (`7d57cd49`) and fixed by phase 10's inserted plan 10-01.1.** They sit here,
+beside the fix they correct, rather than under phase 10's mail section, because a reader of
+FOUND-12 should find what its "built when its tab is first shown" cost. `FOUND-13` was, for
+part of 2026-09-16, the withdrawn #66 (the coverage block below says so); that id was removed
+the same day and is used again here, and this sentence is so nobody reads the old reference
+as this one. Every evidence line was re-taken against `main` at `f3be1ef5` on 2026-09-17;
+`git diff --stat 7d57cd49 HEAD -- src/presentation/wx_settings.rs` prints nothing, so the
+lines are the ones the diagnosis in the planning session quoted.
+
+- [ ] **FOUND-13**: Every checkbox on every Settings tab reads as a check box with its checked
+  state, and toggles on Space with the new state announced, after its page is built lazily.
+  - Evidence: `build_settings_dialog` (`wx_settings.rs:480`) paints all seven page panels at
+    `:629-644` before the six pages after General have any control; those pages are built on
+    the page-changed event by `LaterPages::build_the_page_for` (`:284-318`) through the
+    accessors at `:344-379`. wxWidgets 3.3.2 hands a parent's foreground colour to every
+    child created after it (`src/common/wincmn.cpp:1524-1552`) and makes a checkbox given
+    one owner-drawn (`src/msw/control.cpp:422-444`), so its `BS_CHECKBOX` style becomes
+    `BS_OWNERDRAW`, which Windows' standard accessible object reports as a push button with no
+    checked state; wx's correcting `wxCheckBoxAccessible` (`src/msw/checkbox.cpp:289-328`) is
+    discarded by `names::set_accessible_name`, which installs `FixedName`, answering nothing
+    for role and state. Measured over MSAA from a test that builds the real dialog: at
+    `7d57cd49` all 45 later-page checkboxes are `BS_OWNERDRAW` and answer
+    `ROLE_SYSTEM_PUSHBUTTON` with a state that does not move on a click; General's 6 and all
+    57 at `3e633252` are `BS_CHECKBOX`, `ROLE_SYSTEM_CHECKBUTTON`, and toggle. Under Dark,
+    Light and Default alike; only High Contrast is spared, because no palette is painted then.
+  - [S] #67, the tester on 2026-09-17: "every checkbox on every tab except General is read as
+    a button. Pressing one does not appear to change its state: nothing is announced, and the
+    checkbox does not read as checked afterwards."
+  - [D] Each of the six later panels is painted at the end of its own build, on both build
+    paths, so a checkbox is created first and painted after, the order `3e633252` had; the
+    lazy build, the freeze, `FixedName` and the tab row's arrow handler are untouched, and
+    the readings 09-09 and 09-06 left stay green.
+  - [D] A reading builds the real dialog, reaches each later tab the way the arrow keys do,
+    and asserts over `AccessibleObjectFromWindow` that every `Button`-class descendant that
+    is not a group box or a push button is `BS_CHECKBOX` or `BS_3STATE` and answers
+    `ROLE_SYSTEM_CHECKBUTTON`, and that a click moves its checked state, in the default and
+    dark themes, with a companion that sees a push button as not a check box and sees the
+    fault when a checkbox is created under a painted, then named, parent; a guard record
+    couples it to `wx_settings.rs`.
+  - [S] Whether NVDA says "check box" and its state, says the new state on Space, and reads it
+    back after Tab away and back, on the next build, is the tester's; so is whether General
+    sounds as before and Settings still opens at once.
+
+- [ ] **FOUND-14**: After Ctrl+Tab or Ctrl+Shift+Tab from inside a Settings page, focus rests
+  on the first control of the reached page, or on the tab row, and NVDA names it.
+  - Evidence: `wxNotebook::SetSelection` calls `UpdateSelection` before it sends the
+    page-changed event (`src/msw/notebook.cpp:342-361`), and `UpdateSelection` gives the new
+    page focus when the notebook is visible and does not itself hold focus (`:364-391`, line
+    386). Since `8162ef57` the page is empty then, so `wxSetFocusToChild` finds nothing and
+    native focus lands on the panel itself; the handler builds the controls afterwards and
+    nothing in `wx_settings.rs` moves focus (`grep -c 'set_focus\|has_focus'` is 0). On an
+    arrow key the row holds focus, so nothing moves and the tab is announced once (#33).
+    Found from the source while tracing #67, not heard. Asking the panel to move focus after
+    the build is refused by wx (`src/common/containr.cpp:110-150` returns when the focused
+    window is the panel), and wxdragon 0.9.17 binds no notebook page-changing event, so the
+    page has to name its first control.
+  - [S] #68, from the source on 2026-09-17: "With focus on a control on the General tab of
+    Settings, press Ctrl+Tab. NVDA says 'pane' and nothing else until Tab is pressed. Arrowing
+    along the tab row does not do this."
+  - [D] After the page-changed handler builds a page, if native focus is on the page panel
+    itself, the page hands it to its first control in tab order; when the tab row holds
+    focus nothing moves, so #33's single focus event stays.
+  - [D] A reading builds the real dialog, focuses a General control, moves the selection the
+    way Ctrl+Tab does once wxWidgets has translated it, and asserts `GetFocus()` is the
+    first tab-stop child of the reached page and not the panel, on Compose and then on
+    Reading; an arrow on the row leaves focus on the row; a companion sees focus planted on a
+    panel; a guard record couples it to `wx_settings.rs`.
+  - [S] Whether NVDA names the control at once after Ctrl+Tab, or says the page before it, is
+    the tester's.
+
 **#66 was filed and withdrawn on 2026-09-16, and its one real item is in FOUND-01.** It said
 settings were never written and the log stopped or stayed empty, from a read of the tester's
 profile made through a shell started from this harness, which reads a stale July copy of
@@ -3126,6 +3197,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
 | FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
+| FOUND-13 | Phase 10 | Pending, the inserted 10-01.1; whether NVDA says "check box" and the new state on Space is the tester's |
+| FOUND-14 | Phase 10 | Pending, the inserted 10-01.1; whether NVDA names the control after Ctrl+Tab is the tester's |
 | MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
 | MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
 | MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
@@ -3134,9 +3207,15 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 61 total
-- Mapped to phases: 61
+- v1 requirements: 63 total
+- Mapped to phases: 63
 - Unmapped: 0
+
+**Re-taken 2026-09-17, later the same day.** This block said 61 and 61 from the morning until
+phase 10's inserted plan 10-01.1 was written. Counted with the same command as below, which
+gives 63 at `f3be1ef5` plus this edit with `FOUND-13` and `FOUND-14` in, and the traceability
+table above has 63 rows. The two are regressions of FOUND-12's fix, found in `1.0.0-alpha.1`
+on the second day of testing, and sit in phase 9's section beside it though phase 10 owns them.
 
 **Re-taken 2026-09-17.** This block said 56 and 56 from 2026-09-16 until phase 10 was planned.
 Counted with the same command as below, which gives 61 at `7d57cd49` plus this edit with the
@@ -3195,6 +3274,11 @@ is 56.
 
 **Added 2026-09-17.** `MAIL-01` to `MAIL-05` trace to one GitHub issue each, #20, #24, #23,
 #37 and #38, from the same day; the third of Pratik's seven groups. The total is 61.
+
+**Added 2026-09-17, later.** `FOUND-13` and `FOUND-14` trace to #67 and #68, filed that day
+against `1.0.0-alpha.1` from the second day of testing, both regressions of the fix FOUND-12
+chose; they belong to none of the seven groups and are taken by phase 10's inserted plan
+10-01.1. The total is 63.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document

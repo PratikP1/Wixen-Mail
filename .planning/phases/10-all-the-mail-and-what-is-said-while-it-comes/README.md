@@ -9,6 +9,17 @@ with all ten plans merged. This is the third of the seven groups Pratik
 agreed on 2026-09-16, and the first phase in which every plan touches
 `src/presentation/wx_app.rs`, which is why the order below is what it is.
 
+**An eighth plan was inserted later the same day, after 10-01 merged at
+`d8e887d6`.** 10-01.1 fixes two regressions of 09-09 the tester found in
+`1.0.0-alpha.1`: every Settings checkbox after General reads as a button
+under NVDA (#67), and Ctrl+Tab from inside a page lands on the empty page
+panel (#68). It runs before 10-02 because 10-03 and 10-04 add controls to
+the Permissions and Feedback tabs and their screen-reader checks should be of
+pages whose checkboxes are checkboxes. The six plans after it moved up one
+wave each; 10-02 and 10-07 depend on it. Its requirements are FOUND-13 and
+FOUND-14, under phase 9's section of `.planning/REQUIREMENTS.md`, beside the
+FOUND-12 fix they correct.
+
 **Planned from five issues, each with the tester's words on it.** #20 (only
 500 messages come down per folder), #24 (the list shows only the newest 500
 and older ones fall off), #23 (message text is not downloaded unless asked),
@@ -27,9 +38,11 @@ always.
 
 **Requirements:** MAIL-01 to MAIL-05, one per issue, in
 `.planning/REQUIREMENTS.md` under "All the mail, and what is said while it
-comes".
+comes"; and FOUND-13 and FOUND-14 for the inserted 10-01.1, under "What the
+first day of testing found".
 
-**Roadmap success criteria this phase owns:** all six.
+**Roadmap success criteria this phase owns:** all eight, six for the mail
+and two for the inserted plan.
 
 ## Pratik's order, and which part of it this is
 
@@ -47,21 +60,34 @@ confirms the grouping of 4 to 7 with Pratik before writing requirements.
 | 6 | New features, most from the Outlook gap audit | #45, #47, #49, #50, #52, #54, #55, #57, #58, #59, #60, #61 | a later phase |
 | 7 | The real-account issues, which need Pratik's account | #22, #63 | a later phase, and the first time anything here meets a real server on purpose; this phase's runner and watch will have met his Gmail account by then, unasked |
 
+Two issues filed on 2026-09-17 against `1.0.0-alpha.1` belong to none of the
+seven groups: #67 and #68, both regressions of 09-09, taken by the inserted
+10-01.1 above. One thing that plan found and left: four other windows
+(`wx_account_manager.rs`, `wx_compose.rs`, `wx_item_form.rs`,
+`wx_managers.rs`) both paint themselves with the theme and build checkboxes,
+and none has been read for whether the paint comes before or after the
+build; a checkbox created under an already painted panel reads as a button
+under NVDA. A reading across every window that no built `wxCheckBox` is
+owner-drawn is work for a later phase, recorded in the ledger by 10-01.1 and
+in the changelog's Known limitations.
+
 ## The plans
 
 | Plan | Wave | Criterion | Issues | Closes or advances | What it does |
 |---|---|---|---|---|---|
 | 10-01 | 1 | 1, 3, 4 | #20, #23, #37 | advances | the model: what "everything" means for one account, decided from the cache and nothing else; one wait rule for a server that refused, shared by the download and the watch; the text pass bounded per chunk with the provider's answer read and a stop; all against the scripted mailbox |
-| 10-02 | 2 | 2 | #24 | closes | the list's own read path measured at 12,872 and 200,000 rows before anything changes; the page taken off the folder list and All Inboxes; the labels read by folder because the old read fails above 32,766 rows; measured again |
-| 10-03 | 3 | 3 | #23 | advances | how much message text stays on this computer is a setting under Message Text on the Permissions tab, default all of it; the eviction reads it; the workers that evict are handed it |
-| 10-04 | 4 | 5 | #38 | closes | the three-level setting on the Feedback tab; progress shown and spoken only under Say every step; what arrived said once with counts; errors always; the new-mail sound when mail was found; Settings saved heard |
-| 10-05 | 5 | 1, 3 | #20, #23 | closes both | the download runs after every check for every enabled IMAP account, chunk by chunk, the folder on screen first, text with it, resumable, with Pause Downloading on Tools and a wait after a refusal served by the timer; Download This Whole Folder and Fetch Missing Message Text retired with their warnings |
-| 10-06 | 6 | 4 | #37 | closes | the watch restarts after a growing wait, the network coming back restarts it at once, every account has one, a check runs on the account editor's interval where a watch cannot cover, a start checks, the status line says which |
-| 10-07 | 7 | 6 | all five, #29 one line | closes the phase | the alpha, privacy and guide pages say what the program does now; the listening lines; the closing read; the ledger |
+| 10-01.1 | 2 | 7, 8 | #67, #68 | closes both | inserted 2026-09-17 after 10-01 merged: the six later Settings panels painted at the end of their own build so every checkbox stays a check box, held by an MSAA reading in two themes; a page reached from inside another page hands focus to its first control, held by a focus reading; both coupled to `wx_settings.rs` by measured records; `theme_reach` reads the later panels after they are built |
+| 10-02 | 3 | 2 | #24 | closes | the list's own read path measured at 12,872 and 200,000 rows before anything changes; the page taken off the folder list and All Inboxes; the labels read by folder because the old read fails above 32,766 rows; measured again |
+| 10-03 | 4 | 3 | #23 | advances | how much message text stays on this computer is a setting under Message Text on the Permissions tab, default all of it; the eviction reads it; the workers that evict are handed it |
+| 10-04 | 5 | 5 | #38 | closes | the three-level setting on the Feedback tab; progress shown and spoken only under Say every step; what arrived said once with counts; errors always; the new-mail sound when mail was found; Settings saved heard |
+| 10-05 | 6 | 1, 3 | #20, #23 | closes both | the download runs after every check for every enabled IMAP account, chunk by chunk, the folder on screen first, text with it, resumable, with Pause Downloading on Tools and a wait after a refusal served by the timer; Download This Whole Folder and Fetch Missing Message Text retired with their warnings |
+| 10-06 | 7 | 4 | #37 | closes | the watch restarts after a growing wait, the network coming back restarts it at once, every account has one, a check runs on the account editor's interval where a watch cannot cover, a start checks, the status line says which |
+| 10-07 | 8 | 6 | all five, #29 one line | closes the phase | the alpha, privacy and guide pages say what the program does now; the listening lines; the closing read; the ledger |
 
 Requirement coverage: MAIL-01 by 10-01 and 10-05; MAIL-02 by 10-02; MAIL-03
 by 10-01, 10-03 and 10-05; MAIL-04 by 10-01 and 10-06; MAIL-05 by 10-04;
-10-07 reads all five.
+10-07 reads all five. FOUND-13 and FOUND-14 by 10-01.1, which ticks them
+itself: they are one plan each and 10-07's closing read is about the mail.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
