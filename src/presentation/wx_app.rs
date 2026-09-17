@@ -7015,7 +7015,7 @@ fn load_messages_with_label(
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
         return;
     };
-    match cache.messages_with_label(&account_id, tag_id, None) {
+    match cache.messages_with_label(&account_id, tag_id, None, None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
@@ -7052,7 +7052,7 @@ fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
         let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
         return;
     };
-    match cache.unified_inbox(None) {
+    match cache.unified_inbox(None, None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
@@ -7357,7 +7357,7 @@ fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSe
             .take(MOST_RESULTS_SHOWN)
             .map(|message| message.id)
             .collect();
-        let rows = match cache.message_rows_for(&ids) {
+        let rows = match cache.message_rows_for(&ids, None) {
             Ok(rows) => rows,
             Err(e) => {
                 tracing::error!("What a saved search found could not be listed: {e}");
@@ -13373,7 +13373,7 @@ fn one_message_saved_to(
     use crate::common::Error;
 
     let stored = cache
-        .message_rows_for(&[row_id])?
+        .message_rows_for(&[row_id], None)?
         .into_iter()
         .next()
         .ok_or_else(|| {
@@ -27955,7 +27955,7 @@ mod showing_the_mail_with_a_label {
             .expect("the label goes on");
 
         let listed = home
-            .messages_with_label("acct", "tag-work", None)
+            .messages_with_label("acct", "tag-work", None, None)
             .expect("the listing");
 
         assert_eq!(listed.len(), 1, "{listed:#?}");

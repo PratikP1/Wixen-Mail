@@ -456,7 +456,11 @@ impl MessageCache {
     /// there is nothing a person typed anywhere near this, and SQLite binds a
     /// fixed number of placeholders while this list is as long as the search
     /// found.
-    pub fn message_rows_for(&self, ids: &[i64]) -> Result<Vec<MessageListRow>> {
+    pub fn message_rows_for(
+        &self,
+        ids: &[i64],
+        _order_by: Option<&str>,
+    ) -> Result<Vec<MessageListRow>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -1354,7 +1358,7 @@ mod tests {
             .expect("the later date to be stored");
 
         let rows = cache
-            .message_rows_for(&[older, newer])
+            .message_rows_for(&[older, newer], None)
             .expect("the rows to be read");
 
         assert_eq!(
@@ -1365,7 +1369,7 @@ mod tests {
         );
         assert!(
             cache
-                .message_rows_for(&[])
+                .message_rows_for(&[], None)
                 .expect("nothing to read")
                 .is_empty(),
             "asking for no rows at all came back with some"

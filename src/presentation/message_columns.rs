@@ -928,6 +928,34 @@ mod tests {
     }
 
     #[test]
+    fn test_unread_first_from_the_menu_puts_unread_rows_first_and_newest_beneath() {
+        // The clause the menu's Unread First stores, read back into a query
+        // by the folder listing and, since 10-02.1, by All Inboxes, a label
+        // view and a saved search. `m.read` is 0 for unread and 1 for read,
+        // so unread first is `m.read ASC`; until 2026-09-17 this arm stored
+        // `m.read DESC`, which put every read row above every unread one the
+        // next time the folder was read, while the in-memory sort the menu
+        // applies at once put unread first. And the rows within each group
+        // need an order too, the same one the setting's own unread_first
+        // gives: newest first, so the two spellings of the same choice mean
+        // the same thing.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.set_sort_from_option(MailSortOption::UnreadFirst);
+
+        assert_eq!(
+            layout.sort.order_by_clause(),
+            Sort::from_setting("unread_first")
+                .expect("the setting's own unread first")
+                .order_by_clause(),
+            "the menu's Unread First and the setting's unread_first store different orders"
+        );
+        assert_eq!(
+            layout.sort.order_by_clause(),
+            "m.read ASC, COALESCE(m.internaldate, m.date) DESC"
+        );
+    }
+
+    #[test]
     fn test_clicking_a_header_sorts_then_reverses() {
         // The first click picks a sensible direction for the column, the
         // second reverses it. Anything else means someone who cannot see the

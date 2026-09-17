@@ -316,6 +316,7 @@ impl MessageCache {
         &self,
         account_id: &str,
         tag_id: &str,
+        _order_by: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<super::MessageListRow>> {
         let query = format!(
@@ -643,7 +644,7 @@ mod tests {
         assert_eq!(message_tags.len(), 2);
 
         let messages = cache
-            .messages_with_label("test@example.com", "tag-important", None)
+            .messages_with_label("test@example.com", "tag-important", None, None)
             .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Message");
@@ -653,7 +654,7 @@ mod tests {
         // another's mail even if the ids were ever to collide.
         assert!(
             cache
-                .messages_with_label("someone@else.example", "tag-important", Some(50))
+                .messages_with_label("someone@else.example", "tag-important", None, Some(50))
                 .unwrap()
                 .is_empty(),
             "a label listing reached another account's mail"

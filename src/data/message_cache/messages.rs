@@ -2128,7 +2128,11 @@ impl MessageCache {
     /// since 2026-09-17: until then it asked for the newest 500, and a
     /// message arriving pushed the oldest shown off the end (#24). A bound is
     /// still offered for a caller that wants one screen of it.
-    pub fn unified_inbox(&self, limit: Option<usize>) -> Result<Vec<MessageListRow>> {
+    pub fn unified_inbox(
+        &self,
+        _order_by: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessageListRow>> {
         let query = unified_inbox_query(limit);
         let mut stmt = self
             .conn
@@ -4641,7 +4645,7 @@ mod tests {
             )
             .unwrap();
 
-        let from_all_inboxes = cache.unified_inbox(Some(50)).unwrap();
+        let from_all_inboxes = cache.unified_inbox(None, Some(50)).unwrap();
         assert_eq!(
             from_all_inboxes
                 .iter()
@@ -5680,7 +5684,9 @@ mod tests {
             .save_message(&listing_message(second, 1, "From the second", "2026-08-02"))
             .unwrap();
 
-        let rows = cache.unified_inbox(Some(50)).expect("the combined list");
+        let rows = cache
+            .unified_inbox(None, Some(50))
+            .expect("the combined list");
 
         let subjects: Vec<&str> = rows.iter().map(|r| r.subject.as_str()).collect();
         assert!(subjects.contains(&"From the first"), "{subjects:?}");
@@ -5714,7 +5720,7 @@ mod tests {
             .unwrap();
 
         let subjects: Vec<String> = cache
-            .unified_inbox(Some(50))
+            .unified_inbox(None, Some(50))
             .expect("the combined list")
             .into_iter()
             .map(|r| r.subject)
