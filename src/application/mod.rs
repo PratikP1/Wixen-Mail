@@ -59,6 +59,7 @@ pub mod importing_contacts;
 pub mod importing_messages;
 pub mod invitations;
 pub mod item_fields;
+pub mod keeping_message_text;
 pub mod local_delete;
 pub mod local_folders;
 pub mod long_text;
