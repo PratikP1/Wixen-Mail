@@ -864,7 +864,7 @@ fn test_the_profile_has_the_shape_the_definition_gives() {
     assert!(accounts[0].password.is_empty(), "no credentials");
 
     let rows = cache
-        .unified_inbox(A_THOUSAND)
+        .unified_inbox(None)
         .expect("the unified inbox reads, which is what All Inboxes opens on");
     assert_eq!(rows.len(), A_FEW, "every row is in an inbox");
     let dates: Vec<&str> = rows.iter().map(|row| row.date.as_str()).collect();

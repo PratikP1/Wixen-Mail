@@ -299,6 +299,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: whether NVDA names the control at once, or says the page before it, is
   heard, not measured.
 
+- **The message list holds every message the folder holds on this computer.** Reported on
+  2026-09-15 from build `0.125.1+g3e633252` (#24): "When new messages arrive, older messages are
+  no longer available in the message list. Only 500 messages are shown." The list read the
+  newest 500 of a folder, started again from 500 on every folder change, and grew only when Get
+  Older Messages or a whole-folder download asked, so a message arriving pushed the oldest shown
+  off the end. All Inboxes and the view of one label read through the same page. The page is
+  gone: a folder shows everything of it that is here, All Inboxes shows the whole of every inbox,
+  a label shows every message carrying it, and a message arriving adds a row and removes none.
+  The labels on the rows are read by folder now rather than by a list of every row's id, because
+  the old read failed past 32,766 rows and a folder that size showed no labels at all. What it
+  costs, measured before the page came off on the rows named "The list's own read path" dated
+  2026-09-17 on `docs/development/measurements.md`: at your folder's size, 12,872 messages, the
+  read, the threading and the labels together took about thirty milliseconds; at 200,000
+  messages about a second, and the labels read refused. Get Older Messages stays and means what
+  it says: carry on downloading, this folder first.
+  Measured again after the change on the rows named "The list's own read path after 10-02",
+  same date, same page: the read and the threading cost what they cost before, taken minutes
+  apart on the same machine, and the labels read that refused at 200,000 answers in about a
+  tenth of a second, at your size in about five milliseconds.
+  Known limitations: the first open of a folder of 200,000 messages pays under a second on the
+  thread that answers keys, and the window answers none for that long; nobody has opened a
+  folder of that size in the running program, only the harness has read one. The machine slowed
+  by about a third between the two sets of rows on things no commit touched, and the page says
+  which figures to hold against which.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

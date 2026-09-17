@@ -400,7 +400,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
 /// serve it: an index is searched from its leftmost column and that one begins
 /// with `folder_id`. Without an index in the sort's own order SQLite reads
 /// every message in every inbox, sorts the lot and keeps a screenful.
-pub(super) fn unified_inbox_query(limit: usize) -> String {
+pub(super) fn unified_inbox_query(limit: Option<usize>) -> String {
     format!(
         "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
                 m.from_addr, m.to_addr, m.cc, m.reply_to, m.date, m.snippet,
@@ -411,10 +411,14 @@ pub(super) fn unified_inbox_query(limit: usize) -> String {
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE f.folder_type = 'Inbox' AND m.deleted = 0
-         ORDER BY m.date DESC, m.uid DESC
-         LIMIT {}",
-        limit as i64
+         ORDER BY m.date DESC, m.uid DESC{}",
+        limit_clause(limit)
     )
+}
+
+/// ` LIMIT n` for a bounded read, nothing for the whole of it.
+pub(super) fn limit_clause(limit: Option<usize>) -> String {
+    limit.map(|n| format!(" LIMIT {n}")).unwrap_or_default()
 }
 
 /// One row of a folder listing.
@@ -2120,9 +2124,11 @@ impl MessageCache {
     /// Every row carries the account it came from, which is what lets a flag
     /// change from this list reach the right server.
     ///
-    /// Bounded, because this is every inbox at once and the list is virtual:
-    /// what it needs is the newest page, not the whole of everything.
-    pub fn unified_inbox(&self, limit: usize) -> Result<Vec<MessageListRow>> {
+    /// `None` is the whole of every inbox, which is what the window asks for
+    /// since 2026-09-17: until then it asked for the newest 500, and a
+    /// message arriving pushed the oldest shown off the end (#24). A bound is
+    /// still offered for a caller that wants one screen of it.
+    pub fn unified_inbox(&self, limit: Option<usize>) -> Result<Vec<MessageListRow>> {
         let query = unified_inbox_query(limit);
         let mut stmt = self
             .conn
@@ -2148,14 +2154,16 @@ impl MessageCache {
     /// fixed strings chosen by matching on an enum. Nothing a user typed
     /// reaches it, which is what makes interpolating it here safe.
     ///
-    /// `limit` carries [`Self::unified_inbox`]'s own reasoning to a single
-    /// folder: a folder is opened to read one screen of it, and reading a
-    /// folder that has grown to the tens of thousands of messages the rest of
-    /// this module already plans for, in full, synchronously, on every open,
-    /// is the freeze that bound exists to prevent. `None` keeps the whole
-    /// folder, which [`Self::get_message_list`]'s own callers still need: a
-    /// dedup check or a removal policy that misses a row outside the page
-    /// gets its answer wrong rather than merely a slower one.
+    /// `None` is the whole folder, and since 2026-09-17 it is what the window
+    /// asks for on every open: the page of 500 it asked for until then hid
+    /// every older message and pushed the oldest shown off the end as mail
+    /// arrived (#24). What the whole folder costs the interface thread is on
+    /// `docs/development/measurements.md` under "The list's own read path",
+    /// at the tester's 12,872 rows and at 200,000, taken before and after.
+    /// `Some(n)` is still here for a caller that wants one screen of a folder,
+    /// and [`Self::get_message_list`]'s own callers, a dedup check or a
+    /// removal policy, always wanted all of it: one that misses a row outside
+    /// a page gets its answer wrong rather than merely a slower one.
     pub fn get_message_list_sorted(
         &self,
         folder_id: i64,
@@ -2167,8 +2175,7 @@ impl MessageCache {
         // messages share a timestamp does not shuffle between refreshes and
         // move a row out from under somebody's cursor.
         let order = order_by.unwrap_or("m.date DESC");
-        let limit_clause = limit.map(|n| format!(" LIMIT {n}")).unwrap_or_default();
-        let query = listing_query(order, &limit_clause);
+        let query = listing_query(order, &limit_clause(limit));
         let mut stmt = self
             .conn
             .prepare_cached(&query)
@@ -4634,7 +4641,7 @@ mod tests {
             )
             .unwrap();
 
-        let from_all_inboxes = cache.unified_inbox(50).unwrap();
+        let from_all_inboxes = cache.unified_inbox(Some(50)).unwrap();
         assert_eq!(
             from_all_inboxes
                 .iter()
@@ -5673,7 +5680,7 @@ mod tests {
             .save_message(&listing_message(second, 1, "From the second", "2026-08-02"))
             .unwrap();
 
-        let rows = cache.unified_inbox(50).expect("the combined list");
+        let rows = cache.unified_inbox(Some(50)).expect("the combined list");
 
         let subjects: Vec<&str> = rows.iter().map(|r| r.subject.as_str()).collect();
         assert!(subjects.contains(&"From the first"), "{subjects:?}");
@@ -5707,7 +5714,7 @@ mod tests {
             .unwrap();
 
         let subjects: Vec<String> = cache
-            .unified_inbox(50)
+            .unified_inbox(Some(50))
             .expect("the combined list")
             .into_iter()
             .map(|r| r.subject)
@@ -7953,8 +7960,10 @@ mod a_listing_reads_no_message_text {
             // default `get_message_list_sorted` and `conversations_in` apply.
             super::listing_query("m.date DESC", " LIMIT 50"),
             super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
-            // All Inboxes, which is a folder listing that names no folder.
-            super::unified_inbox_query(100),
+            // All Inboxes, which is a folder listing that names no folder,
+            // bounded and whole.
+            super::unified_inbox_query(Some(100)),
+            super::unified_inbox_query(None),
         ];
         for order in every_order_a_list_can_be_put_in() {
             // Both the page and the whole folder: `limit` is an argument and

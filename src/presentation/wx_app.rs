@@ -315,13 +315,6 @@ pub struct WxUIState {
     /// the same word apart, and which changed under it whenever mail arrived or
     /// somebody renamed something.
     pub selected_folder: Option<crate::presentation::folder_tree::WhichRow>,
-    /// How much of the selected folder the list asks the cache for.
-    ///
-    /// Reset to [`FOLDER_LIST_PAGE_SIZE`] on every folder change and grown by
-    /// that much each time Get Older Messages runs, so the view keeps pace
-    /// with however much of the folder is actually cached rather than always
-    /// showing the same first page.
-    pub message_list_limit: usize,
     /// The message a read receipt has been offered for, if any.
     ///
     /// Set when opening a message that asked for one and the setting says to
@@ -468,7 +461,6 @@ impl Default for WxUIState {
             conversations: Vec::new(),
             selection_before_the_switch: crate::presentation::view_state::KeptSelection::default(),
             selected_folder: None,
-            message_list_limit: FOLDER_LIST_PAGE_SIZE,
             receipt_offered: None,
             folder_ids: std::collections::HashMap::new(),
             mail_watch: None,
@@ -2861,10 +2853,6 @@ impl WxMailApp {
                         let (folder_id, account_id) = {
                             let mut s = lock_state(&state);
                             s.selected_folder = Some(which.clone());
-                            // A folder somebody just switched to is read from
-                            // its first page again, whatever Get Older
-                            // Messages had grown a previous folder's view to.
-                            s.message_list_limit = FOLDER_LIST_PAGE_SIZE;
                             // Whose mail this is, taken from the row rather
                             // than from whichever account was open. The tree
                             // holds every account now, so those are two
@@ -2953,13 +2941,7 @@ impl WxMailApp {
                         // Selecting a folder used to announce "Loading
                         // INBOX..." and then load nothing at all. This is
                         // the read that makes the status true.
-                        load_folder_messages(
-                            &folder_cache,
-                            folder_id,
-                            account_id.clone(),
-                            FOLDER_LIST_PAGE_SIZE,
-                            &ui_tx,
-                        );
+                        load_folder_messages(&folder_cache, folder_id, account_id.clone(), &ui_tx);
                         // Both, when the folder is showing conversations. The
                         // rows come from the conversations and the tree a row
                         // opens into is built from the messages, so neither is
@@ -3747,7 +3729,7 @@ impl WxMailApp {
                             }
                         }
                         _ if id == ID_REFRESH_FOLDER => {
-                            let (folder_id, account_id, name, limit) = {
+                            let (folder_id, account_id, name) = {
                                 let s = lock_state(&state);
                                 (
                                     folder_on_screen(&s),
@@ -3756,21 +3738,10 @@ impl WxMailApp {
                                     // names it. What is open is an identity and
                                     // an identity is not something to read out.
                                     what_the_open_row_says(&s),
-                                    s.message_list_limit,
                                 )
                             };
                             if folder_id.is_some() {
-                                // Whatever Get Older Messages had already
-                                // grown the view to, not reset back to the
-                                // first page: a refresh answers "is this
-                                // still current", not "start over".
-                                load_folder_messages(
-                                    &message_cache,
-                                    folder_id,
-                                    account_id,
-                                    limit,
-                                    &ui_tx,
-                                );
+                                load_folder_messages(&message_cache, folder_id, account_id, &ui_tx);
                                 let _ = a11y.announce_topic(
                                     &format!(
                                         "Refreshed {}",
@@ -4562,29 +4533,20 @@ impl WxMailApp {
                                 ),
                             }
                         }
-                        // The same sync, aimed at one folder. The fetch
-                        // skips what is already stored, so asking again
-                        // brings the next oldest into the cache; the view's
-                        // own limit grows alongside it, so what that fetch
-                        // just brought down, or what an earlier session
-                        // already cached, is actually shown rather than
-                        // staying hidden behind the bound the folder view
-                        // reads through.
+                        // The same sync, aimed at one folder: "carry on
+                        // downloading, this folder first". The fetch skips
+                        // what is already stored, so asking again brings the
+                        // next oldest chunk into the cache, and the list
+                        // shows it when the sync says the folder changed,
+                        // because the list holds everything the folder holds
+                        // here since 2026-09-17 and has no limit to grow.
+                        // Until then the view's own page grew alongside each
+                        // fetch and the folder was re-read here before the
+                        // sync, to show what an earlier session had cached
+                        // behind the page; there is nothing behind it now.
+                        // 10-05 makes the next chunk the runner's job as well.
                         _ if id == ID_GET_OLDER => {
-                            let (open, folder_id, account_id, limit) = {
-                                let mut s = lock_state(&state);
-                                let open = s.selected_folder.clone();
-                                let folder_id = folder_on_screen(&s);
-                                if folder_id.is_some() {
-                                    s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
-                                }
-                                (
-                                    open,
-                                    folder_id,
-                                    s.active_account_id.clone(),
-                                    s.message_list_limit,
-                                )
-                            };
+                            let open = lock_state(&state).selected_folder.clone();
                             match open {
                                 // The path the server spells, taken off the
                                 // row's identity. What went here before was
@@ -4594,15 +4556,6 @@ impl WxMailApp {
                                 // matched nothing and Get Older fetched from no
                                 // folder at all.
                                 Some(folder_tree::WhichRow::Folder { path, .. }) => {
-                                    if folder_id.is_some() {
-                                        load_folder_messages(
-                                            &message_cache,
-                                            folder_id,
-                                            account_id,
-                                            limit,
-                                            &ui_tx,
-                                        );
-                                    }
                                     send_status(&ui_tx, &runtime, "Getting older messages...");
                                     // Reaching further back, not bringing
                                     // the folder up to date. A folder that can
@@ -7042,40 +6995,13 @@ pub(crate) fn lock_state(state: &Arc<StdMutex<WxUIState>>) -> std::sync::MutexGu
 /// replaces the hint rather than reading one out per row.
 const PRESS_ENTER_TO_RUN: &str = "Press Enter to run this saved search.";
 
-/// How many messages the combined list holds.
-///
-/// Every account's inbox at once, so this is the newest page rather than the
-/// whole of everything. Named rather than written into the query, because a
-/// bare number in a listing is a decision nobody can find again.
-const ALL_INBOXES_LIMIT: usize = 500;
-
-/// How many messages a single folder's view holds, before "Get Older
-/// Messages" is asked for more.
-///
-/// The same page size the first sync of a folder fetches
-/// (`mail_sync::INITIAL_FETCH_LIMIT`), so the first screen somebody sees
-/// matches the first screen already sitting in the cache. Read again with a
-/// bigger limit rather than a cursor of its own: [`WxUIState::message_list_limit`]
-/// grows by this much each time older mail is asked for, which stays correct
-/// whatever column the list happens to be sorted by.
-const FOLDER_LIST_PAGE_SIZE: usize = 500;
-
-/// Fill the message list with every account's inbox at once.
-///
-/// Anybody with more than one account works out of one list. Switching accounts
-/// to find out whether anything arrived is exactly the work this removes, and
-/// it is worse by ear than by eye: it is a walk through a tree rather than a
-/// glance at a sidebar.
-///
-/// Each row carries the account it came from, so flagging or deleting one from
-/// this list reaches the right server rather than whichever account happens to
-/// be open.
 /// Show the mail carrying one label.
 ///
 /// Built the same way a folder listing is, down to the threading and the
 /// labels on each row, because it is the same list showing the same messages
 /// and a second shape would mean a label view missing what every other view
-/// of those messages shows.
+/// of those messages shows. Every message carrying the label, since
+/// 2026-09-17, for the reason `load_folder_messages` gives.
 fn load_messages_with_label(
     cache: &Option<Arc<MessageCache>>,
     state: &Arc<StdMutex<WxUIState>>,
@@ -7089,11 +7015,11 @@ fn load_messages_with_label(
     let Some(account_id) = lock_state(state).active_account_id.clone() else {
         return;
     };
-    match cache.messages_with_label(&account_id, tag_id, ALL_INBOXES_LIMIT) {
+    match cache.messages_with_label(&account_id, tag_id, None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
-            attach_labels(cache, &mut items);
+            attach_labels(&mut items, cache.tags_by_message_in_account(&account_id));
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
         }
         Err(e) => {
@@ -7109,16 +7035,28 @@ fn load_messages_with_label(
     }
 }
 
+/// Fill the message list with every account's inbox at once.
+///
+/// Anybody with more than one account works out of one list. Switching accounts
+/// to find out whether anything arrived is exactly the work this removes, and
+/// it is worse by ear than by eye: it is a walk through a tree rather than a
+/// glance at a sidebar.
+///
+/// Each row carries the account it came from, so flagging or deleting one from
+/// this list reaches the right server rather than whichever account happens to
+/// be open. The whole of every inbox, since 2026-09-17, for the reason
+/// `load_folder_messages` gives: the newest 500 it read until then was the
+/// same page, in the combined view.
 fn load_every_inbox(cache: &Option<Arc<MessageCache>>, tx: &Sender<UIUpdate>) {
     let Some(cache) = cache.as_ref() else {
         let _ = tx.try_send(UIUpdate::ErrorOccurred("No storage is open".to_string()));
         return;
     };
-    match cache.unified_inbox(ALL_INBOXES_LIMIT) {
+    match cache.unified_inbox(None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
-            attach_labels(cache, &mut items);
+            attach_labels(&mut items, cache.tags_by_message_in_every_inbox());
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
         }
         Err(e) => {
@@ -7430,7 +7368,14 @@ fn run_a_saved_search(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, chosen: ChosenSe
         };
         let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
         apply_threading(&rows, &mut items);
-        attach_labels(&cache, &mut items);
+        // The labels of the folder the search names, or of the whole account
+        // when it names none: every row found is in one or the other, and
+        // the read is by listing, never by the ids found.
+        let labels = match folder_id {
+            Some(folder_id) => cache.tags_by_message_in_folder(folder_id),
+            None => cache.tags_by_message_in_account(&account_id),
+        };
+        attach_labels(&mut items, labels);
 
         let mut said = what_a_search_found(&name, &found.found());
         if took.len() > MOST_RESULTS_SHOWN {
@@ -9036,7 +8981,6 @@ fn empty_the_chosen_folder(
             &Some(cache.clone()),
             open_now,
             lock_state(state).active_account_id.clone(),
-            FOLDER_LIST_PAGE_SIZE,
             tx,
         );
     }
@@ -9235,7 +9179,6 @@ fn mark_the_chosen_folder_read(
             &Some(cache.clone()),
             open_now,
             lock_state(state).active_account_id.clone(),
-            FOLDER_LIST_PAGE_SIZE,
             tx,
         );
     }
@@ -10272,13 +10215,25 @@ fn act_on_what_the_network_did(
 /// and neither can be left sitting behind the window it interrupted.
 /// Fill in each message's labels, for the ones that have any.
 ///
-/// One query for the whole folder rather than one per row: a page of five
-/// hundred messages would otherwise be five hundred round trips to answer a
-/// question most of them answer with "none".
-fn attach_labels(cache: &MessageCache, items: &mut [MessageItem]) {
-    let ids: Vec<i64> = items.iter().map(|item| item.message_id).collect();
-    let Ok(by_message) = cache.get_tags_for_messages(&ids) else {
-        return;
+/// `read` is the labels of every message the list is showing, by message id,
+/// asked by folder, by account or across every inbox: one query with no
+/// parameter per row, so the row count is not a parameter count. Until
+/// 2026-09-17 this sent every id the list held as one bound parameter each,
+/// and the bundled SQLite refuses more than 32,766 of them, so a folder past
+/// that size showed no labels at all; the row that refused, at 200,000, is on
+/// `docs/development/measurements.md`. A read that fails is logged and the
+/// list still arrives, without its labels, because the rows are worth more
+/// than the labels on them.
+fn attach_labels(
+    items: &mut [MessageItem],
+    read: crate::common::Result<HashMap<i64, Vec<crate::data::message_cache::Tag>>>,
+) {
+    let by_message = match read {
+        Ok(by_message) => by_message,
+        Err(e) => {
+            tracing::warn!("The labels could not be read, so the list shows none: {e}");
+            return;
+        }
     };
     for item in items.iter_mut() {
         item.labels = by_message
@@ -13741,12 +13696,19 @@ fn one_file_of_mail_brought_in(
 /// `MessageCache` wraps a rusqlite connection and is not `Sync`. The channel
 /// is unbounded, so sending never blocks.
 ///
-/// `limit` bounds the read the same way [`ALL_INBOXES_LIMIT`] bounds the
-/// combined list: a folder that has grown into the tens of thousands of
-/// messages this module already plans for is read for one screen at a time
-/// rather than in full on every open. Callers pass
-/// [`WxUIState::message_list_limit`], which starts at
-/// [`FOLDER_LIST_PAGE_SIZE`] and grows when Get Older Messages asks for more.
+/// The whole folder, since 2026-09-17. Until then the read took a page of
+/// 500 that reset on every folder change and grew only when Get Older
+/// Messages or a whole-folder chunk asked, so the list showed the newest 500
+/// and a message arriving pushed the oldest shown off the end, which is #24
+/// in the tester's words. The page was dropped against numbers, not against
+/// the reasoning that put it there: the rows named "The list's own read
+/// path" on `docs/development/measurements.md`, taken before the change on
+/// this thread's three steps, the sorted read, the threading and the labels,
+/// read 16.50 ms cold and 15.26 ms warm, 5.63 ms and 4.47 ms at the tester's
+/// 12,872 rows, and 324.37 ms cold, 368.90 ms warm and 208.79 ms at 200,000,
+/// where the old labels read refused outright. The first open of a folder of
+/// 200,000 pays about a second on this thread; the tester's folder pays
+/// about thirty milliseconds.
 ///
 /// A read failure is announced rather than swallowed. An empty list because
 /// the query failed sounds exactly like an empty folder, and those are not the
@@ -13755,7 +13717,6 @@ fn load_folder_messages(
     cache: &Option<Arc<MessageCache>>,
     folder_id: Option<i64>,
     account_id: Option<String>,
-    limit: usize,
     tx: &Sender<UIUpdate>,
 ) {
     let (Some(cache), Some(folder_id), Some(account_id)) = (cache.as_ref(), folder_id, account_id)
@@ -13792,11 +13753,11 @@ fn load_folder_messages(
 
     let order = the_sort_as(view_state::Showing::Messages);
 
-    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), Some(limit)) {
+    match cache.get_message_list_sorted(folder_id, &account_id, order.as_deref(), None) {
         Ok(rows) => {
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
-            attach_labels(cache, &mut items);
+            attach_labels(&mut items, cache.tags_by_message_in_folder(folder_id));
             let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
         }
         Err(e) => {
@@ -17188,23 +17149,14 @@ fn reread_folder_if_open(
     folder_id: i64,
     tx: &Sender<UIUpdate>,
 ) {
-    let (open, account_id, limit, showing) = {
+    let (open, account_id, showing) = {
         let s = lock_state(state);
-        (
-            folder_on_screen(&s),
-            s.active_account_id.clone(),
-            s.message_list_limit,
-            s.showing,
-        )
+        (folder_on_screen(&s), s.active_account_id.clone(), s.showing)
     };
     if open != Some(folder_id) {
         return;
     }
-    // Whatever Get Older Messages had already grown the view to, not
-    // reset back to the first page: the same reasoning ID_REFRESH_FOLDER
-    // uses, because this is "is the folder still current", not "start
-    // over".
-    load_folder_messages(cache, Some(folder_id), account_id.clone(), limit, tx);
+    load_folder_messages(cache, Some(folder_id), account_id.clone(), tx);
     if showing.showing_conversations() {
         load_folder_conversations(
             cache,
@@ -17916,7 +17868,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     &Some(cache.clone()),
                     Some(folder_id),
                     lock_state(state).active_account_id.clone(),
-                    FOLDER_LIST_PAGE_SIZE,
                     tx,
                 );
             }
@@ -18309,16 +18260,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             reread_folder_if_open(state, message_cache, *folder_id, tx);
         }
         UIUpdate::MoreOfTheFolderArrived(folder_id) => {
-            // Both bounds move together, and this is the second of them. The
-            // first is `mail_sync::INITIAL_FETCH_LIMIT`, which the request
-            // hands the sync to bring the next chunk down; without this line
-            // that chunk arrives in the cache and stays hidden behind the
-            // limit the list reads through, which looks exactly like a request
-            // that did nothing.
-            {
-                let mut s = lock_state(state);
-                s.message_list_limit += FOLDER_LIST_PAGE_SIZE;
-            }
+            // A chunk landed in the cache; if its folder is open, the list
+            // reads the folder again and shows it. Nothing grows here: until
+            // 2026-09-17 this arm moved the second of two bounds, the page
+            // the list read through, once per chunk, and a chunk arriving
+            // with that line missing stayed hidden behind the page. The list
+            // holds everything the folder holds now, so the only bound left
+            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
             reread_folder_if_open(state, message_cache, *folder_id, tx);
         }
         UIUpdate::WholeFolderProgress(said) => {
@@ -19392,7 +19340,6 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 &Some(cache.clone()),
                 Some(folder_id),
                 lock_state(state).active_account_id.clone(),
-                FOLDER_LIST_PAGE_SIZE,
                 tx,
             );
         }
@@ -21572,21 +21519,21 @@ fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
 
 /// Bring a whole folder down, chunk after chunk, without being asked again.
 ///
-/// SCALE-03. A folder view holds `FOLDER_LIST_PAGE_SIZE` messages and a sync
-/// brings down `mail_sync::INITIAL_FETCH_LIMIT`, so somebody with a forty
-/// thousand message inbox who wants all of it presses Get Older Messages eighty
-/// times. This asks once.
+/// SCALE-03. A sync brings down `mail_sync::INITIAL_FETCH_LIMIT` messages, so
+/// somebody with a forty thousand message inbox who wants all of it presses
+/// Get Older Messages eighty times. This asks once.
 ///
-/// **Both bounds move together, and they are two separate numbers.**
-/// `INITIAL_FETCH_LIMIT` is handed to each sync below and bounds what comes
-/// down from the server. `FOLDER_LIST_PAGE_SIZE` bounds what is read out of the
-/// cache into the list, and it is moved by the `MoreOfTheFolderArrived` arm of
-/// the update handler, once per chunk. Moving one alone appears to do nothing,
-/// because the other still binds: either mail arrives and is never shown, or
-/// the list asks for rows that were never fetched.
+/// One bound now, where there were two. `INITIAL_FETCH_LIMIT` is handed to
+/// each sync below and bounds what comes down from the server. Until
+/// 2026-09-17 a second number bounded what was read out of the cache into the
+/// list, and the `MoreOfTheFolderArrived` arm of the update handler moved it
+/// once per chunk, because moving one alone appeared to do nothing: either
+/// mail arrived and was never shown, or the list asked for rows that were
+/// never fetched. The list holds everything the folder holds now, so the arm
+/// re-reads the folder and moves nothing.
 ///
 /// The loop itself is in `application::asking_for_a_whole_folder`, where it can
-/// be run without a window. What is here is the two bounds, the connection and
+/// be run without a window. What is here is the bound, the connection and
 /// the sending.
 ///
 /// Runs on a blocking thread for the same reason the other syncs do: the cache
@@ -24003,13 +23950,7 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(
-            &cache,
-            Some(folder_id),
-            Some("acct-1".to_string()),
-            FOLDER_LIST_PAGE_SIZE,
-            &tx,
-        );
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
 
         let messages = drain(&rx)
             .into_iter()
@@ -24087,13 +24028,7 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(
-            &cache,
-            Some(folder_id),
-            Some("acct-1".to_string()),
-            FOLDER_LIST_PAGE_SIZE,
-            &tx,
-        );
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
 
         let messages = drain(&rx)
             .into_iter()
@@ -24156,13 +24091,7 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(
-            &cache,
-            Some(folder_id),
-            Some("acct-1".to_string()),
-            FOLDER_LIST_PAGE_SIZE,
-            &tx,
-        );
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
 
         let messages = drain(&rx)
             .into_iter()
@@ -25232,13 +25161,7 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(
-            &cache,
-            Some(folder_id),
-            Some("acct-1".to_string()),
-            FOLDER_LIST_PAGE_SIZE,
-            &tx,
-        );
+        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
 
         assert!(drain(&rx).iter().any(
             |u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 1
@@ -25251,13 +25174,7 @@ mod tests {
         // The tree can be clicked before the ids have arrived.
         let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
-        load_folder_messages(
-            &cache,
-            None,
-            Some("acct-1".to_string()),
-            FOLDER_LIST_PAGE_SIZE,
-            &tx,
-        );
+        load_folder_messages(&cache, None, Some("acct-1".to_string()), &tx);
         assert!(drain(&rx).is_empty());
     }
 
@@ -25341,7 +25258,6 @@ mod tests {
         let mut state = WxUIState {
             selected_folder: Some(open.clone()),
             active_account_id: Some("acct-1".to_string()),
-            message_list_limit: FOLDER_LIST_PAGE_SIZE,
             showing,
             ..Default::default()
         };
@@ -25601,10 +25517,11 @@ mod tests {
     }
 
     #[test]
-    fn test_reread_folder_if_open_keeps_a_grown_view_instead_of_resetting_it() {
-        // Whatever Get Older Messages had already grown the view to.
-        // Resetting to the first page the moment a background sync lands
-        // mail would quietly shrink a view somebody had deliberately grown.
+    fn test_reread_folder_if_open_reads_the_whole_folder() {
+        // Every message the folder holds here, when a background sync lands
+        // mail in the open folder. This test held the re-read to a view
+        // Get Older Messages had grown to two of three until 2026-09-17,
+        // when the page came off; it holds it to all three now.
         let cache = test_cache();
         let folder_id = cache
             .as_ref()
@@ -25660,7 +25577,6 @@ mod tests {
                 folder_id,
             );
             s.active_account_id = Some("acct-1".to_string());
-            s.message_list_limit = 2;
         }
         let (tx, rx) = async_channel::unbounded();
 
@@ -25669,7 +25585,7 @@ mod tests {
         assert!(
             drain(&rx)
                 .iter()
-                .any(|u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 2))
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 3))
         );
     }
 
@@ -28039,7 +27955,7 @@ mod showing_the_mail_with_a_label {
             .expect("the label goes on");
 
         let listed = home
-            .messages_with_label("acct", "tag-work", 500)
+            .messages_with_label("acct", "tag-work", None)
             .expect("the listing");
 
         assert_eq!(listed.len(), 1, "{listed:#?}");
