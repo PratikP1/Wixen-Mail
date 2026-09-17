@@ -230,6 +230,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   arriving one level away from the folder they belong to, under the `.sbd` name. Nothing has
   read a Thunderbird profile this way yet; the folder walk is proven against folders of saved
   messages and mailbox files made by this program's tests.
+  What issue 53 asked for that this build does not do, gathered here from its three entries
+  above so the whole is in one place: export writes one zip of mailbox files and never a bare
+  `.mbox` or loose `.eml` files, so one folder for Thunderbird means unzipping by hand (point 4);
+  nothing reads or writes `.msg`, Outlook's single-message file (point 5); and nothing writes a
+  `.pst`, by the decision recorded beside the reader's library in `Cargo.toml`, that only reading
+  is needed and reading is the whole of the risk (point 6). Those three are later work and the
+  issue stays open for them. And, from the two entries above, no real Outlook data file has been
+  through the import and nobody has opened a file Save As wrote in another mail program.
 
 - **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
   build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."

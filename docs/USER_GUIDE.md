@@ -9,10 +9,11 @@
 6. [Search Functionality](#search-functionality)
 7. [Thread View](#thread-view)
 8. [Attachments](#attachments)
-9. [Other modules: contacts, calendar, reminders, tasks, notes](#other-modules)
-10. [Keyboard Shortcuts](#keyboard-shortcuts)
-11. [Accessibility Features](#accessibility-features)
-12. [Troubleshooting](#troubleshooting)
+9. [Import and Export](#import-and-export)
+10. [Other modules: contacts, calendar, reminders, tasks, notes](#other-modules)
+11. [Keyboard Shortcuts](#keyboard-shortcuts)
+12. [Accessibility Features](#accessibility-features)
+13. [Troubleshooting](#troubleshooting)
 
 ## Getting Started
 
@@ -301,6 +302,50 @@ type a message gives its own attachment is written by whoever sent it.
 4. The file will be downloaded
 
 **Keyboard Shortcut:** Tab to the Save button and press `Enter`
+
+## Import and Export
+
+Three commands on the File menu move mail in and out of Wixen Mail. None of
+them has a shortcut key, because each is done once, when you move in or move
+out, and a key nobody presses twice would sit in the way of one somebody
+presses every day. Press `Alt+F` to open the File menu and arrow to them.
+
+| Command | What it takes | What it leaves |
+| --- | --- | --- |
+| Import Mailbox | One file: a zip of mailbox files, a single saved message (`.eml`), a mailbox file (`.mbox`), or an Outlook data file (`.pst`) | Folders under Imported, in the shape the mail was in |
+| Import a Folder of Messages | A folder you choose, holding saved messages and mailbox files, with folders inside it | The same, one folder here for each folder there |
+| Export Mailbox | The folder you are looking at, and everything inside it | One zip of mailbox files, one per folder, with the folder names kept |
+
+Imported mail lands on this computer, under a folder called Imported, and
+never in one of your provider's folders. That is deliberate. Mail read out of
+a file has never been on your provider's server, and a folder that belongs to
+a server is the one place it does not belong: every check for mail would
+compare it against a provider that has never heard of it. Under Imported it is
+yours and nothing can take it away. Importing the same archive twice does not
+give you two of everything.
+
+What a file holds is decided from its first bytes rather than from its name,
+so a mailbox file called `Inbox` with no ending is read as one. Anything that
+is not mail is counted and named in the sentence at the end, not quietly
+skipped. The status bar and your screen reader say when an import starts, how
+far it has got, and what it did.
+
+Two things to know before you rely on this:
+
+- **No real Outlook data file has been through the `.pst` import yet.** The
+  reader is tested against what it hands over, item by item, and against its
+  own reading of each kind of item, because neither Wixen Mail nor the library
+  it reads with can write a data file to test against. The sentence at the end
+  of an import says this too. Check what arrived against Outlook.
+- **A Thunderbird profile folder is not recognised as one.** Thunderbird keeps
+  each folder as a mailbox file with no ending beside a `.msf` index and, for
+  a folder with folders inside it, a `.sbd` folder holding them. Import a
+  Folder of Messages reads that as one folder of mail per mailbox file, refuses
+  and counts each `.msf`, and puts the folders inside a `.sbd` one level away
+  from where they belong, under the `.sbd` name.
+
+To save one message as a file, use File, Save As instead; it writes the message
+you are on as `.eml`, named after its subject.
 
 ## Other modules
 
