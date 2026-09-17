@@ -707,27 +707,41 @@ pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
     // same composition. Two of them would be two chances to disagree about
     // what level a reply is at, and the whole point of this surface is that
     // the levels are right.
-    HtmlRenderer::new().render_thread(
-        subject,
-        &parts
-            .iter()
-            .map(|part| crate::presentation::html_renderer::ThreadPart {
+    HtmlRenderer::new().render_thread(subject, &thread_parts(parts))
+}
+
+/// The parts as the page renderer takes them.
+///
+/// One message of several carries what is said about it under its own
+/// heading, for the reason on [`one_of_several`]. One message on its own
+/// carries nothing here: its findings are in the bar the window puts above the
+/// page, or that [`preview_html`] puts into it.
+fn thread_parts(parts: &[ConversationPart]) -> Vec<crate::presentation::html_renderer::ThreadPart> {
+    parts
+        .iter()
+        .map(|part| {
+            let (before_the_body, body) = match parts {
+                [_] => (None, part.body.clone()),
+                _ => one_of_several(part),
+            };
+            crate::presentation::html_renderer::ThreadPart {
                 sender: part.message.from.trim().to_string(),
                 date: part.message.date.trim().to_string(),
                 subject: part.message.subject.trim().to_string(),
-                body: if nothing_in(&part.body) {
+                body: if nothing_in(&body) {
                     // Said, not shown as a blank space under a heading. A
                     // message that has not been fetched and a message with
                     // nothing in it are different facts, and neither of them
                     // should look like the reader failing to render.
                     MessageBody::Plain(nothing_to_read())
                 } else {
-                    part.body.clone()
+                    body
                 },
+                before_the_body,
                 depth: part.depth,
-            })
-            .collect::<Vec<_>>(),
-    )
+            }
+        })
+        .collect()
 }
 
 /// Compose the preview pane's page: the conversation page with the bar above
@@ -746,9 +760,29 @@ pub fn conversation_html(subject: &str, parts: &[ConversationPart]) -> String {
 /// reached, and the message window is where that is. The preview says so
 /// when there is more.
 pub fn preview_html(subject: &str, parts: &[ConversationPart]) -> String {
-    // Not yet built: the red half. The page with no bar.
-    conversation_html(subject, parts)
+    // What to say above the message, worked out by composing the document the
+    // text reader would have shown and keeping only its bar, the way the
+    // conversation window does. The bar is one question, "what should be said
+    // above this message", and this surface answering it for itself is how the
+    // six surfaces came to say different things about one message.
+    let above = conversation(subject, parts);
+    let bar = above.warning.as_deref().map(|bar| {
+        let top = said_before_the_message(bar);
+        if top.len() < bar.trim_end().len() {
+            format!("{top}\n{}", MORE_IN_THE_MESSAGE_WINDOW)
+        } else {
+            top.to_string()
+        }
+    });
+    HtmlRenderer::new().render_thread_under_a_bar(bar.as_deref(), subject, &thread_parts(parts))
 }
+
+/// What the preview says in place of the account of a signature check.
+///
+/// The preview shows the top of the bar and not the rest, and a bar cut short
+/// with nothing said reads as the whole of it. One sentence saying where the
+/// rest is, rather than the rest.
+const MORE_IN_THE_MESSAGE_WINDOW: &str = "Open the message for more about this signature.";
 
 /// Compose a PDF attachment for the reader.
 ///
@@ -1147,7 +1181,17 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         });
         text.push_str(&heading);
         text.push('\n');
-        text.push_str(&body_text(&part.body).0);
+        // One message has its findings in the bar, folded in at the end. One
+        // of several has them here, at the message they are about.
+        let (said_first, body) = match parts {
+            [_] => (None, part.body.clone()),
+            _ => one_of_several(part),
+        };
+        if let Some(said) = said_first {
+            text.push_str(&said);
+            text.push('\n');
+        }
+        text.push_str(&body_text(&body).0);
         text.push('\n');
     }
 
@@ -1159,10 +1203,12 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
     // A thread of several is left alone, for the reason `with_signature` gives
     // for staying off one. There is a form per message and one bar over all of
     // them, so "this message is encrypted" said over a thread of five is heard
-    // as covering all five. What it costs is named in the changelog rather than
-    // left to be discovered: an encrypted message inside a thread read as one
-    // document still shows its armour with nothing said, and opening that
-    // message on its own is where the sentence is.
+    // as covering all five. What each message of several has to say is said
+    // where it begins instead, by `one_of_several` above; a PGP message inside
+    // a thread that did not open says why under its own heading. What is still
+    // not said in a thread is the general form sentence for a message nobody
+    // offered to a key, and a PGP signature nothing checked; opening that
+    // message on its own is where those are.
     let form = match parts {
         [only] => crate::application::body_safety::what_the_form_says(
             Some(only.body.as_plain()),
@@ -1181,7 +1227,7 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
         .max_by_key(|part| part.message.safety)
         .and_then(|worst| warning_for(worst.message.safety, &worst.message.safety_reasons));
 
-    ReaderDocument {
+    let document = ReaderDocument {
         title,
         text,
         // Derived from the bar rather than fixed, and it used to be fixed at
@@ -1206,7 +1252,17 @@ pub fn conversation(subject: &str, parts: &[ConversationPart]) -> ReaderDocument
             .flat_map(|part| attachments_of(&part.message))
             .collect(),
     }
-    .with_encryption(form)
+    .with_encryption(form);
+
+    // The three findings, for one message only and in the order that keeps
+    // each spoken. The window used to fold the signature in itself, and only
+    // the signature, which is how the default reader came to say nothing about
+    // a PGP message or an envelope (#51). A thread carries its findings per
+    // message, above.
+    match parts {
+        [only] => document.with_what_is_said(&only.said),
+        _ => document,
+    }
 }
 
 /// One attachment in the reader, and enough to fetch it again.
@@ -1692,21 +1748,8 @@ impl ReaderDocument {
     /// `application::opening_pgp` put the decrypted words in its place, so
     /// `single_message` finds no armour and adds no sentence.
     pub fn with_pgp(mut self, found: Option<&crate::service::pgp::WhatOpeningItFound>) -> Self {
-        use crate::service::pgp::WhatOpeningItFound;
-
-        // Nothing offered the message to a key, because its body carries no
-        // armour. Nearly every message, and nothing changes for any of them.
-        let Some(found) = found else {
+        let Some(sentence) = the_reason_it_did_not_open(found) else {
             return self;
-        };
-        let sentence = match found {
-            // Nothing to narrow: the document was built from the words rather
-            // than from the armour.
-            WhatOpeningItFound::Opened(_) => return self,
-            WhatOpeningItFound::NoKeyHere => NO_PGP_KEY_ON_THIS_COMPUTER,
-            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,
-            WhatOpeningItFound::TheKeyHereCouldNotBeRead => THE_PGP_KEY_HERE_COULD_NOT_BE_READ,
-            WhatOpeningItFound::Damaged => THE_PGP_MESSAGE_IS_DAMAGED,
         };
         self.warning = self.warning.take().map(|bar| {
             // A replacement rather than an append, so the reader never says
@@ -1740,6 +1783,55 @@ impl ReaderDocument {
             .with_smime_envelope(&said.envelope)
             .with_signature(&said.signature)
     }
+}
+
+/// Why a PGP message did not open, in the words of the reason.
+///
+/// `None` where nothing offered the message to a key, because its body carries
+/// no armour, which is nearly every message; and `None` where it opened, because
+/// the document was built from the words rather than from the armour and there
+/// is nothing to say. Four sentences for the four ways it did not open, kept
+/// apart because they are four different things to do next.
+fn the_reason_it_did_not_open(
+    found: Option<&crate::service::pgp::WhatOpeningItFound>,
+) -> Option<&'static str> {
+    use crate::service::pgp::WhatOpeningItFound;
+
+    match found? {
+        WhatOpeningItFound::Opened(_) => None,
+        WhatOpeningItFound::NoKeyHere => Some(NO_PGP_KEY_ON_THIS_COMPUTER),
+        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT),
+        WhatOpeningItFound::TheKeyHereCouldNotBeRead => Some(THE_PGP_KEY_HERE_COULD_NOT_BE_READ),
+        WhatOpeningItFound::Damaged => Some(THE_PGP_MESSAGE_IS_DAMAGED),
+    }
+}
+
+/// What one message of several says where it begins, and the body it shows.
+///
+/// The bar cannot carry a finding about one message of several: one sentence
+/// over a thread of five is heard as covering all five, which is the reason
+/// [`ReaderDocument::with_signature`] stays off a thread. So what is known
+/// about one message is said at that message, under its own heading and before
+/// a word of its body: why a PGP message did not open, and what its S/MIME
+/// envelope says. The envelope sentence takes the place of the body where the
+/// body would otherwise say there is no text, as
+/// [`ReaderDocument::with_smime_envelope`] does for one message and for the
+/// same reason: that sentence is false about an enveloped message. Where there
+/// is a body anyway, a shape nothing here has met, the sentence goes before it
+/// rather than over it.
+///
+/// `(None, the body as it came)` for nearly every message, and then nothing is
+/// added anywhere.
+fn one_of_several(part: &ConversationPart) -> (Option<String>, MessageBody) {
+    let reason = the_reason_it_did_not_open(part.said.opened.as_ref());
+    let (envelope, body) = match part.said.envelope.said() {
+        Some(sentence) if nothing_in(&part.body) => {
+            (None, MessageBody::Plain(sentence.to_string()))
+        }
+        other => (other, part.body.clone()),
+    };
+    let said: Vec<&str> = reason.into_iter().chain(envelope).collect();
+    ((!said.is_empty()).then(|| said.join("\n")), body)
 }
 
 /// Put a sentence where the reader would otherwise say there is no text.

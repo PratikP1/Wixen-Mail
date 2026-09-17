@@ -12409,12 +12409,13 @@ fn open_single_message(
         let body = cache
             .as_ref()
             .and_then(|c| c.get_message_body(message.message_id).ok().flatten());
-        let body = body_as_written(body);
         let mut message = message.clone();
         message.attachments = attachments_of(cache, message.message_id);
-        let signature = what_a_message_shows_and_says(cache, &message, body.clone())
-            .said
-            .signature;
+        // The same composition as the text reader, so the default way of
+        // opening a message offers it to the key and says what its envelope
+        // and its signature were worth. Until 2026-09-16 this branch took the
+        // signature verdict alone (#51).
+        let shown = what_a_message_shows_and_says(cache, &message, body_as_written(body));
         show_conversation_as_page(
             frame,
             reader,
@@ -12422,11 +12423,10 @@ fn open_single_message(
             &message.subject.clone(),
             &[reader_text::ConversationPart {
                 message,
-                body,
-                said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                body: shown.body,
+                said: shown.said,
                 depth: 0,
             }],
-            &signature,
             closed,
         );
         return;
@@ -12524,44 +12524,50 @@ fn conversation_parts(
             let body = cache
                 .as_ref()
                 .and_then(|c| c.get_message_body(node.message_id).ok().flatten());
-            let body = body_as_written(body);
             let attachments = attachments_of(cache, node.message_id);
+            let message = MessageItem {
+                uid: node.uid,
+                message_id: node.message_id,
+                subject: node.subject.clone(),
+                from: node.sender.clone(),
+                date: node.date.clone(),
+                read: node.read,
+                starred: false,
+                answered: false,
+                draft: false,
+                has_attachments: !attachments.is_empty(),
+                attachments,
+                thread_depth: node.depth,
+                is_thread_parent: node.depth == 0,
+                thread_id: None,
+                snippet: None,
+                size_bytes: None,
+                to: String::new(),
+                cc: String::new(),
+                reply_to: String::new(),
+                header_message_id: String::new(),
+                refs_header: None,
+                safety: crate::service::safety::Safety::Ordinary,
+                safety_reasons: Vec::new(),
+                receipt_to: None,
+                // A thread node carries neither this nor the receipt
+                // request above, so there is nothing in hand to put here.
+                // Nothing is lost: blocking reads the selected row of the
+                // message list, not a conversation part.
+                list_unsubscribe: None,
+                account_id: String::new(),
+                labels: Vec::new(),
+            };
+            // Asked per message, here, where both conversation surfaces build
+            // their parts: each message's armour is offered to the key and its
+            // envelope and signature asked before either page is composed.
+            // What the surfaces do with a finding about one message of
+            // several is `reader_text`'s decision, made once.
+            let shown = what_a_message_shows_and_says(cache, &message, body_as_written(body));
             reader_text::ConversationPart {
-                message: MessageItem {
-                    uid: node.uid,
-                    message_id: node.message_id,
-                    subject: node.subject.clone(),
-                    from: node.sender.clone(),
-                    date: node.date.clone(),
-                    read: node.read,
-                    starred: false,
-                    answered: false,
-                    draft: false,
-                    has_attachments: !attachments.is_empty(),
-                    attachments,
-                    thread_depth: node.depth,
-                    is_thread_parent: node.depth == 0,
-                    thread_id: None,
-                    snippet: None,
-                    size_bytes: None,
-                    to: String::new(),
-                    cc: String::new(),
-                    reply_to: String::new(),
-                    header_message_id: String::new(),
-                    refs_header: None,
-                    safety: crate::service::safety::Safety::Ordinary,
-                    safety_reasons: Vec::new(),
-                    receipt_to: None,
-                    // A thread node carries neither this nor the receipt
-                    // request above, so there is nothing in hand to put here.
-                    // Nothing is lost: blocking reads the selected row of the
-                    // message list, not a conversation part.
-                    list_unsubscribe: None,
-                    account_id: String::new(),
-                    labels: Vec::new(),
-                },
-                body,
-                said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                message,
+                body: shown.body,
+                said: shown.said,
                 depth: node.depth,
             }
         })
@@ -16945,6 +16951,43 @@ fn write_flags_or_put_the_row_back(
     false
 }
 
+/// The preview pane's page for the message somebody is sitting on.
+///
+/// The same composition the reading window uses, so the preview has the
+/// message's sender, date and subject as real headings and not just its body,
+/// and asks the same questions of it: the armour is offered to the key, and
+/// the bar above the message says what its envelope and its signature were
+/// worth. Until 2026-09-16 the preview rendered the body and nothing else, so
+/// a signed message previewed as unsigned and a PGP message as raw armour
+/// with nothing said (#51). Built once in one place on purpose: two of them
+/// would be two chances to disagree about a thread's shape.
+///
+/// Without a message to describe there is nothing to head the body with and
+/// nothing to ask, so it is wrapped on its own.
+///
+/// A function rather than the arm it came out of so `tests/wired.rs` can name
+/// it: a match arm has no opening line for a source-reading guard to find.
+fn the_preview_of(
+    cache: &Option<Arc<MessageCache>>,
+    showing: Option<MessageItem>,
+    body: &MessageBody,
+) -> String {
+    let Some(message) = showing else {
+        return HtmlRenderer::new().wrap_body(body);
+    };
+    let shown = what_a_message_shows_and_says(cache, &message, body.clone());
+    let subject = message.subject.clone();
+    reader_text::preview_html(
+        &subject,
+        &[reader_text::ConversationPart {
+            message,
+            body: shown.body,
+            said: shown.said,
+            depth: 0,
+        }],
+    )
+}
+
 /// Process a single UIUpdate, updating widgets + accessibility.
 fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     let UpdateTargets {
@@ -17167,34 +17210,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::MessageBodyLoaded(body) => {
             let showing = {
                 let mut s = lock_state(state);
+                // The body as it arrived, armour and all, and not the words the
+                // key opened it into. This is what a reply quotes, and a reply
+                // that quoted the decrypted words would send them on in clear
+                // to whoever it went to.
                 s.message_preview = body.clone();
                 s.selected_message_index
                     .and_then(|index| s.messages.get(index).cloned())
             };
-            // The same composition the reading window uses, so the preview has
-            // the message's sender, date and subject as real headings and not
-            // just its body. Built once in one place on purpose: two of them
-            // would be two chances to disagree about a thread's shape.
-            //
-            // Without a message to describe there is nothing to head the body
-            // with, so it is wrapped on its own.
-            let renderer = HtmlRenderer::new();
-            let html = match showing {
-                Some(message) => {
-                    let subject = message.subject.clone();
-                    reader_text::conversation_html(
-                        &subject,
-                        &[reader_text::ConversationPart {
-                            message,
-                            body: body.clone(),
-                            said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(
-                            ),
-                            depth: 0,
-                        }],
-                    )
-                }
-                None => renderer.wrap_body(body),
-            };
+            let html = the_preview_of(message_cache, showing, body);
             // Where focus is now, recorded before the load rather than after,
             // because partway through the load the browser takes it and the
             // answer stops being true. The preview's own load handler puts it
@@ -20209,18 +20233,16 @@ fn open_conversation_again(
 
     match choice {
         wx_thread_view::ThreadChoice::AsHeadings => {
+            // No one verdict over a whole thread. Each message carries its own
+            // findings, asked as its part is built, and `reader_text` says
+            // each at the message it is about rather than folding one onto
+            // the thread as though it covered all of them.
             show_conversation_as_page(
                 frame,
                 reader,
                 a11y,
                 &subject,
                 &conversation_parts(cache, &nodes),
-                // No signature verdict on a whole thread. Each message carries
-                // its own signature and its own signer, and one verdict folded
-                // onto the thread would be said as though it covered all of
-                // them. Opening a single message is where the verdict belongs,
-                // which is what `ReaderDocument::with_signature` says as well.
-                &crate::application::checking_signatures::SignatureCheck::NotSigned,
                 Some(again),
             );
         }
@@ -20279,7 +20301,6 @@ fn show_conversation_as_page(
     a11y: &Arc<Accessibility>,
     subject: &str,
     parts: &[reader_text::ConversationPart],
-    signature: &crate::application::checking_signatures::SignatureCheck,
     closed: Option<Rc<dyn Fn()>>,
 ) {
     let frame = Frame::builder()
@@ -20307,8 +20328,13 @@ fn show_conversation_as_page(
     //
     // Until this existed, reading formatted showed no bar at all. Formatted is
     // the default, so the ordinary way of opening a message was the one that
-    // never said a provider had called it a phishing attempt.
-    let above = reader_text::conversation(subject, parts).with_signature(signature);
+    // never said a provider had called it a phishing attempt. And until
+    // 2026-09-16 this folded the signature verdict in itself, and only that,
+    // so the same default way never said why a PGP message did not open or
+    // what an envelope said (#51). Each part carries all three now and the
+    // composer folds them, for one message; for a thread it says each finding
+    // at the message it is about.
+    let above = reader_text::conversation(subject, parts);
 
     // A sizer, because the window is no longer only the page: anything hanging
     // off these messages gets a list below it, and a warning goes above it.

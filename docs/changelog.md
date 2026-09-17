@@ -146,6 +146,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   only on the project's own test machine on the next push, and the tester's ear is the other
   proof.
 
+- **Every way of showing a message tries your PGP key, says what an encrypted envelope says, and
+  says what a signature was worth.** Found on 2026-09-15 in build `0.125.1+g3e633252` by an audit
+  of what still separates this program from Outlook (#51). What was true: the key you imported was
+  tried on two of the six ways a message is shown, the plain-text reader and Shift+Space. The
+  Formatted reader, which is the default, the conversation window opened as headings, the whole
+  conversation opened in the text reader, and the preview pane never offered a message to the key,
+  so a fresh installation that had imported a key still saw "Wixen Mail cannot open it" over the
+  armour when it opened mail the ordinary way. Those four never said what an S/MIME envelope said
+  either, and the preview pane carried no bar at all, so a signed message previewed as unsigned and
+  a PGP message previewed as a screenful of armour with nothing said. What is true now: one piece
+  of code decides what a message shows and says, every one of the six ways asks it, and a check
+  reads the source to hold all six to that. The preview pane has a bar above the message, named
+  "Security warning" the way the reader's bar is, showing the top of what the reader would say and
+  a line saying to open the message for the rest. A conversation of several messages says why a
+  PGP message inside it did not open, and what its envelope says, under that message's own
+  heading, on both the page and the text reader, where before it showed the armour and said
+  nothing.
+  Known limitations: nothing here has met a real correspondent's key or a real signed message; it
+  is proven against a key and a message made by GnuPG and a signed message made by OpenSSL, which
+  is two implementations agreeing rather than one, and is not the same as working with mail from
+  somebody. A PGP signature inside a conversation is still not mentioned there; open the message on
+  its own for that sentence. Nobody has heard the preview's bar or a conversation's per-message
+  sentences with a screen reader.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on
@@ -1778,6 +1802,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   one the message was encrypted to, the key could not be read back, or the
   encrypted part is damaged.
 
+  **Corrected on 2026-09-16:** until the build that carries #51's fix, this
+  worked only when a message was opened with the plain-text style or read with
+  Shift+Space. The default Formatted reader, the conversation window and the
+  preview pane never offered a message to the key, so with the setting most
+  people have, "cannot open it" went on being shown over a message the key
+  would have opened. This entry did not say so because nobody had noticed.
+
   Your key goes to the Windows Credential Manager under one name and nowhere
   else. It is never written to the message store, never put in a log, and
   never quoted back to you in an error. Uninstalling erases it.
@@ -1829,6 +1860,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   The same sentence is in the bar spoken as the message opens and in the body
   where you land, so it reaches you whether you listen to the opening or read
   down.
+
+  **Corrected on 2026-09-16:** the sentence above was true of the plain-text
+  reader and of Shift+Space only, until the build that carries #51's fix. On
+  the default Formatted reader, in the conversation window and in the preview
+  pane, an enveloped message went on opening as a blank message with the line
+  about not having been downloaded, because those surfaces never asked. This
+  entry said "the bar spoken as the message opens" as though every way of
+  opening a message had one, and the default way did not.
 
   Known limitations:
 
@@ -2526,7 +2565,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
     detected somewhere this cannot see.
   - **A conversation read as one document says nothing about one message's
     form.** One bar over five messages cannot say which of them it is about.
-    Opening that message on its own says it.
+    Opening that message on its own says it. **Corrected on 2026-09-16:** from
+    the build that carries #51's fix, a PGP message inside a conversation that
+    did not open says why under its own heading, and an S/MIME envelope says
+    what it says there too. A PGP signature inside a conversation is still not
+    mentioned; open the message on its own for that.
 
 - **A filter rule and a saved search can now ask what the spam and phishing
   check made of a message.**

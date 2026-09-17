@@ -3351,10 +3351,19 @@ fn test_opening_a_message_works_out_what_its_signature_is_worth() {
         "the text reader composes a message without folding in what is said about it, \
          so signed mail opens there saying nothing about its signature"
     );
+    // The page's bar is the composer's, and the composer folds all three
+    // findings in for one message; the window no longer folds the signature
+    // in by hand, which is how it came to fold in only the signature.
     assert!(
-        body_of(&app, "fn show_conversation_as_page(").contains("with_signature("),
-        "the page composes a message without folding in what its signature is worth, \
-         so signed mail opens there saying nothing about its signature"
+        body_of(&app, "fn show_conversation_as_page(").contains("reader_text::conversation("),
+        "the page no longer composes its bar from the same document the text reader \
+         would show, so the two can say different things about one message"
+    );
+    let composers = fs::read_to_string("src/presentation/reader_text.rs").expect("the composers");
+    assert!(
+        body_of(&composers, "pub fn conversation(").contains("with_what_is_said("),
+        "the page's composer never folds in what is said about a message, so signed \
+         mail opens formatted saying nothing about its signature"
     );
 
     // The question moved out of the window on 2026-09-16, into the one

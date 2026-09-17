@@ -254,6 +254,15 @@ pub struct ThreadPart {
     /// taken out; this path kept it until every message started opening
     /// through here.
     pub body: MessageBody,
+    /// What is said where this message begins, before a word of its body.
+    ///
+    /// A conversation has a finding per message and one bar over the page
+    /// would be heard as covering all of them, so what is known about one
+    /// message of several is said under that message's own heading: why a PGP
+    /// message did not open, or what its S/MIME envelope says. `None` for
+    /// nearly every message, and then nothing is added. This program's own
+    /// words and never the sender's, and escaped on the way in all the same.
+    pub before_the_body: Option<String>,
     pub depth: usize,
 }
 
@@ -732,7 +741,33 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
     /// structure violation in its own right, and conversations go deeper than
     /// six, so the depth moves into the text rather than the markup.
     pub fn render_thread(&self, subject: &str, parts: &[ThreadPart]) -> String {
+        self.render_thread_under_a_bar(None, subject, parts)
+    }
+
+    /// The same page with what is said above the messages rendered above them.
+    ///
+    /// The reader window and the conversation window put the bar in a control
+    /// of their own; the preview pane is one WebView with nothing above it, so
+    /// its bar goes into the page. A region named the way the reader's bar is
+    /// named, "Security warning", so somebody who has learned one surface has
+    /// learned both, and before the title rather than after it, for the
+    /// reason the reader speaks the bar before a word of the message. One
+    /// paragraph per line of the bar, so a screen reader moving by paragraph
+    /// meets each sentence as one.
+    pub fn render_thread_under_a_bar(
+        &self,
+        bar: Option<&str>,
+        subject: &str,
+        parts: &[ThreadPart],
+    ) -> String {
         let mut body = String::new();
+        if let Some(bar) = bar {
+            body.push_str("<section aria-label=\"Security warning\">\n");
+            for line in bar.lines().filter(|line| !line.trim().is_empty()) {
+                body.push_str(&format!("<p>{}</p>\n", html_escape::encode_text(line)));
+            }
+            body.push_str("</section>\n");
+        }
         let title = html_escape::encode_text(if subject.trim().is_empty() {
             "No subject"
         } else {
@@ -772,6 +807,14 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
                 sender = html_escape::encode_text(&part.sender),
                 date = html_escape::encode_text(&part.date),
             ));
+            // Before the body, under this message's own heading, for the reason
+            // on the field: a finding about one message of several belongs at
+            // that message and not in a bar over the page.
+            if let Some(said) = &part.before_the_body {
+                for line in said.lines().filter(|line| !line.trim().is_empty()) {
+                    body.push_str(&format!("<p>{}</p>\n", html_escape::encode_text(line)));
+                }
+            }
             // The kind is taken, not worked out, for the reason on `ThreadPart`.
             //
             // The count goes under this message's heading rather than being
@@ -1851,6 +1894,7 @@ mod tests {
             date: "2026-07-26".to_string(),
             subject: "Quarterly report".to_string(),
             body: MessageBody::Html(body.to_string()),
+            before_the_body: None,
             depth,
         }
     }
@@ -1862,6 +1906,7 @@ mod tests {
             date: "2026-07-26".to_string(),
             subject: "Quarterly report".to_string(),
             body,
+            before_the_body: None,
             depth,
         }
     }
