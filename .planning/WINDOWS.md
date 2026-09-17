@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 488
+open_count: 489
 waived_count: 0
 fixed_count: 28
-total_count: 516
-last_updated: 2026-09-17T18:50:00.000Z
+total_count: 517
+last_updated: 2026-09-17T19:52:50.000Z
 ---
 
 # Broken Windows Ledger
@@ -531,6 +531,7 @@ last_updated: 2026-09-17T18:50:00.000Z
 | 514 | 10 | unrun-verify | src/presentation/theme.rs |  | Four files both paint a window with theme::paint and build checkboxes on it, and none has been read for whether the paint comes before or after the build: wx_account_manager.rs, wx_compose.rs, wx_item_form.rs and wx_managers.rs. A checkbox created under an already painted panel inherits its text colour, is made owner-drawn by wxWidgets, and reads as a push button under NVDA, which is what #67 was on the Settings pages. A tree-wide reading that no built wxCheckBox is BS_OWNERDRAW, on the shape of tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs, is separate work; said in the changelog's Known limitations for #67. | open |  | 2026-09-17T14:05:00.000Z |  |
 | 515 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #24, fixed by 10-02 and measured by the harness at his size and at 200,000: whether his folder of 12,872 messages opens and reads as one list with his screen reader on his machine, and whether the list still answers keys at once after a folder change, which is MAIL-02's last line. Nobody has opened a folder of 200,000 in the running program, only the harness has read one, and the first open of one that size pays under a second on the interface thread by the rows named The list's own read path after 10-02 on docs/development/measurements.md, dated 2026-09-17; moving that read off the interface thread is later work and the page says what it would buy. | open |  | 2026-09-17T16:10:00.000Z |  |
 | 516 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #69, fixed by 10-02.1: whether, with All Inboxes open, choosing Oldest first from View, Sort Messages, arrowing to a folder and back to All Inboxes reads the oldest first with his screen reader, and the same for a label view and after running a saved search; and whether Unread First from the menu, which was saved as read first until 10-02.1, now puts the unread rows first on the next read of a folder. The composed run through load_every_inbox is held by three links and not by one test: the cache answers in the order it is handed, the sort the menu stores reads back into that clause, and the window's three readers are held to asking for it by a reading of the source, because the loaders and the_sort_as are private to the window and its own test module reads the machine's profile. | open |  | 2026-09-17T18:50:00.000Z |  |
+| 517 | 10 | unrun-verify | scripts/build-installer.sh |  | What only a build and a machine settle for the build counter 10-02.2 added (Pratik's decision of 2026-09-17): that the next installer handed to the tester carries the counter in its file name and in Apps and Features, as 1.0.0-alpha.1+N.g<commit> and a file version ending in the counter; that installing it over the 1.0.0-alpha.1+g59c5b6a4 build he has is read by Windows as an upgrade rather than refused as a downgrade; and that --version and the log's first line show the counter. The tests read the script's text and order the encoded fields; one installer was built from the branch by the executor and its --version and file version read back, but no build with the counter has been installed over the alpha.1 build anybody has, and no build with it has been handed to anybody. | open |  | 2026-09-17T19:52:50.000Z |  |
 
 ````json
 [
@@ -6724,6 +6725,18 @@ last_updated: 2026-09-17T18:50:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T18:50:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 517,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": "scripts/build-installer.sh",
+    "line": null,
+    "description": "What only a build and a machine settle for the build counter 10-02.2 added (Pratik's decision of 2026-09-17): that the next installer handed to the tester carries the counter in its file name and in Apps and Features, as 1.0.0-alpha.1+N.g<commit> and a file version ending in the counter; that installing it over the 1.0.0-alpha.1+g59c5b6a4 build he has is read by Windows as an upgrade rather than refused as a downgrade; and that --version and the log's first line show the counter. The tests read the script's text and order the encoded fields; one installer was built from the branch by the executor and its --version and file version read back, but no build with the counter has been installed over the alpha.1 build anybody has, and no build with it has been handed to anybody.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T19:52:50.000Z",
     "resolved_at": null
   }
 ]
