@@ -103,6 +103,39 @@ fn a_figure_line(what: &str, runs: &[Duration]) -> String {
     )
 }
 
+/// The tabs after General, in the order the dialog adds them; each is built
+/// the first time it is shown, and the harness times that first showing.
+const THE_TABS_AFTER_GENERAL: [&str; 6] = [
+    "Compose",
+    "Reading",
+    "Permissions",
+    "Calendar & PIM",
+    "Feedback",
+    "Advanced",
+];
+
+/// Word the cost of showing each later tab for the first time, in the
+/// order they were shown.
+fn the_first_visits_line(visits: &[(String, Duration)]) -> String {
+    let each = visits
+        .iter()
+        .map(|(name, took)| format!("{name} {}", took.as_millis()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("first visit of each later tab: {each}")
+}
+
+/// Read the first-visits line back: each tab and its milliseconds.
+fn parse_the_first_visits_line(line: &str) -> Option<Vec<(String, u64)>> {
+    let (_, rest) = line.split_once("first visit of each later tab: ")?;
+    rest.split(", ")
+        .map(|one| {
+            let (name, ms) = one.strip_suffix(" ms")?.rsplit_once(' ')?;
+            Some((name.to_string(), ms.parse().ok()?))
+        })
+        .collect()
+}
+
 /// Read a figure line back: what was timed, its first run and its median.
 fn parse_a_figure_line(line: &str) -> Option<(String, u64, u64)> {
     let (what, rest) = line.split_once(": first ")?;
@@ -517,10 +550,15 @@ fn test_how_long_the_settings_dialog_takes_to_build_and_which_part_takes_it() {
         "the machine offers {how_many_languages} spelling languages and {how_many_families} typeface families; the schemes folder is empty"
     );
 
-    // The dialog, built five times in the one window this process may have.
+    // The dialog, built five times in the one window this process may have,
+    // then one more time to show each later tab once, which is where the
+    // pages after General are built since 09-09: the cost of reaching each
+    // tab for the first time is the cost that moved out of the open.
     let builds: Arc<std::sync::Mutex<Vec<Duration>>> = Arc::default();
+    let first_visits: Arc<std::sync::Mutex<Vec<(String, Duration)>>> = Arc::default();
     let result = {
         let builds = builds.clone();
+        let first_visits = first_visits.clone();
         wxdragon::main(move |app| {
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
@@ -531,6 +569,19 @@ fn test_how_long_the_settings_dialog_takes_to_build_and_which_part_takes_it() {
                 widgets.dialog.destroy();
             });
             *builds.lock().expect("the builds") = took;
+
+            let widgets = wx_settings::build_settings_dialog(&frame, &config, &[], false, &a11y);
+            let visits = THE_TABS_AFTER_GENERAL
+                .iter()
+                .enumerate()
+                .map(|(before, name)| {
+                    let began = Instant::now();
+                    widgets.notebook.set_selection(before + 1);
+                    (name.to_string(), began.elapsed())
+                })
+                .collect();
+            *first_visits.lock().expect("the visits") = visits;
+            widgets.dialog.destroy();
             wxdragon::call_after(Box::new(move || {
                 app.exit_main_loop();
             }));
@@ -539,6 +590,8 @@ fn test_how_long_the_settings_dialog_takes_to_build_and_which_part_takes_it() {
     assert!(result.is_ok(), "wxdragon::main returned {result:?}");
     let builds = builds.lock().expect("the builds").clone();
     println!("{}", a_figure_line("build_settings_dialog", &builds));
+    let first_visits = first_visits.lock().expect("the visits").clone();
+    println!("{}", the_first_visits_line(&first_visits));
 
     // The line the release binary writes, five opens in one process.
     let lines = the_lines_the_release_binary_writes(&paths, home.path())
@@ -615,6 +668,29 @@ fn test_a_figure_line_carries_its_unit_and_parses_back() {
         parse_a_figure_line(&line),
         Some(("available_languages".to_string(), 50, 30)),
         "and the summary can read it back"
+    );
+}
+
+#[test]
+fn test_the_first_visits_line_carries_its_units_and_parses_back() {
+    let visits = vec![
+        ("Compose".to_string(), Duration::from_millis(20)),
+        ("Calendar & PIM".to_string(), Duration::from_millis(75)),
+    ];
+
+    let line = the_first_visits_line(&visits);
+
+    assert_eq!(
+        line, "first visit of each later tab: Compose 20 ms, Calendar & PIM 75 ms",
+        "every tab's figure carries its unit, and a tab name may hold spaces"
+    );
+    assert_eq!(
+        parse_the_first_visits_line(&line),
+        Some(vec![
+            ("Compose".to_string(), 20),
+            ("Calendar & PIM".to_string(), 75)
+        ]),
+        "and the summary can read each tab back"
     );
 }
 
