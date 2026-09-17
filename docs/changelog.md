@@ -26,18 +26,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   eighty-eighth commit past the point the version was set, and
   Apps and Features puts a later build above an earlier one. The builds of 2026-09-17 read
   `1.0.0-alpha.1+g7d57cd49` and
-  `1.0.0-alpha.1+g59c5b6a4`, and no number on either said which was later; in Apps and Features
-  both showed the same file version, `1.0.0.1001`. Since 2026-09-17 the installer's file name, the
-  version in Apps and Features, `--version`, About and the first line of the log carry the count in
-  front of the commit, and the Windows file version ends in the same count, so installing a later
-  build over an earlier one is read as an upgrade. The number is how many commits the build is past
+  `1.0.0-alpha.1+g59c5b6a4`, and no number on either said which was later; the file version
+  stamped on both setup files was the same, `1.0.0.1001`, so nothing Windows compares told them
+  apart either. Since 2026-09-17 the installer's file name, the version in Apps and Features,
+  `--version`, About and the first line of the log carry the count in front of the commit, and the
+  setup file's Windows file version ends in the same count, so a later build reads as an upgrade of
+  an earlier one. The number is how many commits the build is past
   the commit that set its version. It is not a build number anybody assigns: two builds made from
   one commit share it, and the commit after the `g` tells them apart. The version itself has not
   moved and still moves only by the rule at the top of this file.
   Known limitations: the Windows file version holds the count to 999 and the prerelease step to
   12, and a build past either says so on the console when it is built while the version string
   keeps the true number. A build from a clone without the full history is refused rather than
-  made. No build carrying the count has been handed to anybody yet.
+  made. The counter is on the setup file and in every string; `wixen-mail.exe` itself keeps the
+  file version `1.0.0.0` in its own Properties, as it always has, because nothing stamps that
+  resource with the build. No build carrying the count has been handed to anybody yet.
 
 ### Fixed
 

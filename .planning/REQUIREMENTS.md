@@ -2988,8 +2988,27 @@ re-taken against `main` at `c5ee5085` on 2026-09-17 with the command in the plan
   - [S] Whether All Inboxes, a label and a saved search open in the chosen order after a
     visit to a folder, with his screen reader on the next build, is the tester's.
 
-- [ ] **FOUND-16**: A build handed to a tester carries an ordered counter in its build
+- [x] **FOUND-16**: A build handed to a tester carries an ordered counter in its build
   metadata and in the Windows file version, and the version proper moves only by the rule.
+  - **Closed 2026-09-17 by 10-02.2, merged at `44bff634`.** The first `[D]` line by
+    `tests/installer.rs` (`test_the_four_field_version_follows_the_scripts_own_table`, which
+    reads the weights and caps off the script and holds `BUILD="$LAG.g$commit"` and the
+    rows; `test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage`;
+    `test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it`;
+    with `test_the_reading_can_see_a_fourth_field_rule_that_is_gone` as the reader's
+    companion) and by `tests/house_style.rs`
+    (`test_the_installer_says_how_far_back_the_version_was_set`, the refusal and
+    `VERSION_SET_AT=` before `BUILD=`), the three records on the script measured; the second
+    by `test_every_job_that_runs_the_tests_checks_out_the_whole_history` widened to jobs that
+    run the script, with `test_the_history_reading_can_see_a_job_with_one_commit` gaining the
+    case and two records on `ci.yml`, by
+    `test_a_build_with_a_counter_is_the_same_version_as_the_bare_number` and
+    `test_the_running_builds_shape_with_a_counter_still_reads` for `compare`, and by the
+    document-reading targets over `CLAUDE.md` and the changelog. One installer was built
+    from `main` at `44bff634` after the merge: `dist/Wixen-Mail-Setup-1.0.0-alpha.1+114.g44bff634.exe`,
+    file version `1.0.0.14114` by PowerShell's `VersionInfo`, and `--version` on the exe it
+    carries says `Wixen Mail 1.0.0-alpha.1+114.g44bff634`. The last `[S]` line stays
+    (ledger 517): nothing has installed it over the alpha.1 build anybody has.
   - Evidence: `scripts/build-installer.sh` composes `FULL_VERSION="$VERSION+$BUILD"` with
     `BUILD="g$commit"` (`:29-45`) and only afterwards counts the commits since the version was
     set as `LAG` (`:67-69`), printed and not carried; the Windows file version's fourth field
@@ -3323,7 +3342,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
 | FOUND-15 | Phase 10 | Complete, 10-02.1 at `c0505f68`; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
-| FOUND-16 | Phase 10 | Pending, 10-02.2; whether the next installer orders above the alpha.1 build is settled by a build, which is Pratik's |
+| FOUND-16 | Phase 10 | Complete, 10-02.2 at `44bff634`; one installer built from `main` reads `1.0.0-alpha.1+114.g44bff634` with file version `1.0.0.14114`; whether it installs over the alpha.1 build as an upgrade is settled by a machine, ledger 517 |
 | MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
 | MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
 | MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
