@@ -96,11 +96,14 @@ pub struct WhatIsSaidAboutIt {
 }
 
 impl WhatIsSaidAboutIt {
-    /// Nothing to say, which is nearly every message.
+    /// Nothing to say, which is the answer nearly every message gets.
     ///
-    /// For a surface that has no message row to ask about, such as the preview
-    /// of a body that arrived with no row selected. It is the answer the
-    /// questions give for ordinary mail, not a way of skipping them.
+    /// No surface calls this, on purpose: a part built with it is a part that
+    /// never asked, which is the bypass #51 was about, and `guards/guards.toml`
+    /// uses exactly that to break the surfaces `tests/wired.rs` names. Tests
+    /// use it to build a part with nothing to say. A surface with no message
+    /// row to ask about, the preview of a body with no row selected, wraps the
+    /// body on its own and builds no part at all.
     pub fn nothing() -> Self {
         Self {
             opened: None,
