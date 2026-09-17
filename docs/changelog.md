@@ -314,10 +314,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   read, the threading and the labels together took about thirty milliseconds; at 200,000
   messages about a second, and the labels read refused. Get Older Messages stays and means what
   it says: carry on downloading, this folder first.
-  Known limitations: the first open of a folder of 200,000 messages pays about a second on the
+  Measured again after the change on the rows named "The list's own read path after 10-02",
+  same date, same page: the read and the threading cost what they cost before, taken minutes
+  apart on the same machine, and the labels read that refused at 200,000 answers in about a
+  tenth of a second, at your size in about five milliseconds.
+  Known limitations: the first open of a folder of 200,000 messages pays under a second on the
   thread that answers keys, and the window answers none for that long; nobody has opened a
-  folder of that size in the running program, only the harness has read one. The cost after the
-  change is measured in the same way and written beside the rows above in the same day's work.
+  folder of that size in the running program, only the harness has read one. The machine slowed
+  by about a third between the two sets of rows on things no commit touched, and the page says
+  which figures to hold against which.
 
 ### Added
 
