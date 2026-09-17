@@ -46,44 +46,88 @@ pub const WHAT_A_SIZE_DOES: &str = "With a size chosen, the text of the messages
      itself stays.";
 
 impl TextKept {
-    /// The choices offered, in the order they are offered.
-    pub const ALL: [TextKept; 4] = [TextKept::All, TextKept::All, TextKept::All, TextKept::All];
+    /// The choices offered, in the order they are offered: the default
+    /// first, then the sizes smallest to largest.
+    pub const ALL: [TextKept; 4] = [
+        TextKept::All,
+        TextKept::UpTo(GIGABYTE),
+        TextKept::UpTo(5 * GIGABYTE),
+        TextKept::UpTo(20 * GIGABYTE),
+    ];
 
-    /// What the choice is called.
+    /// What the choice is called. The sizes offered are whole gigabytes, and
+    /// the label says the whole number of them.
     pub fn label(self) -> String {
-        let _ = self;
-        String::new()
+        match self {
+            TextKept::All => "All of it".to_string(),
+            TextKept::UpTo(bytes) => format!("Up to {} GB", bytes / GIGABYTE),
+        }
     }
 
-    /// How it is written in the settings file.
+    /// How it is written in the settings file: "all", or the bytes.
     pub fn as_stored(self) -> String {
-        let _ = self;
-        String::new()
+        match self {
+            TextKept::All => "all".to_string(),
+            TextKept::UpTo(bytes) => bytes.to_string(),
+        }
     }
 
     /// Read the stored setting.
+    ///
+    /// Anything unreadable is `All`, and so is nought, because the other
+    /// answer to a garbled value is a bound, and a small bound throws away
+    /// the text of every message somebody downloaded (T-10-09). `All` loses
+    /// nothing.
     pub fn from_stored(value: &str) -> Self {
-        let _ = value;
-        TextKept::UpTo(0)
+        match value.trim() {
+            "all" => TextKept::All,
+            other => other
+                .parse::<u64>()
+                .ok()
+                .filter(|bytes| *bytes > 0)
+                .map(TextKept::UpTo)
+                .unwrap_or_default(),
+        }
     }
 
     /// The same answer under the name the eviction and the download use.
+    ///
+    /// One setting feeds both: the eviction at the end of a folder sync
+    /// stops at this, and the runner's text pass (10-05) stops at this, so
+    /// the text that was fetched is the text that is kept.
     pub fn budget(self) -> TextBudget {
-        let _ = self;
-        TextBudget::UpTo(0)
+        match self {
+            TextKept::All => TextBudget::All,
+            TextKept::UpTo(bytes) => TextBudget::UpTo(bytes),
+        }
     }
 }
 
 impl Default for TextKept {
+    /// All of it: the tester's decision in #23, and what an older settings
+    /// file with no such key answers.
     fn default() -> Self {
-        TextKept::UpTo(0)
+        TextKept::All
     }
 }
 
 /// Which entry of the offered list a stored choice selects.
+///
+/// A stored size the list does not offer selects the default, which is
+/// `All`: somebody who opens Settings with a hand-edited bound sees All, and
+/// saving that back keeps their text rather than throwing any away. The
+/// eviction itself honours the unoffered size until then.
 pub fn offered_index(stored: &str) -> usize {
-    let _ = stored;
-    0
+    let wanted = TextKept::from_stored(stored);
+    TextKept::ALL
+        .iter()
+        .position(|choice| *choice == wanted)
+        .or_else(|| {
+            TextKept::ALL
+                .iter()
+                .position(|choice| *choice == TextKept::default())
+        })
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

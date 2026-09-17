@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 86 records have arrived since and have not been through it.
+# 88 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -24579,4 +24579,66 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
+]
+
+# ── A garbled size for the message text kept reads as All, not as a bound (#23) ──
+#
+# The setting that says how much message text stays on this computer is
+# read from the settings file by `TextKept::from_stored`, and what it answers
+# for a value it cannot read decides whether somebody's downloaded text is
+# thrown away (T-10-09): a small bound evicts, All loses nothing. The break
+# makes an unreadable value answer `UpTo(0)`, which is every body over
+# nought bytes gone at the end of the next folder sync. One test goes red,
+# the one that hands it eight garbled values; the round trip, the default and
+# the screen's fallback all read values that parse and do not notice.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a garbled size for the message text kept reads as All and not as a bound"
+file = "src/application/keeping_message_text.rs"
+before = """                .map(TextKept::UpTo)
+                .unwrap_or_default(),"""
+after = """                .map(TextKept::UpTo)
+                .unwrap_or(TextKept::UpTo(0)),"""
+red = [
+    "application::keeping_message_text::tests::test_a_garbled_value_reads_as_all_because_a_wrong_bound_evicts_and_all_loses_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/keeping_message_text.rs", tests = 11 },
+]
+
+# ── The size chosen on the Permissions page is what OK writes back (#23) ────
+#
+# The two settings guards in `config.rs` hold that `message_text_kept` is
+# named in the settings screen's shipping half and in a file that acts on
+# it; neither can tell the line that builds the choice from the line that
+# reads it back, so a `read_the_permissions_page` that stopped writing the
+# field would leave both green and every choice made on that page would be
+# saved as whatever was stored before. The break is that: the write replaced
+# by a read of the control that writes nothing. One test goes red out of the
+# three in the target, the one that chooses each entry and reads it back;
+# the never-shown and default readings answer the stored value either way.
+# `suite` names the target, which couples it to `wx_settings.rs` for
+# `check.sh --suites-for`, the ninth target coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# how_much_message_text_stays_is_read_back_from_the_permissions_page`.
+[[guard]]
+name = "the size chosen on the Permissions page is what OK writes back"
+file = "src/presentation/wx_settings.rs"
+suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
+before = """    cfg.message_text_kept = crate::application::keeping_message_text::TextKept::ALL
+        .get(sel(&w.message_text_kept) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_stored();"""
+after = """    let _ = &w.message_text_kept;"""
+red = [
+    "test_a_size_chosen_on_the_permissions_page_is_what_ok_writes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs", tests = 3 },
 ]
