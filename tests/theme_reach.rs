@@ -337,23 +337,41 @@ fn check_settings(
         into,
     );
     check(
+        "settings font size field",
+        &widgets.font_size,
+        palette.main_surface(),
+        into,
+    );
+    // The six panels below belong to pages built when their tab is first
+    // shown (#34), and each is painted at the end of its own build, after
+    // its controls exist: a checkbox created under an already painted panel
+    // inherits its text colour and is made owner-drawn, which a screen
+    // reader hears as a button (#67). So each panel is asked only after its
+    // page's accessor has built it, the way reaching the tab would; before
+    // that it carries Windows' defaults and there is nothing to read. The two
+    // fields are read the same way, from the pages that paint them.
+    widgets.compose();
+    check(
         "settings compose tab panel",
         &widgets.compose_panel,
         palette.main_surface(),
         into,
     );
+    widgets.reading();
     check(
         "settings reading tab panel",
         &widgets.reading_panel,
         palette.main_surface(),
         into,
     );
+    widgets.permissions();
     check(
         "settings language tab panel",
         &widgets.permissions_panel,
         palette.main_surface(),
         into,
     );
+    let calendar_and_pim = widgets.calendar_and_pim();
     check(
         "settings calendar and pim tab panel",
         &widgets.pim_panel,
@@ -361,11 +379,19 @@ fn check_settings(
         into,
     );
     check(
+        "settings default reminder field",
+        &calendar_and_pim.default_reminder,
+        palette.main_surface(),
+        into,
+    );
+    widgets.feedback();
+    check(
         "settings feedback tab panel",
         &widgets.feedback_panel,
         palette.main_surface(),
         into,
     );
+    let advanced = widgets.advanced();
     check(
         "settings advanced tab panel",
         &widgets.advanced_panel,
@@ -373,24 +399,8 @@ fn check_settings(
         into,
     );
     check(
-        "settings font size field",
-        &widgets.font_size,
-        palette.main_surface(),
-        into,
-    );
-    // The two fields below sit on pages built when their tab is first shown
-    // (#34), which paint their own fields as they are built; asking for the
-    // page here builds it, the way reaching the tab would, and the check
-    // reads what that build painted.
-    check(
-        "settings default reminder field",
-        &widgets.calendar_and_pim().default_reminder,
-        palette.main_surface(),
-        into,
-    );
-    check(
         "settings download folder field",
-        &widgets.advanced().download_folder,
+        &advanced.download_folder,
         palette.main_surface(),
         into,
     );
