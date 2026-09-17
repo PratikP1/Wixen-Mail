@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 475
+open_count: 480
 waived_count: 0
 fixed_count: 28
-total_count: 503
-last_updated: 2026-09-17T02:49:21.208Z
+total_count: 508
+last_updated: 2026-09-17T06:19:32.442Z
 ---
 
 # Broken Windows Ledger
@@ -518,6 +518,11 @@ last_updated: 2026-09-17T02:49:21.208Z
 | 501 | 09 | todo | src/presentation/wx_app.rs |  | After an Outlook data file is imported the folder tree is read back, as after an archive, but the calendar, contacts, tasks and notes modules are not: they show what arrived when next opened, and the changelog says so. The worker should send the module's own reload for each kind that arrived, the way folder_tree_updates does for mail, with a wired.rs reading holding it. | open |  | 2026-09-17T02:49:20.052Z |  |
 | 502 | 09 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has opened a file Save As wrote in another mail program, and nobody has run Save As by hand: what is held is that this program's own reader reads the written bytes back as the message that went in with its file (export_tree tests), that a kept signed original is written byte for byte, and that the window asks the decision and the writer (wired.rs). The dialog, the destination and the status line are the tester's. | open |  | 2026-09-17T02:49:20.635Z |  |
 | 503 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-08-PLAN.md |  | 09-08 executed with five departures: the new module's tests hand it items of each kind rather than reading a fixture, because the reader's header and the crate's README say no data file can be written, so the walk over a real file is a thin untested half named as such; export_tree.rs gained one_message_written_out, a file the plan did not list, because the exporter already owns stored-message-to-bytes and its file walk; the archive import's folder helper moved from wx_app.rs to importing_messages::a_folder_for_imported_mail so three imports share it; the wired.rs reading of the import worker's three-way dispatch arrived green in task 2's green commit rather than red in task 1, its behaviour having been taken red there; and the reader's Error::Other sentences have their words taken out at the seam rather than the reader changed (todo beside this). | open |  | 2026-09-17T02:49:21.208Z |  |
+| 504 | 09 | unrun-verify | tests/the_settings_dialog_opens_in.rs |  | Whether Settings now feels immediate on the tester's machine is his to say (FOUND-12's [S] line, #34). The harness measures from Ctrl+, to the moment before show_modal: 2,206 ms before 09-09 and 397 ms after, median of five in the release binary with NVDA running in this session. The show, the focus landing and the screen reader's first announcement come after that moment and nothing here times them; nobody has heard the dialog open since the change. | open |  | 2026-09-17T06:19:04.138Z |  |
+| 505 | 09 | todo | src/service/spellcheck/mod.rs |  | try_load_spellbook leaks both halves of every Hunspell dictionary it loads through Box::leak, on every for_language call, so a machine with a Hunspell dictionary loses the dictionary's size in memory each time a checker is built: each compose window, and until 09-09 every open of Settings. Pre-existing, found while reading the loader for 09-09 and not changed there because it wants a red of its own. spellbook::Dictionary wants 'static text; an Arc or a once-per-process cache of the parsed dictionary is the shape. | open |  | 2026-09-17T06:19:04.752Z |  |
+| 506 | 09 | todo | src/presentation/wx_settings.rs |  | With the window shown and NVDA running, every control in the Settings dialog costs about twice what it costs on a hidden frame, and a Choice control costs 10 to 60 ms each, the language list's 19 names in many scripts 24 ms hidden and 61 ms shown. That is what is left in the release binary's 397 ms after 09-09: the General page's controls under the screen reader's in-process hooks, plus the configuration read. Found by a scratch run of 2026-09-16 that showed the harness's frame and matched the release binary within three percent; the mechanism is inferred from that and not diagnosed further, because stopping the tester's NVDA to take the number without it was not asked for. Fewer Choice controls on General, or a build off the interface thread, would move it; neither was done. | open |  | 2026-09-17T06:19:18.152Z |  |
+| 507 | 09 | todo | src/presentation/wx_settings.rs |  | Since 09-09 a Settings page after General is built the first time its tab is reached, so the first Right arrow onto Reading pays that page's build: 156 ms on a hidden frame in the test process (the row of 2026-09-17), about twice that under NVDA by the scratch run's factor. The other five are under a tenth of a second hidden. Whether a pause on the first visit of Reading is felt, and whether filling the pages after the dialog shows with the control saying so would be better, is the tester's to say; the plan allowed either shape and this one was chosen because a page is never seen empty. | open |  | 2026-09-17T06:19:18.744Z |  |
+| 508 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-09-PLAN.md |  | 09-09 executed with four departures. The fix is not either shape the plan named: the rows said the three lists cost a millisecond each and the pages the rest, and a scratch timing of each page, reverted, found a spell checker built for one sentence and released (210 ms) and an unfrozen typeface list resizing itself per item (1,090 ms with the window shown), so the change is a frozen build, a source named without a checker, and pages built when their tab is first shown, the last being the shape the plan and FOUND-12 offered for a page cost. The harness drives the release binary itself, posting the Settings menu command to a window it started, rather than a person pressing Ctrl+, on a real profile of this machine, so no run touched the tester's profile and the number is repeatable. The dialog is timed five times in the test process rather than once, and a sixth build times each tab's first visit. Task 1's line is written in show_settings_dialog beside show_modal, from an Instant handle_settings is handed, rather than in handle_settings itself, because show_modal lives there. | open |  | 2026-09-17T06:19:32.442Z |  |
 
 ````json
 [
@@ -6555,6 +6560,66 @@ last_updated: 2026-09-17T02:49:21.208Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T02:49:21.208Z",
+    "resolved_at": null
+  },
+  {
+    "id": 504,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "tests/the_settings_dialog_opens_in.rs",
+    "line": null,
+    "description": "Whether Settings now feels immediate on the tester's machine is his to say (FOUND-12's [S] line, #34). The harness measures from Ctrl+, to the moment before show_modal: 2,206 ms before 09-09 and 397 ms after, median of five in the release binary with NVDA running in this session. The show, the focus landing and the screen reader's first announcement come after that moment and nothing here times them; nobody has heard the dialog open since the change.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T06:19:04.138Z",
+    "resolved_at": null
+  },
+  {
+    "id": 505,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/service/spellcheck/mod.rs",
+    "line": null,
+    "description": "try_load_spellbook leaks both halves of every Hunspell dictionary it loads through Box::leak, on every for_language call, so a machine with a Hunspell dictionary loses the dictionary's size in memory each time a checker is built: each compose window, and until 09-09 every open of Settings. Pre-existing, found while reading the loader for 09-09 and not changed there because it wants a red of its own. spellbook::Dictionary wants 'static text; an Arc or a once-per-process cache of the parsed dictionary is the shape.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T06:19:04.752Z",
+    "resolved_at": null
+  },
+  {
+    "id": 506,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "With the window shown and NVDA running, every control in the Settings dialog costs about twice what it costs on a hidden frame, and a Choice control costs 10 to 60 ms each, the language list's 19 names in many scripts 24 ms hidden and 61 ms shown. That is what is left in the release binary's 397 ms after 09-09: the General page's controls under the screen reader's in-process hooks, plus the configuration read. Found by a scratch run of 2026-09-16 that showed the harness's frame and matched the release binary within three percent; the mechanism is inferred from that and not diagnosed further, because stopping the tester's NVDA to take the number without it was not asked for. Fewer Choice controls on General, or a build off the interface thread, would move it; neither was done.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T06:19:18.152Z",
+    "resolved_at": null
+  },
+  {
+    "id": 507,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "Since 09-09 a Settings page after General is built the first time its tab is reached, so the first Right arrow onto Reading pays that page's build: 156 ms on a hidden frame in the test process (the row of 2026-09-17), about twice that under NVDA by the scratch run's factor. The other five are under a tenth of a second hidden. Whether a pause on the first visit of Reading is felt, and whether filling the pages after the dialog shows with the control saying so would be better, is the tester's to say; the plan allowed either shape and this one was chosen because a page is never seen empty.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T06:19:18.744Z",
+    "resolved_at": null
+  },
+  {
+    "id": 508,
+    "kind": "deviation",
+    "phase": "09",
+    "file": ".planning/phases/09-what-the-first-day-of-testing-found/09-09-PLAN.md",
+    "line": null,
+    "description": "09-09 executed with four departures. The fix is not either shape the plan named: the rows said the three lists cost a millisecond each and the pages the rest, and a scratch timing of each page, reverted, found a spell checker built for one sentence and released (210 ms) and an unfrozen typeface list resizing itself per item (1,090 ms with the window shown), so the change is a frozen build, a source named without a checker, and pages built when their tab is first shown, the last being the shape the plan and FOUND-12 offered for a page cost. The harness drives the release binary itself, posting the Settings menu command to a window it started, rather than a person pressing Ctrl+, on a real profile of this machine, so no run touched the tester's profile and the number is repeatable. The dialog is timed five times in the test process rather than once, and a sixth build times each tab's first visit. Task 1's line is written in show_settings_dialog beside show_modal, from an Instant handle_settings is handed, rather than in handle_settings itself, because show_modal lives there.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T06:19:32.442Z",
     "resolved_at": null
   }
 ]
