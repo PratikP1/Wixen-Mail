@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 86 records have arrived since and have not been through it.
+# 90 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -7646,7 +7646,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/long_text.rs", tests = 60 },
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
@@ -13714,7 +13714,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -15097,7 +15097,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -15177,7 +15177,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -15217,7 +15217,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -23336,7 +23336,7 @@ red = [
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -23358,7 +23358,7 @@ red = [
     "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -23380,7 +23380,7 @@ red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
 ]
 
 # Undo Send taken off the Edit menu, which is the shape the tester met on
@@ -24237,7 +24237,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 49 },
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
 ]
 
 # A chunk of the text pass stops before the next message when it is asked
@@ -24579,4 +24579,130 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
+]
+
+# ── A garbled size for the message text kept reads as All, not as a bound (#23) ──
+#
+# The setting that says how much message text stays on this computer is
+# read from the settings file by `TextKept::from_stored`, and what it answers
+# for a value it cannot read decides whether somebody's downloaded text is
+# thrown away (T-10-09): a small bound evicts, All loses nothing. The break
+# makes an unreadable value answer `UpTo(0)`, which is every body over
+# nought bytes gone at the end of the next folder sync. One test goes red,
+# the one that hands it eight garbled values; the round trip, the default and
+# the screen's fallback all read values that parse and do not notice.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a garbled size for the message text kept reads as All and not as a bound"
+file = "src/application/keeping_message_text.rs"
+before = """                .map(TextKept::UpTo)
+                .unwrap_or_default(),"""
+after = """                .map(TextKept::UpTo)
+                .unwrap_or(TextKept::UpTo(0)),"""
+red = [
+    "application::keeping_message_text::tests::test_a_garbled_value_reads_as_all_because_a_wrong_bound_evicts_and_all_loses_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/keeping_message_text.rs", tests = 10 },
+]
+
+# ── The size chosen on the Permissions page is what OK writes back (#23) ────
+#
+# The two settings guards in `config.rs` hold that `message_text_kept` is
+# named in the settings screen's shipping half and in a file that acts on
+# it; neither can tell the line that builds the choice from the line that
+# reads it back, so a `read_the_permissions_page` that stopped writing the
+# field would leave both green and every choice made on that page would be
+# saved as whatever was stored before. The break is that: the write replaced
+# by a read of the control that writes nothing. One test goes red out of the
+# three in the target, the one that chooses each entry and reads it back;
+# the never-shown and default readings answer the stored value either way.
+# `suite` names the target, which couples it to `wx_settings.rs` for
+# `check.sh --suites-for`, the ninth target coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# how_much_message_text_stays_is_read_back_from_the_permissions_page`.
+[[guard]]
+name = "the size chosen on the Permissions page is what OK writes back"
+file = "src/presentation/wx_settings.rs"
+suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
+before = """    cfg.message_text_kept = crate::application::keeping_message_text::TextKept::ALL
+        .get(sel(&w.message_text_kept) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_stored();"""
+after = """    let _ = &w.message_text_kept;"""
+red = [
+    "test_a_size_chosen_on_the_permissions_page_is_what_ok_writes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs", tests = 4 },
+]
+
+# ── With All chosen, the end of a folder sync evicts no message text (#23) ──
+#
+# The eviction at the end of every folder sync reads the setting through the
+# cache's budget, and `All`, the default, answers nought without reading a
+# row. The break makes `All` evict as a bound of nought bytes rather than as
+# the old half-gigabyte constant, because a test that could tell the constant
+# from All would have to store more than half a gigabyte of bodies, and what
+# the record proves is that the All arm is consulted at all: a cache under
+# All that evicted anything is the download of everything undone by the next
+# folder's sync. One test goes red, the one that opens a cache under All,
+# stores three bodies and reads all three back; every other eviction test
+# opens its cache with a size or with none, and a cache opened with none is
+# `UpTo` the constant.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "with All chosen the end of a folder sync evicts no message text"
+file = "src/data/message_cache/bodies.rs"
+before = """            TextBudget::All => Ok(0),"""
+after = """            TextBudget::All => self.evict_bodies_over(0),"""
+red = [
+    "data::message_cache::bodies::tests::test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+]
+
+# ── The check's worker opens its cache with how much text stays (#23) ───────
+#
+# The setting reaches the eviction only because the two workers that run a
+# folder sync hand it to their cache before the sync: the check
+# (`spawn_mail_sync`) and the whole-folder request. The guard in `config.rs`
+# that requires a reader outside the settings files sees the field's name in
+# the helper that reads the file and cannot tell a worker's cache line from
+# it, so a worker opened without the setting would leave that guard green
+# and evict at the old constant whatever was chosen. The break opens the
+# check's cache bare. One test goes red out of the four in the target, the
+# source reading that takes each worker's body and looks for the seam and
+# the setting; the three dialog readings do not read the window. `suite`
+# names the target, which couples it to `wx_app.rs` for `check.sh
+# --suites-for`, the fourteenth target coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# how_much_message_text_stays_is_read_back_from_the_permissions_page`.
+[[guard]]
+name = "the check's worker opens its cache with how much message text stays"
+file = "src/presentation/wx_app.rs"
+suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
+before = """            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
+            Err(e) => {
+                fail(format!("Cache error: {}", e));"""
+after = """            Ok(cache) => cache,
+            Err(e) => {
+                fail(format!("Cache error: {}", e));"""
+red = [
+    "test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs", tests = 4 },
 ]

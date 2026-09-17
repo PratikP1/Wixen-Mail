@@ -1488,6 +1488,10 @@ pub struct PermissionsTabControls {
     allow_mail: CheckBox,
     allow_pim: CheckBox,
     allow_message_text: CheckBox,
+    /// Public, as `ReadingTabControls::sort_order` is, so the reading in
+    /// `tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs`
+    /// can choose a size and read it back through `read_settings`.
+    pub message_text_kept: Choice,
     send_contact_changes_everywhere: CheckBox,
 }
 
@@ -2200,6 +2204,33 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> PermissionsTabCon
     );
     reading_sec.add(&reading_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
+    // How much of the text, once fetched, stays (#23). Under the same heading
+    // and after the note, so a person who finds the box that forbids fetching
+    // finds the size beside it. A choice of four words rather than a number
+    // of bytes, because a screen reader user meets the words and picks one.
+    // The default is all of it, which is the tester's decision; a stored size
+    // the list does not offer selects All, and the module says why.
+    use crate::application::keeping_message_text::{
+        KEEP_LABEL, TextKept, WHAT_A_SIZE_DOES, offered_index,
+    };
+    let kept_labels: Vec<String> = TextKept::ALL.iter().map(|c| c.label()).collect();
+    let kept_labels: Vec<&str> = kept_labels.iter().map(String::as_str).collect();
+    let message_text_kept = labelled_choice(
+        panel,
+        &reading_sec,
+        KEEP_LABEL,
+        KEEP_LABEL.replace('&', "").trim_end_matches(':'),
+        &kept_labels,
+        offered_index(&config.message_text_kept) as u32,
+    );
+    // What a size does, under the choice, because four sizes cannot say on
+    // their own what passing one costs: what leaves, when, what stays.
+    let kept_note = StaticText::builder(panel)
+        .with_label(WHAT_A_SIZE_DOES)
+        .build();
+    set_accessible_name(&kept_note, WHAT_A_SIZE_DOES);
+    reading_sec.add(&kept_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
+
     sizer.add_sizer(&reading_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // ── Contacts ─────────────────────────────────────────────────────────
@@ -2252,6 +2283,7 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> PermissionsTabCon
         allow_mail,
         allow_pim,
         allow_message_text,
+        message_text_kept,
         send_contact_changes_everywhere,
     }
 }
@@ -3272,6 +3304,11 @@ fn read_the_permissions_page(w: &PermissionsTabControls, cfg: &mut AppConfig) {
         personal_information: w.allow_pim.get_value(),
         reading: w.allow_message_text.get_value(),
     };
+    cfg.message_text_kept = crate::application::keeping_message_text::TextKept::ALL
+        .get(sel(&w.message_text_kept) as usize)
+        .copied()
+        .unwrap_or_default()
+        .as_stored();
     cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
 }
 

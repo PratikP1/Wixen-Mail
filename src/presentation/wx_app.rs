@@ -21532,6 +21532,25 @@ fn folder_arrival_update(folder_id: i64, fetched: usize) -> Option<UIUpdate> {
     (fetched > 0).then_some(UIUpdate::FolderMessagesArrived(folder_id))
 }
 
+/// How much message text the person chose to keep on this computer (#23).
+///
+/// Read once by each worker that evicts, before it opens its cache, the way
+/// the POP path reads `look_at_message_contents`: the two workers below are
+/// the only callers of `keep_bodies_within_budget`, through `sync_folder`,
+/// so the window's own cache is never handed this and never evicts. A
+/// settings file that cannot be read answers All, which is the answer that
+/// loses nothing. A change on the Permissions tab applies from the next
+/// check, because a worker reads it once.
+fn how_much_message_text_stays() -> crate::application::keeping_message_text::TextKept {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::keeping_message_text::TextKept::from_stored(
+                &stored.app_config().message_text_kept,
+            )
+        })
+        .unwrap_or_default()
+}
+
 /// Bring a whole folder down, chunk after chunk, without being asked again.
 ///
 /// SCALE-03. A sync brings down `mail_sync::INITIAL_FETCH_LIMIT` messages, so
@@ -21585,8 +21604,11 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
             ));
             return;
         };
+        // This worker's cache evicts at the end of every chunk, so it is
+        // handed how much text may stay; the window's cache is not.
+        let text_kept = how_much_message_text_stays();
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-            Ok(cache) => cache,
+            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
                 say(UIUpdate::CommandRefused(format!("Cache error: {e}")));
                 return;
@@ -21715,8 +21737,11 @@ fn spawn_mail_sync(
             fail("No cache directory available".to_string());
             return;
         };
+        // This worker's cache evicts at the end of every folder's sync, so
+        // it is handed how much text may stay; the window's cache is not.
+        let text_kept = how_much_message_text_stays();
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-            Ok(cache) => cache,
+            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
                 fail(format!("Cache error: {}", e));
                 return;

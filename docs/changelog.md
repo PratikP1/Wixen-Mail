@@ -370,6 +370,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **How much message text stays on this computer is your choice, and the default is all of
+  it.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#23): message text should come
+  down with the mail unless you forbid it. The forbidding was already on the Permissions tab
+  under Message Text. What did not exist was a way for the text to stay once it was here: the
+  cache dropped the text of the messages you had read least recently above half a gigabyte, at
+  the end of every folder check, so on a mailbox with more text than that each check would have
+  quietly undone the last. A new choice sits under Message Text beside the box that forbids
+  fetching, "Keep the text of messages on this computer", with four answers: All of it, Up to
+  1 GB, Up to 5 GB, Up to 20 GB. All of it is the default, which is what you asked for, and a
+  settings file from before this existed answers the same rather than throwing anything away.
+  With a size chosen, the text of the messages you read least recently is removed when the
+  size is passed and fetched again when you open them. The mail itself never leaves. A change
+  applies from the next check.
+  Known limitations: the text is not downloaded on its own yet. Today it arrives when you open a
+  message or use Fetch Missing Message Text, and bringing every message's text down after every
+  check is the next plan. The stored mail is not encrypted, as `docs/privacy.md` says, and with
+  All of it chosen the cache grows with your mailbox; a size is one choice away on the same
+  screen.
 - **The mail protocols and the CalDAV client went through a mutation run on
   GitHub's runners, and every survivor is killed or has its reason written
   down.** Two dispatches of the mutation workflow on 2026-09-15 at

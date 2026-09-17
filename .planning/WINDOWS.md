@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 489
+open_count: 491
 waived_count: 0
 fixed_count: 28
-total_count: 517
-last_updated: 2026-09-17T19:52:50.000Z
+total_count: 519
+last_updated: 2026-09-17T21:53:34.000Z
 ---
 
 # Broken Windows Ledger
@@ -532,6 +532,8 @@ last_updated: 2026-09-17T19:52:50.000Z
 | 515 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #24, fixed by 10-02 and measured by the harness at his size and at 200,000: whether his folder of 12,872 messages opens and reads as one list with his screen reader on his machine, and whether the list still answers keys at once after a folder change, which is MAIL-02's last line. Nobody has opened a folder of 200,000 in the running program, only the harness has read one, and the first open of one that size pays under a second on the interface thread by the rows named The list's own read path after 10-02 on docs/development/measurements.md, dated 2026-09-17; moving that read off the interface thread is later work and the page says what it would buy. | open |  | 2026-09-17T16:10:00.000Z |  |
 | 516 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester settles for #69, fixed by 10-02.1: whether, with All Inboxes open, choosing Oldest first from View, Sort Messages, arrowing to a folder and back to All Inboxes reads the oldest first with his screen reader, and the same for a label view and after running a saved search; and whether Unread First from the menu, which was saved as read first until 10-02.1, now puts the unread rows first on the next read of a folder. The composed run through load_every_inbox is held by three links and not by one test: the cache answers in the order it is handed, the sort the menu stores reads back into that clause, and the window's three readers are held to asking for it by a reading of the source, because the loaders and the_sort_as are private to the window and its own test module reads the machine's profile. | open |  | 2026-09-17T18:50:00.000Z |  |
 | 517 | 10 | unrun-verify | scripts/build-installer.sh |  | What only a build and a machine settle for the build counter 10-02.2 added (Pratik's decision of 2026-09-17): that the next installer handed to the tester carries the counter in its file name and in Apps and Features, as 1.0.0-alpha.1+N.g<commit> and a file version ending in the counter; that installing it over the 1.0.0-alpha.1+g59c5b6a4 build he has is read by Windows as an upgrade rather than refused as a downgrade; and that --version and the log's first line show the counter. The tests read the script's text and order the encoded fields; one installer was built from the branch by the executor and its --version and file version read back, but no build with the counter has been installed over the alpha.1 build anybody has, and no build with it has been handed to anybody. | open |  | 2026-09-17T19:52:50.000Z |  |
+| 518 | 10 | deviation | .planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-03-PLAN.md |  | 10-03 executed with four departures, so 10-05 reads the seam it will call from the tree and not from the plan. The record on the screen's read-back is measured on a new target, tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs, rather than on every_event_has_a_control or the_settings_dialog_opens_in as the plan offered, because neither of those reads the Permissions page and a break there reddened nothing in either; the new target builds the real dialog, chooses each size and reads it back the way OK does. The record on the check's worker being handed the setting is measured now on a fourth reading in that target rather than deferred to 10-05's target as the plan said to do if no existing target reddened, because the reading is the same reading and earlier. The two worker sites read the setting through one helper, how_much_message_text_stays, rather than each repeating the six lines, and that helper is where the read-by-something guard sees the field's name. The attachment budget's comment, which said the two halves kept the whole cache around a gigabyte, was corrected with the date, because the sentence became false the moment the body half became a setting. | open |  | 2026-09-17T21:53:34.000Z |  |
+| 519 | 10 | unrun-verify | src/presentation/wx_settings.rs |  | What only the tester's ear settles for the choice 10-03 added under Message Text on the Permissions tab: that Alt+K reaches it and NVDA says its name, Keep the text of messages on this computer, then combo box and the current answer; that the four answers read as All of it, Up to 1 GB, Up to 5 GB and Up to 20 GB and Up or Down moves between them; that the sentence under it is read once in passing and says what leaves, when and what stays; and that OK keeps the answer across a restart. Whether the eviction then honours a chosen size against his account is settled only by a mailbox with more than that much text, which his 12,872 messages may or may not hold, and the default keeps everything, so the first sign of the setting working is text that stays where 0.125.1 dropped it, which nothing on his machine has measured. The listening lines belong to 10-07's page. | open |  | 2026-09-17T21:53:34.000Z |  |
 
 ````json
 [
@@ -6737,6 +6739,30 @@ last_updated: 2026-09-17T19:52:50.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T19:52:50.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 518,
+    "kind": "deviation",
+    "phase": "10",
+    "file": ".planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-03-PLAN.md",
+    "line": null,
+    "description": "10-03 executed with four departures, so 10-05 reads the seam it will call from the tree and not from the plan. The record on the screen's read-back is measured on a new target, tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs, rather than on every_event_has_a_control or the_settings_dialog_opens_in as the plan offered, because neither of those reads the Permissions page and a break there reddened nothing in either; the new target builds the real dialog, chooses each size and reads it back the way OK does. The record on the check's worker being handed the setting is measured now on a fourth reading in that target rather than deferred to 10-05's target as the plan said to do if no existing target reddened, because the reading is the same reading and earlier. The two worker sites read the setting through one helper, how_much_message_text_stays, rather than each repeating the six lines, and that helper is where the read-by-something guard sees the field's name. The attachment budget's comment, which said the two halves kept the whole cache around a gigabyte, was corrected with the date, because the sentence became false the moment the body half became a setting.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T21:53:34.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 519,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": "src/presentation/wx_settings.rs",
+    "line": null,
+    "description": "What only the tester's ear settles for the choice 10-03 added under Message Text on the Permissions tab: that Alt+K reaches it and NVDA says its name, Keep the text of messages on this computer, then combo box and the current answer; that the four answers read as All of it, Up to 1 GB, Up to 5 GB and Up to 20 GB and Up or Down moves between them; that the sentence under it is read once in passing and says what leaves, when and what stays; and that OK keeps the answer across a restart. Whether the eviction then honours a chosen size against his account is settled only by a mailbox with more than that much text, which his 12,872 messages may or may not hold, and the default keeps everything, so the first sign of the setting working is text that stays where 0.125.1 dropped it, which nothing on his machine has measured. The listening lines belong to 10-07's page.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T21:53:34.000Z",
     "resolved_at": null
   }
 ]

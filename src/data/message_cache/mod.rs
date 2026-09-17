@@ -150,8 +150,10 @@ impl Drop for MessageCache {
 pub struct MessageCache {
     conn: Connection,
     security: Option<SecurityService>,
-    /// How much body text to keep. See [`bodies::BODY_CACHE_BUDGET_BYTES`].
-    body_budget: i64,
+    /// How much body text to keep: the setting, handed in by the sync
+    /// workers through [`Self::keeping_bodies_under`], or
+    /// [`bodies::BODY_CACHE_BUDGET_BYTES`] for a cache opened with none.
+    body_budget: crate::application::bringing_everything_down::TextBudget,
     /// How much attachment content to keep. See
     /// [`attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES`].
     attachment_budget: i64,
@@ -1373,7 +1375,9 @@ impl MessageCache {
         let mut cache = Self {
             conn,
             security,
-            body_budget: bodies::BODY_CACHE_BUDGET_BYTES,
+            body_budget: crate::application::bringing_everything_down::TextBudget::UpTo(
+                bodies::BODY_CACHE_BUDGET_BYTES,
+            ),
             attachment_budget: attachment_content::ATTACHMENT_CACHE_BUDGET_BYTES,
             signed_original_budget: signed_original::SIGNED_ORIGINAL_BUDGET_BYTES,
             moves_in_flight_budget: moves_in_flight::MOVES_IN_FLIGHT_BUDGET_BYTES,
@@ -1519,14 +1523,21 @@ impl MessageCache {
         }
     }
 
-    /// The same cache, keeping less body text than the default.
+    /// The same cache, keeping as much body text as the setting says.
     ///
-    /// Exists so a test can watch an eviction without building half a gigabyte
-    /// of message bodies, and so a setting has somewhere to plug in if anyone
-    /// ever asks for one.
+    /// The seam the setting plugs into (#23, 10-03): the two sync workers
+    /// that evict open their cache through this with what the person chose
+    /// on the Permissions tab, `All` or a size, and the window's cache, which
+    /// never evicts, is opened without it. Until 2026-09-17 this took a
+    /// number, existed so a test could watch an eviction without building
+    /// half a gigabyte of message bodies, and said a setting had somewhere
+    /// to plug in if anyone ever asked for one.
     #[must_use]
-    pub fn keeping_bodies_under(mut self, budget_bytes: i64) -> Self {
-        self.body_budget = budget_bytes;
+    pub fn keeping_bodies_under(
+        mut self,
+        budget: crate::application::bringing_everything_down::TextBudget,
+    ) -> Self {
+        self.body_budget = budget;
         self
     }
 

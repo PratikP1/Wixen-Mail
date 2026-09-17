@@ -286,6 +286,16 @@ pub struct AppConfig {
     /// rather than carry on sending from code that has never been proved.
     #[serde(default = "default_allowed")]
     pub allowed_changes: crate::application::allowed::Allowed,
+    /// How much message text stays on this computer: "all", or a number of
+    /// bytes above which the least recently read text is dropped.
+    ///
+    /// Offered on the Permissions tab beside the box that forbids fetching
+    /// text, read by the eviction at the end of every folder sync through
+    /// `keeping_message_text::TextKept`. The default is all of it (#23), and
+    /// an absent key answers the same, because anything else would evict the
+    /// text of everybody upgrading.
+    #[serde(default = "default_message_text_kept")]
+    pub message_text_kept: String,
     /// What one account may change, when it differs from the setting above.
     ///
     /// Kept here, keyed by account id, rather than as a field on `Account`.
@@ -544,6 +554,10 @@ fn default_allowed() -> crate::application::allowed::Allowed {
     crate::application::allowed::Allowed::FOR_TESTING
 }
 
+fn default_message_text_kept() -> String {
+    crate::application::keeping_message_text::TextKept::default().as_stored()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -692,6 +706,7 @@ impl Default for AppConfig {
             language: default_language(),
             check_spelling_before_send: true,
             allowed_changes: default_allowed(),
+            message_text_kept: default_message_text_kept(),
             allowed_per_account: HashMap::new(),
             directories: HashMap::new(),
             send_contact_changes_everywhere: default_true(),
@@ -1645,6 +1660,7 @@ mod permission_tests {
             "announce_decorative_pictures",
             "undo_send_hold_seconds",
             "calendar_view",
+            "message_text_kept",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1681,6 +1697,17 @@ mod permission_tests {
             parsed.announce_decorative_pictures,
             "an absent key answered no, so every existing installation would \
              silently take every sender's word that a picture said nothing"
+        );
+        assert_eq!(
+            parsed.message_text_kept, "all",
+            "an absent key answering anything but all would evict the text of \
+             everybody upgrading, at the end of the first folder sync after it"
+        );
+        assert_eq!(
+            crate::application::keeping_message_text::TextKept::from_stored(
+                &parsed.message_text_kept
+            ),
+            crate::application::keeping_message_text::TextKept::All
         );
 
         // These belong to the module that owns the setting. What matters here
