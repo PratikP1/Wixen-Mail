@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 79 records have arrived since and have not been through it.
+# 82 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -14488,7 +14488,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
-    { file = "src/presentation/message_columns.rs", tests = 42 },
+    { file = "src/presentation/message_columns.rs", tests = 43 },
 ]
 
 [[guard]]
@@ -24350,4 +24350,98 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/tags.rs", tests = 10 },
     { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
+]
+
+# ── All Inboxes is read in the sort that was chosen (#69) ────────────────────
+#
+# Until 2026-09-17 `unified_inbox` ran a query carrying its own `ORDER BY
+# m.date DESC, m.uid DESC` and took no order, while a folder is read through
+# `get_message_list_sorted` with the stored sort in the query, so choosing a
+# sort with All Inboxes open re-sorted the rows on screen and saved the
+# choice, and every return to the row read the fixed order. 10-02.1 gave the
+# query the order as `listing_query` takes it. The break hands the query the
+# fixed order in place of what was asked for, which is the defect itself.
+# Two tests go red out of the five in the target: the one that reads every
+# menu sort through `unified_inbox`, and the one that stores Oldest first
+# the way the menu does and reads it back the way the window does. The
+# newest-first companion reads the fixed order and stays green, and the
+# label and search tests read other methods. `suite` names the target,
+# which is what couples it to `messages.rs` for `check.sh --suites-for`:
+# before this record no integration target was coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# all_inboxes_reads_in_the_sort_that_was_chosen`.
+[[guard]]
+name = "All Inboxes is read in the sort that was chosen, not a fixed one"
+file = "src/data/message_cache/messages.rs"
+suite = "all_inboxes_reads_in_the_sort_that_was_chosen"
+before = """        let order = order_by.unwrap_or(NEWEST_MESSAGE_FIRST);
+        let query = unified_inbox_query(order, limit);"""
+after = """        let query = unified_inbox_query(NEWEST_MESSAGE_FIRST, limit);"""
+red = [
+    "test_all_inboxes_answers_in_the_order_it_is_handed",
+    "test_the_sort_the_menu_stores_is_read_back_into_the_order_the_cache_takes",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
+]
+
+# ── A label view is read in the sort that was chosen (#69) ───────────────────
+#
+# The same shape as All Inboxes, in `messages_with_label`: an inline query
+# with its own `ORDER BY` and no order taken, until 10-02.1 lifted it into
+# `label_listing_query` with the order as an argument. The break hands the
+# query the fixed order in place of what was asked for. One test goes red
+# out of the five in the target, the one that reads every menu sort through
+# `messages_with_label` over three labelled rows. `suite` names the target,
+# which couples it to `tags.rs` for `check.sh --suites-for`, beside the
+# labels-by-folder record above.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# all_inboxes_reads_in_the_sort_that_was_chosen`.
+[[guard]]
+name = "a label view is read in the sort that was chosen, not a fixed one"
+file = "src/data/message_cache/tags.rs"
+suite = "all_inboxes_reads_in_the_sort_that_was_chosen"
+before = """        let order = order_by.unwrap_or(super::messages::NEWEST_MESSAGE_FIRST);"""
+after = """        let order = super::messages::NEWEST_MESSAGE_FIRST;"""
+red = [
+    "test_a_label_view_answers_in_the_order_it_is_handed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tags.rs", tests = 10 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
+]
+
+# ── What a saved search found is listed in the sort that was chosen (#69) ────
+#
+# The same shape in `message_rows_for`: `results_query` carried its own
+# `ORDER BY` and took no order, so the newest 500 a search found were listed
+# newest first whatever was chosen. 10-02.1 gave `results_query` the order.
+# The cut stays the search's; the order is the person's. The break hands the
+# query the fixed order in place of what was asked for. One test goes red
+# out of the five in the target, the one that reads every menu sort through
+# `message_rows_for` over five of the fixture's ids. `suite` names the
+# target, which couples it to `saved_searches.rs` for `check.sh
+# --suites-for`: before this record no integration target was coupled to
+# that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# all_inboxes_reads_in_the_sort_that_was_chosen`.
+[[guard]]
+name = "what a saved search found is listed in the sort that was chosen, not a fixed one"
+file = "src/data/message_cache/saved_searches.rs"
+suite = "all_inboxes_reads_in_the_sort_that_was_chosen"
+before = """        let order = order_by.unwrap_or(super::messages::NEWEST_MESSAGE_FIRST);"""
+after = """        let order = super::messages::NEWEST_MESSAGE_FIRST;"""
+red = [
+    "test_what_a_saved_search_found_answers_in_the_order_it_is_handed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/saved_searches.rs", tests = 27 },
+    { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 5 },
 ]

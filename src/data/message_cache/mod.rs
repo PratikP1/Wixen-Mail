@@ -4497,10 +4497,15 @@ mod storage_shape {
         // where most mail is in an inbox, and 276 ms against 3.07 ms where
         // only a tenth of it is, which is the shape that has to walk furthest
         // to fill a screen.
+        //
+        // This is about the default order, the one the index serves. A
+        // chosen order is expected to sort every inbox row, and what that
+        // costs is measured by the scale harness under "All Inboxes in a
+        // chosen sort after 10-02.1" rather than held here.
         let cache = fresh("all_inboxes_does_not_sort");
         let plan = how_it_will_be_answered(
             &cache.conn,
-            &super::messages::unified_inbox_query(Some(100)),
+            &super::messages::unified_inbox_query(super::messages::NEWEST_MESSAGE_FIRST, Some(100)),
             [],
         );
 

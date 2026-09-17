@@ -304,9 +304,18 @@ impl MessageCache {
     /// the snippet, the size and the attachment marker that every other view
     /// of the same messages shows.
     ///
-    /// `None` is every message carrying the label, which is what the window
-    /// asks for since 2026-09-17; it asked for the newest 500 until then, the
-    /// same page the folder list read through (#24).
+    /// `order_by` is the sort that was chosen, in the query rather than
+    /// applied to the rows afterwards, for the reason
+    /// [`MessageCache::get_message_list_sorted`] gives; it must come from
+    /// `Sort::order_by_clause`, fixed strings chosen by matching on an enum,
+    /// and nothing a person typed reaches it. Since 2026-09-17 (#69): until
+    /// then a label view read a fixed newest-first order while a folder read
+    /// the chosen one. `None` is newest first by the sent date, what a
+    /// person who never chose a sort reads.
+    ///
+    /// `None` for the limit is every message carrying the label, which is
+    /// what the window asks for since 2026-09-17; it asked for the newest 500
+    /// until then, the same page the folder list read through (#24).
     ///
     /// Replaced `get_messages_by_tag`, which answered with a different shape,
     /// read body text out of the columns it stopped being written to, and had
@@ -316,23 +325,11 @@ impl MessageCache {
         &self,
         account_id: &str,
         tag_id: &str,
-        _order_by: Option<&str>,
+        order_by: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<super::MessageListRow>> {
-        let query = format!(
-            "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
-                    m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
-                    m.read, m.starred, m.answered, m.draft,
-                    (m.has_attachments = 1
-                     OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                    m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
-             FROM messages m
-             INNER JOIN message_tags mt ON m.id = mt.message_id
-             INNER JOIN folders f ON m.folder_id = f.id
-             WHERE mt.tag_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-             ORDER BY m.date DESC, m.uid DESC{}",
-            super::messages::limit_clause(limit)
-        );
+        let order = order_by.unwrap_or(super::messages::NEWEST_MESSAGE_FIRST);
+        let query = label_listing_query(order, limit);
         let mut stmt = self
             .conn
             .prepare_cached(&query)
@@ -343,6 +340,35 @@ impl MessageCache {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to read a labelled message: {}", e)))
     }
+}
+
+/// The query a label view runs, in one place.
+///
+/// Built here rather than inline for the reason `listing_query` is: a test
+/// asks SQLite whether this exact query reads message text or a table a
+/// listing may not, in every order it can be asked for, and a copy held in
+/// the test is the copy that goes stale. The same columns in the same order
+/// as a folder listing, because `listing_row` reads them.
+///
+/// `order` must come from `Sort::order_by_clause` or be
+/// `NEWEST_MESSAGE_FIRST`; nothing a person typed reaches it. The uid
+/// follows it as the tie-break, so rows sharing a timestamp do not shuffle
+/// between refreshes.
+pub(super) fn label_listing_query(order: &str, limit: Option<usize>) -> String {
+    format!(
+        "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
+                m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
+                m.read, m.starred, m.answered, m.draft,
+                (m.has_attachments = 1
+                 OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe
+         FROM messages m
+         INNER JOIN message_tags mt ON m.id = mt.message_id
+         INNER JOIN folders f ON m.folder_id = f.id
+         WHERE mt.tag_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
+         ORDER BY {order}, m.uid DESC{}",
+        super::messages::limit_clause(limit)
+    )
 }
 
 #[cfg(test)]

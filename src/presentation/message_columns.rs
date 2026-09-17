@@ -720,11 +720,18 @@ impl ColumnLayout {
                 direction: SortDirection::Descending,
                 then: None,
             },
+            // The same two levels the setting's own unread_first stores:
+            // unread at the top, newest first beneath. Until 2026-09-17 this
+            // stored `Unread` descending, which is `m.read DESC` in the query
+            // and puts every read row first, so the in-memory sort the menu
+            // applied at once and the query a folder was read through on the
+            // next return disagreed about what Unread First meant.
             MailSortOption::UnreadFirst => Sort {
-                column: MessageColumn::Unread,
+                column: MessageColumn::Received,
                 direction: SortDirection::Descending,
                 then: None,
-            },
+            }
+            .with_unread_first(),
         };
     }
 
