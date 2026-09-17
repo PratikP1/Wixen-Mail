@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 56 records have arrived since and have not been through it.
+# 59 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -21952,7 +21952,7 @@ red = [
     "common::started::tests::test_the_usable_line_is_said_once_per_start",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
 ]
 
 # The line is written once per process. The handler that asks for it fires on
@@ -21977,7 +21977,7 @@ red = [
     "common::started::tests::test_the_usable_line_is_said_once_per_start",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
 ]
 
 # ── The harness that takes the three numbers ────────────────────────────────
@@ -22027,8 +22027,79 @@ red = [
     "test_the_usable_line_the_library_writes_parses_back",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
     { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
+]
+
+# ── The line Settings writes, and the harness that reads it (#34) ───────────
+#
+# The Settings dialog writes `settings built in N ms` once per open, from the
+# top of the window's `ID_SETTINGS` arm to just before `show_modal`, and
+# `tests/the_settings_dialog_opens_in.rs` parses that line back off the
+# release binary's log. The break rewords the line, which is what a tidy-up
+# of the wording looks like, and the harness would then read nothing off a
+# real log. One goes red in the library: the test that holds the line byte
+# for byte.
+#
+# Measured on 2026-09-16 through `scripts/guards.sh --remeasure`, the whole
+# library at eight threads: exactly this one failed and nothing else did.
+
+[[guard]]
+name = "the settings built line keeps the shape the harness parses"
+file = "src/common/started.rs"
+before = """    format!("settings built in {} ms", building.as_millis())"""
+after = """    format!("settings built after {} ms", building.as_millis())"""
+red = [
+    "common::started::tests::test_the_settings_built_line_is_held_byte_for_byte",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 7 },
+]
+
+# The same break, landing on the harness: this record couples
+# `src/common/started.rs` to the target, so a commit that changes the line
+# runs the harness's parser against it. One goes red there: the test that
+# builds the line with the library function and parses it back.
+#
+# Measured by hand on 2026-09-16 against the target,
+# `cargo test --test the_settings_dialog_opens_in`: 1 passed, 1 ignored and
+# exactly this one failed. The library's own answer to this break is the
+# record above.
+
+[[guard]]
+name = "the harness can still parse the settings built line the application writes"
+file = "src/common/started.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    format!("settings built in {} ms", building.as_millis())"""
+after = """    format!("settings built after {} ms", building.as_millis())"""
+red = [
+    "test_the_settings_built_line_the_library_writes_parses_back",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 7 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 3 },
+]
+
+# Every figure the harness prints carries its unit. The summary and the page
+# quote these lines, and a number without a unit is a number somebody guesses
+# at. The break drops the unit from the figure line, which is what the first
+# draft of the harness did. One goes red: the test that builds a line from
+# five known runs and reads its first and median back.
+#
+# Measured by hand on 2026-09-16 against the target: 1 passed, 1 ignored and
+# exactly this one failed.
+
+[[guard]]
+name = "a figure line the settings harness prints carries its unit"
+file = "tests/the_settings_dialog_opens_in.rs"
+suite = "the_settings_dialog_opens_in"
+before = """        "{what}: first {first} ms, median {median} ms, the {}: {each} ms","""
+after = """        "{what}: first {first}, median {median}, the {}: {each}","""
+red = [
+    "test_a_figure_line_carries_its_unit_and_parses_back",
+]
+tests_last_seen = [
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 3 },
 ]
 
 # The window fills the module it opens on at startup. Found on 2026-09-14 by

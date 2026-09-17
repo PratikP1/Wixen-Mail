@@ -5116,6 +5116,10 @@ impl WxMailApp {
                             spawn_tasks_sync(app);
                         }
                         _ if id == ID_SETTINGS => {
+                            // Taken first, before anything the open costs, so
+                            // the line the dialog writes spans the whole of
+                            // it (#34).
+                            let asked_at = std::time::Instant::now();
                             // The accounts come with the configuration because
                             // the Notes section asks where the default
                             // account's notes go, and that is answered from its
@@ -5128,6 +5132,7 @@ impl WxMailApp {
                                 &accounts,
                                 &message_cache,
                                 &a11y,
+                                asked_at,
                             );
                             // The notification area follows what was just
                             // saved. Without this, ticking that box did nothing
@@ -15525,7 +15530,15 @@ fn open_for_scanning(
             // The accounts as this window has them. A fresh scan profile has
             // none, so the Notes section says so rather than naming one.
             let accounts = lock_state(state).accounts.clone();
-            handle_settings(frame, tx, rt, &accounts, cache, a11y);
+            handle_settings(
+                frame,
+                tx,
+                rt,
+                &accounts,
+                cache,
+                a11y,
+                std::time::Instant::now(),
+            );
             OnReturn::WindowClosed
         }
         ScanTarget::Accounts => {
@@ -16704,6 +16717,10 @@ fn repaint_theme(
 /// chosen is high contrast or a system state this application has no
 /// opinion about, the same three cases [`theme::current`] already folds
 /// into one answer.
+///
+/// `asked_at` is when the command arrived, from the top of the
+/// `ID_SETTINGS` arm; the dialog writes how long everything from then to its
+/// show took (#34).
 fn handle_settings(
     frame: &Frame,
     tx: &Sender<UIUpdate>,
@@ -16711,6 +16728,7 @@ fn handle_settings(
     accounts: &[crate::data::account::Account],
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
+    asked_at: std::time::Instant,
 ) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
     let mut mgr = match ConfigManager::new() {
@@ -16743,7 +16761,14 @@ fn handle_settings(
             crate::application::notes_backend::has_a_calendar_server(cache, &account.id)
         })
     });
-    match wx_settings::show_settings_dialog(frame, &config, accounts, a_calendar_server, a11y) {
+    match wx_settings::show_settings_dialog(
+        frame,
+        &config,
+        accounts,
+        a_calendar_server,
+        a11y,
+        asked_at,
+    ) {
         wx_settings::SettingsResult::Updated(new_config) => {
             // Applied to the running application, not only written to disk.
             // Saving a preference that needs a restart to take effect is a

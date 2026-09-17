@@ -118,10 +118,18 @@ pub fn usable_line(rows: usize, since_start: Duration) -> String {
 /// Word the line the window writes when the Settings dialog is built and
 /// about to be shown.
 ///
-/// Not written yet: the red half of 09-09, which names the shape the
-/// harness will parse.
-pub fn settings_built_line(_building: Duration) -> String {
-    String::new()
+/// `building` runs from the top of the `ID_SETTINGS` arm, where `Ctrl+,`
+/// lands, to just before `show_modal`: the configuration read, the
+/// calendar-server query and every page's controls. It is not the whole wait
+/// somebody feels, which goes on through the show, the focus landing and the
+/// screen reader's first announcement; the line cannot see those and says
+/// "built" rather than "open" for that reason. Written once per open, at
+/// info, so a real profile's log carries the number (#34).
+///
+/// Plain digits, because `tests/the_settings_dialog_opens_in.rs` parses this
+/// line back off the release binary's log.
+pub fn settings_built_line(building: Duration) -> String {
+    format!("settings built in {} ms", building.as_millis())
 }
 
 #[cfg(test)]

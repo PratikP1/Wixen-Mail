@@ -31,6 +31,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 use wxdragon::prelude::*;
 
 // ── Result type ──────────────────────────────────────────────────────────────
@@ -238,14 +239,25 @@ fn section(parent: &Panel, label: &str) -> StaticBoxSizer {
 // ── Public entry point ───────────────────────────────────────────────────────
 
 /// Show the Settings dialog and return the (possibly updated) configuration.
+///
+/// `asked_at` is the instant the command arrived, taken at the top of the
+/// window's `ID_SETTINGS` arm before the configuration was read, so the
+/// line written here spans everything between the key and the show. The
+/// line is the measurement behind #34 and the harness in
+/// `tests/the_settings_dialog_opens_in.rs` reads it off a real log.
 pub fn show_settings_dialog(
     parent: &Frame,
     config: &AppConfig,
     accounts: &[Account],
     a_calendar_server: bool,
     a11y: &Arc<Accessibility>,
+    asked_at: Instant,
 ) -> SettingsResult {
     let widgets = build_settings_dialog(parent, config, accounts, a_calendar_server, a11y);
+    tracing::info!(
+        "{}",
+        crate::common::started::settings_built_line(asked_at.elapsed())
+    );
     if widgets.dialog.show_modal() != ID_OK {
         return SettingsResult::Cancelled;
     }

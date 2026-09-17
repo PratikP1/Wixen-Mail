@@ -90,7 +90,7 @@ fn a_figure_line(what: &str, runs: &[Duration]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "{what}: first {first}, median {median}, the {}: {each}",
+        "{what}: first {first} ms, median {median} ms, the {}: {each} ms",
         runs.len()
     )
 }
