@@ -68,6 +68,15 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
     )
 }
 
+/// The order a list of messages arrives in when nothing has asked for one.
+///
+/// Newest first by the sent date, which is the order the two indexes on
+/// `messages` serve and what every listing reads for a person who never chose
+/// a sort. One constant for the four listings that take an order, the folder,
+/// every inbox, a label and what a search found, so they cannot drift apart
+/// on the day nothing asked.
+pub(super) const NEWEST_MESSAGE_FIRST: &str = "m.date DESC";
+
 /// The order a list of conversations arrives in when nothing has asked for one.
 ///
 /// Newest first, matching the message list's own default, so switching between
@@ -396,11 +405,25 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
 /// SQLite how it plans to answer this, and a copy held in the test would go
 /// stale without saying so.
 ///
+/// `order` must come from `Sort::order_by_clause`, fixed strings chosen by
+/// matching on an enum, or be [`NEWEST_MESSAGE_FIRST`]; nothing a person
+/// typed reaches it, which is what makes interpolating it safe. The uid
+/// follows it as the tie-break, for the reason
+/// [`MessageCache::get_message_list_sorted`] gives.
+///
 /// This one names no folder, so the index that serves a single folder cannot
 /// serve it: an index is searched from its leftmost column and that one begins
-/// with `folder_id`. Without an index in the sort's own order SQLite reads
-/// every message in every inbox, sorts the lot and keeps a screenful.
-pub(super) fn unified_inbox_query(limit: Option<usize>) -> String {
+/// with `folder_id`. `idx_messages_date` serves the fixed order, newest first
+/// by the sent date, and no other: a chosen sort, Date newest from the menu
+/// included, because that sorts on the arrival time, is a sort of every
+/// message in every inbox. What that costs is on
+/// `docs/development/measurements.md` under "All Inboxes in a chosen sort
+/// after 10-02.1", at the tester's 12,872 rows and at 200,000, beside the
+/// fixed order it replaces: at 200,000 rows with no `LIMIT`, the fixed
+/// order 500.31 ms and Date newest 511.84 ms, taken 2026-09-17, because
+/// reading every row is most of the cost and the sort adds a few percent
+/// on top of it.
+pub(super) fn unified_inbox_query(order: &str, limit: Option<usize>) -> String {
     format!(
         "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject,
                 m.from_addr, m.to_addr, m.cc, m.reply_to, m.date, m.snippet,
@@ -411,7 +434,7 @@ pub(super) fn unified_inbox_query(limit: Option<usize>) -> String {
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE f.folder_type = 'Inbox' AND m.deleted = 0
-         ORDER BY m.date DESC, m.uid DESC{}",
+         ORDER BY {order}, m.uid DESC{}",
         limit_clause(limit)
     )
 }
@@ -2124,12 +2147,28 @@ impl MessageCache {
     /// Every row carries the account it came from, which is what lets a flag
     /// change from this list reach the right server.
     ///
-    /// `None` is the whole of every inbox, which is what the window asks for
-    /// since 2026-09-17: until then it asked for the newest 500, and a
-    /// message arriving pushed the oldest shown off the end (#24). A bound is
-    /// still offered for a caller that wants one screen of it.
-    pub fn unified_inbox(&self, limit: Option<usize>) -> Result<Vec<MessageListRow>> {
-        let query = unified_inbox_query(limit);
+    /// `order_by` is the sort that was chosen, in the query rather than
+    /// applied to the rows afterwards, for the reason
+    /// [`Self::get_message_list_sorted`] gives; it must come from
+    /// `Sort::order_by_clause`, fixed strings chosen by matching on an enum,
+    /// and nothing a person typed reaches it. Since 2026-09-17 (#69): until
+    /// then this read a fixed newest-first order while a folder read the
+    /// chosen one, so choosing a sort with All Inboxes open re-sorted the
+    /// rows on screen and saved the choice, and every return to the row
+    /// forgot it. `None` is newest first by the sent date, the order the
+    /// index serves and what a person who never chose a sort reads.
+    ///
+    /// `None` for the limit is the whole of every inbox, which is what the
+    /// window asks for since 2026-09-17: until then it asked for the newest
+    /// 500, and a message arriving pushed the oldest shown off the end (#24).
+    /// A bound is still offered for a caller that wants one screen of it.
+    pub fn unified_inbox(
+        &self,
+        order_by: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<MessageListRow>> {
+        let order = order_by.unwrap_or(NEWEST_MESSAGE_FIRST);
+        let query = unified_inbox_query(order, limit);
         let mut stmt = self
             .conn
             .prepare_cached(&query)
@@ -2174,7 +2213,7 @@ impl MessageCache {
         // The uid is the tie-break in every order, so a folder where forty
         // messages share a timestamp does not shuffle between refreshes and
         // move a row out from under somebody's cursor.
-        let order = order_by.unwrap_or("m.date DESC");
+        let order = order_by.unwrap_or(NEWEST_MESSAGE_FIRST);
         let query = listing_query(order, &limit_clause(limit));
         let mut stmt = self
             .conn
@@ -4641,7 +4680,7 @@ mod tests {
             )
             .unwrap();
 
-        let from_all_inboxes = cache.unified_inbox(Some(50)).unwrap();
+        let from_all_inboxes = cache.unified_inbox(None, Some(50)).unwrap();
         assert_eq!(
             from_all_inboxes
                 .iter()
@@ -5680,7 +5719,9 @@ mod tests {
             .save_message(&listing_message(second, 1, "From the second", "2026-08-02"))
             .unwrap();
 
-        let rows = cache.unified_inbox(Some(50)).expect("the combined list");
+        let rows = cache
+            .unified_inbox(None, Some(50))
+            .expect("the combined list");
 
         let subjects: Vec<&str> = rows.iter().map(|r| r.subject.as_str()).collect();
         assert!(subjects.contains(&"From the first"), "{subjects:?}");
@@ -5714,7 +5755,7 @@ mod tests {
             .unwrap();
 
         let subjects: Vec<String> = cache
-            .unified_inbox(Some(50))
+            .unified_inbox(None, Some(50))
             .expect("the combined list")
             .into_iter()
             .map(|r| r.subject)
@@ -7821,7 +7862,7 @@ mod a_listing_reads_no_message_text {
     /// is caught by a closed set and invisible to a list of forbidden names.
     /// Widening it is an edit somebody makes on purpose with a sentence to
     /// write, rather than a test somebody quietens.
-    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 3] = [
+    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 4] = [
         (
             "messages",
             "the rows themselves: the subject, the addresses, the flags and the \
@@ -7840,6 +7881,11 @@ mod a_listing_reads_no_message_text {
              for their content. A paperclip on a row is a yes or a no, and the \
              file it stands for lives in attachment_content, which is not on \
              this list",
+        ),
+        (
+            "message_tags",
+            "the join a label view reads, for tag_id and message_id only; a \
+             tag's name and colour live in tags, which is not on this list",
         ),
     ];
 
@@ -7953,26 +7999,38 @@ mod a_listing_reads_no_message_text {
         orders
     }
 
-    /// Every query a folder listing runs, in every order it can be asked for.
+    /// Every query a listing runs, in every order it can be asked for: the
+    /// folder, its conversations, All Inboxes, a label view and what a saved
+    /// search found.
     fn every_query_a_listing_runs() -> Vec<String> {
+        let newest_first = super::NEWEST_MESSAGE_FIRST;
         let mut queries = vec![
             // What a listing gets when nothing asked for an order, which is the
-            // default `get_message_list_sorted` and `conversations_in` apply.
-            super::listing_query("m.date DESC", " LIMIT 50"),
+            // default the four message listings and `conversations_in` apply.
+            super::listing_query(newest_first, " LIMIT 50"),
             super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
             // All Inboxes, which is a folder listing that names no folder,
             // bounded and whole.
-            super::unified_inbox_query(Some(100)),
-            super::unified_inbox_query(None),
+            super::unified_inbox_query(newest_first, Some(100)),
+            super::unified_inbox_query(newest_first, None),
+            super::super::tags::label_listing_query(newest_first, None),
+            super::super::saved_searches::results_query("1,2", newest_first),
         ];
         for order in every_order_a_list_can_be_put_in() {
+            let clause = order.order_by_clause();
             // Both the page and the whole folder: `limit` is an argument and
             // `None` is a shape the callers still pass.
-            queries.push(super::listing_query(&order.order_by_clause(), " LIMIT 50"));
-            queries.push(super::listing_query(&order.order_by_clause(), ""));
+            queries.push(super::listing_query(&clause, " LIMIT 50"));
+            queries.push(super::listing_query(&clause, ""));
             queries.push(super::conversations_query(
                 &order.conversation_order_by_clause(),
             ));
+            // The three listings that take the chosen sort since 10-02.1, so
+            // a body column entering through a sort term is caught in every
+            // query it could enter through.
+            queries.push(super::unified_inbox_query(&clause, None));
+            queries.push(super::super::tags::label_listing_query(&clause, None));
+            queries.push(super::super::saved_searches::results_query("1,2", &clause));
         }
         queries
     }
@@ -8054,7 +8112,9 @@ mod a_listing_reads_no_message_text {
     ///
     /// The allowed set is closed rather than a list of things to avoid, so a
     /// second body store written later is caught without anybody adding it to
-    /// a list of forbidden names.
+    /// a list of forbidden names. `message_tags` is on the list since 10-02.1,
+    /// because a label view joins it; `tags`, which holds a label's name and
+    /// colour, is not, and it is `tags` this query is refused on.
     #[test]
     fn test_a_listing_that_read_a_table_outside_the_allowed_set_is_caught() {
         let stripped = a_database_holding_only_what_a_listing_may_read();

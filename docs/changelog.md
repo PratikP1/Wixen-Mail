@@ -324,6 +324,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   by about a third between the two sets of rows on things no commit touched, and the page says
   which figures to hold against which.
 
+- **All Inboxes, a label view and a saved search's results now open in the sort you chose, and
+  keep it when you come back.** Reported on 2026-09-17 from build `1.0.0-alpha.1+g59c5b6a4`
+  (#69): with All Inboxes open, choosing a sort from View, Sort Messages re-sorted the rows on
+  screen and saved the choice, and the next visit to All Inboxes read a fixed newest-first
+  order, because the combined view's query carried its own order while a folder's query took
+  the saved one. A label view did the same, and the results of a saved search were listed
+  newest first whatever was chosen. The three views put the saved sort into their query now,
+  the way a folder does, so the order is the one you chose until you change it; a saved search
+  still shows the newest 500 it found, in the chosen order. One more thing the fix found:
+  Unread First from the menu was saved as read first, so a folder re-read after choosing it put
+  every read message above every unread one. It is saved as unread first, newest first beneath,
+  the order the setting of the same name has always meant.
+  What was measured: each of the three views answers in every sort the menu offers, both ways,
+  held by a test on the cache; the saved choice read back the way the window reads it gives
+  that order; and the window's three readers are held to asking for it. What a chosen sort
+  costs All Inboxes, on the rows named "All Inboxes in a chosen sort after 10-02.1" dated
+  2026-09-17 on `docs/development/measurements.md`: at your folder's size, 12,872 messages,
+  every order read in between 21 and 24 milliseconds, the fixed order among them; at 200,000
+  messages the fixed order read in 500 milliseconds and the chosen orders in 500 to 571,
+  because reading every row is most of the cost and the sort adds a little on top.
+  Known limitations: whether the order survives leaving and returning has been proved link by
+  link and not heard in the running program, which is your check on the next build: with All
+  Inboxes open, choose Oldest first, arrow to a folder and back, and the first row should be the
+  oldest. If you never chose a sort, All Inboxes reads as before.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

@@ -444,19 +444,33 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to count the mail to search: {}", e)))
     }
 
-    /// The listing rows for the messages a search took, newest first.
+    /// The listing rows for the messages a search took, in the order handed
+    /// in, newest first when none is.
     ///
     /// The same shape a folder listing has, read by the same unpacking, so a
     /// result row carries the snippet, the size and the attachment mark every
     /// other view of that message shows. A second shape here would be a list
     /// that quietly said less about the same mail.
     ///
+    /// `order_by` is the sort that was chosen, in the query rather than
+    /// applied to the rows afterwards, for the reason
+    /// [`MessageCache::get_message_list_sorted`] gives; it must come from
+    /// `Sort::order_by_clause`, fixed strings chosen by matching on an enum,
+    /// and nothing a person typed reaches it. Since 2026-09-17 (#69): until
+    /// then what a search found was listed newest first whatever was chosen.
+    /// Which rows are listed is the search's cut, the newest it found, and
+    /// stays so; the order they are listed in is the person's.
+    ///
     /// The identifiers are interpolated rather than bound. They are numbers
     /// this database handed out and were read back from it a moment ago, so
     /// there is nothing a person typed anywhere near this, and SQLite binds a
     /// fixed number of placeholders while this list is as long as the search
     /// found.
-    pub fn message_rows_for(&self, ids: &[i64]) -> Result<Vec<MessageListRow>> {
+    pub fn message_rows_for(
+        &self,
+        ids: &[i64],
+        order_by: Option<&str>,
+    ) -> Result<Vec<MessageListRow>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -465,9 +479,10 @@ impl MessageCache {
             .map(|id| id.to_string())
             .collect::<Vec<_>>()
             .join(",");
+        let order = order_by.unwrap_or(super::messages::NEWEST_MESSAGE_FIRST);
         let mut stmt = self
             .conn
-            .prepare(&results_query(&numbered))
+            .prepare(&results_query(&numbered, order))
             .map_err(|e| Error::Other(format!("Failed to prepare the results query: {}", e)))?;
 
         stmt.query_map([], listing_row)
@@ -587,13 +602,20 @@ fn scanned_message(row: &rusqlite::Row, text: TheMessageText) -> rusqlite::Resul
     })
 }
 
-/// The query that reads the rows a saved search found, newest first.
+/// The query that reads the rows a saved search found, in the order handed
+/// in.
 ///
 /// The same columns in the same order as a folder listing, because
 /// [`listing_row`] reads them and the order is the contract between the two.
 /// The messages come from every folder the account has, so this one cannot
-/// name a folder the way a listing does.
-fn results_query(numbered: &str) -> String {
+/// name a folder the way a listing does. `pub(super)` so the guard in
+/// `messages.rs` can ask SQLite whether this exact query reads message text
+/// or a table a listing may not, in every order.
+///
+/// `order` must come from `Sort::order_by_clause` or be
+/// `NEWEST_MESSAGE_FIRST`; nothing a person typed reaches it. The uid follows
+/// it as the tie-break, as in every listing.
+pub(super) fn results_query(numbered: &str, order: &str) -> String {
     format!(
         "SELECT m.id, m.uid, f.account_id, m.message_id, m.refs_header, m.subject, m.from_addr,
                 m.to_addr, m.cc, m.reply_to, m.date, m.snippet, m.size_bytes,
@@ -604,7 +626,7 @@ fn results_query(numbered: &str) -> String {
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE m.id IN ({numbered})
-         ORDER BY m.date DESC, m.uid DESC"
+         ORDER BY {order}, m.uid DESC"
     )
 }
 
@@ -1354,7 +1376,7 @@ mod tests {
             .expect("the later date to be stored");
 
         let rows = cache
-            .message_rows_for(&[older, newer])
+            .message_rows_for(&[older, newer], None)
             .expect("the rows to be read");
 
         assert_eq!(
@@ -1365,7 +1387,7 @@ mod tests {
         );
         assert!(
             cache
-                .message_rows_for(&[])
+                .message_rows_for(&[], None)
                 .expect("nothing to read")
                 .is_empty(),
             "asking for no rows at all came back with some"

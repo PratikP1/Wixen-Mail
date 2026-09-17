@@ -720,11 +720,18 @@ impl ColumnLayout {
                 direction: SortDirection::Descending,
                 then: None,
             },
+            // The same two levels the setting's own unread_first stores:
+            // unread at the top, newest first beneath. Until 2026-09-17 this
+            // stored `Unread` descending, which is `m.read DESC` in the query
+            // and puts every read row first, so the in-memory sort the menu
+            // applied at once and the query a folder was read through on the
+            // next return disagreed about what Unread First meant.
             MailSortOption::UnreadFirst => Sort {
-                column: MessageColumn::Unread,
+                column: MessageColumn::Received,
                 direction: SortDirection::Descending,
                 then: None,
-            },
+            }
+            .with_unread_first(),
         };
     }
 
@@ -925,6 +932,34 @@ mod tests {
                 option
             );
         }
+    }
+
+    #[test]
+    fn test_unread_first_from_the_menu_puts_unread_rows_first_and_newest_beneath() {
+        // The clause the menu's Unread First stores, read back into a query
+        // by the folder listing and, since 10-02.1, by All Inboxes, a label
+        // view and a saved search. `m.read` is 0 for unread and 1 for read,
+        // so unread first is `m.read ASC`; until 2026-09-17 this arm stored
+        // `m.read DESC`, which put every read row above every unread one the
+        // next time the folder was read, while the in-memory sort the menu
+        // applies at once put unread first. And the rows within each group
+        // need an order too, the same one the setting's own unread_first
+        // gives: newest first, so the two spellings of the same choice mean
+        // the same thing.
+        let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+        layout.set_sort_from_option(MailSortOption::UnreadFirst);
+
+        assert_eq!(
+            layout.sort.order_by_clause(),
+            Sort::from_setting("unread_first")
+                .expect("the setting's own unread first")
+                .order_by_clause(),
+            "the menu's Unread First and the setting's unread_first store different orders"
+        );
+        assert_eq!(
+            layout.sort.order_by_clause(),
+            "m.read ASC, COALESCE(m.internaldate, m.date) DESC"
+        );
     }
 
     #[test]

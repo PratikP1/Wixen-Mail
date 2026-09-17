@@ -53,6 +53,18 @@
 //! a prediction is not a measurement. The same steps are taken at the tester's
 //! size, 12,872, as a second series with the same shape.
 //!
+//! **All Inboxes in a chosen sort**, added 2026-09-17 for 10-02.1 (#69), is
+//! `unified_inbox` over a cache of one inbox, read in the fixed order the
+//! index `idx_messages_date` serves, which is the control, and in four of the
+//! orders the Sort Messages menu offers, the clause built the way the window
+//! builds it. Until 10-02.1 the combined view read the fixed order whatever
+//! was chosen; now the chosen order goes into the query, and a chosen order
+//! is a sort of every inbox row, because `Received` sorts on
+//! `COALESCE(m.internaldate, m.date)` and no index serves that. Three takes
+//! warm after one untimed read, at 200,000 and at the tester's size, so the
+//! two can be read against each other and against the read path's sorted
+//! read, which a folder already pays.
+//!
 //! Every timing is taken three times and the median is the number; the three
 //! takes are written into the row's conditions. The rows are synthetic and no
 //! provider mailbox was used, and every row says so.
@@ -599,6 +611,79 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
     Ok(measured)
 }
 
+// ── All Inboxes in a chosen sort ────────────────────────────────────────────
+
+/// The orders the All Inboxes series is timed in, in the menu's words, with
+/// the fixed order first as the control: it is what the combined view read
+/// before 10-02.1 and what a person who never chose a sort still reads.
+const THE_ORDERS_ALL_INBOXES_IS_TIMED_IN: [(&str, Option<MailSortOption>); 5] = [
+    ("the fixed order, newest first by the sent date", None),
+    ("Date (Newest First)", Some(MailSortOption::DateNewestFirst)),
+    ("Date (Oldest First)", Some(MailSortOption::DateOldestFirst)),
+    ("Sender (A-Z)", Some(MailSortOption::SenderAZ)),
+    ("Unread First", Some(MailSortOption::UnreadFirst)),
+];
+
+/// The combined view's read over a cache of `count` rows at `into`, in the
+/// fixed order the index serves and in four chosen orders, three takes warm
+/// after one untimed read, each take checked to answer every row.
+fn all_inboxes_in_each_order(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
+    const ON_THE_INTERFACE_THREAD: &str = "The window runs this read on the interface thread, where it answers no keys until the read ends; the harness has no window.";
+    const THE_SERIES: &str = "All Inboxes in a chosen sort after 10-02.1";
+    let mut measured = Vec::new();
+
+    a_cache_of(count, into)?;
+    // Reopened, so the reads are on a fresh connection, and read once
+    // untimed so every timed take is warm: the series is about the order,
+    // not about the first read on a connection.
+    let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
+    let warmed = cache
+        .unified_inbox(None, None)
+        .map_err(|e| e.to_string())?
+        .len();
+    if warmed != count {
+        return Err(format!(
+            "the untimed read answered {warmed} rows of the {count} written"
+        ));
+    }
+
+    for (name, option) in THE_ORDERS_ALL_INBOXES_IS_TIMED_IN {
+        let clause = option.map(|option| {
+            let mut layout = ColumnLayout::defaults_for(FolderKind::Inbox);
+            layout.set_sort_from_option(option);
+            view_state::order_by(Showing::Messages, &layout.sort)
+        });
+        let (takes, read) = taken(|| {
+            cache
+                .unified_inbox(clause.as_deref(), None)
+                .map(|rows| rows.len())
+        });
+        let rows_read = read.map_err(|e| e.to_string())?;
+        if rows_read != count {
+            return Err(format!(
+                "All Inboxes in {name} answered {rows_read} rows of the {count} written"
+            ));
+        }
+        let the_order = match &clause {
+            None => String::from(
+                "`unified_inbox` handed no order, so the query's own `ORDER BY m.date DESC, m.uid DESC`, the order `idx_messages_date` serves and what a person who never chose a sort reads",
+            ),
+            Some(clause) => format!(
+                "`unified_inbox` handed the clause the window builds for {name}, `ORDER BY {clause}, m.uid DESC`, which no index serves, so every inbox row is sorted"
+            ),
+        };
+        measured.push(Measured::timed(
+            format!("{THE_SERIES}, {count} rows: {name}"),
+            takes,
+            format!(
+                "{the_order}; {rows_read} rows returned each take, no `LIMIT`, three takes warm after one untimed read on the same connection. {ON_THE_INTERFACE_THREAD}"
+            ),
+        ));
+    }
+
+    Ok(measured)
+}
+
 // ── The row ─────────────────────────────────────────────────────────────────
 
 /// One cell per column of `docs/development/measurements.md`, in its order.
@@ -740,6 +825,14 @@ fn test_the_list_at_two_hundred_thousand_rows() {
     for row in the_rows(SAMPLE_MAILBOX_SIZE, &measured, "release", &machine) {
         println!("{row}");
     }
+    // A third, so the All Inboxes series reads a cache nothing else has
+    // touched.
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured =
+        all_inboxes_in_each_order(SAMPLE_MAILBOX_SIZE, into.path()).expect("All Inboxes");
+    for row in the_rows(SAMPLE_MAILBOX_SIZE, &measured, "release", &machine) {
+        println!("{row}");
+    }
 }
 
 #[test]
@@ -747,8 +840,14 @@ fn test_the_list_at_two_hundred_thousand_rows() {
 fn test_the_lists_own_read_path_at_the_testers_size() {
     refuse_a_debug_build().expect("a release build");
     let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let machine = the_machine();
     let measured = the_lists_own_read_path(THE_TESTERS_FOLDER, into.path()).expect("the read path");
-    for row in the_rows(THE_TESTERS_FOLDER, &measured, "release", &the_machine()) {
+    for row in the_rows(THE_TESTERS_FOLDER, &measured, "release", &machine) {
+        println!("{row}");
+    }
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured = all_inboxes_in_each_order(THE_TESTERS_FOLDER, into.path()).expect("All Inboxes");
+    for row in the_rows(THE_TESTERS_FOLDER, &measured, "release", &machine) {
         println!("{row}");
     }
 }
@@ -869,6 +968,51 @@ fn test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed() {
         assert!(
             answered || refused,
             "the value is neither a time nor a refusal carrying its error: {row}"
+        );
+    }
+}
+
+#[test]
+fn test_every_all_inboxes_row_has_the_pages_shape_and_names_its_order() {
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured =
+        all_inboxes_in_each_order(A_FEW, into.path()).expect("All Inboxes at a few rows");
+    let rows = the_rows(A_FEW, &measured, "debug", "a machine");
+
+    assert_eq!(
+        rows.len(),
+        THE_ORDERS_ALL_INBOXES_IS_TIMED_IN.len(),
+        "{} rows printed and the page wants one per order: {:?}",
+        rows.len(),
+        THE_ORDERS_ALL_INBOXES_IS_TIMED_IN.map(|(name, _)| name)
+    );
+    for (row, (order, _)) in rows.iter().zip(THE_ORDERS_ALL_INBOXES_IS_TIMED_IN) {
+        let cells: Vec<&str> = row.split(" | ").collect();
+        assert_eq!(cells.len(), 6, "not the page's six columns: {row}");
+        assert!(
+            cells[0].starts_with("| All Inboxes in a chosen sort after 10-02.1"),
+            "the row does not say it times All Inboxes in a chosen sort: {row}"
+        );
+        assert!(
+            cells[0].contains(&A_FEW.to_string()),
+            "the row does not carry the count in its name: {row}"
+        );
+        assert!(
+            cells[0].ends_with(order),
+            "the row is not the {order} row: {row}"
+        );
+        assert!(
+            cells[2].contains('`'),
+            "the row carries no backticked command: {row}"
+        );
+        assert!(cells[1].ends_with(" ms"), "the value is not a time: {row}");
+        assert!(
+            cells[5].contains("ORDER BY"),
+            "the row does not carry the ORDER BY it timed: {row}"
+        );
+        assert!(
+            cells[5].contains("interface thread"),
+            "the row does not say the window runs this read on the interface thread: {row}"
         );
     }
 }
