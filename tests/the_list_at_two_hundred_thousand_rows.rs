@@ -599,6 +599,26 @@ fn the_lists_own_read_path(count: usize, into: &Path) -> Result<Vec<Measured>, S
     Ok(measured)
 }
 
+// ── All Inboxes in a chosen sort ────────────────────────────────────────────
+
+/// The orders the All Inboxes series is timed in, in the menu's words, with
+/// the fixed order first as the control: it is what the combined view read
+/// before 10-02.1 and what a person who never chose a sort still reads.
+const THE_ORDERS_ALL_INBOXES_IS_TIMED_IN: [(&str, Option<MailSortOption>); 5] = [
+    ("the fixed order, newest first by the sent date", None),
+    ("Date (Newest First)", Some(MailSortOption::DateNewestFirst)),
+    ("Date (Oldest First)", Some(MailSortOption::DateOldestFirst)),
+    ("Sender (A-Z)", Some(MailSortOption::SenderAZ)),
+    ("Unread First", Some(MailSortOption::UnreadFirst)),
+];
+
+/// The combined view's read over a cache of `count` rows at `into`, in the
+/// fixed order the index serves and in four chosen orders, three takes warm
+/// after one untimed read.
+fn all_inboxes_in_each_order(_count: usize, _into: &Path) -> Result<Vec<Measured>, String> {
+    Ok(Vec::new())
+}
+
 // ── The row ─────────────────────────────────────────────────────────────────
 
 /// One cell per column of `docs/development/measurements.md`, in its order.
@@ -869,6 +889,51 @@ fn test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed() {
         assert!(
             answered || refused,
             "the value is neither a time nor a refusal carrying its error: {row}"
+        );
+    }
+}
+
+#[test]
+fn test_every_all_inboxes_row_has_the_pages_shape_and_names_its_order() {
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let measured =
+        all_inboxes_in_each_order(A_FEW, into.path()).expect("All Inboxes at a few rows");
+    let rows = the_rows(A_FEW, &measured, "debug", "a machine");
+
+    assert_eq!(
+        rows.len(),
+        THE_ORDERS_ALL_INBOXES_IS_TIMED_IN.len(),
+        "{} rows printed and the page wants one per order: {:?}",
+        rows.len(),
+        THE_ORDERS_ALL_INBOXES_IS_TIMED_IN.map(|(name, _)| name)
+    );
+    for (row, (order, _)) in rows.iter().zip(THE_ORDERS_ALL_INBOXES_IS_TIMED_IN) {
+        let cells: Vec<&str> = row.split(" | ").collect();
+        assert_eq!(cells.len(), 6, "not the page's six columns: {row}");
+        assert!(
+            cells[0].starts_with("| All Inboxes in a chosen sort after 10-02.1"),
+            "the row does not say it times All Inboxes in a chosen sort: {row}"
+        );
+        assert!(
+            cells[0].contains(&A_FEW.to_string()),
+            "the row does not carry the count in its name: {row}"
+        );
+        assert!(
+            cells[0].ends_with(order),
+            "the row is not the {order} row: {row}"
+        );
+        assert!(
+            cells[2].contains('`'),
+            "the row carries no backticked command: {row}"
+        );
+        assert!(cells[1].ends_with(" ms"), "the value is not a time: {row}");
+        assert!(
+            cells[5].contains("ORDER BY"),
+            "the row does not carry the ORDER BY it timed: {row}"
+        );
+        assert!(
+            cells[5].contains("interface thread"),
+            "the row does not say the window runs this read on the interface thread: {row}"
         );
     }
 }
