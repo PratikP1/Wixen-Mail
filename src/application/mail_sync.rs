@@ -169,6 +169,22 @@ pub fn what_the_renumbering_discarded(result: &FolderSync) -> Option<String> {
     ))
 }
 
+/// What a check brought, said once at its end: each folder that received
+/// something with its count, or nothing when nothing arrived (#38).
+///
+/// The folder first and then the count, one clause per folder, nothing about
+/// the folders with nothing, because the person hearing it is listening for
+/// where to go and how much is waiting there. Built where the counts are,
+/// in the worker, from a pure function here so the words can be argued about
+/// in a test. `None` rather than an empty sentence, so the window sends no
+/// result for a check that found nothing and the status bar keeps the
+/// check's last step.
+pub fn what_arrived(folders: &[(String, usize)]) -> Option<String> {
+    // Red half: a sentence for every check, empty or not.
+    let _ = folders;
+    Some(String::new())
+}
+
 /// Add what the rules did to a summary, in one place.
 ///
 /// Here rather than in each summary that needs it, because both kinds of
@@ -2130,6 +2146,34 @@ mod tests {
     use super::*;
     use crate::common::temp_home::TempHome;
     use crate::common::types::EmailAddress;
+
+    #[test]
+    fn test_a_check_that_found_nothing_says_nothing_about_what_arrived() {
+        // None rather than an empty sentence, so the window sends no result
+        // and the status bar keeps the check's last step.
+        assert_eq!(what_arrived(&[]), None);
+        assert_eq!(
+            what_arrived(&[("Inbox".to_string(), 0), ("Sent".to_string(), 0)]),
+            None,
+            "folders that received nothing are not a result"
+        );
+    }
+
+    #[test]
+    fn test_what_arrived_names_each_folder_that_received_something_with_its_count() {
+        // The folder first, then the count, one clause per folder, and the
+        // folders with nothing left out: somebody hearing it is listening
+        // for where to go and how much is waiting there.
+        assert_eq!(
+            what_arrived(&[
+                ("Inbox".to_string(), 3),
+                ("Sent".to_string(), 0),
+                ("Work".to_string(), 1),
+            ])
+            .as_deref(),
+            Some("Inbox, 3 new messages; Work, 1 new message")
+        );
+    }
 
     /// A rule written by somebody, on a message that has just arrived.
     ///
