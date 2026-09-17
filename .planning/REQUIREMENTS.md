@@ -2921,6 +2921,93 @@ why the day's log is empty. No settings defect and no log defect. What the read 
 that a settings file's `version` stamp is copied through by `save` and names the build that
 created the profile, so FOUND-01 gains the line that `save` re-stamps it.
 
+**Added 2026-09-17, later still: one defect the tester found in `1.0.0-alpha.1` (`59c5b6a4`)
+on its second day, and one decision Pratik made the same day about what a build carries,
+taken by phase 10's inserted plans 10-02.1 and 10-02.2.** They sit here rather than under
+phase 10's mail section for the reason FOUND-13 and FOUND-14 do: neither is about the mail
+coming down. `FOUND-15` is a sort the combined view forgets, which is a listing defect of the
+kind 10-02 just measured; `FOUND-16` is the versioning rule FOUND-01 wrote gaining a counter,
+and it takes the `FOUND` id because that is where the version rule lives (FOUND-01) and `SHIP`
+is the installer's signing and its updates, not what a build is called. Every evidence line was
+re-taken against `main` at `c5ee5085` on 2026-09-17 with the command in the plan.
+
+- [ ] **FOUND-15**: All Inboxes, a label view and a saved search's results are read in the
+  sort that was chosen, the way a folder is, and keep it when the view is reopened.
+  - Evidence: a folder is read through `get_message_list_sorted` with the stored sort in the
+    query (`load_folder_messages`, `wx_app.rs:13716`, asking `the_sort_as` at `:13784`);
+    All Inboxes is `load_every_inbox` (`:7050`) calling `unified_inbox(None)`, whose query
+    carries `ORDER BY m.date DESC, m.uid DESC` and takes no order
+    (`messages.rs:403-417`); a label view is `load_messages_with_label` (`:7005`) calling
+    `messages_with_label(.., None)` over its own inline query with the same fixed order
+    (`tags.rs:315-343`); a saved search lists the newest 500 it found through
+    `message_rows_for` (`wx_app.rs:7360`, `saved_searches.rs:459`), whose `results_query`
+    carries the same fixed order (`:607`). Choosing a sort from the menu sorts the rows in
+    memory and saves the choice (`sort_from_menu`, `:14361`), so it holds until the row is
+    read again. `Sort::order_by_clause` builds every term from an `m.` column
+    (`message_columns.rs:148-170`), which all three queries alias as the folder listing does.
+    The index `idx_messages_date` serves the fixed order only (`mod.rs:3267`); `Received`
+    sorts on `COALESCE(m.internaldate, m.date)`, which no index serves, so every chosen sort
+    is a sort of every inbox row, as a folder's already is. The loaders are private, so the
+    composed run through `load_every_inbox` is reachable only from `wx_app.rs`'s test module,
+    which costs 58 guard records and reads the machine's own profile because nothing there
+    pins `WIXEN_MAIL_DATA`.
+  - [S] #69, the tester on 2026-09-17: "With All Inboxes open, choose a sort from View, Sort
+    Messages: the list re-sorts and the choice is announced. Move to another folder and come
+    back to All Inboxes: the list is back in newest-first order."
+  - [D] `unified_inbox`, `messages_with_label` and `message_rows_for` take an order from
+    `Sort::order_by_clause` and put it in the query with `m.uid DESC` after it, the fixed
+    order as the default when handed none; a test on the cache holds each to every sort the
+    menu offers, both ways, and the sort the menu stores read back the way `the_sort_as`
+    reads it is a clause the cache honours.
+  - [D] `load_every_inbox`, `load_messages_with_label` and `run_a_saved_search` ask
+    `the_sort_as(view_state::Showing::Messages)` and pass it, held by a reading of the
+    shipping half of `wx_app.rs` with a companion, and four guard records couple the target
+    to the four files.
+  - [D] What a chosen sort costs All Inboxes at 12,872 and at 200,000 rows is on
+    `docs/development/measurements.md` beside the fixed order it replaces, taken by the
+    harness 10-02 built, and the two comments that said why the fixed order was cheap say
+    what the others cost.
+  - [S] Whether All Inboxes, a label and a saved search open in the chosen order after a
+    visit to a folder, with his screen reader on the next build, is the tester's.
+
+- [ ] **FOUND-16**: A build handed to a tester carries an ordered counter in its build
+  metadata and in the Windows file version, and the version proper moves only by the rule.
+  - Evidence: `scripts/build-installer.sh` composes `FULL_VERSION="$VERSION+$BUILD"` with
+    `BUILD="g$commit"` (`:29-45`) and only afterwards counts the commits since the version was
+    set as `LAG` (`:67-69`), printed and not carried; the Windows file version's fourth field
+    is `stage * 1000 + step` with the step held to 999 (`:91-107`), so two builds of one
+    version show one file version. The tester's two builds of `1.0.0-alpha.1` are 70 and 88
+    commits past `01ff57bf`, the commit that set it (`git rev-list --count`), and nothing on
+    either says which is later. `version::without_build` drops everything after the first
+    `+` (`version.rs:83-89`), so `1.0.0-alpha.1+42.g59c5b6a4` already compares `Same` with
+    `1.0.0-alpha.1`; `parse` refuses `alpha.1.2` (`:175-176`). `build.rs:20-22` passes
+    `WIXEN_BUILD` through to `version::current()`, which reaches `--version`, the log's first
+    line, About, the IMAP ID and the update check. CI's Build job checks out one commit and
+    runs the script on every push (`ci.yml:252-277`); the release workflow checks out the
+    history (`release.yml:92`). No tag exists in the clone. `tests/installer.rs:1203-1261`
+    holds the script's expression and cap by their text; `tests/house_style.rs:4744-4775`
+    holds `VERSION_SET_AT` and the word unknown.
+  - [S] Pratik, 2026-09-17: builds handed to testers keep `1.0.0-alpha.1` as the round's name
+    and gain an ordered counter in the build metadata, `1.0.0-alpha.1+42.g59c5b6a4`, the number
+    of commits since the version was set, with the same counter in the Windows file version's
+    last part so Apps and Features orders the builds; declined, a counter inside the
+    prerelease and a release per tester build.
+  - [D] The script computes the counter before the build identifier, composes
+    `counter.gcommit` after the plus, and puts `stage * 13000 + step * 1000 + counter` in the
+    fourth field with the step held to 12 and the counter to 999, each cap saying so on the
+    console; a clone without the commit that set the version is refused with a sentence;
+    nothing is appended at a tag while the file version keeps the counter; held by
+    `tests/installer.rs` reading the rule off the script and ordering builds in the order they
+    are made, and by `tests/house_style.rs` reading the refusal and the order of the two
+    computations.
+  - [D] CI's Build job checks out the whole history, held by the same `house_style` reader
+    that holds the Test Suite job; `compare` reads the new shape as the bare version, held by
+    two companions; the rule in `CLAUDE.md` and the changelog's opening paragraph carry the
+    counter with the date and the reason, the old shape kept and dated.
+  - [S] Whether the next installer built by the script carries the counter in Apps and
+    Features and installs over the alpha.1 build as an upgrade is settled by a build, which is
+    Pratik's to make.
+
 ### All the mail, and what is said while it comes
 
 Added 2026-09-17 for phase 10, the third of the seven groups Pratik agreed on 2026-09-16.
@@ -3217,6 +3304,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
+| FOUND-15 | Phase 10 | Pending, 10-02.1; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
+| FOUND-16 | Phase 10 | Pending, 10-02.2; whether the next installer orders above the alpha.1 build is settled by a build, which is Pratik's |
 | MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
 | MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
 | MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
@@ -3225,9 +3314,17 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 **Coverage:**
 
-- v1 requirements: 63 total
-- Mapped to phases: 63
+- v1 requirements: 65 total
+- Mapped to phases: 65
 - Unmapped: 0
+
+**Re-taken 2026-09-17, later still.** This block said 63 and 63 from the middle of the day
+until phase 10's inserted plans 10-02.1 and 10-02.2 were written. Counted with the same
+command as below, which gives 65 at `c5ee5085` plus this edit with `FOUND-15` and `FOUND-16`
+in, and the traceability table above has 65 rows. One is a defect the tester found in
+`1.0.0-alpha.1` on its second day and one is Pratik's decision about what a build carries;
+both sit in phase 9's section beside the requirements they follow from, though phase 10 owns
+them.
 
 **Re-taken 2026-09-17, later the same day.** This block said 61 and 61 from the morning until
 phase 10's inserted plan 10-01.1 was written. Counted with the same command as below, which
@@ -3297,6 +3394,12 @@ is 56.
 against `1.0.0-alpha.1` from the second day of testing, both regressions of the fix FOUND-12
 chose; they belong to none of the seven groups and are taken by phase 10's inserted plan
 10-01.1. The total is 63.
+
+**Added 2026-09-17, later still.** `FOUND-15` traces to #69, filed that day against
+`1.0.0-alpha.1` (`59c5b6a4`), a sort the combined view forgets, taken by phase 10's inserted
+plan 10-02.1; `FOUND-16` traces to no issue and to Pratik's decision of 2026-09-17 in
+conversation that builds handed to testers carry an ordered counter after the plus, taken by
+the inserted plan 10-02.2. Neither belongs to the seven groups. The total is 65.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document

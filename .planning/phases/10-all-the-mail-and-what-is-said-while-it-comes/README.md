@@ -20,6 +20,25 @@ wave each; 10-02 and 10-07 depend on it. Its requirements are FOUND-13 and
 FOUND-14, under phase 9's section of `.planning/REQUIREMENTS.md`, beside the
 FOUND-12 fix they correct.
 
+**Two more were inserted later the same day, after 10-02 merged at
+`48536d31` and its documents at `c5ee5085`.** 10-02.1 is #69, the second
+day's listing defect: with All Inboxes open, choosing a sort re-sorts the
+rows and saves the choice, and every return to the row reads a fixed
+newest-first order, because `unified_inbox`'s query carries its own
+`ORDER BY` while a folder's takes the stored sort; a label view and a saved
+search's results have the same shape. It lands after 10-02 because it reads
+the loaders as 10-02 left them, and before 10-05 because a chunk arriving
+re-reads the open row. 10-02.2 is Pratik's decision of 2026-09-17 that a
+build handed to a tester carries an ordered counter after the plus,
+`1.0.0-alpha.1+42.g59c5b6a4`, the commits since the version was set, with the
+same counter in the Windows file version so Apps and Features orders the
+builds; the version proper still moves only by `CLAUDE.md`'s rule. The two
+share `docs/changelog.md` and `guards/guards.toml`, so they are waves 4 and 5
+rather than one wave, and the five plans after them moved up two waves each;
+10-03 and 10-07 depend on both, 10-05 on 10-02.1. Their requirements are
+FOUND-15 and FOUND-16, under phase 9's section beside FOUND-13 and FOUND-14,
+each ticked by its own plan.
+
 **Planned from five issues, each with the tester's words on it.** #20 (only
 500 messages come down per folder), #24 (the list shows only the newest 500
 and older ones fall off), #23 (message text is not downloaded unless asked),
@@ -38,11 +57,12 @@ always.
 
 **Requirements:** MAIL-01 to MAIL-05, one per issue, in
 `.planning/REQUIREMENTS.md` under "All the mail, and what is said while it
-comes"; and FOUND-13 and FOUND-14 for the inserted 10-01.1, under "What the
+comes"; FOUND-13 and FOUND-14 for the inserted 10-01.1, and FOUND-15 and
+FOUND-16 for the inserted 10-02.1 and 10-02.2, all four under "What the
 first day of testing found".
 
-**Roadmap success criteria this phase owns:** all eight, six for the mail
-and two for the inserted plan.
+**Roadmap success criteria this phase owns:** all ten, six for the mail
+and one for each inserted plan.
 
 ## Pratik's order, and which part of it this is
 
@@ -55,14 +75,22 @@ confirms the grouping of 4 to 7 with Pratik before writing requirements.
 | 1 | The version becomes `1.0.0-alpha.1` | #46 | phase 9, done |
 | 2 | The cause-known defects, each an hour to a day | #21, #32, #36, #39, #42 with #40 point 5, #44, #51, #53, #56, #33, #34 | phase 9, done; #33, #40, #42 and #53 advanced and open |
 | 3 | All the mail, and what is said while it comes | #20, #23, #24, #37, #38 | this phase |
-| 4 | Reading and the list | #25, #26, #27, #28 with #29, #30, #31, #62 | a later phase; 10-07 writes #29's one line about a whole-mailbox download on the privacy page and leaves the rest |
+| 4 | Reading and the list | #70 first, then #25, #26, #27, #28 with #29, #30, #31, #62 | a later phase; 10-07 writes #29's one line about a whole-mailbox download on the privacy page and leaves the rest; #70 joined on 2026-09-17, below |
 | 5 | The editors | #35, #40 points 1 to 4 and 6, #41, #43, #48 | a later phase |
 | 6 | New features, most from the Outlook gap audit | #45, #47, #49, #50, #52, #54, #55, #57, #58, #59, #60, #61 | a later phase |
 | 7 | The real-account issues, which need Pratik's account | #22, #63 | a later phase, and the first time anything here meets a real server on purpose; this phase's runner and watch will have met his Gmail account by then, unasked |
 
-Two issues filed on 2026-09-17 against `1.0.0-alpha.1` belong to none of the
-seven groups: #67 and #68, both regressions of 09-09, taken by the inserted
-10-01.1 above. One thing that plan found and left: four other windows
+Three issues filed on 2026-09-17 against `1.0.0-alpha.1` belong to none of
+the seven groups: #67 and #68, both regressions of 09-09, taken by the
+inserted 10-01.1 above, and #69, the sort the combined view forgets, taken by
+the inserted 10-02.1. A fourth, #70, filed the same day from the second day
+of testing, is the first item of the next group rather than an insert here:
+Folders to Keep Up to Date is a flat list where the folder tree is nested,
+a kept folder is heard as a read-only unchecked check box, the title shows
+the account's identifier, Gmail's All Mail is missing, and the dialog belongs
+on Tools; it touches the surface 10-05 and 10-06 read choices from and not
+the choices themselves, so it waits for them. One thing 10-01.1 found and
+left: four other windows
 (`wx_account_manager.rs`, `wx_compose.rs`, `wx_item_form.rs`,
 `wx_managers.rs`) both paint themselves with the theme and build checkboxes,
 and none has been read for whether the paint comes before or after the
@@ -78,16 +106,19 @@ in the changelog's Known limitations.
 | 10-01 | 1 | 1, 3, 4 | #20, #23, #37 | advances | the model: what "everything" means for one account, decided from the cache and nothing else; one wait rule for a server that refused, shared by the download and the watch; the text pass bounded per chunk with the provider's answer read and a stop; all against the scripted mailbox |
 | 10-01.1 | 2 | 7, 8 | #67, #68 | closes both | inserted 2026-09-17 after 10-01 merged: the six later Settings panels painted at the end of their own build so every checkbox stays a check box, held by an MSAA reading in two themes; a page reached from inside another page hands focus to its first control, held by a focus reading; both coupled to `wx_settings.rs` by measured records; `theme_reach` reads the later panels after they are built |
 | 10-02 | 3 | 2 | #24 | closes | the list's own read path measured at 12,872 and 200,000 rows before anything changes; the page taken off the folder list and All Inboxes; the labels read by folder because the old read fails above 32,766 rows; measured again |
-| 10-03 | 4 | 3 | #23 | advances | how much message text stays on this computer is a setting under Message Text on the Permissions tab, default all of it; the eviction reads it; the workers that evict are handed it |
-| 10-04 | 5 | 5 | #38 | closes | the three-level setting on the Feedback tab; progress shown and spoken only under Say every step; what arrived said once with counts; errors always; the new-mail sound when mail was found; Settings saved heard |
-| 10-05 | 6 | 1, 3 | #20, #23 | closes both | the download runs after every check for every enabled IMAP account, chunk by chunk, the folder on screen first, text with it, resumable, with Pause Downloading on Tools and a wait after a refusal served by the timer; Download This Whole Folder and Fetch Missing Message Text retired with their warnings |
-| 10-06 | 7 | 4 | #37 | closes | the watch restarts after a growing wait, the network coming back restarts it at once, every account has one, a check runs on the account editor's interval where a watch cannot cover, a start checks, the status line says which |
-| 10-07 | 8 | 6 | all five, #29 one line | closes the phase | the alpha, privacy and guide pages say what the program does now; the listening lines; the closing read; the ledger |
+| 10-02.1 | 4 | 9 | #69 | closes | inserted 2026-09-17 after 10-02 merged: `unified_inbox`, `messages_with_label` and `message_rows_for` take an order from `Sort::order_by_clause` with the fixed order as the default; the three loaders ask `the_sort_as` as a folder does; a new target holds each listing to every menu sort both ways and the stored sort read back, and the window's shipping half to asking, coupled to four files by measured records; what a chosen sort costs All Inboxes at 12,872 and 200,000, ten rows on the measurements page |
+| 10-02.2 | 5 | 10 | none, Pratik's decision of 2026-09-17 | closes | inserted 2026-09-17: the build script computes the commits since the version was set before the build identifier and stamps `counter.gcommit` after the plus and `stage * 13000 + step * 1000 + counter` into the Windows file version, the step held to 12 and the counter to 999 with a loud line each; a clone without the version's commit is refused; CI's Build job checks out the history; `tests/installer.rs` reads the rule off the script and orders builds in the order they are made; `CLAUDE.md` and the changelog carry the rule with the date and the old shape dated |
+| 10-03 | 6 | 3 | #23 | advances | how much message text stays on this computer is a setting under Message Text on the Permissions tab, default all of it; the eviction reads it; the workers that evict are handed it |
+| 10-04 | 7 | 5 | #38 | closes | the three-level setting on the Feedback tab; progress shown and spoken only under Say every step; what arrived said once with counts; errors always; the new-mail sound when mail was found; Settings saved heard |
+| 10-05 | 8 | 1, 3 | #20, #23 | closes both | the download runs after every check for every enabled IMAP account, chunk by chunk, the folder on screen first, text with it, resumable, with Pause Downloading on Tools and a wait after a refusal served by the timer; Download This Whole Folder and Fetch Missing Message Text retired with their warnings |
+| 10-06 | 9 | 4 | #37 | closes | the watch restarts after a growing wait, the network coming back restarts it at once, every account has one, a check runs on the account editor's interval where a watch cannot cover, a start checks, the status line says which |
+| 10-07 | 10 | 6 | all five, #29 one line | closes the phase | the alpha, privacy and guide pages say what the program does now; the listening lines; the closing read; the ledger |
 
 Requirement coverage: MAIL-01 by 10-01 and 10-05; MAIL-02 by 10-02; MAIL-03
 by 10-01, 10-03 and 10-05; MAIL-04 by 10-01 and 10-06; MAIL-05 by 10-04;
-10-07 reads all five. FOUND-13 and FOUND-14 by 10-01.1, which ticks them
-itself: they are one plan each and 10-07's closing read is about the mail.
+10-07 reads all five. FOUND-13 and FOUND-14 by 10-01.1, FOUND-15 by 10-02.1
+and FOUND-16 by 10-02.2, each ticked by its own plan: they are one plan each
+and 10-07's closing read is about the mail.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
