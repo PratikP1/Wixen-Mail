@@ -27,7 +27,7 @@ use crate::presentation::ui_types::CalendarView;
 use crate::service::spellcheck::{
     LanguageChoice, available_languages, language_to_use, system_language,
 };
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -154,36 +154,10 @@ pub struct SettingsWidgets {
     pub pim_panel: Panel,
     pub feedback_panel: Panel,
     pub advanced_panel: Panel,
-    // General
+    // General, the page the dialog opens on, built before it is shown.
     theme: Choice,
     pub font_size: TextCtrl,
     pub font_family: Choice,
-    // Compose
-    preview_before_send: CheckBox,
-    keep_sent_mail_on_this_computer: CheckBox,
-    undo_send_hold: SpinCtrl,
-    draft_autosave: SpinCtrl,
-    add_signature_automatically: CheckBox,
-    copy_lines: Choice,
-    // Reading. The two sort choices are public because a test builds this
-    // dialog and reads their tab order back (#36); nothing else is.
-    pub sort_order: Choice,
-    read_receipts: Choice,
-    read_messages_as: Choice,
-    date_style: Choice,
-    date_order: Choice,
-    date_wording: Choice,
-    clock_hours: Choice,
-    mark_read_after: Choice,
-    pub sort_then: Choice,
-    start_in_all_inboxes: CheckBox,
-    unread_on_a_parent: Choice,
-    a_conversation_reaches: Choice,
-    deleting_a_conversation_row: Choice,
-    empty_reaches_subfolders: CheckBox,
-    mark_read_reaches_subfolders: CheckBox,
-    hold_back_remote_pictures: CheckBox,
-    announce_decorative_pictures: CheckBox,
     smooth_scrolling: CheckBox,
     keep_selected_message_in_view: CheckBox,
     keep_running_in_the_tray: CheckBox,
@@ -192,36 +166,226 @@ pub struct SettingsWidgets {
     // Language
     language: Choice,
     check_spelling_before_send: CheckBox,
-    allow_mail: CheckBox,
-    allow_pim: CheckBox,
-    allow_message_text: CheckBox,
-    send_contact_changes_everywhere: CheckBox,
     check_spelling_as_you_type: CheckBox,
-    // Calendar & PIM
-    pub default_reminder: TextCtrl,
-    day_starts: Choice,
-    day_ends: Choice,
-    calendar_view: Choice,
-    // Advanced
-    log_level: Choice,
-    pub download_folder: TextCtrl,
-    look_at_message_contents: CheckBox,
-    check_links_with_google: CheckBox,
-    // Feedback: each box carries the answer it gives, so a tick cannot be read
-    // back against a different one. Public because a test builds this dialog
-    // and reads these back: wxdragon offers no way to raise a selection event
-    // from outside, so a test that could not reach these could prove the
-    // controls exist and never that moving between events keeps what was
-    // ticked.
-    pub feedback_global: Vec<(Switch, CheckBox)>,
-    pub feedback_whose_choice: StaticText,
-    pub feedback_event: Choice,
-    pub feedback_per_event: PerEventControls,
-    // Which sound plays. Read back by re-running the same discovery that
-    // populated it and indexing by selection, the same shape `sel` already
-    // gives every other Choice, rather than carrying a second, parallel
-    // list of ids that could drift out of position with the widget's own.
-    sound_scheme: Choice,
+    /// The six pages after General, each built when its tab is first
+    /// shown. Shared with the tab row's page-changed handler, which is what
+    /// builds them in the running program.
+    later: Rc<LaterPages>,
+}
+
+impl SettingsWidgets {
+    /// The Compose page's controls, built now if its tab was never shown.
+    pub fn compose(&self) -> &ComposeTabControls {
+        self.later.compose()
+    }
+
+    /// The Reading page's controls, built now if its tab was never shown.
+    pub fn reading(&self) -> &ReadingTabControls {
+        self.later.reading()
+    }
+
+    /// The Permissions page's controls, built now if its tab was never shown.
+    pub fn permissions(&self) -> &PermissionsTabControls {
+        self.later.permissions()
+    }
+
+    /// The Calendar & PIM page's controls, built now if its tab was never
+    /// shown.
+    pub fn calendar_and_pim(&self) -> &CalendarPimTabControls {
+        self.later.calendar_and_pim()
+    }
+
+    /// The Feedback page's controls, built now if its tab was never shown.
+    pub fn feedback(&self) -> &FeedbackTabControls {
+        self.later.feedback()
+    }
+
+    /// The Advanced page's controls, built now if its tab was never shown.
+    pub fn advanced(&self) -> &AdvancedTabControls {
+        self.later.advanced()
+    }
+}
+
+// ── The pages built when their tab is first shown ────────────────────────────
+
+/// Which tab is which, in the order `build_settings_dialog` adds them.
+/// General is tab 0 and is built before the dialog is shown, so nothing
+/// here names it.
+const THE_COMPOSE_TAB: usize = 1;
+const THE_READING_TAB: usize = 2;
+const THE_PERMISSIONS_TAB: usize = 3;
+const THE_CALENDAR_AND_PIM_TAB: usize = 4;
+const THE_FEEDBACK_TAB: usize = 5;
+const THE_ADVANCED_TAB: usize = 6;
+
+/// One page: its panel, which is in the notebook from the start so the tab
+/// row is complete, and its controls, which arrive the first time the tab
+/// is shown.
+struct APage<T> {
+    panel: Panel,
+    controls: OnceCell<T>,
+}
+
+impl<T> APage<T> {
+    fn on(panel: Panel) -> Self {
+        Self {
+            panel,
+            controls: OnceCell::new(),
+        }
+    }
+
+    /// The controls, built now if they were not.
+    fn built(&self, build: impl FnOnce(&Panel) -> T) -> &T {
+        self.controls.get_or_init(|| build(&self.panel))
+    }
+
+    /// The controls only if the page was built; `None` for a tab nobody
+    /// showed, whose settings are then written back as they were stored.
+    fn if_built(&self) -> Option<&T> {
+        self.controls.get()
+    }
+}
+
+/// The six pages after General, and what each is built from.
+///
+/// Before 09-09 every page was built before the dialog was shown, and the
+/// tester found the pause (#34). Measured on 2026-09-16 with the window
+/// shown and a screen reader running, the seven pages of controls were the
+/// whole of a 2.2 second build, and the three lists the issue named cost a
+/// millisecond each. So the page the dialog opens on is built before it is
+/// shown, the others when their tab is first reached, and a page nobody
+/// reaches is read back from the settings it would have shown.
+struct LaterPages {
+    /// What a page is built from: the configuration as it was when the
+    /// dialog opened, the accounts and whether the default one has a
+    /// calendar server, for the Notes section, the accessibility handle the
+    /// Feedback page announces through, and the palette the dialog was
+    /// painted with, so a page built later is painted the same.
+    config: AppConfig,
+    accounts: Vec<Account>,
+    a_calendar_server: bool,
+    a11y: Arc<Accessibility>,
+    palette: Option<theme::Palette>,
+    compose: APage<ComposeTabControls>,
+    reading: APage<ReadingTabControls>,
+    permissions: APage<PermissionsTabControls>,
+    calendar_and_pim: APage<CalendarPimTabControls>,
+    feedback: APage<FeedbackTabControls>,
+    advanced: APage<AdvancedTabControls>,
+}
+
+impl LaterPages {
+    /// Build the page behind `tab` if it is not built yet, frozen while its
+    /// controls arrive. `wxChoice` resizes itself after every item it is
+    /// handed unless it is frozen, and a child added under a frozen window
+    /// is frozen with it, so a page with a long list on it costs a fraction
+    /// of what it costs unfrozen. The General tab and a tab that is not a
+    /// page are nothing to do here.
+    fn build_the_page_for(&self, tab: usize) {
+        let Some(panel) = self.panel_of(tab) else {
+            return;
+        };
+        if self.is_built(tab) {
+            return;
+        }
+        panel.freeze();
+        match tab {
+            THE_COMPOSE_TAB => {
+                self.compose();
+            }
+            THE_READING_TAB => {
+                self.reading();
+            }
+            THE_PERMISSIONS_TAB => {
+                self.permissions();
+            }
+            THE_CALENDAR_AND_PIM_TAB => {
+                self.calendar_and_pim();
+            }
+            THE_FEEDBACK_TAB => {
+                self.feedback();
+            }
+            THE_ADVANCED_TAB => {
+                self.advanced();
+            }
+            _ => {}
+        }
+        // The panel already has the size the notebook gave it, so its new
+        // controls are placed now rather than at the dialog's next layout,
+        // which may never come.
+        panel.layout();
+        panel.thaw();
+    }
+
+    fn panel_of(&self, tab: usize) -> Option<&Panel> {
+        match tab {
+            THE_COMPOSE_TAB => Some(&self.compose.panel),
+            THE_READING_TAB => Some(&self.reading.panel),
+            THE_PERMISSIONS_TAB => Some(&self.permissions.panel),
+            THE_CALENDAR_AND_PIM_TAB => Some(&self.calendar_and_pim.panel),
+            THE_FEEDBACK_TAB => Some(&self.feedback.panel),
+            THE_ADVANCED_TAB => Some(&self.advanced.panel),
+            _ => None,
+        }
+    }
+
+    fn is_built(&self, tab: usize) -> bool {
+        match tab {
+            THE_COMPOSE_TAB => self.compose.if_built().is_some(),
+            THE_READING_TAB => self.reading.if_built().is_some(),
+            THE_PERMISSIONS_TAB => self.permissions.if_built().is_some(),
+            THE_CALENDAR_AND_PIM_TAB => self.calendar_and_pim.if_built().is_some(),
+            THE_FEEDBACK_TAB => self.feedback.if_built().is_some(),
+            THE_ADVANCED_TAB => self.advanced.if_built().is_some(),
+            _ => false,
+        }
+    }
+
+    fn compose(&self) -> &ComposeTabControls {
+        self.compose
+            .built(|panel| build_compose_tab(panel, &self.config))
+    }
+
+    fn reading(&self) -> &ReadingTabControls {
+        self.reading
+            .built(|panel| build_reading_tab(panel, &self.config))
+    }
+
+    fn permissions(&self) -> &PermissionsTabControls {
+        self.permissions
+            .built(|panel| build_permissions_tab(panel, &self.config))
+    }
+
+    fn calendar_and_pim(&self) -> &CalendarPimTabControls {
+        self.calendar_and_pim.built(|panel| {
+            let controls =
+                build_calendar_pim_tab(panel, &self.config, &self.accounts, self.a_calendar_server);
+            self.paint(&controls.default_reminder);
+            controls
+        })
+    }
+
+    fn feedback(&self) -> &FeedbackTabControls {
+        self.feedback
+            .built(|panel| build_feedback_tab(panel, &self.config, &self.a11y))
+    }
+
+    fn advanced(&self) -> &AdvancedTabControls {
+        self.advanced.built(|panel| {
+            let controls = build_advanced_tab(panel, &self.config);
+            self.paint(&controls.download_folder);
+            controls
+        })
+    }
+
+    /// Paint a field the way the dialog was painted when it was built. The
+    /// text fields are the controls whose colour the theme sets by hand;
+    /// `None` means Windows decides and nothing is set.
+    fn paint(&self, field: &TextCtrl) {
+        if let Some(palette) = self.palette {
+            theme::paint(field, palette.main_surface());
+        }
+    }
 }
 
 /// Helper: unwrap get_selection() returning 0 if None.
@@ -266,9 +430,17 @@ pub fn show_settings_dialog(
     // real limit, and the screen used to put nine to five back with nothing
     // said at all: somebody choosing a night shift set it, heard nothing, and
     // found the built-in day again the next time they looked.
-    let starts = sel(&widgets.day_starts) as u8;
-    let ends = sel(&widgets.day_ends) as u8;
-    if WorkingDay::could_not_be_used(starts, ends) {
+    //
+    // A Calendar & PIM tab nobody showed holds no answer to refuse: what is
+    // written back for it is what was stored.
+    let working_day_as_shown = widgets
+        .later
+        .calendar_and_pim
+        .if_built()
+        .map(|pim| (sel(&pim.day_starts) as u8, sel(&pim.day_ends) as u8));
+    if working_day_as_shown
+        .is_some_and(|(starts, ends)| WorkingDay::could_not_be_used(starts, ends))
+    {
         let _ = a11y.announce(
             "A working day that runs past midnight cannot be kept, so the \
              working day is unchanged. Everything else you changed is saved.",
@@ -315,6 +487,13 @@ pub fn build_settings_dialog(
     let dlg = Dialog::builder(parent, "Settings")
         .with_size(560, 520)
         .build();
+    // Frozen until it is laid out. A child added under a frozen window is
+    // frozen with it, and a frozen `wxChoice` takes its items without
+    // resizing itself after each one: measured on 2026-09-16 with the
+    // parent window shown, the typeface list alone cost about a second
+    // unfrozen and a tenth of that frozen (#34). Nothing is drawn before the
+    // dialog is shown either way, so nothing is lost by it.
+    dlg.freeze();
 
     let root_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
@@ -322,7 +501,7 @@ pub fn build_settings_dialog(
     let notebook = Notebook::builder(&dlg).build();
     answer_the_arrows_on(&notebook);
 
-    // ── Tab 1: General
+    // ── Tab 1: General, the page the dialog opens on, so built now
     let general_panel = Panel::builder(&notebook).build();
     let GeneralTabControls {
         theme,
@@ -340,63 +519,51 @@ pub fn build_settings_dialog(
     } = build_general_tab(&general_panel, config);
     notebook.add_page(&general_panel, "General", true, None);
 
-    // ── Tab 2: Compose
+    // ── Tabs 2 to 7: in the tab row from the start, so every tab is
+    // there to be reached and read, and each built the first time its tab
+    // is shown. The order here is the order the constants above name.
     let compose_panel = Panel::builder(&notebook).build();
-    let ComposeTabControls {
-        copy_lines,
-        preview_before_send,
-        keep_sent_mail_on_this_computer,
-        undo_send_hold,
-        draft_autosave,
-        add_signature_automatically,
-    } = build_compose_tab(&compose_panel, config);
     notebook.add_page(&compose_panel, "Compose", false, None);
-
-    // ── Tab 3: Reading
     let reading_panel = Panel::builder(&notebook).build();
-    let ReadingTabControls {
-        sort_order,
-        read_receipts,
-        read_messages_as,
-        date_style,
-        date_order,
-        date_wording,
-        clock_hours,
-        mark_read_after,
-        sort_then,
-        start_in_all_inboxes,
-        unread_on_a_parent,
-        a_conversation_reaches,
-        deleting_a_conversation_row,
-        empty_reaches_subfolders,
-        mark_read_reaches_subfolders,
-        hold_back_remote_pictures,
-        announce_decorative_pictures,
-    } = build_reading_tab(&reading_panel, config);
     notebook.add_page(&reading_panel, "Reading", false, None);
-
-    // ── Tab 4: what this application may change
     let permissions_panel = Panel::builder(&notebook).build();
-    let (allow_mail, allow_pim, allow_message_text, send_contact_changes_everywhere) =
-        build_permissions_tab(&permissions_panel, config);
     notebook.add_page(&permissions_panel, "Permissions", false, None);
-
-    // ── Tab 5: Calendar & PIM
     let pim_panel = Panel::builder(&notebook).build();
-    let (default_reminder, day_starts, day_ends, calendar_view) =
-        build_calendar_pim_tab(&pim_panel, config, accounts, a_calendar_server);
     notebook.add_page(&pim_panel, "Calendar && PIM", false, None);
-
-    // ── Tab 6: Feedback
     let feedback_panel = Panel::builder(&notebook).build();
-    let feedback = build_feedback_tab(&feedback_panel, config, a11y);
     notebook.add_page(&feedback_panel, "Feedback", false, None);
-
-    // ── Tab 7: Advanced
     let advanced_panel = Panel::builder(&notebook).build();
-    let (log_level, download_folder, look_at_message_contents, check_links_with_google) =
-        build_advanced_tab(&advanced_panel, config);
     notebook.add_page(&advanced_panel, "Advanced", false, None);
+
+    // Computed from `config` rather than a fresh disk read (see this
+    // function's own doc comment for why). `None` means high contrast is
+    // on, or the system is set up in a way this application should not
+    // paint over, so nothing is set and Windows decides.
+    let palette = theme::current(&config.theme);
+    let later = Rc::new(LaterPages {
+        config: config.clone(),
+        accounts: accounts.to_vec(),
+        a_calendar_server,
+        a11y: Arc::clone(a11y),
+        palette,
+        compose: APage::on(compose_panel),
+        reading: APage::on(reading_panel),
+        permissions: APage::on(permissions_panel),
+        calendar_and_pim: APage::on(pim_panel),
+        feedback: APage::on(feedback_panel),
+        advanced: APage::on(advanced_panel),
+    });
+    notebook.on_page_changed({
+        let later = Rc::clone(&later);
+        move |event| {
+            if let Some(reached) = event
+                .get_selection()
+                .and_then(|tab| usize::try_from(tab).ok())
+            {
+                later.build_the_page_for(reached);
+            }
+        }
+    });
 
     root_sizer.add(&notebook, 1, SizerFlag::Expand | SizerFlag::All, 8);
 
@@ -455,66 +622,45 @@ pub fn build_settings_dialog(
         }
     });
 
-    // Painted last, after every tab has built and populated its own
-    // controls, and computed from `config` rather than a fresh disk read
-    // (see this function's own doc comment for why). `None` means high
-    // contrast is on, or the system is set up in a way this application
-    // should not paint over, so nothing is set here and Windows decides.
-    if let Some(palette) = theme::current(&config.theme) {
+    // Painted after the page that is built has populated its controls; a
+    // page built later paints its own fields the same way, from the same
+    // palette, in `LaterPages`. The panels are painted now, built or not,
+    // because they are the surface a page's controls sit on.
+    if let Some(palette) = palette {
         theme::paint(&dlg, palette.main_surface());
         theme::paint(&notebook, palette.main_surface());
         for panel in [
             &general_panel,
-            &compose_panel,
-            &reading_panel,
-            &permissions_panel,
-            &pim_panel,
-            &feedback_panel,
-            &advanced_panel,
+            &later.compose.panel,
+            &later.reading.panel,
+            &later.permissions.panel,
+            &later.calendar_and_pim.panel,
+            &later.feedback.panel,
+            &later.advanced.panel,
         ] {
             theme::paint(panel, palette.main_surface());
         }
-        for field in [&font_size, &default_reminder, &download_folder] {
-            theme::paint(field, palette.main_surface());
-        }
+        theme::paint(&font_size, palette.main_surface());
     }
+
+    // Laid out, and only then thawed: a thaw on a window with a sizer
+    // redraws what the sizer has placed, and before the dialog is shown
+    // there is nothing to redraw.
+    dlg.thaw();
 
     SettingsWidgets {
         dialog: dlg,
         notebook,
         general_panel,
-        compose_panel,
-        reading_panel,
-        permissions_panel,
-        pim_panel,
-        feedback_panel,
-        advanced_panel,
+        compose_panel: later.compose.panel,
+        reading_panel: later.reading.panel,
+        permissions_panel: later.permissions.panel,
+        pim_panel: later.calendar_and_pim.panel,
+        feedback_panel: later.feedback.panel,
+        advanced_panel: later.advanced.panel,
         theme,
         font_size,
         font_family,
-        preview_before_send,
-        keep_sent_mail_on_this_computer,
-        undo_send_hold,
-        draft_autosave,
-        add_signature_automatically,
-        sort_order,
-        read_receipts,
-        read_messages_as,
-        date_style,
-        date_order,
-        date_wording,
-        clock_hours,
-        mark_read_after,
-        sort_then,
-        copy_lines,
-        start_in_all_inboxes,
-        unread_on_a_parent,
-        a_conversation_reaches,
-        deleting_a_conversation_row,
-        empty_reaches_subfolders,
-        mark_read_reaches_subfolders,
-        hold_back_remote_pictures,
-        announce_decorative_pictures,
         smooth_scrolling,
         keep_selected_message_in_view,
         keep_running_in_the_tray,
@@ -523,23 +669,7 @@ pub fn build_settings_dialog(
         language,
         check_spelling_before_send,
         check_spelling_as_you_type,
-        allow_mail,
-        allow_pim,
-        allow_message_text,
-        send_contact_changes_everywhere,
-        default_reminder,
-        day_starts,
-        day_ends,
-        calendar_view,
-        log_level,
-        download_folder,
-        look_at_message_contents,
-        check_links_with_google,
-        feedback_global: feedback.global,
-        feedback_whose_choice: feedback.whose_choice,
-        feedback_event: feedback.event,
-        feedback_per_event: feedback.per_event,
-        sound_scheme: feedback.sound_scheme,
+        later,
     }
 }
 
@@ -835,12 +965,12 @@ fn add_language_and_spelling(
         .build();
     lang_sec.add(&marking_note, 0, SizerFlag::All, 4);
 
-    let speller = crate::service::spellcheck::for_language(&config.language);
+    // Named without building a checker. This used to build one to ask it,
+    // and letting go of a Windows checker cost about a fifth of a second,
+    // measured on 2026-09-16 for #34, on every open of this dialog.
+    let source = crate::service::spellcheck::source_for_language(&config.language);
     let checker_note = StaticText::builder(panel)
-        .with_label(&format!(
-            "Spelling is checked by {}.",
-            speller.source().describe()
-        ))
+        .with_label(&format!("Spelling is checked by {}.", source.describe()))
         .build();
     lang_sec.add(&checker_note, 0, SizerFlag::All, 4);
 
@@ -1075,7 +1205,7 @@ fn add_new_versions(panel: &Panel, config: &AppConfig, sizer: &BoxSizer) -> Choi
 /// The controls `build_compose_tab` lays out, one field per control, named for
 /// what it controls rather than by position: two of them are check boxes and
 /// two are spin boxes, and a tuple would tell them apart by counting.
-struct ComposeTabControls {
+pub struct ComposeTabControls {
     copy_lines: Choice,
     preview_before_send: CheckBox,
     keep_sent_mail_on_this_computer: CheckBox,
@@ -1281,10 +1411,13 @@ const DECORATIVE_PICTURES_WHEN_THIS_IS_OFF: &str = "On by default. A sender can 
 
 /// The controls `build_reading_tab` lays out, one field per choice, named
 /// for what it actually controls rather than by position.
-struct ReadingTabControls {
+///
+/// The two sort choices are public because a test builds this dialog and
+/// reads their tab order back (#36); nothing else is.
+pub struct ReadingTabControls {
     empty_reaches_subfolders: CheckBox,
     mark_read_reaches_subfolders: CheckBox,
-    sort_order: Choice,
+    pub sort_order: Choice,
     start_in_all_inboxes: CheckBox,
     unread_on_a_parent: Choice,
     a_conversation_reaches: Choice,
@@ -1298,7 +1431,34 @@ struct ReadingTabControls {
     date_wording: Choice,
     clock_hours: Choice,
     mark_read_after: Choice,
-    sort_then: Choice,
+    pub sort_then: Choice,
+}
+
+/// The controls `build_permissions_tab` lays out: what may be changed at a
+/// server, and how a contact edit travels.
+pub struct PermissionsTabControls {
+    allow_mail: CheckBox,
+    allow_pim: CheckBox,
+    allow_message_text: CheckBox,
+    send_contact_changes_everywhere: CheckBox,
+}
+
+/// The controls `build_calendar_pim_tab` lays out. The reminder field is
+/// public because a test reads back the colour it was painted.
+pub struct CalendarPimTabControls {
+    pub default_reminder: TextCtrl,
+    day_starts: Choice,
+    day_ends: Choice,
+    calendar_view: Choice,
+}
+
+/// The controls `build_advanced_tab` lays out. The download folder is public
+/// for the same reason the reminder field above is.
+pub struct AdvancedTabControls {
+    log_level: Choice,
+    pub download_folder: TextCtrl,
+    look_at_message_contents: CheckBox,
+    check_links_with_google: CheckBox,
 }
 
 /// Reading settings: how the list is sorted, how a message opens, dates.
@@ -1862,10 +2022,7 @@ const CONTACT_CHANGES_WHEN_THIS_IS_OFF: &str =
 /// now, and what was left is the two permissions and the contacts rule. Named
 /// for what it holds, because a tab named for something it does not contain is
 /// a tab nobody looks in for what it does.
-fn build_permissions_tab(
-    panel: &Panel,
-    config: &AppConfig,
-) -> (CheckBox, CheckBox, CheckBox, CheckBox) {
+fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> PermissionsTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Spell Check
@@ -2010,12 +2167,12 @@ fn build_permissions_tab(
     sizer.add_sizer(&contacts_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (
+    PermissionsTabControls {
         allow_mail,
         allow_pim,
         allow_message_text,
         send_contact_changes_everywhere,
-    )
+    }
 }
 
 /// Calendar & PIM settings: default view, weekends, first day, reminder time.
@@ -2024,7 +2181,7 @@ fn build_calendar_pim_tab(
     config: &AppConfig,
     accounts: &[Account],
     a_calendar_server: bool,
-) -> (TextCtrl, Choice, Choice, Choice) {
+) -> CalendarPimTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Calendar View
@@ -2142,7 +2299,12 @@ fn build_calendar_pim_tab(
     sizer.add_sizer(&notes_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (rem_field, day_starts, day_ends, view_choice)
+    CalendarPimTabControls {
+        default_reminder: rem_field,
+        day_starts,
+        day_ends,
+        calendar_view: view_choice,
+    }
 }
 
 /// Every hour of the day, named rather than numbered.
@@ -2179,7 +2341,7 @@ const HOURS: [&str; 25] = [
 ];
 
 /// Advanced: log level, download folder, cache info, link checking.
-fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, CheckBox, CheckBox) {
+fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> AdvancedTabControls {
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     // -- Logging
@@ -2304,7 +2466,12 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> (Choice, TextCtrl, C
     sizer.add_sizer(&links_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     panel.set_sizer(sizer, true);
-    (log_choice, dl_field, body_box, links_box)
+    AdvancedTabControls {
+        log_level: log_choice,
+        download_folder: dl_field,
+        look_at_message_contents: body_box,
+        check_links_with_google: links_box,
+    }
 }
 
 /// The three controls that answer for whichever event the picker is showing,
@@ -2897,6 +3064,11 @@ fn discovered_schemes() -> Vec<SoundScheme> {
 pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     let mut cfg = base.clone();
 
+    // A page whose tab was never shown was never built, and its settings
+    // are `base`'s, which is what the page would have shown; each `if let`
+    // below leaves them as they are. Nothing here builds a page: OK is not
+    // the moment to pay for six pages nobody looked at.
+
     // Feedback. The tab's working settings hold every per-event answer it has
     // been given, including for events the picker is not showing, so what is on
     // screen is remembered first and then the whole thing is written.
@@ -2906,35 +3078,31 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // stored value were preserved because "this tab only decides which channels
     // are on at all". That stopped being true the moment the tab could create
     // them.
-    w.feedback_per_event.remember_what_is_on_screen();
-    {
-        let mut feedback = w.feedback_per_event.working.borrow_mut();
-        for (switch, cb) in &w.feedback_global {
-            for channel in switch.channels() {
-                feedback.set_channel_enabled(*channel, cb.get_value());
+    if let Some(page) = w.later.feedback.if_built() {
+        page.per_event.remember_what_is_on_screen();
+        {
+            let mut feedback = page.per_event.working.borrow_mut();
+            for (switch, cb) in &page.global {
+                for channel in switch.channels() {
+                    feedback.set_channel_enabled(*channel, cb.get_value());
+                }
             }
+            cfg.feedback_channels = feedback.to_stored();
         }
-        cfg.feedback_channels = feedback.to_stored();
+
+        // The scheme picker's own order is whatever discovery produced when
+        // the page was built; reading it back the same way is what makes the
+        // selection index mean the same scheme it meant a moment ago.
+        let schemes = discovered_schemes();
+        cfg.sound_scheme_id = schemes
+            .get(sel(&page.sound_scheme) as usize)
+            .map(|s| s.id.clone())
+            .unwrap_or_default();
     }
 
-    // The scheme picker's own order is whatever discovery produced when the
-    // dialog was built; reading it back the same way is what makes the
-    // selection index mean the same scheme it meant a moment ago.
-    let schemes = discovered_schemes();
-    cfg.sound_scheme_id = schemes
-        .get(sel(&w.sound_scheme) as usize)
-        .map(|s| s.id.clone())
-        .unwrap_or_default();
-
-    // What may be done at a server. Read back as three answers, because they
-    // are three: sending cannot be undone, a task can be moved back, and
-    // fetching a message's text changes nothing there at all.
-    cfg.allowed_changes = crate::application::allowed::Allowed {
-        mail: w.allow_mail.get_value(),
-        personal_information: w.allow_pim.get_value(),
-        reading: w.allow_message_text.get_value(),
-    };
-    cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
+    if let Some(page) = w.later.permissions.if_built() {
+        read_the_permissions_page(page, &mut cfg);
+    }
 
     // General
     cfg.theme = match sel(&w.theme) {
@@ -2950,24 +3118,6 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .parse::<u32>()
         .unwrap_or(base.font_size)
         .clamp(8, 72);
-
-    // Compose
-    cfg.preview_before_send = w.preview_before_send.get_value();
-    cfg.keep_sent_mail_on_this_computer = w.keep_sent_mail_on_this_computer.get_value();
-    // Through the clamping constructor on the way out as well as on the way
-    // in, so what is stored is a length the program will really use and every
-    // sentence about the hold names the length that came out.
-    cfg.undo_send_hold_seconds =
-        crate::application::sending_later::Hold::of_seconds(w.undo_send_hold.value() as i64)
-            .seconds();
-    cfg.draft_autosave_minutes =
-        AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
-    cfg.add_signature_automatically = w.add_signature_automatically.get_value();
-
-    // Reading
-    cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
-    cfg.hold_back_remote_pictures = w.hold_back_remote_pictures.get_value();
-    cfg.announce_decorative_pictures = w.announce_decorative_pictures.get_value();
     cfg.smooth_scrolling = w.smooth_scrolling.get_value();
     cfg.keep_running_in_the_tray = w.keep_running_in_the_tray.get_value();
     // By the words shown rather than the row number. A row number needs the
@@ -2979,10 +3129,89 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .get_string_selection()
         .map(|chosen| crate::application::font_choice::what_the_words_store(&chosen))
         .unwrap_or_else(|| cfg.font_family.clone());
-    // By the words shown rather than the row number, for the same reason
-    // `font_family` above gives. Words nothing recognises fall to the default
-    // rather than to whichever branch is written first, which is what a
-    // hand-edited settings file gets.
+    cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
+    // By position in the one array the control was built from, rather than by
+    // matching the words back. The words are what somebody reads and the
+    // position is what the box holds, and a box that answers nothing keeps
+    // whatever was already stored rather than falling back to a variant chosen
+    // here, which would be a second place deciding what this setting means.
+    cfg.which_updates = crate::common::version::WhichUpdates::ALL
+        .get(sel(&w.which_updates) as usize)
+        .copied()
+        .unwrap_or(cfg.which_updates);
+    cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
+    // Language. Rebuilt rather than remembered, because it is what the picker
+    // was filled from and the two have to stay the same list, including the
+    // row a stored tag nothing offers was given at the end.
+    let (languages, _) = language_rows_and_selection(&base.language);
+    let idx = sel(&w.language) as usize;
+    if idx < languages.len() {
+        cfg.language = languages[idx].tag.clone();
+    }
+    cfg.check_spelling_before_send = w.check_spelling_before_send.is_checked();
+    cfg.check_spelling_as_you_type = w.check_spelling_as_you_type.is_checked();
+
+    if let Some(page) = w.later.compose.if_built() {
+        read_the_compose_page(page, &mut cfg);
+    }
+    if let Some(page) = w.later.reading.if_built() {
+        read_the_reading_page(page, base, &mut cfg);
+    }
+    if let Some(page) = w.later.calendar_and_pim.if_built() {
+        read_the_calendar_and_pim_page(page, base, &mut cfg);
+    }
+    if let Some(page) = w.later.advanced.if_built() {
+        read_the_advanced_page(page, &mut cfg);
+    }
+
+    cfg
+}
+
+/// Permissions: what may be done at a server, read back as three answers,
+/// because they are three: sending cannot be undone, a task can be moved
+/// back, and fetching a message's text changes nothing there at all. And how
+/// a contact edit travels.
+fn read_the_permissions_page(w: &PermissionsTabControls, cfg: &mut AppConfig) {
+    cfg.allowed_changes = crate::application::allowed::Allowed {
+        mail: w.allow_mail.get_value(),
+        personal_information: w.allow_pim.get_value(),
+        reading: w.allow_message_text.get_value(),
+    };
+    cfg.send_contact_changes_everywhere = w.send_contact_changes_everywhere.get_value();
+}
+
+/// Compose: the compose window, sending, drafts, signature.
+fn read_the_compose_page(w: &ComposeTabControls, cfg: &mut AppConfig) {
+    cfg.preview_before_send = w.preview_before_send.get_value();
+    cfg.keep_sent_mail_on_this_computer = w.keep_sent_mail_on_this_computer.get_value();
+    // Through the clamping constructor on the way out as well as on the way
+    // in, so what is stored is a length the program will really use and every
+    // sentence about the hold names the length that came out.
+    cfg.undo_send_hold_seconds =
+        crate::application::sending_later::Hold::of_seconds(w.undo_send_hold.value() as i64)
+            .seconds();
+    cfg.draft_autosave_minutes =
+        AutosaveInterval::from_setting(w.draft_autosave.value().max(0) as u32).minutes();
+    cfg.add_signature_automatically = w.add_signature_automatically.get_value();
+    cfg.copy_lines = match sel(&w.copy_lines) {
+        1 => CopyLines::Hidden,
+        _ => CopyLines::Shown,
+    }
+    .as_stored()
+    .to_string();
+}
+
+/// Reading: how the list is sorted, how a message opens, dates.
+fn read_the_reading_page(w: &ReadingTabControls, base: &AppConfig, cfg: &mut AppConfig) {
+    cfg.start_in_all_inboxes = w.start_in_all_inboxes.get_value();
+    cfg.hold_back_remote_pictures = w.hold_back_remote_pictures.get_value();
+    cfg.announce_decorative_pictures = w.announce_decorative_pictures.get_value();
+    // By the words shown rather than the row number. A row number needs the
+    // list the control was built from a second time to mean anything, and if
+    // that list differed at saving from the one somebody chose from, their
+    // choice would be stored as a different answer or quietly reset. Words
+    // nothing recognises fall to the default rather than to whichever branch
+    // is written first, which is what a hand-edited settings file gets.
     cfg.unread_on_a_parent = w
         .unread_on_a_parent
         .get_string_selection()
@@ -3009,17 +3238,6 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // D-34 and D-35, written back separately because they are two answers.
     cfg.empty_reaches_subfolders = w.empty_reaches_subfolders.get_value();
     cfg.mark_read_reaches_subfolders = w.mark_read_reaches_subfolders.get_value();
-    cfg.check_default_programs_at_startup = w.check_default_programs_at_startup.get_value();
-    // By position in the one array the control was built from, rather than by
-    // matching the words back. The words are what somebody reads and the
-    // position is what the box holds, and a box that answers nothing keeps
-    // whatever was already stored rather than falling back to a variant chosen
-    // here, which would be a second place deciding what this setting means.
-    cfg.which_updates = crate::common::version::WhichUpdates::ALL
-        .get(sel(&w.which_updates) as usize)
-        .copied()
-        .unwrap_or(cfg.which_updates);
-    cfg.keep_selected_message_in_view = w.keep_selected_message_in_view.get_value();
     cfg.default_sort_order = match sel(&w.sort_order) {
         1 => "date_oldest",
         2 => "sender_az",
@@ -3070,12 +3288,6 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .copied()
         .unwrap_or_default()
         .as_stored();
-    cfg.copy_lines = match sel(&w.copy_lines) {
-        1 => CopyLines::Hidden,
-        _ => CopyLines::Shown,
-    }
-    .as_stored()
-    .to_string();
     cfg.message_columns = with_second_level(&base.message_columns, sel(&w.sort_then));
 
     cfg.read_receipts = Policy::ALL
@@ -3084,19 +3296,14 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .unwrap_or_default()
         .as_str()
         .to_string();
+}
 
-    // Language. Rebuilt rather than remembered, because it is what the picker
-    // was filled from and the two have to stay the same list, including the
-    // row a stored tag nothing offers was given at the end.
-    let (languages, _) = language_rows_and_selection(&base.language);
-    let idx = sel(&w.language) as usize;
-    if idx < languages.len() {
-        cfg.language = languages[idx].tag.clone();
-    }
-    cfg.check_spelling_before_send = w.check_spelling_before_send.is_checked();
-    cfg.check_spelling_as_you_type = w.check_spelling_as_you_type.is_checked();
-
-    // Calendar & PIM
+/// Calendar & PIM: the working day, the calendar's view, the reminder.
+fn read_the_calendar_and_pim_page(
+    w: &CalendarPimTabControls,
+    base: &AppConfig,
+    cfg: &mut AppConfig,
+) {
     // Kept through the same check the calendar reads it through, so a day
     // that ends before it starts never reaches the file.
     let day = WorkingDay::from_setting(sel(&w.day_starts) as u8, sel(&w.day_ends) as u8);
@@ -3118,8 +3325,10 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
         .parse::<u32>()
         .unwrap_or(base.default_reminder_minutes)
         .min(1440);
+}
 
-    // Advanced
+/// Advanced: the log level, the download folder, what is looked at.
+fn read_the_advanced_page(w: &AdvancedTabControls, cfg: &mut AppConfig) {
     cfg.log_level = match sel(&w.log_level) {
         0 => "error",
         1 => "warn",
@@ -3134,6 +3343,4 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     }
     cfg.look_at_message_contents = w.look_at_message_contents.is_checked();
     cfg.check_links_with_google = w.check_links_with_google.is_checked();
-
-    cfg
 }

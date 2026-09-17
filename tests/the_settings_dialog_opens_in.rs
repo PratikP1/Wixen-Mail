@@ -32,7 +32,15 @@
 //! no accounts and no calendar server, in this process under
 //! `wxdragon::main`, five times, each dialog destroyed before the next is
 //! built, first and median. It includes the three candidates; the difference
-//! between it and their sum is what building seven pages of controls costs.
+//! between it and their sum is what building the pages of controls costs.
+//! The frame it is built on is never shown, and that understates what the
+//! running program pays: found on 2026-09-16 by showing the frame in a
+//! scratch run, the same build cost three times as much, within three
+//! percent of the release binary's own line, because a screen reader's
+//! in-process hooks attach to a process with a window on screen and watch
+//! every control's creation. The line below is the figure that counts; this
+//! one is kept because it is the figure a runner with no screen reader can
+//! take.
 //!
 //! **The line** is what the release binary writes. It is measured by starting
 //! the binary against a throwaway profile, opening Settings through the same
@@ -670,7 +678,7 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
                         .to_string(),
                 );
             }
-            widgets.sort_order.set_selection(0);
+            widgets.reading().sort_order.set_selection(0);
             let after_a_change = wx_settings::read_settings(&widgets, &config);
             if after_a_change.default_sort_order != "date_newest" {
                 wrong.push(format!(

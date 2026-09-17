@@ -581,10 +581,43 @@ pub fn for_language(tag: &str) -> Box<dyn Speller> {
 /// Which source [`for_language`] would hand back for this tag, decided the
 /// same way and without building a checker.
 ///
-/// Not written yet: the red half of 09-09, which names the answer the
-/// settings screen will word its sentence from.
-pub fn source_for_language(_tag: &str) -> Source {
-    Source::Builtin
+/// The settings screen says which checker will check spelling, and it used
+/// to build one to find out. Letting go of a Windows checker costs about a
+/// fifth of a second, measured on 2026-09-16 for #34, and that was a third
+/// of what opening Settings cost, for one sentence. So the same three
+/// questions are asked here with nothing built: does Windows check the
+/// resolved tag or the tag as stored, is there a Hunspell dictionary for the
+/// language on this computer, and otherwise the built-in list.
+///
+/// The one thing the two can disagree on: a dictionary whose two files are
+/// present and will not parse is named here as installed, and the checker
+/// that tried to read it falls to the built-in list.
+pub fn source_for_language(tag: &str) -> Source {
+    if windows_checks(tag) {
+        return Source::Windows;
+    }
+    let code = short_code(tag);
+    let known = supported_languages().into_iter().find(|l| l.code == code);
+    let hunspell_name = hunspell_name_for(code, known.as_ref());
+    if hunspell_files_for(&hunspell_name, &default_dict_search_paths()).is_empty() {
+        Source::Builtin
+    } else {
+        Source::Hunspell
+    }
+}
+
+/// Whether Windows would check this tag, asked the way [`for_language`]
+/// asks it: the resolved tag first, then the tag as stored.
+#[cfg(windows)]
+fn windows_checks(tag: &str) -> bool {
+    language_to_use(tag, system_language().as_deref(), &available_languages())
+        .is_some_and(|resolved| windows_speller::WindowsSpeller::can_check(&resolved))
+        || windows_speller::WindowsSpeller::can_check(tag)
+}
+
+#[cfg(not(windows))]
+fn windows_checks(_tag: &str) -> bool {
+    false
 }
 
 /// The language half of a tag: `en-GB` is English.
@@ -685,10 +718,7 @@ impl SpellChecker {
         let search_paths = default_dict_search_paths();
 
         // Attempt to load Hunspell dictionary via spellbook
-        let hunspell_name = lang_info
-            .as_ref()
-            .map(|l| l.hunspell_name.clone())
-            .unwrap_or_else(|| format!("{lang_code}_{}", lang_code.to_uppercase()));
+        let hunspell_name = hunspell_name_for(lang_code, lang_info.as_ref());
 
         let backend = try_load_spellbook(&hunspell_name, &search_paths).unwrap_or_else(|| {
             // Fallback: built-in word list (English only)
@@ -899,15 +929,34 @@ fn default_dict_search_paths() -> Vec<PathBuf> {
     paths
 }
 
+/// The file name a Hunspell dictionary for this language goes by, without
+/// its extension: the one the language list records, or `xx_XX` for a
+/// language the list does not know.
+fn hunspell_name_for(lang_code: &str, known: Option<&LanguageInfo>) -> String {
+    known
+        .map(|language| language.hunspell_name.clone())
+        .unwrap_or_else(|| format!("{lang_code}_{}", lang_code.to_uppercase()))
+}
+
+/// Every folder among `search_paths` holding both halves of the dictionary,
+/// as the two files, in the order the folders are searched. Asked by the
+/// loader below and by [`source_for_language`], so the two cannot look in
+/// different places.
+fn hunspell_files_for(hunspell_name: &str, search_paths: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
+    search_paths
+        .iter()
+        .filter_map(|dir| {
+            let aff_path = dir.join(format!("{hunspell_name}.aff"));
+            let dic_path = dir.join(format!("{hunspell_name}.dic"));
+            (aff_path.exists() && dic_path.exists()).then_some((aff_path, dic_path))
+        })
+        .collect()
+}
+
 /// Try to load a Hunspell dictionary from one of the search paths.
 fn try_load_spellbook(hunspell_name: &str, search_paths: &[PathBuf]) -> Option<Backend> {
-    for dir in search_paths {
-        let aff_path = dir.join(format!("{}.aff", hunspell_name));
-        let dic_path = dir.join(format!("{}.dic", hunspell_name));
-
-        if aff_path.exists()
-            && dic_path.exists()
-            && let Ok(aff) = std::fs::read_to_string(&aff_path)
+    for (aff_path, dic_path) in hunspell_files_for(hunspell_name, search_paths) {
+        if let Ok(aff) = std::fs::read_to_string(&aff_path)
             && let Ok(dic) = std::fs::read_to_string(&dic_path)
         {
             let aff_static: &'static str = Box::leak(aff.into_boxed_str());
@@ -916,7 +965,7 @@ fn try_load_spellbook(hunspell_name: &str, search_paths: &[PathBuf]) -> Option<B
                 tracing::info!(
                     "Loaded Hunspell dictionary '{}' from {}",
                     hunspell_name,
-                    dir.display()
+                    aff_path.display()
                 );
                 return Some(Backend::Spellbook(Box::new(dict)));
             }
