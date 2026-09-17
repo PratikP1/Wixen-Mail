@@ -2833,8 +2833,18 @@ as this one. Every evidence line was re-taken against `main` at `f3be1ef5` on 20
 `git diff --stat 7d57cd49 HEAD -- src/presentation/wx_settings.rs` prints nothing, so the
 lines are the ones the diagnosis in the planning session quoted.
 
-- [ ] **FOUND-13**: Every checkbox on every Settings tab reads as a check box with its checked
+- [x] **FOUND-13**: Every checkbox on every Settings tab reads as a check box with its checked
   state, and toggles on Space with the new state announced, after its page is built lazily.
+  - **Closed 2026-09-17 by 10-01.1, merged at `d020aa60`.** The first `[D]` line by the paint
+    moved into `APage::built` on both paths, with
+    `test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown`
+    and `test_one_arrow_on_the_settings_tab_row_raises_one_focus_event` green; the second by
+    `tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs`
+    (`test_every_checkbox_on_a_later_page_answers_check_button_after_set_selection`,
+    `test_bm_click_toggles_the_checked_state_on_every_later_page`,
+    `test_the_reading_tells_a_push_button_from_a_check_box`) and the record "a later Settings
+    panel is painted after its controls exist, so its check boxes stay check boxes". The `[S]`
+    lines stay (ledger 513).
   - Evidence: `build_settings_dialog` (`wx_settings.rs:480`) paints all seven page panels at
     `:629-644` before the six pages after General have any control; those pages are built on
     the page-changed event by `LaterPages::build_the_page_for` (`:284-318`) through the
@@ -2867,8 +2877,16 @@ lines are the ones the diagnosis in the planning session quoted.
     back after Tab away and back, on the next build, is the tester's; so is whether General
     sounds as before and Settings still opens at once.
 
-- [ ] **FOUND-14**: After Ctrl+Tab or Ctrl+Shift+Tab from inside a Settings page, focus rests
+- [x] **FOUND-14**: After Ctrl+Tab or Ctrl+Shift+Tab from inside a Settings page, focus rests
   on the first control of the reached page, or on the tab row, and NVDA names it.
+  - **Closed 2026-09-17 by 10-01.1, merged at `d020aa60`.** The first `[D]` line by
+    `first_in_tab_order` on each page and the hand-off in `build_the_page_for`, held by
+    `test_a_page_reached_from_inside_a_page_puts_focus_on_its_first_control` and
+    `test_a_page_reached_from_the_tab_row_leaves_focus_on_the_row`; the second by
+    `tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs`
+    with `test_the_reading_tells_the_page_panel_from_a_control_on_it` and the record "a
+    Settings page reached from inside another page hands focus to its first control". The
+    `[S]` lines stay (ledger 513).
   - Evidence: `wxNotebook::SetSelection` calls `UpdateSelection` before it sends the
     page-changed event (`src/msw/notebook.cpp:342-361`), and `UpdateSelection` gives the new
     page focus when the notebook is visible and does not itself hold focus (`:364-391`, line
@@ -3197,8 +3215,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
 | FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
-| FOUND-13 | Phase 10 | Pending, the inserted 10-01.1; whether NVDA says "check box" and the new state on Space is the tester's |
-| FOUND-14 | Phase 10 | Pending, the inserted 10-01.1; whether NVDA names the control after Ctrl+Tab is the tester's |
+| FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
+| FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
 | MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
 | MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
 | MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
