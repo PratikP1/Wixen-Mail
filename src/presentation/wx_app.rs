@@ -104,6 +104,10 @@ menu_ids!(
     ID_NEW_DEFAULT,
     ID_OPEN_DRAFT,
     ID_IMPORT_MESSAGES,
+    // A folder rather than a file, because a file picker cannot answer with
+    // one and the folder branch of the archive reader was reached by nothing
+    // until this item (#53, point 3).
+    ID_IMPORT_A_FOLDER_OF_MESSAGES,
     ID_EXPORT_MESSAGES,
     // Reading a key file in from disk. On the File menu beside Import Mailbox,
     // which is where bringing something in from a file already lives, and with
@@ -4669,6 +4673,16 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_IMPORT_A_FOLDER_OF_MESSAGES => {
+                            import_a_folder_of_messages(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                        }
                         _ if id == ID_IMPORT_PGP_KEY => {
                             import_a_pgp_private_key(&frame, &a11y);
                         }
@@ -6086,6 +6100,15 @@ impl WxMailApp {
                 "&Import Mailbox...",
                 "Read mail in from a file, an archive or an Outlook data file, keeping the \
                  folders it was in",
+            )
+            // Alt+O rather than Alt+F, which Fetch Missing Message Text has on
+            // this menu; the collision check in tests/wired.rs reads dialogs
+            // and not menus, so this was found by reading the menu.
+            .append_item(
+                ID_IMPORT_A_FOLDER_OF_MESSAGES,
+                "Import a F&older of Messages...",
+                "Read every saved message and mailbox file in a folder in, keeping the \
+                 folders inside it",
             )
             .append_item(
                 ID_EXPORT_MESSAGES,
@@ -12767,17 +12790,12 @@ fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
 /// `service::outlook_data_file`'s to read and
 /// [`crate::application::importing_an_outlook_data_file`]'s to file and say.
 ///
-/// Handed to a worker rather than done here, and that is not a nicety. This
-/// window has one helper that draws, answers the keyboard, and replies to the
-/// screen reader when it asks what is under the cursor. An archive of forty
-/// thousand messages done on that helper stops all three: arrow keys do
-/// nothing because the key press waits behind the import, nothing already
-/// queued to be spoken is spoken, and Escape does not cancel because it is in
-/// the same queue. To somebody who cannot see the screen that is silence, and
-/// silence is what a program that has died sounds like.
-///
-/// The first version of this command did the work here. It is the one shape
-/// the rest of this program goes out of its way to avoid.
+/// A file picker that must be given a file, which is what a chosen mailbox
+/// is. It cannot answer with a folder, and for a year it was the only picker,
+/// so the archive reader's folder branch was reached by nothing while the
+/// changelog promised "a folder you point it at" (#53, point 3). A folder has
+/// its own picker now, [`import_a_folder_of_messages`], and both hand what
+/// was chosen to [`mail_brought_in_from`].
 fn import_a_mailbox(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
@@ -12786,21 +12804,7 @@ fn import_a_mailbox(
     runtime: &Arc<Runtime>,
     a11y: &Arc<Accessibility>,
 ) {
-    use crate::presentation::accessibility::announcements::Priority;
-
-    let refuse = |said: &str| {
-        send_status(ui_tx, runtime, said);
-        let _ = a11y.announce(said, Priority::High);
-    };
-    // Asked here as well as in the worker, so somebody with no mail store at
-    // all is told before a file picker opens rather than after they have
-    // chosen a file.
-    if cache.is_none() {
-        refuse("There is nowhere to file mail on this computer yet.");
-        return;
-    }
-    let Some(account) = lock_state(state).active_account_id.clone() else {
-        refuse(crate::application::importing_messages::CHOOSE_AN_ACCOUNT_FIRST);
+    let Some(account) = an_account_to_import_into(state, cache, ui_tx, runtime, a11y) else {
         return;
     };
 
@@ -12817,9 +12821,114 @@ fn import_a_mailbox(
         return;
     }
     let Some(chosen) = picker.get_path() else {
-        refuse("No file was chosen.");
+        refuse_to_import(ui_tx, runtime, a11y, "No file was chosen.");
         return;
     };
+    mail_brought_in_from(chosen, account, ui_tx, runtime, a11y);
+}
+
+/// Bring a folder of saved messages in, keeping the folders inside it.
+///
+/// The same import down to the picker: this one asks for a folder, which a
+/// file picker cannot answer with. What the folder holds is read file by
+/// file from each file's first bytes, so saved messages and mailbox files
+/// with any name or none are taken and everything else is refused and
+/// counted. A folder inside it becomes a folder here.
+///
+/// What is not recognised, said rather than absorbed: a mail program's own
+/// layout. Thunderbird keeps each folder as a mailbox file with no ending
+/// beside a `.msf` index and a `.sbd` folder of subfolders, and read here
+/// that is a folder of mail beside a refused file, with the subfolders one
+/// step out of place. The changelog and the guide say so.
+fn import_a_folder_of_messages(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    let Some(account) = an_account_to_import_into(state, cache, ui_tx, runtime, a11y) else {
+        return;
+    };
+
+    let picker = DirDialog::builder(frame, "Import a folder of saved messages", "").build();
+    if picker.show_modal() != ID_OK {
+        return;
+    }
+    let Some(chosen) = picker.get_path() else {
+        refuse_to_import(ui_tx, runtime, a11y, "No folder was chosen.");
+        return;
+    };
+    mail_brought_in_from(chosen, account, ui_tx, runtime, a11y);
+}
+
+/// Say why an import stops before it starts, on the status bar and aloud.
+fn refuse_to_import(
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+    said: &str,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
+
+    send_status(ui_tx, runtime, said);
+    let _ = a11y.announce(said, Priority::High);
+}
+
+/// The account imported mail is filed under, or nothing, said aloud.
+///
+/// Asked here as well as in the worker, so somebody with no mail store at all
+/// is told before a picker opens rather than after they have chosen something.
+fn an_account_to_import_into(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) -> Option<String> {
+    if cache.is_none() {
+        refuse_to_import(
+            ui_tx,
+            runtime,
+            a11y,
+            "There is nowhere to file mail on this computer yet.",
+        );
+        return None;
+    }
+    let account = lock_state(state).active_account_id.clone();
+    if account.is_none() {
+        refuse_to_import(
+            ui_tx,
+            runtime,
+            a11y,
+            crate::application::importing_messages::CHOOSE_AN_ACCOUNT_FIRST,
+        );
+    }
+    account
+}
+
+/// Start the worker that reads what was chosen and files it.
+///
+/// Handed to a worker rather than done here, and that is not a nicety. This
+/// window has one helper that draws, answers the keyboard, and replies to the
+/// screen reader when it asks what is under the cursor. An archive of forty
+/// thousand messages done on that helper stops all three: arrow keys do
+/// nothing because the key press waits behind the import, nothing already
+/// queued to be spoken is spoken, and Escape does not cancel because it is in
+/// the same queue. To somebody who cannot see the screen that is silence, and
+/// silence is what a program that has died sounds like.
+///
+/// The first version of this command did the work here. It is the one shape
+/// the rest of this program goes out of its way to avoid.
+fn mail_brought_in_from(
+    chosen: String,
+    account: String,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::presentation::accessibility::announcements::Priority;
 
     // Said before the worker is even handed the job, the way Check Mail says
     // its own opening sentence. A long job that says nothing until it finishes

@@ -212,6 +212,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   file. There is no command for saving several messages at once; File, Export Mailbox writes a
   whole folder.
 
+- **File, Import a Folder of Messages reads a folder of saved mail in.** Found on 2026-09-15 in
+  build `0.125.1+g3e633252` by the same audit (#53, point 3). The entry further down this page
+  for the mailbox import has said since it was written that the import "takes a zip file, a
+  folder you point it at, or a single saved message", and the reader underneath has had a branch
+  for a folder the whole time. The one picker was a file dialog that must be given a file, which
+  cannot answer with a folder, so the branch was reached by nothing and the promise was of a
+  command that did not exist. Now a second item beside Import Mailbox opens a folder picker, and
+  the folder it answers with goes to the same worker a chosen file goes to: every file in it is
+  read by its first bytes, so saved messages and mailbox files are taken whatever they are called,
+  a folder inside it becomes a folder here, and anything that is not mail is refused and counted.
+  Everything lands under Imported, on this computer.
+  Known limitations: a Thunderbird profile folder is not recognised as one. Thunderbird keeps
+  each mail folder as a mailbox file with no ending, beside a `.msf` index and, for a folder with
+  folders inside it, a `.sbd` folder holding them. Read here, that is one folder of mail per
+  mailbox file, each `.msf` refused as not mail and counted, and the folders inside a `.sbd`
+  arriving one level away from the folder they belong to, under the `.sbd` name. Nothing has
+  read a Thunderbird profile this way yet; the folder walk is proven against folders of saved
+  messages and mailbox files made by this program's tests.
+
 - **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
   build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."
   Measured first, on 2026-09-16, on this project's machine with NVDA running: from `Ctrl+,` to
@@ -4939,6 +4958,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   It takes a zip file, a folder you point it at, or a single saved message, and
   keeps the shape your mail was in: a folder called Work with Invoices inside
   it arrives the same way round.
+
+  **Corrected on 2026-09-17:** "a folder you point it at" was impossible from
+  the build this entry was written for until the build that carries #53's
+  fix. The reader could take a folder; the picker was a file dialog that must
+  be given a file, and it could not answer with one. A folder is chosen
+  through File, Import a Folder of Messages, its own item, since that build.
 
   Everything lands in folders on this computer, under Imported, rather than in
   one of your provider's folders. That is deliberate. Mail read out of a file
