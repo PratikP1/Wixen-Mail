@@ -382,6 +382,41 @@ pub fn file_one_imported_message(
     WhetherItWasWrittenDown::ItIsInTheFolder
 }
 
+/// The folder imported mail lands in, made if it is not there yet.
+///
+/// Two steps rather than one. A folder saved without being told it has no
+/// server behind it is one the next check for mail tries to open at a provider
+/// that has never heard of it.
+///
+/// Here rather than in the window, beside the one function that files a
+/// message, because three imports make folders this way now: an archive's
+/// folders, the folder one saved file goes into, and an Outlook data file's
+/// folders. Three copies of two steps is how one of them comes to skip the
+/// second.
+pub fn a_folder_for_imported_mail(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &str,
+    path: &str,
+) -> Option<i64> {
+    if let Ok(Some(already)) = cache.get_folder(account, path) {
+        return Some(already.id);
+    }
+    let name = path.rsplit('/').next().unwrap_or(path).to_string();
+    let id = cache
+        .save_folder(&crate::data::message_cache::CachedFolder {
+            id: 0,
+            account_id: account.to_string(),
+            name,
+            path: path.to_string(),
+            folder_type: FolderType::Custom.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .ok()?;
+    let _ = cache.set_folder_server_facts(id, false, true);
+    Some(id)
+}
+
 // ── Saying what the import did ──────────────────────────────────────────────
 
 /// What bringing a file of mail into a folder did.
@@ -554,6 +589,76 @@ pub fn writing_out(how_many: usize) -> WritingOut {
         _ => WritingOut::AnArchive,
     }
 }
+
+// ── Save As ─────────────────────────────────────────────────────────────────
+
+/// What to say when Save As is asked for and no message is chosen.
+///
+/// Said as a refusal, because the alternative is what the command did from the
+/// day it was added until #53: one status line, whatever was selected.
+pub const CHOOSE_THE_MESSAGE_TO_SAVE: &str =
+    "Choose the message to save first. Select one message in the list.";
+
+/// What Save As will do with the message under the cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SavingAs {
+    /// Nothing, and this is what to say.
+    Refused(&'static str),
+    /// Write it as one saved message, offering this name.
+    AsAFile {
+        /// The subject made into a file name, ending in `.eml`.
+        named: String,
+    },
+}
+
+/// What Save As does with the message under the cursor, from its subject.
+///
+/// The name offered in the save dialog is the subject with everything a path
+/// could be made of taken out. A subject is a stranger's words, and a file
+/// dialog handed something that looks like a path will use it as one, so a
+/// slash or a backslash becomes an underscore before the name goes anywhere
+/// near a folder somebody chose. The rest of what Windows will not take in a
+/// name goes the same way, through the one function that already knows.
+pub fn saving_as(the_subject_under_the_cursor: Option<&str>) -> SavingAs {
+    let Some(subject) = the_subject_under_the_cursor else {
+        return SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE);
+    };
+    // Separators first, because the one function that knows what a name may
+    // hold keeps only the last segment of anything that looks like a path,
+    // and "Invoices/March" is one subject rather than a folder and a file.
+    let kept_whole: String = subject
+        .chars()
+        .map(|letter| match letter {
+            '/' | '\\' => '_',
+            other => other,
+        })
+        .collect();
+    let stem = if kept_whole.trim().is_empty() {
+        A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED.to_string()
+    } else {
+        crate::service::attachment_name::safe_file_name(&kept_whole)
+    };
+    SavingAs::AsAFile {
+        named: format!("{stem}{A_SAVED_MESSAGE_ENDS_WITH}"),
+    }
+}
+
+/// What to call a saved message whose subject is nothing.
+///
+/// A message rather than the attachment writer's fallback, because a file
+/// called `attachment.eml` is a file somebody opens looking for a photograph.
+const A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED: &str = "message";
+
+/// What a saved message is named to end with.
+///
+/// Taken from the export of one message rather than written down a second
+/// time, so Save As and an export of one message name their file the same
+/// way. A refusal is the only answer that names no ending, and this does not
+/// ask about a refusal, so nothing reaches the second arm.
+const A_SAVED_MESSAGE_ENDS_WITH: &str = match WritingOut::OneMessage.the_file_ends_with() {
+    Some(ending) => ending,
+    None => ".eml",
+};
 
 /// What writing a file of messages out did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1046,6 +1151,62 @@ mod tests {
         assert_eq!(writing_out(1), WritingOut::OneMessage);
         assert_eq!(writing_out(2), WritingOut::AnArchive);
         assert_eq!(writing_out(4000), WritingOut::AnArchive);
+    }
+
+    #[test]
+    fn test_save_as_offers_the_subject_as_the_file_name_ending_in_eml() {
+        assert_eq!(
+            saving_as(Some("Notes on the engine")),
+            SavingAs::AsAFile {
+                named: "Notes on the engine.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name() {
+        // A subject is a stranger's words, and a file dialog handed something
+        // that looks like a path uses it as one. The whole subject is kept,
+        // with each separator made harmless, rather than the last segment
+        // alone: "Invoices/March" is one subject and not a folder and a file.
+        assert_eq!(
+            saving_as(Some("Invoices/March")),
+            SavingAs::AsAFile {
+                named: "Invoices_March.eml".to_string()
+            }
+        );
+        assert_eq!(
+            saving_as(Some("..\\..\\Windows\\notes: \"Re: the engine?\"")),
+            SavingAs::AsAFile {
+                named: ".._.._Windows_notes_ _Re_ the engine__.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_calls_a_message_with_no_subject_something() {
+        // A file named `.eml` is a file with no name, which Windows hides
+        // behind the ending and a screen reader reads as nothing.
+        assert_eq!(
+            saving_as(Some("")),
+            SavingAs::AsAFile {
+                named: "message.eml".to_string()
+            }
+        );
+        assert_eq!(
+            saving_as(Some("   ")),
+            SavingAs::AsAFile {
+                named: "message.eml".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_save_as_with_no_message_chosen_says_so_rather_than_saving_nothing() {
+        assert_eq!(
+            saving_as(None),
+            SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE)
+        );
     }
 
     #[test]

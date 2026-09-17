@@ -5018,7 +5018,14 @@ impl WxMailApp {
                             send_refusal(&ui_tx, &runtime, "No active draft to save")
                         }
                         _ if id == ID_SAVE_AS => {
-                            send_status(&ui_tx, &runtime, "Save As: no message selected")
+                            save_the_message_as(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
                         }
                         _ if id == ID_CHOOSE_WHICH_COPY => {
                             choose_which_copy_to_keep(
@@ -6016,7 +6023,11 @@ impl WxMailApp {
 
         let file = Menu::builder()
             .append_item(ID_SAVE, "&Save\tCtrl+S", "Save current work")
-            .append_item(ID_SAVE_AS, "Save &As...", "Save to a file")
+            .append_item(
+                ID_SAVE_AS,
+                "Save &As...",
+                "Save the message you are on as a file",
+            )
             .append_separator()
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
             // Beside Check Mail because it is the same thing reaching for
@@ -6068,7 +6079,8 @@ impl WxMailApp {
             .append_item(
                 ID_IMPORT_MESSAGES,
                 "&Import Mailbox...",
-                "Read mail in from a file or an archive, keeping the folders it was in",
+                "Read mail in from a file, an archive or an Outlook data file, keeping the \
+                 folders it was in",
             )
             .append_item(
                 ID_EXPORT_MESSAGES,
@@ -12746,7 +12758,9 @@ fn import_a_pgp_private_key(frame: &Frame, a11y: &Arc<Accessibility>) {
 /// The picker and the handing over, and nothing else. Where each folder lands
 /// is [`crate::application::import_tree`]'s answer, reading and writing the
 /// file is `service::mailbox_archive`'s, and what to say is
-/// [`crate::application::importing_messages`]'s.
+/// [`crate::application::importing_messages`]'s. An Outlook data file is
+/// `service::outlook_data_file`'s to read and
+/// [`crate::application::importing_an_outlook_data_file`]'s to file and say.
 ///
 /// Handed to a worker rather than done here, and that is not a nicety. This
 /// window has one helper that draws, answers the keyboard, and replies to the
@@ -12788,7 +12802,8 @@ fn import_a_mailbox(
     let picker = FileDialog::builder(frame)
         .with_message("Import a mailbox from a file")
         .with_wildcard(
-            "Mailbox archives (*.zip;*.eml;*.mbox)|*.zip;*.eml;*.mbox|All files (*.*)|*.*",
+            "Mailboxes and Outlook data files (*.zip;*.eml;*.mbox;*.pst)|\
+             *.zip;*.eml;*.mbox;*.pst|All files (*.*)|*.*",
         )
         .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
         .build();
@@ -12865,14 +12880,24 @@ fn fill_folders_from(
         MessagesImported, WhatToDoWithIt, file_one_imported_message,
     };
 
-    // One saved message and a whole archive are two different readers, and
-    // each refuses what the other takes. Which one this is comes from how the
-    // file begins rather than from what it is called.
+    // One saved message, a whole archive and an Outlook data file are three
+    // different readers, and each refuses what the others take. Which one
+    // this is comes from how the file begins rather than from what it is
+    // called.
     let opens_with = a_look_at_the_start_of(at);
-    if import_tree::what_was_chosen(at.is_dir(), &opens_with)
-        == import_tree::WhatWasChosen::MailInOneFile
-    {
-        return one_file_of_mail_brought_in(cache, account, at);
+    match import_tree::what_was_chosen(at.is_dir(), &opens_with) {
+        import_tree::WhatWasChosen::MailInOneFile => {
+            return one_file_of_mail_brought_in(cache, account, at);
+        }
+        import_tree::WhatWasChosen::AnOutlookDataFile => {
+            return crate::application::importing_an_outlook_data_file::brought_in(
+                cache,
+                account,
+                at,
+                &|so_far| say(UIUpdate::StatusUpdated(so_far.to_string())),
+            );
+        }
+        import_tree::WhatWasChosen::AnArchive => {}
     }
 
     let mut archive = match crate::service::mailbox_archive::opened(at) {
@@ -12884,7 +12909,11 @@ fn fill_folders_from(
     let mut brought_in = MessagesImported::default();
 
     for folder in &plan.folders {
-        let Some(folder_id) = a_folder_on_this_computer(cache, account, &folder.path) else {
+        let Some(folder_id) = crate::application::importing_messages::a_folder_for_imported_mail(
+            cache,
+            account,
+            &folder.path,
+        ) else {
             continue;
         };
         let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
@@ -13136,6 +13165,176 @@ fn a_place_for_the_reply(document: &str) -> std::result::Result<std::path::PathB
         document,
     )
     .map_err(|why| format!("the answer could not be written down: {why}"))
+}
+
+/// Save the message under the cursor in the list as a file of one message.
+///
+/// The picker and the handing over, and nothing else. What the file is called,
+/// and whether there is anything to save, is
+/// [`crate::application::importing_messages::saving_as`]'s answer; what goes
+/// into it is [`crate::application::export_tree::one_message_written_out`]'s,
+/// which makes the same three decisions the mailbox export makes about one
+/// message, so a message saved here and one exported are the same file.
+///
+/// There is no branch here for an attachment, on purpose. The attachment list
+/// is in the reader window, which has its own menu and its own command for
+/// saving one, and the main window's menu is not the active one while the
+/// reader has focus: a branch here for the chosen attachment would be a branch
+/// nothing reaches, which is the shape this command had from the day it was
+/// added until #53, when it sent one status line whatever was selected.
+///
+/// Handed to a worker for the reason the export is: reading a message and its
+/// files out of the database is real work, and on the thread the window
+/// answers on it is silence to somebody who cannot see the screen.
+fn save_the_message_as(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::importing_messages::{SavingAs, saving_as};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    if cache.is_none() {
+        send_refusal(ui_tx, runtime, "There is no mail on this computer to save.");
+        return;
+    }
+    let under_the_cursor = {
+        let held = lock_state(state);
+        held.selected_message_index
+            .and_then(|at| held.messages.get(at))
+            .map(|message| (message.message_id, message.subject.clone()))
+    };
+    let named = match saving_as(
+        under_the_cursor
+            .as_ref()
+            .map(|(_, subject)| subject.as_str()),
+    ) {
+        SavingAs::Refused(why) => {
+            send_refusal(ui_tx, runtime, why);
+            return;
+        }
+        SavingAs::AsAFile { named } => named,
+    };
+    // The decision refuses when nothing is under the cursor, so a name with no
+    // row behind it does not happen; said as nothing to do rather than
+    // unwrapped, because this file does not unwrap.
+    let Some((row_id, _)) = under_the_cursor else {
+        return;
+    };
+
+    // Opening where somebody said to save things, the way the attachment
+    // writer does, so the two commands that write a file open in one place.
+    let opens_in = crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().download_folder.clone())
+        .unwrap_or_default();
+    let mut picker = FileDialog::builder(frame)
+        .with_message("Save the message as a file")
+        .with_default_file(&named)
+        .with_wildcard("Saved messages (*.eml)|*.eml|All files (*.*)|*.*")
+        .with_style(FileDialogStyle::Save | FileDialogStyle::OverwritePrompt);
+    if opens_in.is_dir() {
+        picker = picker.with_default_dir(&opens_in.to_string_lossy());
+    }
+    let dialog = picker.build();
+    if dialog.show_modal() != ID_OK {
+        // Cancelling is a decision and needs no sentence: there is no outcome.
+        return;
+    }
+    let Some(destination) = dialog.get_path() else {
+        send_refusal(ui_tx, runtime, "No file name was chosen.");
+        return;
+    };
+
+    let starting = format!("Saving {named}...");
+    send_status(ui_tx, runtime, &starting);
+    let _ = a11y.announce(&starting, Priority::Normal);
+
+    let tx = ui_tx.clone();
+    let handle = runtime.handle().clone();
+    runtime.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        // The worker opens the cache itself, as every worker here does: a
+        // database handle belongs to the thread that opened it.
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            say(UIUpdate::ErrorOccurred(
+                "There is no mail on this computer to save.".to_string(),
+            ));
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(why) => {
+                say(UIUpdate::ErrorOccurred(format!(
+                    "The mail on this computer could not be opened, so the message was not \
+                     saved. {why}"
+                )));
+                return;
+            }
+        };
+        say(
+            match one_message_saved_to(&cache, row_id, std::path::Path::new(&destination)) {
+                Ok(()) => UIUpdate::StatusUpdated(format!("Saved {named} to {destination}")),
+                // Through ErrorOccurred rather than the status line: a save that
+                // did not happen has to interrupt, because the next thing
+                // somebody does is go looking for a file that is not there.
+                Err(why) => UIUpdate::ErrorOccurred(format!("The message was not saved. {why}")),
+            },
+        );
+    });
+}
+
+/// Read one stored message, with its text, its files and the form it arrived
+/// in, and write it to this path as a file of one message.
+///
+/// The whole of the fallible half in one function that answers with a
+/// `Result`, rather than a worker full of early returns that each have to
+/// remember to report themselves.
+fn one_message_saved_to(
+    cache: &MessageCache,
+    row_id: i64,
+    destination: &std::path::Path,
+) -> crate::common::Result<()> {
+    use crate::common::Error;
+
+    let stored = cache
+        .message_rows_for(&[row_id])?
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            Error::InPlainWords("That message is no longer on this computer.".to_string())
+        })?;
+    let text = cache.get_message_body(row_id)?;
+    let files = cache.attachments_with_content(row_id)?;
+    // A store that cannot be read answers the way a message that never
+    // claimed a signature does, which writes the message and says nothing
+    // false; the export makes the same choice.
+    let arrived_as = cache
+        .signed_original(row_id)
+        .unwrap_or(crate::data::message_cache::signed_original::SignedOriginal::NotSigned);
+    let Some(bytes) = crate::application::export_tree::one_message_written_out(
+        &stored,
+        text.as_ref(),
+        &files,
+        &arrived_as,
+    ) else {
+        return Err(Error::InPlainWords(
+            "Its text has not been downloaded yet. Open the message once, then save it."
+                .to_string(),
+        ));
+    };
+    std::fs::write(destination, bytes).map_err(|why| {
+        Error::InPlainWords(format!(
+            "{} could not be written: {why}.",
+            destination.display()
+        ))
+    })
 }
 
 /// Write the folder being looked at, and everything inside it, out to a file.
@@ -13396,7 +13595,9 @@ fn one_file_of_mail_brought_in(
         return "That file could not be read, so nothing was imported.".to_string();
     };
     let path = import_tree::where_imported_folders_go();
-    let Some(folder_id) = a_folder_on_this_computer(cache, account, &path) else {
+    let Some(folder_id) =
+        crate::application::importing_messages::a_folder_for_imported_mail(cache, account, &path)
+    else {
         return "The folder imported mail goes into could not be made, so nothing \
                 was imported."
             .to_string();
@@ -13418,33 +13619,6 @@ fn one_file_of_mail_brought_in(
         brought_in.count_one(what);
     }
     crate::application::importing_messages::what_the_mail_import_did(&brought_in)
-}
-
-/// The folder an archive's folder lands in, made if it is not there yet.
-///
-/// Two steps rather than one. A folder saved without being told it has no
-/// server behind it is one the next check for mail tries to open at a provider
-/// that has never heard of it.
-fn a_folder_on_this_computer(cache: &MessageCache, account: &str, path: &str) -> Option<i64> {
-    if let Ok(Some(already)) = cache.get_folder(account, path) {
-        return Some(already.id);
-    }
-    let name = path.rsplit('/').next().unwrap_or(path).to_string();
-    let id = cache
-        .save_folder(&crate::data::message_cache::CachedFolder {
-            id: 0,
-            account_id: account.to_string(),
-            name,
-            path: path.to_string(),
-            folder_type: crate::common::types::FolderType::Custom
-                .as_str()
-                .to_string(),
-            unread_count: 0,
-            total_count: 0,
-        })
-        .ok()?;
-    let _ = cache.set_folder_server_facts(id, false, true);
-    Some(id)
 }
 
 /// Read a folder's messages out of the cache and send them to the list.

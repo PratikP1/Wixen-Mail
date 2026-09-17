@@ -3451,6 +3451,50 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
              that files a message decides about signatures does not reach it"
         );
     }
+    // The third import, since #53: mail out of an Outlook data file, filed in
+    // its own module rather than in the window.
+    let data_file = fs::read_to_string("src/application/importing_an_outlook_data_file.rs")
+        .expect("the data file import");
+    assert!(
+        body_of(&data_file, "fn one_message_filed(").contains("file_one_imported_message("),
+        "mail out of an Outlook data file is written its own way, so whatever the one place \
+         that files a message decides about signatures and the sync's marker does not reach it"
+    );
+}
+
+/// Importing mail sends each kind of file to its own reader.
+///
+/// Three readers refuse each other's files: a zip or a folder, one saved
+/// message, and an Outlook data file. The worker asks one question about how
+/// the file begins and dispatches on all three answers. Before #53 it asked
+/// about two, and a data file chosen through All files fell to the archive
+/// reader and was told it was not a mailbox archive, which is true and sent
+/// somebody looking for a different file.
+///
+/// What this cannot see: whether the data file's mail lands, which is measured
+/// against a real database in `application::importing_an_outlook_data_file`.
+/// This only says the window hands the third kind of file to that module
+/// rather than to the archive reader.
+#[test]
+fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let worker = body_of(&what_ships(&app), "fn fill_folders_from(");
+
+    for answer in [
+        "WhatWasChosen::MailInOneFile",
+        "WhatWasChosen::AnOutlookDataFile",
+        "WhatWasChosen::AnArchive",
+    ] {
+        assert!(
+            worker.contains(answer),
+            "the import worker no longer dispatches on {answer}, so a file of that kind goes \
+             to a reader that refuses it"
+        );
+    }
+    assert!(
+        worker.contains("importing_an_outlook_data_file::brought_in("),
+        "an Outlook data file is recognised and then handed to nothing that reads one"
+    );
 }
 
 /// Everything aimed at a chosen message asks which account that message is in.
@@ -4373,5 +4417,140 @@ fn test_the_blocked_senders_list_is_opened_by_something() {
     assert!(
         window.contains("everyone_blocked"),
         "the window never asks who is blocked, so it lists nothing"
+    );
+}
+
+/// What the main window's Save As does, read off its source.
+///
+/// Four questions, each of which the stub the command was for a year answers
+/// no to. It sent "Save As: no message selected" whatever was selected, from
+/// the day the item was added until #53, while the menu item and the shortcuts
+/// page promised a saved message.
+#[derive(Debug, PartialEq, Eq)]
+struct WhatSaveAsDoes {
+    /// The handler arm reaches a function rather than sending a status line.
+    the_arm_reaches_the_handler: bool,
+    /// The handler asks the one decision about what to save and what to call it.
+    asks_the_decision: bool,
+    /// The handler writes the message through the exporter's own writer.
+    writes_through_the_exporter: bool,
+    /// The status line the stub sent is gone from the file.
+    the_stub_is_gone: bool,
+    /// The handler has no branch for an attachment. The attachment list is in
+    /// the reader window, whose own Save Attachment command is that case, and
+    /// a branch here for it would be a branch nothing reaches.
+    has_no_attachment_branch: bool,
+}
+
+/// The reading itself, over the text of the main window.
+///
+/// Panics when the handler is gone, through `body_of`, so a rename fails
+/// loudly rather than reading nothing and passing.
+fn what_save_as_does(app: &str) -> WhatSaveAsDoes {
+    let arm_starts = app
+        .find("_ if id == ID_SAVE_AS =>")
+        .unwrap_or_else(|| panic!("the Save As arm is no longer in the main window"));
+    let arm_ends = app[arm_starts + 1..]
+        .find("_ if id == ")
+        .map_or(app.len(), |at| arm_starts + 1 + at);
+    let arm = &app[arm_starts..arm_ends];
+    let handler = body_of(app, "fn save_the_message_as(");
+    // The writing is the fallible half, split out so the worker is one
+    // `Result` rather than early returns; the reading follows the handler
+    // into it.
+    let writing = body_of(app, "fn one_message_saved_to(");
+    WhatSaveAsDoes {
+        the_arm_reaches_the_handler: arm.contains("save_the_message_as("),
+        asks_the_decision: handler.contains("saving_as("),
+        writes_through_the_exporter: handler.contains("one_message_saved_to(")
+            && writing.contains("one_message_written_out("),
+        the_stub_is_gone: !app.contains("\"Save As: no message selected\""),
+        has_no_attachment_branch: [&handler, &writing]
+            .iter()
+            .all(|half| !half.contains("save_attachment(") && !half.contains("ID_SAVE_ATTACHMENT")),
+    }
+}
+
+/// What the reading answers when the window does all five things.
+const SAVE_AS_SAVES: WhatSaveAsDoes = WhatSaveAsDoes {
+    the_arm_reaches_the_handler: true,
+    asks_the_decision: true,
+    writes_through_the_exporter: true,
+    the_stub_is_gone: true,
+    has_no_attachment_branch: true,
+};
+
+/// File, Save As saves the message under the cursor rather than sending a line.
+///
+/// What this cannot see: whether the dialog opens, whether the file lands where
+/// somebody said, or what the saved file holds. The name offered is measured in
+/// `application::importing_messages` and the bytes written in
+/// `application::export_tree`; this only says the window asks those two rather
+/// than deciding for itself or, as it did, deciding nothing.
+#[test]
+fn test_save_as_writes_the_chosen_message_rather_than_sending_a_status_line() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+
+    assert_eq!(
+        what_save_as_does(&what_ships(&app)),
+        SAVE_AS_SAVES,
+        "Save As is a stub again, or writes its own way: a menu item that promises a saved \
+         message and sends a status line instead"
+    );
+}
+
+/// The reading above can see the stub put back.
+///
+/// A reading that answered yes to everything whatever the file held would keep
+/// the guard green over the very stub it was written against. This reads the
+/// tree first and refuses to splice over a real stub, because then it could not
+/// tell its own break from the tree's; then it puts each half of the stub back
+/// in memory and asks the reading again.
+#[test]
+fn test_the_reading_of_save_as_can_see_the_stub_put_back() {
+    let app =
+        what_ships(&fs::read_to_string("src/presentation/wx_app.rs").expect("the main window"));
+    assert_eq!(
+        what_save_as_does(&app),
+        SAVE_AS_SAVES,
+        "the tree holds a real stub, so nothing spliced here could be told from it"
+    );
+
+    // From the arm onward, so the first call replaced is the arm's own and
+    // not a mention of the handler somewhere above it.
+    let arm_starts = app
+        .find("_ if id == ID_SAVE_AS =>")
+        .expect("the reading above found the arm");
+    let (above, from_the_arm) = app.split_at(arm_starts);
+    let arm_stubbed = format!(
+        "{above}{}",
+        from_the_arm.replacen(
+            "save_the_message_as(",
+            "send_status(&ui_tx, &runtime, \"Save As: no message selected\"); never_reached(",
+            1,
+        )
+    );
+    let read = what_save_as_does(&arm_stubbed);
+    assert!(
+        !read.the_arm_reaches_the_handler,
+        "the arm was made to send the stub's line and the reading still said it reaches \
+         the handler: {read:?}"
+    );
+    assert!(
+        !read.the_stub_is_gone,
+        "the stub's line was put back and the reading did not see it: {read:?}"
+    );
+
+    let decision_gone = app.replace("saving_as(", "a_name_made_up_here(");
+    assert!(
+        !what_save_as_does(&decision_gone).asks_the_decision,
+        "the decision was taken out of the handler and the reading still said it was asked"
+    );
+
+    let writer_gone = app.replace("one_message_written_out(", "written_some_other_way(");
+    assert!(
+        !what_save_as_does(&writer_gone).writes_through_the_exporter,
+        "the exporter's writer was taken out of the handler and the reading still said it \
+         was used"
     );
 }

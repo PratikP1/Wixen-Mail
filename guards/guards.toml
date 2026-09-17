@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 50 records have arrived since and have not been through it.
+# 56 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -3612,7 +3612,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
-    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/service/signed_mail.rs", tests = 113 },
 ]
 
@@ -4416,7 +4416,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -4438,7 +4438,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -8725,7 +8725,7 @@ red = [
     "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
-    { file = "src/application/export_tree.rs", tests = 35 },
+    { file = "src/application/export_tree.rs", tests = 38 },
     { file = "src/application/looking_people_up.rs", tests = 37 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
@@ -11875,7 +11875,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -11891,7 +11891,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -11935,7 +11935,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -11978,11 +11978,18 @@ red = [
     # Added 2026-09-15 by 08-07's sweep: written 2026-09-06 in a file this
     # record had never named.
     "data::message_cache::how_it_arrived::tests::test_the_one_call_still_keeps_the_bytes_a_signed_message_arrived_in",
+    # Added 2026-09-16 by 09-08's remedy, which ran this record because
+    # importing_messages.rs gained tests: written by 09-07 the same day, in
+    # a new file no record named, so the count check could not have flagged
+    # it. The composition reads the kept original to say what a signature
+    # was worth, so the budget this record is about decides its verdict too.
+    "application::reading_a_message::tests::test_a_signed_message_in_the_cache_has_its_verdict_and_an_enveloped_one_its_sentence",
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 8 },
-    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/pop_sync.rs", tests = 49 },
+    { file = "src/application/reading_a_message.rs", tests = 7 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
     { file = "src/data/message_cache/signed_original.rs", tests = 8 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -12022,7 +12029,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 9 },
 ]
 
@@ -14119,7 +14126,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -14648,7 +14655,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -15224,7 +15231,7 @@ red = [
     "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 37 },
+    { file = "src/application/importing_messages.rs", tests = 41 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/messages.rs", tests = 179 },
 ]
@@ -16979,7 +16986,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -17022,7 +17029,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -17089,7 +17096,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -17116,7 +17123,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -17591,7 +17598,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -17828,7 +17835,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
 
 [[guard]]
@@ -23535,5 +23542,161 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 72 },
+    { file = "tests/wired.rs", tests = 75 },
+]
+
+# Mail out of an Outlook data file goes through the one place that files an
+# imported message, which is the one place that puts the marker on a row
+# this program filed itself. Without the marker the next check for mail sees
+# a message the server no longer has and takes it away, with the only copy
+# of its text. The break files the row through the sync's own writer
+# instead, which is exactly the row a sync would then delete, and the
+# reading that asks the row for its marker reddens. Nothing else does: the
+# row is there, the folder is there, and a second import still finds it.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "mail out of a data file is filed with the marker the sync leaves alone"
+file = "src/application/importing_an_outlook_data_file.rs"
+before = """            counted.count_one_written(file_one_imported_message(cache, message, folder_id));"""
+after = """            let row = crate::application::filing::a_row_filed_here(
+                &message.message,
+                folder_id,
+                1,
+                0,
+                crate::application::filing::AlreadyRead::No,
+                "2026-09-17T00:00:00Z",
+            );
+            let _ = cache.upsert_message(&row);
+            counted.count_one_written(WhetherItWasWrittenDown::ItIsInTheFolder);"""
+red = [
+    "application::importing_an_outlook_data_file::tests::test_mail_out_of_the_data_file_lands_under_imported_with_the_marker",
+]
+tests_last_seen = [
+    { file = "src/application/importing_an_outlook_data_file.rs", tests = 8 },
+]
+
+# Every kind of thing out of a data file moves exactly one count, so the
+# closing sentence adds up to what the file held. The break stops the four
+# kinds that are not mail from being counted when they are saved, so an
+# appointment, a contact, a task and a note all land and the sentence says
+# none of them did. The three readings that count a saved kind redden.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "each kind out of a data file is counted when it is saved"
+file = "src/application/importing_an_outlook_data_file.rs"
+before = """        *kind += 1;"""
+after = """        let _ = kind;"""
+red = [
+    "application::importing_an_outlook_data_file::tests::test_each_of_the_four_kinds_lands_under_the_local_account_and_not_the_servers",
+    "application::importing_an_outlook_data_file::tests::test_a_folder_with_a_name_this_computer_cannot_use_keeps_its_mail_and_hands_over_the_rest",
+    "application::importing_an_outlook_data_file::tests::test_a_refusal_from_the_reader_ends_the_folder_and_is_kept_to_be_said",
+]
+tests_last_seen = [
+    { file = "src/application/importing_an_outlook_data_file.rs", tests = 8 },
+]
+
+# An Outlook data file chosen in the picker goes to its own reader. It went
+# to the archive reader until 2026-09-16 and was told it was not a mailbox
+# archive (#53). The break takes the arm out, so a file that begins the way
+# Outlook's do falls through to the archive reader again, and the reading
+# that hands one to what_was_chosen reddens.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "an Outlook data file is sent to its own reader rather than the archive's"
+file = "src/application/import_tree.rs"
+before = """    if opens_with.starts_with(crate::service::outlook_data_file::HOW_ONE_BEGINS) {"""
+after = """    if opens_with.starts_with(b"never") {"""
+red = [
+    "application::import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 33 },
+]
+
+# The name Save As offers is the subject with every path separator made
+# harmless before it goes anywhere near the folder somebody chose. The
+# break leaves the separators in, so the one function that knows what a
+# name may hold keeps only the last segment of the subject, and "Invoices/
+# March" is offered as March. The reading that hands the decision a subject
+# holding a slash reddens; a plain subject and an empty one are unchanged.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "Save As takes the path out of a subject before offering it as a name"
+file = "src/application/importing_messages.rs"
+before = """            '/' | '\\\\' => '_',"""
+after = """            '/' | '\\\\' => letter,"""
+red = [
+    "application::importing_messages::tests::test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 41 },
+]
+
+# File, Save As reaches a handler that writes, held by a reading of the main
+# window. The command sent "Save As: no message selected" whatever was
+# selected from the day it was added until #53, and the break puts that
+# line back in the arm. The reading names the stub, and its companion,
+# which reads the tree before splicing and refuses over a real stub, goes
+# red with it. `suite` names the target, which couples it to the window's
+# source for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+[[guard]]
+name = "Save As reaches a handler that writes rather than a status line"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """                            save_the_message_as(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );"""
+after = """                            send_status(&ui_tx, &runtime, "Save As: no message selected");"""
+red = [
+    "test_save_as_writes_the_chosen_message_rather_than_sending_a_status_line",
+    "test_the_reading_of_save_as_can_see_the_stub_put_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 75 },
+]
+
+# The import worker hands an Outlook data file to the module that reads
+# one. The break keeps the third answer and does nothing with it, so a data
+# file is recognised and then imported by nothing, which is the shape the
+# reader was in for eleven days. The reading that asks the worker for the
+# call reddens.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+[[guard]]
+name = "an Outlook data file the worker recognises is handed to its reader"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """        import_tree::WhatWasChosen::AnOutlookDataFile => {
+            return crate::application::importing_an_outlook_data_file::brought_in(
+                cache,
+                account,
+                at,
+                &|so_far| say(UIUpdate::StatusUpdated(so_far.to_string())),
+            );
+        }"""
+after = """        import_tree::WhatWasChosen::AnOutlookDataFile => {}"""
+red = [
+    "test_importing_mail_sends_each_kind_of_file_to_its_own_reader",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 75 },
 ]
