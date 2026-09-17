@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 470
+open_count: 475
 waived_count: 0
 fixed_count: 28
-total_count: 498
-last_updated: 2026-09-17T01:02:02.964Z
+total_count: 503
+last_updated: 2026-09-17T02:49:21.208Z
 ---
 
 # Broken Windows Ledger
@@ -111,7 +111,7 @@ last_updated: 2026-09-17T01:02:02.964Z
 | 94 | 04 | unrun-verify | src/application/blocking.rs |  | Nobody has heard the mailing-list warning. It is announced at Priority::High before the block is made, and two things about that are judgements rather than measurements: whether it lands before the block rather than reading as a report of one already made, and whether an email address said aloud in the middle of a sentence is understood at speed by somebody arrowing through a mailbox. The sentence is: 'This message came from a mailing list. Blocking files it into Junk and the list carries on sending it. To stop it at the source, unsubscribe by writing to birds-leave@lists.example.' Only a real NVDA or Narrator run settles either. | open |  | 2026-09-05T15:59:50.717Z |  |
 | 95 | 04 | unrun-verify | src/service/mime.rs |  | Whether real mailing lists write List-Unsubscribe in the shape where_to_write_to_leave reads has never been measured. No mail account has ever been used with this program. Sixteen spellings of the header were probed against mail-parser 0.11.5, which settles what the library does with a given header and says nothing about what senders send. If real lists commonly write the header in a shape that carries no angle-bracketed mailto:, the warning fires and always says to look for a link, which is a weaker feature than it reads as here. | open |  | 2026-09-05T15:59:58.905Z |  |
 | 96 | 04 | deviation | src/service/protocols/imap.rs |  | The plan does not mention HEADER_FIELDS, the list of headers an IMAP fetch asks a server for. Without LIST-UNSUBSCRIBE on it, every other hop of this feature is correct and no message on an IMAP account carries the header, which is the whole feature dead on the commonest account type with 6270 tests green. Added, and guarded by a record coupled to tests/the_list_warning_reads_the_message.rs, because the whole library was run against the break and stayed green: nothing in it can see this hop at all. Recorded because a request that names the fields it wants is a silent-drop point invisible to tests on either side of it, and the same shape exists wherever a projection is narrowed. | open |  | 2026-09-05T16:00:07.187Z |  |
-| 97 | 04 | deviation | src/service/outlook_data_file.rs |  | A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it. | open |  | 2026-09-05T16:00:13.954Z |  |
+| 97 | 04 | deviation | src/service/outlook_data_file.rs |  | A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it. Corrected on 2026-09-16 by 09-08: this described an importer path that did not exist, since nothing called the reader from the day it was written; File, Import Mailbox reaches it now through application::importing_an_outlook_data_file, so the deviation is real and stays open, and the fix is the same. | open |  | 2026-09-05T16:00:13.954Z |  |
 | 98 | 04 | deviation | src/application/blocking.rs |  | where_to_write_to_leave names whatever sits between <mailto: and > without asking whether it is an address, so a sender can put a web address or any other text there and have the warning say 'unsubscribe by writing to' it. Left alone deliberately, and the reasoning matters more than the decision: validating it would only reject malformed junk, because the real threat is a well-formed address belonging to somebody else, which no validation can tell from a real one. Nothing in this program acts on the value, so nobody is one keystroke from a stranger either way. Recorded so the judgement is visible rather than assumed. | open |  | 2026-09-05T16:00:21.699Z |  |
 | 99 | 04 | deviation | .planning/phases/04-writing-and-reading-a-message-in-full/04-02-PLAN.md |  | Two of this plan's premises were wrong in ways that would have shipped a broken feature or a weaker test, and both were found by measuring rather than reading. It says to read the header through header_text as receipt_request does; mail-parser parses List-Unsubscribe with its address parser, which strips the angle brackets where_to_write_to_leave searches for, so that route reports every mailing list as one that gave no way out. And it says the second task's census cannot be red because it must name a construction the first task creates; the construction already existed and only its argument changed, so the census was red before any implementation. Recorded because both are general: an accessor's parsed and raw forms are different values, and 'no red is available' is a claim about the tree that is cheaper to falsify than to work around. | open |  | 2026-09-05T16:00:31.782Z |  |
 | 100 | 04 | deviation | guards/guards.toml |  | Two pre-existing guard records were found wrong, both surfaced by the count check because src/application/mail_sync.rs gained one test. 'a sync writes no attachment for a message nobody has opened' had been UNMEASURABLE since 04-01 landed hours earlier: its recorded break writes a CachedAttachment literal, 04-01 added a description field to that struct, and the break stopped compiling, so the run reported a broken tool rather than a finding. 'a count and the thing it counts agree in number' named 16 tests for a break that reddens 17, missing one in application::contacts_sync, a module nobody working on mailing lists would have filtered for. Both corrected by hand and re-measured. Recorded because neither has anything to do with this feature and neither would have been found by any check this plan ran on purpose. | open |  | 2026-09-05T16:39:54.486Z |  |
@@ -513,6 +513,11 @@ last_updated: 2026-09-17T01:02:02.964Z
 | 496 | 09 | todo | src/presentation/wx_app.rs |  | import_a_pgp_private_key announces its outcome and puts nothing in the status bar; its comment said both until 2026-09-16 and was corrected to what the body does. A visible line to match the spoken one is owed, on import_a_mailbox's pattern, which sends the status and announces; it wants a red in tests/wired.rs and ui_tx and runtime passed to the function (09-07, #51 item 6). | open |  | 2026-09-17T01:02:01.809Z |  |
 | 497 | 09 | todo | src/presentation/reader_text.rs |  | A PGP signature inside a conversation of several messages is still not mentioned there: SIGNED_AND_NOT_CHECKED_HERE is folded by with_encryption for one message only, and one_of_several says the PGP opening reason and the S/MIME envelope but nothing about a clearsigned part. Opening the message on its own says it; the changelog's dated correction on the armour entry says so (09-07). | open |  | 2026-09-17T01:02:02.382Z |  |
 | 498 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-07-PLAN.md |  | 09-07 executed with four departures: the wired.rs guards were edited in task 1 rather than task 3 because body_of panics on the moved fn line and task 1 could not compile its verify otherwise; task 2's second guard record went on reader_text's behaviour (the reason dropped from one_of_several) rather than on a call-site bypass, and task 3's record covers the call site; three stray rustdoc blocks moved home rather than one, the folder loader's and the module loader's beside the mailbox import's; and a third changelog entry, the armour entry's thread limitation, was dated beside the two the plan named. The key import's status-bar sentence was corrected in the comment, not built, because the task's one red was spent (ledger todo beside this). | open |  | 2026-09-17T01:02:02.964Z |  |
+| 499 | 09 | unrun-verify | src/application/importing_an_outlook_data_file.rs |  | No real Outlook data file has been through the import: neither this program nor the outlook-pst crate can write one, so brought_in's walk over a real file's folders (opened, what_it_holds, each_item_in) is unrun, and what is tested is the filing of each of the five kinds handed in by one_folder_filed. The closing sentence says so to whoever runs it. FOUND-11's [S] line; the tester's, when he has a .pst to hand. | open |  | 2026-09-17T02:49:01.548Z |  |
+| 500 | 09 | todo | src/service/outlook_data_file.rs |  | The reader words every refusal as a sentence to be heard and carries it in Error::Other, whose display puts Error: in front, which a screen reader says first. importing_an_outlook_data_file::as_it_was_worded takes the words out where the closing sentence is built; the reader itself should move its sentences onto Error::InPlainWords, which is a change to the reader wanting a red of its own and was outside 09-08's rule of touching the reader only to make something public. | open |  | 2026-09-17T02:49:19.475Z |  |
+| 501 | 09 | todo | src/presentation/wx_app.rs |  | After an Outlook data file is imported the folder tree is read back, as after an archive, but the calendar, contacts, tasks and notes modules are not: they show what arrived when next opened, and the changelog says so. The worker should send the module's own reload for each kind that arrived, the way folder_tree_updates does for mail, with a wired.rs reading holding it. | open |  | 2026-09-17T02:49:20.052Z |  |
+| 502 | 09 | unrun-verify | src/presentation/wx_app.rs |  | Nobody has opened a file Save As wrote in another mail program, and nobody has run Save As by hand: what is held is that this program's own reader reads the written bytes back as the message that went in with its file (export_tree tests), that a kept signed original is written byte for byte, and that the window asks the decision and the writer (wired.rs). The dialog, the destination and the status line are the tester's. | open |  | 2026-09-17T02:49:20.635Z |  |
+| 503 | 09 | deviation | .planning/phases/09-what-the-first-day-of-testing-found/09-08-PLAN.md |  | 09-08 executed with five departures: the new module's tests hand it items of each kind rather than reading a fixture, because the reader's header and the crate's README say no data file can be written, so the walk over a real file is a thin untested half named as such; export_tree.rs gained one_message_written_out, a file the plan did not list, because the exporter already owns stored-message-to-bytes and its file walk; the archive import's folder helper moved from wx_app.rs to importing_messages::a_folder_for_imported_mail so three imports share it; the wired.rs reading of the import worker's three-way dispatch arrived green in task 2's green commit rather than red in task 1, its behaviour having been taken red there; and the reader's Error::Other sentences have their words taken out at the seam rather than the reader changed (todo beside this). | open |  | 2026-09-17T02:49:21.208Z |  |
 
 ````json
 [
@@ -1674,7 +1679,7 @@ last_updated: 2026-09-17T01:02:02.964Z
     "phase": "04",
     "file": "src/service/outlook_data_file.rs",
     "line": null,
-    "description": "A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it.",
+    "description": "A message imported from an Outlook data file carries no List-Unsubscribe, so blocking its sender gets no warning. The importer rebuilds a message from the pieces a PST holds and the transport headers are not among the pieces it reads. Left as None with a comment saying so rather than papered over: recovering it means reading the header property out of the file and writing it into the bytes the importer then re-parses, which is its own change. Messages filed from a sent copy and from an archive read through mime::parse do carry it. Corrected on 2026-09-16 by 09-08: this described an importer path that did not exist, since nothing called the reader from the day it was written; File, Import Mailbox reaches it now through application::importing_an_outlook_data_file, so the deviation is real and stays open, and the fix is the same.",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T16:00:13.954Z",
@@ -6490,6 +6495,66 @@ last_updated: 2026-09-17T01:02:02.964Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T01:02:02.964Z",
+    "resolved_at": null
+  },
+  {
+    "id": 499,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/application/importing_an_outlook_data_file.rs",
+    "line": null,
+    "description": "No real Outlook data file has been through the import: neither this program nor the outlook-pst crate can write one, so brought_in's walk over a real file's folders (opened, what_it_holds, each_item_in) is unrun, and what is tested is the filing of each of the five kinds handed in by one_folder_filed. The closing sentence says so to whoever runs it. FOUND-11's [S] line; the tester's, when he has a .pst to hand.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T02:49:01.548Z",
+    "resolved_at": null
+  },
+  {
+    "id": 500,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/service/outlook_data_file.rs",
+    "line": null,
+    "description": "The reader words every refusal as a sentence to be heard and carries it in Error::Other, whose display puts Error: in front, which a screen reader says first. importing_an_outlook_data_file::as_it_was_worded takes the words out where the closing sentence is built; the reader itself should move its sentences onto Error::InPlainWords, which is a change to the reader wanting a red of its own and was outside 09-08's rule of touching the reader only to make something public.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T02:49:19.475Z",
+    "resolved_at": null
+  },
+  {
+    "id": 501,
+    "kind": "todo",
+    "phase": "09",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "After an Outlook data file is imported the folder tree is read back, as after an archive, but the calendar, contacts, tasks and notes modules are not: they show what arrived when next opened, and the changelog says so. The worker should send the module's own reload for each kind that arrived, the way folder_tree_updates does for mail, with a wired.rs reading holding it.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T02:49:20.052Z",
+    "resolved_at": null
+  },
+  {
+    "id": 502,
+    "kind": "unrun-verify",
+    "phase": "09",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Nobody has opened a file Save As wrote in another mail program, and nobody has run Save As by hand: what is held is that this program's own reader reads the written bytes back as the message that went in with its file (export_tree tests), that a kept signed original is written byte for byte, and that the window asks the decision and the writer (wired.rs). The dialog, the destination and the status line are the tester's.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T02:49:20.635Z",
+    "resolved_at": null
+  },
+  {
+    "id": 503,
+    "kind": "deviation",
+    "phase": "09",
+    "file": ".planning/phases/09-what-the-first-day-of-testing-found/09-08-PLAN.md",
+    "line": null,
+    "description": "09-08 executed with five departures: the new module's tests hand it items of each kind rather than reading a fixture, because the reader's header and the crate's README say no data file can be written, so the walk over a real file is a thin untested half named as such; export_tree.rs gained one_message_written_out, a file the plan did not list, because the exporter already owns stored-message-to-bytes and its file walk; the archive import's folder helper moved from wx_app.rs to importing_messages::a_folder_for_imported_mail so three imports share it; the wired.rs reading of the import worker's three-way dispatch arrived green in task 2's green commit rather than red in task 1, its behaviour having been taken red there; and the reader's Error::Other sentences have their words taken out at the seam rather than the reader changed (todo beside this).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-17T02:49:21.208Z",
     "resolved_at": null
   }
 ]
