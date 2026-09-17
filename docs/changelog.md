@@ -212,6 +212,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   file. There is no command for saving several messages at once; File, Export Mailbox writes a
   whole folder.
 
+- **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
+  build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."
+  Measured first, on 2026-09-16, on this project's machine with NVDA running: from `Ctrl+,` to
+  the moment before the dialog is shown took 2,206 ms, the median of five opens in one run of
+  the release binary; the rows are on `docs/development/measurements.md`. The three things the
+  issue suspected, asking Windows for the spelling languages and the installed typefaces and
+  reading the sound-schemes folder, cost about a millisecond each. The time went to building
+  seven pages of controls before the dialog was shown, and inside that to two things nobody
+  had named: a Windows spell checker built only to say "Spelling is checked by Windows", whose
+  release cost 210 ms, and the typeface list, which resized itself after each of the 272 names
+  it was handed, about a second with the window on screen. Three changes: the dialog is frozen
+  while it is built, so lists take their names without resizing; the sentence about the checker
+  is worded without building one; and only the General page is built before the dialog is
+  shown, with each other page built the first time its tab is reached. Measured again on
+  2026-09-17 the same way: 397 ms, the median of five, and 341 ms on a second run. Every
+  setting is where it was; every tab is in the tab row from the start.
+  Known limitations: the first time you reach a tab other than General it pays for its own
+  page, about a sixth of a second for Reading on this machine without a screen reader and about
+  twice that with one; the other five are under a tenth. What the number above measures ends
+  before the dialog is shown, so the wait until it is spoken and takes keys is longer than it
+  by the show and the screen reader's first announcement, which nothing here can time. Whether
+  it now feels immediate on the tester's machine is his to say. The dialog writes one line to
+  the log on every open, `settings built in N ms`, so a profile's log carries the number.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

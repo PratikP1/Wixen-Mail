@@ -65,7 +65,9 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
             let config = AppConfig::default();
             // No accounts and no calendar server: neither reaches the Feedback
-            // tab, and `tests/theme_reach.rs` builds it the same way.
+            // tab, and `tests/theme_reach.rs` builds it the same way. The
+            // Feedback page is built when its tab is first shown (#34), so
+            // the first `feedback()` below is what builds it here.
             let widgets = wx_settings::build_settings_dialog(&frame, &config, &[], false, &a11y);
 
             every_event_is_offered(&widgets, &mut wrong);
@@ -104,7 +106,7 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
 /// Read from `Event::ALL` rather than from a list written into this file, so a
 /// seventeenth event is covered here without anybody remembering to come back.
 fn every_event_is_offered(widgets: &wx_settings::SettingsWidgets, wrong: &mut Wrong) {
-    let offered = widgets.feedback_event.get_count() as usize;
+    let offered = widgets.feedback().event.get_count() as usize;
     if offered != Event::ALL.len() {
         wrong.push((
             "the event picker".to_string(),
@@ -119,7 +121,8 @@ fn every_event_is_offered(widgets: &wx_settings::SettingsWidgets, wrong: &mut Wr
     }
     for (at, event) in Event::ALL.iter().enumerate() {
         let shown = widgets
-            .feedback_event
+            .feedback()
+            .event
             .get_string(at as u32)
             .unwrap_or_default();
         if shown != event.text() {
@@ -143,8 +146,11 @@ fn every_event_is_offered(widgets: &wx_settings::SettingsWidgets, wrong: &mut Wr
 /// there. It does not prove either reader says it.
 fn every_control_carries_its_own_label(widgets: &wx_settings::SettingsWidgets, wrong: &mut Wrong) {
     for (what, ticks) in [
-        ("the per-event controls", &widgets.feedback_per_event.ticks),
-        ("the global controls", &widgets.feedback_global),
+        (
+            "the per-event controls",
+            &widgets.feedback().per_event.ticks,
+        ),
+        ("the global controls", &widgets.feedback().global),
     ] {
         for (switch, tick) in ticks {
             let carried = tick.get_label().unwrap_or_default();
@@ -158,12 +164,12 @@ fn every_control_carries_its_own_label(widgets: &wx_settings::SettingsWidgets, w
             }
         }
     }
-    if widgets.feedback_per_event.ticks.len() != Switch::ALL.len() {
+    if widgets.feedback().per_event.ticks.len() != Switch::ALL.len() {
         wrong.push((
             "the per-event controls".to_string(),
             format!(
                 "there are {} of them and a person gives {} answers",
-                widgets.feedback_per_event.ticks.len(),
+                widgets.feedback().per_event.ticks.len(),
                 Switch::ALL.len()
             ),
         ));
@@ -181,12 +187,12 @@ fn the_global_section_offers_three_answers(
     widgets: &wx_settings::SettingsWidgets,
     wrong: &mut Wrong,
 ) {
-    if widgets.feedback_global.len() != Switch::ALL.len() {
+    if widgets.feedback().global.len() != Switch::ALL.len() {
         wrong.push((
             "the controls that answer for every event at once".to_string(),
             format!(
                 "there are {} of them and a person gives {} answers",
-                widgets.feedback_global.len(),
+                widgets.feedback().global.len(),
                 Switch::ALL.len()
             ),
         ));
@@ -214,7 +220,7 @@ fn the_screen_says_whose_choice_speech_or_braille_is(
     widgets: &wx_settings::SettingsWidgets,
     wrong: &mut Wrong,
 ) {
-    let said = widgets.feedback_whose_choice.get_label();
+    let said = widgets.feedback().whose_choice.get_label();
     for (what, wanted) in [
         ("name the screen reader", "screen reader"),
         ("say the choice is not made here", "not here"),
@@ -243,7 +249,7 @@ fn a_tick_survives_moving_away_and_coming_back(
     widgets: &wx_settings::SettingsWidgets,
     wrong: &mut Wrong,
 ) {
-    let per_event = &widgets.feedback_per_event;
+    let per_event = &widgets.feedback().per_event;
     if per_event.ticks.is_empty() {
         return;
     }
@@ -305,7 +311,7 @@ fn the_button_puts_one_event_back_to_the_default(
     widgets: &wx_settings::SettingsWidgets,
     wrong: &mut Wrong,
 ) {
-    let per_event = &widgets.feedback_per_event;
+    let per_event = &widgets.feedback().per_event;
     if per_event.ticks.is_empty() {
         return;
     }
@@ -381,8 +387,8 @@ fn pressing_ok_saves_what_the_panel_holds(
     opened_with: &AppConfig,
     wrong: &mut Wrong,
 ) {
-    let per_event = &widgets.feedback_per_event;
-    if per_event.ticks.is_empty() || widgets.feedback_global.is_empty() {
+    let per_event = &widgets.feedback().per_event;
+    if per_event.ticks.is_empty() || widgets.feedback().global.is_empty() {
         return;
     }
 
@@ -393,7 +399,7 @@ fn pressing_ok_saves_what_the_panel_holds(
     for (_, tick) in &per_event.ticks {
         tick.set_value(false);
     }
-    let (spoken_or_brailled, announce) = &widgets.feedback_global[0];
+    let (spoken_or_brailled, announce) = &widgets.feedback().global[0];
     announce.set_value(false);
 
     let saved = wx_settings::read_settings(widgets, opened_with);

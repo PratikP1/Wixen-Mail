@@ -288,16 +288,19 @@ fn test_every_check_box_in_a_form_carries_its_own_label() {
                 false,
                 &a11y,
             );
+            // The Feedback page is built when its tab is first shown (#34);
+            // asking for it here builds it, the way reaching the tab would.
+            let feedback = settings.feedback();
             let mut settings_ticks_seen = 0;
             for (what, ticks, wording) in [
                 (
                     "the controls answering for every event",
-                    &settings.feedback_global,
+                    &feedback.global,
                     Switch::setting_label as fn(&Switch) -> &'static str,
                 ),
                 (
                     "the controls answering for one event",
-                    &settings.feedback_per_event.ticks,
+                    &feedback.per_event.ticks,
                     Switch::label_beside_one_event as fn(&Switch) -> &'static str,
                 ),
             ] {

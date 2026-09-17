@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 56 records have arrived since and have not been through it.
+# 65 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -10668,19 +10668,23 @@ tests_last_seen = [
 # two halves of that check discriminate independently, which is worth knowing
 # because one control standing for two channels is the whole reason there are
 # three answers and four channels.
+#
+# The break moved with the code on 2026-09-17, when 09-09 made the Feedback
+# page one that is built when its tab is first shown and read back only then;
+# the same rebuild-from-stored break, inside that `if let`, measured again.
 [[guard]]
 name = "pressing OK writes the answers the panel holds rather than rebuilding from the stored value"
 file = "src/presentation/wx_settings.rs"
 suite = "every_event_has_a_control"
-before = """    w.feedback_per_event.remember_what_is_on_screen();
-    {
-        let mut feedback = w.feedback_per_event.working.borrow_mut();"""
-after = """    {
-        let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);"""
+before = """        page.per_event.remember_what_is_on_screen();
+        {
+            let mut feedback = page.per_event.working.borrow_mut();"""
+after = """        {
+            let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);"""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
-    { file = "tests/every_event_has_a_control.rs", tests = 1 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
 ]
 
 # The last clause of the roadmap's first criterion is a sentence rather than a
@@ -11269,7 +11273,7 @@ before = """    let wanted = system_language()?.to_ascii_lowercase();
 after = """    None"""
 red = ["service::spellcheck::tests::test_the_machines_language_is_exactly_the_best_match_for_its_real_locale"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11290,7 +11294,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11305,7 +11309,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11326,7 +11330,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11349,7 +11353,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11379,7 +11383,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 68 },
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11389,7 +11393,7 @@ before = """            available: language.code == "en","""
 after = """            available: language.code != "en","""
 red = ["service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # Until 2026-09-16 this record was "the first regional variant Windows offers
@@ -11416,7 +11420,7 @@ red = [
     "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11426,7 +11430,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written + 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11436,7 +11440,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written * 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # ── spellcheck: how a source and a spelling summary describe themselves ────
@@ -11455,7 +11459,7 @@ before = """        match self {
 after = """        "xyzzy""""
 red = ["service::spellcheck::tests::test_every_source_describes_itself_honestly"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11465,7 +11469,7 @@ before = """        count if count <= NAMED => format!("""
 after = """        count if count < NAMED => format!("""
 red = ["service::spellcheck::tests::test_exactly_three_words_are_all_named_without_an_and_zero_others"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # ── spellcheck: the Speller trait, reached through a trait object ──────────
@@ -11482,7 +11486,7 @@ after = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11496,7 +11500,7 @@ before = """        Err(Error::Other(
 after = """        Ok(())"""
 red = ["service::spellcheck::tests::test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11510,7 +11514,7 @@ after = """    fn language(&self) -> &str {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_reports_its_real_language"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # ── spellcheck: SpellChecker's own methods ──────────────────────────────────
@@ -11523,18 +11527,26 @@ after = """        let _ = &self.backend;
         false"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_checks_against_the_data_it_was_given"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
+# Two red since 2026-09-17: `source_for_language` names the source without
+# building a checker, and its test holds that answer to the one a built
+# checker reports, so a built-in checker claiming Hunspell data is a
+# disagreement that test sees as well. Found by the remedy run of that day
+# and measured again by hand after the second name was written down.
 [[guard]]
 name = "has_hunspell says no for the plain built-in checker, not always yes"
 file = "src/service/spellcheck/mod.rs"
 before = """        matches!(self.backend, Backend::Spellbook(_))"""
 after = """        let _ = &self.backend;
         true"""
-red = ["service::spellcheck::tests::test_a_plain_checker_without_a_real_dictionary_says_so"]
+red = [
+    "service::spellcheck::tests::test_a_plain_checker_without_a_real_dictionary_says_so",
+    "service::spellcheck::tests::test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report",
+]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11548,7 +11560,7 @@ after = """        let alphabet = supported_languages()
             .find(|l| l.code != lang_code)"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11566,7 +11578,7 @@ after = """                let w = line.trim().to_lowercase();
                 }"""
 red = ["service::spellcheck::tests::test_load_dictionary_file_adds_every_nonblank_line"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11579,7 +11591,7 @@ red = [
     "service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11589,7 +11601,7 @@ before = """        base + self.custom_words.len()"""
 after = """        base - self.custom_words.len()"""
 red = ["service::spellcheck::tests::test_word_count_includes_words_added_this_session"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11603,7 +11615,7 @@ before = """    } else if cfg!(target_os = "windows")
 after = """    }"""
 red = ["service::spellcheck::tests::test_default_dict_search_paths_includes_the_windows_location"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11617,19 +11629,18 @@ after = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
     }"""
 red = ["service::spellcheck::tests::test_dict_search_paths_reports_what_this_checker_actually_searched"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
+# The break moved with the code on 2026-09-17, when 09-09 took the search for
+# the two files out into `hunspell_files_for`, which `source_for_language`
+# asks as well; the loop over what it finds is what the stub replaces now.
+# Measured again.
 [[guard]]
 name = "try_load_spellbook really finds a dictionary sitting on its path, not a stub answering None"
 file = "src/service/spellcheck/mod.rs"
-before = """    for dir in search_paths {
-        let aff_path = dir.join(format!("{}.aff", hunspell_name));
-        let dic_path = dir.join(format!("{}.dic", hunspell_name));
-
-        if aff_path.exists()
-            && dic_path.exists()
-            && let Ok(aff) = std::fs::read_to_string(&aff_path)
+before = """    for (aff_path, dic_path) in hunspell_files_for(hunspell_name, search_paths) {
+        if let Ok(aff) = std::fs::read_to_string(&aff_path)
             && let Ok(dic) = std::fs::read_to_string(&dic_path)
         {
             let aff_static: &'static str = Box::leak(aff.into_boxed_str());
@@ -11638,7 +11649,7 @@ before = """    for dir in search_paths {
                 tracing::info!(
                     "Loaded Hunspell dictionary '{}' from {}",
                     hunspell_name,
-                    dir.display()
+                    aff_path.display()
                 );
                 return Some(Backend::Spellbook(Box::new(dict)));
             }
@@ -11649,7 +11660,7 @@ after = """    let _ = (hunspell_name, search_paths);
     None"""
 red = ["service::spellcheck::tests::test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11659,7 +11670,7 @@ before = """    if s.is_empty() || s.len() <= 1 {"""
 after = """    if s.is_empty() {"""
 red = ["service::spellcheck::tests::test_a_single_letter_is_too_short_to_be_worth_checking"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11669,7 +11680,7 @@ before = """    if lower.contains('@') && lower.contains('.') {"""
 after = """    if lower.contains('@') || lower.contains('.') {"""
 red = ["service::spellcheck::tests::test_a_dot_alone_is_not_treated_as_an_email"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # ── spellcheck: document locale and i18n ────────────────────────────────────
@@ -11683,7 +11694,7 @@ before = """    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
 after = """    let _ = code;"""
 red = ["service::spellcheck::tests::test_set_document_locale_writes_the_code_for_reading_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11693,7 +11704,7 @@ before = """        let count = map.len();"""
 after = """        let count = 0;"""
 red = ["service::spellcheck::tests::test_load_translations_file_reads_every_entry_in_the_table"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11703,7 +11714,7 @@ before = """        self.active_locale = Locale::from_code(code);"""
 after = """        let _ = code;"""
 red = ["service::spellcheck::tests::test_set_locale_changes_which_language_is_read_back"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 [[guard]]
@@ -11718,7 +11729,7 @@ after = """        let _ = args;
         template"""
 red = ["service::spellcheck::tests::test_tf_fills_in_its_placeholders"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # ── spellcheck: windows_speller.rs, the parts that are not COM ─────────────
@@ -21952,7 +21963,7 @@ red = [
     "common::started::tests::test_the_usable_line_is_said_once_per_start",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
 ]
 
 # The line is written once per process. The handler that asks for it fires on
@@ -21977,7 +21988,7 @@ red = [
     "common::started::tests::test_the_usable_line_is_said_once_per_start",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
 ]
 
 # ── The harness that takes the three numbers ────────────────────────────────
@@ -22027,8 +22038,247 @@ red = [
     "test_the_usable_line_the_library_writes_parses_back",
 ]
 tests_last_seen = [
-    { file = "src/common/started.rs", tests = 6 },
+    { file = "src/common/started.rs", tests = 7 },
     { file = "tests/the_numbers_the_targets_ask_for.rs", tests = 16 },
+]
+
+# ── The line Settings writes, and the harness that reads it (#34) ───────────
+#
+# The Settings dialog writes `settings built in N ms` once per open, from the
+# top of the window's `ID_SETTINGS` arm to just before `show_modal`, and
+# `tests/the_settings_dialog_opens_in.rs` parses that line back off the
+# release binary's log. The break rewords the line, which is what a tidy-up
+# of the wording looks like, and the harness would then read nothing off a
+# real log. One goes red in the library: the test that holds the line byte
+# for byte.
+#
+# Measured on 2026-09-16 through `scripts/guards.sh --remeasure`, the whole
+# library at eight threads: exactly this one failed and nothing else did.
+
+[[guard]]
+name = "the settings built line keeps the shape the harness parses"
+file = "src/common/started.rs"
+before = """    format!("settings built in {} ms", building.as_millis())"""
+after = """    format!("settings built after {} ms", building.as_millis())"""
+red = [
+    "common::started::tests::test_the_settings_built_line_is_held_byte_for_byte",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 7 },
+]
+
+# The same break, landing on the harness: this record couples
+# `src/common/started.rs` to the target, so a commit that changes the line
+# runs the harness's parser against it. One goes red there: the test that
+# builds the line with the library function and parses it back.
+#
+# Measured by hand on 2026-09-16 against the target,
+# `cargo test --test the_settings_dialog_opens_in`: 1 passed, 1 ignored and
+# exactly this one failed. The library's own answer to this break is the
+# record above.
+
+[[guard]]
+name = "the harness can still parse the settings built line the application writes"
+file = "src/common/started.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    format!("settings built in {} ms", building.as_millis())"""
+after = """    format!("settings built after {} ms", building.as_millis())"""
+red = [
+    "test_the_settings_built_line_the_library_writes_parses_back",
+]
+tests_last_seen = [
+    { file = "src/common/started.rs", tests = 7 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# Every figure the harness prints carries its unit. The summary and the page
+# quote these lines, and a number without a unit is a number somebody guesses
+# at. The break drops the unit from the figure line, which is what the first
+# draft of the harness did. One goes red: the test that builds a line from
+# five known runs and reads its first and median back.
+#
+# Measured by hand on 2026-09-16 against the target: 1 passed, 1 ignored and
+# exactly this one failed.
+
+[[guard]]
+name = "a figure line the settings harness prints carries its unit"
+file = "tests/the_settings_dialog_opens_in.rs"
+suite = "the_settings_dialog_opens_in"
+before = """        "{what}: first {first} ms, median {median} ms, the {}: {each} ms","""
+after = """        "{what}: first {first}, median {median}, the {}: {each}","""
+red = [
+    "test_a_figure_line_carries_its_unit_and_parses_back",
+]
+tests_last_seen = [
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# The same rule for the line that says what the first visit of each later
+# tab costs, which is where the cost of the open went. The break drops the
+# unit. One goes red: the test that builds the line from two tabs, one with
+# spaces in its name, and reads both back.
+#
+# Measured on 2026-09-17 against the target: exactly this one failed and
+# nothing else did.
+
+[[guard]]
+name = "the first-visits line the settings harness prints carries its units"
+file = "tests/the_settings_dialog_opens_in.rs"
+suite = "the_settings_dialog_opens_in"
+before = """        .map(|(name, took)| format!("{name} {} ms", took.as_millis()))"""
+after = """        .map(|(name, took)| format!("{name} {}", took.as_millis()))"""
+red = [
+    "test_the_first_visits_line_carries_its_units_and_parses_back",
+]
+tests_last_seen = [
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# ── What the before rows justified (#34, 09-09) ──────────────────────────────
+#
+# The settings screen says which checker will check spelling, and it used to
+# build a Windows checker to ask it; letting go of that checker cost about a
+# fifth of a second on every open, measured on 2026-09-16. The answer is now
+# decided the same way with nothing built, and the test holds the two answers
+# to each other on the machine it runs on. The break names the built-in list
+# where Windows checks the tag. One goes red on a machine where Windows
+# checks the default language, which this one is; on a runner with no spell
+# checking feature both answers are the built-in list and the break is
+# invisible, which the test's own comment says.
+#
+# Measured on 2026-09-17 through `scripts/guards.sh --remeasure`, the whole
+# library at eight threads: exactly this one failed and nothing else did.
+
+[[guard]]
+name = "the spelling source named without a checker is the one a checker would report"
+file = "src/service/spellcheck/mod.rs"
+before = """pub fn source_for_language(tag: &str) -> Source {
+    if windows_checks(tag) {
+        return Source::Windows;
+    }"""
+after = """pub fn source_for_language(tag: &str) -> Source {
+    if windows_checks(tag) {
+        return Source::Builtin;
+    }"""
+red = [
+    "service::spellcheck::tests::test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report",
+]
+tests_last_seen = [
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+]
+
+# The same sentence, at the screen: the break puts the checker back, which is
+# exactly the line that was there before 09-09. One goes red: the reading of
+# `add_language_and_spelling` in the settings harness's target. The record
+# couples `wx_settings.rs` to that target.
+#
+# Measured on 2026-09-17 against the target,
+# `cargo test --test the_settings_dialog_opens_in`: exactly this one failed
+# and nothing else did.
+
+[[guard]]
+name = "the spelling sentence on the settings screen is worded without building a checker"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    let source = crate::service::spellcheck::source_for_language(&config.language);"""
+after = """    let source = crate::service::spellcheck::for_language(&config.language).source();"""
+red = [
+    "test_the_spelling_sentence_is_worded_without_building_a_checker",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# The dialog is frozen while it is built. `wxChoice` resizes itself after
+# every item it is handed unless it is frozen, and a child added under a
+# frozen window is frozen with it; measured on 2026-09-16 with the parent
+# window shown, the typeface list alone cost about a second unfrozen and a
+# tenth of that frozen. The break takes the freeze out, which is what a
+# tidy-up that saw nothing drawn before the show would do. One goes red: the
+# reading that holds the freeze before the first page and the thaw after the
+# layout.
+#
+# Measured on 2026-09-17 against the target: exactly this one failed and
+# nothing else did.
+
+[[guard]]
+name = "the settings dialog is frozen while its pages are built"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    dlg.freeze();
+
+    let root_sizer = BoxSizer::builder(Orientation::Vertical).build();"""
+after = """    let root_sizer = BoxSizer::builder(Orientation::Vertical).build();"""
+red = [
+    "test_the_dialog_and_each_later_page_are_built_frozen",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# The six pages after General are built when their tab is first shown, and
+# that is what took the build from 2.2 seconds to what the after rows on
+# docs/development/measurements.md say. The break builds every page before
+# the dialog is shown, in place of the handler that builds one when its tab
+# is reached, which is the shape the dialog had before 09-09. One goes red:
+# the test that finds controls on the Reading page before its tab was shown.
+#
+# Measured on 2026-09-17 against the target: exactly this one failed and
+# nothing else did.
+
+[[guard]]
+name = "a settings page after the first is built when its tab is first shown and not before"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    notebook.on_page_changed({
+        let later = Rc::clone(&later);
+        move |event| {
+            if let Some(reached) = event
+                .get_selection()
+                .and_then(|tab| usize::try_from(tab).ok())
+            {
+                later.build_the_page_for(reached);
+            }
+        }
+    });"""
+after = """    for tab in THE_COMPOSE_TAB..=THE_ADVANCED_TAB {
+        later.build_the_page_for(tab);
+    }"""
+red = [
+    "test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# A page nobody showed is written back as it was stored. `read_settings`
+# starts from the configuration the dialog opened with and each page that
+# was built overwrites its own fields; the break starts from the defaults
+# instead, which is what a simplification that forgot the unbuilt pages
+# would do, and every setting on a page nobody visited would then be reset by
+# pressing OK (T-09-31). One goes red: the test that stores a sort order,
+# never shows the Reading tab, and reads what OK would write.
+#
+# Measured on 2026-09-17 against the target: exactly this one failed and
+# nothing else did.
+
+[[guard]]
+name = "pressing OK keeps the stored answer for a settings page nobody showed"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
+    let mut cfg = base.clone();"""
+after = """pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
+    let mut cfg = AppConfig::default();"""
+red = [
+    "test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
 
 # The window fills the module it opens on at startup. Found on 2026-09-14 by
@@ -22911,7 +23161,7 @@ red = [
     "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 63 },
+    { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
 # The settings screen's language row, put back the way it was: a stored tag

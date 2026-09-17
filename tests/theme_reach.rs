@@ -378,15 +378,19 @@ fn check_settings(
         palette.main_surface(),
         into,
     );
+    // The two fields below sit on pages built when their tab is first shown
+    // (#34), which paint their own fields as they are built; asking for the
+    // page here builds it, the way reaching the tab would, and the check
+    // reads what that build painted.
     check(
         "settings default reminder field",
-        &widgets.default_reminder,
+        &widgets.calendar_and_pim().default_reminder,
         palette.main_surface(),
         into,
     );
     check(
         "settings download folder field",
-        &widgets.download_folder,
+        &widgets.advanced().download_folder,
         palette.main_surface(),
         into,
     );

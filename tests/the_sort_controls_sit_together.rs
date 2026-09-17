@@ -139,7 +139,10 @@ fn test_then_by_is_the_tab_stop_after_default_sort_order() {
                 false,
                 &a11y,
             );
-            match what_sits_between(&settings.sort_order, &settings.sort_then, 3) {
+            // The Reading page is built when its tab is first shown (#34);
+            // asking for it here builds it, the way reaching the tab would.
+            let reading = settings.reading();
+            match what_sits_between(&reading.sort_order, &reading.sort_then, 3) {
                 Ok(between) => {
                     // What sits between is its own label and nothing else,
                     // said in the failure so the next person reads the
@@ -155,7 +158,7 @@ fn test_then_by_is_the_tab_stop_after_default_sort_order() {
                 }
                 Err(why) => wrong.push(("Default sort order to Then by".to_string(), why)),
             }
-            if let Err(why) = whether_the_month_setting_is_behind(&settings.sort_then) {
+            if let Err(why) = whether_the_month_setting_is_behind(&reading.sort_then) {
                 wrong.push(("what is behind Then by".to_string(), why));
             }
             settings.dialog.destroy();
