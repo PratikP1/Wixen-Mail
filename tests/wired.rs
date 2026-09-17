@@ -3346,20 +3346,34 @@ fn test_making_renaming_and_removing_a_saved_search_all_read_the_tree_back() {
 fn test_opening_a_message_works_out_what_its_signature_is_worth() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
-    for opening in [
-        "fn open_in_the_text_reader(",
-        "fn show_conversation_as_page(",
-    ] {
-        assert!(
-            body_of(&app, opening).contains("with_signature("),
-            "{opening} composes a message without folding in what its signature is worth, \
-             so signed mail opens there saying nothing about its signature"
-        );
-    }
-
     assert!(
-        body_of(&app, "fn signature_check_for(").contains("checking_signatures::for_message("),
-        "the reader no longer asks what a message's signature is worth"
+        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
+        "the text reader composes a message without folding in what is said about it, \
+         so signed mail opens there saying nothing about its signature"
+    );
+    // The page's bar is the composer's, and the composer folds all three
+    // findings in for one message; the window no longer folds the signature
+    // in by hand, which is how it came to fold in only the signature.
+    assert!(
+        body_of(&app, "fn show_conversation_as_page(").contains("reader_text::conversation("),
+        "the page no longer composes its bar from the same document the text reader \
+         would show, so the two can say different things about one message"
+    );
+    let composers = fs::read_to_string("src/presentation/reader_text.rs").expect("the composers");
+    assert!(
+        body_of(&composers, "pub fn conversation(").contains("with_what_is_said("),
+        "the page's composer never folds in what is said about a message, so signed \
+         mail opens formatted saying nothing about its signature"
+    );
+
+    // The question moved out of the window on 2026-09-16, into the one
+    // composition every surface asks, and it is still asked there.
+    let composition = fs::read_to_string("src/application/reading_a_message.rs")
+        .expect("what a message shows and says");
+    assert!(
+        body_of(&composition, "fn signature_check_for(")
+            .contains("checking_signatures::for_message("),
+        "nothing asks what a message's signature is worth any more"
     );
 }
 
@@ -4070,42 +4084,194 @@ fn test_the_menu_says_reading_pgp_mail_is_experimental_before_it_is_chosen() {
     );
 }
 
-/// A PGP message is opened before the reader's document is built.
+/// Every surface that shows a message asks what it shows and says, and folds
+/// the answer in.
 ///
 /// Two halves and both are needed. The armour has to be handed to the opener,
 /// and the reason it did not open has to reach the bar. Wiring the first alone
 /// decrypts messages nobody sees the result of; wiring the second alone leaves
 /// every message saying the general sentence.
 ///
+/// Six surfaces, in [`THE_SURFACES`]. Until 2026-09-16 this named two, the
+/// two that worked, and stayed green while the default reader, both
+/// conversation readings and the preview pane bypassed the key (#51). A guard
+/// that names the surfaces it was written against is green for exactly as
+/// long as no other surface exists, which is the reading the table replaces.
+///
 /// The order matters too and is not checked here: the words replace the armour
 /// before `single_message` reads the body, which is what stops the reader
-/// saying both. `presentation::reader_text` measures that.
+/// saying both, and the envelope goes in before the signature so it is spoken.
+/// `application::reading_a_message` and `presentation::reader_text` measure
+/// those.
 ///
-/// What this cannot see: whether the message really opens.
-/// `service::pgp::keys` measures that.
+/// What this cannot see: whether the message really opens, which
+/// `service::pgp::keys` measures; whether the fold reaches the screen, which
+/// `presentation::reader_text` measures; and a seventh surface that is not in
+/// the table.
 #[test]
 fn test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
 
-    for opening in ["fn open_in_the_text_reader(", "fn read_the_whole_message("] {
-        let body = body_of(&app, opening);
-        assert!(
-            body.contains("opening_pgp::"),
-            "{opening} builds a message without ever offering its armour to the \
-             private key on this computer, so a PGP message never opens there"
-        );
-    }
-
+    // The one seam. Every surface asks this, and this asks the composition,
+    // which is where the armour is offered to the key. A surface that built a
+    // part or a document without going through here is the defect (#51).
     assert!(
-        body_of(&app, "fn whole_message_reading(").contains("with_pgp("),
+        body_of(&app, "fn what_a_message_shows_and_says(")
+            .contains("reading_a_message::for_message("),
+        "the window's one seam to the composition no longer asks it, so no surface \
+         offers a PGP message to the key on this computer"
+    );
+
+    let bypassing = surfaces_that_bypass_the_composition(&app);
+    assert!(
+        bypassing.is_empty(),
+        "these surfaces show a message without offering its armour to the private key \
+         on this computer, so a PGP message never opens there and nothing says what \
+         its envelope or its signature was worth:\n{}",
+        bypassing.join("\n")
+    );
+
+    // The fold, on the two surfaces that compose a document in the window.
+    assert!(
+        body_of(&app, "fn whole_message_reading(").contains("with_what_is_said("),
         "reading a message aloud never says why a PGP message did not open, so the \
          quickest way to read a message is the one that explains nothing"
     );
     assert!(
-        body_of(&app, "fn open_in_the_text_reader(").contains("with_pgp("),
+        body_of(&app, "fn open_in_the_text_reader(").contains("with_what_is_said("),
         "the reader never says why a PGP message did not open, so all four reasons \
          arrive as the one general sentence"
     );
+
+    // And on the composer the other four go through, which folds for one
+    // message and says each finding where it begins for several.
+    let composers = fs::read_to_string("src/presentation/reader_text.rs").expect("the composers");
+    let conversation = body_of(&composers, "pub fn conversation(");
+    assert!(
+        conversation.contains("with_what_is_said("),
+        "the page's composer never folds in what is said about one message, so the \
+         Formatted reader and the preview open a PGP message saying nothing"
+    );
+    assert!(
+        conversation.contains("one_of_several("),
+        "the page's composer never says a finding where one message of several \
+         begins, so a PGP message inside a conversation shows its armour with nothing \
+         said, on the page and in the text reader alike"
+    );
+    assert!(
+        body_of(&composers, "pub fn preview_html(").contains("render_thread_under_a_bar("),
+        "the preview's page is rendered with no bar, so a signed message previews as \
+         unsigned"
+    );
+}
+
+/// The six surfaces that show a message, each with the function it goes
+/// through and the call that function has to make to be asking the
+/// composition.
+///
+/// Six, as of 2026-09-16 (#51). The issue counted five and the plan check
+/// found the sixth, the whole conversation opened in the text reader; the
+/// guard above named two, which is how four came to bypass the key while it
+/// stayed green. A seventh surface arriving is a seventh row here, and a
+/// surface built without going through one of these functions is what this
+/// table cannot see.
+///
+/// `open_conversation` is held to two calls, because building the parts and
+/// folding their findings into the document are two halves: a surface that
+/// built every part through the composition and then composed the document
+/// from the bodies alone would open the words and say nothing.
+const THE_SURFACES: [(&str, &[&str], &str); 6] = [
+    (
+        "fn open_in_the_text_reader(",
+        &["what_a_message_shows_and_says("],
+        "the text reader",
+    ),
+    (
+        "fn read_the_whole_message(",
+        &["what_a_message_shows_and_says("],
+        "Shift+Space, reading the message aloud",
+    ),
+    (
+        "fn open_single_message(",
+        &["what_a_message_shows_and_says("],
+        "the Formatted reader, which is the default",
+    ),
+    (
+        "fn conversation_parts(",
+        &["what_a_message_shows_and_says("],
+        "the conversation window as headings",
+    ),
+    (
+        "fn open_conversation(",
+        &["conversation_parts(", "reader_text::conversation("],
+        "the whole conversation in the text reader",
+    ),
+    (
+        "fn the_preview_of(",
+        &["what_a_message_shows_and_says(", "preview_html("],
+        "the preview pane",
+    ),
+];
+
+/// The surfaces in `app`, the main window's source, that show a message
+/// without asking the composition: each named so the failure says which way
+/// of opening mail would bypass the key.
+///
+/// Empty on a tree where every surface asks. A missing opener is a panic and
+/// not a bypass, so a renamed function is a broken guard rather than a quiet
+/// pass.
+fn surfaces_that_bypass_the_composition(app: &str) -> Vec<String> {
+    THE_SURFACES
+        .iter()
+        .filter_map(|(opener, calls, surface)| {
+            let body = body_of(app, opener);
+            let missing: Vec<&str> = calls
+                .iter()
+                .copied()
+                .filter(|call| !body.contains(call))
+                .collect();
+            (!missing.is_empty())
+                .then(|| format!("{surface}: {opener} never calls {}", missing.join(" or ")))
+        })
+        .collect()
+}
+
+/// The reading can see a surface that stopped asking.
+///
+/// A source read that reports nothing on a clean tree reads exactly like one
+/// that reports nothing because it cannot see, so each surface's call is
+/// spliced out of the window's text in memory, one at a time, and the reading
+/// has to name that surface and no other.
+#[test]
+fn test_a_surface_that_stopped_asking_the_composition_is_named() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    assert!(
+        surfaces_that_bypass_the_composition(&app).is_empty(),
+        "the tree itself has a surface bypassing the composition, so the splice \
+         below cannot tell its own break from the tree's"
+    );
+
+    for (opener, calls, surface) in THE_SURFACES {
+        let body = body_of(&app, opener);
+        let bypassed = body.replacen(calls[0], "bypassed(", 1);
+        assert_ne!(
+            body, bypassed,
+            "{opener} never makes the call to splice out"
+        );
+        let spliced = app.replacen(&body, &bypassed, 1);
+
+        let named = surfaces_that_bypass_the_composition(&spliced);
+        assert_eq!(
+            named.len(),
+            1,
+            "with {surface} spliced to bypass the composition the reading named {named:?}"
+        );
+        assert!(
+            named[0].contains(surface),
+            "the reading names {:?} for a bypass in {surface}",
+            named[0]
+        );
+    }
 }
 
 /// Blocking says what it will do before it writes the rule, and what it did

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 45 records have arrived since and have not been through it.
+# 50 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4416,7 +4416,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -4438,7 +4438,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11875,7 +11875,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11891,7 +11891,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11921,7 +11921,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -11935,7 +11935,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -14119,7 +14119,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -14648,7 +14648,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -15786,7 +15786,7 @@ red = [
     "presentation::reader_text::tests::test_an_attachment_row_the_sender_described_with_nothing_says_so_in_words",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -16005,9 +16005,20 @@ after = """    let _ = &whole;
 # the same plan added tests reaching a rule an earlier record was about, and
 # nothing failed. What caught it is the count check flagging the file and the
 # scoped re-measure it printed. 14 tests in 6,488.
+#
+# **Short again on 2026-09-16, the same way, inside 09-07.** The composition
+# every surface asks, `application::reading_a_message`, asks this question
+# through `opening_pgp` before it offers anything to the key, so its three
+# readings that meet armour redden, and so does the preview's reading of why
+# a message did not open. Four more; 18 now. Found by the count check's
+# remedy, written down from what went red.
 red = [
     "application::body_safety::tests::test_an_armoured_message_says_it_is_encrypted",
     "application::opening_pgp::tests::test_an_armoured_message_is_handed_to_the_opener",
+    "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
+    "application::reading_a_message::tests::test_an_armoured_message_with_no_key_here_says_why_and_keeps_its_armour",
+    "application::reading_a_message::tests::test_the_reason_a_pgp_message_did_not_open_reaches_the_bar_through_the_fold",
+    "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
     "presentation::reader_text::encryption_tests::test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words",
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
     "application::body_safety::tests::test_a_signature_block_alone_says_the_message_is_signed",
@@ -16024,7 +16035,8 @@ red = [
 tests_last_seen = [
     { file = "src/application/body_safety.rs", tests = 20 },
     { file = "src/application/opening_pgp.rs", tests = 5 },
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -16052,7 +16064,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16078,7 +16090,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 10 },
 ]
 
@@ -16109,7 +16121,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
     { file = "src/presentation/wx_reader.rs", tests = 14 },
 ]
 
@@ -16143,7 +16155,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -16205,7 +16217,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -16915,13 +16927,17 @@ before = '''    let empty = format!("{}\n", nothing_to_read());
     }'''
 after = '''    let _ = sentence;
     text.to_string()'''
+# Four since 2026-09-16 (09-07): one message opened as a page now folds its
+# envelope in through the same sentence, and that reading holds the body to
+# no longer saying the message may not have arrived.
 red = [
     "presentation::reader_text::encryption_tests::test_an_encrypted_message_reads_as_the_sentence_rather_than_as_nothing_to_read",
     "presentation::reader_text::encryption_tests::test_an_envelope_that_could_not_be_read_still_says_the_message_is_encrypted",
     "presentation::reader_text::encryption_tests::test_the_same_sentence_is_spoken_as_the_message_opens",
+    "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -16963,7 +16979,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -16977,6 +16993,13 @@ tests_last_seen = [
 # recording separately: two surfaces open mail and wiring one is exactly how
 # the two come to disagree about the same message.
 #
+# Rewritten 2026-09-16 (09-07, #51): the two calls this break took out moved
+# into `application::reading_a_message`, and the text reader asks the window's
+# one seam to it, `what_a_message_shows_and_says`. The break now builds the
+# text reader's answer by hand with nothing said, which is the bypass the
+# missing surfaces had. Measured again the same day through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+#
 # Measured by hand on 2026-09-06 against a green tree, with
 # `cargo test --no-fail-fast --test wired`.
 
@@ -16984,15 +17007,22 @@ tests_last_seen = [
 name = "a PGP message the reader window never offers to the key"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
-before = '''    let opened = crate::application::opening_pgp::for_body(&body);
-    let body = crate::application::opening_pgp::the_body_to_show(body, opened.as_ref());'''
-after = '''    let opened = None;'''
+before = '''    let shown = what_a_message_shows_and_says(cache, message, body_as_written(stored));
+    // The list row does not carry the attachments, only whether there are any,'''
+after = '''    let shown = crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        body: body_as_written(stored),
+        said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+    };
+    // The list row does not carry the attachments, only whether there are any,'''
 red = [
     "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
+    # Since the guard's companion arrived the same day: it reads the tree
+    # before splicing and refuses to splice over a real bypass.
+    "test_a_surface_that_stopped_asking_the_composition_is_named",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -17013,14 +17043,17 @@ tests_last_seen = [
 [[guard]]
 name = "the reasons a PGP message did not open stay four different sentences"
 file = "src/presentation/reader_text.rs"
-before = '''            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT,'''
-after = '''            WhatOpeningItFound::TheKeyHereDoesNotOpenIt => NO_PGP_KEY_ON_THIS_COMPUTER,'''
+# The four arms moved out of `with_pgp` into `the_reason_it_did_not_open` on
+# 2026-09-16 (09-07), so a thread can say the reason at the message it is
+# about. The break is the same wrong-key arm; measured again the same day.
+before = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(THE_PGP_KEY_HERE_DOES_NOT_OPEN_IT),'''
+after = '''        WhatOpeningItFound::TheKeyHereDoesNotOpenIt => Some(NO_PGP_KEY_ON_THIS_COMPUTER),'''
 red = [
     "presentation::reader_text::encryption_tests::test_each_reason_a_pgp_message_did_not_open_is_said_in_its_own_words",
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -17056,7 +17089,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17083,7 +17116,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17558,7 +17591,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -17795,7 +17828,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 71 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
 
 [[guard]]
@@ -20870,7 +20903,7 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 49 },
-    { file = "src/presentation/reader_text.rs", tests = 120 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
 
@@ -23366,4 +23399,141 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_settings_tab_row_says_each_tab_once.rs", tests = 3 },
+]
+
+# ── What a message shows and says, decided once (#51) ────────────────────────
+#
+# Two of six surfaces offered a PGP message to the key and said what an
+# envelope and a signature were worth; the default reader, both conversation
+# readings and the preview did not. `application::reading_a_message` is the
+# one composition every surface now asks. Two things about it are worth a
+# record because both were right on the two working surfaces only by each
+# carrying a comment.
+#
+# The opening: the armour is offered to the key and the body handed on is the
+# words where it opened. The break keeps the armour as the body, which is the
+# state every missing surface was in, and the reading against the message
+# GnuPG encrypted to Alice is what reddens.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "a message the key opens is shown as its words and not as its armour"
+file = "src/application/reading_a_message.rs"
+before = """    let body = opening_pgp::the_body_to_show(body, opened.as_ref());"""
+after = """    // the armour stays where it was"""
+red = [
+    "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 7 },
+]
+
+# The order of the fold: a signature verdict puts "More about this signature:"
+# into the bar and the reader speaks only what is above it, so the envelope
+# goes in first. The text reader and Shift+Space each carried that as a
+# comment; `with_what_is_said` carries it as code, once. The break folds the
+# signature before the envelope, and the reading holds the envelope sentence
+# inside the spoken cut.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the envelope is folded in before the signature, so it is spoken"
+file = "src/presentation/reader_text.rs"
+before = """        self.with_pgp(said.opened.as_ref())
+            .with_smime_envelope(&said.envelope)
+            .with_signature(&said.signature)"""
+after = """        self.with_pgp(said.opened.as_ref())
+            .with_signature(&said.signature)
+            .with_smime_envelope(&said.envelope)"""
+red = [
+    "application::reading_a_message::tests::test_the_envelope_is_folded_in_before_the_signature_so_it_is_spoken",
+    # Two since the same day's task 2: the page's composer folds through the
+    # same function, and its reading holds the same order. Written when the
+    # record was a few hours old, which is the shape CLAUDE.md warns of.
+    "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
+]
+tests_last_seen = [
+    { file = "src/application/reading_a_message.rs", tests = 7 },
+    { file = "src/presentation/reader_text.rs", tests = 125 },
+]
+
+# The preview pane's bar. The reader window and the conversation window put
+# the bar in a control above the page; the preview is one WebView and had no
+# bar at all, so a signed message previewed as unsigned and a PGP message as
+# raw armour with nothing said. `preview_html` composes the document the text
+# reader would show, keeps the top of its bar, and renders it into the page
+# as a region. The break renders the page with no bar, which is what the
+# preview did; both preview readings redden, because for one message the
+# reason a PGP message did not open is in the bar and nowhere else.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "the preview pane carries the bar above the message"
+file = "src/presentation/reader_text.rs"
+before = """    HtmlRenderer::new().render_thread_under_a_bar(bar.as_deref(), subject, &thread_parts(parts))"""
+after = """    HtmlRenderer::new().render_thread_under_a_bar(None, subject, &thread_parts(parts))"""
+red = [
+    "presentation::reader_text::encryption_tests::test_the_preview_carries_the_bar_above_the_message",
+    "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 125 },
+]
+
+# A finding about one message of several, said where that message begins.
+# One bar over a thread would be heard as covering every message in it, so
+# the bar stays off a thread and each message's own findings go under its
+# own heading, on both conversation surfaces: the whole thread in the text
+# reader and the page as headings. The break drops the reason a PGP message
+# did not open from what is said there, so a thread holding one goes back to
+# showing its armour with nothing said, and both thread readings redden.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+[[guard]]
+name = "one message of several says why it did not open where it begins"
+file = "src/presentation/reader_text.rs"
+before = """    let reason = the_reason_it_did_not_open(part.said.opened.as_ref());"""
+after = """    let reason: Option<&str> = None;"""
+red = [
+    "presentation::reader_text::encryption_tests::test_a_whole_conversation_says_where_a_message_did_not_open_and_heads_it_with_no_verdict",
+    "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 125 },
+]
+
+# The guard that names every surface. It named two of six until 2026-09-16,
+# which is how four surfaces came to bypass the key while it stayed green
+# (#51); it reads a table of six now, each with the call its function has to
+# make. The break takes the composition out of the preview's function and
+# hands it the answer for nothing said, which is the bypass the preview had,
+# and the guard names the preview pane. Its companion, which splices the
+# same bypass in memory, goes red with it: it reads the tree first and
+# refuses to splice over a real bypass, because then it could not tell its
+# own break from the tree's. Written down as "unmoved" when the record was
+# first drafted and corrected by the first measurement. `suite` names the
+# target, which couples it to this file for `check.sh --suites-for`.
+#
+# Measured 2026-09-16 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test wired`.
+[[guard]]
+name = "a surface that shows a message without asking the composition is named"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """    let shown = what_a_message_shows_and_says(cache, &message, body.clone());"""
+after = """    let shown = crate::application::reading_a_message::WhatAMessageShowsAndSays {
+        body: body.clone(),
+        said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+    };"""
+red = [
+    "test_opening_a_message_tries_the_pgp_key_and_says_why_it_did_not_open",
+    "test_a_surface_that_stopped_asking_the_composition_is_named",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 72 },
 ]
