@@ -312,8 +312,19 @@ pub fn one_message_written_out(
     files: &[AttachmentWithContent],
     arrived_as: &SignedOriginal,
 ) -> Option<Vec<u8>> {
-    let _ = (stored, text, files, arrived_as);
-    None
+    let text = text.filter(|text| is_really_there(text))?;
+    Some(match arrived_as {
+        SignedOriginal::Kept(raw) => raw.clone(),
+        // Not through `ending_where_a_line_ends`: that is what a trip through
+        // an archive changes, and a message written out on its own keeps its
+        // body exactly as it was stored.
+        SignedOriginal::NotSigned | SignedOriginal::NotKept => {
+            message_files::written_as_one_message(
+                &rebuilt_from_what_is_stored(stored, text),
+                &what_can_be_written_of(files).to_write,
+            )
+        }
+    })
 }
 
 /// What an export can write of one message's files, and what it cannot.

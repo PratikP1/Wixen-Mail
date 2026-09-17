@@ -3451,6 +3451,50 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
              that files a message decides about signatures does not reach it"
         );
     }
+    // The third import, since #53: mail out of an Outlook data file, filed in
+    // its own module rather than in the window.
+    let data_file = fs::read_to_string("src/application/importing_an_outlook_data_file.rs")
+        .expect("the data file import");
+    assert!(
+        body_of(&data_file, "fn one_message_filed(").contains("file_one_imported_message("),
+        "mail out of an Outlook data file is written its own way, so whatever the one place \
+         that files a message decides about signatures and the sync's marker does not reach it"
+    );
+}
+
+/// Importing mail sends each kind of file to its own reader.
+///
+/// Three readers refuse each other's files: a zip or a folder, one saved
+/// message, and an Outlook data file. The worker asks one question about how
+/// the file begins and dispatches on all three answers. Before #53 it asked
+/// about two, and a data file chosen through All files fell to the archive
+/// reader and was told it was not a mailbox archive, which is true and sent
+/// somebody looking for a different file.
+///
+/// What this cannot see: whether the data file's mail lands, which is measured
+/// against a real database in `application::importing_an_outlook_data_file`.
+/// This only says the window hands the third kind of file to that module
+/// rather than to the archive reader.
+#[test]
+fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let worker = body_of(&what_ships(&app), "fn fill_folders_from(");
+
+    for answer in [
+        "WhatWasChosen::MailInOneFile",
+        "WhatWasChosen::AnOutlookDataFile",
+        "WhatWasChosen::AnArchive",
+    ] {
+        assert!(
+            worker.contains(answer),
+            "the import worker no longer dispatches on {answer}, so a file of that kind goes \
+             to a reader that refuses it"
+        );
+    }
+    assert!(
+        worker.contains("importing_an_outlook_data_file::brought_in("),
+        "an Outlook data file is recognised and then handed to nothing that reads one"
+    );
 }
 
 /// Everything aimed at a chosen message asks which account that message is in.
@@ -4411,13 +4455,19 @@ fn what_save_as_does(app: &str) -> WhatSaveAsDoes {
         .map_or(app.len(), |at| arm_starts + 1 + at);
     let arm = &app[arm_starts..arm_ends];
     let handler = body_of(app, "fn save_the_message_as(");
+    // The writing is the fallible half, split out so the worker is one
+    // `Result` rather than early returns; the reading follows the handler
+    // into it.
+    let writing = body_of(app, "fn one_message_saved_to(");
     WhatSaveAsDoes {
         the_arm_reaches_the_handler: arm.contains("save_the_message_as("),
         asks_the_decision: handler.contains("saving_as("),
-        writes_through_the_exporter: handler.contains("one_message_written_out("),
+        writes_through_the_exporter: handler.contains("one_message_saved_to(")
+            && writing.contains("one_message_written_out("),
         the_stub_is_gone: !app.contains("\"Save As: no message selected\""),
-        has_no_attachment_branch: !handler.contains("save_attachment(")
-            && !handler.contains("ID_SAVE_ATTACHMENT"),
+        has_no_attachment_branch: [&handler, &writing]
+            .iter()
+            .all(|half| !half.contains("save_attachment(") && !half.contains("ID_SAVE_ATTACHMENT")),
     }
 }
 

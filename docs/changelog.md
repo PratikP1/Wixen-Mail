@@ -195,6 +195,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   in the file. A folder the file names in a way this computer cannot write keeps its mail, and the
   sentence says so.
 
+- **File, Save As saves the message you are on as a `.eml` file.** Found on 2026-09-15 in build
+  `0.125.1+g3e633252` by the same audit (#53, point 2). From the day the item was added, choosing
+  it put "Save As: no message selected" in the status bar whatever was selected, and did nothing
+  else, while the item and the shortcuts page promised a saved message or attachment. Now it opens
+  the ordinary save dialog with a name made from the subject, with anything that could be read as
+  a path made harmless, and writes the message with the files this computer has on it, through the
+  same writer the mailbox export uses for one message. A signed message whose original was kept is
+  written exactly as it arrived, so its signature survives. The status line says what was saved
+  and where; a message whose text has not been downloaded is refused with a sentence saying to
+  open it once first, and choosing the command with nothing selected says to select a message.
+  Attachments are saved from the reader window's own Save Attachment command, as before; the
+  shortcuts page now says which command does which.
+  Known limitations: the saved file has not been opened in another mail program by anybody; what
+  is tested is that this program's own reader reads it back as the message that went in, with its
+  file. There is no command for saving several messages at once; File, Export Mailbox writes a
+  whole folder.
+
 ### Added
 
 - **The mail protocols and the CalDAV client went through a mutation run on

@@ -620,9 +620,45 @@ pub enum SavingAs {
 /// near a folder somebody chose. The rest of what Windows will not take in a
 /// name goes the same way, through the one function that already knows.
 pub fn saving_as(the_subject_under_the_cursor: Option<&str>) -> SavingAs {
-    let _ = the_subject_under_the_cursor;
-    SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE)
+    let Some(subject) = the_subject_under_the_cursor else {
+        return SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE);
+    };
+    // Separators first, because the one function that knows what a name may
+    // hold keeps only the last segment of anything that looks like a path,
+    // and "Invoices/March" is one subject rather than a folder and a file.
+    let kept_whole: String = subject
+        .chars()
+        .map(|letter| match letter {
+            '/' | '\\' => '_',
+            other => other,
+        })
+        .collect();
+    let stem = if kept_whole.trim().is_empty() {
+        A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED.to_string()
+    } else {
+        crate::service::attachment_name::safe_file_name(&kept_whole)
+    };
+    SavingAs::AsAFile {
+        named: format!("{stem}{A_SAVED_MESSAGE_ENDS_WITH}"),
+    }
 }
+
+/// What to call a saved message whose subject is nothing.
+///
+/// A message rather than the attachment writer's fallback, because a file
+/// called `attachment.eml` is a file somebody opens looking for a photograph.
+const A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED: &str = "message";
+
+/// What a saved message is named to end with.
+///
+/// Taken from the export of one message rather than written down a second
+/// time, so Save As and an export of one message name their file the same
+/// way. A refusal is the only answer that names no ending, and this does not
+/// ask about a refusal, so nothing reaches the second arm.
+const A_SAVED_MESSAGE_ENDS_WITH: &str = match WritingOut::OneMessage.the_file_ends_with() {
+    Some(ending) => ending,
+    None => ".eml",
+};
 
 /// What writing a file of messages out did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

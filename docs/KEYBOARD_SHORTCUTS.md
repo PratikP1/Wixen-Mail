@@ -482,7 +482,7 @@ dialog once you have more than one.
 | New > Account | (none) | Open Account Manager |
 | Open Draft | `Ctrl+Shift+O` | Reopen a message you saved to finish later |
 | Save | `Ctrl+S` | Save current draft |
-| Save As | (none) | Save message or attachment to file |
+| Save As | (none) | Save the message you are on as a `.eml` file, named after its subject. To save an attachment, open the message and use the reader's own Save Attachment command (`Ctrl+S` there) |
 | Check Mail | `F9` | Check for new messages |
 | Quit | `Ctrl+Q` | Exit the application |
 
