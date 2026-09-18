@@ -242,7 +242,11 @@ column counts as changing the arrangement.
    - **Forward** - Forward the message to someone else
    - **Delete** - Move to trash
    - **Toggle Star** - Add or remove star/flag
-   - **Mark as Unread** - Mark message as unread
+   - **Mark as read**, or **Mark as unread** - Whichever the message you are
+     on needs. The entry says which way it will go, and so do the Action menu's
+     item and the toolbar button. Until 2026-09-18 this list named a command
+     called Mark as Unread, which never existed under that name: the one
+     command said Mark as read whatever the message's state, and toggled.
 
 **Using Keyboard Shortcuts:**
 - `Ctrl+R` - Reply
@@ -250,7 +254,9 @@ column counts as changing the arrangement.
 - `Ctrl+L` - Forward
 - `Delete` - Delete message
 - `S` - Star/flag message
-- `Space` - Toggle read/unread
+- `M` - Mark the message as read or as unread, whichever it is not, and hear
+  which. `Space` reads the message aloud; until 2026-09-18 this line said it
+  toggled read and unread, and it never did.
 
 ## Composing Email
 
@@ -473,7 +479,8 @@ every module in full.
 - `Ctrl+L` - Forward
 - `Delete` - Delete message
 - `S` - Star/flag message
-- `Space` - Toggle read/unread
+- `M` - Mark as read or as unread, and hear which
+- `Space` - Read the message aloud
 
 ### Navigation
 - `N` - Next unread message

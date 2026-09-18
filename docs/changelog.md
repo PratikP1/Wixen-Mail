@@ -144,6 +144,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Mark as Read says which way it will go, and `M` in the message list does it.** Reported
+  on 2026-09-15 from build `0.125.1+g3e633252` under NVDA (#27): "The mark read command in
+  the action menu and the corresponding context menu should reflect the current status of the
+  message ... Use 'm' bound to message lists to toggle the state and announcement,
+  'read'/'unread'." Until this build the command said Mark as Read on the Action menu, the
+  context menu and the toolbar whatever the message's state, and toggled: on a read message it
+  marked unread while saying it would mark read. Now the item says Mark as Read on an unread
+  message and Mark as Unread on a read one, the context menu's entry says the same in its own
+  words, and the toolbar button says the same, on the channel a screen reader reads a toolbar
+  button's name from. The words follow the message under the cursor: they are set when you
+  land on a row, after the command, and when a read flag reaches the row from the server or is
+  put back because the server refused. On a conversation row the command says Mark as Read
+  while any message in the conversation is unread. `M` with the cursor in the message list
+  toggles the message you are on and says one word, "read" or "unread"; the letter is taken
+  at the key, so the list's own jump-to-a-row-by-its-first-letter never gets it, and a reading
+  on a real list shows the cursor staying put. The same key does nothing in a search box or
+  any other place you can type. Known limitations: nobody has heard any of this; the label on
+  each surface, the word after `M`, and whether the list stays where it was are for the
+  tester's ear. The third thing the issue asks for, marking a whole conversation from its row,
+  lands with the change that makes every command work over a selection, and the issue stays
+  open for it.
 - **Moving through the message list marks nothing read; reading a message aloud or opening
   it starts the clock.** Reported on 2026-09-15 from build `0.125.1+g3e633252` under NVDA
   (#25): "Automatic read/unread status should not be linked to the list traversal for mail.

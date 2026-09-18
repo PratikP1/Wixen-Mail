@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 128 records have arrived since and have not been through it.
+# 134 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25842,4 +25842,179 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# ── Mark as Read says which way it will go ──────────────────────────────────
+#
+# #27: the command said "Mark as Read" on every surface whatever the message's
+# state, and toggled. The words for each state are one rule in
+# marking_read, and the break makes both states answer the unread form,
+# which is what every surface said until 2026-09-18. The read-state case in
+# the module goes red, and so does the message-menu test in context_menu,
+# whose second form takes its Mark entry's words from the same rule; the
+# mnemonic and context-word cases stay green, because a rule that answers
+# one form agrees with itself.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "mark as read says mark as unread on a read message, not the one word whatever the state"
+file = "src/application/marking_read.rs"
+before = """    if any_unread {
+        Wording {"""
+after = """    if any_unread || !any_unread {
+        Wording {"""
+red = [
+    "application::marking_read::tests::test_a_read_message_is_offered_mark_as_unread",
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/marking_read.rs", tests = 5 },
+]
+
+# ── The context menu's second form is offered on a read message ─────────────
+#
+# #27: the context menu has two forms of its message list since 2026-09-18,
+# and entries_for_messages picks by the message under the cursor. The break
+# answers the unread form for a read message too, which is what the menu did
+# before, and the message-menu test goes red on the Mark entry's words.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "the context menu on a read message offers mark as unread, not the unread form"
+file = "src/application/context_menu.rs"
+before = """    } else {
+        MESSAGES_WITH_THE_ONE_UNDER_THE_CURSOR_READ
+    }"""
+after = """    } else {
+        MESSAGES
+    }"""
+red = [
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
+]
+
+# ── A letter bound on a list is consumed, so the search never gets it ───────
+#
+# #27: a plain letter on a SysListView32 is the start of the control's own
+# search, on the WM_CHAR after the key-down, unless the key-down was handled
+# and not skipped. wxdragon resets Skip(true) before every closure, so a
+# handler that runs and says nothing is one the search still gets. The break
+# drops the skip(false), which is the whole mechanism; the reading on the
+# wired list goes red with the selection on Mango, and the companion on the
+# list wired with another letter stays green, since it expects the search.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a letter wired on a list is consumed at the key-down, not left to the control's search"
+file = "src/presentation/list_keys.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """        event.skip(false);
+        on_pressed(i64::from(selected));"""
+after = """        on_pressed(i64::from(selected));"""
+red = [
+    "test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/list_keys.rs", tests = 3 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── A tool's new label reaches the control ──────────────────────────────────
+#
+# #27: the toolbar's label follows the state, and wxdragon 0.9.17 offers no
+# relabel, so it goes through TB_SETBUTTONINFOW with TBIF_TEXT. The break
+# sends the message with no mask, so the control is told nothing; both
+# readings of the label after the relabel go red on "Mark Read", through
+# TB_GETBUTTONTEXTW and through get_accName, and the companion that read the
+# old label before the relabel stays green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a relabelled tool says the new label where the control and a screen reader read it"
+file = "src/presentation/toolbar_text.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """            dw_mask: TBIF_TEXT,"""
+after = """            dw_mask: 0,"""
+red = [
+    "test_reading_b_a_relabelled_tool_says_the_new_label_where_the_control_is_asked",
+    "test_reading_b_a_relabelled_tool_says_the_new_label_where_a_screen_reader_reads_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/toolbar_text.rs", tests = 1 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── The words follow the row landed on ──────────────────────────────────────
+#
+# #27: the command's words are set from the message under the cursor on
+# selection, after the toggle and when a flag lands on the row. The break
+# drops the refresh from the selection handler, so arrowing onto a read
+# message leaves every surface saying Mark as Read; the reading over the
+# three sites goes red with "the selection handler never refreshes the
+# wording", and its companions read snippets and stay green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "landing on a row makes mark as read say which way it will go, not leave the last row's words"
+file = "src/presentation/wx_app.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """                    receipt_for_the_open_message(app);
+                    // Mark as Read says which way it will go for the row
+                    // landed on (#27): the item, the tool and its tip.
+                    refresh_mark_read_wording(&frame, toolbar_handle, &state);"""
+after = """                    receipt_for_the_open_message(app);"""
+red = [
+    "test_the_wording_is_refreshed_on_selection_after_the_toggle_and_when_a_flag_lands",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── M goes through the helper that consumes it ──────────────────────────────
+#
+# #27: M is wired on the message list through list_keys::wire_letter, which
+# calls skip(false) so the control's search never gets the letter. The break
+# wires the key with a bare KEY_DOWN binding that runs the toggle and says
+# nothing about skip, so the dispatcher's Skip(true) stands and the search
+# moves the cursor after every press; the reading over the key wiring goes
+# red with the wire_letter anchor gone. The reading on the built list is
+# not in this record's red list because it builds its own list and wires
+# the helper itself; the record on list_keys.rs covers the helper.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "m on the message list is wired through the helper that consumes it, not bound bare"
+file = "src/presentation/wx_app.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """            crate::presentation::list_keys::wire_letter(&msg_list, 'M', {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |_row| {"""
+after = """            msg_list.bind_internal(EventType::KEY_DOWN, {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |event| {
+                    if event.get_key_code() != Some(77) {
+                        return;
+                    }"""
+red = [
+    "test_the_menu_item_and_the_key_run_one_toggle_and_the_key_says_one_word",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
 ]

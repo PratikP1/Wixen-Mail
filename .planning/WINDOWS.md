@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 506
+open_count: 507
 waived_count: 0
 fixed_count: 33
-total_count: 539
-last_updated: 2026-09-18T20:05:00.000Z
+total_count: 540
+last_updated: 2026-09-18T21:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -554,6 +554,7 @@ last_updated: 2026-09-18T20:05:00.000Z
 | 537 | 11 | unrun-verify | tests/the_numbers_the_targets_ask_for.rs | 433 | 11-04: the two size rows for docs/development/measurements.md, the log a two-minute start writes at info and at debug against the measurement profile, were not taken. One copy of Wixen Mail runs at a time and the tester's copy was open on his account through the whole session (process 12648, INBOX, 14400 unread); the one attempt at 17:37Z handed itself to that copy, which was raised and said "Wixen Mail is already running, and this is it", and a run started the moment his copy closes would take the single-instance slot from a restart. The harness now refuses to start while any wixen-mail.exe is running, with the reason, and pins the level through WIXEN_MEASUREMENT_LOG_LEVEL. The rows are owed: run the two commands on the harness's header with no Wixen Mail open, write the rows with their date and commit, and quote the sizes on docs/ALPHA_TESTING.md | open |  | 2026-09-18T18:05:00.000Z |  |
 | 538 | 11 | unrun-verify | src/presentation/page_jumps.rs |  | 11-04.1: what only the tester's ear settles for #84. In the formatted view: Alt+A from the message landing on the attachments list with "Attachments, N" said, and whether that sentence after the list announces itself is one thing too many; Alt+A from the list going back with "Message"; F7 to the warning bar with "Security warning" and F7 back; "No attachments" and "No warning" when there is nothing to go to. In the plain-text reader: Alt+A to the list and back, where the way back is answered by the menu accelerator when the list has focus, because the frame takes an accelerator before a list box sees the key; that was reasoned from how the toolkit routes a chord (wxTextCtrl exempts Ctrl+arrows, a list box exempts nothing) and never watched, and if the chord reaches the list instead, the list's own handler answers it. The readings hold the shape; none of this has been heard | open |  | 2026-09-18T19:12:00.000Z |  |
 | 539 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-05: what only the tester's ear settles for #25. A walk through a folder with unread messages, letting NVDA finish every row, leaving the unread count where it was; Space on an unread message, then the count moving after two seconds with the row still selected; Enter on one doing the same; moving off a message before the delay runs leaving it unread; and the sentence under Mark as read after on the Reading tab read once, on the choice's own row and not twice. Whether "previewed" in his words means reading aloud from the list, since the preview pane cannot take focus here by design, is asked in the close comment and is his to answer. The rule's six cases and the readings hold the shape; none of this has been heard | open |  | 2026-09-18T20:05:00.000Z |  |
+| 540 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06: what only the tester's ear settles for #27. The Action menu's item heard as Mark as Unread after arrowing onto a read message and as Mark as Read after arrowing onto an unread one, and the context menu's entry the same; M on a message heard as "read" or "unread", one word, and the list staying on the same row after it; the toolbar button's name after a toggle, read from the button under NVDA's own navigation; and Alt+A, E reaching the item whichever way it goes. The readings hold the letter consumed on a built list, the relabel read back over MSAA on a built toolbar, and the three refresh sites in the source; none of this has been heard | open |  | 2026-09-18T21:30:00.000Z |  |
 
 ````json
 [
@@ -7023,6 +7024,18 @@ last_updated: 2026-09-18T20:05:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-18T20:05:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 540,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-06: what only the tester's ear settles for #27. The Action menu's item heard as Mark as Unread after arrowing onto a read message and as Mark as Read after arrowing onto an unread one, and the context menu's entry the same; M on a message heard as \"read\" or \"unread\", one word, and the list staying on the same row after it; the toolbar button's name after a toggle, read from the button under NVDA's own navigation; and Alt+A, E reaching the item whichever way it goes. The readings hold the letter consumed on a built list, the relabel read back over MSAA on a built toolbar, and the three refresh sites in the source; none of this has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T21:30:00.000Z",
     "resolved_at": null
   }
 ]
