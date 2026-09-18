@@ -340,7 +340,16 @@ pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has 
      message that has been sent cannot be recalled, and a message deleted from a \
      server may have been the only copy.";
 
-/// The warning shown beside the offer to fetch missing message text in bulk.
+/// The warning on Pause Downloading, the item that holds the download of
+/// everything (#20, #23).
+///
+/// One sentence where there were two until 2026-09-17, on Fetch Missing
+/// Message Text and on Download This Whole Folder, because the download that
+/// runs on its own after every check is what both of those commands did and
+/// their substance was one risk. It sits on the Pause item because that is
+/// where somebody deciding whether to hold the download reads it: the
+/// download starts without anybody choosing it, so there is no moment of
+/// choosing for a warning to sit beside.
 ///
 /// Its own sentence, beside [`EXPERIMENTAL_WARNING`] rather than inside it,
 /// for two reasons. That one is about writes, and opens by saying both of the
@@ -352,47 +361,22 @@ pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has 
 /// What it has to carry is the one risk no test in this repository can settle.
 /// Every other experimental thing here is experimental because it has never
 /// run; this is experimental because of what a provider may do when it does.
-/// Asking for hundreds of whole messages in a row is a shape a mail server is
+/// Asking for a whole mailbox chunk after chunk is a shape a mail server is
 /// entitled to refuse, throttle or disconnect, and nothing on this side can
-/// find out which without a real account.
+/// find out which without a real account. So it says four things: that the
+/// download runs on its own, that no real account has met it, whose decision
+/// the thing that could go wrong is, and where the hold is.
 ///
 /// Second person and plain language, in the register of the warning above it.
 /// It says what could go wrong and what it costs, rather than only that the
 /// feature is new: "experimental" on its own tells somebody to be careful and
 /// not what to be careful of.
-pub const FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL: &str = "Fetching text in bulk is experimental \
-     and has never been run against a real account. Asking your provider for hundreds of whole \
-     messages one after another is something they are entitled to refuse, to slow down, or to \
-     disconnect you for, and nothing here can find out which yours will do. Nothing is changed \
-     at the server and nothing is sent, so the worst that happens is that it stops part way and \
-     says so. You can start it again.";
-
-/// The warning shown beside the command that downloads a whole folder.
-///
-/// The same kind of experimental as
-/// [`FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL`] rather than the kind
-/// [`EXPERIMENTAL_WARNING`] is about, and it says which. Nothing is changed at
-/// the server and nothing is sent. What is unknown is what a provider does when
-/// a client asks for a forty thousand message folder a page at a time without
-/// stopping, and that is the provider's decision to make.
-///
-/// It carries the second thing somebody should know before they start it, which
-/// the bulk text warning does not have to: there is no way to stop it. It runs
-/// until the folder is here or the server stops sending, the same as the
-/// message text fetch, and on a large mailbox that is a long time.
-pub const DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL: &str = "Downloading a whole folder is experimental and has never been run against a real account. \
-     Asking your provider for a large folder a page at a time, without stopping, is something \
+pub const DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL: &str = "The download of everything runs on \
+     its own after every check for mail, and it is experimental: it has never been run against \
+     a real account. Asking your provider for a whole mailbox chunk after chunk is something \
      they are entitled to refuse, to slow down, or to disconnect you for, and nothing here can \
-     find out which yours will do. There is no way to stop it once it starts: it runs until the \
-     folder is here or the server stops sending, which on a large mailbox is a long time. \
-     Nothing is changed at the server and nothing is sent.";
-
-/// The warning on the item that pauses the download of everything.
-///
-/// The write warning for the red half only: it exists so the two tests that
-/// read it are red on an assertion rather than on a missing name, and the
-/// green commit gives it its own words.
-pub const DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL: &str = EXPERIMENTAL_WARNING;
+     find out which yours will do. Nothing is changed at the server and nothing is sent. If it \
+     stops, it says so and tries again later. Pause Downloading on the Tools menu holds it.";
 
 /// The warning shown beside the command that imports a PGP private key.
 ///

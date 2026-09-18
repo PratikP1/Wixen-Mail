@@ -178,18 +178,17 @@ menu_ids!(
     ID_VIEW_PREVIEW_PANE,
     ID_VIEW_MODULE_BUTTONS,
     ID_VIEW_ALL_INBOXES,
-    // The button above the message list offering to fetch the text a saved
-    // search cannot reach. Not a menu item and not an accelerator of its own:
-    // it belongs beside the sentence that said the numbers, and a new
-    // accelerator would collide with the menus and would have to be documented
-    // in docs/KEYBOARD_SHORTCUTS.md. Tab reaches it.
-    ID_FETCH_MISSING_TEXT,
+    // The check item on Tools that holds the download of everything (#20,
+    // #23). A mnemonic and no chord: a new accelerator needs a line in
+    // docs/KEYBOARD_SHORTCUTS.md in the same commit, and this is pressed
+    // once when a long run is in the way rather than daily.
+    ID_PAUSE_DOWNLOADING,
     // The button above the message list offered when the network comes back.
-    // Beside the offer to fetch missing text and for the same reasons: it
-    // belongs next to the sentence that raised it, Tab reaches it, and a new
-    // accelerator would collide with the menus. There is a second way to the
-    // same end that is on a menu and always there, which is turning offline
-    // mode off, so nobody who misses this is stuck.
+    // Not a menu item and not an accelerator of its own: it belongs next to
+    // the sentence that raised it, Tab reaches it, and a new accelerator
+    // would collide with the menus. There is a second way to the same end
+    // that is on a menu and always there, which is turning offline mode off,
+    // so nobody who misses this is stuck.
     ID_GO_BACK_ONLINE,
     ID_EDIT_CUT,
     ID_EDIT_COPY,
@@ -994,58 +993,12 @@ impl WxMailApp {
             }
             let mail_content_sizer = BoxSizer::builder(Orientation::Vertical).build();
 
-            // The offer to fetch the message text a saved search cannot reach,
-            // above the list and hidden until there is something to fetch.
-            //
-            // Here rather than on a menu, and that is D-2-08 rather than a
-            // preference: the coverage sentence tells somebody a number, and a
-            // remedy they have to go and find somewhere else is a second
-            // thing. A short answer should be legible as narrow coverage at
-            // the moment it is short.
-            //
-            // A native button, so it is in the tab order, carries the focus
-            // ring Windows draws, and is already larger than the twenty-four
-            // by twenty-four target size. No accelerator of its own: a new one
-            // would collide with the menus and would have to be documented.
-            // Nothing here disappears on its own, so there is no timing trap.
-            let offer_panel = Panel::builder(&mail_content).build();
-            if let Some(palette) = palette {
-                theme::paint(&offer_panel, palette.main_surface());
-            }
-            let offer_sizer = BoxSizer::builder(Orientation::Vertical).build();
-            let offer_button = Button::builder(&offer_panel)
-                .with_label("Fetch the missing message text")
-                .with_id(ID_FETCH_MISSING_TEXT)
-                .build();
-            // Both channels. The label is what Windows falls back to on MSAA,
-            // which NVDA reads, and the accessible name is what a UI
-            // Automation scan reports. Set from the same string as the label
-            // whenever the count changes, so there is nothing to drift.
-            set_accessible_name(&offer_button, "Fetch the missing message text");
-            offer_sizer.add(&offer_button, 0, SizerFlag::All, 4);
-            // The warning where somebody reads it before choosing, rather than
-            // in a tooltip a screen reader may never reach or in a changelog
-            // nobody gets. Named on both channels for the same reason as the
-            // button: a static text is what MSAA falls back to and what
-            // carries the sentence to a braille display.
-            let offer_warning = StaticText::builder(&offer_panel)
-                .with_label(crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL)
-                .build();
-            set_accessible_name(
-                &offer_warning,
-                crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL,
-            );
-            offer_sizer.add(&offer_warning, 0, SizerFlag::Expand | SizerFlag::All, 4);
-            offer_panel.set_sizer(offer_sizer, true);
-            offer_panel.show(false);
-            mail_content_sizer.add(&offer_panel, 0, SizerFlag::Expand | SizerFlag::All, 0);
-            // The offer raised when the network comes back, in the same strip
-            // and hidden until there is something to offer.
-            //
-            // Its own panel rather than a second button in the one above,
-            // because the two offers are about different things and appear at
-            // different times, and a strip that sometimes holds one button and
-            // sometimes two is a strip whose shape a person cannot learn.
+            // The offer raised when the network comes back, above the list
+            // and hidden until there is something to offer. Until 2026-09-17
+            // a second panel sat above it offering to fetch the message text
+            // a search could not reach; the download of everything brings
+            // that text down on its own now, so the arm that showed the offer
+            // says what the number means instead (#23).
             //
             // A native button, so it is in the tab order, carries the focus
             // ring Windows draws and is already larger than the twenty-four by
@@ -1072,12 +1025,6 @@ impl WxMailApp {
             let back_online_offer = BackOnlineOffer {
                 panel: back_online_panel,
                 button: back_online_button,
-                around_it: mail_content,
-            };
-
-            let missing_text_offer = MissingTextOffer {
-                panel: offer_panel,
-                button: offer_button,
                 around_it: mail_content,
             };
 
@@ -1957,20 +1904,6 @@ impl WxMailApp {
             // calendar and leaving them looking at the mailbox is a change
             // they have to go and find.
             let switch_for_what_was_opened = do_switch_module.clone();
-
-            // ── The offer to fetch missing message text ──────────────────
-            offer_button.on_click({
-                let state = state.clone();
-                let ui_tx = ui_tx.clone();
-                let runtime = runtime.clone();
-                move |_| {
-                    start_the_missing_text_fetch(AppHandles {
-                        state: &state,
-                        tx: &ui_tx,
-                        rt: &runtime,
-                    });
-                }
-            });
 
             // ── Module button click handlers ─────────────────────────────
             for (btn, module) in module_buttons {
@@ -4521,12 +4454,13 @@ impl WxMailApp {
                                 crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
                             );
                         }
-                        // The same command the button above the message list
-                        // runs, reached by its own id rather than by a second
-                        // one, so the menu and the button cannot come to do
-                        // different things.
-                        _ if id == ID_FETCH_MISSING_TEXT => {
-                            start_the_missing_text_fetch(app);
+                        // The one way to hold the download of everything, and
+                        // to let it go again. Session-only, like Offline
+                        // Mode: a person who paused a run and closed the
+                        // program has not asked for the next start to stay
+                        // paused.
+                        _ if id == ID_PAUSE_DOWNLOADING => {
+                            pause_or_carry_on_downloading(app, &frame);
                         }
                         // Ctrl+N: the primary action for wherever you are.
                         // A key whose meaning depends on focus is normally a
@@ -5542,7 +5476,6 @@ impl WxMailApp {
                                 a11y: &a11y,
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
-                                missing_text_offer: &missing_text_offer,
                                 back_online_offer: &back_online_offer,
                                 reader: &reader,
                                 tx: &ui_tx,
@@ -6036,37 +5969,12 @@ impl WxMailApp {
                 "Save the message you are on as a file",
             )
             .append_separator()
+            // A check ends by starting the download of everything, headers
+            // and text, so Fetch Missing Message Text, which sat here beside
+            // Check Mail until 2026-09-17, went with that: the download is
+            // what it did (#23). The way to hold the download is Pause
+            // Downloading on Tools.
             .append_item(ID_CHECK_MAIL, "Check &Mail\tF9", "Check for new messages")
-            // Beside Check Mail because it is the same thing reaching for
-            // something else: both ask this account's server for mail it has
-            // not got, both act on the account rather than on the row in front
-            // of you, and that last part is what keeps this off the Action
-            // menu with the commands that do.
-            //
-            // It had no menu at all. The button above the message list appears
-            // only while a search that reads message text has just been run,
-            // so somebody who searches by subject, or never searches, was
-            // never offered it. That is ledger 13, and a menu is how somebody
-            // finds out a command exists.
-            //
-            // f, which nothing else on this menu claims. A mnemonic and no
-            // chord: a new accelerator needs a line in
-            // docs/KEYBOARD_SHORTCUTS.md in the same commit, and this is a run
-            // somebody starts once and waits for rather than a key they press
-            // daily.
-            //
-            // Marked experimental on the label as well as in the description,
-            // because a menu has nowhere to put the line of static text that
-            // carries the warning beside the button, and widening where the
-            // fetch is offered widens who meets a path no provider has ever
-            // seen. The description is what Windows shows in the status bar
-            // and hands over as the item's accessible description; the label
-            // is read whatever anybody's settings say.
-            .append_item(
-                ID_FETCH_MISSING_TEXT,
-                "&Fetch Missing Message Text (experimental)",
-                crate::application::allowed::FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL,
-            )
             .append_separator()
             // Drafts were saved and then unreachable, which is worse than not
             // saving them because it looks like it worked. That was fixed by
@@ -6089,9 +5997,11 @@ impl WxMailApp {
                 "Read mail in from a file, an archive or an Outlook data file, keeping the \
                  folders it was in",
             )
-            // Alt+O rather than Alt+F, which Fetch Missing Message Text has on
-            // this menu. Found by reading the menu; the letter check in
-            // tests/wired.rs would have refused the commit otherwise.
+            // Alt+O rather than Alt+F, which Fetch Missing Message Text had on
+            // this menu until 2026-09-17. Found by reading the menu; the
+            // letter check in tests/wired.rs would have refused the commit
+            // otherwise, and the letter stays as it is because nothing here
+            // claims F now and moving one is a change somebody has learned.
             .append_item(
                 ID_IMPORT_A_FOLDER_OF_MESSAGES,
                 "Import a F&older of Messages...",
@@ -6934,6 +6844,20 @@ impl WxMailApp {
                 "Flush &Outbox",
                 "Send all queued messages now",
             )
+            // The one hold on the download of everything, which runs on its
+            // own after every check (#20, #23). A check item, so a screen
+            // reader says "checked" or "unchecked" from the item's own state;
+            // the arm ticks it. The description is the experimental sentence,
+            // because somebody deciding whether to pause is the person who
+            // needs to read what nobody yet knows about a real provider, and
+            // the download starts without a moment of choosing for a warning
+            // to sit beside. P, which nothing else on this menu claims: the
+            // menu's letters are A, n, d, T, W, C, F, k, i, g, b, r, O and S.
+            .append_check_item(
+                ID_PAUSE_DOWNLOADING,
+                "&Pause Downloading",
+                crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL,
+            )
             .append_separator()
             .append_item(ID_SETTINGS, "&Settings\tCtrl+,", "Application preferences")
             .build();
@@ -7148,7 +7072,7 @@ fn coverage_before(
     }
 }
 
-/// What the offer above the message list says, or nothing at all.
+/// What a count of messages with no text here means, or nothing at all.
 ///
 /// Pure and out here rather than a branch inside the window, because the rule
 /// it carries is one a test can hold cheaply and a window is not: wxWidgets
@@ -7156,48 +7080,45 @@ fn coverage_before(
 /// spends none of its one, so a rule wanting a window needs a test binary of
 /// its own. So the decision comes out here and the window does as it is told.
 ///
-/// `count` is the length of the list the fetch will walk, not the difference
-/// between the two numbers the coverage sentence gives. Those come apart where
-/// a message has no text and no server to ask, and a subtraction would then
-/// offer to fetch something nothing can fetch. See
+/// Until 2026-09-17 this was the label of a button offering to fetch the
+/// text; the download of everything brings it down on its own now (#23), so
+/// the number is said with what it means. With reading allowed the text is
+/// on its way; with the Message Text box off it is not, and the sentence
+/// names the box, because a number that will never fall and one that will
+/// are different news.
+///
+/// `count` is the length of the list the download will walk, not the
+/// difference between the two numbers the coverage sentence gives. Those come
+/// apart where a message has no text and no server to ask. See
 /// `MessageCache::messages_with_no_text_here`, which explains the two sets.
 ///
-/// Nought is no offer at all rather than an offer saying nought. An offer to
-/// fetch no messages beside a sentence saying everything is already here reads
-/// as a fault in one of the two.
-/// **It names the account, and that is not a flourish.** The button walks the
-/// whole account whichever search put it on the screen, including a search of
-/// one folder. Said without the scope, the number reads as being about
-/// whatever was just searched, and the coverage sentence beside it carries a
-/// different number about a different set. Two numbers on the screen with
-/// nothing saying which is which read as one number contradicting itself.
-/// What a count of messages with no text here means, or nothing at all.
+/// Nought is nothing at all rather than a sentence saying nought: a sentence
+/// about no messages beside one saying everything is already here reads as a
+/// fault in one of the two.
 ///
-/// The red half: an empty sentence for every count, `pub` so nothing refuses
-/// the build before a caller exists. The green gives it its words and its
-/// caller.
-pub fn what_the_missing_text_means(count: usize, reading_allowed: bool) -> Option<String> {
-    let _ = (count, reading_allowed);
-    Some(String::new())
-}
-
-pub fn the_offer_to_fetch(count: usize) -> Option<String> {
-    match count {
-        0 => None,
-        1 => Some("Fetch the text of 1 message in this account".to_string()),
-        many => Some(format!("Fetch the text of {many} messages in this account")),
+/// **It names the account, and that is not a flourish.** The count is the
+/// account's whichever search asked, including a search of one folder. Said
+/// without the scope, the number reads as being about whatever was just
+/// searched, and the coverage sentence beside it carries a different number
+/// about a different set. Two numbers with nothing saying which is which read
+/// as one number contradicting itself.
+fn what_the_missing_text_means(count: usize, reading_allowed: bool) -> Option<String> {
+    if count == 0 {
+        return None;
     }
+    let messages = crate::service::caldav::how_many(count, "message");
+    Some(if reading_allowed {
+        format!(
+            "The text of {messages} in this account is not here yet and comes down on its own \
+             after the next check."
+        )
+    } else {
+        format!(
+            "The text of {messages} in this account is not here, and the Message Text box on \
+             the Permissions tab is off, so it stays on the server."
+        )
+    })
 }
-
-/// What is said the moment the fetch is chosen, before anything is asked of
-/// anybody.
-///
-/// Deliberately vague about what will happen, because at this point nothing
-/// has looked: reading may be turned off, in which case the next thing said is
-/// a refusal, or there may be nothing missing at all. Naming a number here
-/// would be a promise made before counting.
-const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \
-     computer.";
 
 /// What the download of everything says the moment it starts, before any
 /// server is dialled.
@@ -7221,39 +7142,16 @@ const DOWNLOADING_THIS_FOLDER_FIRST: &str = "Downloading this folder first...";
 /// does nothing.
 const DOWNLOADING_IS_PAUSED: &str = "Downloading is paused. Tools, Pause Downloading takes it off.";
 
-/// The offer as it is spoken, rather than as it is printed on the button.
+/// How many messages beside this saved search have no text here.
 ///
-/// Three things, and the third is why this is a function rather than a format
-/// string in the window: what the button does, where it is, and **which
-/// question its number answers**. A button has room for the first two and the
-/// spoken line has room for all three.
-///
-/// The third one exists because two numbers now arrive on one search. The
-/// coverage sentence says how much of the message text this search could look
-/// inside; this says how much can still be fetched. Those are different sets
-/// and they show different numbers: text that was evicted is still in the
-/// index, so the search can read it and it is still worth fetching, while mail
-/// with no server to ask can be missing and unfetchable. Somebody told both
-/// without being told which is which has been handed a contradiction, and
-/// D-2-13 already settled how this project answers that: where there are
-/// genuinely two coverages, naming them is more honest than collapsing them.
-pub fn how_the_offer_is_announced(offer: &str) -> String {
-    format!(
-        "{offer}. That number is what can be fetched, not what this search \
-         could read. The button is above the message list."
-    )
-}
-
-/// How many messages the offer beside this saved search would attempt.
-///
-/// Nought for a search that does not read message text, because the offer is
-/// about a limit that cannot change such a search's answer, and nought when
-/// nothing is missing.
+/// Nought for a search that does not read message text, because the number
+/// is about a limit that cannot change such a search's answer, and nought
+/// when nothing is missing.
 ///
 /// The gate is this search's own; the counting is
 /// [`managers::how_many_could_be_fetched`], which the search box asks as well.
-/// One place answers how many, so the two searches cannot come to offer
-/// different numbers over one button.
+/// One place answers how many, so the two searches cannot come to say
+/// different numbers about one account.
 fn what_could_be_fetched(
     cache: &MessageCache,
     account_id: &str,
@@ -17000,30 +16898,12 @@ fn handle_settings(
     }
 }
 
-/// The widgets and shared state a `UIUpdate` may need to touch.
-/// The controls carrying the offer to fetch missing message text.
-///
-/// Together rather than as three references, because putting the offer on the
-/// screen means the button, its label on both accessibility channels, and the
-/// panel around it being laid out again. Three separate handles is three
-/// chances to move one and leave the others where they were.
-struct MissingTextOffer {
-    /// The strip above the message list, shown only when there is something
-    /// to fetch.
-    panel: Panel,
-    /// The button itself, whose label says how many messages.
-    button: Button,
-    /// What holds the strip, so a strip that appears or goes makes the list
-    /// below it grow or shrink rather than being drawn over.
-    around_it: Panel,
-}
-
 /// The controls carrying the offer to go back online.
 ///
-/// Together rather than as three references, for the reason [`MissingTextOffer`]
-/// gives: putting an offer on the screen means the button, its label on both
-/// accessibility channels, and the panel around it being laid out again, and
-/// three separate handles is three chances to move one and leave the others.
+/// Together rather than as three references, because putting an offer on the
+/// screen means the button, its label on both accessibility channels, and the
+/// panel around it being laid out again, and three separate handles is three
+/// chances to move one and leave the others where they were.
 struct BackOnlineOffer {
     /// The strip above the message list, shown only when the network has come
     /// back and the program is still offline.
@@ -17036,6 +16916,7 @@ struct BackOnlineOffer {
     around_it: Panel,
 }
 
+/// The widgets and shared state a `UIUpdate` may need to touch.
 struct UpdateTargets<'a> {
     state: &'a Arc<StdMutex<WxUIState>>,
     folder_tree: &'a TreeCtrl,
@@ -17052,8 +16933,6 @@ struct UpdateTargets<'a> {
     a11y: &'a Accessibility,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
-    /// The offer to fetch the message text a saved search cannot reach.
-    missing_text_offer: &'a MissingTextOffer,
     /// The offer to go back online, raised when the network returns.
     back_online_offer: &'a BackOnlineOffer,
     /// So a fetched attachment can be opened as a tab. Reading one happens on
@@ -17367,7 +17246,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         a11y,
         pim,
         message_cache,
-        missing_text_offer,
         back_online_offer,
         reader,
         tx,
@@ -17697,35 +17575,32 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
         }
         UIUpdate::WhatCouldBeFetched(count) => {
-            match the_offer_to_fetch(*count) {
-                Some(offer) => {
-                    // The label and the accessible name from one string, so
-                    // the words somebody sees and the words NVDA and Narrator
-                    // read cannot come apart as the number changes.
-                    missing_text_offer.button.set_label(&offer);
-                    set_accessible_name(&missing_text_offer.button, &offer);
-                    missing_text_offer.panel.show(true);
-                    // Its own topic rather than "status", because the
-                    // coverage sentence is on that one and the queue keeps
-                    // only the most recent of a topic. Sharing it would mean
-                    // the offer silenced the sentence that explains why the
-                    // offer is there. One announcement per search, so it is
-                    // bounded as well as distinct.
-                    let _ = a11y.announce_topic(
-                        &how_the_offer_is_announced(&offer),
-                        Priority::Low,
-                        "message text",
-                    );
-                }
-                // Taken off rather than left saying nought. An offer to fetch
-                // no messages beside a sentence saying everything is here
-                // reads as a fault in one of the two.
-                None => {
-                    missing_text_offer.panel.show(false);
-                }
+            // Said, not offered. Until 2026-09-17 this arm put a button above
+            // the list offering to fetch the text; the download of everything
+            // brings it down on its own now (#23), so the number is turned
+            // into what it means: the text is on its way, or the Message Text
+            // box is holding it back. Nothing for nought, because a sentence
+            // about no messages beside one saying everything is here reads
+            // as a fault in one of the two.
+            //
+            // Whether reading is allowed is the account's answer, read here
+            // rather than sent with the count, so the two searches that send
+            // it keep sending one number.
+            let reading_allowed =
+                lock_state(state)
+                    .active_account_id
+                    .as_deref()
+                    .is_some_and(|account_id| {
+                        crate::application::allowed::allowed_for(account_id).reading
+                    });
+            if let Some(said) = what_the_missing_text_means(*count, reading_allowed) {
+                // Its own topic rather than "status", because the coverage
+                // sentence is on that one and the queue keeps only the most
+                // recent of a topic. Sharing it would mean this silenced the
+                // sentence that explains why it is said. One per search, so
+                // it is bounded as well as distinct.
+                let _ = a11y.announce_topic(&said, Priority::Low, "message text");
             }
-            // Whether it appeared or went, the list below it has changed size.
-            missing_text_offer.around_it.layout();
         }
         UIUpdate::FoldersTheServerStoppedListing(folders) => {
             // Added and nothing else. Nothing has been removed and nothing will
@@ -21343,127 +21218,6 @@ fn bytes_of_the_attachment(
 /// the check at the end: a body only reaches the preview if its message is
 /// still the selected one, so passing over a message costs a fetch and never a
 /// preview that belongs to a different row.
-/// Fetch the message text of this account that is not stored here.
-///
-/// What the offer above the message list does. The work is
-/// `application::mail_sync::fetch_the_missing_message_text`, which is where
-/// the gate, the counting and the reporting live; this opens a connection for
-/// it, carries what it says to the status bar, and asks again afterwards how
-/// much is left so the offer goes away when it is finished.
-///
-/// The connection is opened only when the run is going to happen. The routine
-/// refuses before it touches the server, so an unconnected controller is all a
-/// refusal needs, and nothing reaches somebody's provider for a run they have
-/// already said no to.
-/// `application::mail_sync::tests::test_with_reading_off_nothing_is_asked_of_a_server`
-/// is what holds that order in place.
-fn start_the_missing_text_fetch(app: AppHandles<'_>) {
-    // Written out in full rather than imported at the top of this routine.
-    // A source-reading test asks whether this command reaches the backfill and
-    // says what it did, and an import line naming both functions answers that
-    // question without either being called: the first version of that test was
-    // green through a break that threw the report away, because the two names
-    // it looks for were sitting together in a `use`.
-    let AppHandles { state, tx, rt } = app;
-    // Said before anything else, because the run itself says nothing until it
-    // has a connection and a mail server takes as long as it takes. From the
-    // button that gap was covered by the label somebody had just pressed and
-    // could still see; from a menu it is a command chosen and then silence,
-    // which is how somebody chooses it a second time and starts a second run.
-    //
-    // The count follows, from `mail_sync::about_to_fetch`, and is the more
-    // useful of the two. Both ride the status topic and the queue keeps the
-    // newest of a topic, so this one gives way to it, which is the right way
-    // round.
-    send_status(tx, rt, STARTING_THE_MISSING_TEXT_FETCH);
-    let tx = tx.clone();
-    let handle = rt.handle().clone();
-    let (accounts, account_id) = {
-        let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
-    };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned());
-
-    rt.spawn_blocking(move || {
-        let say = |update: UIUpdate| {
-            handle.block_on(async {
-                let _ = tx.send(update).await;
-            });
-        };
-        let could_not = |why: String| say(UIUpdate::ErrorOccurred(why));
-
-        let Some(account) = account else {
-            return could_not("There is no account open to fetch mail for.".to_string());
-        };
-        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-            return could_not("The mail stored on this computer could not be opened.".to_string());
-        };
-        let Ok(cache) = MessageCache::new(dir, None) else {
-            return could_not("The mail stored on this computer could not be opened.".to_string());
-        };
-
-        let allowed = crate::application::allowed::allowed_for(&account.id);
-        // Nothing is dialled when reading is not allowed, and the run below is
-        // handed a controller that was never signed in so that it takes its own
-        // refusal path. That is the same shape as before; what changed is that
-        // the signed-in half is the account's own session rather than one
-        // opened and thrown away here.
-        let never_signed_in = MailController::new();
-        let session = if allowed.reading {
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => Some(session),
-                Err(why) => {
-                    return could_not(format!(
-                        "Signing in to {} did not work. {why}",
-                        account.email
-                    ));
-                }
-            }
-        } else {
-            None
-        };
-        let controller: &MailController = match &session {
-            Some(session) => session,
-            None => &never_signed_in,
-        };
-
-        // Every line the run says on the way is a step: shown on the status
-        // bar, spoken only under Say every step (#38). The run decides how
-        // often, and it is bounded: at most nine lines between the count it
-        // starts with and the report it ends with, however much mail there
-        // is. The report itself goes out below as the answer to the command.
-        let progress = |line: &str| say(UIUpdate::Progress(line.to_string()));
-        let outcome = handle.block_on(
-            crate::application::mail_sync::fetch_the_missing_message_text(
-                controller,
-                &cache,
-                &account.id,
-                allowed,
-                &progress,
-            ),
-        );
-
-        match outcome {
-            Ok(done) => {
-                say(UIUpdate::StatusUpdated(
-                    crate::application::mail_sync::what_the_fetch_did(&done),
-                ));
-                // Asked again rather than worked out from what the run said,
-                // so the offer reflects the cache rather than a subtraction.
-                // A run that fetched everything takes the offer off the
-                // screen; one stopped part way leaves it saying what is left.
-                let left = cache
-                    .messages_with_no_text_here(&account.id)
-                    .map_or(0, |wanted| wanted.len());
-                say(UIUpdate::WhatCouldBeFetched(left));
-            }
-            Err(e) => could_not(format!("The message text could not be fetched: {e}")),
-        }
-    });
-}
-
 fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
@@ -22036,6 +21790,52 @@ fn start_the_download_if_its_wait_is_over(app: AppHandles<'_>) {
         due
     };
     if due {
+        start_the_download(app);
+    }
+}
+
+/// What Pause Downloading answers when it is ticked.
+///
+/// Both halves of what somebody needs: what has stopped, and that what is
+/// here is not affected, because a pause that read as "your mail is on
+/// hold" would send somebody to the folder tree to check.
+const DOWNLOADING_IS_PAUSED_NOW: &str = "Downloading is paused. Mail already here stays readable.";
+
+/// What Pause Downloading answers when it is unticked and the download
+/// starts again at once.
+const DOWNLOADING_AGAIN: &str = "Downloading again.";
+
+/// What Pause Downloading answers when it is unticked during the wait after
+/// a refusal, which the unticking leaves running: a person lifting a pause
+/// has not asked for a server that said no to be asked again this second.
+const DOWNLOADING_AGAIN_AFTER_THE_WAIT: &str =
+    "Downloading again when the wait after the last refusal is over.";
+
+/// Pause the download of everything, or carry it on: the one function behind
+/// the Tools item (#20, #23).
+///
+/// Flips the flag the runner reads between chunks, ticks the item so the
+/// menu says what the program is doing, and answers the key. Session-only,
+/// like offline mode: nothing is stored, because a person who paused a run
+/// and closed the program has not asked for the next start to stay paused.
+/// The run in flight finishes its chunk and ends; unticking starts a new
+/// one, which picks up where the cache says it was.
+fn pause_or_carry_on_downloading(app: AppHandles<'_>, frame: &Frame) {
+    let AppHandles { state, tx, rt } = app;
+    let (paused, still_waiting) = {
+        let mut s = lock_state(state);
+        s.downloading.paused = !s.downloading.paused;
+        (s.downloading.paused, s.downloading.is_still_waiting())
+    };
+    // The tick, here rather than where the flag is read, because the flag
+    // has one writer and the menu has to say what it says.
+    sync_menu_check(frame, ID_PAUSE_DOWNLOADING, paused);
+    if paused {
+        send_status(tx, rt, DOWNLOADING_IS_PAUSED_NOW);
+    } else if still_waiting {
+        send_status(tx, rt, DOWNLOADING_AGAIN_AFTER_THE_WAIT);
+    } else {
+        send_status(tx, rt, DOWNLOADING_AGAIN);
         start_the_download(app);
     }
 }

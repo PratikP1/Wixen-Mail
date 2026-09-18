@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 98 records have arrived since and have not been through it.
+# 100 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4569,7 +4569,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
 ]
 
 # ── Every check ends by starting the download (#20, #23) ────────────────────
@@ -4601,7 +4601,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
 ]
 
 # ── The download asks whether to stop between chunks ─────────────────────────
@@ -4633,7 +4633,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
 ]
 
 # ── A failed chunk waits before the download is tried again ──────────────────
@@ -4660,7 +4660,60 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+]
+
+# ── Pausing the download ticks the item as well as flipping the flag ─────────
+#
+# A check item says "checked" or "unchecked" from its own state, so a pause
+# that flipped the flag and left the tick would have the Tools menu telling
+# a screen reader the opposite of the truth half the time. The break drops
+# the tick and keeps the flag, which is the shape that gets past a guard
+# written to look for the flag. One test goes red out of the eighteen in the
+# target; the companion is over a snippet.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# everything_comes_down_without_being_asked`.
+[[guard]]
+name = "pausing the download ticks the item as well as flipping the flag"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = """    sync_menu_check(frame, ID_PAUSE_DOWNLOADING, paused);
+    if paused {"""
+after = """    let _ = frame;
+    if paused {"""
+red = [
+    "test_pause_downloading_is_on_the_tools_menu_ticked_and_carries_the_warning",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+]
+
+# ── The download's warning says no real account has met it ──────────────────
+#
+# One sentence replaced two on 2026-09-17, when the download of everything
+# took the place of Fetch Missing Message Text and Download This Whole
+# Folder, and it carries the one risk no test here can settle. The break
+# keeps the sentence and drops the clause saying no real account has met the
+# download, which leaves a warning that reads as ordinary caution. One test
+# goes red out of the twenty-seven in the file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "the download's warning says no real account has met it"
+file = "src/application/allowed.rs"
+before = """     its own after every check for mail, and it is experimental: it has never been run against \\
+     a real account. Asking your provider for a whole mailbox chunk after chunk is something \\"""
+after = """     its own after every check for mail, and it is experimental. \\
+     Asking your provider for a whole mailbox chunk after chunk is something \\"""
+red = [
+    "application::allowed::tests::test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong",
+]
+tests_last_seen = [
+    { file = "src/application/allowed.rs", tests = 27 },
 ]
 
 # ── A deletion that stops being noticed because nobody looks any more ────────

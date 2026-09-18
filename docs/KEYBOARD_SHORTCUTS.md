@@ -560,6 +560,7 @@ Five submenus hold the rest:
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Open Account Manager | `Ctrl+Shift+A` | Open multiple account management dialog |
+| Pause Downloading | (Tools menu, `Alt+P` on the menu) | A check item. Ticked, it holds the download of everything that runs on its own after every check for mail: the chunk in flight finishes and no new one starts. Unticked, the download carries on from where the mail on this computer says it was. Mail already here stays readable either way. Its description is the sentence saying the download has never met a real provider. The pause lasts for the session. Fetch Missing Message Text sat on the File menu until 2026-09-17; the download is what it did |
 
 ### Contact Management
 

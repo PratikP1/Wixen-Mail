@@ -19,18 +19,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   inbox runs when the server says something arrived, so the download starts on its own from the
   first check after this build. It picks up where it was after a restart, because what it knows
   is what is already on this computer. Get Older Messages, `Shift+F9`, carries the download on
-  with this folder first rather than fetching one page. Download This Whole Folder is gone, because
-  this is what it did.
+  with this folder first rather than fetching one page. Pause Downloading, a check item on the
+  Tools menu, holds it: the chunk in flight finishes, no new one starts, mail already here stays
+  readable, and unticking it carries on; the pause lasts for the session. Download This Whole
+  Folder and Fetch Missing Message Text are gone, and so is the button above the message list
+  that offered to fetch the text a search could not read, because this is what all three did. A
+  search that reads message text still says how much of it is here, and now says what the rest
+  means: that it is on its way, or that the Message Text box is holding it back.
   A provider that stops answering is left alone for a growing time, thirty seconds doubling to
   half an hour, and asked again; the status bar says so, and under Say what arrived nothing is
   spoken about it, because the download tries again on its own. What each chunk brought and each
   folder becoming whole are steps, shown and spoken only under Say every step; what an account came
   to, how many folders are whole and how many messages have their text here, is said once when
   its download ends, with the sound for new mail.
-  Known limitations: none of this has met a real account. Asking a provider for a whole mailbox
-  chunk after chunk is something it is entitled to refuse, to slow down, or to disconnect you
-  for, and nothing here can find out which yours will do; the first check after this build is
-  where that is found out. Gmail's All Mail and the Spam folder are not kept up to date by
+  Known limitations: none of this has met a real account, and the Pause item's description says
+  so where you choose it. Asking a provider for a whole mailbox chunk after chunk is something
+  it is entitled to refuse, to slow down, or to disconnect you for, and nothing here can find
+  out which yours will do; the first check after this build is where that is found out. Nobody
+  has heard the Pause item, its two answers, or the sentence a search says about text that is
+  on its way. Gmail's All Mail and the Spam folder are not kept up to date by
   default, as before, and a folder you chose not to keep is not downloaded. The first download of
   a large mailbox is a long run. The stored mail is not encrypted, as `docs/privacy.md` says, and
   with All of it chosen the cache grows with your mailbox.
