@@ -742,9 +742,12 @@ fn what_is_wrong_with_the_check(
             // check in which nothing went through started a download that
             // failed the same way and waited on its own, two retry rows
             // against one server. 10-05's tree never asked for the download
-            // after a failed check, and neither does this.
+            // after a failed check, and neither does this. The branch, not
+            // the flag's name: the flag is declared before the walk, so a
+            // reading of the name alone would pass a check that declared it
+            // and asked nothing.
             match (
-                check.find("nothing_went_through"),
+                check.find("if nothing_went_through {"),
                 check.find("say(UIUpdate::DownloadRequested)"),
             ) {
                 (_, None) => {}

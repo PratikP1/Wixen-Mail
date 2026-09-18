@@ -20250,7 +20250,7 @@ fn what_the_watch_does_next(
     use crate::application::checking_on_a_schedule::{
         TheWatch, WatchAgain, whether_to_watch_again,
     };
-    use crate::application::trying_again::what_to_say_before_waiting;
+    use crate::application::trying_again::said_as_a_person_says_it;
 
     let (watch, how_many_enabled) = {
         let mut s = lock_state(state);
@@ -20262,10 +20262,15 @@ fn what_the_watch_does_next(
             WatchAgain::AfterAWait => {
                 let wait = entry.wait.next_wait();
                 entry.next_watch_at = Some(std::time::Instant::now() + wait);
+                // The reason and the wait, not the download's sentence
+                // about a server that could not be reached: a watch that
+                // never started because no password is saved reached no
+                // server, and the log said it had.
                 tracing::info!(
-                    "The watch on {folder} for {} ended ({why:?}). {}",
+                    "The watch on {folder} for {} ended, {this_failure_counted} in a row \
+                     ({why:?}). Trying the watch again in {}.",
                     account.name,
-                    what_to_say_before_waiting(wait, this_failure_counted)
+                    said_as_a_person_says_it(wait)
                 );
                 Some(TheWatch::Waiting(wait))
             }
@@ -22388,6 +22393,13 @@ fn spawn_mail_sync(
             return;
         }
 
+        // Whether any account was checked through, because the download is
+        // asked for only then: a check that failed has already said so and
+        // waits for the schedule, and a download started behind it would
+        // fail the same way and wait on its own, two retry rows against one
+        // server. Found by starting the release binary against an account
+        // with no password saved.
+        let mut nothing_went_through = true;
         for mut account in accounts {
             // POP and IMAP are different enough that they are different paths
             // rather than one with branches through it. POP has no folders, no
@@ -22666,11 +22678,15 @@ fn spawn_mail_sync(
                 watch.the_server_may_be_reachable_again();
             }
             say(UIUpdate::MailboxWatchRequested(account.id.clone()));
+            nothing_went_through = false;
         }
-        // Every check ends by asking for the download of everything (#20,
-        // #23), after the watches, so a download that does not start leaves
-        // the inboxes watched. Once for the whole list: the window decides
-        // whether one is already running, paused or waiting.
+        if nothing_went_through {
+            return;
+        }
+        // Every check that went through ends by asking for the download of
+        // everything (#20, #23), after the watches, so a download that does
+        // not start leaves the inboxes watched. Once for the whole list: the
+        // window decides whether one is already running, paused or waiting.
         say(UIUpdate::DownloadRequested);
     });
 }

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 109 records have arrived since and have not been through it.
+# 110 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -25283,6 +25283,38 @@ before = """                watch_every_enabled_account(app);
 after = """                let _ = app;"""
 red = [
     "test_a_start_checks_without_a_keystroke",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── A check that went through nowhere asks for no download (#37) ────────────
+#
+# Found by starting the release binary against the measurement profile,
+# whose account has no password saved: the first draft of the walk over the
+# accounts asked for the download after every check, so a check in which
+# nothing went through started a download that failed the same way and
+# waited on its own, two retry rows against one server. The break drops the
+# branch that returns when nothing went through, which is that draft. One
+# test goes red out of the fourteen, the reading of the check; the companion
+# is over two snippets.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "a check that went through nowhere asks for no download"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """        if nothing_went_through {
+            return;
+        }
+        // Every check that went through ends by asking for the download of"""
+after = """        let _ = nothing_went_through;
+        // Every check that went through ends by asking for the download of"""
+red = [
+    "test_the_check_for_mail_walks_every_enabled_account_and_writes_down_when",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
