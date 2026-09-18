@@ -3174,6 +3174,32 @@ seven groups.
     Right reaches on a fresh profile are the runner's to show at the next push of `main`,
     which is Pratik's to make; these tests never run on a machine somebody is using.
 
+- [ ] **FOUND-19**: A shell suite the gate runs cannot act on the repository that runs it,
+  whatever git environment the commit hook handed it: the suite harness clears `GIT_DIR`,
+  `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_PREFIX` and `GIT_COMMON_DIR` before any suite's
+  first `git`, and two cases are red if that stops.
+  - Evidence: `.githooks/commit-msg:44` execs `scripts/check.sh` with git's hook environment
+    intact; `check.sh:324-328` runs each `scripts/*.test.sh` as a child; `which-checks.test.sh:246-262`
+    builds a repository of its own with `git -C "$scratch/a-repo"`, which changes the
+    directory and not the repository once `GIT_DIR` is absolute; `which-checks.sh:197` reads
+    `git diff --cached`, which under an exported `GIT_INDEX_FILE` is the hook's index wherever
+    the subject runs. On 2026-09-18 a hook run from the linked worktree `wixen-mail-sweep` let
+    the suite set `core.bare`, replace `core.hooksPath`, write a suite identity into
+    `.git/config` and put a stray commit on `main` (`b4a4cc81`, undone by `update-ref`), and a
+    partial commit from the primary worktree handed the suite a temporary index and the case
+    answered `all`.
+  - [S] #85, filed 2026-09-18 from the incident: "Guardrail 4's shape: a check that reads as
+    testing itself while writing to the thing it was meant to leave alone."
+  - [D] `scripts/shell-suite.sh` unsets the five variables after `set -uo pipefail` with the
+    two incidents named; `which-checks.test.sh` gains two cases against a throwaway
+    repository, one under an absolute `GIT_DIR` asserting that repository's `HEAD`, config and
+    hooks path did not move, one under an exported `GIT_INDEX_FILE` asserting the file's bytes
+    unchanged and the subject answering `affected`; both red before the harness change and
+    named `which-checks::<description>` in the red trailer; `CLAUDE.md` says what the suites
+    guarantee where the shell-suite rule is (11-06.3).
+  - [S] Nothing here is a person's to settle; the runs are quoted with the real repository's
+    `HEAD`, config and reflog unchanged.
+
 ### All the mail, and what is said while it comes
 
 Added 2026-09-17 for phase 10, the third of the seven groups Pratik agreed on 2026-09-16.
@@ -4121,6 +4147,63 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     the executable (11-11.2).
   - [S] The three routes under NVDA are his ear's.
 
+**Added 2026-09-18, in the night: two more, from two issues filed after the evening's six,
+as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-07 and before
+11-08); #85, the gate's own hazard, is FOUND-19 above.**
+
+- [ ] **LIST-20**: When the message list takes focus by Tab, F6 or a click and no row is
+  focused, the cursor lands on the remembered row for the folder or on the first row under
+  the sort, selected and focused with the viewport following; nothing moves while focus is
+  elsewhere; an empty list says No messages.
+  - Evidence: `MessagesLoaded` (`wx_app.rs:17745-17758` at `4d9f14bf`) moves only the
+    viewport, by a stated rule against moving a screen reader's cursor while focus is in the
+    tree; F6 reaches the list through `Pane::List => msg_list.set_focus()` (`:1454`, `:4407`);
+    the mail list binds no focus event; `put_the_selection_back` (`:14396-14420`) sets
+    Selected and Focused and `ensure_visible`; the control answers its focused item to
+    `get_next_item(-1, All, Focused)`, which the window already uses for Selected (`:12679`).
+  - [S] #87, the tester on 2026-09-18: "Tab from the folder tree to the message list: focus
+    lands on the list with no row under it. It should land on a row, the newest message."
+  - [D] `landing_after_a_removal::where_to_land_on_arrival(remembered, len)` answers nothing
+    for an empty list, the remembered row when it is in range, else the first, with four
+    cases; `list_arrival::wire` binds the list's SET_FOCUS and lands only when no item is
+    focused; the mail list wired once with the state's remembered index; No messages on both
+    channels for an empty list; a built tree and list in a target moved by the list's own
+    focus path, the focused item read back for four steps (11-06.2).
+  - [S] That the newest message is read once on arrival, and not twice, is his ear's.
+
+- [ ] **LIST-21**: A move or a delete within an account completes on this computer first and
+  the server is brought into line afterwards: the row leaves at once, the cursor lands by
+  the removal rule, the success is shown and not spoken, the change is recorded as made here
+  and not yet at the server, told to the server in the background and at the next check
+  before any folder of the account is read, replayed after a restart, undone here and said
+  when the server refuses; Enter on a folder in the Move dialog is the Move.
+  - Evidence: `spawn_folder_move` (`wx_app.rs:19364` at `4d9f14bf`, "the row goes once the
+    server has agreed and not before") on `the_session_at(&account)`, the row leaving at
+    `:19886` and the sentence after; the delete's reason at `:4950-4956`; the shape for a
+    change made here first in `application::flag_changes_waiting` and
+    `data::message_cache::waiting_flag_changes`, offered on the session a check opened
+    (`:22804`); a folder sync forgets what the server no longer lists
+    (`mail_sync.rs:1383-1390`); the Move dialog's button has no default and the tree no
+    activation binding (`wx_destination.rs:268-290`); wxdragon 0.9.17 exposes
+    `TREE_ITEM_ACTIVATED` and `Button::set_default`; the scripted loopback servers at
+    `imap.rs:2814-2830`.
+  - [S] #86, the tester on 2026-09-18: "The move takes a noticeable time to complete and to
+    be announced. It should complete at once on this computer, with the server brought into
+    line when the next check runs"; and "Enter on the chosen folder in the tree does nothing
+    ... Enter on the folder should be the Move."
+  - [D] A `moves_waiting` table with keep, list, stop and the rows a folder's sync must not
+    forget; `application::moves_waiting` with what happens here, the undo, what a replay
+    answered (done, already done, refused, not reached) and the sentences, held against the
+    scripted servers; the sync replaying the account's waiting moves before its first listing
+    and leaving alone what a waiting move holds; the move and delete arms completing here
+    first with the success as `Shown`, the push at once on the action's session and again at
+    the next check, `MovePutBack` undoing and speaking at High; Enter on a folder ending the
+    dialog with `ID_OK`, measured first on a folder with children; a move across accounts
+    unchanged and said (11-07.1).
+  - [S] A replayed move after a restart against a real server, a move of a message the server
+    changed meanwhile, and #63's move, copy and delete proofs re-taken after this, are his
+    account's.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -4217,6 +4300,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
+| FOUND-19 | Phase 11 | Pending, 11-06.3 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
@@ -4236,12 +4320,19 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-17 | Phase 11 | Pending, 11-09.2 |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
 | LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
+| LIST-20 | Phase 11 | Pending, 11-06.2 |
+| LIST-21 | Phase 11 | Pending, 11-07.1 |
 
 **Coverage:**
 
-- v1 requirements: 86 total
-- Mapped to phases: 86
+- v1 requirements: 89 total
+- Mapped to phases: 89
 - Unmapped: 0
+
+**Re-taken 2026-09-18, in the night.** This block said 86 and 86 from the evening until three
+more issues (#85, #86, #87) were taken by three inserted plans (11-06.2, 11-06.3, 11-07.1).
+Counted with the same command as below, which gives 89 at `4d9f14bf` plus this edit with
+`FOUND-19`, `LIST-20` and `LIST-21` in, and the traceability table above has 89 rows.
 
 **Re-taken 2026-09-18, in the evening.** This block said 80 and 80 from the afternoon until six
 more issues filed that evening (#79 to #84) were taken by two tasks added to plans not yet
@@ -4350,6 +4441,13 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-18, in the night.** `LIST-20` and `LIST-21` trace to #87 and #86, filed after
+the evening's six and taken by inserted plans 11-06.2 (beside 11-06.1, which was at three
+tasks) and 11-07.1 (after 11-07, whose delete of a set it changes, and before 11-08);
+`FOUND-19` traces to #85, the gate's own hazard found while the evening's plans were
+committed, taken by 11-06.3 and placed under phase 9's section beside FOUND-17 and FOUND-18
+as a defect in what CI and the hook run. The total is 89.
 
 **Added 2026-09-18, in the evening.** `LIST-14` to `LIST-19` trace to #83, #84, #81, #82, #79
 and #80, filed that evening from the same day of testing: two taken as a third task of a plan
