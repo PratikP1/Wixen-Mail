@@ -736,6 +736,26 @@ fn what_is_wrong_with_the_check(
                         .into(),
                 );
             }
+            // Found by running the release binary against the measurement
+            // profile, whose account has no password saved: the first draft
+            // of the walk asked for the download after every check, so a
+            // check in which nothing went through started a download that
+            // failed the same way and waited on its own, two retry rows
+            // against one server. 10-05's tree never asked for the download
+            // after a failed check, and neither does this.
+            match (
+                check.find("nothing_went_through"),
+                check.find("say(UIUpdate::DownloadRequested)"),
+            ) {
+                (_, None) => {}
+                (Some(asked), Some(download)) if asked < download => {}
+                _ => wrong.push(
+                    "the check asks for the download whether or not any account went through, \
+                     so a server that refused the check is asked again by the download and \
+                     waited on twice"
+                        .into(),
+                ),
+            }
         }
     }
     wrong
@@ -772,10 +792,31 @@ fn test_the_reading_would_see_a_check_of_one_account() {
     );
 
     let the_f9_that_walks = "\n    check_every_enabled_account(app);\n";
+    let the_check_that_downloads_regardless = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+         for account in accounts {\n        account.mark_synced();\n        \
+         cache.update_account_last_sync(&account.id);\n        \
+         say(UIUpdate::MailboxWatchRequested(account.id.clone()));\n    }\n    \
+         say(UIUpdate::DownloadRequested);\n}\n";
+    let wrong = what_is_wrong_with_the_check(
+        Some(the_f9_that_walks),
+        Some(them_all),
+        Some(the_check_that_downloads_regardless),
+    );
+    assert!(
+        wrong
+            .iter()
+            .any(|w| w.contains("whether or not any account went through")),
+        "the reading did not see the download asked for after a check that failed: {wrong:?}"
+    );
+
     let the_check_that_walks = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+                                let mut nothing_went_through = true;\n    \
                                 for account in accounts {\n        account.mark_synced();\n        \
                                 cache.update_account_last_sync(&account.id);\n        \
-                                say(UIUpdate::MailboxWatchRequested(account.id.clone()));\n    }\n}\n";
+                                say(UIUpdate::MailboxWatchRequested(account.id.clone()));\n        \
+                                nothing_went_through = false;\n    }\n    \
+                                if nothing_went_through {\n        return;\n    }\n    \
+                                say(UIUpdate::DownloadRequested);\n}\n";
     let wrong = what_is_wrong_with_the_check(
         Some(the_f9_that_walks),
         Some(them_all),
