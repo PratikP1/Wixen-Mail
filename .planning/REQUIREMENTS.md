@@ -3615,9 +3615,25 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] Whether the lines are the ones a report needs, and what a day at Debug costs on his
     disk, are his; #64's dialog attaching the log is #64's.
 
-- [ ] **LIST-03**: Moving through the message list never marks a message read; a message is
+- [x] **LIST-03**: Moving through the message list never marks a message read; a message is
   marked read only after it has been read aloud from the list or opened, and then after the
   delay the setting names.
+  **Ticked 2026-09-18 by 11-05, merged at `5c82f680`, on its `[D]` lines:**
+  `reading_habits::whether_to_mark_read(began, selected_unread, now, setting)` answers
+  nothing when nothing began, whatever is selected and however long ago; nothing when the
+  message that began reading is not the selected unread one; at once under Immediately,
+  once the wait has run under a wait, never under Only when I say so; held by six cases in
+  the module (25 tests) and a record measured on the library. `WxUIState::reading_began`
+  is written by the mail read-aloud closure for the row Space or Shift+Space is about to
+  read and by `open_single_message` for the message it opens, by nothing in the selection
+  handler; the timer's `mark_what_was_read` asks the rule and does the write it always did;
+  the old `opened_at` clock is gone; held by `tests/moving_through_the_list_marks_nothing_read.rs`
+  (five readings and six companions, 11 tests) and two records on `wx_app.rs`; the sentence
+  under the choice on the Reading tab, `WHAT_MARK_READ_COUNTS_FROM`, read on the built page
+  by `tests/the_settings_dialog_opens_in.rs` with a record; the guide's "When a message
+  counts as read"; the changelog entry naming #25. The `[S]` line is untouched and is
+  ledger 539; nobody has walked an inbox by ear against this, and whether "previewed" means
+  reading aloud from the list is asked of the tester in the close comment.
   - Evidence: `mark_the_open_one_read` (`wx_app.rs:10035`, polled from the main timer at
     `:5576`) starts a clock when the selected message is unread and marks it read when
     `mark_read_after`'s delay passes with the row still selected (`:10046-10098`); the
@@ -4167,7 +4183,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
-| LIST-03 | Phase 11 | Pending, 11-05 |
+| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; whether the unread count survives a walk through his inbox by ear, and whether Space then the delay moves it, are the tester's ear, ledger 539 |
 | LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
 | LIST-05 | Phase 11 | Pending, 11-07 |
 | LIST-06 | Phase 11 | Pending, 11-08 |
