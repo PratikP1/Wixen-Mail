@@ -1649,8 +1649,10 @@ mod tests {
             sentence.contains("switched on"),
             "the sentence did not say the folder was switched on: {sentence}"
         );
+        // The menu as well as the item, because the item moved twice and the
+        // sentence said File for three weeks after it had left (#70).
         assert!(
-            sentence.contains("Folders to Keep Up to Date"),
+            sentence.contains("Tools, then Folders to Keep Up to Date"),
             "the sentence did not say where to undo it: {sentence}"
         );
     }
@@ -1673,7 +1675,7 @@ mod tests {
             "the sentence did not say the folder is not downloaded: {sentence}"
         );
         assert!(
-            sentence.contains("Folders to Keep Up to Date"),
+            sentence.contains("Tools, then Folders to Keep Up to Date"),
             "the sentence did not say how to turn it on: {sentence}"
         );
     }
