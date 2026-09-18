@@ -74,6 +74,10 @@ where
         if selected < 0 {
             return;
         }
+        // Consumed: this is what keeps the char that follows from the
+        // control's search. The reset above is what the dispatcher does
+        // before every closure, said here so the pair reads as one.
+        event.skip(false);
         on_pressed(i64::from(selected));
     });
 }
