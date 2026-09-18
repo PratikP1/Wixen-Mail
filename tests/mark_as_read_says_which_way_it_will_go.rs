@@ -573,8 +573,9 @@ fn the_wording_follows_the_state_everywhere_it_can_change(app: &str) -> Result<(
     let refresh = body_of(app, THE_REFRESH)?;
     for needed in [
         "what_the_command_says(",
-        "find_item(ID_MARK_READ)",
+        "find_item_and_menu(ID_MARK_READ)",
         ".set_label(",
+        ".set_help_string(ID_MARK_READ,",
         "toolbar_text::relabel(",
         "set_tool_short_help(",
     ] {
@@ -675,7 +676,8 @@ fn a_window_as_it_should_be() -> String {
          {}) {{\n    let word = what_the_key_says(new_read);\n    a11y.signal(FeedbackEvent::Confirmed, word);\n\
          ServerChange::Flag(FlagChange::Read(new_read));\n    refresh_mark_read_wording(frame, toolbar, state);\n}}\n\
          {}) {{\n    let wording = what_the_command_says(any_unread);\n\
-         bar.find_item(ID_MARK_READ).set_label(wording.menu);\n\
+         let (item, menu) = bar.find_item_and_menu(ID_MARK_READ);\n\
+         item.set_label(wording.menu);\n    menu.set_help_string(ID_MARK_READ, wording.help);\n\
          toolbar_text::relabel(&toolbar, ID_MARK_READ, wording.spoken);\n\
          toolbar.set_tool_short_help(ID_MARK_READ, wording.help);\n}}\n",
         THE_SELECTION_HANDLER.0,

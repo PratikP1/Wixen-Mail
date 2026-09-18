@@ -551,7 +551,7 @@ anything.
 |--------|----------|-------------|
 | Reply, Reply All, Reply to Sender Only, Forward | `Ctrl+R`, `Ctrl+Shift+R`, `Alt+Shift+R`, `Ctrl+L` | Mail |
 | Next Unread, Previous Unread | `Ctrl+U`, `Ctrl+Shift+U` | Mail |
-| Mark as Read | (no shortcut) | Mail |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mail. The item says which way it will go for the message you are on, and the toolbar button says the same |
 | Star or Unstar | `Ctrl+Shift+S` | Mail |
 | Send Read Receipt | (no shortcut) | Mail, and only when that message asked for one |
 | Mark Done or Not Done | `Ctrl+Shift+K` | Tasks, Reminders |
@@ -666,7 +666,7 @@ moves the menu, and sorting from the menu moves the headers.
 | Forward | `Ctrl+L` | Forward selected message |
 | Delete | `Delete` | Move the selected message to the Trash. On a POP account this is the Trash folder on this computer, and it can be switched off per account in the account's settings. If the account does not say which of its folders holds deleted mail, nothing is deleted and a message says so |
 | Flag Message | `Ctrl+Shift+S` | Flag or unflag the selected message |
-| Mark as Read | (Action menu) | Mark the selected message as read. This is not on `Space`: `Space` reads the item aloud, in every module. |
+| Mark as Read, or Mark as Unread | `M` in the message list | Mark the message you are on as read if it is unread, and as unread if it is read, and say which: "read" or "unread". The same command is on the Action menu, the context menu and the toolbar, and on all three its label says which way it will go, Mark as Read on an unread message and Mark as Unread on a read one. `M` is only the list's: it does nothing in a box you can type in. This is not on `Space`: `Space` reads the item aloud, in every module. |
 
 ### Labels
 

@@ -894,11 +894,13 @@ impl WxMailApp {
                     &bmp(ArtId::Delete),
                     "Delete message (Del)",
                 );
+                // The unread form to start with; `refresh_mark_read_wording`
+                // makes it follow the message under the cursor (#27).
                 toolbar.add_tool(
                     ID_MARK_READ,
-                    "Mark Read",
+                    crate::application::marking_read::what_the_command_says(true).spoken,
                     &bmp(ArtId::TickMark),
-                    "Mark as read",
+                    crate::application::marking_read::what_the_command_says(true).help,
                 );
                 toolbar.add_separator();
                 toolbar.add_tool(
@@ -3098,6 +3100,9 @@ impl WxMailApp {
                     // fact about the message somebody would want before they
                     // decide what to do with it.
                     receipt_for_the_open_message(app);
+                    // Mark as Read says which way it will go for the row
+                    // landed on (#27): the item, the tool and its tip.
+                    refresh_mark_read_wording(&frame, toolbar_handle, &state);
                 }
             });
 
@@ -3303,10 +3308,21 @@ impl WxMailApp {
             // not hand it up from a native list or tree. A handler on the
             // frame was written first and never once fired.
             {
-                use crate::application::context_menu::{Focus, entries_for};
+                use crate::application::context_menu::{Focus, entries_for, entries_for_messages};
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
-                wire_context_menu(&msg_list, || Some(entries_for(Focus::Messages)));
+                // Asked at the moment the key is pressed, because the Mark
+                // entry says which way it will go for the message under the
+                // cursor (#27), and that changes as the cursor moves and as
+                // M toggles.
+                wire_context_menu(&msg_list, {
+                    let state = state.clone();
+                    move || {
+                        let any_unread =
+                            the_selected_row_has_unread(&lock_state(&state)).unwrap_or(true);
+                        Some(entries_for_messages(any_unread))
+                    }
+                });
                 // The one control here holding twelve kinds of row. Which menu
                 // each offers is a question about the row, so it is answered in
                 // `folder_tree` where a row's identity lives and a test can
@@ -3484,6 +3500,31 @@ impl WxMailApp {
                         read_the_row(&message, in_conversation, out),
                         read_the_whole_message(&message_cache, &message, in_conversation, out),
                     ))
+                }
+            });
+
+            // M toggles the selected message between read and unread and
+            // says the one word (#27). Consumed at the key-down through
+            // `list_keys`, so the list's own type-to-search never gets the
+            // letter; the row the handler is given is the selected one, which
+            // the toggle reads from the state as the command does.
+            crate::presentation::list_keys::wire_letter(&msg_list, 'M', {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |_row| {
+                    toggle_read_state(
+                        AppHandles {
+                            state: &state,
+                            tx: &ui_tx,
+                            rt: &runtime,
+                        },
+                        &a11y,
+                        How::TheKey,
+                        &frame,
+                        toolbar_handle,
+                    );
                 }
             });
 
@@ -4891,61 +4932,10 @@ impl WxMailApp {
                             }
                         }
                         _ if id == ID_MARK_READ => {
-                            let toggled = {
-                                let mut s = lock_state(&state);
-                                if let Some(idx) = s.selected_message_index {
-                                    if idx < s.messages.len() {
-                                        s.messages[idx].read = !s.messages[idx].read;
-                                        let msg = &s.messages[idx];
-                                        Some((
-                                            msg.message_id,
-                                            msg.uid,
-                                            msg.read,
-                                            msg.subject.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                }
-                            };
-                            if let Some((cache_id, uid, new_read, subject)) = toggled {
-                                let label = if new_read { "read" } else { "unread" };
-                                let announce_msg = format!("Marked as {}: {}", label, subject);
-                                let tx = ui_tx.clone();
-                                let stored_subject = subject.clone();
-                                runtime.spawn(async move {
-                                    let _ = tx
-                                        .send(UIUpdate::MessageReadToggled(cache_id, new_read))
-                                        .await;
-                                    let _ = tx
-                                        .send(UIUpdate::StatusUpdated(format!(
-                                            "Marked {}: {}",
-                                            label, stored_subject
-                                        )))
-                                        .await;
-                                });
-                                let _ = a11y.announce(
-                                    &announce_msg,
-                                    crate::presentation::accessibility::announcements::Priority::Normal,
-                                );
-                                let confirmed = if new_read {
-                                    "Marked read"
-                                } else {
-                                    "Marked unread"
-                                };
-                                let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
-                                spawn_server_change(
-                                    app,
-                                    cache_id,
-                                    uid,
-                                    subject,
-                                    ServerChange::Flag(FlagChange::Read(new_read)),
-                                );
-                            } else {
-                                send_refusal(&ui_tx, &runtime, "No message selected");
-                            }
+                            // The Action menu, the context menu and the
+                            // toolbar all raise this id; M on the list runs
+                            // the same toggle under its own name (#27).
+                            toggle_read_state(app, &a11y, How::TheCommand, &frame, toolbar_handle);
                         }
                         _ if id == ID_SEARCH => {
                             // It used to say "Searching: report..." and search
@@ -5558,6 +5548,7 @@ impl WxMailApp {
                                 column_layout: &column_layout,
                                 preview: &preview,
                                 frame: &frame,
+                                toolbar: toolbar_handle,
                                 a11y: &a11y,
                                 pim: &pim_refs,
                                 message_cache: &message_cache,
@@ -10057,6 +10048,136 @@ fn wire_read_aloud<F>(
         // stop: private mail and personal notes read aloud in a shared room.
         let _ = a11y.announce_content(&text);
     });
+}
+
+/// Who asked for the read flag to be toggled, which decides what is said.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum How {
+    /// The Action menu's item, the context menu's entry or the toolbar's
+    /// button: one id, and the sentence naming the message.
+    TheCommand,
+    /// M on the message list: the one word the tester asked for, the state
+    /// the message is in now, because the row is still under the cursor and
+    /// the screen reader has already said whose message it is.
+    TheKey,
+}
+
+/// Toggle the selected message between read and unread, say so, and tell
+/// the server.
+///
+/// The one toggle behind the Action menu, the context menu, the toolbar and
+/// M (#27, 2026-09-18); until then the menu's arm held it and M did nothing.
+/// The row in state is flipped first, the list and the status bar are told,
+/// the word is announced, `Confirmed` is signalled so the earcon channel
+/// hears it, and the flag goes to the server, which puts the row back if it
+/// refuses. Then the command's words are refreshed, so what the item says
+/// after the toggle is what the state is.
+fn toggle_read_state(
+    app: AppHandles<'_>,
+    a11y: &Accessibility,
+    how: How,
+    frame: &Frame,
+    toolbar: Option<ToolBar>,
+) {
+    let AppHandles { state, tx, rt } = app;
+    let toggled = {
+        let mut s = lock_state(state);
+        let selected = s.selected_message_index;
+        selected
+            .and_then(|idx| s.messages.get_mut(idx))
+            .map(|message| {
+                message.read = !message.read;
+                (
+                    message.message_id,
+                    message.uid,
+                    message.read,
+                    message.subject.clone(),
+                )
+            })
+    };
+    let Some((cache_id, uid, new_read, subject)) = toggled else {
+        send_refusal(tx, rt, "No message selected");
+        return;
+    };
+    let word = crate::application::marking_read::what_the_key_says(new_read);
+    let said = match how {
+        How::TheCommand => format!("Marked as {word}: {subject}"),
+        How::TheKey => word.to_string(),
+    };
+    let sent = tx.clone();
+    let stored_subject = subject.clone();
+    rt.spawn(async move {
+        let _ = sent
+            .send(UIUpdate::MessageReadToggled(cache_id, new_read))
+            .await;
+        let _ = sent
+            .send(UIUpdate::StatusUpdated(format!(
+                "Marked {word}: {stored_subject}"
+            )))
+            .await;
+    });
+    let _ = a11y.announce(
+        &said,
+        crate::presentation::accessibility::announcements::Priority::Normal,
+    );
+    let confirmed = if new_read {
+        "Marked read"
+    } else {
+        "Marked unread"
+    };
+    let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
+    spawn_server_change(
+        app,
+        cache_id,
+        uid,
+        subject,
+        ServerChange::Flag(FlagChange::Read(new_read)),
+    );
+    refresh_mark_read_wording(frame, toolbar, state);
+}
+
+/// Whether the message under the cursor is unread: the row's own flag, or
+/// on a conversation row whether any of its messages is, so the command on
+/// that row says what it will do to the messages that need it. `None` when
+/// nothing is selected.
+fn the_selected_row_has_unread(s: &WxUIState) -> Option<bool> {
+    let idx = s.selected_message_index?;
+    if s.showing.showing_conversations() {
+        s.conversations.get(idx).map(|row| row.unread > 0)
+    } else {
+        s.messages.get(idx).map(|message| !message.read)
+    }
+}
+
+/// Make Mark as Read say which way it will go, from the message under the
+/// cursor: the Action menu's item and its help, the toolbar's button and its
+/// tip, all from `marking_read::what_the_command_says` (#27).
+///
+/// Called from the selection handler, from the toggle and from the arm that
+/// lands a read flag on a row, which are the three places the state can
+/// change under the label. The context menu is not set here: it is built at
+/// the moment the menu key is pressed, from the same state. Nothing selected
+/// keeps the unread form, which is what the surfaces are built with. The
+/// toolbar's text goes through `toolbar_text`, because wxdragon 0.9.17
+/// offers no relabel for a tool.
+fn refresh_mark_read_wording(
+    frame: &Frame,
+    toolbar: Option<ToolBar>,
+    state: &Arc<StdMutex<WxUIState>>,
+) {
+    let any_unread = the_selected_row_has_unread(&lock_state(state)).unwrap_or(true);
+    let wording = crate::application::marking_read::what_the_command_says(any_unread);
+    if let Some((item, menu)) = frame
+        .get_menu_bar()
+        .and_then(|bar| bar.find_item_and_menu(ID_MARK_READ))
+    {
+        item.set_label(wording.menu);
+        menu.set_help_string(ID_MARK_READ, wording.help);
+    }
+    if let Some(toolbar) = toolbar {
+        crate::presentation::toolbar_text::relabel(&toolbar, ID_MARK_READ, wording.spoken);
+        toolbar.set_tool_short_help(ID_MARK_READ, wording.help);
+    }
 }
 
 /// Mark the message somebody read, once the wait the setting names has run
@@ -17100,6 +17221,10 @@ struct UpdateTargets<'a> {
     column_layout: &'a Rc<RefCell<ColumnLayout>>,
     preview: &'a WebView,
     frame: &'a Frame,
+    /// The main toolbar, when the frame made one, so a read flag landing on
+    /// the row can make Mark as Read say which way it will go there too
+    /// (#27). A copy of the handle rather than a borrow: it is one pointer.
+    toolbar: Option<ToolBar>,
     a11y: &'a Accessibility,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
@@ -17413,6 +17538,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         column_layout,
         preview,
         frame,
+        toolbar,
         a11y,
         pim,
         message_cache,
@@ -18439,6 +18565,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 );
             }
             msg_list.refresh(true, None);
+            // The flag may have landed on the message under the cursor, from
+            // the timer, from a refusal putting it back, or from the toggle
+            // itself, and the command's words follow the flag (#27).
+            refresh_mark_read_wording(frame, toolbar, state);
         }
         UIUpdate::MailboxWatchRequested(account_id) => {
             spawn_mail_watch(AppHandles { state, tx, rt }, account_id);
@@ -26800,15 +26930,31 @@ mod what_the_status_line_says {
         // which speaks and brailles but can never play a tone. `Confirmed`
         // exists so that flag, mark done and pin all share one recognisable
         // "did it" tone rather than each growing its own.
+        //
+        // The mark arm hands its work to `toggle_read_state` since
+        // 2026-09-18 (#27), so M on the list runs the same toggle; the
+        // signal is read there, after the arm is held to calling it.
         let source = the_window_itself();
-        for heading in ["_ if id == ID_TOGGLE_STAR =>", "_ if id == ID_MARK_READ =>"] {
-            let arm = the_id_arm(&source, heading);
-            assert!(
-                arm.contains("a11y.signal(FeedbackEvent::Confirmed"),
-                "the arm starting {heading} does not signal Confirmed, so it \
-                 never reaches the earcon channel"
-            );
-        }
+        let star_arm = the_id_arm(&source, "_ if id == ID_TOGGLE_STAR =>");
+        assert!(
+            star_arm.contains("a11y.signal(FeedbackEvent::Confirmed"),
+            "the star arm does not signal Confirmed, so it never reaches the earcon channel"
+        );
+        let mark_arm = the_id_arm(&source, "_ if id == ID_MARK_READ =>");
+        assert!(
+            mark_arm.contains("toggle_read_state("),
+            "the mark arm does not run toggle_read_state, so the menu and M would toggle apart"
+        );
+        let toggle = source
+            .split_once("fn toggle_read_state(")
+            .expect("the one toggle behind the command and the key")
+            .1;
+        let toggle = &toggle[..toggle.find("\n}\n").unwrap_or(toggle.len())];
+        assert!(
+            toggle.contains("a11y.signal(FeedbackEvent::Confirmed"),
+            "toggle_read_state does not signal Confirmed, so marking read never reaches the \
+             earcon channel"
+        );
     }
 
     /// The body of the contacts search box's own text-changed handler.

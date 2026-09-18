@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 132 records have arrived since and have not been through it.
+# 134 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25922,7 +25922,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/list_keys.rs", tests = 3 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 5 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
 ]
 
 # ── A tool's new label reaches the control ──────────────────────────────────
@@ -25948,5 +25948,73 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/toolbar_text.rs", tests = 1 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 5 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── The words follow the row landed on ──────────────────────────────────────
+#
+# #27: the command's words are set from the message under the cursor on
+# selection, after the toggle and when a flag lands on the row. The break
+# drops the refresh from the selection handler, so arrowing onto a read
+# message leaves every surface saying Mark as Read; the reading over the
+# three sites goes red with "the selection handler never refreshes the
+# wording", and its companions read snippets and stay green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "landing on a row makes mark as read say which way it will go, not leave the last row's words"
+file = "src/presentation/wx_app.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """                    receipt_for_the_open_message(app);
+                    // Mark as Read says which way it will go for the row
+                    // landed on (#27): the item, the tool and its tip.
+                    refresh_mark_read_wording(&frame, toolbar_handle, &state);"""
+after = """                    receipt_for_the_open_message(app);"""
+red = [
+    "test_the_wording_is_refreshed_on_selection_after_the_toggle_and_when_a_flag_lands",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── M goes through the helper that consumes it ──────────────────────────────
+#
+# #27: M is wired on the message list through list_keys::wire_letter, which
+# calls skip(false) so the control's search never gets the letter. The break
+# wires the key with a bare KEY_DOWN binding that runs the toggle and says
+# nothing about skip, so the dispatcher's Skip(true) stands and the search
+# moves the cursor after every press; the reading over the key wiring goes
+# red with the wire_letter anchor gone. The reading on the built list is
+# not in this record's red list because it builds its own list and wires
+# the helper itself; the record on list_keys.rs covers the helper.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "m on the message list is wired through the helper that consumes it, not bound bare"
+file = "src/presentation/wx_app.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = """            crate::presentation::list_keys::wire_letter(&msg_list, 'M', {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |_row| {"""
+after = """            msg_list.bind_internal(EventType::KEY_DOWN, {
+                let state = state.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
+                let a11y = a11y.clone();
+                move |event| {
+                    if event.get_key_code() != Some(77) {
+                        return;
+                    }"""
+red = [
+    "test_the_menu_item_and_the_key_run_one_toggle_and_the_key_says_one_word",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
 ]
