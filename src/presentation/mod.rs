@@ -41,6 +41,7 @@ pub mod ui_types;
 pub mod view_state;
 pub mod virtual_rows;
 pub mod what_the_scans_can_judge;
+pub mod which_language_row;
 pub mod wx_account_manager;
 pub mod wx_add_address_book;
 pub mod wx_add_calendar;
