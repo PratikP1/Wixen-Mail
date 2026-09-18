@@ -1272,7 +1272,17 @@ mod tests {
         assert_eq!(config.default_sort_order, "date_newest");
         assert_eq!(config.default_reminder_minutes, 15);
         assert!(config.preview_before_send);
-        assert_eq!(config.log_level, "info");
+        // Not "info". Since 2026-09-18 the level follows the version the
+        // build carries (#71): under an alpha or beta build this reads
+        // "debug", under an rc or a release "info", and the rule lives in
+        // logging::default_level_for so that a cut moves it without a hand
+        // edit here. Asserting the rule's answer rather than a word keeps
+        // this true across the cut.
+        assert_eq!(
+            config.log_level,
+            crate::common::logging::default_level_for(&crate::common::version::current())
+                .as_stored()
+        );
     }
 
     #[test]

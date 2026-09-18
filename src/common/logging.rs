@@ -40,6 +40,42 @@ impl LogLevel {
             _ => None,
         }
     }
+
+    /// The word the settings file holds for this level, which [`parse`] reads
+    /// back.
+    ///
+    /// [`parse`]: LogLevel::parse
+    pub fn as_stored(self) -> &'static str {
+        ""
+    }
+}
+
+/// The level a fresh profile starts at under the build carrying `version`.
+///
+/// Debug while the version says alpha or beta, info otherwise: Pratik's
+/// decision of 2026-09-17 (#71). Under a testing round every report comes
+/// with a log, and the lines a report needs, each check's result per
+/// folder, each chunk of the download and what the server answered, the
+/// settings save and what was held back from speech, are written at info
+/// and debug; the cost on disk is measured on `docs/development/measurements.md`
+/// and accepted for the reports it buys. An rc is the release build under
+/// test, so it takes the release's default. Following the version rather
+/// than a literal means the cut that moves alpha to rc moves the default
+/// without a hand edit. A profile that already holds a level keeps it:
+/// `main.rs` reads the stored level first and asks this only when there is
+/// none.
+pub fn default_level_for(_version: &str) -> LogLevel {
+    LogLevel::Info
+}
+
+/// The filter the log runs under: this crate at `level`, and nothing else.
+///
+/// One target, on purpose. A library switched on at debug logs what the
+/// library chooses, and for an IMAP crate that is the literals on the wire,
+/// which is message text. A second target cannot be added here without the
+/// test that holds this to one moving.
+pub fn filter_for(_level: LogLevel) -> String {
+    String::new()
 }
 
 /// Logger configuration
@@ -150,6 +186,88 @@ pub fn mask_email(email: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_the_default_level_is_debug_under_alpha_and_beta_and_info_otherwise() {
+        // #71: the default follows the build, so nothing is owed at a cut.
+        for version in [
+            "1.0.0-alpha.1",
+            "1.0.0-beta.3",
+            "1.0.0-alpha.1+42.g59c5b6a4",
+        ] {
+            assert_eq!(
+                default_level_for(version),
+                LogLevel::Debug,
+                "{version} is a testing round and starts at debug"
+            );
+        }
+        for version in ["1.0.0-rc.1", "1.0.0", "0.125.1", "not a version"] {
+            assert_eq!(
+                default_level_for(version),
+                LogLevel::Info,
+                "{version} is not a testing round and starts at info"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_built_in_level_is_the_rules_answer_for_this_build() {
+        // LoggerConfig::default() is what main.rs falls back to when the
+        // profile holds no level, so it has to be the same rule and not a
+        // second literal, which is what it was until 2026-09-18.
+        assert_eq!(
+            LoggerConfig::default().level,
+            default_level_for(&crate::common::version::current())
+        );
+    }
+
+    #[test]
+    fn test_every_level_survives_being_stored_and_read_back() {
+        // as_stored writes the word the settings file holds and parse reads
+        // it back, so the two are held to each other rather than each to a
+        // list of its own.
+        for level in [
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+            LogLevel::Trace,
+        ] {
+            let stored = level.as_stored();
+            assert_eq!(
+                LogLevel::parse(stored),
+                Some(level),
+                "{level:?} is stored as {stored:?}, which parse does not read back"
+            );
+            assert_eq!(stored, stored.to_lowercase(), "{stored:?} is not lowercase");
+        }
+    }
+
+    #[test]
+    fn test_the_filter_names_this_crate_at_the_level_and_nothing_else() {
+        // A second target added here would switch on a library's own lines,
+        // and an IMAP crate at debug logs the literals on the wire, which is
+        // message text. One target, and the level is the one asked for.
+        assert_eq!(filter_for(LogLevel::Debug), "wixen_mail=debug");
+        assert_eq!(filter_for(LogLevel::Info), "wixen_mail=info");
+        for level in [
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+            LogLevel::Trace,
+        ] {
+            let filter = filter_for(level);
+            assert!(
+                filter.starts_with("wixen_mail="),
+                "{filter:?} does not name this crate first"
+            );
+            assert!(
+                !filter.contains(','),
+                "{filter:?} names a second target, which would switch a library on"
+            );
+        }
+    }
 
     #[test]
     fn test_every_level_can_be_asked_for_by_name() {
