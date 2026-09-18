@@ -9,6 +9,7 @@
 
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
+use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use wxdragon::prelude::*;
 
 /// Put a sentence on a line of text and say it out loud, from one call.
@@ -24,6 +25,29 @@ pub(crate) fn said_and_shown(
 ) {
     line.set_label(said);
     let _ = a11y.announce(said, priority);
+}
+
+/// Put a sentence on a line of text and raise the event it is the outcome of,
+/// with the sentence as the event's detail, from one call.
+///
+/// For an outcome that is both an answer and an event: signing in failing is
+/// the answer to the button just pressed and is also the account needing
+/// attention. Said as a sentence and then signalled as the event, it went out
+/// as two notifications a millisecond apart on two topics, at two levels, and
+/// in NVDA run 35336142908 on `main` at `744d05ef` the runner's NVDA spoke
+/// the second and never the first: "Sign-in needs attention, Scan target",
+/// and not why. One event carrying the sentence is one notification, on the
+/// channels the person's Feedback row for that event allows, and one
+/// notification cannot cut off another. The line NVDA hears is the event's
+/// word, then the sentence: "Sign-in needs attention, Signing in failed: ...".
+pub(crate) fn shown_and_signalled(
+    line: &StaticText,
+    a11y: &Accessibility,
+    event: FeedbackEvent,
+    said: &str,
+) {
+    line.set_label(said);
+    let _ = a11y.signal(event, said);
 }
 
 #[cfg(test)]

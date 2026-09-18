@@ -121,6 +121,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A sign-in failure in the Account Manager was two announcements a moment apart, and a
+  screen reader could speak the second and drop the first.** When Sign In Again could not
+  sign an account in, the reason was announced as a sentence and then, a millisecond later,
+  the account-needs-attention cue was raised as its own announcement at a higher level. On
+  GitHub's runner, NVDA spoke "Sign-in needs attention" with the account's name and never the
+  sentence saying why, so a person heard that something needed attention and not what. Found
+  by the NVDA workflow, whose case for this had been failing at every run since 2026-09-15
+  behind a badge reporting success; read on 2026-09-18. Now the three ways signing in again
+  can fail (no sign-in credentials for the provider, a sign-in Windows would not keep, and the
+  provider refusing) are each one announcement: the event's words, then the reason, as
+  "Sign-in needs attention, Signing in failed: ..." with the sound, the words and the line of
+  text coming from the one event, on whichever channels your Feedback row for it allows.
+  Known limitations: whether that one line is heard whole is the runner's next run to show,
+  or your ear; nobody has heard it yet.
 - **A spelling language you chose for a region this computer has no dictionary for was
   rewritten to this computer's own region the first time Settings was saved.** Found by CI on
   2026-09-18 in `1.0.0-alpha.1+149.g744d05ef`, not by anybody: the machine the testing happens on

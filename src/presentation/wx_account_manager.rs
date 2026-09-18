@@ -32,7 +32,7 @@ use crate::service::directory::Directory;
 const APP_PASSWORD_HINT: &str = "Password: use an app password, not your ordinary one. \
 Turn on two-step verification with your provider first, then generate one for mail. \
 See Setting up a provider in Help.";
-use crate::presentation::status_line::said_and_shown;
+use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::{AuthManager, OAuthService};
 use crate::service::oauth_credentials;
@@ -558,35 +558,35 @@ pub fn reauthorize_selected(
                         Priority::Normal,
                     );
                 }
+                // Each of the three ways trying again can leave the account
+                // unauthorised is one notification: the sentence on the line,
+                // and the sign-in event raised with the sentence as its
+                // detail, so the earcon, the words, the braille and the
+                // visual come from one event on the channels the person's
+                // row for it allows. Until 2026-09-18 each arm said the
+                // sentence and then signalled the event, a millisecond apart,
+                // and the runner's NVDA spoke the event and not the sentence
+                // (run 35336142908 at 744d05ef).
                 OAuthFlowResult::NoCreds(provider) => {
-                    said_and_shown(
+                    shown_and_signalled(
                         status,
                         a11y,
+                        FeedbackEvent::AccountNeedsAttention,
                         &no_sign_in_credentials(&provider),
-                        Priority::High,
                     );
-                    // Trying again left the account exactly where it was:
-                    // still unable to sign in. Signalled in addition to the
-                    // sentence above, not instead of it, so earcons-only and
-                    // braille-only setups learn this too.
-                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
                 }
                 OAuthFlowResult::NotSaved(msg) => {
-                    said_and_shown(status, a11y, &msg, Priority::High);
-                    // The account is no more signed in than it was, so it is
-                    // signalled the same way as the other two refusals. Left
-                    // out, the earcons-only and braille-only setups would hear
-                    // nothing for the one outcome that looks most like success.
-                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
+                    // The one outcome that looks most like success: the
+                    // provider allowed it and Windows would not keep it.
+                    shown_and_signalled(status, a11y, FeedbackEvent::AccountNeedsAttention, &msg);
                 }
                 OAuthFlowResult::Failed(msg) => {
-                    said_and_shown(
+                    shown_and_signalled(
                         status,
                         a11y,
+                        FeedbackEvent::AccountNeedsAttention,
                         &format!("Signing in failed: {msg}"),
-                        Priority::High,
                     );
-                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);
                 }
             }
         }
@@ -2542,16 +2542,32 @@ mod tests {
         // one notification with the sentence as its detail, and its level is
         // the event's own rather than one written here: Urgent, above High,
         // because it asks somebody to act.
+        // Read from the arm's own head inside `reauthorize_selected` rather
+        // than around the sentence, because the call sits four lines above
+        // its sentence and a window of 150 characters back stops short of
+        // it; and inside that function, because adding and editing an
+        // account have `Failed` arms of their own that say a different
+        // sentence.
         let signing_in = "Signing in failed:";
-        let near = around(&screen, signing_in)
-            .unwrap_or_else(|| panic!("this screen no longer says {signing_in:?} at all"));
+        let arm = after(
+            &the_reauthorize_function(&screen),
+            "OAuthFlowResult::Failed(msg) =>",
+            400,
+        )
+        .unwrap_or_else(|| {
+            panic!("reauthorize_selected no longer has an arm for signing in failing")
+        });
         assert!(
-            near.contains("shown_and_signalled("),
-            "{signing_in:?} is not one notification through shown_and_signalled: {near}"
+            arm.contains(signing_in),
+            "the arm for signing in failing no longer says {signing_in:?}: {arm}"
         );
         assert!(
-            near.contains("FeedbackEvent::AccountNeedsAttention"),
-            "{signing_in:?} does not carry the sign-in event: {near}"
+            arm.contains("shown_and_signalled("),
+            "{signing_in:?} is not one notification through shown_and_signalled: {arm}"
+        );
+        assert!(
+            arm.contains("FeedbackEvent::AccountNeedsAttention"),
+            "{signing_in:?} does not carry the sign-in event: {arm}"
         );
         assert!(
             FeedbackEvent::AccountNeedsAttention.priority() > Priority::High,
