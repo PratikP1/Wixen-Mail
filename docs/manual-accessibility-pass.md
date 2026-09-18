@@ -98,8 +98,9 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-Forty-one items. Walk them in order; the first ones are the ground the rest
-stand on.
+Fifty-seven items. Walk them in order; the first ones are the ground the rest
+stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57 the same day,
+for what phase 10 built; this line said forty-one until then.
 
 ### The main window
 
@@ -319,6 +320,108 @@ stand on.
 43. **Press OK in Settings while a check is running.** "Settings saved"
     should be heard, not replaced by the next line of the check. Then Draft
     saved and Refreshed the same way. **NVDA.** [ledger 78, ledger 521]
+
+### All the mail, and what is said while it comes
+
+Added 2026-09-18 for what phase 10 built. Everything in this group has been
+proved by readings of the code and by a stand-in server inside the tests, and
+none of it has been heard or met a real provider. The first check after
+installing the build of 2026-09-18 is where items 49 to 56 happen on their
+own, so read them before that check rather than after it.
+
+44. **Arrow to a check box on each Settings tab after General**, Compose,
+    Reading, Permissions, Calendar and PIM, Feedback, Advanced. Each should be
+    heard as "check box" with its state, not as a button; Space should toggle
+    it and the new state be said; Tab away and back should read the state
+    again; OK should keep it. Then, from a control on the General tab, press
+    Ctrl+Tab: a named control on the next page should be spoken and nothing
+    before it, and note whether the page's name is said first. Every checkbox
+    on the six pages answered "push button" in the build of 2026-09-17.
+    **NVDA.** [ledger 513, ledger 514]
+45. **Open a folder holding every message you have.** The whole folder should
+    be one list, and End should land on the oldest message rather than on the
+    five-hundredth; arrow to a smaller folder and back, and the keys should
+    answer at once. A folder of 12,872 messages has been read back whole by a
+    test and never opened in the running program. **NVDA.** [ledger 515]
+46. **With All Inboxes open, choose View, Sort Messages, Oldest first**, arrow
+    to a folder and back: the first row should be the oldest message. The same
+    on a label and after running a saved search. Then Unread First on a folder,
+    away and back: the unread rows should be first. **NVDA.** [ledger 516]
+47. **Open the Permissions tab and Tab to "Keep the text of messages on this
+    computer".** It should be heard as a combo box with that name and its
+    answer, All of it unless you changed it; the sentence beneath it, saying
+    what a size removes and when, should be read once and not with every
+    answer. Choose a size, press OK, restart, and the size should still be
+    chosen. **Both.** [ledger 519]
+48. **Open the Feedback tab and press Alt+W.** "While mail and the other
+    modules are fetched, say" should take focus as a combo box with its three
+    answers in order, Say what arrived, Say every step, Errors only, and the
+    sentence beneath it, that errors are always said, should be read once.
+    **Both.** [ledger 521]
+49. **Let the first download run, once under Say every step.** After a check
+    you should hear "Downloading the mail that is not on this computer
+    yet...", then a line per chunk, "Downloading Inbox: 500 of 12872
+    messages.", "Inbox is downloaded: 12872 messages on this computer." as each
+    folder becomes whole, and "Downloading message text: 50 of 12872
+    messages." per chunk of text. Say whether a line per chunk is bearable at
+    your mailbox's size, and whether the numbers are heard as a count. Under
+    Say what arrived none of those should be heard, only one sentence when the
+    account's download ends, "50 folders are downloaded, and the text of 12872
+    messages is on this computer.", with the sound for new mail; say whether
+    that sentence reads as an ending and whether the sound and the sentence
+    arrive as one event. **NVDA, ears.** [ledger 523, ledger 11, ledger 72]
+50. **Tools, Pause Downloading, during a download.** The item should be heard
+    as a check item with its state and its description, the sentence saying
+    the download has never met a real account. Ticking it should answer
+    "Downloading is paused. Mail already here stays readable.", and unticking
+    it "Downloading again.", each heard above the download's own lines. Then
+    `Shift+F9` in a folder: "Downloading this folder first...", and, while
+    paused, "Downloading is paused. Tools, Pause Downloading takes it off."
+    **NVDA.** [ledger 523]
+51. **If the download stops**, because your provider refused it or your
+    network went, the status bar should say "Downloading Inbox stopped: the
+    mail server stopped answering, and it refused. 3500 of 12872 are on this
+    computer." and then "The mail server could not be reached. Trying again
+    in 30 seconds." Both are steps, so under Say what arrived nothing is
+    spoken about it and the download tries again on its own; say whether that
+    silence is right or whether a stop should be heard once whatever was
+    chosen. Nobody can make a provider do this on purpose, so note it if it
+    happens. **NVDA.** [ledger 523, ledger 64]
+52. **Run a saved search that reads message text before all the text is
+    here.** Beside the coverage sentence you should hear "The text of 137
+    messages in this account is not here yet and comes down on its own after
+    the next check.", as two things and not one run-on, and no button should
+    be offered. With the Message Text box off the sentence ends "so it stays
+    on the server" instead. **NVDA.** [ledger 523, ledger 10]
+53. **Read the status bar while nothing else is happening**, under Say every
+    step. It should say one of "Watching Inbox for new mail. Checking every 5
+    minutes.", "Waiting 2 minutes to watch Inbox again. Checking every 5
+    minutes." or "Checking every 5 minutes.", and the three should be heard
+    as three states rather than as three sentences that sound alike. With two
+    accounts enabled the account should be named first, and `F9` should open
+    with "Checking 2 accounts for new mail..."; with one account, neither name
+    nor count. **NVDA.** [ledger 525]
+54. **Open an account's editor and Tab to "Check Interval (min)".** The
+    sentence saying what the interval does should be heard with the field and
+    again as the text beneath it; say whether hearing it twice is too many.
+    **Both.** [ledger 525]
+55. **Leave the program running for a day.** Mail should keep arriving on its
+    own the whole time, with the sound and the one sentence each time a check
+    found something and nothing spoken when it found nothing. Unplug the
+    network or turn the radio off for a minute and put it back: the network
+    sentence, then the watch starting again and the due accounts checked, at
+    once and without pressing Go Back Online. Say what the status bar said
+    while the network was gone. **Ears, both.** [ledger 525, ledger 64,
+    ledger 65, ledger 67]
+56. **Disable an account whose password is not saved, or leave one that way
+    for an hour.** Every check of it says the error out loud, at the start and
+    then every interval, whatever was chosen on the Feedback tab. Say whether
+    that is a flood or a reminder, and whether disabling the account stops it.
+    **NVDA.** [ledger 525, ledger 526]
+57. **Install the next build over this one and open Apps and Features.** The
+    entry should read `1.0.0-alpha.1` followed by a number and a commit, the
+    number larger than the build before it, and Windows should have installed
+    it as an upgrade rather than beside the old one. **Both.** [ledger 517]
 
 ## B. Low vision and colour
 

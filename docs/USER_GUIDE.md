@@ -65,6 +65,18 @@ have already added:
 `Ctrl+1` through `Ctrl+3` switch directly to your first, second, and third
 enabled accounts.
 
+### How often an account is checked
+
+Each account's editor has a field, "Check Interval (min)", between 1 and 60,
+5 unless you changed it. Since the build of 2026-09-18 it does what it says:
+how often this account is checked for new mail when nothing is watching it,
+or for the folders a watch does not cover. The field had been on the editor
+since 2026-03-01 and nothing read it until that build. Most of the time the
+account's inbox is watched through an open connection instead, and the server
+says when mail lands; [Getting your mail](#getting-your-mail) says which is
+which. There is no second interval on the Settings screen: the one on the
+account is the one.
+
 ### Other tools
 
 The Tools menu also opens:
@@ -79,8 +91,11 @@ The Tools menu also opens:
 - **Signatures**, the text added to the end of messages you send.
 - **Tags**, the labels you can put on a message.
 - **Sync Contacts**, **Sync Calendar**, and **Sync Tasks**, to sync with
-  your provider immediately rather than waiting for the next automatic
-  sync.
+  your provider now. Corrected on 2026-09-18: this line said "rather than
+  waiting for the next automatic sync", and there is none; the three
+  modules sync when you ask, from here or from each module's own Sync, and
+  not on a schedule. Mail is the one thing that arrives on its own, as
+  [Getting your mail](#getting-your-mail) says.
 
 ### Offline Mode
 
@@ -111,6 +126,59 @@ Wixen Mail uses a classic three-pane layout:
 
 - **Keyboard:** Press `F6` to cycle through panes
 - **Mouse:** Click on the desired pane
+
+### Getting your mail
+
+Since the build of 2026-09-18, mail comes down whole and keeps coming, and you
+do not have to ask for either. Until that build a check brought down the
+newest 500 messages of each folder, the text of a message came down when you
+opened it, and new mail stopped arriving on its own the first time the
+connection to the server dropped. None of the new behaviour has run against a
+real mail account yet; the alpha testing page says what to watch for.
+
+**A check.** `F9` checks every enabled account, one after another, and says
+how many when there is more than one. The program also checks every account
+when it starts, and each account's inbox is watched through an open connection
+so the server can say when mail lands. When that watch ends for any reason but
+mail arriving it is started again after a wait, thirty seconds doubling to
+half an hour, and when your network comes back it is started again at once.
+Where a watch cannot cover, the account is checked on the interval its editor
+sets: a POP account, a server that does not offer watching, and the folders
+you keep up to date that are not the inbox. The status bar says which of
+these is happening: "Watching Inbox for new mail. Checking every 5 minutes.",
+"Waiting 2 minutes to watch Inbox again. Checking every 5 minutes.", or
+"Checking every 5 minutes." when nothing is watching, with the account named
+first when you have more than one.
+
+**Everything comes down.** After every check, every message of every folder
+you keep up to date that is not on this computer yet comes down on its own,
+five hundred at a time, the folder you are looking at first, then the inbox,
+then the rest in the order of the folder tree. Then the text of each message,
+fifty at a time, unless the Message Text box on the Permissions tab is off or
+the size you chose there has been reached. The download picks up where it was
+after a restart, because what it knows is what is already on this computer.
+A provider that stops answering is left alone for a growing time and asked
+again; the status bar says so.
+
+**Pause Downloading**, a check item on the Tools menu, holds it: the chunk in
+flight finishes, no new one starts, and the mail already here stays readable.
+Untick it and the download carries on. The pause lasts until you close the
+program. **Get Older Messages**, `Shift+F9`, puts the folder you are in at the
+front of the queue; it no longer fetches one page, because there is no page.
+
+**How much is said while that happens** is yours to choose, on the Feedback
+tab in Settings, at the end, under While fetching: Say what arrived, Say
+every step, or Errors only. Say what arrived is where a new installation
+begins. Each step of a check or a download, Connecting, Checking a folder, a
+chunk downloaded, is shown on the status bar under every answer and spoken
+only under Say every step. What arrived is said once when a check ends,
+folder by folder with its count, "Inbox, 3 new messages; Work, 1 new
+message", and never when nothing arrived; when a download of a whole account
+ends, one sentence says how many folders are whole and how many messages have
+their text here. An error is said whatever you chose, and so are the answers
+to a key, such as "Settings saved", even while a check is running. The sound
+for new mail plays when a check found mail and follows its own row on the
+same tab.
 
 ### Message Status
 

@@ -487,8 +487,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   applies from the next check.
   Known limitations: the text is not downloaded on its own yet. Today it arrives when you open a
   message or use Fetch Missing Message Text, and bringing every message's text down after every
-  check is the next plan. **Corrected on 2026-09-17:** it is, in the entry at the top of this
-  section, and Fetch Missing Message Text is gone with it. The stored mail is not encrypted, as
+  check is the next plan. **Corrected on 2026-09-17:** it is, in the first entry under Changed
+  above, "Everything comes down on its own, with its text", and Fetch Missing Message Text is
+  gone with it. The stored mail is not encrypted, as
   `docs/privacy.md` says, and with All of it chosen the cache grows with your mailbox; a size is
   one choice away on the same screen.
 - **The mail protocols and the CalDAV client went through a mutation run on
