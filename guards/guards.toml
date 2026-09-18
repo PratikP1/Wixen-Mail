@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 100 records have arrived since and have not been through it.
+# 103 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -25026,4 +25026,77 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 149 },
+]
+
+# ── A disabled account is never due a check (#37) ───────────────────────────
+#
+# The schedule asks over every account row and keeps the enabled ones, so an
+# account somebody turned off is not dialled every five minutes for as long
+# as the program runs. The break drops the filter on `enabled`, and the test
+# with a disabled account in the list reddens; the one that builds the
+# schedule's view from the row is green either way, because the field is
+# still carried, only no longer read.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a disabled account is never due a check"
+file = "src/application/checking_on_a_schedule.rs"
+before = """        .filter(|account| account.enabled)
+        .filter(|account| {"""
+after = """        .filter(|account| {"""
+red = [
+    "application::checking_on_a_schedule::tests::test_a_disabled_account_is_never_due",
+]
+tests_last_seen = [
+    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+]
+
+# ── A watch somebody stopped is not started again from the arm (#37) ────────
+#
+# "the watch was stopped" is the window replacing a watch or closing, and
+# whoever asked for the stop knows whether a fresh one is coming. The break
+# reads it as a lost connection and answers a wait, so every check for mail,
+# which ends by replacing the watch, would also schedule a second one behind
+# it: two watches per account, one of them nobody asked for. Two tests
+# redden, the one about the stop and the table of every reason.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a watch somebody stopped is not started again from the arm"
+file = "src/application/checking_on_a_schedule.rs"
+before = """            if said.starts_with(SOMEBODY_STOPPED_IT) || said.starts_with(NOBODY_WAS_LISTENING) =>"""
+after = """            if said.starts_with(NOBODY_WAS_LISTENING) =>"""
+red = [
+    "application::checking_on_a_schedule::tests::test_a_watch_somebody_stopped_is_not_tried_again",
+    "application::checking_on_a_schedule::tests::test_every_reason_the_watch_can_end_with_has_an_answer_that_is_not_a_guess",
+]
+tests_last_seen = [
+    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+]
+
+# ── A stored interval of nought is a minute, not every tick (#37) ───────────
+#
+# The editor clamps the interval to one minute at the least, and the row can
+# still hold nought: written by hand, or by a version that did not clamp.
+# The break reads the stored number as it is, so nought is "due at once,
+# always", which is a check against somebody else's server on every tick of
+# the timer. Two tests redden, the one about nought and the one holding both
+# ends of the clamp.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a stored interval of nought is a minute, not every tick"
+file = "src/application/checking_on_a_schedule.rs"
+before = """    let minutes = minutes.clamp(SHORTEST_INTERVAL_MINUTES, LONGEST_INTERVAL_MINUTES);
+    Duration::from_secs(60 * u64::from(minutes))"""
+after = """    Duration::from_secs(60 * u64::from(minutes))"""
+red = [
+    "application::checking_on_a_schedule::tests::test_a_stored_interval_of_nought_is_read_as_one_minute_and_not_every_tick",
+    "application::checking_on_a_schedule::tests::test_a_stored_interval_above_sixty_is_read_as_sixty",
+]
+tests_last_seen = [
+    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
 ]

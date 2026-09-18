@@ -89,8 +89,8 @@ impl From<&Account> for AccountToCheck {
 
 /// The interval as a length of time, clamped as the editor clamps it.
 pub fn the_interval_of(minutes: u32) -> Duration {
-    let _ = minutes;
-    Duration::from_secs(60 * 5)
+    let minutes = minutes.clamp(SHORTEST_INTERVAL_MINUTES, LONGEST_INTERVAL_MINUTES);
+    Duration::from_secs(60 * u64::from(minutes))
 }
 
 /// The ids of the enabled accounts whose interval has passed since they were
@@ -101,8 +101,17 @@ pub fn which_are_due(
     last_checked: &HashMap<String, Instant>,
     now: Instant,
 ) -> Vec<String> {
-    let _ = (accounts, last_checked, now);
-    Vec::new()
+    accounts
+        .iter()
+        .filter(|account| account.enabled)
+        .filter(|account| {
+            last_checked.get(&account.id).is_none_or(|last| {
+                now.saturating_duration_since(*last)
+                    >= the_interval_of(account.check_interval_minutes)
+            })
+        })
+        .map(|account| account.id.clone())
+        .collect()
 }
 
 /// Why a watch is not running any more.
@@ -141,11 +150,53 @@ pub enum WatchAgain {
     OnTheScheduleAlone(Until),
 }
 
+/// What `imap.rs` says when the server was reached and would not watch: a
+/// NO to IDLE, or a server without it.
+const THE_SERVER_WOULD_NOT_WATCH: &str = "the mail server would not start watching";
+
+/// What `imap.rs` says when the stop was asked for, by the window replacing
+/// the watch or closing.
+const SOMEBODY_STOPPED_IT: &str = "the watch was stopped";
+
+/// What `imap.rs` says when the window stopped reading events, which is the
+/// window having gone.
+const NOBODY_WAS_LISTENING: &str = "nobody was listening";
+
 /// Whether a watch that ended for `reason` is tried again, given how many
 /// times in a row it has now failed, this failure counted.
+///
+/// A connection that dropped is tried again after a wait however many times
+/// in a row, because the wait rule's cap is what bounds that. A server that
+/// was reached and refused to watch, and a server that could not be reached
+/// at all, are each given three tries, and then the schedule alone carries
+/// the account: for the first until the program starts again, since nothing
+/// a check finds out changes what a server offers; for the second until a
+/// check reaches the server or the network comes back, since the reason was
+/// the reach and not the server.
 pub fn whether_to_watch_again(reason: &WhyTheWatchEnded, failures_in_a_row: u32) -> WatchAgain {
-    let _ = (reason, failures_in_a_row);
-    WatchAgain::Never
+    let three_in_a_row = failures_in_a_row >= REFUSALS_BEFORE_THE_SCHEDULE_ALONE;
+    match reason {
+        WhyTheWatchEnded::Ended(said)
+            if said.starts_with(SOMEBODY_STOPPED_IT) || said.starts_with(NOBODY_WAS_LISTENING) =>
+        {
+            WatchAgain::Never
+        }
+        WhyTheWatchEnded::Ended(said) if said.starts_with(THE_SERVER_WOULD_NOT_WATCH) => {
+            if three_in_a_row {
+                WatchAgain::OnTheScheduleAlone(Until::TheProgramStartsAgain)
+            } else {
+                WatchAgain::AfterAWait
+            }
+        }
+        WhyTheWatchEnded::Ended(_) => WatchAgain::AfterAWait,
+        WhyTheWatchEnded::NeverStarted(_) => {
+            if three_in_a_row {
+                WatchAgain::OnTheScheduleAlone(Until::TheServerAnswersAgain)
+            } else {
+                WatchAgain::AfterAWait
+            }
+        }
+    }
 }
 
 /// What the watch on an account is doing.
@@ -180,14 +231,39 @@ pub struct WhatIsRunning<'a> {
 /// reading this did not choose the protocol and cannot do anything about
 /// it.
 pub fn what_the_status_line_says(state: &WhatIsRunning<'_>) -> String {
-    let _ = state;
-    String::new()
+    use super::trying_again::said_as_a_person_says_it;
+
+    let whose = state
+        .account
+        .map_or(String::new(), |name| format!("{name}: "));
+    let folder = state.folder;
+    let what_is_happening = match state.watch {
+        TheWatch::Watching => format!("Watching {folder} for new mail. "),
+        TheWatch::Waiting(wait) => format!(
+            "Waiting {} to watch {folder} again. ",
+            said_as_a_person_says_it(wait)
+        ),
+        TheWatch::NotWatching => String::new(),
+    };
+    // "Every minute" and not "every 1 minute": a count of one is not said
+    // as a count.
+    let how_often = if state.checking_every == Duration::from_secs(60) {
+        "minute".to_string()
+    } else {
+        said_as_a_person_says_it(state.checking_every)
+    };
+    format!("{whose}{what_is_happening}Checking every {how_often}.")
 }
 
 /// The first line a check of every enabled account says.
+///
+/// A person with one account is not told how many accounts they have.
 pub fn what_a_check_of_them_all_says(how_many: usize) -> String {
-    let _ = how_many;
-    "Checking for new mail...".to_string()
+    if how_many > 1 {
+        format!("Checking {how_many} accounts for new mail...")
+    } else {
+        "Checking for new mail...".to_string()
+    }
 }
 
 #[cfg(test)]

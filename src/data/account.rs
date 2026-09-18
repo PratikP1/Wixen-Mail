@@ -322,7 +322,14 @@ impl Account {
         format!("{} <{}>", self.name, self.email)
     }
 
-    /// Update last sync timestamp
+    /// Write down that this account has just been checked.
+    ///
+    /// Called by the mail check in `wx_app::spawn_mail_sync` at the end of a
+    /// pass that worked, on the copy the worker holds, and the row's column
+    /// is written through `MessageCache::update_account_last_sync` in the
+    /// same place, so the moment survives a restart. Until 2026-09-17 this
+    /// was called by its own test and nothing else, and `last_sync` was a
+    /// column every account row carried empty.
     pub fn mark_synced(&mut self) {
         self.last_sync = Some(SystemTime::now());
     }
