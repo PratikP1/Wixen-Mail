@@ -3634,6 +3634,12 @@ the caveat at the top of this file binds every `[D]` line.
   counts as read"; the changelog entry naming #25. The `[S]` line is untouched and is
   ledger 539; nobody has walked an inbox by ear against this, and whether "previewed" means
   reading aloud from the list is asked of the tester in the close comment.
+  **Reopened 2026-09-18 on the tester's answer (#25's last comment): reading the snippet is
+  not reading.** At `5c82f680` the mail read-aloud closure writes `reading_began` before
+  `SpaceCycle` has decided which form the press reads (`wx_app.rs:3475`), so the first Space,
+  the short form, started the clock. The second `[D]` line below is amended for 11-05.1,
+  which moves the record to where the depth is known; the tick stands for the rest and
+  11-05.1's summary dates the amendment when it merges.
   - Evidence: `mark_the_open_one_read` (`wx_app.rs:10035`, polled from the main timer at
     `:5576`) starts a clock when the selected message is unread and marks it read when
     `mark_read_after`'s delay passes with the row still selected (`:10046-10098`); the
@@ -3654,9 +3660,16 @@ the caveat at the top of this file binds every `[D]` line.
     selection handler records nothing; the timer's mark asks the rule and writes what it
     wrote before; a reading target holds the three sites with companions; the choice on the
     Reading tab gains a sentence saying what it counts from; the guide says when a message
-    counts as read.
+    counts as read. **Amended 2026-09-18 for 11-05.1 (#25 reopened):** the record is written
+    only when the press reads the whole item, decided by `read_aloud::what_a_press_starts`
+    over the depth `SpaceCycle` chose, inside a closure `wire_read_aloud` calls after the
+    depth is known; the first Space, the short form, records nothing; opening is unchanged;
+    the reading target gains the case that a first Space marks nothing and a second does,
+    and its read-aloud reading is split to ask where the write is; the sentence under the
+    choice and the guide say reading the whole message or opening it.
   - [S] Whether the unread count survives a walk through his inbox by ear, and whether Space
-    then the delay moves it, are his.
+    then the delay moves it, are his; from 11-05.1, whether the first Space leaves the count
+    alone and the second moves it.
 
 - [ ] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
   menu and the toolbar, M toggles it in the message list and says read or unread, and a
@@ -4183,7 +4196,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
-| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; whether the unread count survives a walk through his inbox by ear, and whether Space then the delay moves it, are the tester's ear, ledger 539 |
+| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
 | LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
 | LIST-05 | Phase 11 | Pending, 11-07 |
 | LIST-06 | Phase 11 | Pending, 11-08 |
