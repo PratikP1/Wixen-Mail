@@ -23453,27 +23453,31 @@ tests_last_seen = [
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
-# The settings screen's language row, put back the way it was: a stored tag
-# that matches no row selects row 0. On a machine set to English (United
-# States) row 0 in Windows' order is English (Caribbean), and a profile from
-# before 2026-09-03 stores a bare "en" that matched no row, which is what the
-# tester saw (#21). The break keeps the resolver's answer and loses only the
-# fallback, so the "en" case stays right on this machine and the tag nothing
-# offers is what goes red; on a runner with no spell checking the built-in
-# list has "en" at row 0 and only the same case can redden.
+# The settings screen's language row, put back the way it was before
+# 2026-09-16: the screen selects row 0 whatever is stored, which on a machine
+# set to English (United States) is English (Caribbean) in Windows' order,
+# and what the tester saw for a profile from before 2026-09-03 storing a bare
+# "en" (#21). The break drops the rule's answer and takes row 0, so all three
+# of the target's cases go red inside its one test: the bare "en", the chosen
+# en-AU, and the tag nothing offers; on a runner with no spell checking the
+# built-in list has "en" at row 0 and the other two still redden. The rule
+# itself, `presentation::which_language_row`, has a record of its own on the
+# library; this one holds the screen to asking it.
 #
 # `suite` names the target that builds the screen, which couples the target
 # to this file for `check.sh --suites-for`, and `wx_settings.rs` holds no
 # unit tests of its own.
 #
-# Measured 2026-09-16 through `--remeasure` on the branch the record was
-# written on, `cargo test --test the_language_the_screen_shows_is_the_one_used`.
+# Rewritten 2026-09-18 by 11-01, whose call replaced the line the old break
+# sat on; measured that day through `--remeasure` on the branch the record
+# was rewritten on, `cargo test --test the_language_the_screen_shows_is_the_one_used`.
 [[guard]]
 name = "the settings screen shows a stored language nothing offers as itself, not as row 0"
 file = "src/presentation/wx_settings.rs"
 suite = "the_language_the_screen_shows_is_the_one_used"
-before = """        .or_else(|| row_of(stored));"""
-after = """        .or(Some(0));"""
+before = """    match which_row_shows(stored, system_language().as_deref(), &rows) {"""
+after = """    let _ = which_row_shows(stored, system_language().as_deref(), &rows);
+    match RowToShow::Existing(0) {"""
 red = [
     "test_the_language_the_screen_shows_is_the_one_the_checker_uses",
 ]

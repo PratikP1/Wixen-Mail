@@ -107,6 +107,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A spelling language you chose for a region this computer has no dictionary for was
+  rewritten to this computer's own region the first time Settings was saved.** Found by CI on
+  2026-09-18 in `1.0.0-alpha.1+149.g744d05ef`, not by anybody: the machine the testing happens on
+  offers the language, and GitHub's test machine does not. A profile set to English (Australia)
+  on a computer that offers only English (United States) was shown in Settings as English
+  (United States), and pressing OK wrote that back, so the choice was gone. The cause was the fix
+  for #21 in 09-02, which put one resolver in front of both the checker and the Settings list: the
+  checker may settle for the nearest dictionary it has, and that is right for the checker, but
+  the list showed the checker's answer and OK writes back what the list shows. Now a language you
+  chose yourself is shown exactly as you chose it, whether or not this computer can check it, as
+  its own row when this computer lists it and as a row added at the end when it does not, and OK
+  keeps it. Checking still happens in the nearest dictionary this computer has, as before. A bare
+  language with no region, which is what a profile from before 2026-09-03 stores, still resolves
+  to this computer's own region, which is #21's fix and is unchanged.
+  Known limitations: whether the list then says "(no dictionary installed)" after the language
+  you chose has been read from the code and not heard.
+
 - **Mail keeps arriving on its own for as long as the program runs.** Reported on 2026-09-15
   from build `0.125.1+g3e633252` (#37): "After running a few hours, automatic mail fetching is
   switched off. The user has to manually fetch mail." The cause was a decision: the watch on your

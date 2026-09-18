@@ -24,9 +24,8 @@ use crate::presentation::accessibility::sound_scheme::SoundScheme;
 use crate::presentation::accessibility::sound_scheme_import;
 use crate::presentation::theme;
 use crate::presentation::ui_types::CalendarView;
-use crate::service::spellcheck::{
-    LanguageChoice, available_languages, language_to_use, system_language,
-};
+use crate::presentation::which_language_row::{RowToShow, which_row_shows};
+use crate::service::spellcheck::{LanguageChoice, available_languages, system_language};
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -868,34 +867,32 @@ struct GeneralTabControls {
 /// The rows the spelling language picker offers, and which of them is
 /// selected for the stored tag.
 ///
-/// The rows are what this machine offers, in its own order. The selection is
-/// [`language_to_use`]'s answer for the stored tag, the same answer the
-/// checker acts on, so the screen shows the language that will really be
-/// used and never row 0 for a tag it could not match: row 0 in Windows'
-/// order is English (Caribbean) on a machine set to English (United States),
-/// and a profile from before 2026-09-03 stores a bare "en" that matched no
-/// row, which is #21. A stored tag nothing can check is shown as itself,
-/// marked as the list marks any language with no dictionary, rather than as
-/// some other language. When it is not even a row, it becomes one, at the
-/// end, so what is stored is visible and pressing OK keeps it.
+/// The rows are what this machine offers, in its own order. Which of them is
+/// selected is [`which_row_shows`]'s answer, whose module says why the rule
+/// has two halves. A tag chosen for a region is kept exactly as chosen,
+/// whether or not this machine can check it, because what is shown is what
+/// OK writes back: showing the checker's nearest dictionary instead rewrote
+/// a stored en-AU to en-US on a machine that offers only en-US, which is
+/// what CI's runner showed on 2026-09-18 and the machine the testing happens
+/// on could not. A bare tag, which a profile from before 2026-09-03 stores,
+/// is resolved as the checker resolves it, to this machine's own region, and
+/// never to row 0 for a tag it could not match: row 0 in Windows' order is
+/// English (Caribbean) on a machine set to English (United States), which is
+/// #21. A stored tag nothing can check is shown as itself, marked as the
+/// list marks any language with no dictionary, rather than as some other
+/// language. When it is not even a row, it becomes one, at the end, so what
+/// is stored is visible and pressing OK keeps it.
 ///
 /// `read_settings` maps the selection back through the same rows, which is
 /// why this is one function rather than a list built in two places.
 fn language_rows_and_selection(stored: &str) -> (Vec<LanguageChoice>, usize) {
     let mut rows = available_languages();
-    let row_of = |tag: &str| {
-        rows.iter()
-            .position(|row| row.tag.eq_ignore_ascii_case(tag))
-    };
-    let selected = language_to_use(stored, system_language().as_deref(), &rows)
-        .and_then(|resolved| row_of(&resolved))
-        .or_else(|| row_of(stored));
-    match selected {
-        Some(selected) => (rows, selected),
-        None => {
+    match which_row_shows(stored, system_language().as_deref(), &rows) {
+        RowToShow::Existing(selected) => (rows, selected),
+        RowToShow::Added(tag) => {
             rows.push(LanguageChoice {
-                tag: stored.to_string(),
-                name: stored.to_string(),
+                name: tag.clone(),
+                tag,
                 available: false,
             });
             let last = rows.len() - 1;
