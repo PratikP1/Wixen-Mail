@@ -112,14 +112,18 @@ pub fn offered_index(stored: &str) -> usize {
 impl Default for MarkRead {
     /// Two seconds, not instantly.
     ///
-    /// Counted from the moment a message is read aloud or opened, never from
-    /// the moment it is selected (#25, 2026-09-18). Until then the two seconds
-    /// were counted from selection, on the reasoning that arrowing past a
-    /// message takes less than that; hearing a row's sender, subject and date
-    /// takes longer, so a walk through a folder by ear marked every message
-    /// stopped on. Counted from reading, two seconds is long enough that a
-    /// Space pressed by mistake and left at once does not mark the message,
-    /// and short enough that hearing it through does.
+    /// Counted from the moment the whole message is read aloud or opened,
+    /// never from the moment it is selected (#25, 2026-09-18). Until then the
+    /// two seconds were counted from selection, on the reasoning that
+    /// arrowing past a message takes less than that; hearing a row's sender,
+    /// subject and date takes longer, so a walk through a folder by ear
+    /// marked every message stopped on. And not from the first Space either:
+    /// that press reads subject, sender and snippet, and from the build of
+    /// 2026-09-18 until 11-05.1 the same day it started the clock, until #25
+    /// was reopened on the tester's word that reading the snippet is not
+    /// reading. Counted from the whole reading, two seconds is long enough
+    /// that a Space pressed by mistake and left at once does not mark the
+    /// message, and short enough that hearing it through does.
     fn default() -> Self {
         MarkRead::After(2)
     }
@@ -131,19 +135,29 @@ impl Default for MarkRead {
 /// Seven answers cannot say on their own when the counting starts, and until
 /// 2026-09-18 it started when a row was selected (#25). Said where somebody
 /// meets the choice, on both channels, so a person who has set a wait knows
-/// that moving through the list is not what the wait is measured from.
-pub const WHAT_MARK_READ_COUNTS_FROM: &str = "Counted from when you read a message aloud with \
-     Space or open it, never from moving onto it.";
+/// that moving through the list is not what the wait is measured from, and
+/// that the first Space, which reads the row a little more fully, is not
+/// either: that press started the clock from the build of 2026-09-18 until
+/// 11-05.1, when #25 was reopened on the tester's word.
+pub const WHAT_MARK_READ_COUNTS_FROM: &str = "Counted from when you read the whole message aloud, \
+     with Space twice or Shift+Space, or open it; never from the first Space or from moving \
+     onto it.";
 
 /// Whether the message somebody began reading is to be marked read now.
 ///
-/// The clock starts when a message is read aloud from the list or opened in
-/// its own window, and never when it is selected (#25, decided 2026-09-18):
-/// selecting a row is how somebody moves through a folder, and for somebody
-/// working by ear hearing the row takes longer than any short wait, so a
-/// clock started by selection marked every message stopped on. `began` is
-/// which message was read and when; `selected_unread` is the message under
-/// the cursor if it is still unread. The answer is the message to mark, or
+/// The clock starts when the whole message is read aloud from the list or
+/// opened in its own window, and never when it is selected (#25, decided
+/// 2026-09-18): selecting a row is how somebody moves through a folder, and
+/// for somebody working by ear hearing the row takes longer than any short
+/// wait, so a clock started by selection marked every message stopped on.
+/// Nor when the first Space reads the short form, subject, sender and
+/// snippet: from the build of 2026-09-18 until 11-05.1 that press started
+/// the clock too, and #25 was reopened on the tester's word that reading the
+/// snippet is not reading; which press counts is
+/// `presentation::read_aloud::what_a_press_starts`, asked where the depth is
+/// known, and this rule only sees what was written. `began` is which
+/// message was read and when; `selected_unread` is the message under the
+/// cursor if it is still unread. The answer is the message to mark, or
 /// nothing.
 ///
 /// Nothing began, nothing is marked, whatever is selected and however long

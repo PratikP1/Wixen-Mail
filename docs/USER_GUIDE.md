@@ -193,15 +193,17 @@ of the item, once for a short summary and again for everything.
 
 Moving through the list never marks anything. You can arrow through a folder,
 let your screen reader finish every row, and the unread count stays where it
-was. A message counts as read once you have read it: press `Space` or
-`Shift+Space` to hear it from the list, or `Enter` to open it in its own
-window. Then the delay under Settings, then Reading, then Mark as read after
-runs, two seconds unless you have changed it, and the message is marked read
-if it is still the one you are on. Move off it before the delay runs and it
-stays unread. Choose Only when I say so and nothing is ever marked on its own;
-marking by hand still works as it did. Until 2026-09-18 the delay was counted
-from the moment a row was selected, so listening to a row was enough to mark
-it.
+was. A message counts as read once you have read the whole of it: press
+`Space` twice, or `Shift+Space`, to hear the message itself from the list, or
+`Enter` to open it in its own window. The first `Space`, which reads the
+subject, the sender and the snippet, does not count. Then the delay under
+Settings, then Reading, then Mark as read after runs, two seconds unless you
+have changed it, and the message is marked read if it is still the one you are
+on. Move off it before the delay runs and it stays unread. Choose Only when I
+say so and nothing is ever marked on its own; marking by hand still works as
+it did. Until 2026-09-18 the delay was counted from the moment a row was
+selected, so listening to a row was enough to mark it, and from the build of
+2026-09-18 until this one the first `Space` counted too.
 
 ### Choosing columns, and what is remembered
 
