@@ -119,6 +119,19 @@ impl Default for MarkRead {
     }
 }
 
+/// Whether the message somebody began reading is to be marked read now.
+///
+/// A stub until the rule is written: it answers nothing, whatever it is
+/// asked.
+pub fn whether_to_mark_read(
+    _began: Option<(i64, std::time::Instant)>,
+    _selected_unread: Option<i64>,
+    _now: std::time::Instant,
+    _setting: MarkRead,
+) -> Option<i64> {
+    None
+}
+
 /// Whether the Cc and Bcc lines are in the compose window from the start.
 ///
 /// Most messages go to one person, and two empty fields between the recipient
@@ -415,6 +428,123 @@ mod tests {
         assert!(night.holds(23));
         assert!(!night.holds(9));
         assert_eq!(night.note_for(9), "before the working day");
+    }
+}
+
+#[cfg(test)]
+mod a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected {
+    //! #25, 2026-09-15, the tester under NVDA: "Automatic read/unread status
+    //! should not be linked to the list traversal for mail. It should be
+    //! either when a message is previewed or when a message is opened."
+    //! Hearing a row's sender, subject and date takes longer than two
+    //! seconds, so a clock started by selection marked every message stopped
+    //! on. The clock starts when a message is read aloud or opened now, and
+    //! these cases hold the rule that turns that clock into a mark.
+
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    const THE_MESSAGE: i64 = 41;
+    const ANOTHER: i64 = 42;
+
+    #[test]
+    fn test_nothing_began_means_nothing_is_marked_however_long_a_row_is_selected() {
+        // Selecting a row starts nothing, so a row selected for an hour with
+        // no reading begun is still unread. This is the whole of #25.
+        let long_ago = Instant::now();
+        let an_hour_on = long_ago + Duration::from_secs(3600);
+        for setting in MarkRead::ALL {
+            assert_eq!(
+                whether_to_mark_read(None, Some(THE_MESSAGE), an_hour_on, setting),
+                None,
+                "{setting:?} marked a message nobody read"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_that_began_reading_is_not_marked_once_another_is_selected() {
+        // The clock belongs to the message that was read; moving on to
+        // another row before it runs out leaves the first unread and starts
+        // nothing for the second.
+        let began = Instant::now();
+        let later = began + Duration::from_secs(60);
+        assert_eq!(
+            whether_to_mark_read(
+                Some((THE_MESSAGE, began)),
+                Some(ANOTHER),
+                later,
+                MarkRead::Immediately
+            ),
+            None
+        );
+        assert_eq!(
+            whether_to_mark_read(Some((THE_MESSAGE, began)), None, later, MarkRead::After(2)),
+            None,
+            "a message that is no longer selected, or is read already, is not marked"
+        );
+    }
+
+    #[test]
+    fn test_immediately_marks_the_message_the_moment_reading_began() {
+        let began = Instant::now();
+        assert_eq!(
+            whether_to_mark_read(
+                Some((THE_MESSAGE, began)),
+                Some(THE_MESSAGE),
+                began,
+                MarkRead::Immediately
+            ),
+            Some(THE_MESSAGE)
+        );
+    }
+
+    #[test]
+    fn test_a_wait_marks_nothing_before_it_has_run() {
+        let began = Instant::now();
+        let not_yet = began + Duration::from_millis(1999);
+        assert_eq!(
+            whether_to_mark_read(
+                Some((THE_MESSAGE, began)),
+                Some(THE_MESSAGE),
+                not_yet,
+                MarkRead::After(2)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_a_wait_marks_the_message_once_it_has_run() {
+        let began = Instant::now();
+        let just = began + Duration::from_secs(2);
+        let well_past = began + Duration::from_secs(90);
+        for now in [just, well_past] {
+            assert_eq!(
+                whether_to_mark_read(
+                    Some((THE_MESSAGE, began)),
+                    Some(THE_MESSAGE),
+                    now,
+                    MarkRead::After(2)
+                ),
+                Some(THE_MESSAGE)
+            );
+        }
+    }
+
+    #[test]
+    fn test_only_when_i_say_so_marks_nothing_however_long_ago_reading_began() {
+        let began = Instant::now();
+        let a_day_on = began + Duration::from_secs(86_400);
+        assert_eq!(
+            whether_to_mark_read(
+                Some((THE_MESSAGE, began)),
+                Some(THE_MESSAGE),
+                a_day_on,
+                MarkRead::Never
+            ),
+            None
+        );
     }
 }
 
