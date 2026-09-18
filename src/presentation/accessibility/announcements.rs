@@ -172,6 +172,13 @@ impl AnnouncementQueue {
     /// the capacity bound.
     pub fn push(&self, announcement: Announcement) -> Result<()> {
         if announcement.kind == Kind::Content && self.is_muted() {
+            // Written so a report of silence can be checked against whether
+            // anything was held back (#71): by its length only, because this
+            // is message text and the log must never carry it.
+            tracing::info!(
+                "Held back {} characters of message text: content is muted",
+                announcement.text.len()
+            );
             return Ok(());
         }
 
@@ -195,6 +202,13 @@ impl AnnouncementQueue {
             .iter()
             .any(|p| p.announcement.text == announcement.text)
         {
+            // At debug, because a repeat is ordinary; the topic and the
+            // length, never the words, which may be message text.
+            tracing::debug!(
+                topic = ?announcement.topic,
+                "Dropped a repeat of a line already waiting, {} characters",
+                announcement.text.len()
+            );
             return Ok(());
         }
 
@@ -213,11 +227,24 @@ impl AnnouncementQueue {
                 })
                 .map(|(index, p)| (index, p.announcement.priority));
 
+            // A line dropped to make room is a line the person is owed, so it
+            // is written (#71): which one by its topic and priority, and the
+            // words never.
             match worst {
                 Some((index, worst_priority)) if worst_priority < announcement.priority => {
-                    state.pending.remove(index);
+                    let dropped = state.pending.remove(index);
+                    tracing::info!(
+                        topic = ?dropped.announcement.topic,
+                        "Dropped a waiting {:?} line to make room: {CAPACITY} were waiting",
+                        worst_priority
+                    );
                 }
                 Some(_) => {
+                    tracing::info!(
+                        topic = ?announcement.topic,
+                        "Dropped a new {:?} line, nothing waiting is less important: {CAPACITY} were waiting",
+                        announcement.priority
+                    );
                     state.skipped += 1;
                     return Ok(());
                 }

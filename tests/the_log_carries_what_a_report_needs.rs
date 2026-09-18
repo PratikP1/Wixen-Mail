@@ -279,11 +279,9 @@ fn every_source_file(dir: &Path, into: &mut Vec<PathBuf>) {
 fn each_folder_of_a_check_is_written_at_info(app: &str) -> Result<(), String> {
     let body = body_of(app, "fn spawn_mail_sync(")?;
     let arm = between(&body, "Ok(result) => {", "Err(e) => problems.push(")?;
-    let bound = between(
-        arm,
-        "let ",
-        " = crate::application::mail_sync::what_the_folder_sync_did(",
-    )?;
+    // The log line carries the check's own sentence, asked for by name, so
+    // the log and the step say the same words.
+    let the_sentence = "what_the_folder_sync_did(&result)";
     let call = the_first_log_call(arm).ok_or(
         "the check's folder arm writes nothing to the log, so a report cannot say what each \
          folder's check found",
@@ -296,7 +294,7 @@ fn each_folder_of_a_check_is_written_at_info(app: &str) -> Result<(), String> {
         ));
     }
     call.names(
-        &["account.name", "folder.name", bound],
+        &["account.name", "folder.name", the_sentence],
         "the check's folder line",
     )
 }
@@ -457,8 +455,8 @@ fn what_is_held_back_from_speech_is_written(queue: &str) -> Result<(), String> {
             call.level
         ));
     }
-    call.names(&[".len()"], "content held back")?;
     never_the_words(&call, "content held back")?;
+    call.names(&[".len()"], "content held back")?;
 
     let repeat = between(
         queue,

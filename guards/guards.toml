@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 118 records have arrived since and have not been through it.
+# 120 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25557,4 +25557,62 @@ red = [
 tests_last_seen = [
     { file = "src/common/logging.rs", tests = 10 },
     { file = "src/service/outward.rs", tests = 38 },
+]
+
+# ── Each folder of a check is written to the log ────────────────────────────
+#
+# #71: a report written from the log has to say what each check found per
+# folder, and until 11-04 the check wrote nothing per folder at any level.
+# The break drops the line, the tree as it stood; the reading in the target
+# goes red with "writes nothing", and so does its companion, which asserts
+# the line is there before planting its absence, so it cannot pass by
+# planting nothing. Both are named, as the runner answered.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "each folder of a check is written to the log, not left to the status bar alone"
+file = "src/presentation/wx_app.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = """                        tracing::info!(
+                            "Checked {} in {}: {}",
+                            folder.name,
+                            account.name,
+                            crate::application::mail_sync::what_the_folder_sync_did(&result)
+                        );"""
+after = """                        // The per-folder line, dropped by a guard's break."""
+red = [
+    "test_each_folder_of_a_check_is_written_at_info",
+    "test_the_reading_complains_when_the_folder_line_is_missing_or_at_debug",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+]
+
+# ── Content held back by mute is written to the log by its length ───────────
+#
+# #71: a tester who reports silence needs the log to say whether anything was
+# held back, and until 11-04 the queue dropped muted content without a word.
+# The break drops the line; the reading goes red with "written nowhere", and
+# its companion goes red on its anchor, as above.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "content held back by mute is written to the log by its length, not dropped in silence"
+file = "src/presentation/accessibility/announcements.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = """            tracing::info!(
+                "Held back {} characters of message text: content is muted",
+                announcement.text.len()
+            );"""
+after = """            // The held-back line, dropped by a guard's break."""
+red = [
+    "test_what_is_held_back_from_speech_is_written_and_never_the_words",
+    "test_the_reading_complains_when_the_muted_line_is_missing_or_writes_the_words",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
 ]
