@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 113 records have arrived since and have not been through it.
+# 114 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -14438,7 +14438,7 @@ red = [
     "test_no_comment_says_a_test_cannot_build_a_window",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_folder_choice.rs", tests = 8 },
+    { file = "src/presentation/wx_folder_choice.rs", tests = 19 },
     { file = "tests/house_style.rs", tests = 74 },
 ]
 
@@ -25445,4 +25445,32 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/which_language_row.rs", tests = 6 },
+]
+
+# ── Folders to Keep Up to Date nests its rows the way the folder tree does ──
+#
+# The tester's first point on #70, 2026-09-17: the list was flat where the
+# folder tree in the main window is nested. Since 11-03 the dialog is a tree
+# and `nesting` places each row under the row whose path its stored parent
+# names, in the order the tree walks its items. The break stops every row
+# from finding its parent, so every row sits at the top in the stored order,
+# which is the flat list the tester reported. Two tests go red, the two
+# that ask for a child under its parent; the three that ask for the stored
+# order of siblings, an unlisted parent at the top and a loop of parents at
+# the top pass on a flat list too, because a flat list is what each of them
+# expects.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a folder in the chooser sits under its parent, not at the top of a flat list"
+file = "src/presentation/wx_folder_choice.rs"
+before = """                .and_then(|parent| rows.iter().position(|it| it.path == parent))"""
+after = """                .and_then(|_parent| None)"""
+red = [
+    "presentation::wx_folder_choice::tests::test_a_child_comes_after_its_parent_one_deeper_and_names_it",
+    "presentation::wx_folder_choice::tests::test_a_grandchild_is_two_deep_and_follows_its_parent_before_the_next_top_row",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_folder_choice.rs", tests = 19 },
 ]

@@ -113,11 +113,46 @@ pub fn row_label(folder: &FolderRow) -> String {
 ///
 /// A row whose parent is not among the rows sits at the top. A folder must
 /// never vanish from this dialog because the folder above it was not listed,
-/// since a folder nobody can see is a folder nobody can untick.
+/// since a folder nobody can see is a folder nobody can untick. Rows whose
+/// parents form a loop, which a stored `parent_id` cannot produce but a
+/// dialog must not hang on, sit at the top for the same reason.
 pub fn nesting(rows: &[FolderRow]) -> Vec<(usize, usize, Option<usize>)> {
-    // Red until 11-03's task 2: every row at the top, which is the flat list
-    // the tester reported.
-    (0..rows.len()).map(|index| (index, 0, None)).collect()
+    let parent_of: Vec<Option<usize>> = rows
+        .iter()
+        .map(|row| {
+            row.parent
+                .as_deref()
+                .and_then(|parent| rows.iter().position(|it| it.path == parent))
+        })
+        .collect();
+    let children_of = |index: usize| {
+        let parent_of = &parent_of;
+        (0..rows.len())
+            .rev()
+            .filter(move |&child| parent_of[child] == Some(index))
+    };
+
+    let mut placed = Vec::with_capacity(rows.len());
+    let mut seen = vec![false; rows.len()];
+    let mut to_place: Vec<(usize, usize, Option<usize>)> = (0..rows.len())
+        .rev()
+        .filter(|&index| parent_of[index].is_none())
+        .map(|index| (index, 0, None))
+        .collect();
+    while let Some((index, depth, parent)) = to_place.pop() {
+        if seen[index] {
+            continue;
+        }
+        seen[index] = true;
+        placed.push((index, depth, parent));
+        to_place.extend(children_of(index).map(|child| (child, depth + 1, Some(index))));
+    }
+    placed.extend(
+        (0..rows.len())
+            .filter(|&index| !seen[index])
+            .map(|index| (index, 0, None)),
+    );
+    placed
 }
 
 /// Whether an account is Gmail, by either fact the account row carries: the
@@ -125,10 +160,10 @@ pub fn nesting(rows: &[FolderRow]) -> Vec<(usize, usize, Option<usize>)> {
 ///
 /// Both, because an account added by hand to `imap.gmail.com` has no
 /// provider, and one made through the provider list has the provider whatever
-/// its server spelling.
-pub fn is_a_gmail_account(_provider: Option<&str>, _imap_server: &str) -> bool {
-    // Red until 11-03's task 2.
-    false
+/// its server spelling. The host is compared ignoring case because a host
+/// name is one.
+pub fn is_a_gmail_account(provider: Option<&str>, imap_server: &str) -> bool {
+    provider == Some("Gmail") || imap_server.eq_ignore_ascii_case("imap.gmail.com")
 }
 
 /// The one sentence the dialog adds when Gmail did not list All Mail.
@@ -139,9 +174,12 @@ pub fn is_a_gmail_account(_provider: Option<&str>, _imap_server: &str) -> bool {
 /// when its Show in IMAP box is off, and a hidden label is absent from the
 /// list this program reads folders from, so the dialog cannot show a row the
 /// server never sent and says so instead.
-pub fn the_all_mail_sentence(_is_gmail: bool, _any_holds_all_mail: bool) -> Option<String> {
-    // Red until 11-03's task 2.
-    None
+pub fn the_all_mail_sentence(is_gmail: bool, any_holds_all_mail: bool) -> Option<String> {
+    (is_gmail && !any_holds_all_mail).then(|| {
+        "Gmail did not list All Mail, so it cannot be kept up to date from here. Gmail's own \
+         settings, Labels, Show in IMAP, decide which labels it lists."
+            .to_string()
+    })
 }
 
 /// Ask which folders to keep up to date.
@@ -349,6 +387,21 @@ mod tests {
         let nested = nesting(&rows);
 
         assert_eq!(nested, vec![(0, 0, None), (1, 0, None)]);
+    }
+
+    #[test]
+    fn test_folders_whose_parents_form_a_loop_still_appear_rather_than_hanging_the_dialog() {
+        // A stored parent_id cannot loop, and a dialog must not hang if one
+        // ever does; the two rows sit at the top and nothing is lost.
+        let rows = [
+            folder("INBOX"),
+            folder_under("A", "B"),
+            folder_under("B", "A"),
+        ];
+
+        let nested = nesting(&rows);
+
+        assert_eq!(nested, vec![(0, 0, None), (1, 0, None), (2, 0, None)]);
     }
 
     #[test]
