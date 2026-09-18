@@ -1718,67 +1718,105 @@ impl WxMailApp {
             let space_cycle = Rc::new(RefCell::new(read_aloud::SpaceCycle::new()));
 
             // The same two keys in every module. One key learned once, not six
-            // that each behave a little differently.
-            wire_read_aloud(&pim_refs.contact_list, &a11y, &space_cycle, "contacts", {
-                let state = state.clone();
-                move |index| {
-                    let s = lock_state(&state);
-                    let item = s.contacts.get(index)?;
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
-                }
-            });
-            wire_read_aloud(&pim_refs.cal_event_list, &a11y, &space_cycle, "calendar", {
-                let state = state.clone();
-                move |index| {
-                    let s = lock_state(&state);
-                    let item = s.events.get(index)?;
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
-                }
-            });
-            wire_read_aloud(&pim_refs.reminder_list, &a11y, &space_cycle, "reminders", {
-                let state = state.clone();
-                move |index| {
-                    let s = lock_state(&state);
-                    let item = s.reminders.get(index)?;
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
-                }
-            });
-            wire_read_aloud(&pim_refs.task_list, &a11y, &space_cycle, "tasks", {
-                let state = state.clone();
-                move |index| {
-                    let s = lock_state(&state);
-                    let item = s.tasks.get(index)?;
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
-                }
-            });
-            wire_read_aloud(&pim_refs.note_list, &a11y, &space_cycle, "notes", {
-                let state = state.clone();
-                move |index| {
-                    let s = lock_state(&state);
-                    let item = s.notes.get(index)?;
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((item.read_id(), item.read_short(out), item.read_full(out)))
-                }
-            });
+            // that each behave a little differently. Only mail has a clock
+            // towards marking an item read, so the whole reading has nothing
+            // to do in these five; the mail wiring below passes the closure
+            // that writes the moment.
+            wire_read_aloud(
+                &pim_refs.contact_list,
+                &a11y,
+                &space_cycle,
+                "contacts",
+                {
+                    let state = state.clone();
+                    move |index| {
+                        let s = lock_state(&state);
+                        let item = s.contacts.get(index)?;
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((item.read_id(), item.read_short(out), item.read_full(out)))
+                    }
+                },
+                |_| {},
+            );
+            wire_read_aloud(
+                &pim_refs.cal_event_list,
+                &a11y,
+                &space_cycle,
+                "calendar",
+                {
+                    let state = state.clone();
+                    move |index| {
+                        let s = lock_state(&state);
+                        let item = s.events.get(index)?;
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((item.read_id(), item.read_short(out), item.read_full(out)))
+                    }
+                },
+                |_| {},
+            );
+            wire_read_aloud(
+                &pim_refs.reminder_list,
+                &a11y,
+                &space_cycle,
+                "reminders",
+                {
+                    let state = state.clone();
+                    move |index| {
+                        let s = lock_state(&state);
+                        let item = s.reminders.get(index)?;
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((item.read_id(), item.read_short(out), item.read_full(out)))
+                    }
+                },
+                |_| {},
+            );
+            wire_read_aloud(
+                &pim_refs.task_list,
+                &a11y,
+                &space_cycle,
+                "tasks",
+                {
+                    let state = state.clone();
+                    move |index| {
+                        let s = lock_state(&state);
+                        let item = s.tasks.get(index)?;
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((item.read_id(), item.read_short(out), item.read_full(out)))
+                    }
+                },
+                |_| {},
+            );
+            wire_read_aloud(
+                &pim_refs.note_list,
+                &a11y,
+                &space_cycle,
+                "notes",
+                {
+                    let state = state.clone();
+                    move |index| {
+                        let s = lock_state(&state);
+                        let item = s.notes.get(index)?;
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((item.read_id(), item.read_short(out), item.read_full(out)))
+                    }
+                },
+                |_| {},
+            );
 
             // Add all content panels to right sizer (only mail visible)
             right_sizer.add(&mail_content, 1, SizerFlag::Expand | SizerFlag::All, 0);
@@ -3475,33 +3513,54 @@ impl WxMailApp {
                 });
             }
 
-            wire_read_aloud(&msg_list, &a11y, &space_cycle, "mail", {
-                let state = state.clone();
-                let message_cache = message_cache.clone();
-                move |index| {
-                    let (message, in_conversation) = {
-                        let mut s = lock_state(&state);
-                        let message = s.messages.get(index)?.clone();
+            wire_read_aloud(
+                &msg_list,
+                &a11y,
+                &space_cycle,
+                "mail",
+                {
+                    let state = state.clone();
+                    let message_cache = message_cache.clone();
+                    move |index| {
+                        let (message, in_conversation) = {
+                            let s = lock_state(&state);
+                            let message = s.messages.get(index)?.clone();
+                            (message, message_rows::conversation_size(&s.messages, index))
+                        };
+                        let out = read_aloud::Reading {
+                            dates: date_settings,
+                            now: chrono::Local::now(),
+                        };
+                        Some((
+                            message.read_id(),
+                            read_the_row(&message, in_conversation, out),
+                            read_the_whole_message(&message_cache, &message, in_conversation, out),
+                        ))
+                    }
+                },
+                {
+                    let state = state.clone();
+                    move |index| {
                         // Reading begins here, and not when the row was
                         // selected (#25): this is the act of reading a
                         // message from the list, and the main timer marks it
                         // read after the wait the setting names, counted from
-                        // now. Written before the text is composed, so the
-                        // wait is counted from the press.
-                        s.reading_began = Some((message.message_id, std::time::Instant::now()));
-                        (message, message_rows::conversation_size(&s.messages, index))
-                    };
-                    let out = read_aloud::Reading {
-                        dates: date_settings,
-                        now: chrono::Local::now(),
-                    };
-                    Some((
-                        message.read_id(),
-                        read_the_row(&message, in_conversation, out),
-                        read_the_whole_message(&message_cache, &message, in_conversation, out),
-                    ))
-                }
-            });
+                        // now. Here and not in the lookup above, because the
+                        // lookup runs before the cycle has decided which form
+                        // the press reads, and the first Space, subject,
+                        // sender and snippet, is not reading the message: it
+                        // started the clock from the build of 2026-09-18
+                        // until #25 was reopened on the tester's word that
+                        // day. This closure is told only about the whole
+                        // reading.
+                        let mut s = lock_state(&state);
+                        let Some(message_id) = s.messages.get(index).map(|m| m.message_id) else {
+                            return;
+                        };
+                        s.reading_began = Some((message_id, std::time::Instant::now()));
+                    }
+                },
+            );
 
             // M toggles the selected message between read and unread and
             // says the one word (#27). Consumed at the key-down through
@@ -10006,12 +10065,22 @@ where
     });
 }
 
+/// Space and Shift+Space on a list read the row under the cursor aloud.
+///
+/// `lookup` answers the row's id and both forms of its text, before the
+/// cycle has decided which form this press reads. `on_whole` is told the
+/// row once the cycle has decided and only when what it decided is the
+/// whole reading, which `read_aloud::what_a_press_starts` says: in mail that
+/// is where the clock towards marking the message read starts (#25, reopened
+/// 2026-09-18 because the first Space, the short form, started it), and
+/// the other modules pass nothing to do.
 fn wire_read_aloud<F>(
     list: &ListCtrl,
     a11y: &Arc<Accessibility>,
     cycle: &Rc<RefCell<read_aloud::SpaceCycle>>,
     module: &'static str,
     lookup: F,
+    on_whole: impl Fn(usize) + 'static,
 ) where
     F: Fn(usize) -> Option<(String, String, String)> + 'static,
 {
@@ -10043,6 +10112,12 @@ fn wire_read_aloud<F>(
         };
         if text.trim().is_empty() {
             return;
+        }
+        // Before the text goes out, so whatever counts from reading counts
+        // from the press.
+        match read_aloud::what_a_press_starts(depth) {
+            read_aloud::WhatBegan::TheWholeReading => on_whole(selected as usize),
+            read_aloud::WhatBegan::Nothing => {}
         }
         // Record content, not interface chatter. This is what mute exists to
         // stop: private mail and personal notes read aloud in a shared room.

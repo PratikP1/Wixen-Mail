@@ -144,6 +144,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The first `Space` on a message no longer starts the clock towards marking it read; the
+  whole reading and opening do.** #25 was reopened on 2026-09-18 on the tester's answer to
+  the question the earlier fix, below, asked him: reading the snippet is not enough to count
+  as read. In the build of 2026-09-18 the first `Space` on a row, which reads the subject,
+  the sender and the snippet, started the delay under Settings, then Reading, then Mark as
+  read after, because the moment was recorded before the program had decided which form
+  that press reads. Now the first `Space` starts nothing, however long you leave it. The
+  clock starts when you read the whole message from the list, `Space` again or
+  `Shift+Space`, and when you open it with `Enter`, as before. Which press counts is one
+  rule over what the press reads, held by a case that a first `Space` marks nothing and a
+  second does, and the moment is recorded where that is known rather than before. The
+  sentence under the setting and the guide say reading the whole message or opening it.
+  Known limitations: nobody has heard the count stay put on the first `Space` and move on
+  the second; that is the tester's ear.
 - **Mark as Read says which way it will go, and `M` in the message list does it.** Reported
   on 2026-09-15 from build `0.125.1+g3e633252` under NVDA (#27): "The mark read command in
   the action menu and the corresponding context menu should reflect the current status of the

@@ -1,5 +1,5 @@
-//! Moving through the message list marks nothing read; reading a message
-//! aloud or opening it starts the clock.
+//! Moving through the message list marks nothing read; reading the whole
+//! message aloud or opening it starts the clock.
 //!
 //! #25, 11-05. The tester on 2026-09-15 under NVDA, on `0.125.1+g3e633252`:
 //! "Automatic read/unread status should not be linked to the list traversal
@@ -17,17 +17,31 @@
 //! when reading began; selecting a row records nothing; the timer asks
 //! `reading_habits::whether_to_mark_read`, whose cases hold the rule.
 //!
-//! Read from the source rather than run, because the three sites are
-//! closures inside a window with a running event loop and a timer, and what a
-//! reading can hold is the shape: which closures write the moment reading
-//! began, which do not, and that the timer asks the rule rather than keeping a
+//! And not every Space is reading (#25 reopened, 11-05.1). The first Space
+//! reads the short form, subject, sender and snippet, and the tester's word
+//! on 2026-09-18 was that reading the snippet is not reading. From the build
+//! of that morning until 11-05.1 the read-aloud closure wrote the moment
+//! before the cycle had decided which form the press reads, so the first
+//! Space started the clock. Now the lookup closure writes nothing; the
+//! wiring asks `read_aloud::what_a_press_starts` once the depth is known and
+//! calls the whole-reading closure only for the whole reading, and that
+//! closure is where the moment is written.
+//!
+//! Read from the source rather than run, because the sites are closures
+//! inside a window with a running event loop and a timer, and what a reading
+//! can hold is the shape: which closures write the moment reading began,
+//! which do not, and that the timer asks the rule rather than keeping a
 //! clock of its own. Each reading is a function over the text with a
-//! companion that hands it the opposite and requires a complaint. What no
-//! reading can see, said plainly: that the unread count survives a walk
-//! through the tester's inbox; that is his ear and is on the ledger.
+//! companion that hands it the opposite and requires a complaint. Which
+//! press counts is not a reading: it is one case over the real cycle and the
+//! real decision. What no reading can see, said plainly: that the unread
+//! count survives a walk through the tester's inbox, and that the second
+//! Space moves it and the first does not; that is his ear and is on the
+//! ledger.
 
 use std::fs;
 use wixen_mail::common::what_ships::what_ships;
+use wixen_mail::presentation::read_aloud::{SpaceCycle, WhatBegan, what_a_press_starts};
 
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 
@@ -66,17 +80,36 @@ fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
     Ok(&rest[..end])
 }
 
+/// The text after the first `from` to the end, or a complaint.
+fn after<'a>(text: &'a str, from: &str) -> Result<&'a str, String> {
+    let start = text
+        .find(from)
+        .ok_or(format!("{from:?} is no longer here, so this reads nothing"))?
+        + from.len();
+    Ok(&text[start..])
+}
+
 /// Where the selection handler starts and where the next handler on the
 /// list starts, which is where it ends.
 const THE_SELECTION_HANDLER: (&str, &str) =
     ("msg_list.on_item_selected({", "msg_list.on_column_click({");
 
 /// Where the mail list's read-aloud wiring starts, and the first line after
-/// its closing.
-const THE_READ_ALOUD_WIRING: (&str, &str) = (
-    "wire_read_aloud(&msg_list, &a11y, &space_cycle, \"mail\", {",
-    "let preview_visible",
-);
+/// its closing. The start is the module name the mail call passes on a line
+/// of its own, since the call takes two closures now and rustfmt puts each
+/// argument on its own line; no other call passes it.
+const THE_READ_ALOUD_WIRING: (&str, &str) = ("\"mail\",\n", "let preview_visible");
+
+/// Where a closure handed to the wiring starts, and the first thing the
+/// lookup closure's answer names, which is where that closure's work ends.
+/// Not `Some((`, because the write spells that too, and a cut made there
+/// lands inside the fault and passes it.
+const A_CLOSURE: &str = "move |index| {";
+const THE_LOOKUP_ANSWER: &str = "message.read_id()";
+
+/// The line in `wire_read_aloud` that hands the whole reading on, and only
+/// the whole reading.
+const THE_ASK: &str = "WhatBegan::TheWholeReading => on_whole(";
 
 /// The write that starts the clock, spelled the one way every site spells it.
 const THE_WRITE: &str = "reading_began = Some(";
@@ -95,14 +128,41 @@ fn selecting_a_row_starts_nothing(app: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Space or Shift+Space on a mail row records that reading began, for the
-/// row about to be read, before anything is announced.
-fn reading_aloud_starts_the_clock(app: &str) -> Result<(), String> {
+/// The mail wiring's lookup closure, which composes both forms before the
+/// cycle has chosen one, writes nothing: a write there is a write for the
+/// first Space too.
+fn the_short_form_starts_nothing(app: &str) -> Result<(), String> {
     let wiring = between(app, THE_READ_ALOUD_WIRING.0, THE_READ_ALOUD_WIRING.1)?;
-    if !wiring.contains(THE_WRITE) {
+    let lookup = between(wiring, A_CLOSURE, THE_LOOKUP_ANSWER)?;
+    if lookup.contains(THE_WRITE) {
         return Err(
-            "the mail read-aloud closure never writes reading_began, so reading a message aloud \
-             starts no clock and nothing is ever marked read"
+            "the mail lookup closure writes reading_began, before the cycle has decided which \
+             form this press reads, so the first Space starts the clock; that is #25 reopened"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// The whole reading records that reading began: the mail wiring hands
+/// `wire_read_aloud` a second closure that writes it, and `wire_read_aloud`
+/// calls that closure under the whole reading and nothing else.
+fn the_whole_reading_starts_the_clock(app: &str) -> Result<(), String> {
+    let wiring = between(app, THE_READ_ALOUD_WIRING.0, THE_READ_ALOUD_WIRING.1)?;
+    let past_the_lookup = after(wiring, THE_LOOKUP_ANSWER)?;
+    let on_whole = after(past_the_lookup, A_CLOSURE)?;
+    if !on_whole.contains(THE_WRITE) {
+        return Err(
+            "the mail whole-reading closure never writes reading_began, so reading a message \
+             aloud starts no clock and nothing read from the list is ever marked read"
+                .to_string(),
+        );
+    }
+    let wiring_fn = body_of(app, "fn wire_read_aloud<")?;
+    if !wiring_fn.contains(THE_ASK) {
+        return Err(
+            "wire_read_aloud never hands the whole reading on under WhatBegan::TheWholeReading, \
+             so which press counts is not the decision the cases hold"
                 .to_string(),
         );
     }
@@ -166,8 +226,14 @@ fn test_selecting_a_row_records_nothing_about_reading() {
 }
 
 #[test]
-fn test_reading_a_row_aloud_records_when_reading_began() {
-    reading_aloud_starts_the_clock(&shipped(THE_MAIN_WINDOW)).unwrap_or_else(|why| panic!("{why}"));
+fn test_the_short_form_records_nothing_about_reading() {
+    the_short_form_starts_nothing(&shipped(THE_MAIN_WINDOW)).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_whole_reading_records_when_reading_began() {
+    the_whole_reading_starts_the_clock(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
@@ -184,6 +250,39 @@ fn test_the_timer_asks_the_rule_and_keeps_no_clock_of_its_own() {
 #[test]
 fn test_the_clock_that_selection_started_is_gone() {
     the_old_clock_is_gone(&shipped(THE_MAIN_WINDOW)).unwrap_or_else(|why| panic!("{why}"));
+}
+
+// ── Which press counts, over the real cycle and the real decision ───────────
+
+/// A first Space on a row marks nothing, a second does, Shift+Space does,
+/// and a first Space on another row marks nothing again.
+///
+/// The cycle chooses the depth the way the wiring asks it, and the decision
+/// is asked of that depth, so this is the shape the keystrokes take without
+/// the window.
+#[test]
+fn test_a_first_space_marks_nothing_and_a_second_does() {
+    let mut cycle = SpaceCycle::new();
+    assert_eq!(
+        what_a_press_starts(cycle.press("mail", "1")),
+        WhatBegan::Nothing,
+        "the first Space reads the short form, and hearing the snippet is not reading"
+    );
+    assert_eq!(
+        what_a_press_starts(cycle.press("mail", "1")),
+        WhatBegan::TheWholeReading,
+        "the second Space reads the message itself"
+    );
+    assert_eq!(
+        what_a_press_starts(cycle.press_full("mail", "2")),
+        WhatBegan::TheWholeReading,
+        "Shift+Space reads the message itself outright"
+    );
+    assert_eq!(
+        what_a_press_starts(cycle.press("mail", "3")),
+        WhatBegan::Nothing,
+        "moving to another row and pressing once is the short form again"
+    );
 }
 
 // ── Companions: each reading complains when handed the opposite ─────────────
@@ -204,10 +303,14 @@ fn a_window_whose_selection_starts_the_clock() -> String {
     )
 }
 
-/// The three sites as they should be, in a snippet.
+/// The lookup closure with nothing written, the whole-reading closure with
+/// the write, the ask in the wiring's function, the opener, the timer: the
+/// sites as they should be, in a snippet.
 fn a_window_as_it_should_be() -> String {
     format!(
-        "{}\n    lock_state(&state).reading_began = Some((message.message_id, now));\n{}\n\
+        "{}\n    move |index| {{\n        let message = s.messages.get(index)?.clone();\n        Some((message.read_id(), short, full))\n    }},\n\
+         {{\n        move |index| {{\n            lock_state(&state).reading_began = Some((message.message_id, now));\n        }}\n    }},\n{}\n\
+         fn wire_read_aloud<F>(\n    match read_aloud::what_a_press_starts(depth) {{\n        read_aloud::WhatBegan::TheWholeReading => on_whole(selected),\n        read_aloud::WhatBegan::Nothing => {{}}\n    }}\n}}\n\
          fn open_single_message(\n    lock_state(state).reading_began = Some((message.message_id, now));\n}}\n\
          fn mark_what_was_read(\n    let mark = whether_to_mark_read(began, selected_unread, now, marks_read);\n}}\n\
          mark_what_was_read(app, marks_read);\n",
@@ -218,7 +321,8 @@ fn a_window_as_it_should_be() -> String {
 #[test]
 fn test_the_readings_pass_a_window_shaped_as_it_should_be() {
     let app = a_window_as_it_should_be();
-    reading_aloud_starts_the_clock(&app).unwrap_or_else(|why| panic!("{why}"));
+    the_short_form_starts_nothing(&app).unwrap_or_else(|why| panic!("{why}"));
+    the_whole_reading_starts_the_clock(&app).unwrap_or_else(|why| panic!("{why}"));
     opening_a_message_starts_the_clock(&app).unwrap_or_else(|why| panic!("{why}"));
     the_timer_asks_the_rule(&app).unwrap_or_else(|why| panic!("{why}"));
     the_old_clock_is_gone(&app).unwrap_or_else(|why| panic!("{why}"));
@@ -235,15 +339,37 @@ fn test_the_reading_complains_when_selection_starts_the_clock() {
 }
 
 #[test]
-fn test_the_reading_complains_when_reading_aloud_starts_no_clock() {
+fn test_the_readings_complain_when_the_short_form_starts_the_clock_or_the_whole_reading_does_not() {
+    // The write moved back into the lookup closure, where 11-05 had it: the
+    // first Space starts the clock again.
+    let app = a_window_as_it_should_be().replacen(
+        "let message = s.messages.get(index)?.clone();",
+        "let message = s.messages.get(index)?.clone();\n        s.reading_began = Some((message.message_id, now));",
+        1,
+    );
+    let why = the_short_form_starts_nothing(&app)
+        .expect_err("a lookup closure writing the clock was passed over");
+    assert!(why.contains("first Space starts the clock"), "{why}");
+
+    // The whole-reading closure with nothing in it: no press starts the clock.
     let app = a_window_as_it_should_be().replacen(
         "lock_state(&state).reading_began = Some((message.message_id, now));",
         "",
         1,
     );
-    let why = reading_aloud_starts_the_clock(&app)
-        .expect_err("a read-aloud closure writing no clock was passed over");
+    let why = the_whole_reading_starts_the_clock(&app)
+        .expect_err("a whole-reading closure writing no clock was passed over");
     assert!(why.contains("never writes reading_began"), "{why}");
+
+    // The wiring calling the closure for every press, whatever the depth.
+    let app = a_window_as_it_should_be().replacen(
+        "read_aloud::WhatBegan::TheWholeReading => on_whole(selected),",
+        "_ => on_whole(selected),",
+        1,
+    );
+    let why = the_whole_reading_starts_the_clock(&app)
+        .expect_err("a wiring handing every press on was passed over");
+    assert!(why.contains("never hands the whole reading on"), "{why}");
 }
 
 #[test]

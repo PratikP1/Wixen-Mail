@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 134 records have arrived since and have not been through it.
+# 137 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2387,7 +2387,7 @@ tests_last_seen = [
     { file = "src/common/moment.rs", tests = 10 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
     { file = "src/service/caldav.rs", tests = 170 },
     { file = "src/service/tasks_api.rs", tests = 62 },
@@ -2988,7 +2988,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/presentation/date_display.rs", tests = 47 },
-    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
 ]
 
 # The hour the calendar's out-of-hours note judges comes from the same parsed,
@@ -18524,7 +18524,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/pim_rows.rs", tests = 25 },
-    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
 ]
 
 # ── The same break as the moved-day record, seen from the library ───────────
@@ -21168,7 +21168,7 @@ tests_last_seen = [
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
-    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/reader_text.rs", tests = 125 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
 ]
@@ -21215,7 +21215,7 @@ tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/common/catalogue.rs", tests = 15 },
     { file = "src/presentation/date_display.rs", tests = 47 },
-    { file = "src/presentation/read_aloud.rs", tests = 49 },
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
 ]
 
 # A count passed as a string matches no plural category and falls through to
@@ -25779,7 +25779,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 11 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
 ]
 
 # ── The timer asks the rule before it marks anything ────────────────────────
@@ -25815,7 +25815,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 11 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
 ]
 
 # ── The sentence under Mark as read after is on the built page ──────────────
@@ -26017,4 +26017,81 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+]
+
+# ── The first Space starts no clock ─────────────────────────────────────────
+#
+# #25 reopened on 2026-09-18 on the tester's word: reading the snippet is
+# not reading. The mail read-aloud closure wrote reading_began before the
+# cycle had decided which form the press reads, so the first Space, subject,
+# sender and snippet, started the clock. 11-05.1 moved the write into a
+# second closure the wiring calls only under the whole reading, and made
+# which press counts one function over the depth, read_aloud::
+# what_a_press_starts. Three records: the write put back where 11-05 had
+# it, and the decision answering the whole reading for the short form,
+# measured on the library and on the target, because a record has one
+# suite and the module's case and the target's case live in different ones.
+
+# The write moved back into the lookup closure, beside the clone of the
+# row, where 11-05 wrote it and where it runs for every press. The
+# short-form reading goes red with "the first Space starts the clock"; the
+# whole-reading reading stays green, since the second closure still writes
+# it too, and the companions read snippets.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the first space, the short form, starts no clock towards marking the message read"
+file = "src/presentation/wx_app.rs"
+suite = "moving_through_the_list_marks_nothing_read"
+before = """                            let s = lock_state(&state);
+                            let message = s.messages.get(index)?.clone();
+                            (message, message_rows::conversation_size(&s.messages, index))"""
+after = """                            let mut s = lock_state(&state);
+                            let message = s.messages.get(index)?.clone();
+                            s.reading_began = Some((message.message_id, std::time::Instant::now()));
+                            (message, message_rows::conversation_size(&s.messages, index))"""
+red = [
+    "test_the_short_form_records_nothing_about_reading",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
+]
+
+# The decision answering the whole reading for the short form, which is what
+# the stub the red commit carried answered and what the tree did in effect
+# before 11-05.1. The module's case goes red on the library.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "the short form is not the whole reading, on the library"
+file = "src/presentation/read_aloud.rs"
+before = """        Depth::Short => WhatBegan::Nothing,"""
+after = """        Depth::Short => WhatBegan::TheWholeReading,"""
+red = [
+    "presentation::read_aloud::tests::test_the_short_form_starts_nothing_towards_marking_read",
+]
+tests_last_seen = [
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
+]
+
+# The same break on the target, where the case over the real cycle and the
+# real decision goes red at the first press.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the short form is not the whole reading, on the target"
+file = "src/presentation/read_aloud.rs"
+suite = "moving_through_the_list_marks_nothing_read"
+before = """        Depth::Short => WhatBegan::Nothing,"""
+after = """        Depth::Short => WhatBegan::TheWholeReading,"""
+red = [
+    "test_a_first_space_marks_nothing_and_a_second_does",
+]
+tests_last_seen = [
+    { file = "src/presentation/read_aloud.rs", tests = 51 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
 ]
