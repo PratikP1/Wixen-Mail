@@ -760,23 +760,24 @@ fn check_first_run(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteR
     check("first run dialog", &dialog, palette.main_surface(), into);
 }
 
-/// The folder chooser opened from "Choose folders to keep up to date". The
-/// `CheckListBox` draws its own check marks rather than going through a
-/// control the established pattern paints, so it is left to Windows here,
-/// the same as every `Choice`, `ComboBox`, `RadioButton` and `CheckBox`
-/// elsewhere in this round; only the dialog itself is checked.
+/// The folder chooser opened from Tools, Folders to Keep Up to Date. Its
+/// tree is left to Windows here, the same as the destination dialog's tree
+/// and every `Choice`, `ComboBox`, `RadioButton` and `CheckBox` elsewhere in
+/// this round; only the dialog itself is checked.
 fn check_folder_choice(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
     let folders = [wx_folder_choice::FolderRow {
         path: "INBOX".to_string(),
         name: "Inbox".to_string(),
+        parent: None,
         syncing: true,
         subscribed: true,
         holds_all_mail: false,
         total: 10,
     }];
-    let (dialog, _list) = wx_folder_choice::build_folder_choice_dialog(
+    let (dialog, _tree) = wx_folder_choice::build_folder_choice_dialog(
         parent,
-        "person@example.com",
+        "Work",
+        false,
         &folders,
         Some(palette),
     );

@@ -6579,12 +6579,10 @@ impl WxMailApp {
                 "Get &Older Messages\tShift+F9",
                 "Carry on downloading, this folder first",
             )
-            .append_separator()
-            .append_item(
-                ID_CHOOSE_FOLDERS,
-                "&Folders to Keep Up to Date...",
-                "Choose which of this account's folders are downloaded",
-            )
+            // Folders to Keep Up to Date sat here from 2026-08-26 until
+            // 2026-09-18, and on File before that; it is on Tools now, by the
+            // tester's word (#70), because it is about the account's download
+            // and not about the folder under the cursor.
             .append_separator()
             // Renaming lives on Action rather than under File then New, which
             // is where making one is, because this acts on whatever is chosen
@@ -6941,11 +6939,23 @@ impl WxMailApp {
             // needs to read what nobody yet knows about a real provider, and
             // the download starts without a moment of choosing for a warning
             // to sit beside. P, which nothing else on this menu claims: the
-            // menu's letters are A, n, d, T, W, C, F, k, i, g, b, r, O and S.
+            // menu's letters are A, n, d, T, W, C, F, k, i, g, b, r, O, l
+            // and S.
             .append_check_item(
                 ID_PAUSE_DOWNLOADING,
                 "&Pause Downloading",
                 crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL,
+            )
+            // Beside Pause Downloading because both are about the download:
+            // this one says which of the account's folders it covers. Here
+            // since 2026-09-18 by the tester's word (#70); it sat on Action,
+            // This Folder from 2026-08-26 and on File before that. The letter
+            // is l, because F is Message Filters and O is Flush Outbox, read
+            // off this builder on the day.
+            .append_item(
+                ID_CHOOSE_FOLDERS,
+                "Fo&lders to Keep Up to Date...",
+                "Choose which of this account's folders are downloaded",
             )
             .append_separator()
             .append_item(ID_SETTINGS, "&Settings\tCtrl+,", "Application preferences")
@@ -15909,7 +15919,8 @@ fn open_for_scanning(
         ScanTarget::FolderChoice => {
             let _ = crate::presentation::wx_folder_choice::ask(
                 frame,
-                "work@example.com",
+                "Work",
+                false,
                 &scan_fixtures::folders(),
             );
             OnReturn::WindowClosed
@@ -19324,14 +19335,24 @@ fn choose_folders(
     frame: &Frame,
 ) {
     let AppHandles { state, tx, rt } = app;
-    use crate::presentation::wx_folder_choice::{FolderRow, ask};
+    use crate::presentation::wx_folder_choice::{FolderRow, ask, is_a_gmail_account};
 
     let Some(cache) = cache.clone() else {
         return send_refusal(tx, rt, "No message store is available");
     };
-    let Some(account_id) = lock_state(state).active_account_id.clone() else {
+    // The account row, not only its identifier: the title says what the
+    // account manager calls it, and whether it is Gmail decides whether a
+    // missing All Mail gets a sentence.
+    let account = {
+        let s = lock_state(state);
+        s.active_account_id
+            .as_ref()
+            .and_then(|id| s.accounts.iter().find(|a| &a.id == id).cloned())
+    };
+    let Some(account) = account else {
         return send_refusal(tx, rt, "Add an account first");
     };
+    let account_id = account.id.clone();
 
     let stored = cache
         .get_folders_for_account(&account_id)
@@ -19347,6 +19368,14 @@ fn choose_folders(
 
     let facts = cache.folder_server_facts(&account_id).unwrap_or_default();
     let keeps = crate::application::mail_sync::keeps_subscriptions_stored(&facts);
+    // The same stored parent the folder tree in the main window nests by, so
+    // the chooser cannot nest differently; the parent's id becomes its path
+    // through the rows already read, and the separator is never split.
+    let parents = cache.folder_parents(&account_id).unwrap_or_default();
+    let path_of_id: std::collections::HashMap<i64, &str> = stored
+        .iter()
+        .map(|folder| (folder.id, folder.path.as_str()))
+        .collect();
 
     // What the sync would do as things stand, so somebody who does not care can
     // close the window and lose nothing. The rule the sync and the tree both
@@ -19363,6 +19392,12 @@ fn choose_folders(
                 ),
                 path: folder.path.clone(),
                 name: folder.name.clone(),
+                parent: parents
+                    .get(&folder.path)
+                    .copied()
+                    .flatten()
+                    .and_then(|id| path_of_id.get(&id))
+                    .map(|path| path.to_string()),
                 subscribed,
                 holds_all_mail,
                 total: folder.total_count as usize,
@@ -19370,7 +19405,8 @@ fn choose_folders(
         })
         .collect();
 
-    let Some(changed) = ask(frame, &account_id, &rows) else {
+    let is_gmail = is_a_gmail_account(account.provider.as_deref(), &account.imap_server);
+    let Some(changed) = ask(frame, &account.name, is_gmail, &rows) else {
         return;
     };
     if changed.is_empty() {

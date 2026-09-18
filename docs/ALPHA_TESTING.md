@@ -112,14 +112,17 @@ In rough order of how useful it is to know.
    message was sent when it was not, a count that does not match what you can
    see, a setting that does not take effect.
 5. **Keyboard traps.** Anywhere Tab or Shift+Tab cannot get you out of.
-6. **Whether the ticks are announced in Folders to Keep Up to Date.** Windows
-   draws those check boxes itself instead of using a control that has them, so
-   the state does not reach a screen reader on its own. Each row now reports
-   itself as a check box with its state, which is the same fix NVDA makes in its
-   own settings. Whether that works is a thing only a screen reader can answer,
-   so it is worth a specific listen: arrow down the list and say whether you
-   hear "ticked" and "not ticked" as well as the folder name, and whether it
-   changes when you press Space.
+6. **Whether the ticks are announced in Folders to Keep Up to Date.** Since
+   2026-09-18 the window is a tree, on the Tools menu, with a check box beside
+   each folder that belongs to the tree control itself, so what a screen reader
+   says for it comes from Windows and not from anything this program adds. It
+   is worth a specific listen: arrow down the tree and say whether you hear
+   "checked" and "not checked" as well as the folder name, whether it changes
+   when you press Space, and whether a folder inside another is read with its
+   level. Until 2026-09-18 this item described a list whose rows reported their
+   own state through an object this program wrote, and asked for the same
+   listen; the listen happened on 2026-09-17 and the answer was "read-only, not
+   checked", which is why the window changed.
 7. **Whether the folder list matches what you see in your webmail.** New in
    this version, and the part most likely to differ between one mail service and
    another. On Gmail in particular: whether your labels are all there, whether

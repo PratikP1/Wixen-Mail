@@ -552,7 +552,7 @@ Five submenus hold the rest:
 | Label | The ten labels, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
-| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first, Folders to Keep Up to Date. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now |
 | Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
 
 ### Account Management
@@ -561,6 +561,7 @@ Five submenus hold the rest:
 |--------|----------|-------------|
 | Open Account Manager | `Ctrl+Shift+A` | Open multiple account management dialog |
 | Pause Downloading | (Tools menu, `Alt+P` on the menu) | A check item. Ticked, it holds the download of everything that runs on its own after every check for mail: the chunk in flight finishes and no new one starts. Unticked, the download carries on from where the mail on this computer says it was. Mail already here stays readable either way. Its description is the sentence saying the download has never met a real provider. The pause lasts for the session. Fetch Missing Message Text sat on the File menu until 2026-09-17; the download is what it did |
+| Folders to Keep Up to Date | (Tools menu, `Alt+L` on the menu) | Which of this account's folders are downloaded, as a tree nested the way the folder tree is, with a check box beside each folder. Space ticks or unticks the folder you are on; Right arrow opens a folder that holds others; the title names the account. On Tools since 2026-09-18; it sat on Action, under This Folder, from 2026-08-26, and on File before that |
 
 ### Contact Management
 

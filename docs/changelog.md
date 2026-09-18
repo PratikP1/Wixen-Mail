@@ -121,6 +121,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Folders to Keep Up to Date is a tree, its check boxes reach a screen reader, and its
+  title names the account.** Reported on 2026-09-17 from build `1.0.0-alpha.1` under NVDA
+  (#70): "the folder list is a flat list, not a tree like the folder tree"; a kept folder was
+  heard as "check box, read-only, not checked"; "the title is the account id, not the account
+  name"; and All Mail was missing for a Gmail account. The window shows the account's folders
+  as a tree nested the way the folder tree in the main window nests them, every branch open,
+  with a check box beside each folder. The check box is the tree's own, so what a screen
+  reader hears for it comes from the control and not from anything this program adds; the
+  list this used to be answered for its rows through an object of this program's, and a
+  reading of that object over the channel NVDA uses found it saying read-only, busy and
+  alerting where it meant checked, because the toolkit's numbers for those states and the
+  toolkit's own list of them disagree. Space ticks and unticks the folder under the cursor,
+  as before; Right arrow opens a folder that holds others. The title says "Folders to keep up
+  to date: " and then the name the Account Manager shows. A folder the server flagged as
+  holding every message, Gmail's All Mail, is in the tree unticked unless you ticked it; when
+  Gmail did not list one, which is what a label with Show in IMAP off looks like from here,
+  the window says so under the tree and says that Gmail's own settings, under Labels, Show in
+  IMAP, decide which labels it lists. The command is on the Tools menu, `Alt+L` on the menu,
+  beside Pause Downloading, by the tester's word; it sat on Action, under This Folder, from
+  2026-08-26, and on File before that, and the pages that said File until this build had not
+  followed it to Action.
+  Known limitations: nobody has heard the tree. Whether a kept folder is heard as checked,
+  what Space says after it toggles, and how a nested folder's level is read are what a
+  listening pass settles. Whether Gmail lists All Mail is Gmail's setting and not this
+  program's.
 - **A sign-in failure in the Account Manager was two announcements a moment apart, and a
   screen reader could speak the second and drop the first.** When Sign In Again could not
   sign an account in, the reason was announced as a sentence and then, a millisecond later,
@@ -11579,9 +11604,9 @@ be added by its address, and an event read aloud says its category.
 - **Sent mail gets saved in your Sent folder.** Nothing was saving it. Sending and receiving are two separate services that know nothing about each other, so a message handed to the sending server left no trace anywhere you could look at it. Gmail files its own copy, so Gmail accounts happened to look right; every other account had no record of anything you had sent.
   Every account gets one, Gmail included, so the rule is the same wherever you are: what you sent is in that account's Sent folder. Gmail matches on the message's own identifier, so the copy that arrives is the one already there rather than a second one. The copy is marked read, so sending something does not raise your unread count. Blind copy recipients are not in the saved copy, which is the same rule that keeps blind copies blind on the way out.
 
-- **The ticks in Folders to Keep Up to Date report themselves to a screen reader.** Windows draws those check boxes rather than using a control that has them, so the ticked state does not reach assistive technology on its own, and a window whose whole purpose is ticking things would have read as a list of folder names. Each row now reports itself as a check box with its state, the same way NVDA fixes it in its own settings. Still to be confirmed with a screen reader, which is the only thing that can confirm it.
+- **The ticks in Folders to Keep Up to Date report themselves to a screen reader.** Windows draws those check boxes rather than using a control that has them, so the ticked state does not reach assistive technology on its own, and a window whose whole purpose is ticking things would have read as a list of folder names. Each row now reports itself as a check box with its state, the same way NVDA fixes it in its own settings. Still to be confirmed with a screen reader, which is the only thing that can confirm it. Confirmed on 2026-09-17, and it was wrong: the tester heard "read-only, not checked", and a reading on 2026-09-18 found the rows' states arriving as different states, because the toolkit's numbers for them and the toolkit's own list of them disagree; the window is a tree with the control's own check boxes since 2026-09-18, under Fixed above.
 
-- **You choose which folders are downloaded.** File, then Folders to Keep Up to Date, or the menu key on the folder tree. A ticked list, one row per folder, saying how many messages are in each. Space ticks the row you are on. The folder tree shows the folders that are kept up to date, so a folder you turn off leaves the tree rather than sitting there empty.
+- **You choose which folders are downloaded.** File, then Folders to Keep Up to Date, or the menu key on the folder tree. A ticked list, one row per folder, saying how many messages are in each. Space ticks the row you are on. The folder tree shows the folders that are kept up to date, so a folder you turn off leaves the tree rather than sitting there empty. The command moved to Action, under This Folder, on 2026-08-26 and to Tools on 2026-09-18, and the window is a tree since that day; this entry is left as it was written.
   **If you are upgrading, this may change what you see.** Folders you are not subscribed to on the server stop being downloaded and leave the tree, which on most accounts is nothing and on a shared or university server can be a lot. Nothing is deleted: tick a folder in that window and it comes back at the next check for mail.
   This matters most on Gmail, where All Mail holds a copy of every message in the account. Downloading it alongside the Inbox meant fetching everything twice and reading every message twice in the list. It is now off unless you ask for it, and the row says why. It matters on shared and university servers too, which list every mailbox the account can see, often hundreds.
   Your choice is written to the server as a subscription as well, so a folder you turn off here reads as unwanted in your phone's mail app. If the server will not record it, it says so, and your choice still holds here.

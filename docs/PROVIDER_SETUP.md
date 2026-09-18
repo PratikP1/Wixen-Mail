@@ -260,8 +260,13 @@ label.
 
 **All Mail is not downloaded unless you ask for it.** It holds a copy of every
 message in the account, so downloading it alongside your Inbox means fetching
-everything twice. Turn it on under File, then Folders to Keep Up to Date, if
-you want it.
+everything twice. Turn it on under Tools, then Folders to Keep Up to Date, if
+you want it. All Mail is in that window only when Gmail lists it: Gmail's own
+settings, under Labels, have a Show in IMAP box for each label, and a label
+with that box off is one Wixen Mail is never told about. When Gmail did not
+list All Mail, the window says so under the tree. Until 2026-09-18 this
+paragraph said the command was on File; it had been on Action, under This
+Folder, since 2026-08-26, and on File before that.
 
 **Deleting moves the message to Bin.** Gmail's own setting for what a deleted
 message should do is in Gmail's web settings, under Forwarding and POP/IMAP,
@@ -584,12 +589,20 @@ you know it is the provider and not a fault.
 
 ### Choosing which folders are downloaded
 
-File, then Folders to Keep Up to Date. A ticked list, one row per folder,
-saying how many messages are in each. Space ticks the row you are on.
+Tools, then Folders to Keep Up to Date. A tree of the account's folders,
+nested the way the folder tree in the main window is, with a check box beside
+each folder and each saying how many messages it holds. Space ticks or unticks
+the folder you are on, and Right arrow opens a folder that holds others. The
+title names the account. Until 2026-09-18 this section said the command was
+on File and the window was a ticked list; the command had been on Action,
+under This Folder, since 2026-08-26, and on File before that.
 
 This is worth opening on two kinds of account. Gmail, where All Mail holds a
-copy of every message and is off by default. And shared or university servers,
-which list every mailbox the account can see, sometimes hundreds of them.
+copy of every message and is off by default, and appears in the tree only
+when Gmail lists it; the window says so when it did not, and Gmail's own
+settings, under Labels, Show in IMAP, decide that. And shared or university
+servers, which list every mailbox the account can see, sometimes hundreds of
+them.
 
 Your choice is also sent to the server as a subscription, so a folder you turn
 off here reads as unwanted in your phone's mail app. If the server will not

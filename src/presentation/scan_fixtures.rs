@@ -93,6 +93,7 @@ pub fn folders() -> Vec<FolderRow> {
     let folder = |path: &str, syncing: bool, holds_all_mail: bool, total: usize| FolderRow {
         path: path.to_string(),
         name: path.to_string(),
+        parent: None,
         syncing,
         subscribed: syncing,
         holds_all_mail,
