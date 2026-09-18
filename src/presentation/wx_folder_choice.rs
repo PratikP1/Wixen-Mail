@@ -155,6 +155,21 @@ pub fn nesting(rows: &[FolderRow]) -> Vec<(usize, usize, Option<usize>)> {
     placed
 }
 
+/// Each row's native item, from the items the control walked in `nesting`'s
+/// order: `handles[p]` belongs to row `placed[p].0`, so the answer is indexed
+/// by row. `None` when the walk found a different number of items from the
+/// rows placed, because a handle matched to the wrong row would read one
+/// folder's tick as another's and write a choice nobody made; a caller then
+/// leaves everything as it was.
+pub fn handles_by_row<H: Copy>(
+    placed: &[(usize, usize, Option<usize>)],
+    handles: &[H],
+) -> Option<Vec<H>> {
+    // Red until 11-03's task 2.
+    let _ = (placed, handles);
+    None
+}
+
 /// Whether an account is Gmail, by either fact the account row carries: the
 /// provider it was made through, or the server it points at.
 ///
@@ -402,6 +417,25 @@ mod tests {
         let nested = nesting(&rows);
 
         assert_eq!(nested, vec![(0, 0, None), (1, 0, None), (2, 0, None)]);
+    }
+
+    #[test]
+    fn test_each_row_gets_the_handle_the_walk_found_at_its_place() {
+        // Rows stored as [child, top A, top B]; placed as A, then its child,
+        // then B; the walk answers three handles in that order.
+        let placed = [(1, 0, None), (0, 1, Some(1)), (2, 0, None)];
+
+        let by_row = handles_by_row(&placed, &['a', 'c', 'b']);
+
+        assert_eq!(by_row, Some(vec!['c', 'a', 'b']));
+    }
+
+    #[test]
+    fn test_a_walk_of_the_wrong_length_maps_nothing_rather_than_one_row_wrong() {
+        let placed = [(0, 0, None), (1, 0, None)];
+
+        assert_eq!(handles_by_row(&placed, &['a']), None);
+        assert_eq!(handles_by_row(&placed, &['a', 'b', 'c']), None);
     }
 
     #[test]
