@@ -742,37 +742,51 @@ clauses phase 9 left open for a push of `main`.
      menu; a provider that refuses ends the run and the run is tried again after a wait that
      grows to a cap; Download This Whole Folder is gone because this is what it did; and one
      sentence says the download has never met a real provider, where somebody deciding to
-     pause it reads. (#20)
+     pause it reads. (#20) Closed 2026-09-18 by the phase's closing read in 10-07: the
+     decision by 10-01 at `d8e887d6`, the rest by 10-05 at `b477e8c9`, each clause named in
+     MAIL-01's closing sentence; no provider has met it, ledger 11, 72 and 523.
   2. The message list holds every message the folder holds on this computer, and so does All
      Inboxes; a message arriving adds a row and removes none; the list's own read path is
      measured at 12,872 and at 200,000 rows before the page is dropped and again after, with
      the rows on `docs/development/measurements.md`; and the labels are read by folder rather
-     than by one bound parameter per row, proved above SQLite's variable limit. (#24)
+     than by one bound parameter per row, proved above SQLite's variable limit. (#24) Closed
+     2026-09-18 by the closing read: 10-02 at `48536d31`, sixteen rows on the measurements
+     page and the readings named in MAIL-02's closing sentence; whether 12,872 reads as one
+     list is the tester's, ledger 515.
   3. The text of each message comes down with the mail unless the Message Text box on the
      Permissions tab is off, in chunks bounded by count and bytes, with three refusals in a
      row read as the server's answer; how much text stays on this computer is a choice on the
      same tab, All of it by default, read by the eviction so that under All nothing is evicted;
      and Fetch Missing Message Text and the offer above the list are gone because the download
-     does what they did. (#23)
+     does what they did. (#23) Closed 2026-09-18 by the closing read: the chunks and the
+     refusals by 10-01 at `d8e887d6`, the setting and the eviction by 10-03 at `c4203632`,
+     the download and the retirements by 10-05 at `b477e8c9`, each clause named in MAIL-03's
+     closing sentence; no provider has met the text in chunks, ledger 11, 519 and 523.
   4. A watch that ends for any reason but mail arriving or somebody stopping it is started
      again after the same growing wait, the network coming back starts one at once, every
      enabled IMAP account has a watch of its own, mail is checked on the account editor's
      Check Interval where a watch cannot cover (a server without IDLE, a watch that keeps
      failing, POP, the other kept folders), a start checks without a keystroke, and the status
      line says which of those is happening and never that new mail will not appear on its own.
-     (#37)
+     (#37) Closed 2026-09-18 by the closing read: the wait by 10-01 at `d8e887d6`, the rest
+     by 10-06 at `2da50b6b`, each clause named in MAIL-04's closing sentence; no provider has
+     dropped the watch, ledger 64, 65, 67, 525 and 526.
   5. How much is said while mail and the other modules are fetched is a choice on the Feedback
      tab, Say what arrived, Say every step or Errors only, default Say what arrived; a progress
      line is shown on the status bar and spoken only under Say every step; what arrived is one
      sentence per check naming each folder or module with something new and its count, spoken
      once and never when nothing arrived; errors are spoken under every choice; the new-mail
      sound fires when a check found mail on the channel its own row gives; and Settings saved
-     and the other answers to a key are heard above a running check. (#38)
+     and the other answers to a key are heard above a running check. (#38) Closed 2026-09-18
+     by the closing read: 10-04 at `19a10706`, each clause named in MAIL-05's closing
+     sentence; nobody has listened to the three levels, ledger 521.
   6. The alpha testing page, the privacy page and the user guide say what the program does now,
      the privacy page says what a whole-mailbox download tells a provider and puts on the disk,
      the listening lines are on `docs/manual-accessibility-pass.md`, and the five issues are
      read against the tree clause by clause with the requirements, the roadmap, the state and
-     the ledger saying the same thing.
+     the ledger saying the same thing. Closed 2026-09-18 by 10-07: the four pages at
+     `8ec6f314`, items 44 to 57 on the listening page, the closing read in 10-07's summary
+     and in the four planning files.
   7. Every checkbox on every Settings tab reads as a check box with its checked state over
      MSAA, the channel NVDA uses for a native button, and toggles on a click, after its page
      is built the way the tab row builds it; the six pages after General are painted at the
@@ -826,10 +840,10 @@ was made in conversation and is recorded in `CLAUDE.md` with the date.
 - [x] 10-02-PLAN.md: The list measured at the tester's size and at 200,000, the page taken off, the labels by folder, measured again (#24)
 - [x] 10-02.1-PLAN.md: All Inboxes, a label view and a saved search read in the sort that was chosen, the way a folder is, with what a chosen sort costs measured (#69)
 - [x] 10-02.2-PLAN.md: A build carries how many commits it is past its version, in the string and in the Windows file version, and the rule says so (Pratik's decision of 2026-09-17)
-- [ ] 10-03-PLAN.md: How much message text stays is a setting, default all of it, read by the eviction (#23)
-- [ ] 10-04-PLAN.md: What is said while fetching is a setting with three choices; progress shown, what arrived said once, errors always, answers heard (#38)
-- [ ] 10-05-PLAN.md: The download runs after every check for every account with a Pause; the two commands it replaces retired (#20, #23)
-- [ ] 10-06-PLAN.md: The watch keeps going, the network return restarts it, every account, the schedule on the account's interval, a start checks, the status line honest (#37)
+- [x] 10-03-PLAN.md: How much message text stays is a setting, default all of it, read by the eviction (#23)
+- [x] 10-04-PLAN.md: What is said while fetching is a setting with three choices; progress shown, what arrived said once, errors always, answers heard (#38)
+- [x] 10-05-PLAN.md: The download runs after every check for every account with a Pause; the two commands it replaces retired (#20, #23)
+- [x] 10-06-PLAN.md: The watch keeps going, the network return restarts it, every account, the schedule on the account's interval, a start checks, the status line honest (#37)
 - [ ] 10-07-PLAN.md: The four pages, the listening lines, and the phase's closing read (all five)
 
 **UI hint**: yes

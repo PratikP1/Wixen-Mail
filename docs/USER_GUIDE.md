@@ -91,8 +91,11 @@ The Tools menu also opens:
 - **Signatures**, the text added to the end of messages you send.
 - **Tags**, the labels you can put on a message.
 - **Sync Contacts**, **Sync Calendar**, and **Sync Tasks**, to sync with
-  your provider immediately rather than waiting for the next automatic
-  sync.
+  your provider now. Corrected on 2026-09-18: this line said "rather than
+  waiting for the next automatic sync", and there is none; the three
+  modules sync when you ask, from here or from each module's own Sync, and
+  not on a schedule. Mail is the one thing that arrives on its own, as
+  [Getting your mail](#getting-your-mail) says.
 
 ### Offline Mode
 

@@ -3062,8 +3062,36 @@ last `[S]` line says what only that account can settle; the caveat at the top of
 binds every `[D]` line: a loopback server proves the shape, and no criterion claims what a
 provider does.
 
-- [ ] **MAIL-01**: Every message of every kept folder comes down on its own, without a
+- [x] **MAIL-01**: Every message of every kept folder comes down on its own, without a
   person asking for the rest.
+  - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-01, merged 2026-09-17 at
+    `d8e887d6`, and 10-05, merged 2026-09-18 at `b477e8c9`.** The three `[D]` lines each
+    have a name. The decision, in `src/application/bringing_everything_down.rs`:
+    `test_the_folder_on_screen_comes_first_then_the_inbox_then_the_tree_order`,
+    `test_the_rest_follow_the_tree_order_and_custom_folders_go_by_name`,
+    `test_headers_come_before_text_for_the_whole_account`,
+    `test_a_folder_that_is_all_here_is_never_asked_for_headers_again` and
+    `test_the_headers_chunk_is_the_syncs_own_page_by_name`, against the scripted mailbox
+    through `fetch_over_a_mailbox`'s tests. The runner, in
+    `tests/everything_comes_down_without_being_asked.rs`:
+    `test_every_check_ends_by_starting_the_download`,
+    `test_the_download_does_what_the_model_says_and_nothing_of_its_own`,
+    `test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit` for the list re-read per
+    chunk, `test_the_download_asks_whether_to_stop_between_chunks` and
+    `test_pause_downloading_is_on_the_tools_menu_ticked_and_carries_the_warning` for the
+    Pause item, `test_get_older_messages_hands_to_the_download_with_this_folder_first`,
+    `test_the_whole_folder_command_is_gone_because_the_download_is_what_it_did`, and
+    `allowed::tests::test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong`
+    for the one sentence. The wait: `trying_again::tests::test_each_failure_doubles_the_wait_until_the_cap`,
+    `test_the_wait_never_goes_past_thirty_minutes` and
+    `test_a_success_puts_the_wait_back_to_the_start`;
+    `test_a_failed_chunk_waits_before_the_download_is_tried_again` for the runner asking it;
+    `mail_sync::tests::test_a_server_that_refuses_three_in_a_row_ends_the_chunk_after_six_asks_and_not_ten`
+    for a provider's refusal ending the run;
+    `test_a_folder_whose_last_chunk_brought_nothing_new_is_asked_once_more_and_then_reported`
+    for the rule kept; and the watch asking the same rule by
+    `checking_on_a_schedule::tests::test_a_watch_whose_connection_was_lost_is_tried_again_after_a_wait`.
+    The last `[S]` line stays: no provider has met the download (ledger 11, 72, 523).
   - Evidence: `grep -n 'pub const INITIAL_FETCH_LIMIT' src/application/mail_sync.rs` ->
     `40: 500` on 2026-09-17 at `7d57cd49`; `uids_to_fetch` (`mail_sync.rs:307`) takes the
     newest `limit` uids the cache lacks and `fetch_headers` (`imap.rs:1156`) asks for them by
@@ -3105,8 +3133,24 @@ provider does.
     coming down chunk after chunk is the tester's account's to show, and ledger 72 stays open
     until it has.
 
-- [ ] **MAIL-02**: The message list holds every message the folder holds on this computer,
+- [x] **MAIL-02**: The message list holds every message the folder holds on this computer,
   and a message arriving adds a row and removes none.
+  - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-02, merged 2026-09-17 at
+    `48536d31`.** The two `[D]` lines each have a name. The measurement: sixteen rows on
+    `docs/development/measurements.md` named "The list's own read path" and "The list's own
+    read path after 10-02", dated 2026-09-17 with their command at `dbcddb93` and `760a4d87`,
+    held by `test_every_read_path_row_has_the_pages_shape_and_says_which_step_it_timed` in
+    the harness and by `test_every_row_on_the_measurements_page_carries_its_command_its_date_and_its_commit`.
+    The window, in `tests/the_list_holds_everything_the_folder_holds.rs`:
+    `test_the_window_asks_for_the_whole_folder` holds `load_folder_messages` to no limit and
+    the file to naming none of the three identifiers,
+    `test_a_folder_of_the_testers_size_is_read_back_whole_through_the_query_the_window_uses`,
+    `test_the_labels_of_a_folder_are_read_by_folder` and
+    `test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error` at
+    40,000 rows; and `test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit` for the
+    arriving row. `grep -c 'FOLDER_LIST_PAGE_SIZE\|ALL_INBOXES_LIMIT\|message_list_limit'
+    src/presentation/wx_app.rs` answers 0 on 2026-09-18 at `de0d45e2`. The last `[S]` line
+    stays: whether his folder reads as one list is the tester's (ledger 515).
   - Evidence: `grep -n 'const FOLDER_LIST_PAGE_SIZE\|const ALL_INBOXES_LIMIT' src/presentation/wx_app.rs`
     -> `7061: 500`, `7050: 500` on 2026-09-17 at `7d57cd49`; `message_list_limit` starts at
     the page (`:471`), is reset to it on every folder change (`:2867`) and grown by Get Older
@@ -3134,8 +3178,41 @@ provider does.
   - [S] Whether a folder of 12,872 messages opens and reads as one list on the tester's
     machine with his screen reader is his.
 
-- [ ] **MAIL-03**: Message text comes down with the mail unless a person has forbidden it,
+- [x] **MAIL-03**: Message text comes down with the mail unless a person has forbidden it,
   and stays unless a person has chosen a size.
+  - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-01 at `d8e887d6`, 10-03,
+    merged 2026-09-17 at `c4203632`, and 10-05 at `b477e8c9`.** The three `[D]` lines each
+    have a name. The text pass: `mail_sync::tests::test_a_server_that_refuses_three_in_a_row_ends_the_chunk_after_six_asks_and_not_ten`,
+    `test_a_chunk_stops_before_the_next_message_when_asked_to`,
+    `test_the_server_stopping_is_worded_by_us_with_one_clause_per_reason` and
+    `test_no_sentence_about_the_server_stopping_carries_a_string_the_server_sent`;
+    `bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it` for the
+    bound on bytes; in `bringing_everything_down`,
+    `test_a_chunk_of_text_is_at_most_fifty_messages`,
+    `test_a_chunk_of_text_is_at_most_sixteen_mebibytes_whichever_bound_is_met_first`,
+    `test_text_is_asked_for_newest_first_once_every_folder_is_here`,
+    `test_no_text_is_asked_for_when_reading_is_not_allowed_and_the_run_says_why`,
+    `test_the_budget_ends_a_text_run_and_says_what_it_would_have_needed` and
+    `test_the_text_report_says_what_the_budget_kept_and_what_happens_to_the_rest`; and
+    `test_the_download_does_what_the_model_says_and_nothing_of_its_own` for the runner
+    handing the chunk to `fetch_over_a_mailbox`. The setting, in `keeping_message_text`:
+    `test_the_choices_are_all_of_it_then_one_five_and_twenty_gigabytes`,
+    `test_the_default_keeps_all_of_it` and
+    `test_a_garbled_value_reads_as_all_because_a_wrong_bound_evicts_and_all_loses_nothing`;
+    `data::config::permission_tests::test_a_settings_file_written_before_these_existed_reads_the_way_it_should`
+    for the older file; `test_every_setting_somebody_can_change_is_offered_by_a_screen`,
+    which failed on arrival between the field and the control and is green;
+    `test_a_size_chosen_on_the_permissions_page_is_what_ok_writes_back` against the real
+    dialog; `bodies::tests::test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size`;
+    and `test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts`.
+    The retirements: `test_the_whole_folder_command_is_gone_because_the_download_is_what_it_did`,
+    `wx_app::tests::test_the_answer_says_what_the_missing_text_means_and_puts_no_button_on_the_screen`
+    and `test_the_missing_text_sentence_says_it_is_coming_or_that_the_box_is_off`;
+    `grep -rn 'ID_FETCH_MISSING_TEXT\|missing_text_offer\|FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL'
+    src tests --include='*.rs'` finds one line on 2026-09-18 at `de0d45e2`, the test
+    asserting the name is absent from the shipping half; the on-open fetch,
+    `wx_app::spawn_body_fetch`, is unchanged since `7d57cd49` by `git log -L`. The last
+    `[S]` line stays: no provider has met the text in chunks (ledger 11, 519, 523).
   - Evidence: `Allowed.reading` is on by default (`allowed.rs:57-82`) and offered as
     "Fetch the text of a message from the server when it is not already stored" under
     Message Text on the Permissions tab (`allowed.rs:206,224`; `wx_settings.rs:2095-2118`),
@@ -3171,7 +3248,37 @@ provider does.
   - [S] Whether Gmail tolerates the text of 12,872 messages coming down in chunks is the
     tester's account's to show, and ledger 11 stays open until it has.
 
-- [ ] **MAIL-04**: Mail keeps arriving on its own for as long as the program runs.
+- [x] **MAIL-04**: Mail keeps arriving on its own for as long as the program runs.
+  - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-01 at `d8e887d6` and
+    10-06, merged 2026-09-18 at `2da50b6b`.** The three `[D]` lines each have a name. The
+    restart, in `tests/mail_keeps_arriving_on_its_own.rs`:
+    `test_a_watch_that_ends_asks_whether_to_watch_again`,
+    `test_a_watch_that_never_started_asks_too_before_it_returns` and
+    `test_the_network_coming_back_starts_the_watches_at_once`; in
+    `checking_on_a_schedule`, `test_a_watch_whose_connection_was_lost_is_tried_again_after_a_wait`,
+    `test_a_watch_somebody_stopped_is_not_tried_again` and
+    `test_every_reason_the_watch_can_end_with_has_an_answer_that_is_not_a_guess`, one
+    answer per reason string the IMAP module gives; the watch per account by
+    `test_the_check_for_mail_walks_every_enabled_account_and_writes_down_when`, which holds
+    each account's own watch request. The schedule:
+    `test_the_timer_checks_on_the_accounts_own_interval`,
+    `test_an_account_whose_interval_has_passed_is_due`,
+    `test_a_stored_interval_of_nought_is_read_as_one_minute_and_not_every_tick`,
+    `test_a_server_that_would_not_start_watching_three_times_is_left_to_the_schedule` and
+    `test_an_account_to_check_is_built_from_the_account_row`;
+    `test_a_start_checks_without_a_keystroke`; `mark_synced` called at the check's end,
+    held by the same walk reading; the editor's sentence `WHAT_THE_INTERVAL_DOES` at
+    `wx_account_manager.rs:966`, built on the field at `:1639`. The status line:
+    `test_the_status_line_says_watching_and_the_interval`,
+    `test_the_status_line_says_only_the_interval_when_nothing_watches`,
+    `test_the_status_line_says_the_wait_and_the_interval` and
+    `test_nothing_says_new_mail_will_not_appear_on_its_own`, with `grep -c 'will not appear
+    on its own\|say_the_watch_is_off' src/presentation/wx_app.rs` at 0 on 2026-09-18 at
+    `de0d45e2`; the cold-start and idle rows re-taken on `docs/development/measurements.md`
+    dated 2026-09-18 at `7ad596ca`, the old rows dated, and ledger 446 closed
+    on the refusal being read, which was the credential store's and not the socket's (ledger
+    526). The last `[S]` line stays: no provider has dropped the watch (ledger 64, 65, 67,
+    525).
   - Evidence: one watch, on the active account's inbox, started only at the end of a check
     (`grep -n 'MailboxWatchRequested' src/presentation/wx_app.rs` -> `18288` the arm, `21975`
     the one sender, on 2026-09-17 at `7d57cd49`); nothing checks at startup (the three
@@ -3213,8 +3320,31 @@ provider does.
     mail over hours, and whether two connections per account are welcome are the tester's
     account's to show (ledger 64, 65, 67).
 
-- [ ] **MAIL-05**: How much is said while mail and the other modules are fetched is the
+- [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
+  - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-04, merged 2026-09-18 at
+    `19a10706`.** The three `[D]` lines each have a name. The choice, in
+    `what_is_said_while_fetching`: `test_the_choices_are_what_arrived_then_every_step_then_errors_only`,
+    `test_the_default_says_what_arrived` and
+    `test_anything_unreadable_reads_as_what_arrived_because_the_other_two_cost_more`;
+    `data::config::permission_tests::test_a_settings_file_written_before_these_existed_reads_the_way_it_should`
+    for the older file; `test_every_setting_somebody_can_change_is_offered_by_a_screen`,
+    which failed on arrival and is green;
+    `accessibility::tests::test_how_much_to_say_reports_what_was_just_set_rather_than_the_default`
+    for the level on `Accessibility`; and `tests/every_event_has_a_control.rs`'s sub-check
+    that each level chosen on the built dialog is what OK writes back. The kinds, in
+    `tests/progress_is_shown_and_results_are_said.rs`:
+    `test_a_step_is_spoken_only_when_every_step_was_asked_for`,
+    `test_what_arrived_is_said_once_at_normal_and_signals_new_mail`,
+    `test_the_mail_checks_lines_are_steps_and_what_arrived_goes_out_once_after_the_loop`,
+    `test_the_new_mail_sound_plays_when_a_check_found_mail_and_not_when_the_watch_woke`
+    and `test_no_step_rides_the_answer_channel` over every sync path's lines, with
+    companions; `mail_sync::tests::test_a_check_that_found_nothing_says_nothing_about_what_arrived`;
+    the twelve cells `test_under_what_arrived_a_step_is_not_spoken` through
+    `test_under_errors_only_an_answer_is_spoken` for errors under every level. The answers:
+    `test_settings_saved_and_the_other_answers_are_said_at_normal`. The last `[S]` line
+    stays: nobody has listened to the three levels (ledger 521; items 42, 43 and 48 on
+    `docs/manual-accessibility-pass.md`).
   - Evidence: the `StatusUpdated` arm writes the status bar and announces at Low under the
     topic "status" (`wx_app.rs:17576-17590` on 2026-09-17 at `7d57cd49`); the queue keeps one
     entry per topic and four a second (`announcements.rs:20-26,178-190`); 43 `StatusUpdated`
@@ -3343,11 +3473,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
 | FOUND-15 | Phase 10 | Complete, 10-02.1 at `c0505f68`; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
 | FOUND-16 | Phase 10 | Complete, 10-02.2 at `44bff634`; one installer built from `main` reads `1.0.0-alpha.1+114.g44bff634` with file version `1.0.0.14114`; whether it installs over the alpha.1 build as an upgrade is settled by a machine, ledger 517 |
-| MAIL-01 | Phase 10 | Pending, 10-01 and 10-05; whether Gmail tolerates the download is the tester's account's |
-| MAIL-02 | Phase 10 | Pending, 10-02; whether his folder reads as one list is the tester's |
-| MAIL-03 | Phase 10 | Pending, 10-01, 10-03 and 10-05; whether Gmail tolerates the text in chunks is the tester's account's |
-| MAIL-04 | Phase 10 | Pending, 10-01 and 10-06; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's |
-| MAIL-05 | Phase 10 | Pending, 10-04; what each level sounds like is a listening pass and the tester's |
+| MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523 |
+| MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515 |
+| MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523 |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526 |
+| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
 
 **Coverage:**
 
