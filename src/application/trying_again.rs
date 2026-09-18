@@ -113,7 +113,11 @@ pub fn what_to_say_before_waiting(wait: Duration, failures_in_a_row: u32) -> Str
 /// Whole minutes as minutes, anything shorter as seconds, and a wait that is
 /// both as both. Never a bare count of seconds above a minute, which is a
 /// number somebody has to divide in their head.
-fn said_as_a_person_says_it(wait: Duration) -> String {
+///
+/// Shared with `checking_on_a_schedule`, whose status line says the same
+/// wait and the check interval in the same words, so the two cannot come to
+/// say "2 minutes" and "120 seconds" about one length of time.
+pub(crate) fn said_as_a_person_says_it(wait: Duration) -> String {
     let seconds = wait.as_secs();
     let (minutes, rest) = (seconds / 60, seconds % 60);
     match (minutes, rest) {

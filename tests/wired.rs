@@ -1719,17 +1719,24 @@ fn test_a_sent_message_that_will_not_leave_the_queue_is_reported() {
 ///
 /// The window watches the inbox so new mail arrives without asking for it.
 /// When that watch ends, because the connection dropped or the server closed
-/// it, nothing restarts it: the ordinary cycle starts a fresh watch only after
-/// mail arrives and the folder is re-read, which is exactly what stops
-/// happening. New mail then stops arriving on its own, the mailbox looks no
-/// different, and the only record is a line in a file nobody reads.
+/// it, or never starts because the server could not be reached, both
+/// failures reach the decision about what comes next, which since
+/// 2026-09-18 is a watch tried again after a growing wait or the schedule
+/// alone (#37). Until then nothing restarted a watch: the ordinary cycle
+/// started a fresh one only after mail arrived, which is exactly what had
+/// stopped, and the two failures reached a sentence telling the person to
+/// use Refresh, which this test held them to. New mail arriving on its own
+/// is what the watch is for, and a watch that ends for good is silence with
+/// the mailbox looking no different.
 ///
 /// `ImapIdleEvent::Stopped` says as much where it is declared: silence is what
 /// a dropped connection looks like, which is why it is an event at all.
 ///
-/// What this cannot see: whether either sentence reaches anybody, or whether
-/// what it says is true. It asks only that both failures reach the routine
-/// that speaks, and that both are still handled here.
+/// What this cannot see: whether a watch is really started again, or what a
+/// provider does with one. It asks only that both failures reach the
+/// decision, as `WhyTheWatchEnded`, and that both are still handled here;
+/// `tests/mail_keeps_arriving_on_its_own.rs` reads the decision and the arms
+/// in detail.
 #[test]
 fn test_a_mail_watch_that_ends_is_reported_rather_than_only_logged() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -1745,7 +1752,7 @@ fn test_a_mail_watch_that_ends_is_reported_rather_than_only_logged() {
         );
     }
     assert!(
-        watcher.matches("say_the_watch_is_off").count() >= 2,
+        watcher.matches("WhyTheWatchEnded::").count() >= 2,
         "one or both of the two ways a mail watch can fail goes to a log and \
          nowhere else. New mail stops arriving on its own and the mailbox looks \
          no different, which is the whole reason Stopped is an event."

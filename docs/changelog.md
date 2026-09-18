@@ -107,6 +107,45 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Mail keeps arriving on its own for as long as the program runs.** Reported on 2026-09-15
+  from build `0.125.1+g3e633252` (#37): "After running a few hours, automatic mail fetching is
+  switched off. The user has to manually fetch mail." The cause was a decision: the watch on your
+  inbox, the open connection through which the server says when mail lands, ended the first time
+  the connection dropped and nothing started it again, and the status bar told you to use Refresh.
+  Two more things the report did not say: nothing checked for mail when the program started, so
+  nothing watched until the first F9; and the Check Interval on the account editor, offered there
+  since 2026-03-01, was read by nothing.
+  Now: when the watch ends for any reason but mail arriving, it is started again after a growing
+  wait, thirty seconds doubling to half an hour, the same wait the download uses. When the network
+  comes back it is started again at once, and the accounts that are due are checked at once,
+  without waiting for Go Back Online: reads follow the network, and offline mode holds what you
+  send. Every enabled IMAP account has a watch of its own, where before one account was watched.
+  Where a watch cannot cover, your accounts are checked on a schedule: a POP account, a server
+  that does not offer watching or refuses it three times in a row, an account whose watch keeps
+  failing, and the folders you keep up to date that are not the inbox. The schedule's interval is
+  the Check Interval on the account editor, which now does what it says: between 1 and 60 minutes,
+  5 unless you changed it, and the editor says so under the field. A start checks every enabled
+  account and starts the watches, so the first hours after opening the program are no different
+  from the hours after the first F9; F9 itself checks every enabled account, one after another,
+  and says how many when there is more than one. The status bar says which of these is happening:
+  "Watching Inbox for new mail. Checking every 5 minutes.", "Waiting 2 minutes to watch Inbox
+  again. Checking every 5 minutes.", or "Checking every 5 minutes." when nothing watches, with
+  the account named first when more than one is enabled. These are steps, shown always and spoken
+  only under Say every step. The sentence that said new mail will not appear on its own is gone,
+  because it is no longer true.
+  Known limitations: no real server has dropped a watch on this program yet, so whether your
+  provider drops it, after how long, and whether the restart carries mail in over hours, is what
+  the first day of this build will show. A connection that dies without saying so can go
+  unnoticed for up to 29 minutes, which is how often the watch renews itself; the scheduled check
+  is what covers that, at your interval. Whether a provider counts a watch per account against a
+  connection limit is not known; each account holds two connections, one watching and one
+  working. The schedule does not run while this computer has no network, so a computer that goes
+  off the network and comes back is checked when it comes back and not before. An account whose
+  password is not saved on this computer is told so out loud at every check, at the start and then
+  every interval, until the password is entered again or the account is disabled; that was seen by
+  running this build against such an account, and it is an error said as errors are, not a watch
+  that keeps quiet. Nobody has heard the three status lines.
+
 - **A computer set to English (United States) had its spelling checked in English (Caribbean),
   and Settings said so.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#21). The cause
   was a stored value read wrongly: a profile made before 2026-09-03 stores the bare language `en`,

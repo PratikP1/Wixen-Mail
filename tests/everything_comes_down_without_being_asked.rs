@@ -127,10 +127,12 @@ fn the_menu_arm_for(source: &str, id: &str) -> String {
 /// The send is matched as a call, `say(UIUpdate::...)`, and not as the
 /// variant's name: a name can sit in a comment or a `let _ =` and send
 /// nothing, and a reading that accepted a mention would stay green through
-/// exactly the break that matters.
+/// exactly the break that matters. The watch request carries the account
+/// it is for since 2026-09-18 (#37), so the call is matched up to its
+/// opening bracket.
 fn what_is_wrong_with_the_end_of_a_check(check: &str) -> Vec<String> {
     let mut wrong = Vec::new();
-    let Some(watch) = check.find("say(UIUpdate::MailboxWatchRequested)") else {
+    let Some(watch) = check.find("say(UIUpdate::MailboxWatchRequested(") else {
         wrong.push(
             "the check no longer asks for the watch, so this reads nothing about its end".into(),
         );
@@ -169,7 +171,7 @@ fn test_the_reading_would_see_a_check_that_forgot_the_download() {
     let the_old_end = "        say(UIUpdate::ConnectionStatusChanged(\n\
                        \x20           ConnectionStatus::Disconnected,\n\
                        \x20       ));\n\
-                       \x20       say(UIUpdate::MailboxWatchRequested);\n\
+                       \x20       say(UIUpdate::MailboxWatchRequested(account.id.clone()));\n\
                        \x20   });\n";
     let wrong = what_is_wrong_with_the_end_of_a_check(the_old_end);
     assert!(
@@ -180,7 +182,7 @@ fn test_the_reading_would_see_a_check_that_forgot_the_download() {
     );
 
     let the_wrong_way_round = "        say(UIUpdate::DownloadRequested);\n\
-                               \x20       say(UIUpdate::MailboxWatchRequested);\n";
+                               \x20       say(UIUpdate::MailboxWatchRequested(account.id.clone()));\n";
     let wrong = what_is_wrong_with_the_end_of_a_check(the_wrong_way_round);
     assert!(
         wrong.iter().any(|w| w.contains("before the watch")),

@@ -483,7 +483,7 @@ dialog once you have more than one.
 | Open Draft | `Ctrl+Shift+O` | Reopen a message you saved to finish later |
 | Save | `Ctrl+S` | Save current draft |
 | Save As | (none) | Save the message you are on as a `.eml` file, named after its subject. To save an attachment, open the message and use the reader's own Save Attachment command (`Ctrl+S` there) |
-| Check Mail | `F9` | Check for new messages |
+| Check Mail | `F9` | Check every enabled account for new messages, one after another. Since 2026-09-18 mail also arrives on its own: each account's inbox is watched, the watch is started again after a wait when it ends, and every account is checked on the interval its editor sets, so this key is for when you do not want to wait |
 | Import Mailbox | (none) | Read mail in from one file: a zip of mailbox files, a single saved message, a mailbox file, or an Outlook data file. Everything lands under Imported, on this computer, in the folders it was in |
 | Import a Folder of Messages | (none) | Read every saved message and mailbox file in a folder you choose, and in the folders inside it. Same destination. A file picker cannot answer with a folder, which is why this is its own command |
 | Export Mailbox | (none) | Write the folder you are looking at, and everything inside it, into one zip of mailbox files |

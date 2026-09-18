@@ -20,6 +20,7 @@ pub mod calendar_conflict;
 pub mod calendar_source;
 pub mod carddav_sync;
 pub mod categories;
+pub mod checking_on_a_schedule;
 pub mod checking_signatures;
 pub mod closing;
 pub mod collection_sync;
