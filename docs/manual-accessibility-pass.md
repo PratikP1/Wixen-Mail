@@ -305,6 +305,20 @@ stand on.
     language, inside an English sentence. This is 3.1.2, and nobody knows
     what a screen reader does with it. **Both.** [row 3.1.2, ledger 360,
     ledger 366, ledger 368, ledger 370, ledger 371]
+42. **Check mail on an account with many folders, once under each answer to
+    "While mail and the other modules are fetched, say" on the Feedback
+    tab.** Under Say what arrived you should hear nothing while the folders
+    are checked and then one sentence naming each folder that received
+    something with its count, and the sound for new mail if that row plays
+    one; under Say every step, every step and then the same sentence; under
+    Errors only, nothing but the sound and "New mail" if that row says so.
+    Note any sentence heard as a step under the default, and any result
+    heard as a step under Say every step: which is which is a judgement by
+    ear that nothing here has made. **NVDA.** [ledger 10, ledger 73, ledger
+    521]
+43. **Press OK in Settings while a check is running.** "Settings saved"
+    should be heard, not replaced by the next line of the check. Then Draft
+    saved and Refreshed the same way. **NVDA.** [ledger 78, ledger 521]
 
 ## B. Low vision and colour
 
