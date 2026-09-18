@@ -424,9 +424,47 @@ fn is_prerelease(version: &str) -> bool {
     parse(version).is_some_and(|version| !matches!(version.stage, Stage::Release))
 }
 
+/// Whether a version is a testing round rather than a candidate or a release.
+///
+/// Alpha and beta are the rounds where builds go to testers and every report
+/// comes back with a log, so the log's default level follows this answer
+/// (`logging::default_level_for`, #71). An rc is the release build under
+/// test and is not one of them. A string this cannot read is not one either,
+/// so an unreadable version gets the quieter default rather than the fuller
+/// one.
+pub fn is_alpha_or_beta(version: &str) -> bool {
+    parse(version).is_some_and(|version| matches!(version.stage, Stage::Alpha | Stage::Beta))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_a_version_carrying_alpha_or_beta_is_a_testing_round() {
+        // With and without the build identifier the installer script appends,
+        // because the version a build reports is the described one.
+        for version in [
+            "1.0.0-alpha.1",
+            "1.0.0-beta.3",
+            "1.0.0-alpha.1+42.g59c5b6a4",
+        ] {
+            assert!(is_alpha_or_beta(version), "{version} is a testing round");
+        }
+    }
+
+    #[test]
+    fn test_an_rc_a_release_or_an_unreadable_version_is_not_a_testing_round() {
+        // An rc is the release build under test, so it takes the release's
+        // answer; a string that is not a version takes the quieter answer
+        // rather than being guessed at.
+        for version in ["1.0.0-rc.1", "1.0.0", "0.125.1", "alpha", "", "1.0.0-alpha"] {
+            assert!(
+                !is_alpha_or_beta(version),
+                "{version} is not a testing round"
+            );
+        }
+    }
 
     #[test]
     fn test_a_later_patch_minor_or_major_is_newer() {

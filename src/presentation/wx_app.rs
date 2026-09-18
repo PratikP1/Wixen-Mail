@@ -17011,6 +17011,14 @@ fn handle_settings(
                 )));
                 let _ = tx.try_send(UIUpdate::CalendarViewChanged(opens_on));
                 send_status(tx, rt, "Settings saved");
+                // The two levels a report reads the rest of the log by, and
+                // nothing else from the settings (#71): a person's choices
+                // are theirs, and the two named change what the log holds.
+                tracing::info!(
+                    "Settings saved: log level {}, while fetching {}",
+                    mgr.app_config().log_level,
+                    mgr.app_config().announce_while_fetching
+                );
             }
             palette
         }
@@ -22053,15 +22061,29 @@ fn start_the_download(app: AppHandles<'_>) {
                                 entry.held_before_the_last_chunk = Some(entry.here.held);
                                 entry.here.held = done.held;
                                 entry.here.total_on_server = done.total_on_server;
+                                // Per chunk, at debug: hundreds per account,
+                                // which is what debug is for (#71). Counts and
+                                // names, never a subject.
+                                tracing::debug!(
+                                    "A chunk of headers for {} in {} landed: {} of {} here",
+                                    folder.name,
+                                    account.name,
+                                    done.held,
+                                    done.total_on_server
+                                );
                                 // The list re-reads the folder if it is open.
                                 say(UIUpdate::MoreOfTheFolderArrived(folder_id));
                                 say(UIUpdate::Progress(what_a_chunk_of_headers_came_to(entry)));
                             }
                             Err(e) => {
+                                // This program's clause for the kind of failure
+                                // first, then the server's own words, which go
+                                // to the log and nowhere else.
                                 tracing::warn!(
-                                    "The download of {} for {} stopped: {e}",
+                                    "The download of {} for {} stopped: {}; the server said: {e}",
                                     folder.name,
-                                    account.name
+                                    account.name,
+                                    crate::application::mail_sync::WhyTheServerStopped::from_the_kind_of(&e).as_a_clause()
                                 );
                                 say(UIUpdate::Progress(what_a_refused_chunk_came_to(entry, &e)));
                                 ended = WhyTheRunEnded::AServerStopped;
@@ -22087,6 +22109,15 @@ fn start_the_download(app: AppHandles<'_>) {
                         match done.ended {
                             Ending::WentThroughTheWholeList => {
                                 worked();
+                                // Per chunk, at debug, as the headers are:
+                                // how many of how many, and never a body.
+                                tracing::debug!(
+                                    "A chunk of text for {} landed: {} of {} fetched, {} could not be",
+                                    account.name,
+                                    text.fetched,
+                                    to_fetch,
+                                    text.could_not
+                                );
                                 say(UIUpdate::Progress(how_far_the_text_has_got(
                                     text.fetched,
                                     to_fetch,
@@ -22099,7 +22130,15 @@ fn start_the_download(app: AppHandles<'_>) {
                                 ended = WhyTheRunEnded::ItWasPaused;
                                 break 'accounts;
                             }
-                            Ending::TheServerStoppedAnswering { .. } => {
+                            Ending::TheServerStoppedAnswering { after, because } => {
+                                // The clause is this program's reading of the
+                                // failure's kind (#71); the server's words for a
+                                // text fetch are written where the fetch fails.
+                                tracing::info!(
+                                    "The text download for {} stopped after {after} messages: {}",
+                                    account.name,
+                                    because.as_a_clause()
+                                );
                                 say(UIUpdate::Progress(
                                     crate::application::bringing_everything_down::what_the_text_download_came_to(&text),
                                 ));
@@ -22658,6 +22697,18 @@ fn spawn_mail_sync(
                         say(UIUpdate::Progress(
                             crate::application::mail_sync::what_the_folder_sync_did(&result),
                         ));
+                        // The same sentence per folder in the log, so a report
+                        // says what each check found where (#71): the account,
+                        // the folder and the counts, never a subject. Asked
+                        // again rather than bound above, because 10-04's
+                        // reading finds the sentence's first call and reads
+                        // the send before it.
+                        tracing::info!(
+                            "Checked {} in {}: {}",
+                            folder.name,
+                            account.name,
+                            crate::application::mail_sync::what_the_folder_sync_did(&result)
+                        );
                         if let Some(update) = folder_arrival_update(*folder_id, result.fetched) {
                             say(update);
                         }
