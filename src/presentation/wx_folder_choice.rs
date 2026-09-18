@@ -6,47 +6,61 @@
 //! message in the account, so keeping it up to date means downloading the whole
 //! account a second time and reading every message twice in the list.
 //!
-//! So this asks. A checked list, one row per folder, with the row saying how
-//! many messages the folder holds and whether it is one somebody is subscribed
-//! to. What is ticked when the window opens is what the sync would do anyway,
-//! so somebody who does not care can close it and lose nothing.
+//! So this asks. A tree, one item per folder, nested the way the folder tree
+//! in the main window nests them, with a check box beside each and the item
+//! saying how many messages the folder holds and whether it is one somebody
+//! is subscribed to. What is ticked when the window opens is what the sync
+//! would do anyway, so somebody who does not care can close it and lose
+//! nothing.
 //!
-//! # Why a checked list and not a tree
+//! # Why a tree, and why it was a list until 2026-09-18
 //!
-//! The folder tree in the main window is one flat level, so a tree here would
-//! be a tree with no branches. A checked list is a single control where Space
-//! ticks the row under the cursor and arrows move, which is the plainest
-//! arrangement there is for exactly this question.
+//! This module's header used to say the folder tree in the main window is
+//! one flat level, so a tree here would be a tree with no branches. That was
+//! true when it was written and stopped being true when plan 01-04 stored
+//! each folder's parent and the main window began nesting by it; the header
+//! was not read again, and the tester met a flat list of fifty Gmail labels
+//! where the window beside it showed a hierarchy (#70, first point). The
+//! nesting here reads the same stored parent, through [`FolderRow::parent`],
+//! so the two cannot disagree again.
 //!
 //! # Making the tick reach a screen reader
 //!
-//! On Windows wxWidgets draws these check boxes itself rather than using a
-//! control that has them, so the platform sees a plain list and the ticked
-//! state reaches nobody. On a window whose entire purpose is ticking things,
-//! that is the window.
+//! On Windows wxWidgets draws a `CheckListBox`'s check boxes itself, so the
+//! platform sees a plain list. The list this used to be answered for its
+//! rows through an accessible object this program wrote, and a reading of
+//! that object over the channel NVDA uses found it saying read-only, busy and
+//! alerting where it meant checked: the toolkit's state constants and the
+//! toolkit's own enumeration disagree, which the paragraph in
+//! `accessibility/names.rs` where the object stood sets out. Its header said
+//! "Still to be confirmed with a screen reader"; the tester confirmed it on
+//! 2026-09-17 and heard "check box, read-only, not checked".
 //!
-//! So each row reports itself, through
-//! [`set_accessible_checked_rows`](crate::presentation::accessibility::names::set_accessible_checked_rows),
-//! as a check box with a checked state, and the row the cursor is on reports
-//! that it is the current one. It is the same fix NVDA makes in its own
-//! settings, where the problem is identical and the answer is written in
-//! Python: answer for the rows and not only for the control.
+//! A native tree with `TVS_CHECKBOXES` keeps the check state as the item's
+//! own state image, which NVDA reads from the control with
+//! `TVM_GETITEMSTATE` and which Windows' own accessible object for the tree
+//! answers as a check button with the checked state. No object of this
+//! program's is in that path. The style, the ticks and the reading go through
+//! [`native_tree_checks`], and `tests/a_kept_folder_reads_as_a_checked_check_box.rs`
+//! measured all of it on 2026-09-18 before this was written, Space included:
+//! the control toggles the item under the cursor by itself, so nothing here
+//! handles the key.
 //!
-//! The snapshot is refreshed on every tick and every move of the cursor, by the
-//! list itself rather than by anything here. A state read once when the window
-//! opened would announce confidently and be wrong from the first press of
-//! Space, which is worse than announcing nothing.
+//! What is written back at Save is read from the control's own state, item
+//! by item, at that moment; nothing here remembers a tick, so nothing here
+//! can remember it wrong.
 //!
-//! **Still to be confirmed with a screen reader.** The structure is there and
-//! the reasoning is sound; whether NVDA says "ticked" is a thing only NVDA can
-//! answer. Sixteen controls in this application were once named by a call that
-//! compiled, passed the tests and never reached a screen reader.
-//!
-//! The row's own text carries everything except the tick: the folder's name,
+//! The item's own text carries everything except the tick: the folder's name,
 //! how much is in it, and the warning about the one folder that doubles what
 //! gets downloaded. Those are read whatever happens to the check box.
+//!
+//! **Windows only**, as the tree's check boxes are. Elsewhere [`ask`] answers
+//! `None` without opening anything, because a dialog whose ticks reach nobody
+//! is worse than no dialog; a port needs its own bridge, as `CLAUDE.md` says
+//! of `wxAccessible`.
 
-use crate::presentation::accessibility::names::{set_accessible_checked_rows, set_accessible_name};
+use crate::presentation::accessibility::names::set_accessible_name;
+use crate::presentation::native_tree_checks;
 use crate::presentation::theme;
 use wxdragon::prelude::*;
 
@@ -165,9 +179,14 @@ pub fn handles_by_row<H: Copy>(
     placed: &[(usize, usize, Option<usize>)],
     handles: &[H],
 ) -> Option<Vec<H>> {
-    // Red until 11-03's task 2.
-    let _ = (placed, handles);
-    None
+    if placed.len() != handles.len() {
+        return None;
+    }
+    let mut by_row: Vec<Option<H>> = vec![None; placed.len()];
+    for ((row, _, _), handle) in placed.iter().zip(handles) {
+        by_row[*row] = Some(*handle);
+    }
+    by_row.into_iter().collect()
 }
 
 /// Whether an account is Gmail, by either fact the account row carries: the
@@ -199,86 +218,135 @@ pub fn the_all_mail_sentence(is_gmail: bool, any_holds_all_mail: bool) -> Option
 
 /// Ask which folders to keep up to date.
 ///
-/// `None` when somebody cancelled, which must leave everything as it was.
-/// Otherwise the folders whose answer changed, each with its new state, so the
-/// caller writes only what was actually decided rather than restating every
-/// folder as a choice somebody made.
-pub fn ask(parent: &Frame, account: &str, folders: &[FolderRow]) -> Option<Vec<(String, bool)>> {
-    if folders.is_empty() {
+/// `account_name` is what the account manager calls the account, which is
+/// what the title says; the tester heard an identifier there (#70, third
+/// point). `is_gmail` decides whether a missing All Mail is worth a sentence.
+///
+/// `None` when somebody cancelled, which must leave everything as it was, and
+/// on a platform where a tick would reach no screen reader, where nothing is
+/// opened. Otherwise the folders whose answer changed, each with its new
+/// state, so the caller writes only what was actually decided rather than
+/// restating every folder as a choice somebody made.
+pub fn ask(
+    parent: &Frame,
+    account_name: &str,
+    is_gmail: bool,
+    folders: &[FolderRow],
+) -> Option<Vec<(String, bool)>> {
+    if folders.is_empty() || !native_tree_checks::CHECK_STATES_REACH_A_SCREEN_READER {
         return None;
     }
-    let (dialog, list) = build_folder_choice_dialog(
+    let (dialog, tree) = build_folder_choice_dialog(
         parent,
-        account,
+        account_name,
+        is_gmail,
         folders,
         theme::current_from_stored_config(),
     );
 
     let answer = dialog.show_modal();
-    let changed = if answer == ID_OK {
-        Some(changes(folders, |index| list.is_checked(index as u32)))
-    } else {
-        None
-    };
+    let changed = (answer == ID_OK)
+        .then(|| what_the_tree_shows(&tree, folders))
+        .flatten();
     dialog.destroy();
     changed
+}
+
+/// The answers as the control shows them at this moment, read item by item
+/// from its own state, or `None` when the control's items cannot be matched
+/// to the rows, in which case nothing is written.
+fn what_the_tree_shows(tree: &TreeCtrl, folders: &[FolderRow]) -> Option<Vec<(String, bool)>> {
+    let by_row = handles_by_row(
+        &nesting(folders),
+        &native_tree_checks::items_in_walk_order(tree),
+    );
+    if by_row.is_none() {
+        tracing::warn!(
+            "The folder chooser's tree does not hold one item per folder, so no choice was written"
+        );
+    }
+    let by_row = by_row?;
+    Some(changes(folders, |row| {
+        native_tree_checks::is_checked(tree, by_row[row])
+    }))
 }
 
 /// Build the folder chooser without showing it.
 ///
 /// Everything `ask` used to do up to its own `.show_modal()` call, split out
 /// the same way [`crate::presentation::wx_settings::build_settings_dialog`]
-/// splits Settings: a test can build the real dialog and read back the real
-/// colour a live control holds, and never call `.show_modal()` at all.
+/// splits Settings: a test can build the real dialog and read back what the
+/// live control answers, and never call `.show_modal()` at all.
 ///
 /// `folders` must not be empty; `ask` checks that before calling here, since
-/// there is nothing to build a list out of otherwise.
+/// there is nothing to build a tree out of otherwise.
 ///
-/// Returns the list alongside the dialog, the same way the caller needs it
-/// after a real `.show_modal()`: to read which rows are ticked.
+/// Returns the tree alongside the dialog, the same way the caller needs it
+/// after a real `.show_modal()`: to read which items are ticked.
 pub fn build_folder_choice_dialog(
     parent: &Frame,
-    account: &str,
+    account_name: &str,
+    is_gmail: bool,
     folders: &[FolderRow],
     palette: Option<theme::Palette>,
-) -> (Dialog, CheckListBox) {
-    let dialog = Dialog::builder(parent, &format!("Folders to keep up to date: {account}"))
-        .with_size(560, 460)
-        .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
-        .build();
+) -> (Dialog, TreeCtrl) {
+    let dialog = Dialog::builder(
+        parent,
+        &format!("Folders to keep up to date: {account_name}"),
+    )
+    .with_size(560, 460)
+    .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
+    .build();
 
     let sizer = BoxSizer::builder(Orientation::Vertical).build();
 
     let explain = StaticText::builder(&dialog)
         .with_label(
-            "Space ticks the folder under the cursor. Folders you untick stay on the \
-             server and stop being downloaded.",
+            "Space ticks the folder under the cursor. Right arrow opens a folder that holds \
+             others. Folders you untick stay on the server and stop being downloaded.",
         )
         .build();
     sizer.add(&explain, 0, SizerFlag::All | SizerFlag::Expand, 8);
 
-    let list = CheckListBox::builder(&dialog).build();
-    for folder in folders {
-        list.append(&row_label(folder));
+    let tree = TreeCtrl::builder(&dialog)
+        .with_style(
+            TreeCtrlStyle::HideRoot | TreeCtrlStyle::HasButtons | TreeCtrlStyle::LinesAtRoot,
+        )
+        .build();
+    // Before the first item, which is the order the style needs; see the
+    // module it comes from.
+    native_tree_checks::add_check_boxes(&tree);
+    set_accessible_name(&tree, "Folders to keep up to date");
+    let placed = nesting(folders);
+    let mut items: Vec<Option<TreeItemId>> = vec![None; folders.len()];
+    if let Some(root) = tree.add_root("Folders", None, None) {
+        for (row, _depth, parent) in &placed {
+            let under = parent.and_then(|at| items[at].as_ref()).unwrap_or(&root);
+            items[*row] = tree.append_item(under, &row_label(&folders[*row]), None, None);
+        }
     }
-    for (index, folder) in folders.iter().enumerate() {
-        // Set after every row exists. Checking as they are appended works on
-        // Windows and is not guaranteed to, and a tick that silently lands on
-        // the wrong row is a folder somebody did not ask for.
-        list.check(index as u32, folder.syncing);
+    // Every branch open, so a nested folder is reachable by arrowing down
+    // without knowing it is there, which somebody working by ear does not.
+    for item in items.iter().flatten() {
+        tree.expand(item);
     }
-    // Each row reports itself as a check box with its ticked state and says
-    // whether it is the one the cursor is on, because Windows draws these check
-    // boxes rather than using a control that has them, so without this neither
-    // fact reaches anybody. It selects the first row, reads the list, and keeps
-    // reading it as rows are ticked and the cursor moves, so nothing here has
-    // to remember to.
-    set_accessible_checked_rows(
-        list,
-        "Folders to keep up to date",
-        "Tick a folder to download its messages. Untick one to leave it on the server.",
-    );
-    sizer.add(&list, 1, SizerFlag::All | SizerFlag::Expand, 8);
+    // The ticks, through the control's own state, matched to the rows by the
+    // walk the module describes. A walk that does not match the rows ticks
+    // nothing rather than ticking the wrong folder.
+    if let Some(by_row) = handles_by_row(&placed, &native_tree_checks::items_in_walk_order(&tree)) {
+        for (row, folder) in folders.iter().enumerate() {
+            native_tree_checks::set_checked(&tree, by_row[row], folder.syncing);
+        }
+    }
+    sizer.add(&tree, 1, SizerFlag::All | SizerFlag::Expand, 8);
+
+    if let Some(sentence) =
+        the_all_mail_sentence(is_gmail, folders.iter().any(|folder| folder.holds_all_mail))
+    {
+        let said = StaticText::builder(&dialog).with_label(&sentence).build();
+        set_accessible_name(&said, &sentence);
+        sizer.add(&said, 0, SizerFlag::All | SizerFlag::Expand, 8);
+    }
 
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
     let save = Button::builder(&dialog)
@@ -296,23 +364,27 @@ pub fn build_folder_choice_dialog(
     sizer.add_sizer(&buttons, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
 
     dialog.set_sizer(sizer, true);
-    // Focus starts in the list rather than on Save, so the first thing heard is
-    // a folder and its state rather than a button. The first row is already the
-    // current one, chosen when the rows were given their accessible state,
-    // because a list where nothing is selected has no folder to announce.
-    list.set_focus();
+    // Focus starts in the tree rather than on Save, so the first thing heard is
+    // a folder and its state rather than a button, and the cursor is put on the
+    // first item, because a tree where nothing is selected has no folder to
+    // announce.
+    if let Some(first) = placed.first().and_then(|(row, _, _)| items[*row].as_ref()) {
+        tree.select_item(first);
+        tree.set_focused_item(first);
+    }
+    tree.set_focus();
 
-    // Painted last. The `CheckListBox` draws its own check marks rather than
-    // going through a control the established pattern paints, so it is left
-    // to Windows here, the same as every `Choice`, `ComboBox`, `RadioButton`
-    // and `CheckBox` elsewhere in this round. `None` means high contrast is
-    // on, or the system is set up in a way this application should not paint
-    // over, so nothing is set here and Windows decides.
+    // Painted last. The tree is left to Windows here, the same as the tree in
+    // the "where does this go" dialog and every `Choice`, `ComboBox`,
+    // `RadioButton` and `CheckBox` elsewhere in this round; only the dialog is
+    // painted. `None` means high contrast is on, or the system is set up in a
+    // way this application should not paint over, so nothing is set here and
+    // Windows decides.
     if let Some(palette) = palette {
         theme::paint(&dialog, palette.main_surface());
     }
 
-    (dialog, list)
+    (dialog, tree)
 }
 
 /// Which answers differ from what they were.

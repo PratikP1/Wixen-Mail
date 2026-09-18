@@ -25,6 +25,7 @@ pub mod managers;
 pub mod markdown_input;
 pub mod message_columns;
 pub mod message_rows;
+pub mod native_tree_checks;
 pub mod note_folder_tree;
 pub mod one_question_at_a_time;
 pub mod panes;

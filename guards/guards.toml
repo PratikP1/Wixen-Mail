@@ -80,8 +80,12 @@
 #
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
-# 802 records were swept that day.
-# 114 records have arrived since and have not been through it.
+# 798 records were swept that day.
+# 116 records have arrived since and have not been through it.
+#
+# 798 rather than the 802 this line read until 2026-09-18: four swept
+# records on `names.rs`'s `should_select_first_row` were retired by 11-03
+# with the function, and the comment where they stood says why.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -11005,45 +11009,18 @@ tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
-[[guard]]
-name = "the first row becomes current only without a selection, not with one too"
-file = "src/presentation/accessibility/names.rs"
-before = """!has_selection && row_count > 0"""
-after = """!has_selection || row_count > 0"""
-red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility/names.rs", tests = 32 },
-]
-
-[[guard]]
-name = "the first row becomes current only when a row exists, not when the count is exactly zero"
-file = "src/presentation/accessibility/names.rs"
-before = """row_count > 0"""
-after = """row_count == 0"""
-red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility/names.rs", tests = 32 },
-]
-
-[[guard]]
-name = "the first row becomes current only when a row exists, not when the count is negative"
-file = "src/presentation/accessibility/names.rs"
-before = """row_count > 0"""
-after = """row_count < 0"""
-red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility/names.rs", tests = 32 },
-]
-
-[[guard]]
-name = "the first row becomes current only when a row exists, not whenever the count is non-negative"
-file = "src/presentation/accessibility/names.rs"
-before = """row_count > 0"""
-after = """row_count >= 0"""
-red = ["presentation::accessibility::names::tests::test_the_first_row_becomes_current_only_when_nothing_is_selected_and_a_row_exists"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility/names.rs", tests = 32 },
-]
+# Four records retired on 2026-09-18 by 11-03, all on `names.rs`'s
+# `should_select_first_row`: "the first row becomes current only without a
+# selection, not with one too", and the three "the first row becomes current
+# only when a row exists" records (count exactly zero, negative,
+# non-negative). Each named the one test of that function. The function, the
+# `CheckedRows` object it served and that test went with the folder chooser's
+# `CheckListBox`, which is a native tree with `TVS_CHECKBOXES` now; a
+# reading over MSAA found the object answering read-only where it meant
+# checked (the paragraph in `names.rs` where it stood says why). A record
+# whose `before` names no place in the tree is one the runner refuses, and a
+# rule that no longer exists has nothing to guard. All four were in the sweep
+# of 2026-09-15, which is why the count above reads 798.
 
 [[guard]]
 name = "a nonzero UI Automation client count means something is listening, not only a nonpositive read"
@@ -25473,4 +25450,57 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+]
+
+# ── A kept folder is ticked in the control's own state, where NVDA reads it ──
+#
+# The tester's second point on #70: a kept folder was heard as "check box,
+# read-only, not checked". The dialog's tree ticks each item through
+# `TVM_SETITEMW` from the row's `syncing`, and reading C in the target reads
+# every item's state image back through `TVM_GETITEMSTATE` and its MSAA
+# state through `AccessibleObjectFromWindow`, which are the two channels NVDA
+# and Windows' own tree object answer from. The break unticks every item
+# whatever the row says, so the kept row's state image reads 1 and its MSAA
+# state carries no CHECKED bit; reading C goes red on both and nothing else
+# does, since the companions hold the predicate to a hand-built harvest and
+# reading D reads static texts.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a kept folder in the chooser is ticked in the control's own state, not left unticked whatever the row says"
+file = "src/presentation/wx_folder_choice.rs"
+suite = "a_kept_folder_reads_as_a_checked_check_box"
+before = """            native_tree_checks::set_checked(&tree, by_row[row], folder.syncing);"""
+after = """            native_tree_checks::set_checked(&tree, by_row[row], false);"""
+red = [
+    "test_reading_c_the_dialog_is_a_tree_whose_kept_folder_is_checked_where_nvda_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_folder_choice.rs", tests = 21 },
+    { file = "tests/a_kept_folder_reads_as_a_checked_check_box.rs", tests = 8 },
+]
+
+# ── The chooser's title names the account, not its identifier ───────────────
+#
+# The tester's third point on #70: the title was an identifier. The chooser
+# puts whatever it is handed after the colon, so the fact lives at the one
+# call in `choose_folders`, which hands the account row's `name`. The break
+# hands the identifier back, the tree as it stood before 11-03; the reading
+# of the window's source in the target goes red and nothing else does.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the folder chooser is handed the account's name for its title, not its identifier"
+file = "src/presentation/wx_app.rs"
+suite = "a_kept_folder_reads_as_a_checked_check_box"
+before = """    let Some(changed) = ask(frame, &account.name, is_gmail, &rows) else {"""
+after = """    let Some(changed) = ask(frame, &account_id, is_gmail, &rows) else {"""
+red = [
+    "test_the_window_hands_the_chooser_the_accounts_name_and_not_its_identifier",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_kept_folder_reads_as_a_checked_check_box.rs", tests = 8 },
 ]

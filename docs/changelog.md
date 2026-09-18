@@ -121,6 +121,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Folders to Keep Up to Date is a tree, its check boxes reach a screen reader, and its
+  title names the account.** Reported on 2026-09-17 from build `1.0.0-alpha.1` under NVDA
+  (#70): "the folder list is a flat list, not a tree like the folder tree"; a kept folder was
+  heard as "check box, read-only, not checked"; "the title is the account id, not the account
+  name"; and All Mail was missing for a Gmail account. The window shows the account's folders
+  as a tree nested the way the folder tree in the main window nests them, every branch open,
+  with a check box beside each folder. The check box is the tree's own, so what a screen
+  reader hears for it comes from the control and not from anything this program adds; the
+  list this used to be answered for its rows through an object of this program's, and a
+  reading of that object over the channel NVDA uses found it saying read-only, busy and
+  alerting where it meant checked, because the toolkit's numbers for those states and the
+  toolkit's own list of them disagree. Space ticks and unticks the folder under the cursor,
+  as before; Right arrow opens a folder that holds others. The title says "Folders to keep up
+  to date: " and then the name the Account Manager shows. A folder the server flagged as
+  holding every message, Gmail's All Mail, is in the tree unticked unless you ticked it; when
+  Gmail did not list one, which is what a label with Show in IMAP off looks like from here,
+  the window says so under the tree and says that Gmail's own settings, under Labels, Show in
+  IMAP, decide which labels it lists.
+  Known limitations: nobody has heard the tree. Whether a kept folder is heard as checked,
+  what Space says after it toggles, and how a nested folder's level is read are what a
+  listening pass settles. Whether Gmail lists All Mail is Gmail's setting and not this
+  program's.
 - **A sign-in failure in the Account Manager was two announcements a moment apart, and a
   screen reader could speak the second and drop the first.** When Sign In Again could not
   sign an account in, the reason was announced as a sentence and then, a millisecond later,

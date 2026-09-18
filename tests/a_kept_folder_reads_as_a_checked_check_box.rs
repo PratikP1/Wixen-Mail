@@ -8,16 +8,22 @@
 //! module's own header said "Still to be confirmed with a screen reader"; that
 //! confirmation happened, and it failed.
 //!
-//! Three readings, taken in one window session and asserted over separately.
+//! Four readings, taken in one window session and asserted over separately.
 //!
-//! **Reading A** is the dialog as it was built until 2026-09-18: a
+//! **Reading A** is the record of the day. Until 2026-09-18 the dialog was a
 //! `CheckListBox` whose rows answered through an accessible object this
-//! program wrote (`names::CheckedRows`). It is read over
-//! `AccessibleObjectFromWindow(hwnd, OBJID_CLIENT)`, which is what NVDA asks a
-//! `ListBox`-class window for, and each row's role, state and name are kept.
-//! The test holds the object to what the code claimed, and whether it is green
-//! or red is the finding: green means the object was right and NVDA read
-//! something else for the row; red means the snapshot was wrong.
+//! program wrote (`names::CheckedRows`), and the first version of this
+//! reading built that dialog and read its rows over
+//! `AccessibleObjectFromWindow(hwnd, OBJID_CLIENT)`, which is what NVDA asks
+//! a `ListBox`-class window for. It was red on arrival (commit `6bad4765`):
+//! every row answered role 0x2c, the kept row state 0xc000840 and the others
+//! 0x40, which over MSAA is READONLY, BUSY and two ALERT bits and never
+//! CHECKED, exactly the "read-only, not checked" the tester heard. The object
+//! is gone with the list, and what stays here is the same reading over the
+//! bare control it was attached to, a `CheckListBox` with one row ticked and
+//! nothing of this program's in the path, pinned to what it answers so the
+//! next person who reaches for that control knows what a screen reader gets
+//! from it.
 //!
 //! **Reading B** is a scratch `SysTreeView32` with `TVS_CHECKBOXES` added
 //! through `SetWindowLongPtrW` before any item, one item ticked through
@@ -36,6 +42,11 @@
 //! harvest to what the rows asked for, and two companions hand the predicate a
 //! wrong state and a wrong parent so it is known to complain.
 //!
+//! **Reading D** is the sentence for a Gmail account whose server listed no
+//! All Mail: the dialog built for Gmail over rows none of which holds every
+//! message carries a static text saying so and where Gmail decides it, and the
+//! same rows for another provider carry none.
+//!
 //! The reader is the same sixty lines of user32 and oleacc declarations that
 //! `tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs`
 //! uses, for the same reason: a feature on the `windows` crate is compiled into
@@ -46,6 +57,7 @@
 
 #![cfg(windows)]
 
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::presentation::theme;
@@ -174,11 +186,41 @@ const VTBL_GET_ACC_STATE: usize = 14;
 
 #[link(name = "user32")]
 unsafe extern "system" {
+    fn EnumChildWindows(
+        parent: isize,
+        callback: extern "system" fn(isize, isize) -> i32,
+        lparam: isize,
+    ) -> i32;
     fn GetClassNameW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetFocus() -> isize;
+}
+
+thread_local! {
+    static FOUND: RefCell<Vec<isize>> = const { RefCell::new(Vec::new()) };
+}
+
+extern "system" fn collect(hwnd: isize, _lparam: isize) -> i32 {
+    FOUND.with(|found| found.borrow_mut().push(hwnd));
+    1
+}
+
+/// Every descendant window of `parent`, in the order Windows enumerates them.
+fn descendants_of(parent: isize) -> Vec<isize> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumChildWindows(parent, collect, 0) };
+    FOUND.with(|found| found.borrow().clone())
+}
+
+fn window_text(hwnd: isize) -> String {
+    let mut buffer = [0u16; 512];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
 }
 
 #[link(name = "oleacc")]
@@ -450,30 +492,29 @@ fn row(
 }
 
 /// The three rows the tester's report is about: a kept one, a dropped one and
-/// the one that holds every message.
-fn the_rows_of_the_day() -> Vec<FolderRow> {
-    vec![
-        row("INBOX", "Inbox", None, true, false),
-        row("Archive", "Archive", None, false, false),
-        row("[Gmail]/All Mail", "All Mail", None, false, true),
-    ]
-}
+/// the one that holds every message, as labels for the bare list.
+const THE_ROWS_OF_THE_DAY: [&str; 3] = [
+    "Inbox, 12 messages",
+    "Archive, 12 messages",
+    "All Mail, holds a copy of every message, so this doubles what is downloaded",
+];
 
-fn read_the_dialog_as_it_stood(frame: &Frame) -> Result<ReadingA, String> {
-    let (dialog, control) = build_folder_choice_dialog(
-        frame,
-        "work@example.com",
-        &the_rows_of_the_day(),
-        theme::current(""),
-    );
-    let hwnd = control.get_handle() as isize;
+/// The control the dialog was built on until 2026-09-18, with the first row
+/// ticked the way the dialog ticked it, and no accessible object attached.
+fn read_the_control_the_dialog_stood_on(frame: &Frame) -> Result<ReadingA, String> {
+    let list = CheckListBox::builder(frame).build();
+    for label in THE_ROWS_OF_THE_DAY {
+        list.append(label);
+    }
+    list.check(0, true);
+    let hwnd = list.get_handle() as isize;
     let control_class = class_name(hwnd);
     let mut rows = Vec::new();
     for child in 1..=3 {
         let msaa = msaa_of(hwnd, child).map_err(|why| format!("reading A, row {child}: {why}"))?;
         rows.push(ListRow { child, msaa });
     }
-    dialog.destroy();
+    list.destroy();
     Ok(ReadingA {
         control_class,
         rows,
@@ -740,6 +781,7 @@ fn read_the_dialog_as_it_is(frame: &Frame) -> Result<ReadingC, String> {
     let (dialog, control) = build_folder_choice_dialog(
         frame,
         "Pratik at work",
+        false,
         &the_nested_rows(),
         theme::current(""),
     );
@@ -775,6 +817,45 @@ fn read_the_dialog_as_it_is(frame: &Frame) -> Result<ReadingC, String> {
     })
 }
 
+// ── Reading D: the sentence when Gmail listed no All Mail ──────────────────
+
+/// The static texts of the dialog built for a Gmail account and for another
+/// provider, over rows none of which holds every message.
+#[derive(Debug)]
+struct ReadingD {
+    static_texts_for_gmail: Vec<String>,
+    static_texts_for_another_provider: Vec<String>,
+}
+
+fn static_texts_of(dialog: &Dialog) -> Vec<String> {
+    descendants_of(dialog.get_handle() as isize)
+        .into_iter()
+        .filter(|hwnd| class_name(*hwnd) == "Static")
+        .map(window_text)
+        .collect()
+}
+
+fn read_the_all_mail_sentence(frame: &Frame) -> Result<ReadingD, String> {
+    let mut texts = Vec::new();
+    for is_gmail in [true, false] {
+        let (dialog, _tree) = build_folder_choice_dialog(
+            frame,
+            "Pratik at work",
+            is_gmail,
+            &the_nested_rows(),
+            theme::current(""),
+        );
+        texts.push(static_texts_of(&dialog));
+        dialog.destroy();
+    }
+    let static_texts_for_another_provider = texts.pop().ok_or("reading D: no second dialog")?;
+    let static_texts_for_gmail = texts.pop().ok_or("reading D: no first dialog")?;
+    Ok(ReadingD {
+        static_texts_for_gmail,
+        static_texts_for_another_provider,
+    })
+}
+
 // ── The one window session ─────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -782,6 +863,7 @@ struct Harvest {
     reading_a: ReadingA,
     reading_b: ReadingB,
     reading_c: ReadingC,
+    reading_d: ReadingD,
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -804,13 +886,15 @@ fn take_the_harvest() -> Result<Harvest, String> {
         wxdragon::main(move |app| {
             let taken: Result<Harvest, String> = (|| {
                 let frame = Frame::builder().build();
-                let reading_a = read_the_dialog_as_it_stood(&frame)?;
+                let reading_a = read_the_control_the_dialog_stood_on(&frame)?;
                 let reading_b = read_a_native_tree_with_check_boxes(&frame)?;
                 let reading_c = read_the_dialog_as_it_is(&frame)?;
+                let reading_d = read_the_all_mail_sentence(&frame)?;
                 Ok(Harvest {
                     reading_a,
                     reading_b,
                     reading_c,
+                    reading_d,
                 })
             })();
             if let Ok(mut slot) = outcome.lock() {
@@ -852,30 +936,44 @@ fn complain(what: &str, wrong: &[String]) {
 // ── Reading A ──────────────────────────────────────────────────────────────
 
 #[test]
-fn test_reading_a_the_rows_of_the_old_list_answered_what_the_code_claimed() {
-    // What `names::CheckedRows` claimed: every row a check button, the kept
-    // row checked and the others not, read-only on none. Green means the
-    // object was right and NVDA read something else for the row; red means
-    // the snapshot was wrong. The harvest is quoted either way.
+fn test_reading_a_a_bare_check_list_box_row_already_carried_its_tick_and_the_object_broke_it() {
+    // The record of the day, over the control the dialog stood on: with no
+    // object of this program's attached, a ticked row of a wx `CheckListBox`
+    // answers role 0x2c and state 0x100010, FOCUSABLE and CHECKED, and an
+    // unticked one 0x100000, with the row's text as its name. Measured
+    // 2026-09-18, and it means the platform had the tick right on its own:
+    // the object this program attached replaced those flags with wrongly
+    // numbered ones, which is the whole of what the tester heard. The first
+    // version of this reading, over the dialog with that object attached, is
+    // quoted in the file comment. The dialog is a tree for the hierarchy,
+    // and the tree's own state reaches the same channel (reading B).
     let reading = &the_harvest().reading_a;
     let mut wrong = Vec::new();
     let quoted: Vec<String> = reading.rows.iter().map(ListRow::describe).collect();
+    if reading.control_class != "ListBox" {
+        wrong.push(format!("the control is a {:?}", reading.control_class));
+    }
     for row in &reading.rows {
         if row.msaa.role != ROLE_SYSTEM_CHECKBUTTON {
             wrong.push(format!("not a check button: {}", row.describe()));
         }
-        let checked = row.msaa.state & STATE_SYSTEM_CHECKED != 0;
-        if checked != (row.child == 1) {
+        if (row.msaa.state & STATE_SYSTEM_CHECKED != 0) != (row.child == 1) {
             wrong.push(format!("the checked bit is wrong: {}", row.describe()));
         }
         if row.msaa.state & STATE_SYSTEM_READONLY != 0 {
             wrong.push(format!("read-only: {}", row.describe()));
         }
+        if row.msaa.name != THE_ROWS_OF_THE_DAY[row.child as usize - 1] {
+            wrong.push(format!(
+                "the row's name is not its text: {}",
+                row.describe()
+            ));
+        }
     }
     complain(
         &format!(
-            "the {} the old dialog held should have answered what its object claimed; it answered\n  {}",
-            reading.control_class,
+            "a bare CheckListBox row should answer check button, its tick, no read-only and \
+             its text as its name; it answered\n  {}",
             quoted.join("\n  ")
         ),
         &wrong,
@@ -1041,5 +1139,55 @@ fn test_the_reading_complains_when_a_folder_sits_under_the_wrong_parent() {
     assert!(
         wrong.iter().any(|it| it.contains("\"QILC\" sits under")),
         "the reading did not complain about the parent: {wrong:?}"
+    );
+}
+
+// ── The title ──────────────────────────────────────────────────────────────
+
+#[test]
+fn test_the_window_hands_the_chooser_the_accounts_name_and_not_its_identifier() {
+    // The tester's third point: the title was an identifier. The chooser
+    // puts whatever it is handed after the colon, so the fact to hold is at
+    // the one call site, read from the source: the second argument is the
+    // account row's name. A guard record couples this to `wx_app.rs`.
+    let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+        .expect("the window's source is beside this test");
+    let calls: Vec<&str> = source
+        .lines()
+        .filter(|line| line.contains("ask(frame, ") && !line.trim_start().starts_with("//"))
+        .collect();
+    assert!(
+        calls
+            .iter()
+            .any(|line| line.contains("ask(frame, &account.name, ")),
+        "no call hands the chooser the account's name: {calls:?}"
+    );
+    assert!(
+        !calls
+            .iter()
+            .any(|line| line.contains("ask(frame, &account_id")),
+        "a call still hands the chooser the identifier: {calls:?}"
+    );
+}
+
+// ── Reading D ──────────────────────────────────────────────────────────────
+
+#[test]
+fn test_reading_d_gmail_with_no_all_mail_listed_gets_the_sentence_and_another_provider_does_not() {
+    // The tester's fourth point: All Mail was missing. His server listed none
+    // (50 folders, none flagged, read 2026-09-18), so the dialog cannot show
+    // a row and says so, once, for Gmail only, in a static text a screen
+    // reader reaches by arrowing past the tree.
+    let reading = &the_harvest().reading_d;
+    let says_so = |texts: &[String]| texts.iter().any(|it| it.contains("Show in IMAP"));
+    assert!(
+        says_so(&reading.static_texts_for_gmail),
+        "the dialog for Gmail says nothing about All Mail: {:?}",
+        reading.static_texts_for_gmail
+    );
+    assert!(
+        !says_so(&reading.static_texts_for_another_provider),
+        "the dialog for another provider talks about Gmail: {:?}",
+        reading.static_texts_for_another_provider
     );
 }
