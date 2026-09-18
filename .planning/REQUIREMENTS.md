@@ -10,7 +10,9 @@ build `0.125.1+g3e633252`, which produced 44 GitHub issues, #20 to #63, in one d
 requirements, `FOUND-01` to `FOUND-12`, are drawn from those issues and from nothing else; the
 section "What the first day of testing found" says which issue each one comes from. Phase 10's,
 `MAIL-01` to `MAIL-05`, added 2026-09-17, are five more of the same issues, the third of the
-seven groups; the section "All the mail, and what is said while it comes" names each.
+seven groups; the section "All the mail, and what is said while it comes" names each. Phase
+11's, `LIST-01` to `LIST-10`, added 2026-09-18, are the fourth group with #70 and #71 in
+front; the section "Reading, and the list" names each.
 
 ## How to read the acceptance criteria
 
@@ -3045,6 +3047,76 @@ re-taken against `main` at `c5ee5085` on 2026-09-17 with the command in the plan
     Features and installs over the alpha.1 build as an upgrade is settled by a build, which is
     Pratik's to make.
 
+**Added 2026-09-18: two more under this section, from what the morning's push of `744d05ef`
+showed, owned by phase 11 and placed here on the reasoning FOUND-13 to FOUND-16 gave.**
+`FOUND-17` is a regression of FOUND-02's fix, found by CI and not by anybody; `FOUND-18` is the
+workflow FOUND-09's case runs in, reporting success over a failed job. Neither is one of the
+seven groups.
+
+- [ ] **FOUND-17**: The Settings screen keeps a chosen spelling language exactly as chosen
+  when this machine cannot check it, and CI on `main` is green.
+  - Evidence: `gh run view 35336142985 --json conclusion` -> `failure` on 2026-09-18 at
+    `744d05ef`, the Test Suite job alone; its log at line 10868: `thread
+    'test_the_language_the_screen_shows_is_the_one_the_checker_uses' panicked ... stored
+    "en-AU": the screen would keep "en-US", the checker uses "en-AU"`; every other target
+    passed (75 `test result: ok`, `--no-fail-fast` at `ci.yml:74`). The same target passes on
+    this machine (`cargo test --test the_language_the_screen_shows_is_the_one_used` -> ok,
+    2026-09-18), because Windows here offers en-AU. `language_rows_and_selection`
+    (`wx_settings.rs:884`) asks `language_to_use` first, whose second arm answers this
+    machine's region for any tag in the family (`spellcheck/mod.rs:354-380`), so the
+    `or_else` that would keep a stored regional tag is never reached when the machine's
+    region is offered. 19 records name `wx_settings.rs` at 0 tests and 30 name the checker's
+    module, so the rule goes in a module of its own.
+  - [S] `tests/the_language_the_screen_shows_is_the_one_used.rs:81-83`: "A tag somebody chose
+    is kept exactly as chosen, whether or not this machine can check it."
+  - [D] `presentation::which_language_row::which_row_shows(stored, machine, rows)` answers the
+    row spelled as a stored tag with a region, available or not, or a row added at the end
+    when none spells it; a bare tag resolves the way the checker resolves it; a tag nothing
+    offers is added as stored; held by a case per rule over hand-built rows, red on both
+    machines before the rule and green after.
+  - [D] `language_rows_and_selection` asks that rule; `read_settings` writes the same list's
+    tag; the integration reading is unchanged and passes here; a guard record measures the
+    region rule's break; the changelog names the regression against 09-02 and #21.
+  - [S] Whether the target passes on GitHub's runner is the next push of `main`, which is
+    Pratik's to make.
+
+- [ ] **FOUND-18**: A run of the NVDA workflow in which a case failed is a failed run, its
+  two failing cases are read and acted on where each was at fault, and the Accessibility
+  run's walk over the five editors is read into FOUND-08.
+  - Evidence: `gh run view 35336142908 --json conclusion,jobs` -> the run `success`, its one
+    job `failure`, 2026-09-18 at `744d05ef`; `.github/workflows/nvda.yml:39` `continue-on-error:
+    true`, since `363358b3` on 2026-08-16, with the header saying the job is non-blocking on
+    purpose. The job log: `FAIL tests/settings-tabs-read-once.test.js`, "never heard all of
+    ["General"] within 15000ms. Everything NVDA said: []", at the case's first wait before any
+    key, on the case's first ever run (`a7a54743`, 2026-09-16); `FAIL
+    tests/account-manager-sign-in-failure.test.js`, "never heard all of ["Signing in
+    failed","not one Wixen Mail can sign in to through a browser"]", and the same at
+    `3e633252` (run 34973255598, 2026-09-15). The transcripts: the sign-in case ends with
+    "Sign-in needs attention, Scan target" and never holds the sentence; no transcript of any
+    case holds a dialog's opening announcement. The tester heard the Settings dialog speak
+    correctly by hand on `1.0.0-alpha.1+149.g744d05ef` on 2026-09-18 and #33 is closed on his
+    word. `wx_account_manager.rs:582-590`: the sentence through `said_and_shown` at High,
+    then `a11y.signal(FeedbackEvent::AccountNeedsAttention, ..)` at Urgent, a millisecond
+    apart. Run 35336142914: the five editor targets walked, "0 without a name" each.
+  - [S] `CLAUDE.md`, guardrail 4: "A check nobody reads is worse than no check ... a scan
+    reporting success while its scan step errored, buys false confidence."
+  - [D] `nvda.yml` loses `continue-on-error`; the summary and the upload keep `if: always()`;
+    the header says why with the date; `accessibility.yml` is left as it is, recorded in the
+    ledger with the reason.
+  - [D] The settings case takes its mark after the settle and presses Right rather than
+    waiting for an opening announcement the harness never captures; the Settings dialog is
+    not changed; `nvda-tests/README.md` lists every case and says what the log holds.
+  - [D] The three sign-in failure arms call one helper, `status_line::shown_and_signalled`,
+    which puts the sentence on the line and raises the event with the sentence as its detail,
+    so the words, the cue, the braille and the visual are one notification; the reading at
+    `wx_account_manager.rs:2787` is rewritten in place to hold it; a guard record measures the
+    break.
+  - [D] FOUND-08 is ticked on run 35336142914's walk; FOUND-09 is ticked on the tester's ear
+    with the runner's case named as the harness's remaining work; ledger 489 and 492 closed.
+  - [S] Whether the sign-in line is heard whole and which tab the corrected case's first
+    Right reaches on a fresh profile are the runner's to show at the next push of `main`,
+    which is Pratik's to make; these tests never run on a machine somebody is using.
+
 ### All the mail, and what is said while it comes
 
 Added 2026-09-17 for phase 10, the third of the seven groups Pratik agreed on 2026-09-16.
@@ -3384,6 +3456,300 @@ provider does.
     sentence is a step and which a result by ear, is a listening pass and his (ledger 10, 73,
     78).
 
+### Reading, and the list
+
+Added 2026-09-18 for phase 11, the fourth of the seven groups Pratik agreed on 2026-09-16,
+with #70 from the second day of testing first and #71 from his decision of 2026-09-17. Every
+requirement here is one GitHub issue, in the tester's words on its `[S]` lines, with the
+`[D]` lines written on 2026-09-18 by the planner as proposals in the sense the top of this
+file gives. Every evidence line was re-taken against `main` at `744d05ef` on 2026-09-18, and
+where a premise moved the evidence line says which way. The plans are in
+`.planning/phases/11-reading-and-the-list/README.md`.
+
+Nothing here has met a real provider except through the tester's Gmail account. Each
+requirement's last `[S]` line says what only his ear, his reader or his account can settle;
+the caveat at the top of this file binds every `[D]` line.
+
+- [ ] **LIST-01**: Folders to Keep Up to Date is a tree whose ticks a screen reader hears,
+  names the account, shows All Mail when the server lists it, and is on the Tools menu.
+  - Evidence: `src/presentation/wx_folder_choice.rs:159-168` on 2026-09-18 at `744d05ef`: one
+    `CheckListBox`, one row per folder in stored order, and the header's reason ("the folder
+    tree in the main window is one flat level") is no longer so (`folder_tree::nested` at
+    `:1074`, `folder_parents` at `folders.rs:661`). Each row answers as a check box through
+    `set_accessible_checked_rows` (`names.rs:232-262`), never read-only. The title is built
+    from `account_id` (`wx_app.rs:19373`, `ask(frame, &account_id, &rows)`). The item is on
+    Action, This Folder (`wx_app.rs:6584` inside the `folder_menu` builder appended to the
+    Action menu at `:6815`), not File as the issue and three pages say; it left File on
+    2026-08-26 (`d9503015`). Read through Python on 2026-09-18, read-only: his 50 stored
+    folders hold no `[Gmail]/All Mail` and none flagged `holds_all_mail`; `store_folders`
+    (`mail_sync.rs:694-718`) saves every folder the server lists, so his server did not list
+    it, which Gmail's Show in IMAP setting decides. wxdragon 0.9.17's tree has no check state.
+  - [S] #70, the tester on 2026-09-17: "The list is flat. It should follow the folder
+    hierarchy"; "heard as 'check box, read-only, not checked'. It should be heard as checked,
+    and not read-only"; "The title ... should carry the account's name"; "A Gmail account
+    should show its All Mail folder ... unticked by default"; and his comment: "the command
+    should be on the Tools menu."
+  - [D] A reading over a built dialog records what each row answers today over MSAA and what a
+    native tree with `TVS_CHECKBOXES` answers through `TVM_GETITEMSTATE` and MSAA, which is
+    what NVDA reads for a tree item (`sysTreeView32.py`), and the dialog becomes a
+    `TreeCtrl` nested by `folder_parents` with a check state per folder read back from the
+    control at OK, never from a snapshot; Space toggles; the title carries the account's
+    name; a listed `\All` folder is a row unticked unless chosen, and for a Gmail account with
+    none listed one sentence says where Gmail decides it.
+  - [D] The item moves from Action, This Folder to Tools with a letter nothing there claims;
+    `docs/PROVIDER_SETUP.md`, `docs/KEYBOARD_SHORTCUTS.md` and the Blocked Senders sentence
+    say Tools, dated, with the fact that they said File while the command sat on Action.
+  - [S] Whether NVDA says "check box, checked" on a kept folder, the level on a nested one and
+    the new state on Space, and whether his own Gmail lists All Mail, are his.
+
+- [ ] **LIST-02**: The log level's default follows the version the build carries, the lines
+  a tester's report needs are written at that level, and the alpha page says what each level
+  writes and what the default costs.
+  - Evidence: `grep -n 'log_level: "info"' src/data/config.rs` -> `703`, and `LoggerConfig::default`
+    at `logging.rs:62`, two literals; the field has no serde default (`config.rs:47`);
+    `main.rs:100-106` reads the stored level first. Counts on 2026-09-18: `error` 59, `warn`
+    215, `info` 77, `debug` 12, `trace` 0 sites. Of the five things #71 lists, one is written
+    (the watch's end, 10-06); nothing per folder of a check, nothing per chunk of the download,
+    nothing on a settings save, nothing where content is muted or a line dropped
+    (`grep -n 'tracing::' src/presentation/wx_app.rs | awk -F: '$1>21860 && $1<22130'`;
+    `accessibility.rs:426,429`). The filter is `wixen_mail=<level>` (`logging.rs:102`). His
+    profile holds `info`, read through Python on 2026-09-18.
+  - [S] #71, Pratik's decision of 2026-09-17: "the default is `debug` while the version
+    carries an alpha or beta suffix, and `info` for a release without one (release candidates
+    included) ... The default follows the version the build carries, so no hand change is
+    owed at the cut ... A profile that already holds a level keeps it; the guide says how to
+    move it."
+  - [D] `version::is_alpha_or_beta` and `logging::default_level_for(version)` give one rule
+    read by `LoggerConfig::default()` and by `AppConfig`'s default and serde default;
+    `filter_for(level)` names this crate alone, with a test that refuses a second target.
+  - [D] Each check's result per folder, each chunk of the download (at `debug`) and what the
+    server answered, the settings save, and an announcement held back (muted, dropped for
+    capacity or a repeat) are written, none naming a subject, a body, a password or a token;
+    a reading target holds each line's presence and level, and a guard over every `tracing::`
+    call under `src/` refuses those identifiers.
+  - [D] `docs/ALPHA_TESTING.md` has a table of the five levels in the Advanced tab's words,
+    what each writes, why the alpha default is Debug, that a profile keeps its level and where
+    to move it, and the log's size after the harness's two-minute start under `info` and
+    `debug`, two rows on the measurements page.
+  - [S] Whether the lines are the ones a report needs, and what a day at Debug costs on his
+    disk, are his; #64's dialog attaching the log is #64's.
+
+- [ ] **LIST-03**: Moving through the message list never marks a message read; a message is
+  marked read only after it has been read aloud from the list or opened, and then after the
+  delay the setting names.
+  - Evidence: `mark_the_open_one_read` (`wx_app.rs:10035`, polled from the main timer at
+    `:5576`) starts a clock when the selected message is unread and marks it read when
+    `mark_read_after`'s delay passes with the row still selected (`:10046-10098`); the
+    default is `After(2)` (`reading_habits.rs:118-127`). The preview pane cannot take focus
+    by design (`wx_app.rs:1339`, `set_can_focus(false)`, and `panes.rs:21`), so "entering
+    the reading pane" has no act here; reading aloud with Space through `wire_read_aloud`
+    (`:3433`) and opening with Enter through `open_single_message` (`:12447`) are the acts,
+    and opening marks nothing today. His profile holds `mark_read_after` `never`, read
+    2026-09-18.
+  - [S] #25, the tester on 2026-09-15: "Automatic read/unread status should not be linked to
+    the list traversal for mail. It should be either when a message is previewed or when a
+    message is opened."
+  - [D] `reading_habits::whether_to_mark_read(began, selected_unread, now, setting)` answers
+    nothing without a reading having begun, nothing for a message other than the selected
+    unread one, at once under Immediately, after the delay under After, never under Never;
+    held by a case per answer.
+  - [D] The mail read-aloud closure and `open_single_message` record when reading began; the
+    selection handler records nothing; the timer's mark asks the rule and writes what it
+    wrote before; a reading target holds the three sites with companions; the choice on the
+    Reading tab gains a sentence saying what it counts from; the guide says when a message
+    counts as read.
+  - [S] Whether the unread count survives a walk through his inbox by ear, and whether Space
+    then the delay moves it, are his.
+
+- [ ] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
+  menu and the toolbar, M toggles it in the message list and says read or unread, and a
+  conversation row marks the whole thread.
+  - Evidence: one id on three surfaces with one fixed label: `ID_MARK_READ` at
+    `wx_app.rs:886` (the toolbar, "Mark Read"), `:6725` ("Mark as R&ead"), and
+    `context_menu.rs:296` ("&Mark as read", a static slice); the arm at `:4859` toggles and
+    announces which way it went. No key: `docs/KEYBOARD_SHORTCUTS.md:538` "(no shortcut)".
+    wxdragon 0.9.17 relabels a menu item (`menuitem.rs:145`) and not a tool (`toolbar.rs`
+    offers `set_tool_short_help` only). No key on any list is consumed today
+    (`grep -n 'skip(false)' src/presentation/wx_app.rs` -> nothing); `wire_read_aloud`
+    skips Space in every path. The thread case rests on the selection LIST-05 builds.
+  - [S] #27, the tester on 2026-09-15: "the command should say 'mark as read' and vice versa.
+    Use 'm' bound to message lists to toggle the state and announcement, 'read'/'unread'. If a
+    thread has the focus, then the entire thread should be marked."
+  - [D] `marking_read::what_the_command_says(any_unread)` and `what_the_key_says(now_read)`
+    are the words; the label is refreshed on selection, after the arm and on the toggled
+    update, on the menu item through `set_label`, on the context menu through a second
+    entry list, and on the toolbar through `TB_SETBUTTONINFOW`, read back over MSAA in a
+    reading.
+  - [D] `list_keys::wire_letter` binds M on the list and does not skip it, so the control's
+    type-to-search never gets it, shown by a reading that sends `WM_KEYDOWN` and `WM_CHAR`
+    to a real list and finds the selection unmoved; the key announces the one word.
+  - [D] A selected conversation row contributes every message in the conversation to Mark
+    as Read, with one announcement saying how many (with LIST-05).
+  - [S] The label heard on each surface after arrowing between a read and an unread message,
+    the word after M, and that M does not jump the list, are his ear's.
+
+- [ ] **LIST-05**: Shift with the arrow keys selects more than one message, every command
+  that acts on messages acts on the selection with one announcement saying how many, and a
+  conversation row contributes its messages.
+  - Evidence: `ListCtrlStyle::SingleSel` at `wx_app.rs:1108`; 27 sites read
+    `selected_message_index` in the shipping half (`grep -c` 28, one in a test), sorted in
+    11-07's premise into seven set commands, eleven cursor commands and the bookkeeping;
+    `Doing::ChooseEveryRow` (`:16515`) already sets Selected on every row and refuses above
+    `MOST_ROWS_WORTH_SELECTING`, 5,000 (`editing.rs:86`), and on a single-selection list
+    selects one; `conversation_nodes` (`:12648`) is the walk over a conversation's messages;
+    `mail_across_accounts` reports one move at a time (`:603`, `:713`).
+  - [S] #30, the tester on 2026-09-15: "Shift+arrow keys should allow the user to select
+    multiple messages."
+  - [D] `choosing_messages::what_the_selection_holds` turns the control's selected rows into
+    a set with duplicates removed, a conversation row contributing the whole conversation to
+    Mark as Read, Star and Label, this folder's messages to Move and Copy, and its setting's
+    reach to Delete; `what_was_done` words one sentence with the count; `too_many` refuses
+    above the bound Select All uses.
+  - [D] The list is built without single selection; Delete, Delete Permanently, Move to, Copy
+    to, Mark as Read or Unread, Star or Unstar and the Label commands read the set from the
+    control at the command and act per message with one sentence; Reply, Forward, Open, Save
+    As, the receipt and Copy to a task, event or note act on the cursor row; a cross-account
+    batch sums its report; a reading target holds every arm; marking 5,000 read in the cache
+    is a row on the measurements page.
+  - [S] NVDA's own selected and not selected as he extends, the count after Ctrl+A, one
+    sentence after a command over many, and the refusal above the bound, are his ear's.
+
+- [ ] **LIST-06**: A conversation row stands for the originator when every message in it is
+  unread and for the first unread message otherwise, reports that message's sender first,
+  previews and opens on it, and selecting it fetches the conversation's text.
+  - Evidence: every conversation column is one SQL expression used for the cell and the sort
+    (`message_columns.rs:208-250`, `messages.rs:258-330`): Correspondent is every distinct
+    sender in stored order, Snippet the newest message's, and nothing names a message the row
+    stands for (`conversations.rs:190-245`). The conversation window selects the root
+    (`wx_thread_view.rs:300`). The selection handler has no conversation branch
+    (`grep -n 'showing_conversations()' src/presentation/wx_app.rs | awk -F: '$1>3000 && $1<3100'`
+    -> nothing) and previews `messages[idx]` (`:3040-3043`), a message unrelated to the
+    conversation at row `idx`. Nothing fetches a conversation's text on selection; since
+    10-05 the download brings text for kept folders, so what remains is the order, a folder
+    not kept, and a mailbox under a chosen size.
+  - [S] #31, the tester on 2026-09-16: "Focusing on a thread in the mail list should use the
+    originator of the thread ... if all the messages in the thread are unread. If not, then
+    the first unread message should be highlighted with the corresponding correspondent.
+    Currently, the last message is highlighted. If a thread is highlighted, all messages
+    should be cached."
+  - [D] One correlated subquery ordered by `read ASC, received_at ASC, id ASC` chooses the
+    row's message where the columns are, so the first unread by arrival when any is unread
+    and the originator otherwise; its id, uid and sender ride the row; the Correspondent and
+    Snippet expressions follow it, so the cell, the sort, the preview and the window agree;
+    the correspondent cell says that sender first and the rest after; held by fixtures
+    through the real query.
+  - [D] The selection handler under conversation view previews the row's message and fetches
+    the conversation's missing text as one chunk under the reading gate and the runner's
+    bound, that message first, saying nothing per message; the window opens on that message's
+    node; a reading target holds the branch, the fetch and the window.
+  - [S] The sender heard first on his thread rows, the window's opening node, and the text of
+    a conversation arriving from Gmail on selection are his ear's and his account's.
+
+- [ ] **LIST-07**: Ctrl+Shift+; reads the selected row column by column with its headings on
+  request, and the pages say why the headers are spoken on every row and how to quiet them.
+  - Evidence: NVDA's `sysListView32.py`, read 2026-09-18: the header is spoken before every
+    column but the first when `documentFormatting.reportTableHeaders` is rows-and-columns or
+    columns, the default, and no property an application sets changes it; `message_rows.rs:66-73`
+    says "the headings are not being read here", from nobody's ear. `Ctrl+Shift+;` is on no
+    row of `docs/KEYBOARD_SHORTCUTS.md`. The visible layout is `ColumnLayout` applied at
+    `wx_app.rs:9880`; `heading` at `message_columns.rs:96`; the six flag columns answer a word
+    or nothing (`message_rows.rs:59-110`).
+  - [S] #26, the tester on 2026-09-15: "column headers should not be announced each time. The
+    user should be able to specifically request the reading of columns and corresponding text
+    by pressing a keyboard command. use control+shift+; if not already assigned."
+  - [D] `message_rows::the_row_with_its_headings` composes the visible cells in order as
+    heading then text, the six self-describing columns as their text alone, empty cells left
+    out; an Action menu item with the chord announces it once as content the mute controls,
+    for a message row and a conversation row, and refuses off the list; the comments that
+    said the headings are not read are corrected.
+  - [D] `docs/KEYBOARD_SHORTCUTS.md` says the three routes (the program speaking rows, an NVDA
+    add-on, an NVDA setting), that the third is taken and why, and gives the steps for a
+    configuration profile triggered by Wixen Mail with Row/column headers off, naming
+    Narrator's and JAWS's own settings as the place to look; the add-on is later work in the
+    ledger.
+  - [S] That the reading is heard whole and once on the key, and that arrowing is quiet under
+    the profile, are his ear's; Narrator and JAWS are unread.
+
+- [ ] **LIST-08**: A rule can change how a row is announced: a phrase said first and shown
+  in a column, a sound once per check, and the labels heard on the row as a column.
+  - Evidence: `FilterAction` has seven variants (`filters.rs:11-19`), stored as one
+    `action_type` and one `action_value` per rule (`mod.rs:1845`); `Outcome` carries read,
+    starred, move_to, tags, delete (`:461-472`); `apply_rules` and `carry_out`
+    (`mail_sync.rs:985-1070`) write per message; `cell_text` and `text_for` take no
+    per-message override (`message_rows.rs:59`, `virtual_rows.rs:63`); `MessageColumn::ALL`
+    is fifteen (`message_columns.rs:77`) with no Labels column, though `MessageItem.labels` is
+    filled per message by 10-02's read; the sound scheme is keyed by `Event`, whose list is a
+    census (`feedback.rs:76-140`, `sound_scheme.rs:81`); `NewMail` is signalled once per check
+    from the `WhatArrived` arm (10-04).
+  - [S] #62, from the Outlook gap report of 2026-08-27 and the audit of 2026-09-15: "Let a
+    rule change how a row is announced, not only how it looks, so the emphasis reaches
+    somebody who cannot see the colour."
+  - [D] `FilterAction::SayFirst(phrase)`, stored as `say_first` with the phrase bounded,
+    written onto the message in an additive `says_first` column, carried into `MessageItem`,
+    prefixed to the first visible cell of the row under either view so it is the first thing
+    spoken, and shown in a Says first column; a Labels column off by default; both columns
+    in the Columns dialog.
+  - [D] An additive `plays_a_sound` flag per rule with a box in the rule editor; a new
+    `Event::RuleMatched` with its own tone and Feedback row; the check counts the matches
+    that sounded and the `WhatArrived` arm signals the event once per check, never per
+    message; the rule editor offers the action and the box; readings hold the prefix, the
+    columns, the bound and the arm.
+  - [S] The phrase at the start of a row, the sound once after a check with several matches,
+    and the labels read as part of the row, are his ear's.
+
+- [ ] **LIST-09**: Pictures a message points at are shown by default except tracking pixels
+  and pictures the sender marked decorative, a linked picture takes the link's words as its
+  description, and an undescribed picture is described as nothing unless Settings says image
+  or photo.
+  - Evidence: `hold_back_remote_pictures` on by default (`config.rs:89`, `:715`) holds every
+    remote picture back through `what_to_do_about` (`pictures.rs:555-572`); his profile has it
+    off, read 2026-09-18. `hold_back_what_would_be_fetched` (`html_renderer.rs:464-486`)
+    replaces a held-back picture and rewrites only an `alt` that is present and empty on a
+    shown one (`:508-540`), on the reading path and never in `sanitize_html`; ammonia keeps
+    `width` and `height` on `img` and drops `style` (`:142-175`), so a beacon is told by its
+    declared size and by nothing else the clean leaves. A picture with no `alt` is left as it
+    is in mail; in a note, `long_text.rs:411-420` says "image with no description", held by
+    the test at `:1189`. Nothing takes a link's text as a description.
+  - [S] #28, the tester on 2026-09-15: "By default, only beacons should be avoided along with
+    decorative images. Photo links should have the link text as the default alt for the photo
+    unless there's an associated alt. Photos without descriptions should automatically be
+    given "" as the alt by default unless the user specifically chooses either 'image' or
+    'photo' in settings."
+  - [D] `hold_back_remote_pictures` defaults to off; `looks_like_a_beacon` reads a declared
+    width or height of a pixel or less; a beacon and a decorative remote picture are not
+    fetched and the message-top sentence counts the pixels; the switch still holds every
+    remote picture back when on; a tracker the size of a picture is fetched, said on the
+    privacy page.
+  - [D] A linked picture with no `alt` and some link text takes the text, escaped; a picture
+    with no `alt` takes `undescribed_pictures_read_as`'s answer, nothing by default, image or
+    photo by choice, on the Reading tab under the two picture boxes with a sentence; a
+    sender's description is untouched; the sending path is untouched, held by a case; a
+    note's undescribed picture follows the same setting, its test rewritten in place; fixtures
+    through the real cleaner hold each rule.
+  - [S] A shown picture in the preview, a passed-over undescribed one, the link's words as a
+    description and the sentence about tracking pixels are his reader's.
+
+- [ ] **LIST-10**: The privacy page lists every way a reader of mail can be tracked, what
+  this program does about each by default, what a person can change, and what it cannot
+  protect against, each read from the code.
+  - Evidence: `docs/privacy.md:314-330` is the one section, "Pictures a message points at",
+    and `:326` says "There is no setting for this yet", false since `hold_back_remote_pictures`
+    was written. 10-07 wrote one line of the list at `:183` (the whole-mailbox download and
+    the watch). The other ways are in the code: read receipts (`wx_app.rs:19646-19730`, sent
+    only on Send Read Receipt; the `rsa` advisory at `.cargo/audit.toml:65` reasons about the
+    channel), links and link checking (`:350`), invitations (`:297`), the update check and
+    download (`:417`, `:467`); `grep -rn -i 'telemetry\|analytics\|crash report' src` is the
+    evidence for what is never sent.
+  - [S] #29, the tester on 2026-09-15: "The user should know the ways that they can be
+    tracked."
+  - [D] The pictures section is rewritten for the new default with its cost and the switch,
+    the stale sentence corrected by dating; a section "How a reader of mail can be tracked,
+    and what this program does about each" lists remote pictures, read receipts, links and
+    link checking, meeting invitations, the update check and download, the whole-mailbox
+    download and the watch, and what is never sent, each naming the file it was read from or
+    the section it cross-references, the "never" row quoting its grep.
+  - [S] Whether the page is clear to the person it is for is his.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -3478,12 +3844,31 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523 |
 | MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526 |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
+| FOUND-17 | Phase 11 | Pending, 11-01; the runner's next run is Pratik's push |
+| FOUND-18 | Phase 11 | Pending, 11-02; the sign-in line and the corrected settings case are the runner's at the next push |
+| LIST-01 | Phase 11 | Pending, 11-03 |
+| LIST-02 | Phase 11 | Pending, 11-04; #64's half stays #64's |
+| LIST-03 | Phase 11 | Pending, 11-05 |
+| LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
+| LIST-05 | Phase 11 | Pending, 11-07 |
+| LIST-06 | Phase 11 | Pending, 11-08 |
+| LIST-07 | Phase 11 | Pending, 11-09 |
+| LIST-08 | Phase 11 | Pending, 11-10 |
+| LIST-09 | Phase 11 | Pending, 11-11 |
+| LIST-10 | Phase 11 | Pending, 11-11 |
 
 **Coverage:**
 
-- v1 requirements: 65 total
-- Mapped to phases: 65
+- v1 requirements: 77 total
+- Mapped to phases: 77
 - Unmapped: 0
+
+**Re-taken 2026-09-18.** This block said 65 and 65 from 2026-09-17 until phase 11 was planned.
+Counted with the same command as below, which gives 77 at `744d05ef` plus this edit with the
+ten `LIST` requirements and `FOUND-17` and `FOUND-18` in, and the traceability table above has
+77 rows. The ten are the fourth of Pratik's seven groups with #70 and #71 in front; the two
+`FOUND` ones are what the morning's push of `744d05ef` showed, and sit in phase 9's section
+beside FOUND-13 to FOUND-16 for the reason given there, though phase 11 owns them.
 
 **Re-taken 2026-09-17, later still.** This block said 63 and 63 from the middle of the day
 until phase 10's inserted plans 10-02.1 and 10-02.2 were written. Counted with the same
@@ -3567,6 +3952,13 @@ chose; they belong to none of the seven groups and are taken by phase 10's inser
 plan 10-02.1; `FOUND-16` traces to no issue and to Pratik's decision of 2026-09-17 in
 conversation that builds handed to testers carry an ordered counter after the plus, taken by
 the inserted plan 10-02.2. Neither belongs to the seven groups. The total is 65.
+
+**Added 2026-09-18.** `LIST-01` to `LIST-10` trace to one GitHub issue each, #70, #71, #25, #27,
+#30, #31, #26, #62, #28 and #29, the fourth of Pratik's seven groups with #70 (the second day
+of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to no issue and
+to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
+35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
+belongs to the seven groups. The total is 77.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document
