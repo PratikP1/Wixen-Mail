@@ -3123,9 +3123,23 @@ seven groups.
   - [S] Whether the target passes on GitHub's runner is the next push of `main`, which is
     Pratik's to make.
 
-- [ ] **FOUND-18**: A run of the NVDA workflow in which a case failed is a failed run, its
+- [x] **FOUND-18**: A run of the NVDA workflow in which a case failed is a failed run, its
   two failing cases are read and acted on where each was at fault, and the Accessibility
-  run's walk over the five editors is read into FOUND-08.
+  run's walk over the five editors is read into FOUND-08. **Ticked 2026-09-18 by 11-02,
+  merged at `1c0e9b0b`, on its four `[D]` lines:** `nvda.yml` without `continue-on-error`
+  and with `if: always()` on the summary and the upload (`grep -c` 0 and 2), the header
+  dated, `accessibility.yml` as it was with ledger 532 saying why; the settings case taking
+  its mark after the settle (`waitToHearAll(nvda, [TABS[0]` gone, `node --check` clean), the
+  Settings dialog untouched, the README listing all five cases (ledger 494 closed);
+  `status_line::shown_and_signalled` and the three arms of `reauthorize_selected` calling it
+  with `AccountNeedsAttention`, held by
+  `test_an_outcome_that_is_also_an_event_is_one_notification_carrying_the_sentence`,
+  `test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel` and
+  `test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run`, red at `eb2011ad`
+  and green at `a697f61f`, with three records measured (3, 2 and 1 red, nothing else) and
+  one re-measured; FOUND-08 and FOUND-09 ticked above with ledger 489 and 492 closed. The
+  `[S]` line below is the runner's at the next push, ledger 531 and the changelog's Known
+  limitations.
   - Evidence: `gh run view 35336142908 --json conclusion,jobs` -> the run `success`, its one
     job `failure`, 2026-09-18 at `744d05ef`; `.github/workflows/nvda.yml:39` `continue-on-error:
     true`, since `363358b3` on 2026-08-16, with the header saying the job is non-blocking on
@@ -3968,7 +3982,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526 |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
-| FOUND-18 | Phase 11 | Pending, 11-02; the sign-in line and the corrected settings case are the runner's at the next push |
+| FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | LIST-01 | Phase 11 | Pending, 11-03 |
 | LIST-02 | Phase 11 | Pending, 11-04; #64's half stays #64's |
 | LIST-03 | Phase 11 | Pending, 11-05 |
