@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The NVDA workflow fails when one of its cases fails.** Since 2026-09-18. The job that
+  drives a real NVDA against the real program on GitHub's runner had been marked non-blocking
+  since 2026-08-16, so that its findings would be a work queue rather than a gate, and the queue
+  was never read: the run of the morning of 2026-09-18, on `1.0.0-alpha.1+149.g744d05ef`,
+  reported success while its one job failed, and the case that listens for "Signing in failed"
+  in the Account Manager had failed at every run since 2026-09-15 with nobody told. Now the
+  run's verdict is the job's, and the transcript of everything NVDA said is still uploaded when
+  the run is red. The Settings tab-row case, which heard nothing at all on its first run, waited
+  for the dialog's opening announcement, which this harness has never captured for any case; it
+  now counts from the first key. The Settings dialog itself was not changed: it speaks, and
+  arrowing along its tab row says each tab once, heard by the tester on the same build.
+  Known limitations: which tab the first Right reaches on the runner's fresh profile is what the
+  next run shows. The Accessibility scan's job stays non-blocking; its findings are counts, and
+  whether a count should fail a run has not been decided.
 - **Everything comes down on its own, with its text.** Reported on 2026-09-15 from build
   `0.125.1+g3e633252` (#20): "Right now, only 500 messages are downloaded per folder. All email
   should be downloaded." And (#23): "Unless explicitly forbidden, message text should be downloaded

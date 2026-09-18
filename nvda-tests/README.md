@@ -18,8 +18,9 @@ either:
 
 Neither one presses a key and listens. A structural scan can report a control as fully named,
 correctly typed, and reachable, and still be silent, or say something different from what it
-shows, because nothing walked up to it and asked NVDA what it heard. This package does that,
-for two places a previous round of accessibility work found and could not close any other way:
+shows, because nothing walked up to it and asked NVDA what it heard. This package does that.
+It began on 2026-08-16 with two places a previous round of accessibility work found and could
+not close any other way:
 
 1. Whether NVDA announces "Signing in failed" when signing in to an account fails, in the
    Account Manager.
@@ -27,10 +28,11 @@ for two places a previous round of accessibility work found and could not close 
    repeating event, focuses and ticks the same answer, so what NVDA announces on open names one
    answer as chosen rather than naming one and ticking another.
 
-The second test is written and correct, but skipped. Read `tests/which-days-focus-and-tick.test.js`
-for why: reaching that dialog from a clean, disposable profile needs a Rust change this package's
-own scope does not cover, and the file explains what that change is and why it is out of scope
-here rather than made silently.
+Three cases have been added since, and the table below is the inventory: five files under
+`tests/`, four that run and one that is skipped. The skipped one is the second above, written
+and correct. Read `tests/which-days-focus-and-tick.test.js` for why: reaching that dialog from
+a clean, disposable profile needs a Rust change this package's own scope does not cover, and
+the file explains what that change is and why it is out of scope here rather than made silently.
 
 ## This never runs on your own machine
 
@@ -56,8 +58,11 @@ Jest directly against these files, on a computer you or anyone else is using.
 | `helpers/launch-app.js` | Starts and stops the built `wixen-mail.exe`, and waits for its window the way `accessibility.yml` already does in PowerShell: poll for the main window rather than guess at a fixed delay, then settle briefly for a dialog opened on top of it. |
 | `helpers/nvda-navigation.js` | Finds a control by tabbing until NVDA says its name, the way a screen reader user finds it, rather than by counting how many Tab presses come first. Also polls the spoken-phrase log rather than reading it once immediately after an action, since an announcement takes a moment to arrive and Guidepup's own capture debounces it. |
 | `helpers/results.js` | Writes everything NVDA said during a test to `results/`, so the CI workflow can upload it as an artifact. |
-| `tests/account-manager-sign-in-failure.test.js` | The first test described above. Runs. |
-| `tests/which-days-focus-and-tick.test.js` | The second test described above. Written against the real, current wording; skipped until a scan target for this dialog exists. |
+| `tests/account-manager-sign-in-failure.test.js` | The first case described above: tabs to Sign In Again on a synthesised account no provider recognises, presses it, and waits to hear "Signing in failed" with its reason. Runs. |
+| `tests/which-days-focus-and-tick.test.js` | The second case described above. Written against the real, current wording; skipped until a scan target for this dialog exists. |
+| `tests/calendar-immediate-actions.test.js` | Presses Edit Event, Delete Event and Sync on an empty calendar and waits to hear each button's own answer, because those three once ran their answer while the window was hidden and NVDA heard nothing. Runs. |
+| `tests/filter-manager-delete.test.js` | Presses Delete in the Filter Manager with nothing selected and waits to hear the same sentence Delete shows, the same class of bug as the calendar's. Runs. |
+| `tests/settings-tabs-read-once.test.js` | Opens Settings on a fresh profile and presses Right six times and Left once, holding the log to each reached tab heard once (#33). Counts from a mark taken after the dialog has settled, not from an opening announcement; see below. Runs. |
 
 ## Why only these two dependencies
 
@@ -86,14 +91,30 @@ The `NVDA` workflow:
 1. Builds the release binary (`cargo build --release`).
 2. Installs Node and this package's dependencies (`npm ci`).
 3. Downloads the disposable, portable copy of NVDA `@guidepup/guidepup` expects.
-4. Runs both tests.
+4. Runs every case in `tests/` that is not skipped: four on 2026-09-18.
 5. Uploads whatever NVDA said, as a plain text artifact, whether the run passed or failed.
 
-The job does not block a pull request. Read its own summary and the uploaded transcript rather
-than the pass or fail badge: a run that fails to start NVDA at all and a run where NVDA started
-and heard the wrong sentence are different problems, and the summary says which one happened.
+Since 2026-09-18 a case that fails fails the run. Until then the job carried
+`continue-on-error: true`, so its findings would be a work queue rather than a gate, and the
+queue went unread: run 35336142908, on `main` at `744d05ef`, reported success over a job that
+failed, and the sign-in case had failed at every run since 2026-09-15 with nobody told. The
+badge now says what the job said. Still read the summary and the uploaded transcript: a run
+that fails to start NVDA at all and a run where NVDA started and heard the wrong sentence are
+different problems, and the summary says which one happened.
 
-A clean result here means the specific keystrokes and the specific sentences these two tests
+## What the log holds, and what it does not
+
+Each case ends by writing everything NVDA said during it to `results/`, read back from
+Guidepup's spoken-phrase log. Run 35336142908 showed the shape of that log, and a case has to
+be written to it. The transcript of every case that passed begins with what the case's first
+key made NVDA say: the account row after Down, a button after Tab. None holds what NVDA said
+as the dialog opened, though the dialog does speak: the tester heard Settings speak by hand on
+the same build the same day. The settings case had been written to wait for that opening
+announcement before pressing any key, and it timed out with an empty log. So a case waits for
+what a key makes NVDA say, and never for an opening; it takes its mark after the dialog has
+settled and counts from the first key.
+
+A clean result here means the specific keystrokes and the specific sentences these cases
 check were really spoken. That is stronger than the structural scan, which never presses a key.
 It is still not a full manual walkthrough, and it says nothing about any control, any dialog,
-or any sentence these two tests do not touch.
+or any sentence these cases do not touch.

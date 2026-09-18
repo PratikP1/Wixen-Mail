@@ -15,9 +15,19 @@ name: NVDA
 # runner that nobody is using for anything else. See nvda-tests/README.md
 # for why these tests must never run on a developer's own machine.
 #
-# The job is non-blocking on purpose, the same as accessibility.yml's.
-# Treat its findings as a work queue, not a gate, and read the uploaded
-# transcript rather than the pass or fail badge.
+# Since 2026-09-18 a case that fails fails the run. From 2026-08-16 the job
+# was marked as one whose failure does not fail the run, so that its findings
+# would be a work queue rather than a gate, and the queue was never read: run
+# 35336142908 on main at 744d05ef reported success over a job that failed,
+# and the sign-in case had failed at every run since 2026-09-15 with nobody
+# told. A check nobody reads is worse than no check. The summary step and
+# the upload still run whatever the tests did, so a red run carries its
+# transcript; read that transcript rather than the badge alone, because a run
+# that never started NVDA and a run where NVDA heard the wrong sentence are
+# different problems and the summary says which. accessibility.yml keeps its
+# own non-blocking job: its findings are counts the workflow reads out, and
+# whether a count should fail a run is the decision of whoever owns the
+# findings.
 
 on:
   push:
@@ -36,7 +46,6 @@ jobs:
   nvda-tests:
     name: NVDA screen reader tests
     runs-on: windows-latest
-    continue-on-error: true
 
     permissions:
       contents: read
