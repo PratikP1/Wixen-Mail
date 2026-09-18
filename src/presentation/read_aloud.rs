@@ -121,8 +121,10 @@ pub enum WhatBegan {
 /// One function over the depth the cycle chose, rather than a rule inside
 /// the wiring, so the decision has cases of its own and the wiring only asks.
 pub fn what_a_press_starts(depth: Depth) -> WhatBegan {
-    let _ = depth;
-    WhatBegan::TheWholeReading
+    match depth {
+        Depth::Short => WhatBegan::Nothing,
+        Depth::Full => WhatBegan::TheWholeReading,
+    }
 }
 
 /// Something a list row can read aloud.

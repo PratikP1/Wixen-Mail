@@ -95,11 +95,10 @@ const THE_SELECTION_HANDLER: (&str, &str) =
     ("msg_list.on_item_selected({", "msg_list.on_column_click({");
 
 /// Where the mail list's read-aloud wiring starts, and the first line after
-/// its closing.
-const THE_READ_ALOUD_WIRING: (&str, &str) = (
-    "wire_read_aloud(&msg_list, &a11y, &space_cycle, \"mail\", {",
-    "let preview_visible",
-);
+/// its closing. The start is the module name the mail call passes on a line
+/// of its own, since the call takes two closures now and rustfmt puts each
+/// argument on its own line; no other call passes it.
+const THE_READ_ALOUD_WIRING: (&str, &str) = ("\"mail\",\n", "let preview_visible");
 
 /// Where a closure handed to the wiring starts, and the first thing the
 /// lookup closure's answer names, which is where that closure's work ends.
