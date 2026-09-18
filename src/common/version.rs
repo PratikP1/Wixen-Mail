@@ -432,8 +432,8 @@ fn is_prerelease(version: &str) -> bool {
 /// test and is not one of them. A string this cannot read is not one either,
 /// so an unreadable version gets the quieter default rather than the fuller
 /// one.
-pub fn is_alpha_or_beta(_version: &str) -> bool {
-    false
+pub fn is_alpha_or_beta(version: &str) -> bool {
+    parse(version).is_some_and(|version| matches!(version.stage, Stage::Alpha | Stage::Beta))
 }
 
 #[cfg(test)]

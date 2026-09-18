@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 116 records have arrived since and have not been through it.
+# 118 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -20748,7 +20748,7 @@ red = [
     "service::update_check::tests::test_a_published_release_that_is_not_an_offer_is_reported_as_this_being_the_newest",
 ]
 tests_last_seen = [
-    { file = "src/common/version.rs", tests = 25 },
+    { file = "src/common/version.rs", tests = 27 },
     { file = "src/service/update_check.rs", tests = 23 },
 ]
 
@@ -20781,7 +20781,7 @@ red = [
     "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/common/version.rs", tests = 25 },
+    { file = "src/common/version.rs", tests = 27 },
 ]
 
 # A fresh installation asking GitHub for a version list nobody asked for. The
@@ -23356,7 +23356,7 @@ red = [
     "common::version::tests::test_whether_a_release_is_an_offer_depends_on_the_channel_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/common/version.rs", tests = 25 },
+    { file = "src/common/version.rs", tests = 27 },
 ]
 
 # The half-fix rather than the absent one: the stamp is still written, still
@@ -25503,4 +25503,58 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_kept_folder_reads_as_a_checked_check_box.rs", tests = 8 },
+]
+
+# ── The log's default follows the version the build carries ─────────────────
+#
+# #71, Pratik's decision of 2026-09-17: debug while the version says alpha or
+# beta, info otherwise, one rule in `logging::default_level_for` that both
+# `LoggerConfig::default()` and `AppConfig::default()` read. The break makes
+# every version answer info, the tree as it stood before 11-04 with its two
+# literals. The rule's own test goes red; the two tests that hold the defaults
+# to the rule stay green, because they compare the default with the rule's
+# answer and both move together, which is the point of asking the rule.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "the log's default is debug under alpha and beta, not info for every build"
+file = "src/common/logging.rs"
+before = """    if crate::common::version::is_alpha_or_beta(version) {"""
+after = """    if false && crate::common::version::is_alpha_or_beta(version) {"""
+red = [
+    "common::logging::tests::test_the_default_level_is_debug_under_alpha_and_beta_and_info_otherwise",
+]
+tests_last_seen = [
+    { file = "src/common/logging.rs", tests = 10 },
+]
+
+# ── The log filter names this crate and no library ──────────────────────────
+#
+# A library switched on at debug logs what the library chooses, and for an
+# IMAP crate that is the literals on the wire, which is message text (T-11-16).
+# The break adds a second target the way somebody debugging a connection
+# would, and the filter test goes red on the comma. The first draft named
+# that one test; the runner answered two, because the census in
+# `service::outward` reads every module for the name of a crate that reaches
+# the network, and a module that spells `async_imap` is a module naming a way
+# out, which `logging.rs` is not on any list as. So a library named in the
+# filter is caught twice, by the filter test and by the census, and the record
+# says so rather than being shorter than the truth.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library, twice: once as the draft
+# and once as this.
+[[guard]]
+name = "the log filter names this crate alone, not a library beside it"
+file = "src/common/logging.rs"
+before = """    format!("wixen_mail={}", level.as_stored())"""
+after = """    format!("wixen_mail={},async_imap=debug", level.as_stored())"""
+red = [
+    "common::logging::tests::test_the_filter_names_this_crate_at_the_level_and_nothing_else",
+    "service::outward::completeness::test_every_module_that_names_a_way_out_is_on_one_of_these_lists",
+]
+tests_last_seen = [
+    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/service/outward.rs", tests = 38 },
 ]

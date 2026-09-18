@@ -43,7 +43,10 @@ pub struct AppConfig {
     pub theme: String,
     /// Font size
     pub font_size: u32,
-    /// Log level
+    /// Log level, one of the five words `logging::LogLevel::parse` reads.
+    /// The default follows the version the build carries (#71); a stored
+    /// level is kept, whatever the build.
+    #[serde(default = "default_log_level")]
     pub log_level: String,
     /// Show preview dialog before sending emails
     #[serde(default = "default_true")]
@@ -613,6 +616,15 @@ fn default_copy_lines() -> String {
         .to_string()
 }
 
+/// The log level a fresh profile starts at: the rule's answer for the
+/// version this build carries, so the cut that moves alpha to rc moves it
+/// without an edit here. Until 2026-09-18 this was the literal "info" (#71).
+fn default_log_level() -> String {
+    crate::common::logging::default_level_for(&crate::common::version::current())
+        .as_stored()
+        .to_string()
+}
+
 fn default_day_starts() -> u8 {
     crate::application::reading_habits::WorkingDay::default().starts
 }
@@ -700,7 +712,7 @@ impl Default for AppConfig {
             feedback_channels: String::new(),
             announce_while_fetching: default_announce_while_fetching(),
             sound_scheme_id: String::new(),
-            log_level: "info".to_string(),
+            log_level: default_log_level(),
             preview_before_send: true,
             // The safe answer is the one that changes nothing: the server's own
             // copy is what Sent has always listed.

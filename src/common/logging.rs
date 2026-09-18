@@ -3,7 +3,6 @@
 //! Provides structured logging with file rotation and privacy protection.
 
 use std::path::PathBuf;
-use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt, layer::SubscriberExt};
 
@@ -18,17 +17,6 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    /// Convert to tracing Level
-    fn to_tracing_level(self) -> Level {
-        match self {
-            LogLevel::Error => Level::ERROR,
-            LogLevel::Warn => Level::WARN,
-            LogLevel::Info => Level::INFO,
-            LogLevel::Debug => Level::DEBUG,
-            LogLevel::Trace => Level::TRACE,
-        }
-    }
-
     /// Parse from string
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
@@ -46,7 +34,13 @@ impl LogLevel {
     ///
     /// [`parse`]: LogLevel::parse
     pub fn as_stored(self) -> &'static str {
-        ""
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        }
     }
 }
 
@@ -64,8 +58,12 @@ impl LogLevel {
 /// without a hand edit. A profile that already holds a level keeps it:
 /// `main.rs` reads the stored level first and asks this only when there is
 /// none.
-pub fn default_level_for(_version: &str) -> LogLevel {
-    LogLevel::Info
+pub fn default_level_for(version: &str) -> LogLevel {
+    if crate::common::version::is_alpha_or_beta(version) {
+        LogLevel::Debug
+    } else {
+        LogLevel::Info
+    }
 }
 
 /// The filter the log runs under: this crate at `level`, and nothing else.
@@ -74,8 +72,8 @@ pub fn default_level_for(_version: &str) -> LogLevel {
 /// library chooses, and for an IMAP crate that is the literals on the wire,
 /// which is message text. A second target cannot be added here without the
 /// test that holds this to one moving.
-pub fn filter_for(_level: LogLevel) -> String {
-    String::new()
+pub fn filter_for(level: LogLevel) -> String {
+    format!("wixen_mail={}", level.as_stored())
 }
 
 /// Logger configuration
@@ -95,7 +93,7 @@ pub struct LoggerConfig {
 impl Default for LoggerConfig {
     fn default() -> Self {
         Self {
-            level: LogLevel::Info,
+            level: default_level_for(&crate::common::version::current()),
             log_to_file: true,
             log_dir: default_log_dir(),
             log_file_prefix: "wixen-mail".to_string(),
@@ -132,13 +130,10 @@ pub fn init_logging(config: LoggerConfig) -> Result<WorkerGuard, Box<dyn std::er
         .build(&config.log_dir)?;
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    // Create filter
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!(
-            "wixen_mail={}",
-            config.level.to_tracing_level().as_str()
-        ))
-    });
+    // The environment can still override the filter (RUST_LOG); without one,
+    // this crate at the chosen level and no library, through filter_for.
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(filter_for(config.level)));
 
     // Create layers
     let file_layer = fmt::layer()
@@ -306,13 +301,6 @@ mod tests {
 
         assert!(dir.is_absolute(), "the log folder is not an absolute path");
         assert!(dir.ends_with("logs"), "{dir:?} is not a logs folder");
-    }
-
-    #[test]
-    fn test_log_level_conversion() {
-        assert_eq!(LogLevel::Error.to_tracing_level(), tracing::Level::ERROR);
-        assert_eq!(LogLevel::Info.to_tracing_level(), tracing::Level::INFO);
-        assert_eq!(LogLevel::Trace.to_tracing_level(), tracing::Level::TRACE);
     }
 
     #[test]
