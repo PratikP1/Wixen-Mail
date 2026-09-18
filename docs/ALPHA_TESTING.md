@@ -9,6 +9,23 @@ This page says which parts, so you can decide what to point it at.
 **Reading your mail is the part that has been used.** Signing in, listing
 folders, fetching messages, reading them, searching, threading.
 
+**Since the build of 2026-09-18, your mail comes down whole and keeps coming,
+and none of that has met a real account yet.** After every check for mail,
+every message of every folder you keep up to date comes down on its own, for
+every enabled IMAP account, and the text of each message with it unless the
+Message Text box on the Permissions tab is off or you chose a size there. A
+check is what `F9` runs and what happens when the server says something
+arrived, so the download starts on its own from the first check after you
+install this build. Pause Downloading on the Tools menu holds it. Each
+account's inbox is watched for as long as the program runs, the watch is
+started again after a wait when it ends, and every account is checked on the
+interval its own editor sets. Until that build, 500 messages came down per
+folder, the text of a message came down when you opened it, and the watch
+ended the first time the connection dropped. Every part of the new behaviour
+has been driven against a stand-in written for the tests and none of it
+against a mail provider; the account you point it at is the first one it
+meets. The list further down says what nobody has seen it do.
+
 **Everything that writes is experimental.** Sending a message, deleting one,
 moving or copying one to another folder, marking one read on the server, filing
 a copy of what you send in Sent, changing which folders you are subscribed to,
@@ -119,6 +136,22 @@ In rough order of how useful it is to know.
    asked and, by default, sends nothing. Worth reporting: whether you were told,
    whether anything was sent when it should not have been, and whether the
    setting under Reading does what it says.
+11. **What your provider does with the download, and whether mail keeps
+   arriving over a day.** New in the build of 2026-09-18. The first check
+   after you install it starts bringing every kept folder down, and a
+   provider is entitled to slow that down, refuse it or disconnect you; if
+   yours does, the status bar says the download stopped and when it will be
+   tried again, and that sentence is worth quoting. Then leave the program
+   running for a day and say whether mail turned up on its own the whole
+   time, whether it turned up again after your network went and came back,
+   and what the status bar said while you waited.
+12. **How much is said while mail is fetched.** The Feedback tab in Settings
+   has a new choice, "While mail and the other modules are fetched, say", with
+   three answers. Nobody has listened to any of them. Under the default, Say
+   what arrived, a check should say nothing until it ends and then one
+   sentence naming each folder that received something; say whether anything
+   was spoken on the way that should not have been, and whether the one
+   sentence reads as an ending.
 
 ## What is already known to be missing or unproven
 
@@ -127,6 +160,71 @@ Written down so you do not spend time reporting things already on the list.
 - **Nothing that writes has run against a real account.** Sending, deleting,
   moving, copying, filing a copy in Sent, sending a read receipt, changing
   which folders you are subscribed to, and the three syncs that push changes.
+- **The download of everything has never met a real provider.** Since the
+  build of 2026-09-18, every check for mail ends by bringing down every
+  message of every folder you keep up to date, five hundred headers at a time
+  with the folder you are looking at first, then the text of each message
+  fifty at a time, for every enabled IMAP account. It picks up where it was
+  after a restart, because what it knows is what is already on this computer.
+  Get Older Messages, `Shift+F9`, puts the folder you are in at the front of
+  the queue, and Pause Downloading on the Tools menu holds the whole thing
+  between chunks for the rest of the session. Download This Whole Folder and
+  Fetch Missing Message Text are gone, because this is what both did.
+
+  Every part of it has been driven against a stand-in written for the tests,
+  so we know the program asks for the right things in the right order and we
+  do not know what a real provider says back. What we do not know, one thing
+  at a time: whether a provider tolerates a whole mailbox coming down chunk
+  after chunk, whether it slows the download, refuses it or disconnects you
+  part way, and what it does after that. If it does refuse, the program stops
+  asking, says so on the status bar, waits thirty seconds, then a minute, then
+  two, doubling to half an hour, and asks again, for as long as the program
+  runs. Whether those waits suit your provider is a guess until somebody has
+  watched one.
+
+  Two things to expect. The first download of a large mailbox is a long run,
+  and the cache on this computer grows with your mailbox while it happens.
+  Gmail's All Mail and the Spam folder are not kept up to date unless you
+  tick them in Folders to Keep Up to Date, so they do not come down, and
+  neither does any folder you chose not to keep.
+- **Mail keeps arriving on its own, and no real server has dropped the watch
+  yet.** Since the same build, each enabled account's inbox is watched through
+  an open connection for as long as the program runs. When the watch ends for
+  any reason but mail arriving, it is started again after the same growing
+  wait; when your network comes back it is started again at once, and the
+  accounts that are due are checked at once, without pressing Go Back Online.
+  Where a watch cannot cover, the account is checked on a schedule: a POP
+  account, a server that does not offer watching or refuses it three times in
+  a row, and the folders you keep up to date that are not the inbox. The
+  interval is the Check Interval on the account's own editor, which has been
+  there since 2026-03-01 and did nothing until this build: between 1 and 60
+  minutes, 5 unless you changed it. Starting the program checks every enabled
+  account, so the first hours are no different from the hours after the first
+  `F9`.
+
+  What nobody has seen: whether your provider drops the watch, after how long,
+  and whether the restart carries mail in over hours; whether it counts a
+  watch per account against a connection limit, since each account now holds
+  two connections, one watching and one working. A connection that dies
+  without saying so can go unnoticed for up to 29 minutes, which is how often
+  the watch renews itself; the scheduled check is what covers that. The
+  schedule does not run while this computer has no network. An account whose
+  password is not saved on this computer is told so out loud at every check,
+  at the start and then every interval, until the password is entered again
+  or the account is disabled; that was seen by running this build against
+  such an account, and it is an error said as errors are. The status bar says
+  which of watching, waiting to watch again, and checking every so often is
+  happening, and nobody has heard those three lines.
+- **How much is said while mail is fetched is a choice, and nobody has
+  listened to the three answers.** At the end of the Feedback tab in Settings,
+  "While mail and the other modules are fetched, say" offers Say what arrived,
+  Say every step and Errors only, and starts on Say what arrived. Each step of
+  a check or a download is shown on the status bar under every answer and
+  spoken only under Say every step; what arrived is said once at the end,
+  folder by folder with its count, and never when nothing arrived; an error
+  is said whatever you chose. Which sentence is a step and which a result was
+  decided by reading each line's words, and a line sorted wrongly is silent
+  under the default or spoken under it. Say which you hear.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
@@ -371,6 +469,13 @@ Written down so you do not spend time reporting things already on the list.
 
 Include what you did, what you expected, and what happened. If a screen reader
 was involved, say which one and what it said.
+
+Say which build. Since 2026-09-17 a build's name says how far along it is:
+`1.0.0-alpha.1+114.g44bff634` is the version, then how many commits the build
+is past the point that version was set, then the commit it was made from. The
+name is in Apps and Features, in About, in `--version` and on the first line
+of the log, and a later build has the larger number. The two builds handed
+out before that date, `+g7d57cd49` and `+g59c5b6a4`, carry the commit alone.
 
 Log files are in your Wixen Mail data folder, under `logs`. They do not contain
 your passwords or the text of your messages. They may contain folder names and

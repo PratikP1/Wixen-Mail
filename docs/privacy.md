@@ -55,6 +55,25 @@ drive out unless the disk itself is encrypted. Turn on BitLocker if that matters
 is the same position as Outlook's offline folders and Thunderbird's local store, and it is
 stated here rather than left to be discovered.
 
+### The text of every message is here too, unless you chose a size
+
+Since the build of 2026-09-18, the text of every message in every folder you keep up to date
+comes down after every check for mail and stays, in the same `cache` folder and as unencrypted
+as the rest of it. Until that build, a message's text came down when you opened it, and the
+cache dropped the text of the messages you had read least recently once it passed half a
+gigabyte, so the disk held a slice of your mail rather than the whole of it. Now it holds the
+whole of it by default, which is more of your mail on disk than any earlier version kept, and
+the cache grows with your mailbox.
+
+How much stays is your choice, on the Permissions tab in Settings under Message Text, beside
+the box that stops the text being fetched at all: "Keep the text of messages on this computer",
+with the answers All of it, Up to 1 GB, Up to 5 GB and Up to 20 GB. All of it is where a new
+installation and every older settings file begin. With a size chosen, the text of the messages
+you read least recently is removed when the size is passed and fetched again when you open them.
+The mail itself stays either way: a size removes text from this computer and nothing from your
+provider. With the fetching box off, no message text comes down at all, and a message whose
+text is not here says so rather than fetching it.
+
 ### Attachments are kept too
 
 When you open a message, the files it carries are kept in the `cache` folder alongside its
@@ -145,7 +164,7 @@ group changes nothing about their contact.
 
 | Who | When | What goes |
 |---|---|---|
-| Your mail provider | Checking, reading, sending | The mail itself, over TLS |
+| Your mail provider | Checking, reading, sending, and, since the build of 2026-09-18, downloading everything after every check, see below | The mail itself, over TLS: the whole of every folder you keep up to date, a chunk at a time, and the text of each message unless you turn that off |
 | The same provider, for your contacts, calendar and tasks | Syncing, which a new installation allows | The contacts, events and tasks |
 | A separate calendar or contacts server | Syncing, if you set one up | The events and contacts |
 | Your organisation's directory | Only if you name one on the account, see below | The part of a name you have typed into To, Cc or Bcc |
@@ -160,6 +179,49 @@ to this project, so there is nowhere for anything of yours to go even by acciden
 GitHub row is the one place this program asks anything for its own reasons rather than
 yours, and it carries no account and no identifier. The last row is the sender choosing,
 not this program, and the section below says what it means.
+
+### A whole mailbox, a chunk at a time, and a connection held open all day
+
+Since the build of 2026-09-18 the first row is busier than it was, and this section says
+what your provider learns from that. Until that build, a check asked for the newest five
+hundred messages of each kept folder and the text of a message was asked for when you opened
+it, and the connection that listens for new mail was let go the first time it dropped.
+
+**What the download asks for.** After every check for mail, for every enabled IMAP account,
+Wixen Mail asks for every message of every folder you keep up to date that is not on this
+computer yet, five hundred headers at a time, and then for the text of each of those messages,
+fifty at a time, unless the Message Text box on the Permissions tab is off or the size you
+chose there has been reached. It asks over the same TLS connection the check uses, signed in
+as you, and it changes nothing on the server: a message whose text is fetched this way is not
+marked read by it, because fetching the text is not opening the message.
+
+**What that tells the provider, and what it does not.** A client that downloads the whole
+mailbox tells the provider that, and nothing more. It learns that a program signed in as you
+asked for everything, in the order the folders sit in your folder tree with the one you were
+looking at first, and it can see how much and how fast. It does not learn which messages you
+read, which you searched for, or which you opened, because every message is asked for
+whether or not you ever look at it. Which messages you have read is told to it by the read
+flag, exactly as before this build, and only when marking a message read on the server is
+something Allow Changes lets this program do. What a provider makes of a whole mailbox
+arriving chunk after chunk is its choice: it is entitled to slow the download down, refuse
+it, or disconnect you for it, and nothing here can find out which yours will do. Nobody has
+watched one do any of those things to this program yet. If it refuses, the download stops,
+waits thirty seconds doubling to half an hour, and asks again.
+
+**A connection stays open for as long as the program runs.** Each enabled account's inbox is
+watched through a connection held open to the provider, so the server can say when mail
+lands; the provider sees a client connected all day rather than one that visits. When that
+connection ends it is opened again after a growing wait, and when your network comes back it
+is opened again at once. Every account is also checked on the Check Interval on its editor,
+five minutes unless you changed it, whether or not something is watching. Both the watch and
+the download resume when the network returns without your pressing Go Back Online: offline
+mode holds what you send and nothing you read. Each account holds two connections, one
+watching and one working, and whether a provider counts that against a limit has not been
+observed either.
+
+**What ends up on your disk.** Everything the download brings, in the `cache` folder, which
+[Where your things are](#where-your-things-are) above describes: the whole of every kept
+folder and its text, unencrypted, growing with your mailbox unless you chose a size.
 
 ### The OneNote permission, which nothing uses
 
