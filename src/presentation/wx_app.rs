@@ -22,6 +22,7 @@ use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::platform_bridge;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
+use crate::presentation::landing_after_a_removal;
 use crate::presentation::mail_sort::sort_messages;
 use crate::presentation::one_question_at_a_time;
 use crate::presentation::page_jumps;
@@ -19809,6 +19810,37 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
         tell_the_list_how_many(state, msg_list);
         msg_list.refresh(true, None);
     }
+}
+
+/// Land the message list's cursor after `removed` rows have left it (#76).
+///
+/// The rule is `landing_after_a_removal::where_to_land`; this is the rule
+/// reaching the control, which since 2026-09-18 it does. Answers the row
+/// landed on, for the caller's own record of the selection.
+pub fn land_the_cursor_after(
+    list: &ListCtrl,
+    removed: &[usize],
+    len_after: usize,
+) -> Option<usize> {
+    let _ = list;
+    landing_after_a_removal::where_to_land(removed, len_after)
+}
+
+/// Keep the cursor on the same message once the rows were replaced (#76).
+///
+/// `cursor` is the message the cursor was on and `old_index` its row before
+/// the load; the answer is the row it was moved to, or nothing when its
+/// message is still on the same row or no longer listed, in which case the
+/// control is not touched, which is 10-02's rule kept.
+pub fn keep_the_cursor_on_its_message(
+    list: &ListCtrl,
+    old_index: Option<usize>,
+    cursor: Option<i64>,
+    ids_after: &[i64],
+) -> Option<usize> {
+    let _ = list;
+    let now = landing_after_a_removal::where_the_same_message_is(cursor, ids_after);
+    landing_after_a_removal::whether_to_move(old_index, now)
 }
 
 /// Tell the message list how many rows it has, from whichever view is on.
