@@ -426,3 +426,337 @@ fn test_reading_b_companion_both_readers_saw_the_old_label_before_the_relabel() 
     assert_eq!(harvest.text_before.as_deref(), Some(THE_OLD_LABEL));
     assert_eq!(harvest.name_before, THE_OLD_LABEL);
 }
+
+// ── The main window's source: the three surfaces, the key, the toggle ──────
+//
+// Read from the source rather than run, because the sites are inside the
+// main window's builder and its update handler, which need a live window, a
+// running event loop and a mail store to reach. Each reading is a function
+// over the shipped text returning a complaint, and each has a companion that
+// hands it a snippet shaped like the site with the fault planted.
+
+const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
+
+fn the_main_window() -> String {
+    let whole = std::fs::read_to_string(THE_MAIN_WINDOW)
+        .unwrap_or_else(|why| panic!("{THE_MAIN_WINDOW}: {why}"))
+        .replace("\r\n", "\n");
+    wixen_mail::common::what_ships::what_ships(&whole)
+}
+
+/// One function's text, from its signature to the closing brace at column
+/// nought, or a complaint when the signature is gone.
+fn body_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n}\n").map_or(rest.len(), |end| end + 2);
+    Ok(rest[..ends].to_string())
+}
+
+/// The text after the first `from` up to the next `to`, or a complaint
+/// naming which anchor is gone.
+fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
+    let start = text
+        .find(from)
+        .ok_or(format!("{from:?} is no longer here, so this reads nothing"))?
+        + from.len();
+    let rest = &text[start..];
+    let end = rest
+        .find(to)
+        .ok_or(format!("{to:?} is no longer here, so this reads nothing"))?;
+    Ok(&rest[..end])
+}
+
+/// The body of one `_ if id == ...` arm of the command dispatch, up to the
+/// next arm of the same shape.
+fn the_id_arm<'a>(source: &'a str, heading: &str) -> Result<&'a str, String> {
+    let start = source.find(heading).ok_or(format!(
+        "{heading:?} is no longer here, so this reads nothing"
+    ))? + heading.len();
+    let rest = &source[start..];
+    let end = rest.find("_ if id ==").unwrap_or(rest.len());
+    Ok(&rest[..end])
+}
+
+const THE_ARM: &str = "_ if id == ID_MARK_READ =>";
+const THE_TOGGLE: &str = "fn toggle_read_state(";
+const THE_REFRESH: &str = "fn refresh_mark_read_wording(";
+/// Where the key is wired on the message list, and the first line after the
+/// read-aloud and key wirings.
+const THE_KEY_WIRING: (&str, &str) = ("wire_letter(&msg_list, 'M'", "let preview_visible");
+/// Where the selection handler starts and where the next handler on the
+/// list starts, which is where it ends.
+const THE_SELECTION_HANDLER: (&str, &str) =
+    ("msg_list.on_item_selected({", "msg_list.on_column_click({");
+/// The update arm that lands a read flag on the row, and the next arm.
+const THE_TOGGLED_ARM: (&str, &str) = (
+    "UIUpdate::MessageReadToggled(cache_id, new_read) => {",
+    "\n        UIUpdate::",
+);
+/// Where the message list's context menu is wired, and the next control's.
+const THE_CONTEXT_WIRING: (&str, &str) = (
+    "wire_context_menu(&msg_list,",
+    "wire_context_menu(&folder_tree",
+);
+/// Where the main toolbar's tool is added, and the end of that call.
+const THE_TOOL_ADDED: (&str, &str) = ("toolbar.add_tool(\n                    ID_MARK_READ,", ");");
+const THE_ITEM: &str = ".append_item(ID_MARK_READ, ";
+
+/// The Action menu's item and the key run one toggle, and the key says one
+/// word: the arm calls it, the key wiring calls it under the key's name, and
+/// the toggle asks the rule for the word, signals Confirmed and sends the
+/// flag to the server as the arm always did.
+fn the_arm_and_the_key_share_one_toggle(app: &str) -> Result<(), String> {
+    let arm = the_id_arm(app, THE_ARM)?;
+    if !arm.contains("toggle_read_state(") {
+        return Err(
+            "the ID_MARK_READ arm does not call toggle_read_state, so the menu item and the key \
+             run two copies of the toggle"
+                .to_string(),
+        );
+    }
+    let wiring = between(app, THE_KEY_WIRING.0, THE_KEY_WIRING.1)?;
+    if !wiring.contains("toggle_read_state(") || !wiring.contains("How::TheKey") {
+        return Err(
+            "the key wired on the message list does not run toggle_read_state as the key, so M \
+             does something other than the command"
+                .to_string(),
+        );
+    }
+    let toggle = body_of(app, THE_TOGGLE)?;
+    for needed in [
+        "what_the_key_says(",
+        "a11y.signal(FeedbackEvent::Confirmed",
+        "FlagChange::Read(",
+    ] {
+        if !toggle.contains(needed) {
+            return Err(format!(
+                "toggle_read_state does not reach {needed}, so the toggle under the key is not \
+                 the toggle the command was"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The words are refreshed wherever the state can change under them: on
+/// selection, after the toggle, and when a read flag lands on the row from
+/// the server or is put back by a refusal. The refresh sets all three
+/// surfaces from the one rule.
+fn the_wording_follows_the_state_everywhere_it_can_change(app: &str) -> Result<(), String> {
+    let handler = between(app, THE_SELECTION_HANDLER.0, THE_SELECTION_HANDLER.1)?;
+    if !handler.contains("refresh_mark_read_wording(") {
+        return Err(
+            "the selection handler never refreshes the wording, so arrowing onto a read message \
+             leaves the command saying Mark as Read"
+                .to_string(),
+        );
+    }
+    let toggle = body_of(app, THE_TOGGLE)?;
+    if !toggle.contains("refresh_mark_read_wording(") {
+        return Err(
+            "toggle_read_state never refreshes the wording, so the item says the old way after \
+             the key or the command"
+                .to_string(),
+        );
+    }
+    let toggled = between(app, THE_TOGGLED_ARM.0, THE_TOGGLED_ARM.1)?;
+    if !toggled.contains("refresh_mark_read_wording(") {
+        return Err(
+            "the MessageReadToggled arm never refreshes the wording, so a flag that lands from \
+             the server or is put back by a refusal leaves the command saying the wrong way"
+                .to_string(),
+        );
+    }
+    let refresh = body_of(app, THE_REFRESH)?;
+    for needed in [
+        "what_the_command_says(",
+        "find_item(ID_MARK_READ)",
+        ".set_label(",
+        "toolbar_text::relabel(",
+        "set_tool_short_help(",
+    ] {
+        if !refresh.contains(needed) {
+            return Err(format!(
+                "refresh_mark_read_wording does not reach {needed}, so one of the three surfaces \
+                 is not set from the rule"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The message list's context menu is answered from the state at the moment
+/// the key is pressed, and no longer from the focus alone.
+fn the_context_menu_asks_the_state(app: &str) -> Result<(), String> {
+    let wiring = between(app, THE_CONTEXT_WIRING.0, THE_CONTEXT_WIRING.1)?;
+    if !wiring.contains("entries_for_messages(") {
+        return Err(
+            "the message list's context menu is not built from entries_for_messages, so it says \
+             Mark as read whatever the message's state"
+                .to_string(),
+        );
+    }
+    if wiring.contains("entries_for(Focus::Messages)") {
+        return Err(
+            "the message list's context menu still answers the focus form beside the state's"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// The tool and the item are built with the unread wording's words, which
+/// is what they say until the first selection refreshes them.
+fn the_tool_and_the_item_start_with_the_rules_words(app: &str) -> Result<(), String> {
+    let tool = between(app, THE_TOOL_ADDED.0, THE_TOOL_ADDED.1)?;
+    if !tool.contains("what_the_command_says(true)") {
+        return Err(
+            "the toolbar's tool is added with its own words rather than the rule's".to_string(),
+        );
+    }
+    let item = between(app, THE_ITEM, ")")?;
+    let literal = item
+        .split('"')
+        .nth(1)
+        .ok_or("the Action menu's item carries no quoted label".to_string())?;
+    let rule = wixen_mail::application::marking_read::what_the_command_says(true).menu;
+    if literal != rule {
+        return Err(format!(
+            "the Action menu's item is built with {literal:?} and the rule says {rule:?}; the \
+             literal stays so the menu-letter guard in tests/wired.rs can read it, and it has \
+             to be the rule's word"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_menu_item_and_the_key_run_one_toggle_and_the_key_says_one_word() {
+    the_arm_and_the_key_share_one_toggle(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_wording_is_refreshed_on_selection_after_the_toggle_and_when_a_flag_lands() {
+    the_wording_follows_the_state_everywhere_it_can_change(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_context_menu_on_the_message_list_asks_the_state() {
+    the_context_menu_asks_the_state(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_tool_and_the_item_are_built_with_the_rules_words() {
+    the_tool_and_the_item_start_with_the_rules_words(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+// ── The companions ─────────────────────────────────────────────────────────
+//
+// Each hands its reading a snippet shaped like the sites, with the fault
+// planted, rather than editing the real file's text: the readings' anchors
+// exist only once the sites are built.
+
+/// The sites as they should be, in a snippet.
+fn a_window_as_it_should_be() -> String {
+    format!(
+        "{}\n    refresh_mark_read_wording(&frame, toolbar_handle, &state);\n{}\n\
+         {} Some(entries_for_messages(any_unread)){}\n\
+         {}\n    what_the_command_says(true).spoken,\n{}\n\
+         {}\"Mark as R&ead\", \"Mark the selected message as read\")\n\
+         {}\n    toggle_read_state(app, &a11y, How::TheKey, &frame, toolbar_handle);\n{}\n\
+         {} {{\n    toggle_read_state(app, &a11y, How::TheCommand, &frame, toolbar_handle);\n\
+         }}\n                        _ if id == ID_SEARCH => {{\n\
+         {}\n    refresh_mark_read_wording(frame, toolbar, state);{}\n\
+         {}) {{\n    let word = what_the_key_says(new_read);\n    a11y.signal(FeedbackEvent::Confirmed, word);\n\
+         ServerChange::Flag(FlagChange::Read(new_read));\n    refresh_mark_read_wording(frame, toolbar, state);\n}}\n\
+         {}) {{\n    let wording = what_the_command_says(any_unread);\n\
+         bar.find_item(ID_MARK_READ).set_label(wording.menu);\n\
+         toolbar_text::relabel(&toolbar, ID_MARK_READ, wording.spoken);\n\
+         toolbar.set_tool_short_help(ID_MARK_READ, wording.help);\n}}\n",
+        THE_SELECTION_HANDLER.0,
+        THE_SELECTION_HANDLER.1,
+        THE_CONTEXT_WIRING.0,
+        THE_CONTEXT_WIRING.1,
+        THE_TOOL_ADDED.0,
+        THE_TOOL_ADDED.1,
+        THE_ITEM,
+        THE_KEY_WIRING.0,
+        THE_KEY_WIRING.1,
+        THE_ARM,
+        THE_TOGGLED_ARM.0,
+        THE_TOGGLED_ARM.1,
+        THE_TOGGLE,
+        THE_REFRESH,
+    )
+}
+
+#[test]
+fn test_the_readings_pass_a_window_shaped_as_it_should_be() {
+    let app = a_window_as_it_should_be();
+    the_arm_and_the_key_share_one_toggle(&app).unwrap_or_else(|why| panic!("{why}"));
+    the_wording_follows_the_state_everywhere_it_can_change(&app)
+        .unwrap_or_else(|why| panic!("{why}"));
+    the_context_menu_asks_the_state(&app).unwrap_or_else(|why| panic!("{why}"));
+    the_tool_and_the_item_start_with_the_rules_words(&app).unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_reading_complains_when_the_key_runs_its_own_toggle() {
+    let app = a_window_as_it_should_be().replacen(
+        "toggle_read_state(app, &a11y, How::TheKey, &frame, toolbar_handle);",
+        "lock_state(&state).messages[row].read ^= true;",
+        1,
+    );
+    let why = the_arm_and_the_key_share_one_toggle(&app)
+        .expect_err("a key running its own toggle was passed over");
+    assert!(
+        why.contains("does not run toggle_read_state as the key"),
+        "{why}"
+    );
+}
+
+#[test]
+fn test_the_reading_complains_when_a_surface_is_left_behind() {
+    let app = a_window_as_it_should_be().replacen(
+        "    refresh_mark_read_wording(&frame, toolbar_handle, &state);\n",
+        "",
+        1,
+    );
+    let why = the_wording_follows_the_state_everywhere_it_can_change(&app)
+        .expect_err("a selection handler refreshing nothing was passed over");
+    assert!(why.contains("selection handler never refreshes"), "{why}");
+
+    let app = a_window_as_it_should_be().replacen(
+        "toolbar_text::relabel(&toolbar, ID_MARK_READ, wording.spoken);\n",
+        "",
+        1,
+    );
+    let why = the_wording_follows_the_state_everywhere_it_can_change(&app)
+        .expect_err("a refresh leaving the toolbar behind was passed over");
+    assert!(why.contains("toolbar_text::relabel("), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_the_context_menu_answers_the_focus_alone() {
+    let app = a_window_as_it_should_be().replacen(
+        "Some(entries_for_messages(any_unread))",
+        "Some(entries_for(Focus::Messages))",
+        1,
+    );
+    let why = the_context_menu_asks_the_state(&app)
+        .expect_err("a context menu answering the focus alone was passed over");
+    assert!(why.contains("not built from entries_for_messages"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_the_item_and_the_rule_differ() {
+    let app = a_window_as_it_should_be().replacen("\"Mark as R&ead\"", "\"&Mark Read\"", 1);
+    let why = the_tool_and_the_item_start_with_the_rules_words(&app)
+        .expect_err("an item built with its own words was passed over");
+    assert!(why.contains("the rule says"), "{why}");
+}
