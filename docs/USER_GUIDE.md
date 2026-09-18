@@ -350,8 +350,10 @@ the full detail.
 A message with attachments is announced as having them, and Wixen Mail does
 not use an icon for this: your screen reader hears it in words rather than
 having to identify a glyph. Select the message to see the attachments listed
-below the message body in the preview pane, or press `F8` from inside the
-reader window to jump straight to the list.
+below the message body in the preview pane, or press `Alt+A` from inside an
+open message to jump straight to the list, in the formatted view and in the
+plain-text reader alike; `Alt+A` again goes back to the message. Until
+2026-09-18 the key was `F8`, and it worked only in the plain-text reader.
 
 ### Attachment Information
 

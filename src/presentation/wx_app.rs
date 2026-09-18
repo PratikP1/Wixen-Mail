@@ -24,6 +24,7 @@ use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::mail_sort::sort_messages;
 use crate::presentation::one_question_at_a_time;
+use crate::presentation::page_jumps;
 use crate::presentation::sample_mailbox::{SAMPLE_MAILBOX_SIZE, sample_mailbox};
 use crate::presentation::ui_types::*;
 use crate::presentation::view_state;
@@ -1409,7 +1410,7 @@ impl WxMailApp {
                 // The page listens for Escape and F6 and posts back to the
                 // host, which moves focus to the message list. It is the same
                 // channel the context menu already uses.
-                wire_the_way_out(&preview, "preview");
+                wire_the_way_out(&preview, "preview", PageKeys::TheWayOut);
 
                 // Handle context menu messages from JS: store link href in state,
                 // show popup menu, let events bubble to frame.on_menu handler.
@@ -11956,13 +11957,41 @@ fn how_many_on_the_server(count: usize) -> String {
 ///
 /// Refusals are logged rather than ignored. A page whose way out was refused
 /// looks exactly like one that works right up until somebody needs to leave.
-fn wire_the_way_out(view: &WebView, surface: &str) -> bool {
+///
+/// A page with somewhere to jump to inside its window is given the jumps as
+/// well, from `page_jumps`, by the same route and for the same reason: a key
+/// bound on the browser control itself never fires while the browser has
+/// focus, which is how the page window's F8 sat dead until #84 (2026-09-18).
+fn wire_the_way_out(view: &WebView, surface: &str, keys: PageKeys) -> bool {
     let channel = view.add_script_message_handler("contextMenu");
     if !channel {
         tracing::error!("{surface}: script channel refused, the Back button will do nothing");
     }
-    let script = view.add_user_script(
-        r#"document.addEventListener('contextmenu', function(e) {
+    let script = match keys {
+        PageKeys::TheWayOut => THE_WAY_OUT.to_string(),
+        PageKeys::TheWayOutAndTheJumps => format!("{THE_WAY_OUT}\n{}", page_jumps::SCRIPT),
+    };
+    let script = view.add_user_script(&script, WebViewUserScriptInjectionTime::AtDocumentStart);
+    if !script {
+        tracing::error!("{surface}: user script refused, Escape will not leave the page");
+    }
+    channel && script
+}
+
+/// Which keys a page gives back to its window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageKeys {
+    /// Escape and F6, which every page needs. The preview takes only these:
+    /// it has no list and no bar of its own to jump to, and a key posted to
+    /// a window with nothing to do is a key that does nothing.
+    TheWayOut,
+    /// The way out, and Alt+A to the attachments and F7 to the warning bar,
+    /// for the page window, which has both.
+    TheWayOutAndTheJumps,
+}
+
+/// The listener every page runs for the way out, and the context menu.
+const THE_WAY_OUT: &str = r#"document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
     var link = e.target.closest('a');
     var data = { kind: 'context', x: e.clientX, y: e.clientY };
@@ -11987,14 +12016,7 @@ document.addEventListener('keydown', function(e) {
         if (e.key === 'F6') { data.back = e.shiftKey; }
         window.contextMenu.postMessage(JSON.stringify(data));
     }
-}, true);"#,
-        WebViewUserScriptInjectionTime::AtDocumentStart,
-    );
-    if !script {
-        tracing::error!("{surface}: user script refused, Escape will not leave the page");
-    }
-    channel && script
-}
+}, true);"#;
 
 /// A stored body as the thing it is, rather than whichever column was filled.
 ///
@@ -21082,26 +21104,128 @@ fn show_conversation_as_page(
         }
     });
 
+    // Anything hanging off these messages, in a list of its own. Without it,
+    // reading formatted would quietly cost somebody their attachments: the page
+    // renders bodies and nothing else, so the only sign there had been a file
+    // would be its absence.
+    //
+    // Built here, after the page and before the page's message handler, so
+    // the tab order runs bar, message, list and the handler below can move
+    // focus to a list that exists.
+    let hanging_off = reader_text::attachments_in(parts);
+    let attached = hanging_off.len();
+    let attachments = (!hanging_off.is_empty()).then(|| {
+        let list = ListBox::builder(&frame).build();
+        if let Some(palette) = palette {
+            theme::paint(&list, palette.main_surface());
+        }
+        for attachment in &hanging_off {
+            list.append(&attachment.label());
+        }
+        set_accessible_name_and_description(
+            &list,
+            "Attachments",
+            "Enter reads one here where that is possible, Ctrl+S saves it, Alt+A \
+             goes back to the message.",
+        );
+        sizer.add(&list, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+        list.bind_internal(EventType::KEY_DOWN, {
+            let reader = reader.clone();
+            let hanging_off = hanging_off.clone();
+            let a11y = a11y.clone();
+            move |event| {
+                event.skip(true);
+                let Some(key) = event.get_key_code() else {
+                    return;
+                };
+                // Alt+A goes back to the message, as it does in the reader.
+                // The list is a native control, so the key reaches it, which
+                // is the one thing the browser control above never allowed.
+                // Consumed rather than skipped: Alt with a letter no menu
+                // answers is a beep from Windows.
+                if key == 65 && event.alt_down() {
+                    event.skip(false);
+                    page.set_focus();
+                    let _ = a11y.announce(
+                        "Message",
+                        crate::presentation::accessibility::announcements::Priority::Normal,
+                    );
+                    return;
+                }
+                let Some(chosen) = list
+                    .get_selection()
+                    .and_then(|at| hanging_off.get(at as usize))
+                else {
+                    return;
+                };
+                // The same keys as the reader's own attachment list, running
+                // the same two actions, so neither surface can come to mean
+                // something different by them.
+                match (key, event.control_down()) {
+                    (13, _) | (79, true) => reader.read_attachment_now(chosen),
+                    (83, true) => reader.save_attachment_now(chosen),
+                    _ => {}
+                }
+            }
+        });
+        list
+    });
+
     // Before the page is loaded, because the script is injected as each
-    // document is created and one already loaded has missed it.
-    wire_the_way_out(&page, "conversation window");
+    // document is created and one already loaded has missed it. The page is
+    // given the jumps as well as the way out: this window has a bar and a
+    // list to jump to, and a key bound on the browser control never fires
+    // while the browser has focus, which is what #84 met with F8.
+    wire_the_way_out(&page, "conversation window", PageKeys::TheWayOutAndTheJumps);
     page.on_script_message_received({
+        let a11y = a11y.clone();
         move |event: WebViewEventData| {
-            if event
-                .get_string()
-                .is_some_and(|json| crate::presentation::panes::leaving_which_way(&json).is_some())
-            {
-                // Closing is what going back means here. The close handler
-                // below hides the window and hands control back to whatever
-                // opened it, so there is one way out and not two that could
-                // come to disagree.
-                //
-                // The direction the page sends is dropped here on purpose,
-                // and that is not an oversight to tidy up. wire_the_way_out
-                // injects one script into two surfaces, and closing is
-                // closing whichever key was pressed. Only the preview has two
-                // places to land, so only the preview reads which way.
-                frame.close(false);
+            use crate::presentation::accessibility::announcements::Priority;
+            let Some(json) = event.get_string() else {
+                return;
+            };
+            match page_jumps::the_jump_the_page_asked_for(&json) {
+                // Said as well as moved to, because a jump somebody cannot
+                // see needs to say where it landed: where focus is now, then
+                // how many. With nothing to go to, said rather than left
+                // silent, since a key that does nothing is indistinguishable
+                // from one that is broken.
+                Some(page_jumps::Jump::Attachments) => match attachments {
+                    Some(list) => {
+                        list.set_focus();
+                        let _ =
+                            a11y.announce(&format!("Attachments, {}", attached), Priority::Normal);
+                    }
+                    None => {
+                        let _ = a11y.announce("No attachments", Priority::Normal);
+                    }
+                },
+                Some(page_jumps::Jump::Warning) => match warning {
+                    Some(bar) => {
+                        bar.set_focus();
+                        let _ = a11y.announce("Security warning", Priority::Normal);
+                    }
+                    None => {
+                        let _ = a11y.announce("No warning", Priority::Normal);
+                    }
+                },
+                None => {
+                    if crate::presentation::panes::leaving_which_way(&json).is_some() {
+                        // Closing is what going back means here. The close
+                        // handler below hides the window and hands control
+                        // back to whatever opened it, so there is one way out
+                        // and not two that could come to disagree.
+                        //
+                        // The direction the page sends is dropped here on
+                        // purpose, and that is not an oversight to tidy up.
+                        // wire_the_way_out injects one script into two
+                        // surfaces, and closing is closing whichever key was
+                        // pressed. Only the preview has two places to land,
+                        // so only the preview reads which way.
+                        frame.close(false);
+                    }
+                }
             }
         }
     });
@@ -21145,97 +21269,13 @@ fn show_conversation_as_page(
         }
     });
 
-    // Anything hanging off these messages, in a list of its own. Without it,
-    // reading formatted would quietly cost somebody their attachments: the page
-    // renders bodies and nothing else, so the only sign there had been a file
-    // would be its absence.
-    let hanging_off = reader_text::attachments_in(parts);
-    let attachments = (!hanging_off.is_empty()).then(|| {
-        let list = ListBox::builder(&frame).build();
-        if let Some(palette) = palette {
-            theme::paint(&list, palette.main_surface());
-        }
-        for attachment in &hanging_off {
-            list.append(&attachment.label());
-        }
-        set_accessible_name_and_description(
-            &list,
-            "Attachments",
-            "Enter reads one here where that is possible, Ctrl+S saves it, F8 \
-             goes back to the message.",
-        );
-        sizer.add(&list, 0, SizerFlag::Expand | SizerFlag::All, 8);
-
-        list.bind_internal(EventType::KEY_DOWN, {
-            let reader = reader.clone();
-            let hanging_off = hanging_off.clone();
-            move |event| {
-                event.skip(true);
-                let Some(key) = event.get_key_code() else {
-                    return;
-                };
-                // F8 goes back to the message, as it does in the reader.
-                if key == 347 {
-                    page.set_focus();
-                    return;
-                }
-                let Some(chosen) = list
-                    .get_selection()
-                    .and_then(|at| hanging_off.get(at as usize))
-                else {
-                    return;
-                };
-                // The same keys as the reader's own attachment list, running
-                // the same two actions, so neither surface can come to mean
-                // something different by them.
-                match (key, event.control_down()) {
-                    (13, _) | (79, true) => reader.read_attachment_now(chosen),
-                    (83, true) => reader.save_attachment_now(chosen),
-                    _ => {}
-                }
-            }
-        });
-        list
-    });
-
-    // One key handler on the message rather than one per destination. Two
-    // handlers bound to the same event on the same control is a shape where
-    // which of them runs is the framework's business and not this file's, and
-    // the second one added is the one that reads as working until it does not.
+    // No key is bound on the page itself. Until 2026-09-18 F7 and F8 were,
+    // and neither ever fired: a WebView keeps every key once the browser has
+    // focus (#84). The jumps arrive through the page's script and the
+    // handler above.
     //
-    // F7 to the warning and F8 to the attachments, the same two keys and the
-    // same two directions as the reader window, so somebody who has learned one
-    // surface has learned both.
-    page.bind_internal(EventType::KEY_DOWN, {
-        let a11y = a11y.clone();
-        move |event| {
-            event.skip(true);
-            match event.get_key_code() {
-                // WXK_F7
-                Some(346) => {
-                    if let Some(bar) = warning {
-                        bar.set_focus();
-                        // Said as well as moved to, the same as the reader
-                        // does, because a jump somebody cannot see needs to say
-                        // where it landed.
-                        let _ = a11y.announce(
-                            "Security warning",
-                            crate::presentation::accessibility::announcements::Priority::Normal,
-                        );
-                    }
-                }
-                // WXK_F8
-                Some(347) => {
-                    if let Some(list) = attachments {
-                        list.set_focus();
-                    }
-                }
-                _ => {}
-            }
-        }
-    });
     // And back from the warning, because somewhere to jump to is only useful
-    // with a way back.
+    // with a way back. The bar is a native control, so the key reaches it.
     if let Some(bar) = warning {
         let a11y = a11y.clone();
         bar.bind_internal(EventType::KEY_DOWN, move |event| {
@@ -21266,10 +21306,10 @@ fn show_conversation_as_page(
             } else {
                 ""
             },
-            match hanging_off.len() {
+            match attached {
                 0 => String::new(),
-                1 => " 1 attachment, F8 for it.".to_string(),
-                many => format!(" {many} attachments, F8 for them."),
+                1 => " 1 attachment, Alt+A for it.".to_string(),
+                many => format!(" {many} attachments, Alt+A for them."),
             }
         ),
         crate::presentation::accessibility::announcements::Priority::Normal,

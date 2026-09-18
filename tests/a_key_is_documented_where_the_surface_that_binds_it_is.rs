@@ -9,9 +9,10 @@
 //! which means one thing everywhere in the application.
 //!
 //! It is the wrong question for a key that means different things on different
-//! surfaces, and this application has three of those. `F8` reaches the
-//! attachments in the reader window, opens the Columns dialog on the View menu,
-//! and reaches the toolbar in the composer. `Delete` throws a message away in
+//! surfaces, and this application has three of those. `F8` opens the Columns
+//! dialog on the View menu and reaches the toolbar in the composer, and until
+//! 2026-09-18 it reached the attachments in the reader window too (#84 moved
+//! that to Alt+A). `Delete` throws a message away in
 //! the message list and takes a file off a message in the composer. `F6` moves
 //! between panes in the main window and closes the conversation window.
 //!
@@ -213,6 +214,14 @@ fn test_the_key_that_takes_a_file_off_a_message_is_in_the_composers_section() {
 /// What this cannot see: the shift half. The script reads `e.shiftKey` for `F6`
 /// and this reader answers key names, so `Shift+F6` is documented because it is
 /// true rather than because anything here checks it.
+///
+/// Since 2026-09-18 (#84) the same window is also given a second script, from
+/// `src/presentation/page_jumps.rs`, whose keys move focus inside the window
+/// rather than out of it: Alt+A to the attachments and `F7` to the warning.
+/// That script is not in this file, so this reader does not see its keys, and
+/// it must not: they belong in the reader window's section, and
+/// `tests/attachments_are_reached_with_alt_a_in_both_views.rs` holds them
+/// there.
 #[test]
 fn test_every_key_that_closes_the_conversation_window_is_in_its_section() {
     let app = what_ships(&fs::read_to_string(THE_MAIN_WINDOW).expect("the main window"));
@@ -225,7 +234,9 @@ fn test_every_key_that_closes_the_conversation_window_is_in_its_section() {
     );
 
     assert!(
-        app.contains("wire_the_way_out(&page, \"conversation window\")"),
+        app.contains(
+            "wire_the_way_out(&page, \"conversation window\", PageKeys::TheWayOutAndTheJumps)"
+        ),
         "the conversation window no longer takes the injected script, so the \
          keys this is about are not bound there"
     );

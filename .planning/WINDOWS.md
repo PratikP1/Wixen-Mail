@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 504
+open_count: 505
 waived_count: 0
 fixed_count: 33
-total_count: 537
-last_updated: 2026-09-18T18:05:00.000Z
+total_count: 538
+last_updated: 2026-09-18T19:12:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -552,6 +552,7 @@ last_updated: 2026-09-18T18:05:00.000Z
 | 535 | 11 | unrun-verify | src/presentation/wx_app.rs | 22706 | 11-04: the log's default follows the version and the lines a report needs are written at info and debug, and what only a report from the tester's machine settles for #71: whether each check's per-folder line, the download's chunk lines, the settings save line and the held-back line are the lines that make his next problem diagnosable, and what a day at Debug on his real account costs on his disk, which a two-minute start against the measurement profile cannot say. The readings prove each line's presence and level and that no call spells a secret; nobody has written a report from a log at this level | open |  | 2026-09-18T17:52:00.000Z |  |
 | 536 | 11 | deviation | scripts/which-checks.test.sh | 248 | 11-04 found, not fixed: the suite's scratch-repository fixture runs git -C <scratch> init, config, add and commit, and a hook exports an absolute GIT_DIR and GIT_INDEX_FILE when the commit is made from a linked worktree (measured 2026-09-18 with a hook printing its environment: unset in the main checkout, absolute in a worktree), so from a worktree every fixture command acts on the real repository: init marked it bare, config overwrote hooksPath and the user, add staged the fixture's four-line Cargo.toml into the worktree's index, and commit landed that beside the planner's staged files on main as b4a4cc81 under the fixture's message and committer. The repository config was restored by hand at 16:55Z, and the planner undid the commit (main's reflog at eb5d8517: "planner: undo the suite's stray commit made through the hook from a linked worktree") and landed its plans as 1ae63359. The fixture itself is unchanged and will do the same on the next commit made from a linked worktree: it must clear GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE and GIT_PREFIX before its first git, with a case that exports an absolute GIT_DIR and asserts the real repository did not move | open |  | 2026-09-18T17:52:00.000Z |  |
 | 537 | 11 | unrun-verify | tests/the_numbers_the_targets_ask_for.rs | 433 | 11-04: the two size rows for docs/development/measurements.md, the log a two-minute start writes at info and at debug against the measurement profile, were not taken. One copy of Wixen Mail runs at a time and the tester's copy was open on his account through the whole session (process 12648, INBOX, 14400 unread); the one attempt at 17:37Z handed itself to that copy, which was raised and said "Wixen Mail is already running, and this is it", and a run started the moment his copy closes would take the single-instance slot from a restart. The harness now refuses to start while any wixen-mail.exe is running, with the reason, and pins the level through WIXEN_MEASUREMENT_LOG_LEVEL. The rows are owed: run the two commands on the harness's header with no Wixen Mail open, write the rows with their date and commit, and quote the sizes on docs/ALPHA_TESTING.md | open |  | 2026-09-18T18:05:00.000Z |  |
+| 538 | 11 | unrun-verify | src/presentation/page_jumps.rs |  | 11-04.1: what only the tester's ear settles for #84. In the formatted view: Alt+A from the message landing on the attachments list with "Attachments, N" said, and whether that sentence after the list announces itself is one thing too many; Alt+A from the list going back with "Message"; F7 to the warning bar with "Security warning" and F7 back; "No attachments" and "No warning" when there is nothing to go to. In the plain-text reader: Alt+A to the list and back, where the way back is answered by the menu accelerator when the list has focus, because the frame takes an accelerator before a list box sees the key; that was reasoned from how the toolkit routes a chord (wxTextCtrl exempts Ctrl+arrows, a list box exempts nothing) and never watched, and if the chord reaches the list instead, the list's own handler answers it. The readings hold the shape; none of this has been heard | open |  | 2026-09-18T19:12:00.000Z |  |
 
 ````json
 [
@@ -6997,6 +6998,18 @@ last_updated: 2026-09-18T18:05:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-18T18:05:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 538,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/page_jumps.rs",
+    "line": null,
+    "description": "11-04.1: what only the tester's ear settles for #84. In the formatted view: Alt+A from the message landing on the attachments list with \"Attachments, N\" said, and whether that sentence after the list announces itself is one thing too many; Alt+A from the list going back with \"Message\"; F7 to the warning bar with \"Security warning\" and F7 back; \"No attachments\" and \"No warning\" when there is nothing to go to. In the plain-text reader: Alt+A to the list and back, where the way back is answered by the menu accelerator when the list has focus, because the frame takes an accelerator before a list box sees the key; that was reasoned from how the toolkit routes a chord (wxTextCtrl exempts Ctrl+arrows, a list box exempts nothing) and never watched, and if the chord reaches the list instead, the list's own handler answers it. The readings hold the shape; none of this has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T19:12:00.000Z",
     "resolved_at": null
   }
 ]

@@ -185,7 +185,16 @@ plain text. That gives you the text control described below, with a caret you
 can move through the message with. It is a real trade: a caret against the
 structure the sender wrote, and neither answer is right for everybody.
 
-Either way, `F8` reaches the attachments and `Ctrl+S` saves the one you are on.
+Either way, `Alt+A` reaches the attachments and `Ctrl+S` saves the one you are
+on. `Alt+A` again goes back to the message, and `F7` reaches the security
+warning and back in both views too.
+
+Until 2026-09-18 this page gave `F8` for the attachments, and `F8` reached them
+only in the plain-text reader, never in the formatted view: there the key was
+bound on the browser control, which keeps every key once it has focus, so
+pressing it did nothing (#84). `F8` is retired from both message windows. It
+still opens the column chooser in the main window and reaches the toolbar in
+the composition window.
 
 From the conversation tree, `Enter` on the top row opens the whole conversation
 as a page, where every message is a real heading, `H` moves between them, and
@@ -211,7 +220,7 @@ where the caret is.
 | Next message in the conversation | `Ctrl+Down` | Announces the message it lands on, and says "Last message" at the end |
 | Previous message in the conversation | `Ctrl+Up` | |
 | Security warning | `F7` | Moves between the message and the warning above it, when there is one |
-| Attachments | `F8` | Moves between the message and the list of attachments, when there is one |
+| Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
 | Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 
@@ -222,8 +231,10 @@ the next thing after the message in the tab order. Each row reads as the name,
 what kind of file it is in plain words, and how big it is: "Report.pdf, PDF
 document, 240 KB".
 
-`F8` jumps to the list from anywhere in the message, and `F8` again goes back to
-the message.
+`Alt+A` jumps to the list from anywhere in the message, and `Alt+A` again goes
+back to the message. In the formatted view the window says "Attachments" and
+how many when you land, and "Message" on the way back; with nothing attached it
+says "No attachments" rather than doing nothing.
 
 `Ctrl+S` opens the standard Save dialog with the name already filled in. The
 file is downloaded when you save it rather than kept on your computer in
@@ -305,8 +316,11 @@ button away for a whole conversation.
 All three close it. That is worth saying plainly because `F6` moves between
 panes everywhere else in this application, so somebody who learned it in the
 main window will press it here and the window will go. There are no panes to
-move between in this one: it holds the conversation and nothing else, which is
-what makes it safe to use a browser control here at all.
+move between in this one: it holds the conversation, with the list of
+attachments below it and the security warning above it when the message has
+them, and nothing else, which is what makes it safe to use a browser control
+here at all. `Alt+A` and `F7` move to those two and back; they are the keys
+under Attachments and The security warning above.
 
 #### The security warning
 
@@ -317,7 +331,9 @@ through it with the arrow keys, and copy it.
 
 It comes before the message in the tab order, so `Shift+Tab` from the message
 reaches it, and `F7` jumps to it from anywhere in the text. `F7` again goes
-back to where you were reading.
+back to where you were reading. The formatted view has the same bar and the
+same key, since 2026-09-18: the window says "Security warning" when you land
+on it, "Message" on the way back, and "No warning" when there is none.
 
 The warning is also announced when the message opens. That announcement is an
 ordinary feedback event, so in Settings, Feedback you can pick "Unsafe message"
