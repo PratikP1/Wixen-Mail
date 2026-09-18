@@ -599,8 +599,12 @@ pub fn what_blocking_did(
 /// Where somebody chooses which folders are downloaded.
 ///
 /// Named once, because every sentence here sends them to it and a menu path
-/// written out three times is a menu path that drifts.
-const WHERE_FOLDERS_ARE_CHOSEN: &str = "File, then Folders to Keep Up to Date";
+/// written out three times is a menu path that drifts. It drifted anyway:
+/// this said File from 2026-07-30 while the item moved to Action, This
+/// Folder on 2026-08-26, and the tests beside it held the item's name and
+/// not the menu. On Tools since 2026-09-18 (#70), and the tests hold the
+/// menu now.
+const WHERE_FOLDERS_ARE_CHOSEN: &str = "Tools, then Folders to Keep Up to Date";
 
 /// Why a junk folder nobody downloads makes a block worth nothing.
 const A_FOLDER_NOT_DOWNLOADED_CANNOT_BE_READ: &str =

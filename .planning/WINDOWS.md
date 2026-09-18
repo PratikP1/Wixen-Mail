@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 499
+open_count: 501
 waived_count: 0
 fixed_count: 33
-total_count: 532
-last_updated: 2026-09-18T13:30:00.000Z
+total_count: 534
+last_updated: 2026-09-18T15:12:32.000Z
 ---
 
 # Broken Windows Ledger
@@ -547,6 +547,8 @@ last_updated: 2026-09-18T13:30:00.000Z
 | 530 | 11 | unrun-verify | tests/the_language_the_screen_shows_is_the_one_used.rs |  | The en-AU case of this target, the one that failed on GitHub's runner in CI run 35336142985 at 744d05ef, cannot be run red on this machine, because Windows here offers en-AU and the runner does not; 11-01 fixed the rule in presentation::which_language_row, held it by six cases over hand-built rows that are red on both machines before the rule, and left this target unchanged and green here. Whether the runner now keeps en-AU is settled by the next push of main, which is Pratik's; until that run is read this entry stands, and the run's Test Suite job is the reading. | open |  | 2026-09-18T13:04:42.000Z |  |
 | 531 | 11 | unrun-verify | nvda-tests/tests/settings-tabs-read-once.test.js | 160 | 11-02: the corrected settings case takes its mark after the settle and presses Right without waiting to hear General, because its first run (35336142908 at 744d05ef) waited for an opening announcement no transcript of any case has ever held and timed out with an empty log. It never runs on this machine (nvda-tests/README.md) and runs at the next push of main, which is Pratik's. What that run shows: which tab the first Right reaches on the runner's fresh profile. If the tab row holds focus at open, Compose, and the six Rights and one Left are counted; if not, the case fails with 'never heard: Compose', a finding about focus at open on a fresh profile and not about the row. The tester's ear has settled the row itself (#33); this entry is the harness's own case | open |  | 2026-09-18T13:30:00.000Z |  |
 | 532 | 11 | deviation | .github/workflows/accessibility.yml | 44 | 11-02 took continue-on-error off the NVDA job and left it on the Accessibility scan job on purpose. The scan's findings are counts per window the workflow already reads out (violations, unnamed, broken): 20 violations over 36 windows in run 35336142914 at 744d05ef, on windows 11-02 does not touch (new-event 9, send-later 6, compose 4, accounts 1). Whether a count should fail the run is a decision for the phase that owns the findings, not 11-02's. Until it is taken, the scan's badge is green over any count and the report is what to read | open |  | 2026-09-18T13:30:00.000Z |  |
+| 533 | 11 | unrun-verify | src/presentation/wx_folder_choice.rs | 286 | 11-03: Folders to Keep Up to Date is a tree with the control's own check boxes, and what only the tester's ear settles for #70: that a kept folder is heard as checked and an unkept one as not checked, that Space says the new state after it toggles, that a nested folder's level is read, that the title is heard as the account's name, that the All Mail sentence under the tree is reached and understood on his Gmail account, and whether his Gmail lists All Mail at all (his folder list holds none; Gmail's Labels, Show in IMAP setting decides). The readings prove the state on TVM_GETITEMSTATE and over MSAA, the nesting, the cursor, the sentence and the title's argument | open |  | 2026-09-18T15:12:32.000Z |  |
+| 534 | 11 | deviation | src/presentation/accessibility/names.rs | 140 | 11-03: wxdragon 0.9.17's acc_state constants carry MSAA's numbering (CHECKED 0x10, FOCUSABLE 0x100000, SELECTABLE 0x200000), its C++ shim hands a GetState answer to wxAccessible unconverted, and wxWidgets numbers its own wxACC_STATE_SYSTEM enumeration differently (BUSY 0x10, PROTECTED 0x100000, READONLY 0x200000) before converting to the platform's, so every state written through those constants arrives as a different state. Measured over AccessibleObjectFromWindow: CHECKED arrived as BUSY and SELECTABLE as READONLY, which is what the tester heard. The one writer in this tree, CheckedRows, is retired; nothing writes a state through them now, and the paragraph at this line says so. Upstream defect, not reported yet | open |  | 2026-09-18T15:12:32.000Z |  |
 
 ````json
 [
@@ -6932,6 +6934,30 @@ last_updated: 2026-09-18T13:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-18T13:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 533,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_folder_choice.rs",
+    "line": 286,
+    "description": "11-03: Folders to Keep Up to Date is a tree with the control's own check boxes, and what only the tester's ear settles for #70: that a kept folder is heard as checked and an unkept one as not checked, that Space says the new state after it toggles, that a nested folder's level is read, that the title is heard as the account's name, that the All Mail sentence under the tree is reached and understood on his Gmail account, and whether his Gmail lists All Mail at all (his folder list holds none; Gmail's Labels, Show in IMAP setting decides). The readings prove the state on TVM_GETITEMSTATE and over MSAA, the nesting, the cursor, the sentence and the title's argument",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T15:12:32.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 534,
+    "kind": "deviation",
+    "phase": "11",
+    "file": "src/presentation/accessibility/names.rs",
+    "line": 140,
+    "description": "11-03: wxdragon 0.9.17's acc_state constants carry MSAA's numbering (CHECKED 0x10, FOCUSABLE 0x100000, SELECTABLE 0x200000), its C++ shim hands a GetState answer to wxAccessible unconverted, and wxWidgets numbers its own wxACC_STATE_SYSTEM enumeration differently (BUSY 0x10, PROTECTED 0x100000, READONLY 0x200000) before converting to the platform's, so every state written through those constants arrives as a different state. Measured over AccessibleObjectFromWindow: CHECKED arrived as BUSY and SELECTABLE as READONLY, which is what the tester heard. The one writer in this tree, CheckedRows, is retired; nothing writes a state through them now, and the paragraph at this line says so. Upstream defect, not reported yet",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T15:12:32.000Z",
     "resolved_at": null
   }
 ]

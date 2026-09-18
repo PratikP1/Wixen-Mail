@@ -6579,12 +6579,10 @@ impl WxMailApp {
                 "Get &Older Messages\tShift+F9",
                 "Carry on downloading, this folder first",
             )
-            .append_separator()
-            .append_item(
-                ID_CHOOSE_FOLDERS,
-                "&Folders to Keep Up to Date...",
-                "Choose which of this account's folders are downloaded",
-            )
+            // Folders to Keep Up to Date sat here from 2026-08-26 until
+            // 2026-09-18, and on File before that; it is on Tools now, by the
+            // tester's word (#70), because it is about the account's download
+            // and not about the folder under the cursor.
             .append_separator()
             // Renaming lives on Action rather than under File then New, which
             // is where making one is, because this acts on whatever is chosen
@@ -6941,11 +6939,23 @@ impl WxMailApp {
             // needs to read what nobody yet knows about a real provider, and
             // the download starts without a moment of choosing for a warning
             // to sit beside. P, which nothing else on this menu claims: the
-            // menu's letters are A, n, d, T, W, C, F, k, i, g, b, r, O and S.
+            // menu's letters are A, n, d, T, W, C, F, k, i, g, b, r, O, l
+            // and S.
             .append_check_item(
                 ID_PAUSE_DOWNLOADING,
                 "&Pause Downloading",
                 crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL,
+            )
+            // Beside Pause Downloading because both are about the download:
+            // this one says which of the account's folders it covers. Here
+            // since 2026-09-18 by the tester's word (#70); it sat on Action,
+            // This Folder from 2026-08-26 and on File before that. The letter
+            // is l, because F is Message Filters and O is Flush Outbox, read
+            // off this builder on the day.
+            .append_item(
+                ID_CHOOSE_FOLDERS,
+                "Fo&lders to Keep Up to Date...",
+                "Choose which of this account's folders are downloaded",
             )
             .append_separator()
             .append_item(ID_SETTINGS, "&Settings\tCtrl+,", "Application preferences")
