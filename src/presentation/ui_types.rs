@@ -348,6 +348,17 @@ pub enum WhyTheRowsWereRead {
     MailArrived,
 }
 
+/// A folder a watch is on, by the account it belongs to and its path.
+///
+/// The path alone cannot say whose folder it is: two accounts each have an
+/// INBOX. A watch that woke has to name the account so the check that
+/// follows reads that account and not whichever is active.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WatchedFolder {
+    pub account_id: String,
+    pub path: String,
+}
+
 /// UI update messages sent from async tasks to the UI thread
 #[derive(Clone, Debug)]
 pub enum UIUpdate {
@@ -671,23 +682,27 @@ pub enum UIUpdate {
     MessageLeftTheFolder(i64),
     /// A message's read flag was toggled in the cache (cache_id, new_read_state)
     MessageReadToggled(i64, bool),
-    /// A sync finished, so the inbox can be watched again.
+    /// An account's inbox should be watched: a check of it finished, a start
+    /// or the network coming back asked, or its wait after a failure is
+    /// over. Carries the account's id, because every enabled IMAP account
+    /// has a watch of its own since 2026-09-18 (#37).
     ///
-    /// Sent rather than acted on directly because the watch handle lives with
+    /// Sent rather than acted on directly because the watch handles live with
     /// the rest of the window state, on the thread that owns it.
-    MailboxWatchRequested,
+    MailboxWatchRequested(String),
     /// A check finished, so the download of everything may start (#20, #23).
     ///
     /// Sent rather than started on the worker, for the reason the watch is:
     /// whether a download is already running, paused or waiting lives with
     /// the window state, on the thread that owns it.
     DownloadRequested,
-    /// The server said a watched folder changed (folder path).
+    /// The server said a watched folder changed.
     ///
-    /// Carries the path rather than a count, because the server reports how
-    /// many messages a mailbox now holds and not which ones are new. Finding
-    /// out means asking, which is what the handler does.
-    MailboxChanged(String),
+    /// Carries the folder rather than a count, because the server reports
+    /// how many messages a mailbox now holds and not which ones are new.
+    /// Finding out means asking, which is what the handler does, of the
+    /// account the folder belongs to.
+    MailboxChanged(WatchedFolder),
     /// A sync wrote new messages into a folder's cache (the folder's
     /// database id).
     ///

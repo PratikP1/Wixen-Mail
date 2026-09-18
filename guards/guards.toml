@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 103 records have arrived since and have not been through it.
+# 109 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -24861,17 +24861,20 @@ tests_last_seen = [
 #
 # Measured 2026-09-17 on the branch the record was written on, through
 # `scripts/guards.sh --remeasure`, `cargo test --test
-# how_much_message_text_stays_is_read_back_from_the_permissions_page`.
+# how_much_message_text_stays_is_read_back_from_the_permissions_page`. The
+# break moved one indent to the right on 2026-09-18, when 10-06 put the
+# check's body inside a walk over the accounts it is handed (#37); the
+# lines are the same and the record was measured again that day.
 [[guard]]
 name = "the check's worker opens its cache with how much message text stays"
 file = "src/presentation/wx_app.rs"
 suite = "how_much_message_text_stays_is_read_back_from_the_permissions_page"
-before = """            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
-            Err(e) => {
-                fail(format!("Cache error: {}", e));"""
-after = """            Ok(cache) => cache,
-            Err(e) => {
-                fail(format!("Cache error: {}", e));"""
+before = """                Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
+                Err(e) => {
+                    fail(format!("Cache error: {}", e));"""
+after = """                Ok(cache) => cache,
+                Err(e) => {
+                    fail(format!("Cache error: {}", e));"""
 red = [
     "test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evicts",
 ]
@@ -25099,4 +25102,189 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+]
+
+# ── A watch that ends is asked about, not broken from (#37) ─────────────────
+#
+# The Stopped arm hands the reason to the decision, which asks the rule and
+# writes a wait or the schedule alone on the account's watch. The break puts
+# the arm back the way it stood until 2026-09-18: the reason is logged and
+# the loop breaks, and nothing starts another watch, which is the tester's
+# "automatic mail fetching is switched off". One test goes red out of the
+# fourteen in the target; the companion is over a snippet. `wired`'s reading
+# of the same arm reddens too and is not in this suite. This record is also
+# what couples the target to `wx_app.rs`, so it runs on the commits that
+# could break it.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "a watch that ends is asked about, not broken from"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """                        what_the_watch_does_next(
+                            &state_for_task,
+                            &tx,
+                            &account,
+                            &inbox.name,
+                            WhyTheWatchEnded::Ended(reason),
+                        );
+                        break;"""
+after = """                        let _ = reason;
+                        break;"""
+red = [
+    "test_a_watch_that_ends_asks_whether_to_watch_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── A watch that never started is asked about before the branch returns ─────
+#
+# The connection, the sign-in or the select failing before any watch exists
+# answers an error from `watch_folder` and never reaches Stopped, so the
+# question has to be asked in that branch. The break returns without asking,
+# which is the tree as it stood until 2026-09-18: a server that could not be
+# reached at startup was logged and never tried again. One test goes red out
+# of the fourteen; the companion is over a snippet.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "a watch that never started is asked about before the branch returns"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """                // question is asked here, and it is asked before the return.
+                tracing::warn!("Could not watch the inbox of {}: {}", account.name, e);
+                ask_what_next(WhyTheWatchEnded::NeverStarted(e.to_string()));
+                return;"""
+after = """                // question is asked here, and it is asked before the return.
+                tracing::warn!("Could not watch the inbox of {}: {}", account.name, e);
+                return;"""
+red = [
+    "test_a_watch_that_never_started_asks_too_before_it_returns",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── The network coming back starts the watches at once (#37) ────────────────
+#
+# Reads follow the network. The back branch asks for a watch on every
+# enabled IMAP account and a check of every due one; the break drops both,
+# so a watch that died with the network waits out the whole of a wait that
+# was about the network, and mail that arrived meanwhile waits for the
+# schedule. One test goes red out of the fourteen; the companion is over a
+# snippet.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "the network coming back starts the watches at once"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """        watch_every_enabled_account(app);
+        check_the_accounts_that_are_due(app, true);"""
+after = """        let _ = app;"""
+red = [
+    "test_the_network_coming_back_starts_the_watches_at_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── The timer checks the accounts that are due (#37) ────────────────────────
+#
+# The schedule arm sits on the main timer's minute look, beside the
+# reminders. The break takes it out, so nothing is checked on a schedule: a
+# server without IDLE, a POP account and the kept folders the watch does not
+# cover are read only when somebody presses F9. One test goes red out of the
+# fourteen; the companion is over a snippet.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "the timer checks the accounts that are due"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """                        check_the_accounts_that_are_due(
+                            app,
+                            the_network.borrow().there_is_a_network(),
+                        );"""
+after = """                        let _ = the_network.borrow().there_is_a_network();"""
+red = [
+    "test_the_timer_checks_on_the_accounts_own_interval",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── The schedule reads the interval off the account row (#37) ───────────────
+#
+# The accounts handed to `which_are_due` are built from the rows by `From`,
+# so the Check Interval the account editor has offered since it was written
+# is what decides. The break builds them by hand with five minutes for
+# everybody, which is the field stopping to act again with nothing red, as
+# it did from the day it was written until 2026-09-18. One test goes red out
+# of the fourteen, the same one as the timer's record, on a different
+# sentence; the companion plants the same five minutes.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "the schedule reads the interval off the account row"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """        let to_check: Vec<AccountToCheck> = s.accounts.iter().map(AccountToCheck::from).collect();"""
+after = """        let to_check: Vec<AccountToCheck> = s
+            .accounts
+            .iter()
+            .map(|account| AccountToCheck {
+                id: account.id.clone(),
+                enabled: account.enabled,
+                protocol: account.protocol(),
+                check_interval_minutes: 5,
+            })
+            .collect();"""
+red = [
+    "test_the_timer_checks_on_the_accounts_own_interval",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── A start checks without a keystroke (#37) ────────────────────────────────
+#
+# After the module is filled, the start asks for a watch on every enabled
+# IMAP account and checks every enabled account. The break drops both, which
+# is the tree as it stood until 2026-09-18: nothing checked at startup and
+# nothing watched until the first F9. One test goes red out of the fourteen;
+# the companion is over a snippet.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# mail_keeps_arriving_on_its_own`.
+[[guard]]
+name = "a start checks without a keystroke"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = """                watch_every_enabled_account(app);
+                check_every_enabled_account(app);"""
+after = """                let _ = app;"""
+red = [
+    "test_a_start_checks_without_a_keystroke",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
 ]

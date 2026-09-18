@@ -322,12 +322,20 @@ pub struct WxUIState {
     pub receipt_offered: Option<i64>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
-    /// The connection watching the inbox for arrivals, when one is running.
+    /// The watch on each account's inbox, by account id: the connection when
+    /// one is running, the wait before the next attempt, and whether the
+    /// schedule alone carries the account (#37).
     ///
-    /// Held so a new sync can stop the old watch before starting another.
-    /// Without that, every check for mail would leave a connection behind and
-    /// a server would eventually refuse to open any more.
-    pub mail_watch: Option<crate::service::protocols::imap::ImapIdleHandle>,
+    /// One per enabled IMAP account since 2026-09-18; until then one handle
+    /// for whichever account was active. Held so a request for a watch can
+    /// stop that account's old one before starting another. Without that,
+    /// every check for mail would leave a connection behind and a server
+    /// would eventually refuse to open any more.
+    pub mail_watches: std::collections::HashMap<String, InboxWatch>,
+    /// When each account was last checked this session, by account id, for
+    /// the schedule. Session-only: a start checks every enabled account, so
+    /// nothing before it matters.
+    pub last_checked: std::collections::HashMap<String, std::time::Instant>,
     pub selected_message_index: Option<usize>,
     pub message_preview: MessageBody,
     pub connection_status: ConnectionStatus,
@@ -487,6 +495,55 @@ impl Downloading {
     }
 }
 
+/// Where the watch on one account's inbox stands.
+///
+/// The decisions are `application::checking_on_a_schedule`'s and the wait is
+/// `application::trying_again`'s; this is only what a running program holds
+/// between one watch and the next. The wait is the watch's own and not the
+/// download's, because a server refusing a fetch and a server dropping a
+/// watch are different failures with different counts.
+#[derive(Debug, Default)]
+pub struct InboxWatch {
+    /// The connection, when one has been opened. Kept after the watch's
+    /// loop has broken, because the task idles on until it is stopped, and
+    /// stopping is what a fresh request does first.
+    handle: Option<crate::service::protocols::imap::ImapIdleHandle>,
+    /// The loop is reading events: the server will say when mail lands.
+    watching: bool,
+    /// How long the next wait is, growing with each failure in a row and
+    /// put back by a watch that worked.
+    wait: crate::application::trying_again::WaitBeforeTryingAgain,
+    /// When the next attempt may start, after a failure. Served by the main
+    /// timer rather than by a sleeping thread; `None` when nothing waits.
+    next_watch_at: Option<std::time::Instant>,
+    /// The schedule alone carries the account, until what is named. Cleared
+    /// by the network coming back and by a check that reached the server
+    /// when the reason was the reach; only a fresh start clears the other.
+    on_the_schedule_alone: Option<crate::application::checking_on_a_schedule::Until>,
+}
+
+impl InboxWatch {
+    /// The network is back, or a check reached the server. A wait that was
+    /// running is cut short, so the next attempt is now rather than later,
+    /// and an account left to the schedule because the server could not be
+    /// reached is given the watch again with its failures forgotten. An
+    /// account left to the schedule because the server would not watch
+    /// stays there: nothing about the reach changes what the server offers.
+    fn the_server_may_be_reachable_again(&mut self) {
+        use crate::application::checking_on_a_schedule::Until;
+        self.next_watch_at = None;
+        if self.on_the_schedule_alone == Some(Until::TheServerAnswersAgain) {
+            self.on_the_schedule_alone = None;
+            self.wait.tell_it_worked();
+        }
+    }
+
+    /// Whether the loop is reading events on an open connection.
+    fn is_watching(&self) -> bool {
+        self.watching && self.handle.is_some()
+    }
+}
+
 impl Default for WxUIState {
     fn default() -> Self {
         Self {
@@ -499,7 +556,8 @@ impl Default for WxUIState {
             selected_folder: None,
             receipt_offered: None,
             folder_ids: std::collections::HashMap::new(),
-            mail_watch: None,
+            mail_watches: std::collections::HashMap::new(),
+            last_checked: std::collections::HashMap::new(),
             selected_message_index: None,
             message_preview: MessageBody::default(),
             connection_status: ConnectionStatus::Disconnected,
@@ -4444,15 +4502,12 @@ impl WxMailApp {
                             frame.raise();
                         }
                         _ if id == ID_CHECK_MAIL => {
-                            // A step (#38): what the check found is said
-                            // once when it ends, and the sound for new mail
-                            // plays then if it found any.
-                            send_progress(&ui_tx, &runtime, "Checking for new mail...");
-                            spawn_mail_sync(
-                                app,
-                                None,
-                                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
-                            );
+                            // Every enabled account, in list order, since
+                            // 2026-09-18 (#37); before that, the active one.
+                            // What the check found is said once when it
+                            // ends, and the sound for new mail plays then if
+                            // it found any (#38).
+                            check_every_enabled_account(app);
                         }
                         // The one way to hold the download of everything, and
                         // to let it go again. Session-only, like Offline
@@ -5528,22 +5583,25 @@ impl WxMailApp {
                     //
                     // It has to be here rather than at the end of a mail check,
                     // which is where a check of this kind would naturally go.
-                    // Nothing in this program checks mail on a schedule: a sync
-                    // starts because somebody asked for one, or because the
-                    // watch on a folder fired. Both of those stop when the
-                    // network goes, so a check that only ran there would notice
-                    // the network leaving and could never notice it coming
-                    // back.
+                    // Since 2026-09-18 this program does check mail on a
+                    // schedule (#37, below), and the network look still
+                    // belongs here rather than there: the schedule follows
+                    // the network, so a check that only ran with the
+                    // schedule would notice the network leaving and could
+                    // never notice it coming back.
                     if asked_the_network_at.get().elapsed() >= HOW_OFTEN_TO_ASK_ABOUT_THE_NETWORK {
                         asked_the_network_at.set(std::time::Instant::now());
                         let news = the_network
                             .borrow_mut()
                             .told(crate::service::network::whether_there_is_a_network());
-                        act_on_what_the_network_did(news, &ui_tx, &runtime);
+                        act_on_what_the_network_did(news, app);
                         // The download's wait after a refusal is served
                         // here, on the same cadence: the runner records
                         // when it may try again rather than sleeping.
                         start_the_download_if_its_wait_is_over(app);
+                        // And the watches' waits, each account's own, on
+                        // the same cadence for the same reason.
+                        start_the_watches_whose_wait_is_over(app);
                     }
 
                     // Held mail goes on its own. On this timer and on its own
@@ -5619,6 +5677,14 @@ impl WxMailApp {
                             date_settings,
                             &somewhere_to_type,
                         );
+                        // Mail, on the same look, for the accounts whose
+                        // own interval has passed (#37). On this timer for
+                        // the reason everything else is; once a minute
+                        // because the shortest interval is a minute.
+                        check_the_accounts_that_are_due(
+                            app,
+                            the_network.borrow().there_is_a_network(),
+                        );
                     }
 
                     // After the updates are drained and after the reminders, so
@@ -5685,6 +5751,29 @@ impl WxMailApp {
                     )
                 };
                 load_module_data(module, &message_cache, account_id, &scan_tx, showing);
+            }
+
+            // A start checks without a keystroke, and watches (#37). Until
+            // 2026-09-18 nothing checked at startup, and the only thing that
+            // started a watch was the end of a check, so the first hours
+            // after opening the program were hours with no watch and no
+            // check until somebody pressed F9. After the fill, so the list
+            // somebody opens on is the cached one and the check's lines
+            // follow it rather than racing it; the check runs on a worker
+            // and the window is not held. The watch is asked for as well as
+            // the check, and not only by the check's end, because a check
+            // that fails asks for no watch and a server that was down for
+            // the check is then tried by the watch's own growing wait.
+            // Skipped during a scan run, which wants a still window and has
+            // nobody reading it.
+            if scan_target.is_none() {
+                let app = AppHandles {
+                    state: &state,
+                    tx: &scan_tx,
+                    rt: &scan_rt,
+                };
+                watch_every_enabled_account(app);
+                check_every_enabled_account(app);
             }
 
             // Once, on a fresh installation or an upgrade from before this
@@ -10130,11 +10219,21 @@ fn go_into_offline_mode(app: AppHandles<'_>, offline: bool) {
 /// and the moment it would be most wrong to: mail leaving this computer is
 /// publishing, and guardrail 7 says publishing happens because somebody asked.
 /// What the network returning gets is a sentence saying the Outbox is untouched
-/// and, once plan 03-08's third task lands, a button somebody can press.
+/// and a button somebody can press.
+///
+/// Reads follow the network; sends follow offline mode (#37, since
+/// 2026-09-18). Offline mode's own two sentences are about the Outbox, and
+/// nothing that fetches asks it. So the network coming back also asks for a
+/// watch on every enabled IMAP account at once, with the waits and the
+/// marks their failures earned put back, because those failures were the
+/// network's; and it checks every account that is due, because mail that
+/// arrived while the network was gone is mail the watch never saw. Neither
+/// changes anything at a server, and neither waits for Go Back Online: an
+/// inbox held stale until somebody noticed the offer is #37 by another
+/// route.
 fn act_on_what_the_network_did(
     news: crate::application::the_network_coming_and_going::WhatToDoAboutIt,
-    tx: &Sender<UIUpdate>,
-    rt: &Arc<Runtime>,
+    app: AppHandles<'_>,
 ) {
     use crate::application::the_network_coming_and_going::{
         WhatToDoAboutIt, what_to_say_about_the_network,
@@ -10143,14 +10242,14 @@ fn act_on_what_the_network_did(
     let Some(said) = what_to_say_about_the_network(news) else {
         return;
     };
-    let tx = tx.clone();
+    let tx = app.tx.clone();
     let words = said.to_string();
     let go_offline = news == WhatToDoAboutIt::SayItWentAndGoOffline;
     let offer_the_way_back = news == WhatToDoAboutIt::OfferToGoBackOnline;
     // One task rather than two, so the order really is the order. Two spawned
     // sends race, and the race this one would lose is the mode arriving first
     // and changing the indicator with nothing having said why.
-    rt.spawn(async move {
+    app.rt.spawn(async move {
         let _ = tx.send(UIUpdate::TheNetworkChanged(words)).await;
         if go_offline {
             let _ = tx.send(UIUpdate::OfflineModeChanged(true)).await;
@@ -10159,6 +10258,16 @@ fn act_on_what_the_network_did(
             let _ = tx.send(UIUpdate::TheNetworkIsBack).await;
         }
     });
+    if offer_the_way_back {
+        {
+            let mut s = lock_state(app.state);
+            for watch in s.mail_watches.values_mut() {
+                watch.the_server_may_be_reachable_again();
+            }
+        }
+        watch_every_enabled_account(app);
+        check_the_accounts_that_are_due(app, true);
+    }
 }
 
 /// Raise anything that has come due, one window at a time.
@@ -18270,8 +18379,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             msg_list.refresh(true, None);
         }
-        UIUpdate::MailboxWatchRequested => {
-            spawn_mail_watch(AppHandles { state, tx, rt });
+        UIUpdate::MailboxWatchRequested(account_id) => {
+            spawn_mail_watch(AppHandles { state, tx, rt }, account_id);
         }
         UIUpdate::DownloadRequested => {
             start_the_download(AppHandles { state, tx, rt });
@@ -18285,11 +18394,20 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // something". It fires from the WhatArrived arm now, which a
             // check reaches only when it found mail, whoever started it.
             //
-            // Only the folder that changed. Re-reading the whole account
-            // because one message arrived is work nobody asked for.
+            // Only the folder that changed, of the account it belongs to.
+            // Re-reading the whole account because one message arrived is
+            // work nobody asked for, and reading the active account when
+            // another's watch woke is somebody else's mail (#37).
+            let woken: Vec<Account> = lock_state(state)
+                .accounts
+                .iter()
+                .filter(|account| account.id == folder.account_id)
+                .cloned()
+                .collect();
             spawn_mail_sync(
                 AppHandles { state, tx, rt },
-                Some(folder.clone()),
+                woken,
+                Some(folder.path.clone()),
                 crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
             );
         }
@@ -19959,27 +20077,6 @@ fn ensure_local_folders(
         .ok_or_else(|| crate::common::Error::Other("This account has no folders".into()))
 }
 
-/// Watch the inbox for arrivals on a connection of its own.
-///
-/// Started when a check for mail finishes, so the client learns about new mail
-/// as it lands instead of only when somebody presses F9. IDLE takes a
-/// connection over for as long as it runs, so this is a second connection and
-/// not the one everything else uses.
-///
-/// Any watch already running is stopped first. Without that, every check for
-/// mail would leave a connection behind, and a server refuses new ones long
-/// before the count gets interesting.
-/// Say that new mail will not arrive on its own any more.
-///
-/// Both ways the inbox watch can fail end here: one where it never starts, and
-/// one where it ends after running. Neither is restarted from where it
-/// happens, because the ordinary cycle begins a fresh watch only after mail
-/// arrives and the folder is read again, and mail arriving on its own is what
-/// has stopped.
-///
-/// Worded for somebody reading their mail rather than as a connection error,
-/// and it says what to do instead. The mailbox looks exactly the same either
-/// way, which is what makes silence here the wrong answer.
 /// Say that a link was not opened, and why.
 ///
 /// Four places open a link a sender wrote: the preview's navigation and its
@@ -20000,24 +20097,229 @@ fn say_the_link_was_refused(a11y: &Arc<Accessibility>) {
     );
 }
 
-fn say_the_watch_is_off(tx: &Sender<UIUpdate>) {
-    let _ = tx.try_send(UIUpdate::StatusUpdated(
-        "New mail will not appear on its own. Use Refresh to check for it.".to_string(),
-    ));
+/// The enabled accounts, in list order.
+fn every_enabled_account(state: &Arc<StdMutex<WxUIState>>) -> Vec<Account> {
+    lock_state(state)
+        .accounts
+        .iter()
+        .filter(|account| account.enabled)
+        .cloned()
+        .collect()
 }
 
-fn spawn_mail_watch(app: AppHandles<'_>) {
+/// Check every enabled account for mail, saying first how many, which is
+/// what F9 and a start both do (#37).
+fn check_every_enabled_account(app: AppHandles<'_>) {
+    let accounts = every_enabled_account(app.state);
+    // A step (#38): what the check found is said once when it ends.
+    send_progress(
+        app.tx,
+        app.rt,
+        &crate::application::checking_on_a_schedule::what_a_check_of_them_all_says(accounts.len()),
+    );
+    spawn_mail_sync(
+        app,
+        accounts,
+        None,
+        crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+    );
+}
+
+/// Ask for a watch on every enabled IMAP account (#37).
+///
+/// Through the update channel like the check's end does, so the handles
+/// are written on the thread that owns them. A POP account is never
+/// watched: nothing to select and nothing to watch, so the schedule alone
+/// carries it.
+fn watch_every_enabled_account(app: AppHandles<'_>) {
+    for account in every_enabled_account(app.state) {
+        if account.protocol() == crate::common::types::Protocol::Imap {
+            let _ = app.tx.try_send(UIUpdate::MailboxWatchRequested(account.id));
+        }
+    }
+}
+
+/// Check the accounts whose own interval has passed, on the main timer (#37).
+///
+/// Which are due is `checking_on_a_schedule::which_are_due`'s answer over
+/// the accounts as the rows carry them, so the Check Interval on the account
+/// editor is what decides, and over when each was last checked this session
+/// by anything: F9, a start, the watch waking or this. The schedule follows
+/// the network: with no network there is nothing to reach, and a check that
+/// ran anyway would say an error every interval for as long as the network
+/// was gone, which is the flood guardrail 5 is about. The network coming
+/// back checks the due accounts at once.
+fn check_the_accounts_that_are_due(app: AppHandles<'_>, there_is_a_network: bool) {
+    use crate::application::checking_on_a_schedule::{AccountToCheck, which_are_due};
+
+    if !there_is_a_network {
+        return;
+    }
+    let due: Vec<Account> = {
+        let s = lock_state(app.state);
+        let to_check: Vec<AccountToCheck> = s.accounts.iter().map(AccountToCheck::from).collect();
+        let due = which_are_due(&to_check, &s.last_checked, std::time::Instant::now());
+        s.accounts
+            .iter()
+            .filter(|account| due.contains(&account.id))
+            .cloned()
+            .collect()
+    };
+    if due.is_empty() {
+        return;
+    }
+    tracing::info!("{} due a check on their interval", due.len());
+    spawn_mail_sync(
+        app,
+        due,
+        None,
+        crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+    );
+}
+
+/// Start the watches whose wait after a failure has run out (#37).
+///
+/// On the main timer, on the network's cadence, because the decision
+/// records when the next attempt may start rather than holding a thread
+/// asleep for up to thirty minutes. An account left to the schedule alone
+/// has no wait to run out.
+fn start_the_watches_whose_wait_is_over(app: AppHandles<'_>) {
+    let now = std::time::Instant::now();
+    let due: Vec<String> = {
+        let mut s = lock_state(app.state);
+        s.mail_watches
+            .iter_mut()
+            .filter(|(_, watch)| watch.on_the_schedule_alone.is_none())
+            .filter(|(_, watch)| watch.next_watch_at.is_some_and(|at| at <= now))
+            .map(|(id, watch)| {
+                watch.next_watch_at = None;
+                id.clone()
+            })
+            .collect()
+    };
+    for account_id in due {
+        spawn_mail_watch(app, &account_id);
+    }
+}
+
+/// Say on the status line what the watch on an account is doing, as a step
+/// (#37, #38): shown always, spoken under Say every step.
+///
+/// The account is named when more than one is enabled, so a person with
+/// two accounts knows whose line this is; a person with one is not told
+/// the name of the account they have.
+fn say_what_the_watch_is_doing(
+    tx: &Sender<UIUpdate>,
+    account: &Account,
+    folder: &str,
+    watch: crate::application::checking_on_a_schedule::TheWatch,
+    how_many_enabled: usize,
+) {
+    use crate::application::checking_on_a_schedule::{
+        WhatIsRunning, the_interval_of, what_the_status_line_says,
+    };
+    let said = what_the_status_line_says(&WhatIsRunning {
+        account: (how_many_enabled > 1).then_some(account.name.as_str()),
+        folder,
+        watch,
+        checking_every: the_interval_of(account.check_interval_minutes),
+    });
+    let _ = tx.try_send(UIUpdate::Progress(said));
+}
+
+/// Decide what a watch that ended, or never started, does next (#37).
+///
+/// The reason goes to `checking_on_a_schedule::whether_to_watch_again` with
+/// how many times in a row this account's watch has now failed, and the
+/// answer is written on the account's watch: a wait from the account's own
+/// wait rule, served by the main timer, or the schedule alone. A stop
+/// somebody asked for writes nothing, because whoever asked knows whether a
+/// fresh watch is coming. Every attempt is logged with the account and the
+/// reason and never a folder's contents; the status line says what is
+/// happening in a person's words.
+///
+/// The state lock is taken to write the answer and released before
+/// anything else; nothing here dials.
+fn what_the_watch_does_next(
+    state: &Arc<StdMutex<WxUIState>>,
+    tx: &Sender<UIUpdate>,
+    account: &Account,
+    folder: &str,
+    why: crate::application::checking_on_a_schedule::WhyTheWatchEnded,
+) {
+    use crate::application::checking_on_a_schedule::{
+        TheWatch, WatchAgain, whether_to_watch_again,
+    };
+    use crate::application::trying_again::what_to_say_before_waiting;
+
+    let (watch, how_many_enabled) = {
+        let mut s = lock_state(state);
+        let how_many_enabled = s.accounts.iter().filter(|a| a.enabled).count();
+        let entry = s.mail_watches.entry(account.id.clone()).or_default();
+        entry.watching = false;
+        let this_failure_counted = entry.wait.how_many_failures_in_a_row() + 1;
+        let watch = match whether_to_watch_again(&why, this_failure_counted) {
+            WatchAgain::AfterAWait => {
+                let wait = entry.wait.next_wait();
+                entry.next_watch_at = Some(std::time::Instant::now() + wait);
+                tracing::info!(
+                    "The watch on {folder} for {} ended ({why:?}). {}",
+                    account.name,
+                    what_to_say_before_waiting(wait, this_failure_counted)
+                );
+                Some(TheWatch::Waiting(wait))
+            }
+            WatchAgain::OnTheScheduleAlone(until) => {
+                entry.wait.next_wait();
+                entry.next_watch_at = None;
+                entry.on_the_schedule_alone = Some(until);
+                tracing::info!(
+                    "The watch on {folder} for {} is left to the schedule alone until {until:?} \
+                     ({why:?})",
+                    account.name
+                );
+                Some(TheWatch::NotWatching)
+            }
+            WatchAgain::Never => None,
+        };
+        (watch, how_many_enabled)
+    };
+    if let Some(watch) = watch {
+        say_what_the_watch_is_doing(tx, account, folder, watch, how_many_enabled);
+    }
+}
+
+/// Watch one account's inbox for arrivals on a connection of its own.
+///
+/// Asked for by the end of a check of that account, by a start, by the
+/// network coming back, and by the main timer when the wait after a failure
+/// is over, so the client learns about new mail as it lands instead of only
+/// when somebody presses F9. IDLE takes a connection over for as long as it
+/// runs, so this is a second connection and not the one everything else
+/// uses. One per enabled IMAP account since 2026-09-18 (#37); until then
+/// one, on whichever account was active, started only by a finished check
+/// and started again by nothing.
+///
+/// A watch already reading events is left alone: a check every five
+/// minutes that replaced a working watch would open and close a connection
+/// per check for nothing. Any other previous watch on the account is
+/// stopped first. Without that, every request would leave a connection
+/// behind, and a server refuses new ones long before the count gets
+/// interesting. An account the schedule alone carries is not watched.
+fn spawn_mail_watch(app: AppHandles<'_>, account_id: &str) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
     let state_for_task = state.clone();
-    let (accounts, account_id, previous) = {
+    let (account, previous, how_many_enabled) = {
         let mut s = lock_state(state);
-        (
-            s.accounts.clone(),
-            s.active_account_id.clone(),
-            s.mail_watch.take(),
-        )
+        let how_many_enabled = s.accounts.iter().filter(|a| a.enabled).count();
+        let account = s.accounts.iter().find(|a| a.id == account_id).cloned();
+        let entry = s.mail_watches.entry(account_id.to_string()).or_default();
+        if entry.on_the_schedule_alone.is_some() || entry.is_watching() {
+            return;
+        }
+        (account, entry.handle.take(), how_many_enabled)
     };
     if let Some(previous) = previous {
         rt.spawn(async move {
@@ -20025,15 +20327,10 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
         });
     }
 
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
-
     rt.spawn_blocking(move || {
-        // Nothing here is announced. Failing to watch means mail arrives
-        // silently until the next check, which is where the client was before
-        // watching existed, and is not worth interrupting somebody to say.
+        // Configuration a check would name is not the watch's to say: a
+        // server left empty or a port that is not a number is answered by
+        // the check, and a watch that cannot even dial says nothing.
         let Some(account) = account else { return };
         if account.imap_server.trim().is_empty() {
             return;
@@ -20047,11 +20344,10 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
         let Ok(cache) = crate::data::message_cache::MessageCache::new(dir, None) else {
             return;
         };
-        let Ok(auth) = handle.block_on(crate::application::mail_auth::for_account(&account)) else {
-            return;
-        };
         // Whichever folder the server calls the inbox, which is not always
-        // spelled "INBOX" once a hierarchy is involved.
+        // spelled "INBOX" once a hierarchy is involved. An account whose
+        // folders have never been stored is one no check has reached yet;
+        // the check stores them and asks for the watch again when it ends.
         let Ok(folders) = cache.get_folders_for_account(&account.id) else {
             return;
         };
@@ -20065,6 +20361,18 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
         else {
             return;
         };
+        use crate::application::checking_on_a_schedule::WhyTheWatchEnded;
+        let ask_what_next = |why: WhyTheWatchEnded| {
+            what_the_watch_does_next(&state_for_task, &tx, &account, &inbox.name, why);
+        };
+        let auth = match handle.block_on(crate::application::mail_auth::for_account(&account)) {
+            Ok(auth) => auth,
+            Err(e) => {
+                tracing::warn!("Could not watch the inbox of {}: {}", account.name, e);
+                ask_what_next(WhyTheWatchEnded::NeverStarted(e.to_string()));
+                return;
+            }
+        };
 
         let watching = handle.block_on(crate::application::mail_sync::watch_folder(
             &account.imap_server,
@@ -20077,35 +20385,78 @@ fn spawn_mail_watch(app: AppHandles<'_>) {
         let (mut events, watch) = match watching {
             Ok(watching) => watching,
             Err(e) => {
-                tracing::warn!("Could not watch the inbox: {}", e);
-                say_the_watch_is_off(&tx);
+                // The connection, the sign-in or the select failed before
+                // any watch existed, so nothing reaches Stopped: the
+                // question is asked here, and it is asked before the return.
+                tracing::warn!("Could not watch the inbox of {}: {}", account.name, e);
+                ask_what_next(WhyTheWatchEnded::NeverStarted(e.to_string()));
                 return;
             }
         };
         if let Ok(mut s) = state_for_task.lock() {
-            s.mail_watch = Some(watch);
+            let entry = s.mail_watches.entry(account.id.clone()).or_default();
+            entry.handle = Some(watch);
+            entry.watching = true;
         }
-        tracing::info!("Watching {} for new mail", inbox.name);
+        tracing::info!("Watching {} of {} for new mail", inbox.name, account.name);
+        say_what_the_watch_is_doing(
+            &tx,
+            &account,
+            &inbox.name,
+            crate::application::checking_on_a_schedule::TheWatch::Watching,
+            how_many_enabled,
+        );
 
         handle.block_on(async move {
+            use crate::service::protocols::imap::ImapIdleEvent;
+            // The watch has answered, so the next wait starts from the
+            // beginning: a watch that ran for an hour and then dropped is
+            // not punished for the failures of the morning.
+            let it_worked = || {
+                if let Ok(mut s) = state_for_task.lock()
+                    && let Some(entry) = s.mail_watches.get_mut(&account.id)
+                {
+                    entry.wait.tell_it_worked();
+                }
+            };
             while let Some(event) = events.recv().await {
                 match event {
-                    crate::service::protocols::imap::ImapIdleEvent::Changed { folder, .. } => {
-                        let _ = tx.send(UIUpdate::MailboxChanged(folder)).await;
+                    ImapIdleEvent::Changed { folder, .. } => {
+                        it_worked();
+                        if let Ok(mut s) = state_for_task.lock()
+                            && let Some(entry) = s.mail_watches.get_mut(&account.id)
+                        {
+                            entry.watching = false;
+                        }
+                        let _ = tx
+                            .send(UIUpdate::MailboxChanged(WatchedFolder {
+                                account_id: account.id.clone(),
+                                path: folder,
+                            }))
+                            .await;
                         // One report per watch. The folder is re-read, and that
                         // starts a fresh watch when it finishes, so a busy
                         // mailbox cannot turn into a stream of announcements.
                         break;
                     }
-                    crate::service::protocols::imap::ImapIdleEvent::StillWatching { .. } => {}
-                    crate::service::protocols::imap::ImapIdleEvent::Stopped { folder, reason } => {
-                        tracing::info!("Stopped watching {}: {}", folder, reason);
-                        // Nothing starts another watch from here. A fresh one
-                        // begins only after mail arrives and the folder is
-                        // read again, and mail arriving on its own is exactly
-                        // what has stopped. Said, because the mailbox looks no
-                        // different either way.
-                        say_the_watch_is_off(&tx);
+                    ImapIdleEvent::StillWatching { .. } => it_worked(),
+                    ImapIdleEvent::Stopped { folder, reason } => {
+                        tracing::info!(
+                            "Stopped watching {} of {}: {}",
+                            folder,
+                            account.name,
+                            reason
+                        );
+                        // Asked, not broken from (#37). Until 2026-09-18
+                        // nothing started another watch from here, and mail
+                        // arriving on its own is exactly what stopped.
+                        what_the_watch_does_next(
+                            &state_for_task,
+                            &tx,
+                            &account,
+                            &inbox.name,
+                            WhyTheWatchEnded::Ended(reason),
+                        );
                         break;
                     }
                 }
@@ -21970,10 +22321,21 @@ fn what_the_budget_left(
     }
 }
 
-/// Fetch mail from the account's IMAP server into the cache.
+/// Fetch mail from each account's server into the cache, one account after
+/// another in the order handed in.
 ///
 /// Runs on a blocking thread because the cache holds a SQLite connection that
-/// is not `Sync`, which is the same reason the other syncs do.
+/// is not `Sync`, which is the same reason the other syncs do. One worker
+/// for the whole list rather than one per account, so the lines two
+/// accounts say are not interleaved for somebody hearing every step, and so
+/// the download of everything is asked for once, at the end of the last.
+///
+/// Takes the accounts rather than choosing the active one (#37, since
+/// 2026-09-18): F9 and a start hand it every enabled account, the schedule
+/// the ones that are due, and a watch that woke the one it woke for. Each
+/// account that is checked through ends with its own watch request and with
+/// when it was checked written down; a check that fails asks for no watch,
+/// because a server that could not be checked could not be watched either.
 ///
 /// Progress is reported as it happens rather than only at the end. A first sync
 /// of a large mailbox takes a while, and silence for a minute is
@@ -21981,20 +22343,25 @@ fn what_the_budget_left(
 /// cannot see that anything is happening.
 fn spawn_mail_sync(
     app: AppHandles<'_>,
+    accounts: Vec<Account>,
     only: Option<String>,
     wanted: crate::application::mail_sync::WhatThisSyncIsFor,
 ) {
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
     let handle = rt.handle().clone();
-    let (accounts, account_id) = {
-        let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
-    };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
+    let state = state.clone();
+    // Written down before the worker starts, so a scheduled look that lands
+    // while this check runs does not start a second one. A check of one
+    // folder, which is what a watch waking asks for, is not a check of the
+    // account and leaves the schedule's clock where it was.
+    if only.is_none() {
+        let mut s = lock_state(&state);
+        let now = std::time::Instant::now();
+        for account in &accounts {
+            s.last_checked.insert(account.id.clone(), now);
+        }
+    }
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -22016,263 +22383,294 @@ fn spawn_mail_sync(
             });
         };
 
-        let Some(account) = account else {
+        if accounts.is_empty() {
             fail("Add an account before checking for mail".to_string());
             return;
-        };
-
-        // POP and IMAP are different enough that they are different paths
-        // rather than one with branches through it. POP has no folders, no
-        // flags and nothing to select, so almost none of what follows applies.
-        if account.protocol() == crate::common::types::Protocol::Pop3 {
-            check_pop_mail(&account, &handle, &tx);
-            return;
         }
 
-        if account.imap_server.trim().is_empty() {
-            fail(format!("{} has no IMAP server set", account.name));
-            return;
-        }
-        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-            fail("No cache directory available".to_string());
-            return;
-        };
-        // This worker's cache evicts at the end of every folder's sync, so
-        // it is handed how much text may stay; the window's cache is not.
-        let text_kept = how_much_message_text_stays();
-        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
-            Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
-            Err(e) => {
-                fail(format!("Cache error: {}", e));
-                return;
+        for mut account in accounts {
+            // POP and IMAP are different enough that they are different paths
+            // rather than one with branches through it. POP has no folders, no
+            // flags and nothing to select, so almost none of what follows applies.
+            if account.protocol() == crate::common::types::Protocol::Pop3 {
+                check_pop_mail(&account, &handle, &tx);
+                continue;
             }
-        };
 
-        say(UIUpdate::ConnectionStatusChanged(
-            ConnectionStatus::Connecting,
-        ));
-        // Every line this check says on the way is a step, shown and spoken
-        // only under Say every step; what arrived goes out once at the end
-        // (#38). The kind is decided here, where the line is made.
-        say(UIUpdate::Progress(format!(
-            "Connecting to {}...",
-            account.imap_server
-        )));
-
-        // The account's own session, signed in only if there is not one
-        // already. The credential is still fetched before anything is dialled,
-        // and still inside the helper: an expired token is refreshed there and
-        // a missing one is named as a configuration problem rather than left to
-        // the server to refuse for reasons nobody can act on.
-        let controller =
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => session,
-                Err(why) => {
-                    fail(why.to_string());
-                    return;
-                }
-            };
-        say(UIUpdate::ConnectionStatusChanged(
-            ConnectionStatus::Connected,
-        ));
-
-        // The changes that were waiting, on the session this check has just
-        // opened. Here rather than anywhere that watches the network, because
-        // a flag reaching the server is a write at somebody else's service:
-        // this program is in front of that server because somebody pressed
-        // Check Mail, opened a folder, or the watch on their inbox woke.
-        send_the_flag_changes_that_were_waiting(&cache, &controller, &account.id, &handle, &say);
-
-        let folders = match handle.block_on(controller.fetch_folders()) {
-            Ok(folders) => folders,
-            Err(e) => {
-                fail(e.to_string());
-                return;
+            if account.imap_server.trim().is_empty() {
+                fail(format!("{} has no IMAP server set", account.name));
+                continue;
             }
-        };
-        let stored =
-            match crate::application::mail_sync::store_folders(&cache, &account.id, &folders) {
-                Ok(stored) => stored,
-                Err(e) => {
-                    fail(format!("Could not store the folder list: {}", e));
-                    return;
-                }
-            };
-        say(UIUpdate::Progress(how_many_on_the_server(stored.len())));
-
-        // D-27. Which of this account's stored folders this answer left out.
-        // Read back rather than taken from `stored`, because `stored` is what
-        // the server just listed and the question is about what it did not.
-        //
-        // Marked and nothing else: the folders stay in the tree saying the
-        // server no longer lists them, and every message in them stays cached
-        // and readable. A sync runs on a timer, so anything destroyed here
-        // would be destroyed with nobody there to have agreed to it.
-        let listed_paths: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
-        match cache.get_folders_for_account(&account.id) {
-            Ok(held) => {
-                use crate::application::mail_sync::what_the_server_now_says;
-                let said_before = cache.what_the_server_said(&account.id).unwrap_or_else(|e| {
-                    tracing::warn!("What the server said before could not be read: {e}");
-                    std::collections::HashMap::new()
-                });
-                let no_longer_listed =
-                    crate::application::mail_sync::folders_the_server_no_longer_lists(
-                        &held,
-                        &listed_paths,
-                    );
-                // Only the ones somebody still has to answer for. A folder
-                // already answered for is not a question, and a folder already
-                // put to somebody this session is caught further on by the set
-                // that holds them.
-                let mut to_ask_about = Vec::new();
-                for folder in &held {
-                    // Every direction, in one pass over the rows: a folder in
-                    // this answer that was marked last time has come back, and
-                    // leaving the mark on it would go on telling somebody a
-                    // folder plainly in front of them had gone.
-                    let before = said_before.get(&folder.path).copied().unwrap_or_default();
-                    let now =
-                        what_the_server_now_says(before, !no_longer_listed.contains(&folder.id));
-                    if let Err(e) = cache.set_what_the_server_said(folder.id, now) {
-                        tracing::warn!("The folder's listing state could not be recorded: {e}");
-                        continue;
-                    }
-                    if now.somebody_has_yet_to_answer() {
-                        to_ask_about.push(one_question_at_a_time::GoneFolder {
-                            id: folder.id,
-                            account: account.display_name(),
-                            name: folder.name.clone(),
-                        });
-                    }
-                }
-                if !to_ask_about.is_empty() {
-                    say(UIUpdate::FoldersTheServerStoppedListing(to_ask_about));
-                }
-            }
-            // Said rather than swallowed. Nothing is marked, which is the
-            // reading that understates: the tree shows what it showed before.
-            Err(e) => tracing::warn!("The stored folder list could not be read back: {e}"),
-        }
-
-        // A watch that fires names one folder, and re-reading the whole
-        // account because one message arrived in the inbox is work nobody
-        // asked for.
-        //
-        // What somebody chose about each folder wins over the default. An
-        // account nobody has answered for has an empty map, and every folder
-        // gets the default.
-        let chosen = cache.folder_choices(&account.id).unwrap_or_default();
-        let worth_syncing: Vec<&crate::service::protocols::imap::ImapFolder> =
-            crate::application::mail_sync::folders_to_sync(&folders, &chosen)
-                .into_iter()
-                .filter(|f| only.as_deref().is_none_or(|path| f.path == path))
-                .collect();
-        let mut fetched = 0usize;
-        // Each folder with what it received, for the one result line at the
-        // end; the folders with nothing are dropped where the words are made.
-        let mut arrived: Vec<(String, usize)> = Vec::new();
-        let mut problems: Vec<String> = Vec::new();
-
-        // The account's rules, read once for the whole sync rather than once
-        // per folder. An account with no rules gets `None`, and arriving mail
-        // is not looked at twice for nothing.
-        let engine = cache
-            .get_filter_rules_for_account(&account.id)
-            .map(|stored| {
-                let mut engine = crate::application::filters::FilterEngine::default();
-                engine.load_from_persisted(&stored);
-                engine
-            })
-            .unwrap_or_else(|e| {
-                // Said rather than swallowed. Mail arriving unsorted looks the
-                // same as mail arriving with no rules written.
-                problems.push(format!("Rules could not be read: {}", e));
-                crate::application::filters::FilterEngine::default()
-            });
-        let filtering =
-            (!engine.get_rules().is_empty()).then(|| crate::application::mail_sync::Filtering {
-                rules: &engine,
-                allowed: crate::application::allowed::allowed_for(&account.id),
-            });
-
-        for folder in worth_syncing {
-            let Some((_, folder_id)) = stored.iter().find(|(f, _)| f.path == folder.path) else {
+            let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+                fail("No cache directory available".to_string());
                 continue;
             };
-            say(UIUpdate::Progress(format!("Checking {}...", folder.name)));
-            match handle.block_on(crate::application::mail_sync::sync_folder(
-                controller.as_ref(),
-                &cache,
-                folder,
-                *folder_id,
-                crate::application::mail_sync::INITIAL_FETCH_LIMIT,
-                filtering.as_ref(),
-                wanted,
-            )) {
-                Ok(result) => {
-                    fetched += result.fetched;
-                    arrived.push((folder.name.clone(), result.fetched));
-                    // The words are worked out where they can be tested. Built
-                    // here, they were inside this closure with its own cache on
-                    // a background thread, which nothing could reach.
-                    // Ahead of the summary, because it is the reason for it:
-                    // the summary's own "read again after the server
-                    // renumbered it" is the short form of this. Sent only when
-                    // it happened, and the words decide that, so this cannot
-                    // start announcing ordinary syncs by reading a flag the
-                    // wrong way round here.
-                    if let Some(said) =
-                        crate::application::mail_sync::what_the_renumbering_discarded(&result)
-                    {
-                        say(UIUpdate::FolderWasRenumbered(said));
+            // This worker's cache evicts at the end of every folder's sync, so
+            // it is handed how much text may stay; the window's cache is not.
+            let text_kept = how_much_message_text_stays();
+            let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+                Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
+                Err(e) => {
+                    fail(format!("Cache error: {}", e));
+                    continue;
+                }
+            };
+
+            say(UIUpdate::ConnectionStatusChanged(
+                ConnectionStatus::Connecting,
+            ));
+            // Every line this check says on the way is a step, shown and spoken
+            // only under Say every step; what arrived goes out once at the end
+            // (#38). The kind is decided here, where the line is made.
+            say(UIUpdate::Progress(format!(
+                "Connecting to {}...",
+                account.imap_server
+            )));
+
+            // The account's own session, signed in only if there is not one
+            // already. The credential is still fetched before anything is dialled,
+            // and still inside the helper: an expired token is refreshed there and
+            // a missing one is named as a configuration problem rather than left to
+            // the server to refuse for reasons nobody can act on.
+            let controller =
+                match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                    Ok(session) => session,
+                    Err(why) => {
+                        fail(why.to_string());
+                        continue;
                     }
-                    // A step whether or not anything arrived: the counts go
-                    // out once, after the loop, rather than per folder.
-                    say(UIUpdate::Progress(
-                        crate::application::mail_sync::what_the_folder_sync_did(&result),
-                    ));
-                    if let Some(update) = folder_arrival_update(*folder_id, result.fetched) {
-                        say(update);
+                };
+            say(UIUpdate::ConnectionStatusChanged(
+                ConnectionStatus::Connected,
+            ));
+
+            // The changes that were waiting, on the session this check has just
+            // opened. Here rather than anywhere that watches the network, because
+            // a flag reaching the server is a write at somebody else's service:
+            // this program is in front of that server because somebody pressed
+            // Check Mail, opened a folder, or the watch on their inbox woke.
+            send_the_flag_changes_that_were_waiting(
+                &cache,
+                &controller,
+                &account.id,
+                &handle,
+                &say,
+            );
+
+            let folders = match handle.block_on(controller.fetch_folders()) {
+                Ok(folders) => folders,
+                Err(e) => {
+                    fail(e.to_string());
+                    continue;
+                }
+            };
+            let stored =
+                match crate::application::mail_sync::store_folders(&cache, &account.id, &folders) {
+                    Ok(stored) => stored,
+                    Err(e) => {
+                        fail(format!("Could not store the folder list: {}", e));
+                        continue;
+                    }
+                };
+            say(UIUpdate::Progress(how_many_on_the_server(stored.len())));
+
+            // D-27. Which of this account's stored folders this answer left out.
+            // Read back rather than taken from `stored`, because `stored` is what
+            // the server just listed and the question is about what it did not.
+            //
+            // Marked and nothing else: the folders stay in the tree saying the
+            // server no longer lists them, and every message in them stays cached
+            // and readable. A sync runs on a timer, so anything destroyed here
+            // would be destroyed with nobody there to have agreed to it.
+            let listed_paths: Vec<String> = folders.iter().map(|f| f.path.clone()).collect();
+            match cache.get_folders_for_account(&account.id) {
+                Ok(held) => {
+                    use crate::application::mail_sync::what_the_server_now_says;
+                    let said_before = cache.what_the_server_said(&account.id).unwrap_or_else(|e| {
+                        tracing::warn!("What the server said before could not be read: {e}");
+                        std::collections::HashMap::new()
+                    });
+                    let no_longer_listed =
+                        crate::application::mail_sync::folders_the_server_no_longer_lists(
+                            &held,
+                            &listed_paths,
+                        );
+                    // Only the ones somebody still has to answer for. A folder
+                    // already answered for is not a question, and a folder already
+                    // put to somebody this session is caught further on by the set
+                    // that holds them.
+                    let mut to_ask_about = Vec::new();
+                    for folder in &held {
+                        // Every direction, in one pass over the rows: a folder in
+                        // this answer that was marked last time has come back, and
+                        // leaving the mark on it would go on telling somebody a
+                        // folder plainly in front of them had gone.
+                        let before = said_before.get(&folder.path).copied().unwrap_or_default();
+                        let now = what_the_server_now_says(
+                            before,
+                            !no_longer_listed.contains(&folder.id),
+                        );
+                        if let Err(e) = cache.set_what_the_server_said(folder.id, now) {
+                            tracing::warn!("The folder's listing state could not be recorded: {e}");
+                            continue;
+                        }
+                        if now.somebody_has_yet_to_answer() {
+                            to_ask_about.push(one_question_at_a_time::GoneFolder {
+                                id: folder.id,
+                                account: account.display_name(),
+                                name: folder.name.clone(),
+                            });
+                        }
+                    }
+                    if !to_ask_about.is_empty() {
+                        say(UIUpdate::FoldersTheServerStoppedListing(to_ask_about));
                     }
                 }
-                // One folder that will not open is not a reason to abandon the
-                // rest, and naming it is the difference between a fixable
-                // problem and a sync that quietly did less than it said.
-                Err(e) => problems.push(format!("{}: {}", folder.name, e)),
+                // Said rather than swallowed. Nothing is marked, which is the
+                // reading that understates: the tree shows what it showed before.
+                Err(e) => tracing::warn!("The stored folder list could not be read back: {e}"),
             }
-        }
 
-        // The tree reads from the cache, which has changed underneath it.
-        match folder_tree_updates(&cache, &account.id) {
-            Ok(updates) => updates.into_iter().for_each(&say),
-            Err(e) => problems.push(format!("folder list: {}", e)),
-        }
+            // A watch that fires names one folder, and re-reading the whole
+            // account because one message arrived in the inbox is work nobody
+            // asked for.
+            //
+            // What somebody chose about each folder wins over the default. An
+            // account nobody has answered for has an empty map, and every folder
+            // gets the default.
+            let chosen = cache.folder_choices(&account.id).unwrap_or_default();
+            let worth_syncing: Vec<&crate::service::protocols::imap::ImapFolder> =
+                crate::application::mail_sync::folders_to_sync(&folders, &chosen)
+                    .into_iter()
+                    .filter(|f| only.as_deref().is_none_or(|path| f.path == path))
+                    .collect();
+            let mut fetched = 0usize;
+            // Each folder with what it received, for the one result line at the
+            // end; the folders with nothing are dropped where the words are made.
+            let mut arrived: Vec<(String, usize)> = Vec::new();
+            let mut problems: Vec<String> = Vec::new();
 
-        if !problems.is_empty() {
-            say(UIUpdate::ErrorOccurred(format!(
-                "Some folders could not be read. {}",
-                problems.join("; ")
+            // The account's rules, read once for the whole sync rather than once
+            // per folder. An account with no rules gets `None`, and arriving mail
+            // is not looked at twice for nothing.
+            let engine = cache
+                .get_filter_rules_for_account(&account.id)
+                .map(|stored| {
+                    let mut engine = crate::application::filters::FilterEngine::default();
+                    engine.load_from_persisted(&stored);
+                    engine
+                })
+                .unwrap_or_else(|e| {
+                    // Said rather than swallowed. Mail arriving unsorted looks the
+                    // same as mail arriving with no rules written.
+                    problems.push(format!("Rules could not be read: {}", e));
+                    crate::application::filters::FilterEngine::default()
+                });
+            let filtering = (!engine.get_rules().is_empty()).then(|| {
+                crate::application::mail_sync::Filtering {
+                    rules: &engine,
+                    allowed: crate::application::allowed::allowed_for(&account.id),
+                }
+            });
+
+            for folder in worth_syncing {
+                let Some((_, folder_id)) = stored.iter().find(|(f, _)| f.path == folder.path)
+                else {
+                    continue;
+                };
+                say(UIUpdate::Progress(format!("Checking {}...", folder.name)));
+                match handle.block_on(crate::application::mail_sync::sync_folder(
+                    controller.as_ref(),
+                    &cache,
+                    folder,
+                    *folder_id,
+                    crate::application::mail_sync::INITIAL_FETCH_LIMIT,
+                    filtering.as_ref(),
+                    wanted,
+                )) {
+                    Ok(result) => {
+                        fetched += result.fetched;
+                        arrived.push((folder.name.clone(), result.fetched));
+                        // The words are worked out where they can be tested. Built
+                        // here, they were inside this closure with its own cache on
+                        // a background thread, which nothing could reach.
+                        // Ahead of the summary, because it is the reason for it:
+                        // the summary's own "read again after the server
+                        // renumbered it" is the short form of this. Sent only when
+                        // it happened, and the words decide that, so this cannot
+                        // start announcing ordinary syncs by reading a flag the
+                        // wrong way round here.
+                        if let Some(said) =
+                            crate::application::mail_sync::what_the_renumbering_discarded(&result)
+                        {
+                            say(UIUpdate::FolderWasRenumbered(said));
+                        }
+                        // A step whether or not anything arrived: the counts go
+                        // out once, after the loop, rather than per folder.
+                        say(UIUpdate::Progress(
+                            crate::application::mail_sync::what_the_folder_sync_did(&result),
+                        ));
+                        if let Some(update) = folder_arrival_update(*folder_id, result.fetched) {
+                            say(update);
+                        }
+                    }
+                    // One folder that will not open is not a reason to abandon the
+                    // rest, and naming it is the difference between a fixable
+                    // problem and a sync that quietly did less than it said.
+                    Err(e) => problems.push(format!("{}: {}", folder.name, e)),
+                }
+            }
+
+            // The tree reads from the cache, which has changed underneath it.
+            match folder_tree_updates(&cache, &account.id) {
+                Ok(updates) => updates.into_iter().for_each(&say),
+                Err(e) => problems.push(format!("folder list: {}", e)),
+            }
+
+            if !problems.is_empty() {
+                say(UIUpdate::ErrorOccurred(format!(
+                    "Some folders could not be read. {}",
+                    problems.join("; ")
+                )));
+            }
+            say(UIUpdate::Progress(format!(
+                "Mail check finished. {} new {}.",
+                fetched,
+                if fetched == 1 { "message" } else { "messages" }
             )));
+            // Once, after the loop, and only when something arrived: the arm
+            // this reaches is where the new-mail sound is signalled from.
+            if let Some(what) = crate::application::mail_sync::what_arrived(&arrived) {
+                say(UIUpdate::WhatArrived { what });
+            }
+            say(UIUpdate::ConnectionStatusChanged(
+                ConnectionStatus::Disconnected,
+            ));
+            // When this account was checked, on the worker's copy and in the
+            // row, so the moment survives a restart (#37). The column and not
+            // `save_account`, which would write the credential store on every
+            // check for nothing.
+            account.mark_synced();
+            if let Err(e) = cache.update_account_last_sync(&account.id) {
+                tracing::warn!(
+                    "When {} was checked could not be written: {e}",
+                    account.name
+                );
+            }
+            // The server answered this check, so an account the schedule alone
+            // carried because the server could not be reached is given the
+            // watch again.
+            if let Ok(mut s) = state.lock()
+                && let Some(watch) = s.mail_watches.get_mut(&account.id)
+            {
+                watch.the_server_may_be_reachable_again();
+            }
+            say(UIUpdate::MailboxWatchRequested(account.id.clone()));
         }
-        say(UIUpdate::Progress(format!(
-            "Mail check finished. {} new {}.",
-            fetched,
-            if fetched == 1 { "message" } else { "messages" }
-        )));
-        // Once, after the loop, and only when something arrived: the arm
-        // this reaches is where the new-mail sound is signalled from.
-        if let Some(what) = crate::application::mail_sync::what_arrived(&arrived) {
-            say(UIUpdate::WhatArrived { what });
-        }
-        say(UIUpdate::ConnectionStatusChanged(
-            ConnectionStatus::Disconnected,
-        ));
-        say(UIUpdate::MailboxWatchRequested);
         // Every check ends by asking for the download of everything (#20,
-        // #23), after the watch, so a download that does not start leaves
-        // the inbox watched. The window decides whether one is already
-        // running, paused or waiting.
+        // #23), after the watches, so a download that does not start leaves
+        // the inboxes watched. Once for the whole list: the window decides
+        // whether one is already running, paused or waiting.
         say(UIUpdate::DownloadRequested);
     });
 }

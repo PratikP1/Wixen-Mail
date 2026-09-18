@@ -261,9 +261,11 @@ fn what_is_wrong_with_a_watch_that_never_started(watch: Option<&str>) -> Vec<Str
         );
         return wrong;
     };
+    // The statement, with its semicolon: the word alone is in the comment
+    // that says the question comes before it.
     match (
         branch.find("WhyTheWatchEnded::NeverStarted("),
-        branch.find("return"),
+        branch.find("return;"),
     ) {
         (None, _) => wrong.push(
             "the start-failure branch returns without asking whether to watch again, so a \
@@ -715,7 +717,9 @@ fn what_is_wrong_with_the_check(
     match check {
         None => wrong.push("the window no longer checks for mail at all".into()),
         Some(check) => {
-            if !check.contains("for account in accounts") {
+            // With or without `mut`: the check marks each account synced
+            // on its own copy, and the walk is the point.
+            if !check.contains(" account in accounts {") {
                 wrong.push("the check does not walk the accounts it is handed".into());
             }
             if !check.contains("say(UIUpdate::MailboxWatchRequested(account.id.clone()))") {

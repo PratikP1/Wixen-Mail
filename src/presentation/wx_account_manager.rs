@@ -907,6 +907,7 @@ struct Page2Shell {
     settings_section_heading: StaticText,
     interval_label: StaticText,
     interval: TextCtrl,
+    interval_note: StaticText,
     enabled: CheckBox,
     allowed_section_heading: StaticText,
     allow_mail_here: CheckBox,
@@ -938,6 +939,7 @@ impl Page2Shell {
         self.settings_section_heading.show(visible);
         self.interval_label.show(visible);
         self.interval.show(visible);
+        self.interval_note.show(visible);
         self.enabled.show(visible);
         self.allowed_section_heading.show(visible);
         self.allow_mail_here.show(visible);
@@ -955,6 +957,14 @@ impl Page2Shell {
 /// What the step heading reads on each page.
 const STEP_ONE_HEADING: &str = "Step 1 of 2: Account details";
 const STEP_TWO_HEADING: &str = "Step 2 of 2: Connection and sign-in";
+
+/// What the Check Interval field does, in the words under it and on it.
+///
+/// The field is read by `application::checking_on_a_schedule` since
+/// 2026-09-18 (#37), which is what makes this sentence true; the bounds are
+/// the clamp `show_edit` applies and that module applies again.
+const WHAT_THE_INTERVAL_DOES: &str = "How often this account is checked for new mail when \
+     nothing is watching it, or for the folders a watch does not cover. Between 1 and 60 minutes.";
 
 /// What each of the three boxes about this account's permissions is for, in
 /// the words its label opens with.
@@ -1621,7 +1631,21 @@ pub fn build_account_edit_dialog(
     };
 
     let settings_section_heading = section("── Settings ──");
-    let (interval_label, interval_f) = tf("Check &Interval (min):", "5");
+    // Offered since this editor was written and read by nothing until
+    // 2026-09-18 (#37): the schedule reads it now, and the sentence says
+    // what it does, on the field for whoever tabs to it and beneath it for
+    // whoever reads the page.
+    let (interval_label, interval_f) =
+        tf_with_description("Check &Interval (min):", "5", WHAT_THE_INTERVAL_DOES);
+    let interval_note = {
+        let n = StaticText::builder(&dlg)
+            .with_label(WHAT_THE_INTERVAL_DOES)
+            .build();
+        set_accessible_name(&n, WHAT_THE_INTERVAL_DOES);
+        leave_the_cell_empty(&fields);
+        fields.add(&n, 0, SizerFlag::Expand | SizerFlag::All, 4);
+        n
+    };
     let enabled = cb("Ena&ble this account", true);
 
     // ── What this account may change ─────────────────────────────────────
@@ -1719,6 +1743,7 @@ pub fn build_account_edit_dialog(
         settings_section_heading,
         interval_label,
         interval: interval_f,
+        interval_note,
         enabled,
         allowed_section_heading,
         allow_mail_here,
