@@ -189,6 +189,20 @@ column in the message list, and reads as a word: "unread", "starred", "has
 attachment". `Space` on a message reads its full status along with the rest
 of the item, once for a short summary and again for everything.
 
+### When a message counts as read
+
+Moving through the list never marks anything. You can arrow through a folder,
+let your screen reader finish every row, and the unread count stays where it
+was. A message counts as read once you have read it: press `Space` or
+`Shift+Space` to hear it from the list, or `Enter` to open it in its own
+window. Then the delay under Settings, then Reading, then Mark as read after
+runs, two seconds unless you have changed it, and the message is marked read
+if it is still the one you are on. Move off it before the delay runs and it
+stays unread. Choose Only when I say so and nothing is ever marked on its own;
+marking by hand still works as it did. Until 2026-09-18 the delay was counted
+from the moment a row was selected, so listening to a row was enough to mark
+it.
+
 ### Choosing columns, and what is remembered
 
 `F8`, or View then Columns, opens the column chooser. `Space` shows or hides

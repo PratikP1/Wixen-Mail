@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 124 records have arrived since and have not been through it.
+# 128 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25721,4 +25721,125 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 14 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
+]
+
+# ── A message nobody read is never marked read ──────────────────────────────
+#
+# #25: a row selected for two seconds was marked read, and hearing a row takes
+# longer than that, so a walk through a folder by ear marked every message
+# stopped on. The rule answers nothing when no reading began, whatever is
+# selected. The break is the old behaviour in the rule's own words: when
+# nothing began, the selected unread message stands in as though its reading
+# had begun just now. The case that selects a row for an hour with no reading
+# begun goes red under Immediately, and the case that reads one message and
+# then selects another goes red the same way, because the break stands the
+# second message in too.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a message nobody read is never marked read, whatever is selected"
+file = "src/application/reading_habits.rs"
+before = """    let (message, since) = began.filter(|(message, _)| Some(*message) == selected_unread)?;"""
+after = """    let (message, since) = began
+        .filter(|(message, _)| Some(*message) == selected_unread)
+        .or_else(|| selected_unread.map(|message| (message, now)))?;"""
+red = [
+    "application::reading_habits::a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected::test_nothing_began_means_nothing_is_marked_however_long_a_row_is_selected",
+    "application::reading_habits::a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected::test_a_message_that_began_reading_is_not_marked_once_another_is_selected",
+]
+tests_last_seen = [
+    { file = "src/application/reading_habits.rs", tests = 25 },
+]
+
+# ── Selecting a row starts no clock ─────────────────────────────────────────
+#
+# #25: the clock that marks a message read started the moment a row was
+# selected, and hearing a row takes longer than the wait, so a walk through a
+# folder by ear marked every message stopped on. The break puts the write
+# back into the selection handler, for the message the row landed on. The
+# reading over the handler goes red with "touches reading_began"; its
+# companion reads a snippet rather than the file and stays green, which is
+# why one test is named.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "selecting a row starts no clock towards marking it read, whatever the wait"
+file = "src/presentation/wx_app.rs"
+suite = "moving_through_the_list_marks_nothing_read"
+before = """                        s.selected_message_index = Some(idx);"""
+after = """                        s.selected_message_index = Some(idx);
+                        s.reading_began = s
+                            .messages
+                            .get(idx)
+                            .map(|m| (m.message_id, std::time::Instant::now()));"""
+red = [
+    "test_selecting_a_row_records_nothing_about_reading",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 11 },
+]
+
+# ── The timer asks the rule before it marks anything ────────────────────────
+#
+# The decision that turns time into a mark is one rule in reading_habits,
+# held by six cases; a timer that decides for itself is a second copy of the
+# decision, and the second copy is where the selection clock lived. The
+# break drops the ask and marks the selected unread message at once, which
+# is what the timer did under Immediately. The reading over the function goes
+# red with "never asks whether_to_mark_read"; its companion reads a snippet
+# and stays green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the timer asks whether to mark what was read, not marks the selected one itself"
+file = "src/presentation/wx_app.rs"
+suite = "moving_through_the_list_marks_nothing_read"
+before = """        let Some(row) = crate::application::reading_habits::whether_to_mark_read(
+            s.reading_began,
+            selected_unread,
+            std::time::Instant::now(),
+            marks_read,
+        ) else {
+            return;
+        };"""
+after = """        let _ = marks_read;
+        let Some(row) = selected_unread else {
+            return;
+        };"""
+red = [
+    "test_the_timer_asks_the_rule_and_keeps_no_clock_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 11 },
+]
+
+# ── The sentence under Mark as read after is on the built page ──────────────
+#
+# #25: the setting's seven answers cannot say what the wait is counted from,
+# and until 2026-09-18 it was counted from selection. The sentence saying it
+# is counted from reading sits under the choice on the Reading tab, and the
+# one test that builds that page in a window session reads it there. The
+# break builds the sentence and destroys it instead of adding it to the
+# section; the reading goes red with "holds no static text saying". Taken by
+# hand first on 2026-09-18, then measured.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the sentence saying what mark as read after counts from is on the reading page, not only in the source"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    read_sec.add(&markread_note, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+after = """    markread_note.destroy();"""
+red = [
+    "test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]

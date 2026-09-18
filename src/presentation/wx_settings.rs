@@ -7,7 +7,9 @@
 use crate::application::autosave::AutosaveInterval;
 use crate::application::conversations::{AConversationReaches, DeletingAConversationRow};
 use crate::application::folder_settings::{self, UnreadOnAParent};
-use crate::application::reading_habits::{CopyLines, MarkRead, WorkingDay};
+use crate::application::reading_habits::{
+    CopyLines, MarkRead, WHAT_MARK_READ_COUNTS_FROM, WorkingDay,
+};
 use crate::application::reading_style::Style as ReadingStyle;
 use crate::application::receipts::Policy;
 use crate::common::paths::AppPaths;
@@ -1763,6 +1765,15 @@ fn build_reading_tab(panel: &Panel, config: &AppConfig) -> ReadingTabControls {
             .collect::<Vec<_>>(),
         crate::application::reading_habits::offered_index(&config.mark_read_after) as u32,
     );
+    // What the wait is counted from, under the choice, because seven answers
+    // cannot say on their own when the counting starts, and until 2026-09-18
+    // it started when a row was selected (#25). Named on both channels, the
+    // way the sentence under the message-text size is.
+    let markread_note = StaticText::builder(panel)
+        .with_label(WHAT_MARK_READ_COUNTS_FROM)
+        .build();
+    set_accessible_name(&markread_note, WHAT_MARK_READ_COUNTS_FROM);
+    read_sec.add(&markread_note, 0, SizerFlag::Expand | SizerFlag::All, 4);
 
     // How a message opens. First in this section, because it is the biggest
     // difference between two ways of reading the same mail.
