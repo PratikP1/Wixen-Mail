@@ -51,8 +51,25 @@ pub fn which_row_shows(
     this_machine: Option<&str>,
     rows: &[LanguageChoice],
 ) -> RowToShow {
-    let _ = (this_machine, rows, language_to_use);
-    RowToShow::Added(stored.to_string())
+    let row_of = |tag: &str| {
+        rows.iter()
+            .position(|row| row.tag.eq_ignore_ascii_case(tag))
+    };
+    let own_row = row_of(stored);
+    let shown = if names_a_region(stored) {
+        own_row
+    } else {
+        language_to_use(stored, this_machine, rows)
+            .and_then(|resolved| row_of(&resolved))
+            .or(own_row)
+    };
+    shown.map_or_else(|| RowToShow::Added(stored.to_string()), RowToShow::Existing)
+}
+
+/// Whether a tag names a region: `en-AU` does, `en` and `en-` do not.
+fn names_a_region(tag: &str) -> bool {
+    tag.split_once('-')
+        .is_some_and(|(_, region)| !region.is_empty())
 }
 
 #[cfg(test)]

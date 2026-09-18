@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 110 records have arrived since and have not been through it.
+# 111 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -25319,4 +25319,37 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+]
+
+# ── A spelling language chosen for a region is shown as chosen, not as the checker's answer ──
+#
+# The settings screen's language row shows one row and OK writes that row's
+# tag back, so a row chosen for the person rewrites their choice. The checker
+# may settle for the nearest dictionary it has, en-US for a stored en-AU on a
+# machine with no Australian dictionary, and that is right for the checker
+# and wrong for the screen: on such a machine the screen showed English
+# (United States) for a stored en-AU and saved it the first time Settings was
+# saved. GitHub's runner is such a machine, and the Test Suite job of CI run
+# 35336142985 on 2026-09-18 is where it was seen; the machine the testing
+# happens on offers en-AU, which is why nobody saw it there. A regression of
+# 09-02's fix for #21. The break makes no tag name a region, so every tag
+# takes the resolver's answer, which is the tree as it stood before 11-01.
+# Two tests go red, the two whose region tag the resolver would resolve
+# elsewhere; the case-insensitive one stays green because its row is an
+# exact usable match the resolver answers too, and the bare-tag cases never
+# reach the half that broke.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the whole library.
+[[guard]]
+name = "a spelling language chosen for a region is shown as chosen, not as the checker's answer"
+file = "src/presentation/which_language_row.rs"
+before = """        .is_some_and(|(_, region)| !region.is_empty())"""
+after = """        .is_some_and(|(_, region)| region.is_empty())"""
+red = [
+    "presentation::which_language_row::tests::test_a_tag_with_a_region_is_shown_as_its_own_row_even_without_a_dictionary",
+    "presentation::which_language_row::tests::test_a_tag_with_a_region_the_machine_does_not_list_is_added_as_stored",
+]
+tests_last_seen = [
+    { file = "src/presentation/which_language_row.rs", tests = 6 },
 ]
