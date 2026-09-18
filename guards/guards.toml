@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 90 records have arrived since and have not been through it.
+# 95 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -638,13 +638,17 @@ red = [
     # the sentence at the end of a download of everything counts folders and
     # messages through `how_many`, in a file this record had never named.
     "application::bringing_everything_down::tests::test_the_whole_account_is_said_in_one_sentence_with_both_counts",
+    # Added 2026-09-17 by 10-04, found by --remeasure rather than predicted:
+    # the result line said once at the end of a check, "Work, 1 new message",
+    # counts through `how_many` and reads "1 new messages" under this break.
+    "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
 ]
 tests_last_seen = [
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
     { file = "src/application/calendar.rs", tests = 194 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
@@ -4603,7 +4607,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -4640,7 +4644,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -4692,7 +4696,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -4748,7 +4752,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -4781,7 +4785,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -5099,10 +5103,14 @@ tests_last_seen = [
 # whether the announcement reaches a screen reader, or whether the sentence
 # handed in is true. Only a screen reader run answers the first.
 
+# The line moved from Low to Normal on 2026-09-17 (#38), when the steady run
+# of a sync left this channel for `Progress` and what remains on it, the
+# answers to a key, was raised so a sync cannot bury them; the same break,
+# the announcement taken out, on the new line, measured again.
 [[guard]]
 name = "what goes to the status bar is said as well as shown"
 file = "src/presentation/wx_app.rs"
-before = """            let _ = a11y.announce_topic(status, Priority::Low, "status");"""
+before = """            let _ = a11y.announce_topic(status, Priority::Normal, "status");"""
 after = """            let _ = status;"""
 red = [
     "presentation::wx_app::what_the_status_line_says::test_every_arm_that_shows_something_says_it_or_is_named_as_quiet",
@@ -10475,7 +10483,7 @@ after = """            description: Some("Primary application window".to_string(
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10488,7 +10496,7 @@ after = """            description: Some("Folder navigation".to_string()),
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10499,7 +10507,7 @@ before = """                state: automation::AutomationState {
 after = """                state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10515,7 +10523,7 @@ after = """        let _ = (node_id, state);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10525,7 +10533,7 @@ before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"
 after = """        Default::default()"""
 red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10541,7 +10549,7 @@ after = """        let _ = (region_id, text);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -10565,7 +10573,7 @@ red = [
     "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 23 },
+    { file = "src/presentation/accessibility.rs", tests = 24 },
     { file = "src/presentation/accessibility/automation.rs", tests = 2 },
 ]
 
@@ -10683,15 +10691,18 @@ tests_last_seen = [
 # The break moved with the code on 2026-09-17, when 09-09 made the Feedback
 # page one that is built when its tab is first shown and read back only then;
 # the same rebuild-from-stored break, inside that `if let`, measured again.
+# It moved a second time the same day, when 10-04 took the block out of
+# `read_settings` into `read_the_feedback_page`, where the stored value is
+# `cfg`'s before the write; the same break, on the new lines, measured again.
 [[guard]]
 name = "pressing OK writes the answers the panel holds rather than rebuilding from the stored value"
 file = "src/presentation/wx_settings.rs"
 suite = "every_event_has_a_control"
-before = """        page.per_event.remember_what_is_on_screen();
-        {
-            let mut feedback = page.per_event.working.borrow_mut();"""
-after = """        {
-            let mut feedback = FeedbackSettings::from_stored(&base.feedback_channels);"""
+before = """    w.per_event.remember_what_is_on_screen();
+    {
+        let mut feedback = w.per_event.working.borrow_mut();"""
+after = """    {
+        let mut feedback = FeedbackSettings::from_stored(&cfg.feedback_channels);"""
 red = ["test_every_event_is_reachable_and_keeps_what_it_was_given"]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
@@ -14843,7 +14854,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -15141,7 +15152,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -15981,7 +15992,7 @@ red = [
     "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 [[guard]]
@@ -19490,15 +19501,19 @@ tests_last_seen = [
 # Measured 2026-09-10 with `cargo test --all-targets --no-fail-fast` on a clean
 # tree with nothing else building, at the default eight threads. 6,801 passed in
 # the library and exactly one failed.
+#
+# The line moved from `send_status` to `send_progress` on 2026-09-17 (#38),
+# when a sync request became a step; the same break, the call to the sync
+# taken out, on the new lines, measured again through `--remeasure`.
 [[guard]]
 name = "asking for a notes sync reaches the sync rather than reporting one"
 file = "src/presentation/wx_app.rs"
 before = '''                                PimModule::Notes => {
-                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
                                     spawn_notes_sync(app);
                                 }'''
 after = '''                                PimModule::Notes => {
-                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
                                 }'''
 red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
@@ -24259,7 +24274,7 @@ red = [
     "application::mail_sync::tests::test_a_chunk_stops_before_the_next_message_when_asked_to",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # Three failures in a row that are not the gate's refusal end the chunk,
@@ -24283,7 +24298,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # What a person hears when the server stops answering is this program's
@@ -24310,7 +24325,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 147 },
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]
 
 # ── Every Settings check box stays a check box (#67) ──────────────────────────
@@ -24705,4 +24720,152 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs", tests = 4 },
+]
+
+# ── A step is not spoken under Say what arrived (#38) ───────────────────────
+#
+# The setting's whole point is the cell of the table that says a progress
+# line is silent under the default: a check of fifty folders speaks fifty
+# lines without it. The break widens the Progress row so a step is spoken
+# under everything but Errors only, which is today's verbosity with a
+# setting in front of it. One test goes red, the cell itself; the other
+# eleven cells and the stored forms answer the same either way.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, whole library.
+[[guard]]
+name = "a step is not spoken under Say what arrived"
+file = "src/application/what_is_said_while_fetching.rs"
+before = """            Kind::Progress => self == HowMuchToSay::EveryStep,"""
+after = """            Kind::Progress => self != HowMuchToSay::ErrorsOnly,"""
+red = [
+    "application::what_is_said_while_fetching::tests::test_under_what_arrived_a_step_is_not_spoken",
+]
+tests_last_seen = [
+    { file = "src/application/what_is_said_while_fetching.rs", tests = 19 },
+]
+
+# ── The level chosen on the Feedback page is what OK writes back (#38) ──────
+#
+# The same shape as the Permissions record above it: the two settings guards
+# in `config.rs` see `announce_while_fetching` named in the settings screen
+# and in a file that acts on it, and cannot tell the line that builds the
+# choice from the line that reads it back, so a `read_the_feedback_page`
+# that stopped writing the field would leave both green and every level
+# chosen would be saved as whatever was stored before. The break replaces the
+# write with a read of the control that writes nothing. The target has one
+# test, which builds the real dialog and asks every reading of the Feedback
+# page inside it, so that one goes red. `suite` names the target, which is
+# already coupled to `wx_settings.rs` by the four records above it.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test every_event_has_a_control`.
+[[guard]]
+name = "the level chosen on the Feedback page is what OK writes back"
+file = "src/presentation/wx_settings.rs"
+suite = "every_event_has_a_control"
+before = """    cfg.announce_while_fetching =
+        crate::application::what_is_said_while_fetching::HowMuchToSay::ALL
+            .get(sel(&w.announce_while_fetching) as usize)
+            .copied()
+            .unwrap_or_default()
+            .as_stored();"""
+after = """    let _ = &w.announce_while_fetching;"""
+red = [
+    "test_every_event_is_reachable_and_keeps_what_it_was_given",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/every_event_has_a_control.rs", tests = 1 },
+]
+
+# ── A step is spoken only when every step was asked for (#38) ───────────────
+#
+# The Progress arm is the one place the level governs a step. The break
+# takes the ask away and speaks every step, which is the verbosity #38 was
+# filed about with a setting in front of it that governs nothing. The arm
+# still contains `a11y.announce`, so the window's own reading of arms that
+# show and never say passes over it; the reading in the target is what sees
+# the ask gone. Two tests go red out of the thirteen in the target: the
+# reading of the Progress arm, and its companion, which plants the same
+# break into the real text by replacing the ask and refuses to plant into a
+# window that has no ask to replace. The first draft of this record named
+# the reading alone and said the companion was green either way; the runner
+# said otherwise, and the record carries what it measured. `suite` names the
+# target, which couples it to `wx_app.rs` for `check.sh --suites-for`, the
+# fifteenth target coupled to that file.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# progress_is_shown_and_results_are_said`.
+[[guard]]
+name = "a step is spoken only when every step was asked for"
+file = "src/presentation/wx_app.rs"
+suite = "progress_is_shown_and_results_are_said"
+before = """            if a11y.how_much_to_say().is_spoken(Kind::Progress) {
+                let _ = a11y.announce_topic(said, Priority::Low, "progress");
+            }"""
+after = """            let _ = a11y.announce_topic(said, Priority::Low, "progress");"""
+red = [
+    "test_a_step_is_spoken_only_when_every_step_was_asked_for",
+    "test_the_reading_complains_when_a_step_is_spoken_without_asking",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+]
+
+# ── The new-mail sound means mail arrived, not that the watch woke (#38) ───
+#
+# The signal fired from the MailboxChanged arm until 2026-09-17, which is
+# reached when the watch wakes: before the folder is read, whether or not
+# anything arrives, and never for a check started by F9. The break puts it
+# back there, beside the one in the WhatArrived arm, so the sound plays for
+# both and means neither. One test goes red out of the thirteen, the reading
+# that holds the MailboxChanged arm clear and counts the signal's places as
+# one; its companion plants the same line and is green either way.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# progress_is_shown_and_results_are_said`.
+[[guard]]
+name = "the new-mail sound means mail arrived, not that the watch woke"
+file = "src/presentation/wx_app.rs"
+suite = "progress_is_shown_and_results_are_said"
+before = """        UIUpdate::MailboxChanged(folder) => {
+            // Nothing is signalled here since 2026-09-17 (#38). The new-mail"""
+after = """        UIUpdate::MailboxChanged(folder) => {
+            let _ = a11y.signal(FeedbackEvent::NewMail, "");
+            // Nothing is signalled here since 2026-09-17 (#38). The new-mail"""
+red = [
+    "test_the_new_mail_sound_plays_when_a_check_found_mail_and_not_when_the_watch_woke",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/progress_is_shown_and_results_are_said.rs", tests = 13 },
+]
+
+# ── A check that found nothing says nothing about what arrived (#38) ────────
+#
+# `what_arrived` answers `None` when every count is nought, and the window
+# sends a result only for `Some`, so a check that found nothing sends no
+# result, plays no sound and says nothing under the default. The break keeps
+# the folders with nothing, so every check answers a sentence naming every
+# folder with "0 new messages" and the sound plays for every check. Two
+# tests go red, the one that asks for `None` and the one that asks for the
+# folders with nothing to be left out.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, whole library.
+[[guard]]
+name = "a check that found nothing says nothing about what arrived"
+file = "src/application/mail_sync.rs"
+before = """        .filter(|(_, count)| *count > 0)"""
+after = """        .filter(|(_, _count)| true)"""
+red = [
+    "application::mail_sync::tests::test_a_check_that_found_nothing_says_nothing_about_what_arrived",
+    "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 149 },
 ]

@@ -8,6 +8,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **How much is said while mail and the other modules are fetched is your choice.** Reported on
+  2026-09-15 from build `0.125.1+g3e633252` (#38): "When fetching mail and other items, the
+  announcements are too verbose. Only folders and items with new mail or items should be
+  announced," and, the same day, "Or make this user-configurable. Let the user decide how much
+  to announce while fetching items." A new choice sits at the end of the Feedback tab under
+  While fetching, "While mail and the other modules are fetched, say:", with three answers: Say
+  what arrived, Say every step, Errors only. Say what arrived is the default, and a settings file
+  from before this existed answers the same. The choice is read when the program starts and
+  again when you press OK, so the next check speaks as much as you just chose.
+  What each answer does. A step on the way, Connecting, Checking a folder, Loading a folder, a
+  sync requested, a chunk downloaded, is shown on the status bar under every answer and spoken
+  only under Say every step. What arrived is said once when a check ends, folder by folder with
+  its count, "Inbox, 3 new messages; Work, 1 new message", and never when nothing arrived; the
+  contacts, calendar, tasks and notes syncs say their counts the same way, through the Sync
+  finished event, so the tone for it follows its own row above. An error is said whatever you
+  chose. Under Errors only a check that found mail still plays the sound for new mail and says
+  "New mail" if that row says so, and says no counts. Two things changed with it. The sound for
+  new mail plays when a check found mail, whoever started the check, rather than when the
+  server said a folder changed, which was before the folder was read and whether or not
+  anything arrived; and Settings saved, Draft saved, Saved to, Refreshed and the other answers
+  to a key are said above the run of a check rather than behind it, which is why "Settings
+  saved" could not be heard during one.
+  Known limitations: nobody has heard any of this. Which sentence is a step and which a result
+  is a judgement by ear, and a line sorted wrongly is silent under the default or spoken under
+  it; the listening page asks for each of the three answers on a check of many folders. The
+  Download This Whole Folder and Fetch Missing Message Text commands say their progress as
+  steps now, so under the default their progress and the whole-folder command's closing report
+  are shown and not spoken; both commands are retired by the download of everything that
+  follows.
 - **The version is `1.0.0-alpha.1`.** It was `0.125.1`. Pratik decided on 2026-09-15, testing
   build `0.125.1+g3e633252`, that the builds going to testers are the alpha, beta and
   release-candidate stages of 1.0.0, so the number moved once, by hand, and every fix that follows

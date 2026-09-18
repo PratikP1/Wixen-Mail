@@ -706,13 +706,37 @@ pub enum UIUpdate {
     /// that moves one alone appears to do nothing because the other still
     /// binds. This is the update that moves the second.
     MoreOfTheFolderArrived(i64),
-    /// How far a whole-folder request has got, in the words the loop chose.
+    /// A step on the way: connecting, a folder being checked, a chunk landed,
+    /// a module's sync requested (#38).
     ///
-    /// Announced under a topic of its own rather than as a status line. The
-    /// queue keeps only the newest announcement of a topic, and `"status"`
-    /// carries every other line a sync produces, so a fetch running for minutes
-    /// there would silence all of them for as long as it ran.
-    WholeFolderProgress(String),
+    /// Shown on the status bar always and spoken only when every step was
+    /// asked for on the Feedback tab. Separate from [`Self::StatusUpdated`]
+    /// because that is now the answer channel, spoken at Normal whatever was
+    /// chosen, and a step riding it would both be spoken under Say what
+    /// arrived and replace the answer to a key where it stands. The kind is
+    /// decided where the line is made, so a new line cannot arrive on the
+    /// spoken channel by accident. Until 2026-09-17 a whole-folder request's
+    /// lines had a variant of their own on a topic of their own; they are
+    /// steps like any other now.
+    Progress(String),
+    /// What a check brought, once, at its end: each folder that received
+    /// something with its count (#38).
+    ///
+    /// Sent only when something arrived, so the arm that reaches it is the
+    /// one place the new-mail sound is signalled from: the sound means mail
+    /// arrived, not that the watch woke. Spoken at Normal on its own topic
+    /// unless nothing but errors was asked for.
+    WhatArrived {
+        what: String,
+    },
+    /// A tasks or notes sync finished, in the words the status line uses.
+    ///
+    /// Routed through the `SyncComplete` event as the contacts and calendar
+    /// completions are, so the tone and the word follow the person's row for
+    /// that event and the counts follow the level chosen while fetching.
+    /// Until 2026-09-17 both syncs said their result through the status
+    /// channel, which no earcon reached.
+    ModuleSyncFinished(String),
     /// A message's flagged state changed (cache_id, new_flagged_state)
     ///
     /// Sent when the server accepts the change, and again with the opposite

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 491
+open_count: 493
 waived_count: 0
 fixed_count: 28
-total_count: 519
-last_updated: 2026-09-17T21:53:34.000Z
+total_count: 521
+last_updated: 2026-09-18T00:21:57.000Z
 ---
 
 # Broken Windows Ledger
@@ -534,6 +534,8 @@ last_updated: 2026-09-17T21:53:34.000Z
 | 517 | 10 | unrun-verify | scripts/build-installer.sh |  | What only a build and a machine settle for the build counter 10-02.2 added (Pratik's decision of 2026-09-17): that the next installer handed to the tester carries the counter in its file name and in Apps and Features, as 1.0.0-alpha.1+N.g<commit> and a file version ending in the counter; that installing it over the 1.0.0-alpha.1+g59c5b6a4 build he has is read by Windows as an upgrade rather than refused as a downgrade; and that --version and the log's first line show the counter. The tests read the script's text and order the encoded fields; one installer was built from the branch by the executor and its --version and file version read back, but no build with the counter has been installed over the alpha.1 build anybody has, and no build with it has been handed to anybody. | open |  | 2026-09-17T19:52:50.000Z |  |
 | 518 | 10 | deviation | .planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-03-PLAN.md |  | 10-03 executed with four departures, so 10-05 reads the seam it will call from the tree and not from the plan. The record on the screen's read-back is measured on a new target, tests/how_much_message_text_stays_is_read_back_from_the_permissions_page.rs, rather than on every_event_has_a_control or the_settings_dialog_opens_in as the plan offered, because neither of those reads the Permissions page and a break there reddened nothing in either; the new target builds the real dialog, chooses each size and reads it back the way OK does. The record on the check's worker being handed the setting is measured now on a fourth reading in that target rather than deferred to 10-05's target as the plan said to do if no existing target reddened, because the reading is the same reading and earlier. The two worker sites read the setting through one helper, how_much_message_text_stays, rather than each repeating the six lines, and that helper is where the read-by-something guard sees the field's name. The attachment budget's comment, which said the two halves kept the whole cache around a gigabyte, was corrected with the date, because the sentence became false the moment the body half became a setting. | open |  | 2026-09-17T21:53:34.000Z |  |
 | 519 | 10 | unrun-verify | src/presentation/wx_settings.rs |  | What only the tester's ear settles for the choice 10-03 added under Message Text on the Permissions tab: that Alt+K reaches it and NVDA says its name, Keep the text of messages on this computer, then combo box and the current answer; that the four answers read as All of it, Up to 1 GB, Up to 5 GB and Up to 20 GB and Up or Down moves between them; that the sentence under it is read once in passing and says what leaves, when and what stays; and that OK keeps the answer across a restart. Whether the eviction then honours a chosen size against his account is settled only by a mailbox with more than that much text, which his 12,872 messages may or may not hold, and the default keeps everything, so the first sign of the setting working is text that stays where 0.125.1 dropped it, which nothing on his machine has measured. The listening lines belong to 10-07's page. | open |  | 2026-09-17T21:53:34.000Z |  |
+| 520 | 10 | deviation | .planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-04-PLAN.md |  | 10-04 executed with five departures, so 10-05 and 10-06 read the kinds from the tree and not from the plan. The new-mail signal lives in the WhatArrived arm rather than inside spawn_mail_sync as the plan's grep criterion said, because the worker holds no accessibility handle and the arm is what its end-of-check update reaches; the criterion as written could not be met. The two new variants and ModuleSyncFinished are on ui_types.rs, which the plan's file list did not name, because that is where UIUpdate lives. The tasks and notes syncs finish through a new ModuleSyncFinished update rather than the existing completion updates, and the notes sync's two answers that no sync ran stay on the answer channel, because they answer the key rather than report a sync. The result sentence counts through how_many, Inbox, 3 new messages, rather than the plan's Inbox, 3 new, so a listener hears what the number counts. The whole-folder request's closing report goes out as a step with its progress, shown and not spoken under the default, because the loop hands over one kind of line and the command retires with 10-05. The setting's changelog entry landed in task 1's commit, on the rule that the entry goes with the setting, and task 2 extended it; task 3 wrote the listening lines. | open |  | 2026-09-18T00:21:57.000Z |  |
+| 521 | 10 | unrun-verify | src/presentation/wx_app.rs |  | What only the tester's ear settles for #38: what a check of his 50 folders says under each of the three answers on the Feedback tab, and which sentence is a step and which a result by ear, since the sorting was done by reading each line's words and a line sorted wrongly is silent under the default or spoken under it; whether the one result sentence, folder by folder with counts, is heard as an ending rather than as another line; whether the sound for new mail followed by that sentence reads as one event or two; whether Settings saved is now heard when OK is pressed during a check; and whether the choice itself is reached by Alt+W and read as its name, combo box and answer, with the sentence under it read once. Nothing here met a real account, and nobody has listened. Items 42 and 43 on docs/manual-accessibility-pass.md. | open |  | 2026-09-18T00:21:57.000Z |  |
 
 ````json
 [
@@ -6763,6 +6765,30 @@ last_updated: 2026-09-17T21:53:34.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-17T21:53:34.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 520,
+    "kind": "deviation",
+    "phase": "10",
+    "file": ".planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-04-PLAN.md",
+    "line": null,
+    "description": "10-04 executed with five departures, so 10-05 and 10-06 read the kinds from the tree and not from the plan. The new-mail signal lives in the WhatArrived arm rather than inside spawn_mail_sync as the plan's grep criterion said, because the worker holds no accessibility handle and the arm is what its end-of-check update reaches; the criterion as written could not be met. The two new variants and ModuleSyncFinished are on ui_types.rs, which the plan's file list did not name, because that is where UIUpdate lives. The tasks and notes syncs finish through a new ModuleSyncFinished update rather than the existing completion updates, and the notes sync's two answers that no sync ran stay on the answer channel, because they answer the key rather than report a sync. The result sentence counts through how_many, Inbox, 3 new messages, rather than the plan's Inbox, 3 new, so a listener hears what the number counts. The whole-folder request's closing report goes out as a step with its progress, shown and not spoken under the default, because the loop hands over one kind of line and the command retires with 10-05. The setting's changelog entry landed in task 1's commit, on the rule that the entry goes with the setting, and task 2 extended it; task 3 wrote the listening lines.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T00:21:57.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 521,
+    "kind": "unrun-verify",
+    "phase": "10",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "What only the tester's ear settles for #38: what a check of his 50 folders says under each of the three answers on the Feedback tab, and which sentence is a step and which a result by ear, since the sorting was done by reading each line's words and a line sorted wrongly is silent under the default or spoken under it; whether the one result sentence, folder by folder with counts, is heard as an ending rather than as another line; whether the sound for new mail followed by that sentence reads as one event or two; whether Settings saved is now heard when OK is pressed during a check; and whether the choice itself is reached by Alt+W and read as its name, combo box and answer, with the sentence under it read once. Nothing here met a real account, and nobody has listened. Items 42 and 43 on docs/manual-accessibility-pass.md.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T00:21:57.000Z",
     "resolved_at": null
   }
 ]

@@ -11,6 +11,7 @@ use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun}
 // the accessible name are visibly the same binding rather than two spellings a
 // reader has to compare character by character.
 use crate::application::the_network_coming_and_going::WHAT_THE_OFFER_SAYS;
+use crate::application::what_is_said_while_fetching::Kind;
 use crate::common::Result;
 use crate::common::paths::AppPaths;
 use crate::common::types::MessageBody;
@@ -1181,6 +1182,18 @@ impl WxMailApp {
                     ),
                 );
             }
+            // How much is said while things are fetched, kept in the same
+            // place as the channels, so the arms that speak a fetch's lines
+            // ask one layer for every routing choice. Set whether or not a
+            // file was read: an unreadable file answers the default, which
+            // is what arrived.
+            a11y.set_how_much_to_say(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::from_stored(
+                    stored_config
+                        .as_ref()
+                        .map_or("", |c| c.announce_while_fetching.as_str()),
+                ),
+            );
 
             // Which sound plays is a separate choice from which channels an
             // event reaches, so it is resolved the same way but kept apart:
@@ -2879,10 +2892,12 @@ impl WxMailApp {
                         };
                         // Update title bar with folder context
                         frame.set_title(&format!("{} - Mail - Wixen Mail", name));
+                        // A step (#38): the rows arriving are what somebody
+                        // hears, and this is shown while they come.
                         let tx = ui_tx.clone();
                         runtime.spawn(async move {
                             let _ = tx
-                                .send(UIUpdate::StatusUpdated(format!("Loading {}...", name)))
+                                .send(UIUpdate::Progress(format!("Loading {}...", name)))
                                 .await;
                         });
                         // Sent and Drafts are read differently from a folder
@@ -4139,20 +4154,23 @@ impl WxMailApp {
                             // froze the screen reader with it.
                             let module = lock_state(&state).active_module;
                             match module {
+                                // Steps: shown, and spoken only under Say
+                                // every step (#38). The sync's own finish
+                                // is what is said by default.
                                 PimModule::Contacts => {
-                                    send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Contacts sync requested...");
                                     spawn_contacts_sync(app);
                                 }
                                 PimModule::Calendar => {
-                                    send_status(&ui_tx, &runtime, "Calendar sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Calendar sync requested...");
                                     spawn_calendar_sync(&state, &ui_tx, &runtime);
                                 }
                                 PimModule::Tasks => {
-                                    send_status(&ui_tx, &runtime, "Tasks sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Tasks sync requested...");
                                     spawn_tasks_sync(app);
                                 }
                                 PimModule::Notes => {
-                                    send_status(&ui_tx, &runtime, "Notes sync requested...");
+                                    send_progress(&ui_tx, &runtime, "Notes sync requested...");
                                     spawn_notes_sync(app);
                                 }
                                 // Mail has its own Check Mail, and a reminder
@@ -4456,7 +4474,10 @@ impl WxMailApp {
                             frame.raise();
                         }
                         _ if id == ID_CHECK_MAIL => {
-                            send_status(&ui_tx, &runtime, "Checking for new mail...");
+                            // A step (#38): what the check found is said
+                            // once when it ends, and the sound for new mail
+                            // plays then if it found any.
+                            send_progress(&ui_tx, &runtime, "Checking for new mail...");
                             spawn_mail_sync(
                                 app,
                                 None,
@@ -5012,7 +5033,7 @@ impl WxMailApp {
                                 &runtime,
                                 &a11y,
                             ) {
-                                send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                                send_progress(&ui_tx, &runtime, "Contacts sync requested...");
                                 spawn_contacts_sync(app);
                             }
                         }
@@ -5070,16 +5091,18 @@ impl WxMailApp {
                                 &runtime,
                             )
                         }
+                        // Steps, as the module's own Sync command sends
+                        // them (#38): the finish is what is said by default.
                         _ if id == ID_SYNC_CONTACTS => {
-                            send_status(&ui_tx, &runtime, "Contacts sync requested...");
+                            send_progress(&ui_tx, &runtime, "Contacts sync requested...");
                             spawn_contacts_sync(app);
                         }
                         _ if id == ID_SYNC_CALENDAR => {
-                            send_status(&ui_tx, &runtime, "Calendar sync requested...");
+                            send_progress(&ui_tx, &runtime, "Calendar sync requested...");
                             spawn_calendar_sync(&state, &ui_tx, &runtime);
                         }
                         _ if id == ID_SYNC_TASKS => {
-                            send_status(&ui_tx, &runtime, "Syncing tasks...");
+                            send_progress(&ui_tx, &runtime, "Syncing tasks...");
                             spawn_tasks_sync(app);
                         }
                         _ if id == ID_SETTINGS => {
@@ -14649,12 +14672,43 @@ fn choose_which_copy_to_keep(
     }
 }
 
+/// The answer to something that happened, shown and said at Normal.
+///
+/// Not for a step on the way: since 2026-09-17 (#38) a line saying what a
+/// fetch is doing goes through [`send_progress`], which is spoken only when
+/// every step was asked for. A step sent through this is spoken under every
+/// choice and replaces the answer to a key where it stands, and
+/// `tests/progress_is_shown_and_results_are_said.rs` reads every call of
+/// this for the openings a step has.
 pub(crate) fn send_status(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
     let tx = tx.clone();
     let msg = msg.to_string();
     rt.spawn(async move {
         let _ = tx.send(UIUpdate::StatusUpdated(msg)).await;
     });
+}
+
+/// A step on the way, shown always and spoken only under Say every step.
+pub(crate) fn send_progress(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, msg: &str) {
+    let tx = tx.clone();
+    let msg = msg.to_string();
+    rt.spawn(async move {
+        let _ = tx.send(UIUpdate::Progress(msg)).await;
+    });
+}
+
+/// A sync's sentence as the detail of its finishing event, or nothing when
+/// results are not spoken under the level chosen while fetching.
+///
+/// The event itself still fires either way: the tone and the word "Sync
+/// finished" follow the person's row for that event, and only the counts
+/// follow the level, so Errors only hears a sync end and not what it did.
+fn the_counts_if_results_are_spoken<'a>(a11y: &Accessibility, said: &'a str) -> &'a str {
+    if a11y.how_much_to_say().is_spoken(Kind::Result) {
+        said
+    } else {
+        ""
+    }
 }
 
 /// The answer to a key somebody just pressed, shown and said.
@@ -16863,6 +16917,13 @@ fn handle_settings(
                     &new_config.feedback_channels,
                 ),
             );
+            // The same for how much is said while things are fetched: the
+            // next check after OK speaks as much as was just chosen.
+            a11y.set_how_much_to_say(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::from_stored(
+                    &new_config.announce_while_fetching,
+                ),
+            );
             // Applied the same way and for the same reason: a scheme
             // changed in Settings and never reaching the running earcon
             // player until a restart is a setting that appears not to work.
@@ -17550,10 +17611,60 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // bottom of a window, which is not somewhere anybody navigating by
             // ear goes, so everything written there was written to nobody.
             //
-            // Low, and under one topic, because these arrive steadily while a
-            // mailbox syncs: the queue coalesces same-topic announcements, so
-            // the most recent one is heard rather than all of them.
-            let _ = a11y.announce_topic(status, Priority::Low, "status");
+            // Normal since 2026-09-17 (#38). What rides this channel now is
+            // the answer to something that happened, Settings saved, Draft
+            // saved, Saved to, Refreshed, a label put on or taken off; the
+            // steady run of a sync goes out as Progress and is spoken only
+            // under Say every step. At Low these answers queued behind every
+            // line a syncing mailbox said and were replaced on this topic
+            // before anybody heard them, which is why the tester never heard
+            // Settings saved. Still one topic, so a burst of answers is heard
+            // as the newest rather than all of them.
+            let _ = a11y.announce_topic(status, Priority::Normal, "status");
+        }
+        UIUpdate::Progress(said) => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(said, 0);
+            // A step on the way: shown always, spoken only when every step
+            // was asked for on the Feedback tab (#38). Low and under one
+            // topic, because these arrive steadily while a mailbox syncs and
+            // the queue keeps only the newest of a topic. Not registered as
+            // quiet, because under Say every step it is not.
+            if a11y.how_much_to_say().is_spoken(Kind::Progress) {
+                let _ = a11y.announce_topic(said, Priority::Low, "progress");
+            }
+        }
+        UIUpdate::WhatArrived { what } => {
+            {
+                let mut s = lock_state(state);
+                s.status_message = what.clone();
+            }
+            frame.set_status_text(what, 0);
+            // The new-mail sound and its word follow their own row on the
+            // Feedback tab whatever level was chosen: that row is the
+            // person's answer for this event. Signalled here, which a check
+            // reaches only when it found mail, and no longer when the watch
+            // wakes, so the sound means mail arrived. No detail: the counts
+            // are the sentence below, and the event's own word is enough.
+            let _ = a11y.signal(FeedbackEvent::NewMail, "");
+            // Once per check, with the counts, at Normal on its own topic so
+            // a step arriving behind it cannot replace it; silent only under
+            // Errors only.
+            if a11y.how_much_to_say().is_spoken(Kind::Result) {
+                let _ = a11y.announce_topic(what, Priority::Normal, "arrived");
+            }
+        }
+        UIUpdate::ModuleSyncFinished(said) => {
+            // Through the event the contacts and calendar completions use,
+            // so the tone and the word follow the person's row for it and
+            // the counts follow the level: the sentence is the detail unless
+            // nothing but errors was asked for. The status bar shows it
+            // through the event's visual channel.
+            let detail = the_counts_if_results_are_spoken(a11y, said);
+            let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
         }
         UIUpdate::WhatCouldBeFetched(count) => {
             match the_offer_to_fetch(*count) {
@@ -17892,8 +18003,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Signalled rather than shown and spoken by hand, so somebody who
             // wants a tone for a finished sync gets a tone and the status bar
             // still gets the sentence through the visual channel. The routing
-            // is a setting, not a decision made here.
-            let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);
+            // is a setting, not a decision made here; so is whether the
+            // counts are said, which the level chosen while fetching decides.
+            let detail = the_counts_if_results_are_spoken(a11y, &msg);
+            let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
             for err in &result.errors {
                 tracing::warn!("Contacts sync error: {}", err);
             }
@@ -17975,7 +18088,8 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             );
             // Signalled rather than shown and spoken by hand, matching how
             // the contacts sync's own completion is routed just above.
-            let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);
+            let detail = the_counts_if_results_are_spoken(a11y, &msg);
+            let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
             for err in errors {
                 tracing::warn!("Calendar sync error: {}", err);
             }
@@ -18255,14 +18369,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             spawn_mail_watch(AppHandles { state, tx, rt });
         }
         UIUpdate::MailboxChanged(folder) => {
-            // Signalled rather than spoken, so somebody who wants a tone for
-            // new mail gets a tone and somebody who wants the words gets the
-            // words. The routing is a setting, not a decision made here.
+            // Nothing is signalled here since 2026-09-17 (#38). The new-mail
+            // event used to fire from this arm, which is reached when the
+            // watch wakes: before the folder is read, whether or not anything
+            // arrives, and never for a check started by F9. The sound the
+            // tester takes to mean "mail arrived" meant "the server said
+            // something". It fires from the WhatArrived arm now, which a
+            // check reaches only when it found mail, whoever started it.
             //
-            // No detail: the event's own words are the whole fact. The folder
-            // that changed is a server path, so saying which one would read out
-            // something like "[Gmail]/All Mail".
-            let _ = a11y.signal(FeedbackEvent::NewMail, "");
             // Only the folder that changed. Re-reading the whole account
             // because one message arrived is work nobody asked for.
             spawn_mail_sync(
@@ -18283,20 +18397,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // holds everything the folder holds now, so the only bound left
             // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
             reread_folder_if_open(state, message_cache, *folder_id, tx);
-        }
-        UIUpdate::WholeFolderProgress(said) => {
-            frame.set_status_text(said, 0);
-            // Its own topic rather than the one every steady sync line shares,
-            // and the constant comes from the loop so the words and the topic
-            // cannot come apart. Low, because this is progress: it arrives
-            // every few seconds for as long as the request runs, and the queue
-            // keeping only the newest of a topic is what makes that a handful
-            // of sentences rather than one per chunk.
-            let _ = a11y.announce_topic(
-                said,
-                Priority::Low,
-                crate::application::asking_for_a_whole_folder::THE_PROGRESS_TOPIC,
-            );
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -19766,7 +19866,8 @@ fn check_pop_mail(
     say(UIUpdate::ConnectionStatusChanged(
         ConnectionStatus::Connecting,
     ));
-    say(UIUpdate::StatusUpdated(format!(
+    // A step, as the IMAP check's lines are (#38).
+    say(UIUpdate::Progress(format!(
         "Connecting to {}...",
         account.pop_server
     )));
@@ -19848,9 +19949,15 @@ fn check_pop_mail(
             // mail on a POP account too, and only the other copy says what
             // they did, so a rule that could not file anything was carried out
             // in silence.
-            say(UIUpdate::StatusUpdated(
-                crate::application::pop_sync::what_the_pop_check_did(&result),
-            ));
+            //
+            // A result when something came down, so the new-mail sound and
+            // the sentence follow the level and the row; a step otherwise.
+            let what = crate::application::pop_sync::what_the_pop_check_did(&result);
+            if result.fetched > 0 {
+                say(UIUpdate::WhatArrived { what });
+            } else {
+                say(UIUpdate::Progress(what));
+            }
             // The links in each new message, against Google's lists, if the
             // reader turned that on and a key exists. Any of those missing
             // makes this nothing at all. Mail arriving over IMAP has had this
@@ -21289,11 +21396,12 @@ fn start_the_missing_text_fetch(app: AppHandles<'_>) {
             None => &never_signed_in,
         };
 
-        // Every line the run says goes to the status bar, which announces it.
-        // The run decides how often, and it is bounded: at most nine lines
-        // between the count it starts with and the report it ends with,
-        // however much mail there is.
-        let progress = |line: &str| say(UIUpdate::StatusUpdated(line.to_string()));
+        // Every line the run says on the way is a step: shown on the status
+        // bar, spoken only under Say every step (#38). The run decides how
+        // often, and it is bounded: at most nine lines between the count it
+        // starts with and the report it ends with, however much mail there
+        // is. The report itself goes out below as the answer to the command.
+        let progress = |line: &str| say(UIUpdate::Progress(line.to_string()));
         let outcome = handle.block_on(
             crate::application::mail_sync::fetch_the_missing_message_text(
                 controller,
@@ -21663,9 +21771,13 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
                 },
             )
         };
+        // Steps, like every other fetch's lines since 2026-09-17 (#38): shown
+        // always, spoken only under Say every step. The loop's closing
+        // report goes out the same way, because the loop hands over one kind
+        // of line, and this command retires with 10-05.
         crate::application::asking_for_a_whole_folder::until_the_whole_folder_is_here(
             &mut ask_for_another_chunk,
-            &mut |line| say(UIUpdate::WholeFolderProgress(line.to_string())),
+            &mut |line| say(UIUpdate::Progress(line.to_string())),
         );
     });
 }
@@ -21751,7 +21863,10 @@ fn spawn_mail_sync(
         say(UIUpdate::ConnectionStatusChanged(
             ConnectionStatus::Connecting,
         ));
-        say(UIUpdate::StatusUpdated(format!(
+        // Every line this check says on the way is a step, shown and spoken
+        // only under Say every step; what arrived goes out once at the end
+        // (#38). The kind is decided here, where the line is made.
+        say(UIUpdate::Progress(format!(
             "Connecting to {}...",
             account.imap_server
         )));
@@ -21795,9 +21910,7 @@ fn spawn_mail_sync(
                     return;
                 }
             };
-        say(UIUpdate::StatusUpdated(how_many_on_the_server(
-            stored.len(),
-        )));
+        say(UIUpdate::Progress(how_many_on_the_server(stored.len())));
 
         // D-27. Which of this account's stored folders this answer left out.
         // Read back rather than taken from `stored`, because `stored` is what
@@ -21868,6 +21981,9 @@ fn spawn_mail_sync(
                 .filter(|f| only.as_deref().is_none_or(|path| f.path == path))
                 .collect();
         let mut fetched = 0usize;
+        // Each folder with what it received, for the one result line at the
+        // end; the folders with nothing are dropped where the words are made.
+        let mut arrived: Vec<(String, usize)> = Vec::new();
         let mut problems: Vec<String> = Vec::new();
 
         // The account's rules, read once for the whole sync rather than once
@@ -21896,10 +22012,7 @@ fn spawn_mail_sync(
             let Some((_, folder_id)) = stored.iter().find(|(f, _)| f.path == folder.path) else {
                 continue;
             };
-            say(UIUpdate::StatusUpdated(format!(
-                "Checking {}...",
-                folder.name
-            )));
+            say(UIUpdate::Progress(format!("Checking {}...", folder.name)));
             match handle.block_on(crate::application::mail_sync::sync_folder(
                 controller.as_ref(),
                 &cache,
@@ -21911,6 +22024,7 @@ fn spawn_mail_sync(
             )) {
                 Ok(result) => {
                     fetched += result.fetched;
+                    arrived.push((folder.name.clone(), result.fetched));
                     // The words are worked out where they can be tested. Built
                     // here, they were inside this closure with its own cache on
                     // a background thread, which nothing could reach.
@@ -21925,7 +22039,9 @@ fn spawn_mail_sync(
                     {
                         say(UIUpdate::FolderWasRenumbered(said));
                     }
-                    say(UIUpdate::StatusUpdated(
+                    // A step whether or not anything arrived: the counts go
+                    // out once, after the loop, rather than per folder.
+                    say(UIUpdate::Progress(
                         crate::application::mail_sync::what_the_folder_sync_did(&result),
                     ));
                     if let Some(update) = folder_arrival_update(*folder_id, result.fetched) {
@@ -21951,11 +22067,16 @@ fn spawn_mail_sync(
                 problems.join("; ")
             )));
         }
-        say(UIUpdate::StatusUpdated(format!(
+        say(UIUpdate::Progress(format!(
             "Mail check finished. {} new {}.",
             fetched,
             if fetched == 1 { "message" } else { "messages" }
         )));
+        // Once, after the loop, and only when something arrived: the arm
+        // this reaches is where the new-mail sound is signalled from.
+        if let Some(what) = crate::application::mail_sync::what_arrived(&arrived) {
+            say(UIUpdate::WhatArrived { what });
+        }
         say(UIUpdate::ConnectionStatusChanged(
             ConnectionStatus::Disconnected,
         ));
@@ -22175,8 +22296,13 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         for problem in &total.errors {
             tracing::warn!("Task sync: {}", problem);
         }
-        let _ = tx.try_send(UIUpdate::StatusUpdated(format!(
-            "Tasks synced: {}",
+        // Through the finishing event, as the contacts and calendar syncs
+        // are, so the tone and the word follow the person's row for it and
+        // the counts follow the level chosen while fetching (#38). Until
+        // 2026-09-17 this went out on the status channel, which no earcon
+        // reached and which every choice would have spoken.
+        let _ = tx.try_send(UIUpdate::ModuleSyncFinished(format!(
+            "Tasks: {}",
             total.summary()
         )));
         // The panel is showing what was there before this ran.
@@ -22242,15 +22368,20 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
             }
         };
 
-        let status = match said {
-            WhatTheNotesSyncDid::TheyStayHere => {
+        // Two of the three are the answer to the key somebody pressed and
+        // ride the answer channel, spoken whatever level was chosen; a sync
+        // that ran finishes through the finishing event, as the tasks sync
+        // does, so the tone and the word follow the person's row for it and
+        // the counts follow the level chosen while fetching (#38).
+        let update = match said {
+            WhatTheNotesSyncDid::TheyStayHere => UIUpdate::StatusUpdated(
                 "This account's notes are kept on this computer, so there is \
                  nothing to sync"
-                    .to_string()
-            }
-            WhatTheNotesSyncDid::NobodyIsSignedIn => {
-                "Nobody is signed in to the server this account's notes go to".to_string()
-            }
+                    .to_string(),
+            ),
+            WhatTheNotesSyncDid::NobodyIsSignedIn => UIUpdate::StatusUpdated(
+                "Nobody is signed in to the server this account's notes go to".to_string(),
+            ),
             WhatTheNotesSyncDid::ItRan(result) => {
                 // The messages go to the log and the count goes on screen,
                 // because the status line has one line and a failure per note
@@ -22259,10 +22390,10 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
                 for problem in &result.errors {
                     tracing::warn!("Notes sync: {}", problem);
                 }
-                format!("Notes synced: {}", result.summary())
+                UIUpdate::ModuleSyncFinished(format!("Notes: {}", result.summary()))
             }
         };
-        let _ = tx.try_send(UIUpdate::StatusUpdated(status));
+        let _ = tx.try_send(update);
         // The panel is showing what was there before this ran.
         let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Notes));
     });
@@ -26221,16 +26352,25 @@ mod what_the_status_line_says {
         // anyway, which is what a rule written in a comment and nothing else
         // gets you.
         //
-        // It matters twice over. A status announcement is spoken at Low, so it
-        // queues behind everything a syncing mailbox is saying. And it carries
-        // the topic "status", where a newer announcement replaces the older
-        // one where it stands, so the sentence saying why nothing happened is
-        // dropped outright by whatever the next sync writes there.
+        // It matters because of the topic. A status announcement carries the
+        // topic "status", where a newer announcement replaces the older one
+        // where it stands, so the sentence saying why nothing happened is
+        // dropped outright by whatever the next answer writes there. Until
+        // 2026-09-17 it mattered twice over: the channel was spoken at Low
+        // and carried every line of a syncing mailbox as well, so a refusal
+        // queued behind all of them. Progress goes out as its own kind now
+        // and the channel is spoken at Normal, and a refusal still has a
+        // topic of its own to be heard on.
         //
         // What this cannot see: whether either sentence is true, whether the
         // call is reached, or a refusal worded so it does not open any of
         // these ways. It reads the opening of a sentence, which is as much as
         // reading source gives.
+        //
+        // This used to allow two progress openings that happened to read
+        // like refusals, "No new mail" and "Nothing to send". Neither rides
+        // this channel any more, and an allowance for a line nobody sends is
+        // a hole waiting for a line somebody does, so there is none.
         const REFUSALS: [&str; 6] = [
             "\"No ",
             "\"Nothing ",
@@ -26239,9 +26379,6 @@ mod what_the_status_line_says {
             "\"That ",
             "\"Could not ",
         ];
-        // Progress that happens to open the same way. Each is the application
-        // saying something about itself, not the answer to a keystroke.
-        const PROGRESS: [&str; 2] = ["\"No new mail", "\"Nothing to send"];
 
         let mut found = Vec::new();
         let mut read = 0;
@@ -26255,9 +26392,6 @@ mod what_the_status_line_says {
                     continue;
                 }
                 read += 1;
-                if PROGRESS.iter().any(|allowed| line.contains(allowed)) {
-                    continue;
-                }
                 if REFUSALS.iter().any(|refusal| line.contains(refusal)) {
                     found.push(format!("{path}:{}", at + 1));
                 }
@@ -26270,9 +26404,9 @@ mod what_the_status_line_says {
         );
         assert!(
             found.is_empty(),
-            "these say why a command did nothing on the status channel, which is \
-             spoken at Low and where a newer status line replaces it before it is \
-             heard. send_refusal is the one for this:\n  {}",
+            "these say why a command did nothing on the status channel, where a \
+             newer answer replaces it before it is heard. send_refusal is the one \
+             for this:\n  {}",
             found.join("\n  ")
         );
     }

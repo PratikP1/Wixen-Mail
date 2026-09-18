@@ -29,6 +29,7 @@
 //! `.planning/WINDOWS.md`.
 
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::what_is_said_while_fetching::HowMuchToSay;
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::accessibility::feedback::{Event, FeedbackSettings, Switch};
@@ -77,6 +78,7 @@ fn test_every_event_is_reachable_and_keeps_what_it_was_given() {
             a_tick_survives_moving_away_and_coming_back(&widgets, &mut wrong);
             the_button_puts_one_event_back_to_the_default(&widgets, &mut wrong);
             pressing_ok_saves_what_the_panel_holds(&widgets, &config, &mut wrong);
+            the_level_chosen_while_fetching_is_what_ok_writes_back(&widgets, &config, &mut wrong);
 
             widgets.dialog.destroy();
             drop(wrong);
@@ -436,6 +438,61 @@ fn pressing_ok_saves_what_the_panel_holds(
                     "still switched on, where the one control standing for \
                      {spoken_or_brailled:?} was switched off, so saving wrote \
                      only some of the channels it answers for"
+                ),
+            ));
+        }
+    }
+}
+
+/// How much is said while things are fetched is offered as three sentences,
+/// what arrived first, and the one chosen is what OK writes back (#38).
+///
+/// The two settings guards in `src/data/config.rs` hold that the field's
+/// name appears in the settings screen's shipping half and in a file that
+/// acts on it; neither can tell the line that builds the control from the
+/// line that reads it back, so a `read_the_feedback_page` that stopped
+/// writing the field would leave both green. This chooses each level on the
+/// real control and reads the settings back the way OK does.
+fn the_level_chosen_while_fetching_is_what_ok_writes_back(
+    widgets: &wx_settings::SettingsWidgets,
+    opened_with: &AppConfig,
+    wrong: &mut Wrong,
+) {
+    let choice = &widgets.feedback().announce_while_fetching;
+    let offered: Vec<String> = (0..choice.get_count())
+        .map(|at| choice.get_string(at).unwrap_or_default())
+        .collect();
+    let expected: Vec<&str> = HowMuchToSay::ALL
+        .iter()
+        .map(|level| level.label())
+        .collect();
+    if offered != expected {
+        wrong.push((
+            "the choice of how much is said while fetching".to_string(),
+            format!("offers {offered:?} where the levels are {expected:?}"),
+        ));
+        return;
+    }
+    if choice.get_selection() != Some(0) {
+        wrong.push((
+            "the choice of how much is said while fetching, over the defaults".to_string(),
+            format!(
+                "opens on {:?} where the default is the first entry, {:?}",
+                choice.get_selection(),
+                HowMuchToSay::default().label()
+            ),
+        ));
+    }
+    for (at, level) in HowMuchToSay::ALL.iter().enumerate() {
+        choice.set_selection(at as u32);
+        let saved = wx_settings::read_settings(widgets, opened_with);
+        if saved.announce_while_fetching != level.as_stored() {
+            wrong.push((
+                format!("what OK writes back with {:?} chosen", level.label()),
+                format!(
+                    "{:?}, where the stored form of that choice is {:?}",
+                    saved.announce_while_fetching,
+                    level.as_stored()
                 ),
             ));
         }

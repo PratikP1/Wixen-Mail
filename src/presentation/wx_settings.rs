@@ -2768,6 +2768,10 @@ pub struct FeedbackTabControls {
     pub event: Choice,
     pub per_event: PerEventControls,
     pub sound_scheme: Choice,
+    /// How much is said while mail and the other modules are fetched (#38).
+    /// Public so the reading in `tests/every_event_has_a_control.rs` can
+    /// choose a level and read it back through `read_settings`.
+    pub announce_while_fetching: Choice,
 }
 
 impl FeedbackTabControls {
@@ -2982,6 +2986,33 @@ fn build_feedback_tab(
     );
     sizer.add_sizer(&per_event_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
+    // While fetching (#38). Last on the tab, after the per-event choices,
+    // because it is about a run of events rather than one: how much of what
+    // a check says on the way is heard. Three sentences rather than a
+    // number, because a screen reader user meets the words and picks one.
+    // The default is what arrived, which is the tester's shape; the sentence
+    // under it says what the choice leaves alone, because three answers
+    // cannot say on their own what stays the same under all of them.
+    use crate::application::what_is_said_while_fetching::{
+        HowMuchToSay, WHAT_THE_CHOICE_LEAVES_ALONE, WHILE_FETCHING_LABEL, offered_index,
+    };
+    let fetching_sec = section(panel, "While fetching");
+    let level_labels: Vec<&str> = HowMuchToSay::ALL.iter().map(|c| c.label()).collect();
+    let announce_while_fetching = labelled_choice(
+        panel,
+        &fetching_sec,
+        WHILE_FETCHING_LABEL,
+        WHILE_FETCHING_LABEL.replace('&', "").trim_end_matches(':'),
+        &level_labels,
+        offered_index(&config.announce_while_fetching) as u32,
+    );
+    let leaves_alone = StaticText::builder(panel)
+        .with_label(WHAT_THE_CHOICE_LEAVES_ALONE)
+        .build();
+    set_accessible_name(&leaves_alone, WHAT_THE_CHOICE_LEAVES_ALONE);
+    fetching_sec.add(&leaves_alone, 0, SizerFlag::Expand | SizerFlag::All, 4);
+    sizer.add_sizer(&fetching_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
     let per_event = PerEventControls {
         ticks,
         what_really_happens,
@@ -3013,6 +3044,7 @@ fn build_feedback_tab(
         event: event_choice,
         per_event,
         sound_scheme: scheme_choice,
+        announce_while_fetching,
     }
 }
 
@@ -3196,35 +3228,8 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     // below leaves them as they are. Nothing here builds a page: OK is not
     // the moment to pay for six pages nobody looked at.
 
-    // Feedback. The tab's working settings hold every per-event answer it has
-    // been given, including for events the picker is not showing, so what is on
-    // screen is remembered first and then the whole thing is written.
-    //
-    // This used to rebuild from `base.feedback_channels` and set only the
-    // global channels, with a comment saying the per-event overrides in the
-    // stored value were preserved because "this tab only decides which channels
-    // are on at all". That stopped being true the moment the tab could create
-    // them.
     if let Some(page) = w.later.feedback.if_built() {
-        page.per_event.remember_what_is_on_screen();
-        {
-            let mut feedback = page.per_event.working.borrow_mut();
-            for (switch, cb) in &page.global {
-                for channel in switch.channels() {
-                    feedback.set_channel_enabled(*channel, cb.get_value());
-                }
-            }
-            cfg.feedback_channels = feedback.to_stored();
-        }
-
-        // The scheme picker's own order is whatever discovery produced when
-        // the page was built; reading it back the same way is what makes the
-        // selection index mean the same scheme it meant a moment ago.
-        let schemes = discovered_schemes();
-        cfg.sound_scheme_id = schemes
-            .get(sel(&page.sound_scheme) as usize)
-            .map(|s| s.id.clone())
-            .unwrap_or_default();
+        read_the_feedback_page(page, &mut cfg);
     }
 
     if let Some(page) = w.later.permissions.if_built() {
@@ -3292,6 +3297,47 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     }
 
     cfg
+}
+
+/// Feedback: which channels each event reaches, which sound scheme plays,
+/// and how much is said while things are fetched.
+///
+/// The tab's working settings hold every per-event answer it has been
+/// given, including for events the picker is not showing, so what is on
+/// screen is remembered first and then the whole thing is written.
+///
+/// This used to rebuild from the stored `feedback_channels` and set only the
+/// global channels, with a comment saying the per-event overrides in the
+/// stored value were preserved because "this tab only decides which channels
+/// are on at all". That stopped being true the moment the tab could create
+/// them.
+fn read_the_feedback_page(w: &FeedbackTabControls, cfg: &mut AppConfig) {
+    w.per_event.remember_what_is_on_screen();
+    {
+        let mut feedback = w.per_event.working.borrow_mut();
+        for (switch, cb) in &w.global {
+            for channel in switch.channels() {
+                feedback.set_channel_enabled(*channel, cb.get_value());
+            }
+        }
+        cfg.feedback_channels = feedback.to_stored();
+    }
+
+    // The scheme picker's own order is whatever discovery produced when
+    // the page was built; reading it back the same way is what makes the
+    // selection index mean the same scheme it meant a moment ago.
+    let schemes = discovered_schemes();
+    cfg.sound_scheme_id = schemes
+        .get(sel(&w.sound_scheme) as usize)
+        .map(|s| s.id.clone())
+        .unwrap_or_default();
+
+    cfg.announce_while_fetching =
+        crate::application::what_is_said_while_fetching::HowMuchToSay::ALL
+            .get(sel(&w.announce_while_fetching) as usize)
+            .copied()
+            .unwrap_or_default()
+            .as_stored();
 }
 
 /// Permissions: what may be done at a server, read back as three answers,

@@ -243,23 +243,36 @@ fn test_the_reading_would_see_a_request_that_moved_only_one_bound() {
 }
 
 #[test]
-fn test_the_progress_is_not_announced_where_the_next_sync_line_replaces_it() {
-    // `"status"` carries every steady sync line and the queue keeps only the
-    // newest of a topic, so a fetch running for minutes announced there would
-    // silence all of them for as long as it ran. The topic is a constant beside
-    // the loop, so this asks that the window uses the constant rather than
-    // writing a topic of its own.
-    let arm = the_arm_for(&the_window_itself(), "WholeFolderProgress");
+fn test_the_progress_is_a_step_which_is_shown_and_spoken_only_under_say_every_step() {
+    // Until 2026-09-17 the request's lines went out on a topic of their own,
+    // `THE_PROGRESS_TOPIC`, so that `"status"`, which carried every steady
+    // sync line and kept only the newest of a topic, could not swallow them.
+    // Since #38 every step of every fetch goes out as `UIUpdate::Progress`,
+    // whose arm shows the line and speaks it only when every step was asked
+    // for; the request's lines are steps like any other, and the topic
+    // constant has no consumer until 10-05 retires the request. This asks
+    // that the request sends steps and nothing on the answer channel, and
+    // that the arm they reach asks the level before speaking.
+    let window = the_window_itself();
+    let handler = the_item_starting_with(&window, THE_HANDLER);
 
     assert!(
-        arm.contains("THE_PROGRESS_TOPIC"),
-        "the whole-folder progress does not announce on the topic the loop \
-         names, so the two can come apart: {arm}"
+        handler.contains("UIUpdate::Progress("),
+        "the whole-folder request no longer sends its lines as steps: {handler}"
+    );
+    assert!(
+        !handler.contains("UIUpdate::StatusUpdated(") && !handler.contains("WholeFolderProgress"),
+        "the whole-folder request sends a line on the answer channel or on a channel of \
+         its own, where Say what arrived cannot quieten it: {handler}"
+    );
+    let arm = the_arm_for(&window, "Progress(");
+    assert!(
+        arm.contains("is_spoken(Kind::Progress)"),
+        "the arm a step reaches does not ask the level, so every step is spoken: {arm}"
     );
     assert!(
         !arm.contains("\"status\""),
-        "the whole-folder progress is announced where the next sync line \
-         replaces it: {arm}"
+        "a step is announced where the next answer replaces it: {arm}"
     );
 }
 
@@ -268,16 +281,16 @@ fn test_the_arm_reading_stops_at_the_next_arm() {
     // Proving that reading too. An arm read to the end of the match holds every
     // arm below it, and one of those announces on `"status"`, so the assertion
     // above would fail against correct code and pass against nothing.
-    let two_arms = "        UIUpdate::WholeFolderProgress(said) => {\n\
-                    \x20           announce(said, THE_PROGRESS_TOPIC);\n\
+    let two_arms = "        UIUpdate::Progress(said) => {\n\
+                    \x20           if level.is_spoken(Kind::Progress) { announce(said, \"progress\"); }\n\
                     \x20       }\n\
                     \x20       UIUpdate::StatusUpdated(status) => {\n\
                     \x20           announce(status, \"status\");\n\
                     \x20       }\n";
-    let arm = the_arm_for(two_arms, "WholeFolderProgress");
+    let arm = the_arm_for(two_arms, "Progress(");
 
     assert!(
-        arm.contains("THE_PROGRESS_TOPIC"),
+        arm.contains("is_spoken(Kind::Progress)"),
         "the arm was not read: {arm}"
     );
     assert!(

@@ -452,6 +452,17 @@ pub struct AppConfig {
     /// office swap a sentence of speech for a short tone.
     #[serde(default)]
     pub feedback_channels: String,
+    /// How much is said while mail and the other modules are fetched:
+    /// "what-arrived", "every-step" or "errors-only".
+    ///
+    /// Offered on the Feedback tab under While fetching, read by the arms
+    /// that speak a fetch's lines through
+    /// `what_is_said_while_fetching::HowMuchToSay`. The default is what
+    /// arrived (#38), and an absent key answers the same: every step would
+    /// put everybody upgrading back to the verbosity the issue was filed
+    /// about, and errors only would silence arrivals for everybody.
+    #[serde(default = "default_announce_while_fetching")]
+    pub announce_while_fetching: String,
     /// Which sound scheme plays when the earcon channel is one an event
     /// reaches. Empty means the built-in "Generated tones", the same
     /// scheme every installation starts on; anything else is a scheme's own
@@ -556,6 +567,10 @@ fn default_allowed() -> crate::application::allowed::Allowed {
 
 fn default_message_text_kept() -> String {
     crate::application::keeping_message_text::TextKept::default().as_stored()
+}
+
+fn default_announce_while_fetching() -> String {
+    crate::application::what_is_said_while_fetching::HowMuchToSay::default().as_stored()
 }
 
 fn default_true() -> bool {
@@ -683,6 +698,7 @@ impl Default for AppConfig {
             which_updates: crate::common::version::WhichUpdates::default(),
             message_columns: String::new(),
             feedback_channels: String::new(),
+            announce_while_fetching: default_announce_while_fetching(),
             sound_scheme_id: String::new(),
             log_level: "info".to_string(),
             preview_before_send: true,
@@ -1661,6 +1677,7 @@ mod permission_tests {
             "undo_send_hold_seconds",
             "calendar_view",
             "message_text_kept",
+            "announce_while_fetching",
         ] {
             assert!(
                 fields.remove(gone).is_some(),
@@ -1708,6 +1725,18 @@ mod permission_tests {
                 &parsed.message_text_kept
             ),
             crate::application::keeping_message_text::TextKept::All
+        );
+        assert_eq!(
+            parsed.announce_while_fetching, "what-arrived",
+            "an absent key answering every step would put everybody upgrading back \
+             to the verbosity #38 was filed about, and errors only would silence \
+             arrivals for everybody"
+        );
+        assert_eq!(
+            crate::application::what_is_said_while_fetching::HowMuchToSay::from_stored(
+                &parsed.announce_while_fetching
+            ),
+            crate::application::what_is_said_while_fetching::HowMuchToSay::WhatArrived
         );
 
         // These belong to the module that owns the setting. What matters here

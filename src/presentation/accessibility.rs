@@ -31,6 +31,12 @@ pub struct Accessibility {
     /// itself: that decides which channels an event reaches at all, this
     /// decides what the sound channel actually sounds like.
     scheme: std::sync::Mutex<sound_scheme::SoundScheme>,
+    /// How much is said while mail and the other modules are fetched. Kept
+    /// here beside the other routing choices, set at startup and on save,
+    /// because the arms that speak a fetch's lines ask this layer rather
+    /// than reading the settings file per line.
+    how_much_to_say:
+        std::sync::Mutex<crate::application::what_is_said_while_fetching::HowMuchToSay>,
     /// The most recent event's written form, for the status line to pick up.
     ///
     /// The visual channel has no API of its own here: the window owns the
@@ -51,6 +57,9 @@ impl Accessibility {
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
+            how_much_to_say: std::sync::Mutex::new(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::default(),
+            ),
             visual: std::sync::Mutex::new(None),
         })
     }
@@ -294,6 +303,24 @@ impl Accessibility {
         }
     }
 
+    /// Read how much is said while things are fetched.
+    pub fn how_much_to_say(&self) -> crate::application::what_is_said_while_fetching::HowMuchToSay {
+        self.how_much_to_say
+            .lock()
+            .map(|level| *level)
+            .unwrap_or_default()
+    }
+
+    /// Replace how much is said while things are fetched.
+    pub fn set_how_much_to_say(
+        &self,
+        level: crate::application::what_is_said_while_fetching::HowMuchToSay,
+    ) {
+        if let Ok(mut current) = self.how_much_to_say.lock() {
+            *current = level;
+        }
+    }
+
     /// Queue an announcement about the application and speak what is due now.
     ///
     /// The queue paces itself, so a burst leaves a remainder behind. The UI
@@ -447,6 +474,9 @@ impl Default for Accessibility {
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
+            how_much_to_say: std::sync::Mutex::new(
+                crate::application::what_is_said_while_fetching::HowMuchToSay::default(),
+            ),
             visual: std::sync::Mutex::new(None),
         })
     }
@@ -815,6 +845,23 @@ mod tests {
             feedback::FeedbackSettings::default(),
             "earcons are off by default, so a settings value with them on must not read back as the default"
         );
+    }
+
+    #[test]
+    fn test_how_much_to_say_reports_what_was_just_set_rather_than_the_default() {
+        // The same shape as the feedback settings test above, for the same
+        // reason: a getter that ignored its mutex and handed back the
+        // default would pass every reading taken before anything was set.
+        use crate::application::what_is_said_while_fetching::HowMuchToSay;
+        let a11y = Accessibility::new().expect("accessibility");
+        let not_the_default = HowMuchToSay::ALL
+            .into_iter()
+            .find(|level| *level != HowMuchToSay::default())
+            .expect("a level other than the default");
+        a11y.set_how_much_to_say(not_the_default);
+
+        assert_eq!(a11y.how_much_to_say(), not_the_default);
+        assert_ne!(a11y.how_much_to_say(), HowMuchToSay::default());
     }
 
     #[test]
