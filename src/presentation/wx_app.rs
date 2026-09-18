@@ -17726,15 +17726,39 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let _ = a11y.announce(said, Priority::High);
         }
         UIUpdate::MessagesLoaded(messages) => {
-            {
+            // The cursor's message and its row, remembered before the rows
+            // are replaced, so it can be found again by identity below.
+            let (old_index, cursor) = {
                 let mut s = lock_state(state);
+                let old_index = s.selected_message_index;
+                let cursor = (!s.showing.showing_conversations())
+                    .then(|| old_index.and_then(|at| s.messages.get(at)))
+                    .flatten()
+                    .map(|message| message.message_id);
                 s.messages = messages.clone();
-            }
+                (old_index, cursor)
+            };
             // Virtual mode: tell the control how many rows exist and let it
             // ask for the ones it paints. Inserting them would be a quarter of
             // a million native calls to render thirty visible lines.
             tracing::info!("Message list now holds {} rows", messages.len());
             tell_the_list_how_many(state, msg_list);
+            // The cursor follows its message (#76). Since 10-06 every delete
+            // on an IMAP account is followed by the watch's re-read of the
+            // folder, and the row under the surviving index may be a
+            // different message. Found by identity, and the control touched
+            // only when the row changed: 10-02's rule that a load does not
+            // re-select still holds for a load that left the cursor's message
+            // where it was, which is why a load that changes nothing under
+            // the cursor moves nothing. Under conversation view the rows are
+            // not these messages, and the cursor above was read as nothing.
+            if !lock_state(state).showing.showing_conversations() {
+                let ids: Vec<i64> = messages.iter().map(|message| message.message_id).collect();
+                if let Some(row) = keep_the_cursor_on_its_message(msg_list, old_index, cursor, &ids)
+                {
+                    lock_state(state).selected_message_index = Some(row);
+                }
+            }
             // Once per process, the first time rows reach the list: this is
             // the moment PERF-02's "usable" means, and the harness in
             // `tests/the_numbers_the_targets_ask_for.rs` reads this line. The
@@ -17747,7 +17771,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // setting asks for it. Only the viewport moves: the selection is
             // deliberately not touched, because re-selecting would move focus
             // and take the screen reader's cursor with it, which is the fault
-            // the folder tree already had to be fixed for.
+            // the folder tree already had to be fixed for. Narrowed on
+            // 2026-09-18 (#76): the one case that does move the selection is
+            // above, a load in which the cursor's own message changed row, and
+            // every other load still touches nothing.
             if crate::application::scrolling::Following::from_setting(
                 crate::data::config::ConfigManager::load_stored()
                     .map(|stored| stored.app_config().keep_selected_message_in_view)
@@ -19788,28 +19815,51 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
 /// things by it: a message the server has agreed to delete, and a message that
 /// has moved to another folder on this computer, which is still there and must
 /// not be marked as deleted where it landed.
+///
+/// Where the cursor lands afterwards is `landing_after_a_removal::where_to_land`,
+/// and since 2026-09-18 (#76) the rule reaches the control and not only the
+/// record of the selection here: the next message, or the previous one when
+/// the last was deleted, is what the screen reader reads next. Until then the
+/// index was written here and the control was left with whatever the count
+/// change left it, which after the last row is no row at all.
 fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl, cache_id: i64) {
     let removed = {
         let mut s = lock_state(state);
-        match s.messages.iter().position(|m| m.message_id == cache_id) {
-            Some(idx) => {
-                s.messages.remove(idx);
-                // Keep focus somewhere real. Landing on nothing after a delete
-                // leaves a reader with no idea where they are.
-                s.selected_message_index = if s.messages.is_empty() {
-                    None
-                } else {
-                    Some(idx.min(s.messages.len() - 1))
-                };
-                Some(s.messages.len())
-            }
-            None => None,
-        }
+        let Some(idx) = s.messages.iter().position(|m| m.message_id == cache_id) else {
+            return;
+        };
+        s.messages.remove(idx);
+        (idx, s.messages.len(), s.showing.showing_conversations())
     };
-    if removed.is_some() {
-        tell_the_list_how_many(state, msg_list);
-        msg_list.refresh(true, None);
+    let (idx, len_after, showing_conversations) = removed;
+    tell_the_list_how_many(state, msg_list);
+    msg_list.refresh(true, None);
+    // Under conversation view the rows on screen are conversations and the
+    // index is one of theirs, so a message's row is nowhere to land; which
+    // message a conversation row stands for is 11-08's. The record is left
+    // as it was there.
+    if showing_conversations {
+        return;
     }
+    let landed = land_the_cursor_after(msg_list, &[idx], len_after);
+    lock_state(state).selected_message_index = landed;
+}
+
+/// Put the message list's cursor on `row`: selected, focused, in view, and
+/// the focus event raised even when the control already held the row.
+///
+/// Cleared and set again on purpose. After a middle row leaves, the control
+/// keeps its focused index where it was, which is the next message already;
+/// setting a state the control already holds raises nothing, and a screen
+/// reader reads the landed row from the focus event and from nothing else.
+/// Re-selecting also runs the selection handler, so the preview shows the
+/// message the cursor landed on rather than the one that left. Measured on a
+/// built list in `tests/deleting_a_message_lands_on_the_next_one.rs`.
+fn put_the_cursor_on(list: &ListCtrl, row: usize) {
+    let both = ListItemState::Selected | ListItemState::Focused;
+    list.set_item_state(row as i64, ListItemState::None, both);
+    list.set_item_state(row as i64, both, both);
+    list.ensure_visible(row as i64);
 }
 
 /// Land the message list's cursor after `removed` rows have left it (#76).
@@ -19822,8 +19872,9 @@ pub fn land_the_cursor_after(
     removed: &[usize],
     len_after: usize,
 ) -> Option<usize> {
-    let _ = list;
-    landing_after_a_removal::where_to_land(removed, len_after)
+    let row = landing_after_a_removal::where_to_land(removed, len_after)?;
+    put_the_cursor_on(list, row);
+    Some(row)
 }
 
 /// Keep the cursor on the same message once the rows were replaced (#76).
@@ -19838,9 +19889,10 @@ pub fn keep_the_cursor_on_its_message(
     cursor: Option<i64>,
     ids_after: &[i64],
 ) -> Option<usize> {
-    let _ = list;
     let now = landing_after_a_removal::where_the_same_message_is(cursor, ids_after);
-    landing_after_a_removal::whether_to_move(old_index, now)
+    let row = landing_after_a_removal::whether_to_move(old_index, now)?;
+    put_the_cursor_on(list, row);
+    Some(row)
 }
 
 /// Tell the message list how many rows it has, from whichever view is on.

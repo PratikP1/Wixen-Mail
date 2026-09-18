@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 139 records have arrived since and have not been through it.
+# 141 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26149,4 +26149,56 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+]
+
+# The landing dropped from the control: the helper still answers the row
+# the rule chose, the record of the selection still moves, and the control
+# is left with whatever the count change left it, which is the tree before
+# this plan. On the built list the middle-row landing raises no focus event
+# and the last-row landing leaves the control holding nothing; the source
+# reading complains that the helper sets nothing on the control. The
+# companions read snippets and stay green.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a removal lands the cursor on the control, not only in the record of the selection"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """    let row = landing_after_a_removal::where_to_land(removed, len_after)?;
+    put_the_cursor_on(list, row);"""
+after = """    let row = landing_after_a_removal::where_to_land(removed, len_after)?;
+    let _ = list;"""
+red = [
+    "test_deleting_a_middle_row_lands_the_cursor_on_the_row_that_followed_it",
+    "test_deleting_the_last_row_lands_the_cursor_on_the_row_before_it",
+    "test_a_removal_lands_the_cursor_on_the_control_through_the_rule",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 12 },
+]
+
+# A re-read that puts the cursor on its message's row whatever row it was
+# on, which moves focus on every load and is what 10-02 refused. On the
+# built list the re-read that changed nothing raises a focus event and the
+# helper answers a row; the source reading complains that the helper does
+# not ask whether_to_move.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a re-read moves the cursor only when its message changed row, not on every load"
+file = "src/presentation/wx_app.rs"
+suite = "deleting_a_message_lands_on_the_next_one"
+before = """    let row = landing_after_a_removal::whether_to_move(old_index, now)?;"""
+after = """    let row = now?;
+    let _ = old_index;"""
+red = [
+    "test_a_re_read_that_left_the_cursors_message_where_it_was_raises_no_focus_event",
+    "test_a_re_read_keeps_the_cursor_on_its_message_and_moves_it_only_when_its_row_changed",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/deleting_a_message_lands_on_the_next_one.rs", tests = 12 },
 ]

@@ -144,6 +144,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **After a delete the cursor lands on the next message, or on the previous one when the
+  last was deleted, and stays on the same message when the folder is re-read.** The tester
+  on 2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` under NVDA (#76): "Deleting a message
+  puts the cursor at the top of the list. It should land on the next message, and on the
+  previous one when the deleted message was the last." The rule was already written, in the
+  program's own record of which row is selected; nothing put the list control's own cursor
+  on that row, and the control is what a screen reader follows. A built list showed what the
+  control does on its own: when a middle row goes it keeps the cursor where it was, which is
+  the next message already, and raises nothing a screen reader reads the row from; when the
+  last row goes with the cursor on it, it holds no row at all, which is what reads as the top.
+  Now the cursor is put on the next message, or the previous one after the last, on the
+  control itself, with the focus event a screen reader reads the landed row from, and the
+  preview shows the message the cursor landed on. The same after Move to Trash and after a
+  move out of the folder. And when the folder is re-read afterwards, which the watch does
+  after every delete on an IMAP account, the cursor stays on the same message by its identity
+  and not its position; a re-read that leaves the cursor's message where it was moves
+  nothing, as before. Known limitations: nobody has heard the landed row; whether NVDA reads
+  it once after Delete, and does not read it again when the re-read follows, is the tester's
+  ear. Which of the two paths the tester met was not watched, because a delete cannot be
+  driven on this machine while the tester's copy is open.
 - **The first `Space` on a message no longer starts the clock towards marking it read; the
   whole reading and opening do.** #25 was reopened on 2026-09-18 on the tester's answer to
   the question the earlier fix, below, asked him: reading the snippet is not enough to count

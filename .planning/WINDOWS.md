@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 507
+open_count: 508
 waived_count: 0
 fixed_count: 33
-total_count: 540
-last_updated: 2026-09-18T21:30:00.000Z
+total_count: 541
+last_updated: 2026-09-18T23:59:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -555,6 +555,7 @@ last_updated: 2026-09-18T21:30:00.000Z
 | 538 | 11 | unrun-verify | src/presentation/page_jumps.rs |  | 11-04.1: what only the tester's ear settles for #84. In the formatted view: Alt+A from the message landing on the attachments list with "Attachments, N" said, and whether that sentence after the list announces itself is one thing too many; Alt+A from the list going back with "Message"; F7 to the warning bar with "Security warning" and F7 back; "No attachments" and "No warning" when there is nothing to go to. In the plain-text reader: Alt+A to the list and back, where the way back is answered by the menu accelerator when the list has focus, because the frame takes an accelerator before a list box sees the key; that was reasoned from how the toolkit routes a chord (wxTextCtrl exempts Ctrl+arrows, a list box exempts nothing) and never watched, and if the chord reaches the list instead, the list's own handler answers it. The readings hold the shape; none of this has been heard | open |  | 2026-09-18T19:12:00.000Z |  |
 | 539 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-05, amended by 11-05.1 on 2026-09-18: what only the tester's ear settles for #25. A walk through a folder with unread messages, letting NVDA finish every row, leaving the unread count where it was; Space once on an unread message leaving the count where it is, however long the row stays selected; Space again, the whole reading, then the count moving after two seconds with the row still selected; Shift+Space the same; Enter on one doing the same; moving off a message before the delay runs leaving it unread; and the sentence under Mark as read after on the Reading tab read once, on the choice's own row and not twice. Whether "previewed" in his words meant reading aloud from the list was asked in the first close comment and answered the same day: reading the snippet is not reading, which is why the first Space counts for nothing now. The rule's six cases, the decision's cases and the readings hold the shape; none of this has been heard | open |  | 2026-09-18T20:05:00.000Z |  |
 | 540 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06: what only the tester's ear settles for #27. The Action menu's item heard as Mark as Unread after arrowing onto a read message and as Mark as Read after arrowing onto an unread one, and the context menu's entry the same; M on a message heard as "read" or "unread", one word, and the list staying on the same row after it; the toolbar button's name after a toggle, read from the button under NVDA's own navigation; and Alt+A, E reaching the item whichever way it goes. The readings hold the letter consumed on a built list, the relabel read back over MSAA on a built toolbar, and the three refresh sites in the source; none of this has been heard | open |  | 2026-09-18T21:30:00.000Z |  |
+| 541 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06.1: what only the tester's ear settles for #76. After Delete on a middle row, NVDA reading the next message's row once and not twice when the watch's re-read follows; after Delete on the last row, the previous row read once; the same after Move to Trash and after a move out of the folder; and the preview showing the landed message. A built list holds the four cases and the focus event the landing raises; which of the two paths the tester met was not watched, because a delete cannot be driven here while the tester's copy is open, and the built list showed the last-row case leaving the control holding nothing | open |  | 2026-09-18T23:59:00.000Z |  |
 
 ````json
 [
@@ -7036,6 +7037,18 @@ last_updated: 2026-09-18T21:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-18T21:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 541,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-06.1: what only the tester's ear settles for #76. After Delete on a middle row, NVDA reading the next message's row once and not twice when the watch's re-read follows; after Delete on the last row, the previous row read once; the same after Move to Trash and after a move out of the folder; and the preview showing the landed message. A built list holds the four cases and the focus event the landing raises; which of the two paths the tester met was not watched, because a delete cannot be driven here while the tester's copy is open, and the built list showed the last-row case leaving the control holding nothing",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T23:59:00.000Z",
     "resolved_at": null
   }
 ]
