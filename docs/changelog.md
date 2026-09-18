@@ -69,7 +69,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Download This Whole Folder and Fetch Missing Message Text commands say their progress as
   steps now, so under the default their progress and the whole-folder command's closing report
   are shown and not spoken; both commands are retired by the download of everything that
-  follows.
+  follows. **Corrected on 2026-09-17:** they are gone, in the entry above this one, and the
+  download's own lines are the steps and the one result this entry describes.
 - **The version is `1.0.0-alpha.1`.** It was `0.125.1`. Pratik decided on 2026-09-15, testing
   build `0.125.1+g3e633252`, that the builds going to testers are the alpha, beta and
   release-candidate stages of 1.0.0, so the number moved once, by hand, and every fix that follows
@@ -447,9 +448,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   applies from the next check.
   Known limitations: the text is not downloaded on its own yet. Today it arrives when you open a
   message or use Fetch Missing Message Text, and bringing every message's text down after every
-  check is the next plan. The stored mail is not encrypted, as `docs/privacy.md` says, and with
-  All of it chosen the cache grows with your mailbox; a size is one choice away on the same
-  screen.
+  check is the next plan. **Corrected on 2026-09-17:** it is, in the entry at the top of this
+  section, and Fetch Missing Message Text is gone with it. The stored mail is not encrypted, as
+  `docs/privacy.md` says, and with All of it chosen the cache grows with your mailbox; a size is
+  one choice away on the same screen.
 - **The mail protocols and the CalDAV client went through a mutation run on
   GitHub's runners, and every survivor is killed or has its reason written
   down.** Two dispatches of the mutation workflow on 2026-09-15 at
@@ -3159,6 +3161,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   once it starts: it runs until the folder is here or the server stops sending.
   Nothing is changed at the server and nothing is sent.
 
+  **Corrected on 2026-09-17:** Download This Whole Folder is gone. Everything
+  comes down on its own after every check for mail since that day, with this
+  folder first when you press Get Older Messages, and Pause Downloading on the
+  Tools menu is the way to stop it that this entry said did not exist. The
+  words above are as they were written.
+
 ### Changed
 
 - **A message list no longer says a message is empty when it has not been
@@ -3819,6 +3827,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   fetch mail collected over POP or a copy of a message you sent. For a POP
   account the button never appears at all.
 
+  **Corrected on 2026-09-17:** the button is gone. The text of every message
+  comes down on its own after every check for mail since that day, unless the
+  Message Text box is off or the size chosen on the Permissions tab is reached,
+  and a search that reads message text says what the number of messages still
+  without text means instead of offering a button. The words above are as they
+  were written.
+
 - **Fetching the missing message text is now on the File menu too.** File,
   Fetch Missing Message Text (experimental), beside Check Mail. Alt+F then F.
 
@@ -3838,6 +3853,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Windows shows for it**, because a menu has nowhere to put the line of text
   that sits beside the button, and offering the fetch in more places means more
   people meeting a path no mail provider has ever seen.
+
+  **Corrected on 2026-09-17:** Fetch Missing Message Text is gone from the File
+  menu, because the download of everything that runs after every check is what
+  it did. The warning moved to Pause Downloading on the Tools menu, which is
+  where somebody deciding whether to hold the download reads it. Alt+F on the
+  File menu is free again. The words above are as they were written.
 
 ### Changed
 
