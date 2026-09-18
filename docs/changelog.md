@@ -140,8 +140,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   is what covers that, at your interval. Whether a provider counts a watch per account against a
   connection limit is not known; each account holds two connections, one watching and one
   working. The schedule does not run while this computer has no network, so a computer that goes
-  off the network and comes back is checked when it comes back and not before. Nobody has heard
-  the three status lines.
+  off the network and comes back is checked when it comes back and not before. An account whose
+  password is not saved on this computer is told so out loud at every check, at the start and then
+  every interval, until the password is entered again or the account is disabled; that was seen by
+  running this build against such an account, and it is an error said as errors are, not a watch
+  that keeps quiet. Nobody has heard the three status lines.
 
 - **A computer set to English (United States) had its spelling checked in English (Caribbean),
   and Settings said so.** Reported on 2026-09-15 from build `0.125.1+g3e633252` (#21). The cause

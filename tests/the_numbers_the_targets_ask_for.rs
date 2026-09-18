@@ -44,11 +44,14 @@
 //! a watch on each, and a watch that could not start is tried again after a
 //! growing wait served by the main timer. Against this profile that is one
 //! refused check and a refused watch at the start, a second refused watch
-//! about thirty seconds in and a third about ninety seconds in, after which
-//! the account is left to the schedule alone and the next check is five
-//! minutes after the start, past the last reading. The definition is
-//! unchanged; the condition is new, and the rows say which condition each
-//! was taken under.
+//! about forty seconds in and a third about a hundred seconds in, the
+//! timer's ten-second look added to each wait, after which the account is
+//! left to the schedule alone and the next check is five minutes after the
+//! start, past the last reading. The refusals are the credential store's,
+//! not the port's: the profile stores no password (see `a_profile_with`),
+//! so nothing is dialled, ledger 526. The definition is unchanged; the
+//! condition is new, and the rows say which condition each was taken
+//! under.
 //!
 //! **Memory with 1,000 cached messages** is the peak working set of the
 //! application process between start and the 60 s reading, plus the WebView2
@@ -68,11 +71,13 @@
 //! started process and a dependency for one number is a dependency too many.
 //!
 //! The profile's account points at `127.0.0.1` on a closed port, so the
-//! startup connection is refused at once rather than timing out. Until
-//! 2026-09-18 that connection was never attempted, because nothing checked
-//! at startup (ledger 446); a start dials it now, once for the check and
-//! once for the watch, is refused at once, and the watch's wait begins, so
-//! the log of a measured run holds the refusal and the wait. Its settings
+//! startup connection would be refused at once rather than timing out.
+//! Until 2026-09-18 the account was never attempted, because nothing
+//! checked at startup (ledger 446); a start attempts it now, once for the
+//! check and once for the watch, is refused at once by the credential
+//! store because the profile stores no password, and the watch's wait
+//! begins, so the log of a measured run holds the refusal and the wait.
+//! The port itself is still never reached, ledger 526. Its settings
 //! say the alpha notice has been shown, or every start would stop at that
 //! dialog, and that the window opens on All Inboxes, because a fresh profile
 //! otherwise opens with no folder chosen and no list ever loads.
