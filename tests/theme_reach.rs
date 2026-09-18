@@ -769,6 +769,7 @@ fn check_folder_choice(parent: &Frame, palette: theme::Palette, into: &mut Vec<S
     let folders = [wx_folder_choice::FolderRow {
         path: "INBOX".to_string(),
         name: "Inbox".to_string(),
+        parent: None,
         syncing: true,
         subscribed: true,
         holds_all_mail: false,

@@ -19363,6 +19363,7 @@ fn choose_folders(
                 ),
                 path: folder.path.clone(),
                 name: folder.name.clone(),
+                parent: None,
                 subscribed,
                 holds_all_mail,
                 total: folder.total_count as usize,

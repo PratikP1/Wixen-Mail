@@ -57,6 +57,12 @@ pub struct FolderRow {
     pub path: String,
     /// What to show and announce.
     pub name: String,
+    /// The path of the folder this one sits inside, or `None` at the top.
+    ///
+    /// Read from the stored `parent_id` the main window's folder tree nests
+    /// by, never from the path, so the two cannot nest differently. The
+    /// separator is never split here; that was plan 01-04's rule.
+    pub parent: Option<String>,
     /// Whether it syncs now.
     pub syncing: bool,
     /// Whether the account is subscribed to it on the server.
@@ -94,6 +100,48 @@ pub fn row_label(folder: &FolderRow) -> String {
         label.push_str(", not subscribed");
     }
     label
+}
+
+/// Where each row sits in the tree: the row's index, its depth, and the index
+/// of the row it sits under, in the order the tree walks them.
+///
+/// Each top-level row in the stored order, then everything under it before
+/// the next, so a child always follows its parent and siblings keep the
+/// order the server listed them in. That order is also the order the native
+/// tree walks its items, which is what lets a handle be matched to a row
+/// without wxdragon ever handing one out.
+///
+/// A row whose parent is not among the rows sits at the top. A folder must
+/// never vanish from this dialog because the folder above it was not listed,
+/// since a folder nobody can see is a folder nobody can untick.
+pub fn nesting(rows: &[FolderRow]) -> Vec<(usize, usize, Option<usize>)> {
+    // Red until 11-03's task 2: every row at the top, which is the flat list
+    // the tester reported.
+    (0..rows.len()).map(|index| (index, 0, None)).collect()
+}
+
+/// Whether an account is Gmail, by either fact the account row carries: the
+/// provider it was made through, or the server it points at.
+///
+/// Both, because an account added by hand to `imap.gmail.com` has no
+/// provider, and one made through the provider list has the provider whatever
+/// its server spelling.
+pub fn is_a_gmail_account(_provider: Option<&str>, _imap_server: &str) -> bool {
+    // Red until 11-03's task 2.
+    false
+}
+
+/// The one sentence the dialog adds when Gmail did not list All Mail.
+///
+/// Only for Gmail, and only when no listed folder holds every message: a
+/// Gmail account whose All Mail is in the tree needs no explanation, and
+/// another provider has no All Mail to miss. Gmail hides a label from IMAP
+/// when its Show in IMAP box is off, and a hidden label is absent from the
+/// list this program reads folders from, so the dialog cannot show a row the
+/// server never sent and says so instead.
+pub fn the_all_mail_sentence(_is_gmail: bool, _any_holds_all_mail: bool) -> Option<String> {
+    // Red until 11-03's task 2.
+    None
 }
 
 /// Ask which folders to keep up to date.
@@ -237,11 +285,112 @@ mod tests {
         FolderRow {
             path: name.to_string(),
             name: name.to_string(),
+            parent: None,
             syncing: true,
             subscribed: true,
             holds_all_mail: false,
             total: 42,
         }
+    }
+
+    fn folder_under(path: &str, parent: &str) -> FolderRow {
+        let mut row = folder(path);
+        row.parent = Some(parent.to_string());
+        row
+    }
+
+    #[test]
+    fn test_a_child_comes_after_its_parent_one_deeper_and_names_it() {
+        // [Gmail]/QC Docs is stored before INBOX here, and the tree still puts
+        // it under [Gmail], one level down, pointing back at its parent's row.
+        let rows = [
+            folder_under("[Gmail]/QC Docs", "[Gmail]"),
+            folder("INBOX"),
+            folder("[Gmail]"),
+        ];
+
+        let nested = nesting(&rows);
+
+        assert_eq!(nested, vec![(1, 0, None), (2, 0, None), (0, 1, Some(2))]);
+    }
+
+    #[test]
+    fn test_a_grandchild_is_two_deep_and_follows_its_parent_before_the_next_top_row() {
+        let rows = [
+            folder("[Gmail]"),
+            folder("Archive"),
+            folder_under("[Gmail]/QC Docs", "[Gmail]"),
+            folder_under("[Gmail]/QC Docs/QILC", "[Gmail]/QC Docs"),
+        ];
+
+        let nested = nesting(&rows);
+
+        assert_eq!(
+            nested,
+            vec![(0, 0, None), (2, 1, Some(0)), (3, 2, Some(2)), (1, 0, None)]
+        );
+    }
+
+    #[test]
+    fn test_siblings_keep_the_order_the_server_listed_them_in() {
+        let rows = [folder("Work"), folder("INBOX"), folder("Archive")];
+
+        let nested = nesting(&rows);
+
+        assert_eq!(nested, vec![(0, 0, None), (1, 0, None), (2, 0, None)]);
+    }
+
+    #[test]
+    fn test_a_folder_whose_parent_was_not_listed_sits_at_the_top_rather_than_vanishing() {
+        // The server can list a child and hide its parent; Gmail does exactly
+        // that for a label whose parent is not shown in IMAP.
+        let rows = [folder("INBOX"), folder_under("Hidden/Seen", "Hidden")];
+
+        let nested = nesting(&rows);
+
+        assert_eq!(nested, vec![(0, 0, None), (1, 0, None)]);
+    }
+
+    #[test]
+    fn test_an_account_made_through_the_provider_list_is_gmail_by_its_provider() {
+        assert!(is_a_gmail_account(Some("Gmail"), "imap.gmail.com"));
+        assert!(is_a_gmail_account(Some("Gmail"), "imap.example.org"));
+    }
+
+    #[test]
+    fn test_an_account_pointed_at_gmails_server_is_gmail_whatever_the_case_of_the_host() {
+        assert!(is_a_gmail_account(None, "imap.gmail.com"));
+        assert!(is_a_gmail_account(None, "IMAP.Gmail.com"));
+        assert!(is_a_gmail_account(Some("Custom"), "imap.gmail.com"));
+    }
+
+    #[test]
+    fn test_an_account_on_another_server_with_another_provider_is_not_gmail() {
+        assert!(!is_a_gmail_account(None, "imap.example.org"));
+        assert!(!is_a_gmail_account(
+            Some("Outlook"),
+            "outlook.office365.com"
+        ));
+    }
+
+    #[test]
+    fn test_gmail_with_no_folder_holding_every_message_gets_the_sentence() {
+        let said =
+            the_all_mail_sentence(true, false).expect("a sentence for Gmail with no All Mail");
+
+        assert!(said.starts_with("Gmail did not list All Mail"), "{said}");
+        assert!(said.contains("Show in IMAP"), "{said}");
+    }
+
+    #[test]
+    fn test_gmail_with_all_mail_listed_gets_no_sentence() {
+        assert_eq!(the_all_mail_sentence(true, true), None);
+    }
+
+    #[test]
+    fn test_another_provider_gets_no_sentence_whether_or_not_a_folder_holds_everything() {
+        assert_eq!(the_all_mail_sentence(false, false), None);
+        assert_eq!(the_all_mail_sentence(false, true), None);
     }
 
     #[test]
