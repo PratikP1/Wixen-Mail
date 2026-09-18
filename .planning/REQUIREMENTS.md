@@ -3572,6 +3572,20 @@ the caveat at the top of this file binds every `[D]` line.
 - [ ] **LIST-02**: The log level's default follows the version the build carries, the lines
   a tester's report needs are written at that level, and the alpha page says what each level
   writes and what the default costs.
+  **Held 2026-09-18 by 11-04, merged at `03513fd0`, on its first two `[D]` lines and the
+  third but for its two rows:** `version::is_alpha_or_beta` and `logging::default_level_for`
+  are one rule read by `LoggerConfig::default()` and by `AppConfig`'s default and serde
+  default, `filter_for` names this crate alone, held by 27 and 10 tests in the two modules
+  and five guard records; the per-folder, per-chunk, server-answer, settings-save and
+  held-back lines are written at info and debug, held by
+  `tests/the_log_carries_what_a_report_needs.rs` (five readings, five companions, the
+  lexical guard over every `tracing::` call and its two parsing tests, 13 tests, two
+  records); the table, the two sentences and the privacy sentence are on the pages. Not
+  held: the two size rows on the measurements page, because the measurement starts a
+  second copy and the tester's copy was open all afternoon (ledger 537); the harness now
+  refuses to start while any copy runs and pins the level, and the guide says the cost is
+  owed. The box is ticked when the rows are on the page. The `[S]` line is untouched and
+  is ledger 535.
   - Evidence: `grep -n 'log_level: "info"' src/data/config.rs` -> `703`, and `LoggerConfig::default`
     at `logging.rs:62`, two literals; the field has no serde default (`config.rs:47`);
     `main.rs:100-106` reads the stored level first. Counts on 2026-09-18: `error` 59, `warn`
@@ -4138,7 +4152,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
-| LIST-02 | Phase 11 | Pending, 11-04; #64's half stays #64's |
+| LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
 | LIST-03 | Phase 11 | Pending, 11-05 |
 | LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
 | LIST-05 | Phase 11 | Pending, 11-07 |
