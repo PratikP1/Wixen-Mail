@@ -8,6 +8,39 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Everything comes down on its own, with its text.** Reported on 2026-09-15 from build
+  `0.125.1+g3e633252` (#20): "Right now, only 500 messages are downloaded per folder. All email
+  should be downloaded." And (#23): "Unless explicitly forbidden, message text should be downloaded
+  along with mail." After every check for mail, everything the kept folders hold comes down without
+  you asking, for every enabled IMAP account: the headers first, five hundred at a time, the folder
+  you are looking at first, then the inbox, then the rest in the order of the folder tree; then the
+  text of each message, fifty at a time, unless the Message Text box on the Permissions tab is off
+  or the size you chose there has been reached. A check is what F9 runs and what the watch on your
+  inbox runs when the server says something arrived, so the download starts on its own from the
+  first check after this build. It picks up where it was after a restart, because what it knows
+  is what is already on this computer. Get Older Messages, `Shift+F9`, carries the download on
+  with this folder first rather than fetching one page. Pause Downloading, a check item on the
+  Tools menu, holds it: the chunk in flight finishes, no new one starts, mail already here stays
+  readable, and unticking it carries on; the pause lasts for the session. Download This Whole
+  Folder and Fetch Missing Message Text are gone, and so is the button above the message list
+  that offered to fetch the text a search could not read, because this is what all three did. A
+  search that reads message text still says how much of it is here, and now says what the rest
+  means: that it is on its way, or that the Message Text box is holding it back.
+  A provider that stops answering is left alone for a growing time, thirty seconds doubling to
+  half an hour, and asked again; the status bar says so, and under Say what arrived nothing is
+  spoken about it, because the download tries again on its own. What each chunk brought and each
+  folder becoming whole are steps, shown and spoken only under Say every step; what an account came
+  to, how many folders are whole and how many messages have their text here, is said once when
+  its download ends, with the sound for new mail.
+  Known limitations: none of this has met a real account, and the Pause item's description says
+  so where you choose it. Asking a provider for a whole mailbox chunk after chunk is something
+  it is entitled to refuse, to slow down, or to disconnect you for, and nothing here can find
+  out which yours will do; the first check after this build is where that is found out. Nobody
+  has heard the Pause item, its two answers, or the sentence a search says about text that is
+  on its way. Gmail's All Mail and the Spam folder are not kept up to date by
+  default, as before, and a folder you chose not to keep is not downloaded. The first download of
+  a large mailbox is a long run. The stored mail is not encrypted, as `docs/privacy.md` says, and
+  with All of it chosen the cache grows with your mailbox.
 - **How much is said while mail and the other modules are fetched is your choice.** Reported on
   2026-09-15 from build `0.125.1+g3e633252` (#38): "When fetching mail and other items, the
   announcements are too verbose. Only folders and items with new mail or items should be
@@ -36,7 +69,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Download This Whole Folder and Fetch Missing Message Text commands say their progress as
   steps now, so under the default their progress and the whole-folder command's closing report
   are shown and not spoken; both commands are retired by the download of everything that
-  follows.
+  follows. **Corrected on 2026-09-17:** they are gone, in the entry above this one, and the
+  download's own lines are the steps and the one result this entry describes.
 - **The version is `1.0.0-alpha.1`.** It was `0.125.1`. Pratik decided on 2026-09-15, testing
   build `0.125.1+g3e633252`, that the builds going to testers are the alpha, beta and
   release-candidate stages of 1.0.0, so the number moved once, by hand, and every fix that follows
@@ -414,9 +448,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   applies from the next check.
   Known limitations: the text is not downloaded on its own yet. Today it arrives when you open a
   message or use Fetch Missing Message Text, and bringing every message's text down after every
-  check is the next plan. The stored mail is not encrypted, as `docs/privacy.md` says, and with
-  All of it chosen the cache grows with your mailbox; a size is one choice away on the same
-  screen.
+  check is the next plan. **Corrected on 2026-09-17:** it is, in the entry at the top of this
+  section, and Fetch Missing Message Text is gone with it. The stored mail is not encrypted, as
+  `docs/privacy.md` says, and with All of it chosen the cache grows with your mailbox; a size is
+  one choice away on the same screen.
 - **The mail protocols and the CalDAV client went through a mutation run on
   GitHub's runners, and every survivor is killed or has its reason written
   down.** Two dispatches of the mutation workflow on 2026-09-15 at
@@ -3126,6 +3161,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   once it starts: it runs until the folder is here or the server stops sending.
   Nothing is changed at the server and nothing is sent.
 
+  **Corrected on 2026-09-17:** Download This Whole Folder is gone. Everything
+  comes down on its own after every check for mail since that day, with this
+  folder first when you press Get Older Messages, and Pause Downloading on the
+  Tools menu is the way to stop it that this entry said did not exist. The
+  words above are as they were written.
+
 ### Changed
 
 - **A message list no longer says a message is empty when it has not been
@@ -3786,6 +3827,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   fetch mail collected over POP or a copy of a message you sent. For a POP
   account the button never appears at all.
 
+  **Corrected on 2026-09-17:** the button is gone. The text of every message
+  comes down on its own after every check for mail since that day, unless the
+  Message Text box is off or the size chosen on the Permissions tab is reached,
+  and a search that reads message text says what the number of messages still
+  without text means instead of offering a button. The words above are as they
+  were written.
+
 - **Fetching the missing message text is now on the File menu too.** File,
   Fetch Missing Message Text (experimental), beside Check Mail. Alt+F then F.
 
@@ -3805,6 +3853,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Windows shows for it**, because a menu has nowhere to put the line of text
   that sits beside the button, and offering the fetch in more places means more
   people meeting a path no mail provider has ever seen.
+
+  **Corrected on 2026-09-17:** Fetch Missing Message Text is gone from the File
+  menu, because the download of everything that runs after every check is what
+  it did. The warning moved to Pause Downloading on the Tools menu, which is
+  where somebody deciding whether to hold the download reads it. Alt+F on the
+  File menu is free again. The words above are as they were written.
 
 ### Changed
 

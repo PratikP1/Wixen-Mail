@@ -2097,23 +2097,24 @@ pub fn search_messages(
         })
         .map(crate::application::saved_searches::what_the_search_box_covers);
 
-    // The remedy beside the disclosure, which is what D-2-08 asks for and what
-    // the search box did not have: the offer went out only while a saved
-    // search ran, so somebody who never uses one was never shown it.
+    // What the number means beside the disclosure, which is what D-2-08 asks
+    // for and what the search box did not have: the count went out only
+    // while a saved search ran, so somebody who never uses one was never
+    // told it. Until 2026-09-17 the window put a button on it offering to
+    // fetch the text; the download of everything brings it down on its own
+    // now, and the window says so (#23).
     //
     // **The same update, carrying the same account-wide number.** The sentence
     // above narrows to the folder the In box named; this does not, because the
-    // fetch the button starts does not. A count narrowed to match the sentence
-    // would read "2 messages" over a button that opens hundreds of requests
-    // across every folder in the account, which is a label describing
-    // something other than what pressing it does.
+    // download does not. A count narrowed to match the sentence would read
+    // "2 messages" about a download that walks every folder in the account,
+    // which is a number describing something other than what happens.
     //
-    // Counted for the account the button would reach, which is not always the
+    // Counted for the account the download walks, which is not always the
     // account this search read. `manager_account` falls back to the reserved
-    // local id so a search still runs with nothing signed in;
-    // `start_the_missing_text_fetch` has no such fallback and refuses. An
-    // offer counted over the local id would be a button whose only answer is
-    // an apology.
+    // local id so a search still runs with nothing signed in; the download
+    // has no such fallback and covers only accounts with a server. A count
+    // over the local id would describe a download that will never run.
     //
     // Behind the same gate as the sentence. Text arriving cannot change what a
     // search of subjects or senders alone answers, so that search is offered

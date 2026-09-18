@@ -8,7 +8,6 @@ pub mod address_book_source;
 pub mod allowed;
 pub mod answered_meetings;
 pub mod answering;
-pub mod asking_for_a_whole_folder;
 pub mod asking_when_free;
 pub mod attaching;
 pub mod autosave;

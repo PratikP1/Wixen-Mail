@@ -2044,7 +2044,7 @@ fn test_every_command_that_acts_on_a_selection_is_on_the_menu_bar() {
             "fetch this module from the provider now",
         ),
         ("ID_REFRESH_FOLDER", "read this folder again"),
-        ("ID_GET_OLDER", "fetch older messages in this folder"),
+        ("ID_GET_OLDER", "carry on downloading, this folder first"),
         ("ID_RENAME_SEARCH", "rename the chosen saved search"),
         ("ID_DELETE_SEARCH", "remove the chosen saved search"),
         (
@@ -3250,7 +3250,7 @@ fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
             body_of(&ship, "fn export_a_mailbox("),
         ),
         (
-            "fetching older messages from the server",
+            "carrying on the download with this folder first",
             body_of(
                 &ship,
                 "                        _ if id == ID_GET_OLDER => {",

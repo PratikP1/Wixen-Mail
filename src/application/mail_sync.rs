@@ -1823,7 +1823,11 @@ impl WhyTheServerStopped {
     }
 
     /// The clause a person hears, one per arm.
-    fn as_a_clause(self) -> &'static str {
+    ///
+    /// Crate-wide since 2026-09-17, because the download of everything words
+    /// a refused chunk of headers with the same clause rather than a second
+    /// reading of the same error.
+    pub(crate) fn as_a_clause(self) -> &'static str {
         match self {
             Self::Refused => "it refused",
             Self::ConnectionLost => "the connection was lost",
@@ -1951,8 +1955,15 @@ pub fn what_the_fetch_did(outcome: &Backfill) -> String {
 
 /// Fetch the text of every message in one account that has none stored here.
 ///
-/// The other half of what a saved search says it covers: the disclosure names
-/// a number, and this is what somebody does about it.
+/// **Reached by nothing outside this module's tests since 2026-09-17.** It was
+/// what Fetch Missing Message Text and the offer above the message list did;
+/// 10-05 retired both for #23, because the download of everything asks
+/// [`fetch_over_a_mailbox`] for one chunk at a time after every check and
+/// decides the next chunk itself. This and the fold below stay because
+/// fifteen tests hold the fold, the wording and the reading gate through
+/// them, in a file thirteen guard records fingerprint; taking them out is a
+/// rewrite of the text pass's test suite, recorded in the ledger rather than
+/// done here. Nothing under `src/` calls this.
 ///
 /// Not generic, deliberately. [`Mailbox`] is the seam that lets the routine be
 /// tested without a server, and a caller has a real controller and should not
@@ -1975,10 +1986,11 @@ pub async fn fetch_the_missing_message_text(
 /// [`crate::application::bringing_everything_down::TEXT_PER_CHUNK_MESSAGES`],
 /// never stops, and folds the chunk endings into one [`Backfill`]: a chunk
 /// that went through is followed by the next, and a chunk that ended for any
-/// other reason ends the run with that reason. The one entry point the window
-/// has, kept as it was for it; the download of everything (10-05) asks
+/// other reason ends the run with that reason. Until 2026-09-17 the one entry
+/// point the window had; the download of everything asks
 /// [`fetch_over_a_mailbox`] for one chunk at a time instead and decides the
-/// next chunk itself.
+/// next chunk itself, so this is reached by its tests alone now, as the entry
+/// point above says.
 pub(crate) async fn fetch_all_the_missing_text<M: Mailbox>(
     server: &M,
     cache: &MessageCache,

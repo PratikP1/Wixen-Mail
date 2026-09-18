@@ -400,14 +400,17 @@ pub enum UIUpdate {
     StatusUpdated(String),
     /// How many of the open account's messages have no text stored here.
     ///
-    /// Sent beside the coverage sentence a saved search says before it runs,
-    /// and it is what puts the offer to fetch that text on the screen. Nought
-    /// takes the offer off again, which is the ordinary case: the offer is
-    /// there only while it would do something.
+    /// Sent beside the coverage sentence a saved search or the search box
+    /// says before it runs. Until 2026-09-17 it put a button on the screen
+    /// offering to fetch that text; the download of everything brings the
+    /// text down on its own now (#23), so the window says what the number
+    /// means instead, and nought says nothing, which is the ordinary case.
     ///
     /// A count rather than a ready-made sentence, because the words are
-    /// decided by `wx_app::the_offer_to_fetch`, which is pure and has the test
-    /// that says no offer appears when there is nothing to fetch.
+    /// decided by `wx_app::what_the_missing_text_means`, which is pure and
+    /// has the test that says nothing is said when nothing is missing. The
+    /// name is what it always was: what the number counts is what could be
+    /// fetched, and the download is what fetches it.
     WhatCouldBeFetched(usize),
     /// A command was asked for and did not run, and why.
     ///
@@ -673,6 +676,12 @@ pub enum UIUpdate {
     /// Sent rather than acted on directly because the watch handle lives with
     /// the rest of the window state, on the thread that owns it.
     MailboxWatchRequested,
+    /// A check finished, so the download of everything may start (#20, #23).
+    ///
+    /// Sent rather than started on the worker, for the reason the watch is:
+    /// whether a download is already running, paused or waiting lives with
+    /// the window state, on the thread that owns it.
+    DownloadRequested,
     /// The server said a watched folder changed (folder path).
     ///
     /// Carries the path rather than a count, because the server reports how
