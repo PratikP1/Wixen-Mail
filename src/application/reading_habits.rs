@@ -125,6 +125,16 @@ impl Default for MarkRead {
     }
 }
 
+/// The sentence under the Mark as read after choice in Settings: what the
+/// wait is counted from.
+///
+/// Seven answers cannot say on their own when the counting starts, and until
+/// 2026-09-18 it started when a row was selected (#25). Said where somebody
+/// meets the choice, on both channels, so a person who has set a wait knows
+/// that moving through the list is not what the wait is measured from.
+pub const WHAT_MARK_READ_COUNTS_FROM: &str = "Counted from when you read a message aloud with \
+     Space or open it, never from moving onto it.";
+
 /// Whether the message somebody began reading is to be marked read now.
 ///
 /// The clock starts when a message is read aloud from the list or opened in

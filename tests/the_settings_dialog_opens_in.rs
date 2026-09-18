@@ -64,6 +64,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use wixen_mail::application::reading_habits::WHAT_MARK_READ_COUNTS_FROM;
 use wixen_mail::common::paths::AppPaths;
 use wixen_mail::common::started;
 use wixen_mail::data::config::AppConfig;
@@ -343,6 +344,25 @@ mod windows_of {
     pub fn has_a_child(window: Hwnd) -> bool {
         // Safe: a query on a handle the toolkit gave us.
         unsafe { GetWindow(window, GW_CHILD) != 0 }
+    }
+
+    /// The window text of each direct child of the window, in sibling
+    /// order: a label's words, a static text's sentence, a button's caption.
+    pub fn child_texts(window: Hwnd) -> Vec<String> {
+        const GW_HWNDNEXT: u32 = 2;
+        let mut texts = Vec::new();
+        // Safe: plain window queries on handles the toolkit gave us; every
+        // buffer is passed with its length.
+        unsafe {
+            let mut child = GetWindow(window, GW_CHILD);
+            while child != 0 {
+                let mut text = [0u16; 512];
+                let length = GetWindowTextW(child, text.as_mut_ptr(), text.len() as i32);
+                texts.push(String::from_utf16_lossy(&text[..length.max(0) as usize]));
+                child = GetWindow(child, GW_HWNDNEXT);
+            }
+        }
+        texts
     }
 
     /// Every visible top-level window of one process, with its title.
@@ -700,7 +720,10 @@ fn test_the_first_visits_line_carries_its_units_and_parses_back() {
 // pages of controls cost the rest, so the change is to the build and not to
 // the lists: the dialog is frozen while it is built, the spelling sentence is
 // worded without building a checker, and only the first page is built before
-// the dialog is shown. The tests below hold each of those.
+// the dialog is shown. The tests below hold each of those. The one that shows
+// the Reading page also reads, since 2026-09-18, that the sentence under Mark
+// as read after is on the built page (#25), because that is the one test here
+// that builds the page in a window session.
 
 /// Which page of the notebook is which, by the order the dialog adds them.
 const THE_READING_PAGE: usize = 2;
@@ -753,6 +776,17 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
                     "the Reading tab was shown and its page still has no controls on it"
                         .to_string(),
                 );
+            }
+            // The sentence under Mark as read after is on the built page
+            // (#25, 11-05): the wait is counted from reading, never from
+            // moving onto a row, and the choice cannot say that on its own.
+            if !windows_of::child_texts(reading)
+                .iter()
+                .any(|text| text == WHAT_MARK_READ_COUNTS_FROM)
+            {
+                wrong.push(format!(
+                    "the built Reading page holds no static text saying {WHAT_MARK_READ_COUNTS_FROM:?} under Mark as read after"
+                ));
             }
             widgets.reading().sort_order.set_selection(0);
             let after_a_change = wx_settings::read_settings(&widgets, &config);

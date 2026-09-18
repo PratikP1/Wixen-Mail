@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 127 records have arrived since and have not been through it.
+# 128 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25816,4 +25816,30 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 11 },
+]
+
+# ── The sentence under Mark as read after is on the built page ──────────────
+#
+# #25: the setting's seven answers cannot say what the wait is counted from,
+# and until 2026-09-18 it was counted from selection. The sentence saying it
+# is counted from reading sits under the choice on the Reading tab, and the
+# one test that builds that page in a window session reads it there. The
+# break builds the sentence and destroys it instead of adding it to the
+# section; the reading goes red with "holds no static text saying". Taken by
+# hand first on 2026-09-18, then measured.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the sentence saying what mark as read after counts from is on the reading page, not only in the source"
+file = "src/presentation/wx_settings.rs"
+suite = "the_settings_dialog_opens_in"
+before = """    read_sec.add(&markread_note, 0, SizerFlag::Expand | SizerFlag::All, 4);"""
+after = """    markread_note.destroy();"""
+red = [
+    "test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
 ]
