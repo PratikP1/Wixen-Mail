@@ -144,6 +144,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Moving through the message list marks nothing read; reading a message aloud or opening
+  it starts the clock.** Reported on 2026-09-15 from build `0.125.1+g3e633252` under NVDA
+  (#25): "Automatic read/unread status should not be linked to the list traversal for mail.
+  It should be either when a message is previewed or when a message is opened." Until this
+  build a row selected for two seconds was marked read, whether or not the message was read.
+  Two seconds was chosen so that arrowing past a message would not mark it, and it is not
+  longer than hearing a row takes: a screen reader speaks the sender, the subject and the
+  date, and by the end of that the message was marked, so a walk through a folder by ear
+  marked every message stopped on and the unread count emptied itself on the way to the one
+  that mattered. Now selecting a row marks nothing, however long you stay on it. A message
+  is marked read after you read it aloud from the list with `Space` or `Shift+Space`, or
+  open it with `Enter`, and then after the delay under Settings, then Reading, then Mark as
+  read after. The setting keeps its four kinds of answer, Immediately, a number of seconds,
+  a minute and Only when I say so, and its default is still two seconds, now counted from
+  reading rather than from moving onto the row; a sentence under the setting says so. A
+  profile set to Only when I say so keeps that, and marking by hand is unchanged. The
+  preview pane cannot take focus in this program by design, so reading a message aloud from
+  the list is the act that previewing is here; the issue left what previewed means to the
+  tester, and the close comment asks him to confirm this reading. Known limitations: nobody
+  has walked an inbox by ear against this yet, and whether the unread count now stays put on
+  a walk is the tester's ear.
 - **Alt+A reaches the attachments of an open message in both views, and F8 is retired
   there.** Reported on 2026-09-18 from build `1.0.0-alpha.1+149.g744d05ef` under NVDA (#84):
   "in an open message F8 does not reach the attachments". Under the Formatted style, which

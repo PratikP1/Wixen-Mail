@@ -149,13 +149,12 @@ pub fn whether_to_mark_read(
     setting: MarkRead,
 ) -> Option<i64> {
     let (message, since) = began.filter(|(message, _)| Some(*message) == selected_unread)?;
-    match setting {
-        MarkRead::Immediately => Some(message),
-        MarkRead::After(seconds) => {
-            let waited = now.saturating_duration_since(since);
-            (waited >= std::time::Duration::from_secs(u64::from(seconds))).then_some(message)
-        }
-        MarkRead::Never => None,
+    if !setting.marks_at_all() {
+        return None;
+    }
+    match setting.delay() {
+        None => Some(message),
+        Some(wait) => (now.saturating_duration_since(since) >= wait).then_some(message),
     }
 }
 

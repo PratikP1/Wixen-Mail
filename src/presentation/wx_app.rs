@@ -321,6 +321,16 @@ pub struct WxUIState {
     /// ask. Send Read Receipt refuses unless the open message is this one, so
     /// the command cannot acknowledge a message nobody was offered.
     pub receipt_offered: Option<i64>,
+    /// Which message somebody began reading, and when.
+    ///
+    /// Written where a message is read aloud from the list with Space or
+    /// Shift+Space and where one is opened in its own window; never by the
+    /// selection handler (#25, 2026-09-18). Read by the main timer, which asks
+    /// `reading_habits::whether_to_mark_read` and clears this once the mark
+    /// is written. Until 2026-09-18 the timer kept a clock of its own,
+    /// started the moment a row was selected, and a walk through a folder by
+    /// ear marked every message stopped on.
+    pub reading_began: Option<(i64, std::time::Instant)>,
     /// Folder name to database id, so selecting a folder can read it.
     pub folder_ids: std::collections::HashMap<String, i64>,
     /// The watch on each account's inbox, by account id: the connection when
@@ -556,6 +566,7 @@ impl Default for WxUIState {
             selection_before_the_switch: crate::presentation::view_state::KeptSelection::default(),
             selected_folder: None,
             receipt_offered: None,
+            reading_began: None,
             folder_ids: std::collections::HashMap::new(),
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
@@ -3188,6 +3199,7 @@ impl WxMailApp {
                                     &frame,
                                     &reader,
                                     &a11y,
+                                    &state,
                                     &thread_cache,
                                     &only,
                                     None,
@@ -3217,12 +3229,28 @@ impl WxMailApp {
                     let Some(thread_id) = thread_id else {
                         // Not in a conversation, so there is nothing to choose
                         // between: it opens straight into the reader.
-                        open_single_message(&frame, &reader, &a11y, &thread_cache, &message, None);
+                        open_single_message(
+                            &frame,
+                            &reader,
+                            &a11y,
+                            &state,
+                            &thread_cache,
+                            &message,
+                            None,
+                        );
                         return;
                     };
                     let nodes = conversation_nodes(&state, &thread_id);
                     if nodes.len() < 2 {
-                        open_single_message(&frame, &reader, &a11y, &thread_cache, &message, None);
+                        open_single_message(
+                            &frame,
+                            &reader,
+                            &a11y,
+                            &state,
+                            &thread_cache,
+                            &message,
+                            None,
+                        );
                         return;
                     }
                     // Opening a conversation, and coming back out of it,
@@ -3436,11 +3464,16 @@ impl WxMailApp {
                 let message_cache = message_cache.clone();
                 move |index| {
                     let (message, in_conversation) = {
-                        let s = lock_state(&state);
-                        (
-                            s.messages.get(index)?.clone(),
-                            message_rows::conversation_size(&s.messages, index),
-                        )
+                        let mut s = lock_state(&state);
+                        let message = s.messages.get(index)?.clone();
+                        // Reading begins here, and not when the row was
+                        // selected (#25): this is the act of reading a
+                        // message from the list, and the main timer marks it
+                        // read after the wait the setting names, counted from
+                        // now. Written before the text is composed, so the
+                        // wait is counted from the press.
+                        s.reading_began = Some((message.message_id, std::time::Instant::now()));
+                        (message, message_rows::conversation_size(&s.messages, index))
                     };
                     let out = read_aloud::Reading {
                         dates: date_settings,
@@ -5458,10 +5491,6 @@ impl WxMailApp {
                 let waiting_to_be_asked_about: RefCell<
                     crate::presentation::one_question_at_a_time::Pending,
                 > = RefCell::new(one_question_at_a_time::Pending::default());
-                // Which message has been open, and since when. `None` when
-                // nothing is open, or when the one that is has already been
-                // dealt with.
-                let opened_at: RefCell<Option<(i64, std::time::Instant)>> = RefCell::new(None);
                 // When the reminders were last looked at. By the clock rather
                 // than by counting ticks: how often this timer actually fires
                 // is the event loop's business, and counting ticks to a minute
@@ -5564,7 +5593,8 @@ impl WxMailApp {
                     // On this timer rather than one of its own, because a timer
                     // event reaches every handler bound on its owner and a
                     // second timer here would run this one as well.
-                    // A message that has been open long enough counts as read.
+                    // A message that was read aloud or opened long enough ago
+                    // counts as read; one that was only selected never does.
                     //
                     // On this poll rather than a timer of its own, for the same
                     // reason the reminders are: a timer event reaches every
@@ -5574,7 +5604,7 @@ impl WxMailApp {
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    mark_the_open_one_read(app, &a11y, &opened_at, marks_read);
+                    mark_what_was_read(app, marks_read);
 
                     // Whether this computer still has a network. On this timer
                     // and on its own interval, for the same reason the
@@ -10029,74 +10059,57 @@ fn wire_read_aloud<F>(
     });
 }
 
-/// Mark the message somebody is looking at read, once they have looked long
-/// enough.
+/// Mark the message somebody read, once the wait the setting names has run
+/// from the moment they read it.
 ///
-/// The setting for this has been in the settings window since it was written
-/// and there has never been anything behind it: nothing read the control back,
-/// and nothing anywhere marked a message read on its own. So the answer was
-/// always "never", whatever it said on screen.
+/// The clock starts when a message is read aloud from the list with Space or
+/// Shift+Space, or opened in its own window, and never when it is selected
+/// (#25, 2026-09-18). Until then this function started the clock itself the
+/// moment the selection landed on an unread message, on the reasoning that
+/// two seconds was longer than arrowing past a row takes. It is not longer
+/// than hearing a row takes: a screen reader speaks the sender, the subject
+/// and the date, and by the end of that the message was marked, so a walk
+/// through a folder by ear marked every message stopped on and the unread
+/// count emptied itself on the way to the one that mattered. Selection now
+/// records nothing here; `WxUIState::reading_began` is written by the two
+/// acts of reading, and the decision is `reading_habits::whether_to_mark_read`,
+/// which answers nothing when nothing began, whatever is selected and however
+/// long ago.
 ///
-/// Timed from when the selection landed on the message rather than from when
-/// its body arrived, because what is being measured is how long somebody has
-/// been on it. Moving off before the time is up leaves it unread, which is the
-/// whole point: arrowing down a list to find something reads every message on
-/// the way, and marking each one would empty the unread count and lose the one
-/// that mattered.
-fn mark_the_open_one_read(
+/// The write is the one it always was: the row in state, the list told, the
+/// server told. Nothing is announced, because this is not something somebody
+/// did, and the count in the folder tree is where it shows.
+fn mark_what_was_read(
     app: AppHandles<'_>,
-    a11y: &Arc<Accessibility>,
-    opened_at: &RefCell<Option<(i64, std::time::Instant)>>,
     marks_read: crate::application::reading_habits::MarkRead,
 ) {
     let AppHandles { state, tx, rt } = app;
-    if !marks_read.marks_at_all() {
-        return;
-    }
 
-    let open = {
-        let s = lock_state(state);
-        s.selected_message_index
+    let marked = {
+        let mut s = lock_state(state);
+        let selected_unread = s
+            .selected_message_index
             .and_then(|index| s.messages.get(index))
             .filter(|message| !message.read)
-            .map(|message| (message.message_id, message.uid, message.subject.clone()))
+            .map(|message| message.message_id);
+        let Some(row) = crate::application::reading_habits::whether_to_mark_read(
+            s.reading_began,
+            selected_unread,
+            std::time::Instant::now(),
+            marks_read,
+        ) else {
+            return;
+        };
+        // Cleared before the write, so a slow server does not mean asking
+        // twice.
+        s.reading_began = None;
+        let Some(message) = s.messages.iter_mut().find(|m| m.message_id == row) else {
+            return;
+        };
+        message.read = true;
+        (row, message.uid, message.subject.clone())
     };
-    let Some((row, uid, subject)) = open else {
-        opened_at.replace(None);
-        return;
-    };
-
-    let since = {
-        let mut watching = opened_at.borrow_mut();
-        match *watching {
-            // Still the same one, so the clock keeps running.
-            Some((watched, since)) if watched == row => since,
-            // A different message, or the first. The clock starts now.
-            _ => {
-                let now = std::time::Instant::now();
-                *watching = Some((row, now));
-                now
-            }
-        }
-    };
-    if let Some(wait) = marks_read.delay()
-        && since.elapsed() < wait
-    {
-        return;
-    }
-
-    // Cleared before the write, so a slow server does not mean asking twice.
-    opened_at.replace(None);
-    {
-        let mut s = lock_state(state);
-        if let Some(message) = s.messages.iter_mut().find(|m| m.message_id == row) {
-            message.read = true;
-        }
-    }
-    // Not announced. This is not something somebody did, and a spoken "marked
-    // as read" between every message and the next is a word paid for on all of
-    // them. The count in the folder tree is where it shows.
-    let _ = a11y;
+    let (row, uid, subject) = marked;
     let sent = tx.clone();
     rt.spawn(async move {
         let _ = sent.send(UIUpdate::MessageReadToggled(row, true)).await;
@@ -12476,15 +12489,22 @@ fn selected_row(list: &ListCtrl) -> Option<usize> {
 /// The body comes from the cache. A message with no cached body still opens:
 /// the document says the body has not been downloaded, which is a different
 /// fact from an empty message and a much more useful one than a blank window.
+///
+/// Opening is reading (#25): the moment is recorded in `state`, and the main
+/// timer marks the message read after the wait the setting names, counted
+/// from here, if it is still the selected unread one then.
 fn open_single_message(
     frame: &Frame,
     reader: &Rc<wx_reader::ReaderWindow>,
     a11y: &Arc<Accessibility>,
+    state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
     closed: Option<Rc<dyn Fn()>>,
 ) {
     use crate::application::reading_style::Style;
+
+    lock_state(state).reading_began = Some((message.message_id, std::time::Instant::now()));
 
     // Formatted unless somebody said otherwise. A message opened as plain text
     // has had its headings, links and tables taken out of it, and the person
@@ -20969,7 +20989,7 @@ fn open_conversation_again(
             };
             match chosen {
                 Some(message) => {
-                    open_single_message(frame, reader, a11y, cache, &message, Some(again));
+                    open_single_message(frame, reader, a11y, &state, cache, &message, Some(again));
                 }
                 None => msg_list.set_focus(),
             }
