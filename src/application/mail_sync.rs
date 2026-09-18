@@ -180,9 +180,21 @@ pub fn what_the_renumbering_discarded(result: &FolderSync) -> Option<String> {
 /// result for a check that found nothing and the status bar keeps the
 /// check's last step.
 pub fn what_arrived(folders: &[(String, usize)]) -> Option<String> {
-    // Red half: a sentence for every check, empty or not.
-    let _ = folders;
-    Some(String::new())
+    let clauses: Vec<String> = folders
+        .iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(folder, count)| {
+            format!(
+                "{folder}, {}",
+                crate::service::caldav::how_many(*count, "new message")
+            )
+        })
+        .collect();
+    if clauses.is_empty() {
+        None
+    } else {
+        Some(clauses.join("; "))
+    }
 }
 
 /// Add what the rules did to a summary, in one place.

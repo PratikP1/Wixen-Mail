@@ -30,9 +30,10 @@
 //!
 //! # What it says while it runs
 //!
-//! One announcement topic of its own, superseding, so a fetch of eighty chunks
-//! speaks a handful of times rather than eighty. See [`THE_PROGRESS_TOPIC`] for
-//! why it is not the topic every other status line shares.
+//! Steps, since 2026-09-17: each line goes out as `UIUpdate::Progress`, shown
+//! on the status bar and spoken only when every step was asked for on the
+//! Feedback tab (#38). Until then it had an announcement topic of its own,
+//! [`THE_PROGRESS_TOPIC`], which nothing reads now.
 
 /// How much of a folder is on this computer after a chunk landed.
 ///
@@ -53,19 +54,21 @@ pub enum HowTheRequestEnded {
     AChunkFailed { held: usize, because: String },
 }
 
-/// The topic the progress is announced under.
+/// The topic the progress was announced under until 2026-09-17.
 ///
-/// Its own topic rather than `"status"`. The queue keeps only the newest
-/// announcement of a topic, and `"status"` carries every other status line a
-/// sync produces, so a fetch running for minutes would silence all of them for
-/// as long as it ran. The precedent for splitting is the `"message text"` topic
-/// in `wx_app`, which was kept off `"status"` for exactly this reason.
+/// Nothing reads this since #38: every step of every fetch goes out as
+/// `UIUpdate::Progress`, shown always and spoken only under Say every step,
+/// on the one topic steps share, and the request's lines are steps like any
+/// other. The constant stays until 10-05 retires the request with the
+/// command, so that the retirement is one change rather than two, and its
+/// own test still holds it off `"status"`.
 ///
-/// **This is an assumption Pratik has not confirmed by listening to it.** The
-/// argument above is reasoning about how the queue coalesces rather than an
-/// observation of what somebody hears, and the opposite choice is defensible:
-/// on one topic the progress and the sync lines take turns instead of running
-/// in parallel. Moving it is one line, this constant.
+/// Why it was its own topic: the queue keeps only the newest announcement
+/// of a topic, and `"status"` carried every other status line a sync
+/// produced, so a fetch running for minutes would have silenced all of them
+/// for as long as it ran. That was reasoning about how the queue coalesces
+/// rather than an observation of what somebody hears, and nobody listened
+/// to it before the level made the question moot.
 pub const THE_PROGRESS_TOPIC: &str = "whole folder";
 
 /// What to say while the fetch is running.
