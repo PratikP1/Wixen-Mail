@@ -673,6 +673,12 @@ pub enum UIUpdate {
     /// Sent rather than acted on directly because the watch handle lives with
     /// the rest of the window state, on the thread that owns it.
     MailboxWatchRequested,
+    /// A check finished, so the download of everything may start (#20, #23).
+    ///
+    /// Sent rather than started on the worker, for the reason the watch is:
+    /// whether a download is already running, paused or waiting lives with
+    /// the window state, on the thread that owns it.
+    DownloadRequested,
     /// The server said a watched folder changed (folder path).
     ///
     /// Carries the path rather than a count, because the server reports how

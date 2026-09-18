@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 95 records have arrived since and have not been through it.
+# 98 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -4566,6 +4566,97 @@ after = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk
             let _ = folder_id;"""
 red = [
     "test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+]
+
+# ── Every check ends by starting the download (#20, #23) ────────────────────
+#
+# The download of everything is reached from one place: the end of the
+# check for mail, which F9, the watch waking and, after 10-06, the schedule
+# all end in. A check that stopped asking for it would leave every folder at
+# its first five hundred, which is the tester's report, with the runner
+# built, tested and reached by nothing. The break keeps the variant's name
+# in the check and sends nothing, which is the shape a reading that matched
+# a mention would pass; the reading matches the call. One test goes red out
+# of the sixteen in the target; the companion is over a snippet.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# everything_comes_down_without_being_asked`.
+[[guard]]
+name = "every check ends by starting the download"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = """        say(UIUpdate::DownloadRequested);
+    });
+}"""
+after = """        let _ = UIUpdate::DownloadRequested;
+    });
+}"""
+red = [
+    "test_every_check_ends_by_starting_the_download",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+]
+
+# ── The download asks whether to stop between chunks ─────────────────────────
+#
+# Pause Downloading is one flag, read by the runner before each chunk of
+# headers and handed to each chunk of text. The break leaves the read in
+# place and never lets it answer yes before a chunk of headers, so a pause
+# waits for the text pass, which on a first download is hours away. One
+# test goes red out of the sixteen in the target; the companion is over a
+# snippet.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# everything_comes_down_without_being_asked`.
+[[guard]]
+name = "the download asks whether to stop between chunks"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = """                if stop() {
+                    ended = WhyTheRunEnded::ItWasPaused;
+                    break 'accounts;
+                }"""
+after = """                if false && stop() {
+                    ended = WhyTheRunEnded::ItWasPaused;
+                    break 'accounts;
+                }"""
+red = [
+    "test_the_download_asks_whether_to_stop_between_chunks",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
+]
+
+# ── A failed chunk waits before the download is tried again ──────────────────
+#
+# A server that refused a chunk is left alone for a growing time, thirty
+# seconds doubling to thirty minutes from `trying_again`, and the runner
+# records when the next attempt may start for the main timer to serve. The
+# break records the moment without asking the rule, so the next attempt is
+# due at once and a provider that has had enough is asked again every ten
+# seconds, which is T-10-16. One test goes red out of the sixteen in the
+# target; the companion is over a snippet.
+#
+# Measured 2026-09-17 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, `cargo test --test
+# everything_comes_down_without_being_asked`.
+[[guard]]
+name = "a failed chunk waits before the download is tried again"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = """                let wait = s.downloading.wait.next_wait();"""
+after = """                let wait = std::time::Duration::ZERO;"""
+red = [
+    "test_a_failed_chunk_waits_before_the_download_is_tried_again",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -24225,12 +24316,17 @@ tests_last_seen = [
 # that is coming down is left at its second chunk and said to have
 # stopped, which is a server that answered being reported as one that did
 # not. The pure test of the rule reddens on the case where the count
-# moved, and the old whole-folder loop, which asks the same rule, stops at
-# its second chunk and so reddens its carry-on test and its last-thing-said
-# test.
+# moved.
+#
+# Until 2026-09-17 the old whole-folder loop asked the same rule, stopped
+# at its second chunk under the break, and so reddened its carry-on test
+# and its last-thing-said test as well; 10-05 retired that loop with its
+# module when the download of everything took the command's place, so the
+# two names came off this record by hand that day and it was measured again.
 #
 # Measured 2026-09-17 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the whole library.
+# `scripts/guards.sh --remeasure`, the whole library; measured again the
+# same day after the correction.
 [[guard]]
 name = "a folder is reported as stopped only when a chunk brought nothing new"
 file = "src/application/bringing_everything_down.rs"
@@ -24238,11 +24334,8 @@ before = """    here.held < here.total_on_server && held_before_the_last_chunk =
 after = """    here.held < here.total_on_server && held_before_the_last_chunk.is_some()"""
 red = [
     "application::bringing_everything_down::tests::test_a_finished_folder_brings_nothing_new_and_is_not_a_server_that_stopped",
-    "application::asking_for_a_whole_folder::tests::test_the_request_carries_on_past_the_first_chunk_without_being_asked_again",
-    "application::asking_for_a_whole_folder::tests::test_the_last_thing_said_is_a_count_rather_than_another_progress_line",
 ]
 tests_last_seen = [
-    { file = "src/application/asking_for_a_whole_folder.rs", tests = 7 },
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
 ]
 

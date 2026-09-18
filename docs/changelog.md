@@ -8,6 +8,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Everything comes down on its own, with its text.** Reported on 2026-09-15 from build
+  `0.125.1+g3e633252` (#20): "Right now, only 500 messages are downloaded per folder. All email
+  should be downloaded." And (#23): "Unless explicitly forbidden, message text should be downloaded
+  along with mail." After every check for mail, everything the kept folders hold comes down without
+  you asking, for every enabled IMAP account: the headers first, five hundred at a time, the folder
+  you are looking at first, then the inbox, then the rest in the order of the folder tree; then the
+  text of each message, fifty at a time, unless the Message Text box on the Permissions tab is off
+  or the size you chose there has been reached. A check is what F9 runs and what the watch on your
+  inbox runs when the server says something arrived, so the download starts on its own from the
+  first check after this build. It picks up where it was after a restart, because what it knows
+  is what is already on this computer. Get Older Messages, `Shift+F9`, carries the download on
+  with this folder first rather than fetching one page. Download This Whole Folder is gone, because
+  this is what it did.
+  A provider that stops answering is left alone for a growing time, thirty seconds doubling to
+  half an hour, and asked again; the status bar says so, and under Say what arrived nothing is
+  spoken about it, because the download tries again on its own. What each chunk brought and each
+  folder becoming whole are steps, shown and spoken only under Say every step; what an account came
+  to, how many folders are whole and how many messages have their text here, is said once when
+  its download ends, with the sound for new mail.
+  Known limitations: none of this has met a real account. Asking a provider for a whole mailbox
+  chunk after chunk is something it is entitled to refuse, to slow down, or to disconnect you
+  for, and nothing here can find out which yours will do; the first check after this build is
+  where that is found out. Gmail's All Mail and the Spam folder are not kept up to date by
+  default, as before, and a folder you chose not to keep is not downloaded. The first download of
+  a large mailbox is a long run. The stored mail is not encrypted, as `docs/privacy.md` says, and
+  with All of it chosen the cache grows with your mailbox.
 - **How much is said while mail and the other modules are fetched is your choice.** Reported on
   2026-09-15 from build `0.125.1+g3e633252` (#38): "When fetching mail and other items, the
   announcements are too verbose. Only folders and items with new mail or items should be

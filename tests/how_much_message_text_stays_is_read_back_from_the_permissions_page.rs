@@ -280,8 +280,10 @@ fn test_the_two_workers_that_evict_are_handed_the_setting_and_nothing_else_evict
     }
 
     // The folder sync has two callers in the window, and each opens its
-    // cache with the setting, read once before the cache is built.
-    let workers = ["spawn_mail_sync", "spawn_whole_folder_fetch"];
+    // cache with the setting, read once before the cache is built. Until
+    // 2026-09-17 the second was the whole-folder request; the download of
+    // everything took its place when 10-05 retired that command.
+    let workers = ["spawn_mail_sync", "start_the_download"];
     let callers = window.matches("mail_sync::sync_folder(").count();
     if callers != workers.len() {
         wrong.push(format!(

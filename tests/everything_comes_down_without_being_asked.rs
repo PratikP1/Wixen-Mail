@@ -123,15 +123,20 @@ fn the_menu_arm_for(source: &str, id: &str) -> String {
 
 /// What is wrong with the end of a check, as sentences; nothing when it asks
 /// for the download after it asks for the watch.
+///
+/// The send is matched as a call, `say(UIUpdate::...)`, and not as the
+/// variant's name: a name can sit in a comment or a `let _ =` and send
+/// nothing, and a reading that accepted a mention would stay green through
+/// exactly the break that matters.
 fn what_is_wrong_with_the_end_of_a_check(check: &str) -> Vec<String> {
     let mut wrong = Vec::new();
-    let Some(watch) = check.find("UIUpdate::MailboxWatchRequested") else {
+    let Some(watch) = check.find("say(UIUpdate::MailboxWatchRequested)") else {
         wrong.push(
             "the check no longer asks for the watch, so this reads nothing about its end".into(),
         );
         return wrong;
     };
-    match check.find("UIUpdate::DownloadRequested") {
+    match check.find("say(UIUpdate::DownloadRequested)") {
         None => wrong.push(
             "the check never asks for the download, so everything past the first chunk of each \
              folder waits for a key"

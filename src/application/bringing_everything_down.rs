@@ -92,7 +92,8 @@ pub struct HowMuchIsHere {
 /// completeness test rather than before it, because a folder whose last chunk
 /// finished it also brings nothing new to the next one, and reporting that as
 /// a server that stopped would turn every finished folder into a failed one.
-/// The rule `asking_for_a_whole_folder` was written with, kept here for both.
+/// The rule the whole-folder request was written with, moved here on
+/// 2026-09-17 and kept when 10-05 retired that request with its module.
 pub fn stopped_coming_down(held_before_the_last_chunk: Option<usize>, here: HowMuchIsHere) -> bool {
     here.held < here.total_on_server && held_before_the_last_chunk == Some(here.held)
 }
@@ -572,7 +573,7 @@ mod tests {
 
     #[test]
     fn test_a_folder_whose_last_chunk_brought_nothing_new_is_asked_once_more_and_then_reported() {
-        // The rule asking_for_a_whole_folder was written with: a chunk that
+        // The rule the whole-folder request was written with: a chunk that
         // brings nothing new is a server that has stopped handing messages
         // over, and asking again would ask forever. A folder that has not
         // been asked in this run is asked; one whose last chunk left the

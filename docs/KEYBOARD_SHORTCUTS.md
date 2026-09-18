@@ -425,7 +425,7 @@ can navigate. Making them real headings is being worked on.
 | Previous unread | `Ctrl+Shift+U` | Go to the previous message you have not read |
 | Star or unstar | `Ctrl+Shift+S` | Star the selected message, or take the star off |
 | Refresh folder | `F5` | Read this folder again from the server |
-| Get older messages | `Shift+F9` | Fetch the next page of older messages |
+| Get older messages | `Shift+F9` | Carry on downloading everything, with this folder first. Every message of every kept folder comes down on its own after a check; this puts the folder you are in at the front of the queue |
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
 | Send read receipt | no shortcut | Action menu. Only when that message asked for one |
@@ -552,7 +552,7 @@ Five submenus hold the rest:
 | Label | The ten labels, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
-| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), Download This Whole Folder, Folders to Keep Up to Date |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first, Folders to Keep Up to Date. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did |
 | Saved Searches | Rename or delete the saved search you are on in the folder tree. Deleting one never deletes mail |
 
 ### Account Management

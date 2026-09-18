@@ -117,7 +117,6 @@ menu_ids!(
     // somebody presses daily.
     ID_IMPORT_PGP_KEY,
     ID_GET_OLDER,
-    ID_GET_WHOLE_FOLDER,
     ID_QUIT,
     ID_SEARCH,
     ID_REPLY,
@@ -450,6 +449,43 @@ pub struct WxUIState {
     /// Every one of them has to ask for the same window, or saving an event in
     /// a week view silently puts somebody back in the agenda.
     pub calendar_showing: CalendarShowing,
+    /// Where the download of everything stands (#20, #23).
+    ///
+    /// In state because three things read it: the runner, to know whether
+    /// it is already running and whether to stop between chunks; the Pause
+    /// item, which flips one flag; and the main timer, which starts the next
+    /// attempt when a wait after a refusal has run out. Session-only, like
+    /// offline mode: a person who paused a run and closed the program has
+    /// not asked for the next start to stay paused.
+    pub downloading: Downloading,
+}
+
+/// Where the download of everything stands.
+///
+/// The runner's state is the cache; this is only what a running program
+/// needs to hold between chunks and between attempts.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Downloading {
+    /// A run is on a worker thread now, so a second start does nothing.
+    pub running: bool,
+    /// Pause Downloading is ticked: the run in flight ends between chunks
+    /// and no new one starts until it is unticked.
+    pub paused: bool,
+    /// When the next attempt may start, after a chunk failed. Served by the
+    /// main timer rather than by a sleeping thread; `None` when nothing is
+    /// waiting.
+    pub next_attempt_at: Option<std::time::Instant>,
+    /// How long the next wait is, growing with each failure in a row and
+    /// put back by a chunk that worked.
+    pub wait: crate::application::trying_again::WaitBeforeTryingAgain,
+}
+
+impl Downloading {
+    /// Whether a wait after a refusal is still running.
+    fn is_still_waiting(&self) -> bool {
+        self.next_attempt_at
+            .is_some_and(|at| at > std::time::Instant::now())
+    }
 }
 
 impl Default for WxUIState {
@@ -498,6 +534,7 @@ impl Default for WxUIState {
                 crate::data::config::AppConfig::default().default_reminder_minutes,
             ),
             calendar_showing: CalendarShowing::agenda_now(),
+            downloading: Downloading::default(),
         }
     }
 }
@@ -4554,70 +4591,41 @@ impl WxMailApp {
                                 ),
                             }
                         }
-                        // The same sync, aimed at one folder: "carry on
-                        // downloading, this folder first". The fetch skips
-                        // what is already stored, so asking again brings the
-                        // next oldest chunk into the cache, and the list
-                        // shows it when the sync says the folder changed,
-                        // because the list holds everything the folder holds
-                        // here since 2026-09-17 and has no limit to grow.
-                        // Until then the view's own page grew alongside each
-                        // fetch and the folder was re-read here before the
-                        // sync, to show what an earlier session had cached
-                        // behind the page; there is nothing behind it now.
-                        // 10-05 makes the next chunk the runner's job as well.
+                        // "Carry on downloading, this folder first." The
+                        // download of everything runs after every check
+                        // since 2026-09-17 (#20) and prefers the folder on
+                        // screen, so this hands to it rather than running a
+                        // sync of its own: one path brings older mail down,
+                        // not two. Until then this ran the sync itself, one
+                        // chunk per press, and before 10-02 the view's own
+                        // page grew alongside each fetch; the list holds
+                        // everything the folder holds now.
+                        //
+                        // The key is answered before the hand-over, because
+                        // the download's own lines are steps, silent under
+                        // Say what arrived, and a key pressed into silence is
+                        // pressed again.
                         _ if id == ID_GET_OLDER => {
-                            let open = lock_state(&state).selected_folder.clone();
+                            let (open, paused) = {
+                                let s = lock_state(&state);
+                                (s.selected_folder.clone(), s.downloading.paused)
+                            };
                             match open {
-                                // The path the server spells, taken off the
-                                // row's identity. What went here before was
-                                // what `selected_folder` held, which was the
-                                // row's words, unread count and all: no folder
-                                // ever had that path, so the filter this feeds
-                                // matched nothing and Get Older fetched from no
-                                // folder at all.
-                                Some(folder_tree::WhichRow::Folder { path, .. }) => {
-                                    send_status(&ui_tx, &runtime, "Getting older messages...");
-                                    // Reaching further back, not bringing
-                                    // the folder up to date. A folder that can
-                                    // resume is asked for the uids above the
-                                    // highest one held, and the older mail this
-                                    // key exists to fetch is below it, so a
-                                    // sync told the other thing answers this
-                                    // with nothing at all.
-                                    spawn_mail_sync(
-                                        app,
-                                        Some(path),
-                                        crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
-                                    );
+                                // The path is what says this is a folder on a
+                                // server; the download reads which one from
+                                // the state itself.
+                                Some(folder_tree::WhichRow::Folder { .. }) if paused => {
+                                    send_refusal(&ui_tx, &runtime, DOWNLOADING_IS_PAUSED);
+                                }
+                                Some(folder_tree::WhichRow::Folder { .. }) => {
+                                    send_status(&ui_tx, &runtime, DOWNLOADING_THIS_FOLDER_FIRST);
+                                    start_the_download(app);
                                 }
                                 // A saved search is not a mailbox, and neither
                                 // is a branch or a label. There is nothing on a
                                 // server to select and nothing older to fetch.
                                 Some(_) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
                                 None => send_refusal(&ui_tx, &runtime, "Choose a folder first"),
-                            }
-                        }
-                        // Get Older Messages asking for all of it. The request
-                        // carries on by itself once it starts, so this hands
-                        // over and says nothing else: the loop's own progress
-                        // lines are what somebody hears from here on.
-                        _ if id == ID_GET_WHOLE_FOLDER => {
-                            let (open, folder_id) = {
-                                let s = lock_state(&state);
-                                (s.selected_folder.clone(), folder_on_screen(&s))
-                            };
-                            match (open, folder_id) {
-                                (Some(folder_tree::WhichRow::Folder { path, .. }), Some(id)) => {
-                                    spawn_whole_folder_fetch(app, path, id);
-                                }
-                                // A saved search is not a mailbox, and neither
-                                // is a branch or a label. There is nothing on a
-                                // server to select and nothing to download.
-                                (Some(_), _) => refuse_a_command(&ui_tx, NOT_A_FOLDER),
-                                (None, _) => {
-                                    send_refusal(&ui_tx, &runtime, "Choose a folder first");
-                                }
                             }
                         }
                         _ if id == ID_OPEN_DRAFT => {
@@ -5599,6 +5607,10 @@ impl WxMailApp {
                             .borrow_mut()
                             .told(crate::service::network::whether_there_is_a_network());
                         act_on_what_the_network_did(news, &ui_tx, &runtime);
+                        // The download's wait after a refusal is served
+                        // here, on the same cadence: the runner records
+                        // when it may try again rather than sleeping.
+                        start_the_download_if_its_wait_is_over(app);
                     }
 
                     // Held mail goes on its own. On this timer and on its own
@@ -6558,29 +6570,15 @@ impl WxMailApp {
                 "Read this folder again from the server",
             )
             // Shift with the same key as Check Mail, because it is the same
-            // action reaching further back.
+            // action reaching further back. Since 2026-09-17 the download of
+            // everything runs on its own after every check, so this carries
+            // it on with the folder on screen first rather than fetching one
+            // page; Download This Whole Folder, which sat beside it, went
+            // with that, because the download is what it did.
             .append_item(
                 ID_GET_OLDER,
                 "Get &Older Messages\tShift+F9",
-                "Fetch the next page of older messages in this folder",
-            )
-            // The same action asking for all of it rather than one page more.
-            //
-            // Marked experimental on the label as well as in the description,
-            // for the reason the missing message text item gives: a menu has
-            // nowhere to put the line of static text that carries the warning
-            // beside a button, the description is what Windows shows in the
-            // status bar and hands over as the accessible description, and the
-            // label is read whatever anybody's settings say.
-            //
-            // A mnemonic and no chord. A new accelerator needs a line in
-            // docs/KEYBOARD_SHORTCUTS.md in the same commit, and this is a run
-            // somebody starts once and waits for rather than a key they press
-            // daily.
-            .append_item(
-                ID_GET_WHOLE_FOLDER,
-                "Down&load This Whole Folder (experimental)",
-                crate::application::allowed::DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL,
+                "Carry on downloading, this folder first",
             )
             .append_separator()
             .append_item(
@@ -7191,19 +7189,27 @@ pub fn the_offer_to_fetch(count: usize) -> Option<String> {
 const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \
      computer.";
 
-/// What the download of everything says the moment it starts.
+/// What the download of everything says the moment it starts, before any
+/// server is dialled.
 ///
-/// `pub` for the red half only: nothing calls it yet, `dead_code` fires on a
-/// private constant nothing reads, and `-D warnings` refuses the build. It is
-/// narrowed to private in the commit that gives it a caller. Empty here so
-/// the test that reads its words is red on an assertion rather than on a
-/// missing name.
-pub const STARTING_THE_DOWNLOAD: &str = "";
+/// A step, not an answer: the download starts on its own after every check,
+/// so nobody pressed anything for it to answer, and under Say what arrived
+/// it is shown and not spoken. Deliberately vague about how much, because
+/// nothing has counted yet.
+const STARTING_THE_DOWNLOAD: &str = "Downloading the mail that is not on this computer yet...";
 
 /// What Get Older Messages answers before it hands to the download.
 ///
-/// `pub` and empty for the reason the constant above gives.
-pub const DOWNLOADING_THIS_FOLDER_FIRST: &str = "";
+/// An answer to a key, said at Normal, because the download's own lines are
+/// steps and Shift+F9 would otherwise be a key pressed and then silence.
+const DOWNLOADING_THIS_FOLDER_FIRST: &str = "Downloading this folder first...";
+
+/// What Get Older Messages answers while the download is paused.
+///
+/// A refusal that names the way out, so somebody who paused an hour ago and
+/// forgot is told where the tick is rather than left pressing a key that
+/// does nothing.
+const DOWNLOADING_IS_PAUSED: &str = "Downloading is paused. Tools, Pause Downloading takes it off.";
 
 /// The offer as it is spoken, rather than as it is printed on the button.
 ///
@@ -18382,6 +18388,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::MailboxWatchRequested => {
             spawn_mail_watch(AppHandles { state, tx, rt });
         }
+        UIUpdate::DownloadRequested => {
+            start_the_download(AppHandles { state, tx, rt });
+        }
         UIUpdate::MailboxChanged(folder) => {
             // Nothing is signalled here since 2026-09-17 (#38). The new-mail
             // event used to fire from this arm, which is reached when the
@@ -21673,39 +21682,85 @@ fn how_much_message_text_stays() -> crate::application::keeping_message_text::Te
         .unwrap_or_default()
 }
 
-/// Bring a whole folder down, chunk after chunk, without being asked again.
+/// Why one run of the download over every account ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhyTheRunEnded {
+    /// Every account was asked until it had nothing more to do.
+    EveryAccountIsDone,
+    /// Pause Downloading was ticked between chunks.
+    ItWasPaused,
+    /// A server refused a chunk, so the run waits and is tried again.
+    AServerStopped,
+}
+
+/// Bring everything down, chunk by chunk, without being asked (#20, #23).
 ///
-/// SCALE-03. A sync brings down `mail_sync::INITIAL_FETCH_LIMIT` messages, so
-/// somebody with a forty thousand message inbox who wants all of it presses
-/// Get Older Messages eighty times. This asks once.
+/// Started by the end of every check for mail, by Get Older Messages, and
+/// by the main timer when a wait after a refusal has run out. For each
+/// enabled IMAP account, in the order the account list holds them, it asks
+/// `bringing_everything_down::what_to_do_next` what to do and does that one
+/// thing: the next chunk of headers through `sync_folder`, the next chunk of
+/// text through `fetch_over_a_mailbox`, or nothing, because everything is
+/// here. The decisions are all the model's; what is here is the connection,
+/// the cache, the sending, and the two things only a running program can
+/// hold, a stop and a wait.
 ///
-/// One bound now, where there were two. `INITIAL_FETCH_LIMIT` is handed to
-/// each sync below and bounds what comes down from the server. Until
-/// 2026-09-17 a second number bounded what was read out of the cache into the
-/// list, and the `MoreOfTheFolderArrived` arm of the update handler moved it
-/// once per chunk, because moving one alone appeared to do nothing: either
-/// mail arrived and was never shown, or the list asked for rows that were
-/// never fetched. The list holds everything the folder holds now, so the arm
-/// re-reads the folder and moves nothing.
+/// Its state is the cache, so a run that stopped anywhere picks up where it
+/// was on the next start, and a restart of the program resumes with no
+/// state file. Between chunks it asks whether Pause Downloading is ticked,
+/// and a chunk in flight finishes before it stops.
 ///
-/// The loop itself is in `application::asking_for_a_whole_folder`, where it can
-/// be run without a window. What is here is the bound, the connection and
-/// the sending.
+/// A chunk the server refuses ends the run, and the run is tried again
+/// after a wait from `trying_again::WaitBeforeTryingAgain`, thirty seconds
+/// doubling to thirty minutes, served by the timer rather than by a thread
+/// asleep. It retries at the cap for as long as the program runs and the
+/// download is not paused, with no bound of its own: a provider that
+/// refuses for a day and relents is the case the tester's account is most
+/// likely to show, and a run that gave up would leave a mailbox half here
+/// with nothing to restart it but a keystroke. A person who wants it to
+/// stop has Pause. The watch (10-06) is where a bound does apply, because a
+/// schedule carries on underneath it and nothing carries on underneath this.
 ///
-/// Runs on a blocking thread for the same reason the other syncs do: the cache
-/// holds a SQLite connection that is not `Sync`.
-fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
+/// Every line on the way is a step, shown always and spoken only under Say
+/// every step (#38); what an account came to is said once, as what arrived,
+/// when the run over that account ends, and only if it had anything to do.
+/// Nothing is said per folder at Normal, because a mailbox of fifty folders
+/// would otherwise say fifty sentences over the hours a first download
+/// takes. A refusal is shown and, under the default, not spoken, because the
+/// run is tried again on its own.
+///
+/// Logging names accounts, folders, counts and reasons, never a subject or
+/// a body: this is the one routine holding hundreds of messages in a row.
+///
+/// Runs on a blocking thread for the same reason the other syncs do: the
+/// cache holds a SQLite connection that is not `Sync`. The state lock is
+/// held to read a few fields and to write the flags, never across a server
+/// call. One function rather than several, because three source readings
+/// hold what it reaches by reading this item, and the whole-folder request
+/// it grew out of had the same shape.
+fn start_the_download(app: AppHandles<'_>) {
     let AppHandles { state, tx, rt } = app;
+    {
+        let mut s = lock_state(state);
+        if s.downloading.running || s.downloading.paused || s.downloading.is_still_waiting() {
+            return;
+        }
+        s.downloading.running = true;
+    }
+    // Before anything is dialled, as a step: the first thing the run itself
+    // does is a sign-in that takes as long as a mail server takes.
+    send_progress(tx, rt, STARTING_THE_DOWNLOAD);
+    let accounts: Vec<Account> = lock_state(state)
+        .accounts
+        .iter()
+        .filter(|account| {
+            account.enabled && account.protocol() == crate::common::types::Protocol::Imap
+        })
+        .cloned()
+        .collect();
+    let state = state.clone();
     let tx = tx.clone();
     let handle = rt.handle().clone();
-    let (accounts, account_id) = {
-        let s = lock_state(state);
-        (s.accounts.clone(), s.active_account_id.clone())
-    };
-    let account = account_id
-        .as_ref()
-        .and_then(|id| accounts.iter().find(|a| &a.id == id).cloned())
-        .or_else(|| accounts.first().cloned());
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -21713,87 +21768,396 @@ fn spawn_whole_folder_fetch(app: AppHandles<'_>, path: String, folder_id: i64) {
                 let _ = tx.send(update).await;
             });
         };
+        // One flag, read in one place: asked before each chunk of headers
+        // below, and handed to each chunk of text, which asks it before
+        // each message.
+        let stop = || lock_state(&state).downloading.paused;
+        let on_screen = || folder_on_screen(&lock_state(&state));
+        let worked = || lock_state(&state).downloading.wait.tell_it_worked();
 
-        let Some(account) = account else {
-            say(UIUpdate::CommandRefused(
-                "Add an account before downloading a folder".to_string(),
-            ));
-            return;
-        };
         let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
-            say(UIUpdate::CommandRefused(
-                "No cache directory available".to_string(),
-            ));
+            say(UIUpdate::ErrorOccurred("No cache directory available".to_string()));
+            lock_state(&state).downloading.running = false;
             return;
         };
         // This worker's cache evicts at the end of every chunk, so it is
-        // handed how much text may stay; the window's cache is not.
+        // handed how much text may stay; the window's cache is not. The same
+        // value is the budget the model measures the text pass against.
         let text_kept = how_much_message_text_stays();
+        let budget = text_kept.budget();
         let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
             Ok(cache) => cache.keeping_bodies_under(text_kept.budget()),
             Err(e) => {
-                say(UIUpdate::CommandRefused(format!("Cache error: {e}")));
+                say(UIUpdate::ErrorOccurred(format!("Cache error: {e}")));
+                lock_state(&state).downloading.running = false;
                 return;
             }
-        };
-        let controller =
-            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
-                Ok(session) => session,
-                Err(why) => {
-                    say(UIUpdate::CommandRefused(why.to_string()));
-                    return;
-                }
-            };
-        let folders = match handle.block_on(controller.fetch_folders()) {
-            Ok(folders) => folders,
-            Err(e) => {
-                say(UIUpdate::CommandRefused(e.to_string()));
-                return;
-            }
-        };
-        let Some(folder) = folders.into_iter().find(|f| f.path == path) else {
-            say(UIUpdate::CommandRefused(format!(
-                "{} is not a folder this account has any more",
-                path
-            )));
-            return;
         };
 
-        let mut ask_for_another_chunk = || {
-            let done = handle.block_on(crate::application::mail_sync::sync_folder(
-                controller.as_ref(),
+        let mut ended = WhyTheRunEnded::EveryAccountIsDone;
+        'accounts: for account in &accounts {
+            let controller = match handle
+                .block_on(crate::application::mail_session::the_session_at(account))
+            {
+                Ok(session) => session,
+                Err(why) => {
+                    tracing::warn!("The download could not sign in to {}: {why}", account.name);
+                    ended = WhyTheRunEnded::AServerStopped;
+                    break;
+                }
+            };
+            let folders = match handle.block_on(controller.fetch_folders()) {
+                Ok(folders) => folders,
+                Err(e) => {
+                    tracing::warn!("The download could not list {}'s folders: {e}", account.name);
+                    ended = WhyTheRunEnded::AServerStopped;
+                    break;
+                }
+            };
+            let stored = match crate::application::mail_sync::store_folders(
                 &cache,
-                &folder,
-                folder_id,
-                crate::application::mail_sync::INITIAL_FETCH_LIMIT,
-                None,
-                // Reaching further back, not bringing the folder up to date.
-                // A sync told the other thing resumes, and a resumed listing
-                // covers only the uids above the highest one held, which is
-                // the opposite end of the folder from the mail this request is
-                // asking for. It would answer every chunk after the first with
-                // nothing and the request would stop saying the server had.
-                crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
-            ))?;
-            // The other bound, moved for every chunk. Sent rather than done
-            // here because the view's limit lives on the interface thread.
-            say(UIUpdate::MoreOfTheFolderArrived(folder_id));
-            Ok(
-                crate::application::asking_for_a_whole_folder::HowMuchIsHere {
-                    held: done.held,
-                    total_on_server: done.total_on_server,
-                },
-            )
+                &account.id,
+                &folders,
+            ) {
+                Ok(stored) => stored,
+                Err(e) => {
+                    say(UIUpdate::ErrorOccurred(format!(
+                        "Could not store the folder list: {e}"
+                    )));
+                    continue;
+                }
+            };
+            let chosen = cache.folder_choices(&account.id).unwrap_or_default();
+            let kept = crate::application::mail_sync::folders_to_sync(&folders, &chosen);
+            let mut here = folders_here_for(&cache, &account.id, &kept, &stored);
+            let mut reading_allowed = crate::application::allowed::allowed_for(&account.id).reading;
+            let mut text = crate::application::bringing_everything_down::TextDownload {
+                fetched: 0,
+                could_not: 0,
+                stopped_at_the_budget: None,
+            };
+            let mut text_to_fetch: Option<usize> = None;
+            let mut did_anything = false;
+
+            loop {
+                // Between chunks, so the one in flight finishes and the next
+                // does not start.
+                if stop() {
+                    ended = WhyTheRunEnded::ItWasPaused;
+                    break 'accounts;
+                }
+                let missing = match cache.messages_with_no_text_here(&account.id) {
+                    Ok(missing) => missing,
+                    Err(e) => {
+                        say(UIUpdate::ErrorOccurred(format!(
+                            "The messages with no text here could not be listed: {e}"
+                        )));
+                        break;
+                    }
+                };
+                let kept_bytes = cache.cached_body_bytes().unwrap_or(0).max(0) as u64;
+                let next = crate::application::bringing_everything_down::what_to_do_next(
+                    &here,
+                    crate::application::bringing_everything_down::TextStillMissing {
+                        messages: &missing,
+                        kept_bytes,
+                    },
+                    budget,
+                    on_screen(),
+                    reading_allowed,
+                );
+                use crate::application::bringing_everything_down::WhatToDoNext;
+                match next {
+                    WhatToDoNext::TheNextChunkOfHeaders { folder_id, path } => {
+                        did_anything = true;
+                        let Some(folder) = kept.iter().find(|f| f.path == path) else {
+                            break;
+                        };
+                        let Some(entry) = here.iter_mut().find(|f| f.folder_id == folder_id)
+                        else {
+                            break;
+                        };
+                        match handle.block_on(crate::application::mail_sync::sync_folder(
+                            controller.as_ref(),
+                            &cache,
+                            folder,
+                            folder_id,
+                            crate::application::mail_sync::INITIAL_FETCH_LIMIT,
+                            None,
+                            // Reaching further back, not bringing the folder
+                            // up to date: a resumed listing covers only the
+                            // uids above the highest one held, which is the
+                            // opposite end of the folder from what this
+                            // wants, and would answer every chunk with
+                            // nothing.
+                            crate::application::mail_sync::WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+                        )) {
+                            Ok(done) => {
+                                worked();
+                                entry.held_before_the_last_chunk = Some(entry.here.held);
+                                entry.here.held = done.held;
+                                entry.here.total_on_server = done.total_on_server;
+                                // The list re-reads the folder if it is open.
+                                say(UIUpdate::MoreOfTheFolderArrived(folder_id));
+                                say(UIUpdate::Progress(what_a_chunk_of_headers_came_to(entry)));
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "The download of {} for {} stopped: {e}",
+                                    folder.name,
+                                    account.name
+                                );
+                                say(UIUpdate::Progress(what_a_refused_chunk_came_to(entry, &e)));
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;
+                            }
+                        }
+                    }
+                    WhatToDoNext::TheNextChunkOfText { messages, .. } => {
+                        did_anything = true;
+                        let to_fetch = *text_to_fetch.get_or_insert(missing.len());
+                        let done = handle.block_on(
+                            crate::application::mail_sync::fetch_over_a_mailbox(
+                                controller.as_ref(),
+                                &cache,
+                                &messages,
+                                &stop,
+                                &|_| {},
+                            ),
+                        );
+                        text.fetched += done.fetched;
+                        text.could_not += done.could_not;
+                        use crate::application::mail_sync::Ending;
+                        match done.ended {
+                            Ending::WentThroughTheWholeList => {
+                                worked();
+                                say(UIUpdate::Progress(how_far_the_text_has_got(
+                                    text.fetched,
+                                    to_fetch,
+                                )));
+                            }
+                            // The next ask answers that reading is off, and
+                            // says so at the end.
+                            Ending::ReadingWasTurnedOff(_) => reading_allowed = false,
+                            Ending::Stopped { .. } => {
+                                ended = WhyTheRunEnded::ItWasPaused;
+                                break 'accounts;
+                            }
+                            Ending::TheServerStoppedAnswering { .. } => {
+                                say(UIUpdate::Progress(
+                                    crate::application::bringing_everything_down::what_the_text_download_came_to(&text),
+                                ));
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;
+                            }
+                        }
+                    }
+                    WhatToDoNext::EverythingIsHere { why } => {
+                        if did_anything {
+                            let with_text = how_much_text_is_here(&cache, &account.id);
+                            if text_to_fetch.is_some() {
+                                text.stopped_at_the_budget =
+                                    what_the_budget_left(why, budget, with_text, missing.len());
+                                say(UIUpdate::Progress(
+                                    crate::application::bringing_everything_down::what_the_text_download_came_to(&text),
+                                ));
+                            }
+                            let folders_done = here
+                                .iter()
+                                .filter(|f| {
+                                    crate::application::bringing_everything_down::where_a_folder_stands(f)
+                                        == crate::application::bringing_everything_down::WhereAFolderStands::IsAllHere
+                                })
+                                .count();
+                            tracing::info!(
+                                "The download of {} is done: {folders_done} folders whole, the text of {with_text} messages here",
+                                account.name
+                            );
+                            // Once per account, and only when it had anything
+                            // to do: the one sentence a run says under Say
+                            // what arrived.
+                            say(UIUpdate::WhatArrived {
+                                what: crate::application::bringing_everything_down::what_a_whole_account_came_to(folders_done, with_text),
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        let waiting = {
+            let mut s = lock_state(&state);
+            s.downloading.running = false;
+            (ended == WhyTheRunEnded::AServerStopped).then(|| {
+                let wait = s.downloading.wait.next_wait();
+                s.downloading.next_attempt_at = Some(std::time::Instant::now() + wait);
+                (wait, s.downloading.wait.how_many_failures_in_a_row())
+            })
         };
-        // Steps, like every other fetch's lines since 2026-09-17 (#38): shown
-        // always, spoken only under Say every step. The loop's closing
-        // report goes out the same way, because the loop hands over one kind
-        // of line, and this command retires with 10-05.
-        crate::application::asking_for_a_whole_folder::until_the_whole_folder_is_here(
-            &mut ask_for_another_chunk,
-            &mut |line| say(UIUpdate::Progress(line.to_string())),
-        );
+        if let Some((wait, failures)) = waiting {
+            tracing::warn!(
+                "The download will be tried again in {} seconds, after {failures} failure(s) in a row",
+                wait.as_secs()
+            );
+            say(UIUpdate::Progress(
+                crate::application::trying_again::what_to_say_before_waiting(wait, failures),
+            ));
+        }
     });
+}
+
+/// Start the download when a wait after a refusal has run out.
+///
+/// On the main timer, on the network's cadence, because the runner records
+/// when the next attempt may start rather than holding a thread asleep for
+/// up to thirty minutes. Paused stays paused: unticking the item is what
+/// starts it then.
+fn start_the_download_if_its_wait_is_over(app: AppHandles<'_>) {
+    let due = {
+        let mut s = lock_state(app.state);
+        let due = s.downloading.next_attempt_at.is_some()
+            && !s.downloading.is_still_waiting()
+            && !s.downloading.paused
+            && !s.downloading.running;
+        if due {
+            s.downloading.next_attempt_at = None;
+        }
+        due
+    };
+    if due {
+        start_the_download(app);
+    }
+}
+
+/// Each kept folder of an account as the cache knows it, which is what the
+/// model decides from.
+///
+/// `total_on_server` is the count the last check stored on the folder's row,
+/// and `held` is what the cache holds; a folder no check has synced yet has
+/// both at nought and is asked by the next check rather than here.
+fn folders_here_for(
+    cache: &MessageCache,
+    account_id: &str,
+    kept: &[&crate::service::protocols::imap::ImapFolder],
+    stored: &[(crate::service::protocols::imap::ImapFolder, i64)],
+) -> Vec<crate::application::bringing_everything_down::FolderHere> {
+    let totals: std::collections::HashMap<i64, usize> = cache
+        .get_folders_for_account(account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| (row.id, row.total_count.max(0) as usize))
+        .collect();
+    kept.iter()
+        .filter_map(|folder| {
+            let (_, folder_id) = stored.iter().find(|(f, _)| f.path == folder.path)?;
+            let held = cache.messages_stored_in(&[*folder_id]).unwrap_or(0);
+            let total_on_server = totals.get(folder_id).copied().unwrap_or(0);
+            Some(crate::application::bringing_everything_down::FolderHere {
+                folder_id: *folder_id,
+                path: folder.path.clone(),
+                name: folder.name.clone(),
+                kind: folder.folder_type,
+                here: crate::application::bringing_everything_down::HowMuchIsHere {
+                    held,
+                    total_on_server,
+                },
+                held_before_the_last_chunk: None,
+            })
+        })
+        .collect()
+}
+
+/// What to say after a chunk of headers landed: how far the folder has got,
+/// or that it is whole, or that the server stopped sending it.
+fn what_a_chunk_of_headers_came_to(
+    folder: &crate::application::bringing_everything_down::FolderHere,
+) -> String {
+    use crate::application::bringing_everything_down::{
+        HowTheRunEnded, WhereAFolderStands, how_far_the_download_has_got,
+        what_the_folder_download_came_to, where_a_folder_stands,
+    };
+    match where_a_folder_stands(folder) {
+        WhereAFolderStands::NeedsMoreHeaders => {
+            how_far_the_download_has_got(&folder.name, folder.here)
+        }
+        WhereAFolderStands::IsAllHere => what_the_folder_download_came_to(
+            &folder.name,
+            &HowTheRunEnded::TheWholeFolderIsHere {
+                held: folder.here.held,
+            },
+        ),
+        WhereAFolderStands::StoppedComingDown => what_the_folder_download_came_to(
+            &folder.name,
+            &HowTheRunEnded::ItStoppedComingDown {
+                held: folder.here.held,
+                total_on_server: folder.here.total_on_server,
+            },
+        ),
+    }
+}
+
+/// What to say when a chunk of headers was refused, in this program's words
+/// and never the server's: the kind of the failure decides the clause.
+fn what_a_refused_chunk_came_to(
+    folder: &crate::application::bringing_everything_down::FolderHere,
+    error: &crate::common::Error,
+) -> String {
+    use crate::application::bringing_everything_down::{
+        HowTheRunEnded, what_the_folder_download_came_to,
+    };
+    let why = crate::application::mail_sync::WhyTheServerStopped::from_the_kind_of(error);
+    what_the_folder_download_came_to(
+        &folder.name,
+        &HowTheRunEnded::AChunkFailed {
+            held: folder.here.held,
+            total_on_server: folder.here.total_on_server,
+            because: format!(
+                "the mail server stopped answering, and {}.",
+                why.as_a_clause()
+            ),
+        },
+    )
+}
+
+/// The step said after a chunk of text landed, in the shape of a folder's
+/// progress line: what is being downloaded, then how much of how many.
+fn how_far_the_text_has_got(fetched: usize, to_fetch: usize) -> String {
+    crate::application::bringing_everything_down::how_far_the_download_has_got(
+        "message text",
+        crate::application::bringing_everything_down::HowMuchIsHere {
+            held: fetched,
+            total_on_server: to_fetch,
+        },
+    )
+}
+
+/// How many of an account's messages have their text on this computer.
+fn how_much_text_is_here(cache: &MessageCache, account_id: &str) -> usize {
+    cache
+        .how_much_message_text_is_stored_here(account_id)
+        .map_or(0, |text| text.with_text.max(0) as usize)
+}
+
+/// What a text pass that ended at the budget leaves behind, or nothing when
+/// the budget is not what ended it.
+fn what_the_budget_left(
+    why: crate::application::bringing_everything_down::Why,
+    budget: crate::application::bringing_everything_down::TextBudget,
+    with_text: usize,
+    older_messages: usize,
+) -> Option<crate::application::bringing_everything_down::StoppedAtTheBudget> {
+    use crate::application::bringing_everything_down::{StoppedAtTheBudget, TextBudget, Why};
+    match (why, budget) {
+        (Why::TextStoppedAtTheBudget { .. }, TextBudget::UpTo(budget_bytes)) => {
+            Some(StoppedAtTheBudget {
+                kept_messages: with_text,
+                budget_bytes,
+                older_messages,
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Fetch mail from the account's IMAP server into the cache.
@@ -22095,6 +22459,11 @@ fn spawn_mail_sync(
             ConnectionStatus::Disconnected,
         ));
         say(UIUpdate::MailboxWatchRequested);
+        // Every check ends by asking for the download of everything (#20,
+        // #23), after the watch, so a download that does not start leaves
+        // the inbox watched. The window decides whether one is already
+        // running, paused or waiting.
+        say(UIUpdate::DownloadRequested);
     });
 }
 

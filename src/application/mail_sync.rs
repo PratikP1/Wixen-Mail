@@ -1823,7 +1823,11 @@ impl WhyTheServerStopped {
     }
 
     /// The clause a person hears, one per arm.
-    fn as_a_clause(self) -> &'static str {
+    ///
+    /// Crate-wide since 2026-09-17, because the download of everything words
+    /// a refused chunk of headers with the same clause rather than a second
+    /// reading of the same error.
+    pub(crate) fn as_a_clause(self) -> &'static str {
         match self {
             Self::Refused => "it refused",
             Self::ConnectionLost => "the connection was lost",
