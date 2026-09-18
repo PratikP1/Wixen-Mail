@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 802 records were swept that day.
-# 111 records have arrived since and have not been through it.
+# 113 records have arrived since and have not been through it.
 #
 # The one sweep of the milestone, every record once, on GitHub's Windows
 # runners rather than on a machine: 41 shards of about 20 records each,
@@ -5512,7 +5512,7 @@ red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/status_line.rs", tests = 2 },
+    { file = "src/presentation/status_line.rs", tests = 3 },
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
@@ -5536,23 +5536,112 @@ tests_last_seen = [
 # says what it shows and at what priority. It cannot tell whether the
 # announcement reaches a screen reader from inside a modal dialog, or whether
 # the sentence is a true one. Only a screen reader run answers the first.
+#
+# Rewritten on 2026-09-18 by 11-02: the arm no longer says the sentence through
+# said_and_shown at High and then signals the sign-in event at Urgent, but
+# goes out as one notification through shown_and_signalled with the event
+# carrying the sentence (the record below is that break). The old before no
+# longer named a place in the tree. The break is the same silence as before,
+# the sentence shown and nothing said or signalled, and it now reddens three:
+# the two it always did, and the reading of reauthorize_selected that counts
+# the one notification per unauthorised arm.
 
 [[guard]]
 name = "signing in failing on the account screen is said, not only shown"
 file = "src/presentation/wx_account_manager.rs"
-before = """                    said_and_shown(
+before = """                    shown_and_signalled(
                         status,
                         a11y,
+                        FeedbackEvent::AccountNeedsAttention,
                         &format!("Signing in failed: {msg}"),
-                        Priority::High,
                     );"""
 after = """                    status.set_label(&format!("Signing in failed: {msg}"));"""
 red = [
     "presentation::wx_account_manager::tests::test_every_answer_the_account_manager_gives_is_said_out_loud",
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
+    "presentation::wx_account_manager::tests::test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# ── A sign-in failure is one notification, not a sentence and a cue ─────────
+#
+# Each of the three ways Sign In Again can leave an account unauthorised used
+# to say its sentence through said_and_shown at High and then signal
+# AccountNeedsAttention at Urgent, a millisecond apart, on two topics. NVDA
+# run 35336142908 on main at 744d05ef heard the second and never the first:
+# the transcript ends "Sign-in needs attention, Scan target", and the case
+# listening for "Signing in failed" had failed the same way at every run since
+# 2026-09-15, behind a badge that reported success over the failed job. One
+# outcome sent as two notifications is guardrail 5's flood in miniature, and
+# one notification cannot cut off another. Since 2026-09-18 each arm is one
+# call, shown_and_signalled, which puts the sentence on the line and raises
+# the event with the sentence as its detail, so the words, the earcon, the
+# braille and the visual come from one event on the channels the person's
+# Feedback row for it allows.
+#
+# The break puts the two notifications back into the Failed arm. The reading
+# of reauthorize_selected counts the one call per unauthorised arm and refuses
+# a separate signal in the function; the reading of the two failures said
+# above the ordinary run holds the arm to the one call and the event.
+#
+# What this record cannot see. It is a source read, because reaching this arm
+# needs a window, a frame and a running event loop. It cannot tell whether
+# the one line, "Sign-in needs attention, Signing in failed: ...", is heard
+# whole by a screen reader; that is the runner's case at the next push, or
+# the tester's ear (ledger 531's neighbour in 11-02's summary).
+
+[[guard]]
+name = "a sign-in failure on the account screen is one notification, not a sentence and a cue a moment apart"
+file = "src/presentation/wx_account_manager.rs"
+before = """                    shown_and_signalled(
+                        status,
+                        a11y,
+                        FeedbackEvent::AccountNeedsAttention,
+                        &format!("Signing in failed: {msg}"),
+                    );"""
+after = """                    said_and_shown(
+                        status,
+                        a11y,
+                        &format!("Signing in failed: {msg}"),
+                        Priority::High,
+                    );
+                    let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &name);"""
+red = [
+    "presentation::wx_account_manager::tests::test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel",
+    "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# ── The one call for an outcome that is also an event raises the event ──────
+#
+# shown_and_signalled exists so that an outcome which is both an answer and an
+# event goes out once: the sentence on the line, and the event raised with the
+# sentence as its detail. Its whole point is the signal. With the signal gone
+# the sentence is shown and nothing is said, sounded or brailled, which is the
+# silence status_line.rs was written to end, now for the one outcome that asks
+# a person to act. The other half, the sentence announced as well as
+# signalled, is the two notifications the call replaces, and the same reading
+# refuses that too.
+#
+# What this record cannot see. A source read of the helper's body; it cannot
+# tell whether the one notification is heard.
+
+[[guard]]
+name = "an outcome that is also an event is shown and signalled from one call"
+file = "src/presentation/status_line.rs"
+before = """    line.set_label(said);
+    let _ = a11y.signal(event, said);"""
+after = """    line.set_label(said);
+    let _ = (a11y, event);"""
+red = [
+    "presentation::status_line::tests::test_an_outcome_that_is_also_an_event_is_one_notification_carrying_the_sentence",
+]
+tests_last_seen = [
+    { file = "src/presentation/status_line.rs", tests = 3 },
 ]
 
 # ── What the tag, signature, filter and contact windows answer ──────────────

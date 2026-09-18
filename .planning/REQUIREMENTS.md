@@ -2605,9 +2605,14 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     way the sort was chosen, including from a column header; a reading holds the submenu's
     builder to having no separator between its first and last radio item.
 
-- [ ] **FOUND-08**: Every checkbox in the editors is named on the channel NVDA reads, no
+- [x] **FOUND-08**: Every checkbox in the editors is named on the channel NVDA reads, no
   empty static text sits before a control as a spacer, and the check that refuses a
   whitespace label refuses that shape too.
+  - **Ticked 2026-09-18 by 11-02 on the walk it waited for: Accessibility run 35336142914,
+    on `main` at `744d05ef`, the morning's push, walked the five editors over MSAA and found
+    no control without a name on any of them; the second `[D]` line below quotes the five
+    lines. Ledger 489 closed on that run. The walk still crashes on this machine (ledger 390)
+    and 11-02 did not run it. The last `[S]` line stays (ledger 490).**
   - **Read 2026-09-17 by the phase's closing read in 09-10; 09-05, merged 2026-09-16 at
     `165fd811`; left open on its second `[D]` line.** The first `[D]` line by
     `scan_target::tests::test_every_window_a_fresh_profile_can_reach_has_a_name` and
@@ -2651,14 +2656,29 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     on this machine or on CI's next run. Ledger 390 records the walk crashing here with
     STATUS_STACK_BUFFER_OVERRUN, "Not diagnosed", NVDA running being a difference between the
     machines and not a cause; stopping NVDA is not asked for, and this line stays open until
-    one of the two has walked the five editors.
+    one of the two has walked the five editors. **Walked on CI, 2026-09-18, run 35336142914
+    at `744d05ef`, read by 11-02 with `gh run view 35336142914 --log`: `contact-editor`
+    "Walked 2 window(s): 'Edit Contact', 'Wixen Mail'", "MSAA walk: 2915 elements, 1718 of
+    them operated, 0 without a name"; `condition-editor` 'Edit Condition', 1978, 1158, 0;
+    `filter-editor` 'Edit Filter Rule', 2126, 1242, 0; `signature-editor` 'Edit Signature',
+    1889, 1114, 0; `account-editor` 'Edit Account', 3120, 1833, 0. Five walks, none unnamed;
+    this line closes on them.**
   - [D] No `StaticText` built with an empty literal is added to a sizer and never filled or
     named afterwards; the empty spacers go, a sizer spacer keeps the grid where one is needed,
     and `tests/no_label_is_only_a_space.rs` refuses the shape with a companion that plants one.
   - [S] What the tester hears on the signature editor and the contact editor afterwards is a
     listening pass.
 
-- [ ] **FOUND-09**: Arrowing through the Settings tab row says each tab once.
+- [x] **FOUND-09**: Arrowing through the Settings tab row says each tab once.
+  - **Ticked 2026-09-18 by 11-02 on the tester's ear, on the `[S]` line's own terms:** #33
+    closed 2026-09-18T11:34:22Z on his word, quoted: "Heard on 2026-09-18 by the tester on
+    `1.0.0-alpha.1+149.g744d05ef` with NVDA: the Settings dialog speaks as it should;
+    arrowing along the tab row says each tab once." The runner's case is the harness's own
+    remaining work: it ran once, in NVDA run 35336142908 at `744d05ef`, and heard nothing,
+    because it waited for an opening announcement the harness has never captured for any
+    case; 11-02 corrected the wait (the third `[D]` line below says what the corrected case
+    proves and no longer proves) and the next push of `main` runs it, ledger 531. Ledger 492
+    closed on the tester's word.
   - **Read 2026-09-17 by the phase's closing read in 09-10; 09-06, merged 2026-09-16 at
     `de58771a`; left open on its third `[D]` line.** The first `[D]` line by
     `scripts/uia-events.ps1` and the capture quoted in 09-06's summary, 42 events over six
@@ -2686,7 +2706,17 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
   - [D] Whatever the capture names as the second event is stopped at its source, and a test
     holds the handler that stops it.
   - [D] An `nvda-tests` case arrows through the Settings tabs and holds the transcript to
-    each tab name once; it runs on CI at the next push.
+    each tab name once; it runs on CI at the next push. **Ran once, 2026-09-18, in NVDA run
+    35336142908 at `744d05ef`, and heard nothing: "never heard all of ["General"] within
+    15000ms. Everything NVDA said: []", at its first wait, before any key. The transcript of
+    every case that passed in that run begins with what its first key made NVDA say and
+    none holds a dialog's opening announcement, so the wait was for something the harness
+    never captures. 11-02 replaced it with the settle and the mark; the corrected case
+    proves the six tabs after General heard once each going Right, in order, General not
+    heard going Right, and Feedback once going Left, and no longer proves General's own
+    reading at open, which only the tester's ear settled (#33, closed 2026-09-18). The next
+    push of `main` runs it, ledger 531; which tab the first Right reaches on the runner's
+    fresh profile is what it shows.**
   - [S] Whether the tab is now heard once is a listening pass on the tester's machine.
 
 - [x] **FOUND-10**: Every surface that shows a message tries the PGP key, states the S/MIME
@@ -3923,8 +3953,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
-| FOUND-08 | Phase 9 | Open on its second `[D]` line, 09-05 at `165fd811`: the MSAA walk waits for the Accessibility workflow at the next push (ledger 489) |
-| FOUND-09 | Phase 9 | Open on its third `[D]` line, 09-06 at `de58771a`: the NVDA case waits for the NVDA workflow at the next push (ledger 492) |
+| FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
+| FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
 | FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |

@@ -26,7 +26,11 @@
 // A fresh profile opens Settings on the General tab with the tab row itself
 // focused: the win-event capture of 2026-09-16 shows the control raising
 // EVENT_OBJECT_FOCUS on tab 1 as the dialog opens, before any key. So the
-// first Right reaches Compose, and six of them reach Advanced.
+// first Right reaches Compose, and six of them reach Advanced. That is the
+// capture's word and not yet the runner's: the case's first run there heard
+// nothing before its first key (see the note above the first wait below),
+// and which tab the first Right reaches on the runner's fresh profile is
+// what its next run shows.
 
 "use strict";
 
@@ -132,8 +136,9 @@ let app;
 
 beforeAll(async () => {
   // NVDA starts before the application does, and stays running while it
-  // opens, so the first tab's own reading, at open, is in the log and the
-  // mark taken below comes after it.
+  // opens, so whatever the harness captures of the dialog's own opening
+  // speech is in the log before the mark taken below. At 744d05ef it
+  // captured none of it, which is why the case no longer waits for any.
   await nvda.start();
 
   const dataDir = freshProfileDir("settings");
@@ -158,10 +163,27 @@ afterAll(async () => {
 });
 
 test("NVDA says each Settings tab once as Right and Left move along the tab row", async () => {
-  // The dialog opens on General with the row focused, and NVDA says so;
-  // wait for that, then let it finish before taking the mark everything
-  // below is counted from.
-  await waitToHearAll(nvda, [TABS[0].heardAs]);
+  // No wait for the dialog's own opening speech. This case's first run, in
+  // run 35336142908 on main at 744d05ef on 2026-09-18, waited here to hear
+  // "General" and timed out with an empty log, before any key was pressed.
+  // The transcript of every case that passed in the same run begins with
+  // what its first key made NVDA say, a row after Down or a button after
+  // Tab, and none holds a dialog's opening announcement; that wait was for
+  // something this harness has never captured. The dialog itself speaks:
+  // the tester heard it by hand on the same build on 2026-09-18, each tab
+  // once along the row, and #33 closed on his word. So the mark is taken
+  // after the settle, with whatever NVDA said as the dialog opened already
+  // in the log if the harness captured any of it, and the count begins at
+  // the first Right.
+  //
+  // What this case proves: Compose to Advanced heard once each and in
+  // order going Right, General not heard going Right, Feedback once going
+  // Left. What it no longer proves: General's own reading at open, which
+  // is outside what the harness's log holds and which only the tester's
+  // ear settled (#33, closed 2026-09-18). If the tab row does not hold
+  // focus on a fresh profile, the first Right moves nothing in the notebook
+  // and the failure reads "never heard: Compose", which is a finding about
+  // focus at open and not about the row.
   await sleep(SETTLE_AFTER_KEYS_MS);
   const opened = (await nvda.spokenPhraseLog()).length;
 

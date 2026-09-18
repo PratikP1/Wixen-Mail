@@ -8,6 +8,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The NVDA workflow fails when one of its cases fails.** Since 2026-09-18. The job that
+  drives a real NVDA against the real program on GitHub's runner had been marked non-blocking
+  since 2026-08-16, so that its findings would be a work queue rather than a gate, and the queue
+  was never read: the run of the morning of 2026-09-18, on `1.0.0-alpha.1+149.g744d05ef`,
+  reported success while its one job failed, and the case that listens for "Signing in failed"
+  in the Account Manager had failed at every run since 2026-09-15 with nobody told. Now the
+  run's verdict is the job's, and the transcript of everything NVDA said is still uploaded when
+  the run is red. The Settings tab-row case, which heard nothing at all on its first run, waited
+  for the dialog's opening announcement, which this harness has never captured for any case; it
+  now counts from the first key. The Settings dialog itself was not changed: it speaks, and
+  arrowing along its tab row says each tab once, heard by the tester on the same build.
+  Known limitations: which tab the first Right reaches on the runner's fresh profile is what the
+  next run shows. The Accessibility scan's job stays non-blocking; its findings are counts, and
+  whether a count should fail a run has not been decided.
 - **Everything comes down on its own, with its text.** Reported on 2026-09-15 from build
   `0.125.1+g3e633252` (#20): "Right now, only 500 messages are downloaded per folder. All email
   should be downloaded." And (#23): "Unless explicitly forbidden, message text should be downloaded
@@ -107,6 +121,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A sign-in failure in the Account Manager was two announcements a moment apart, and a
+  screen reader could speak the second and drop the first.** When Sign In Again could not
+  sign an account in, the reason was announced as a sentence and then, a millisecond later,
+  the account-needs-attention cue was raised as its own announcement at a higher level. On
+  GitHub's runner, NVDA spoke "Sign-in needs attention" with the account's name and never the
+  sentence saying why, so a person heard that something needed attention and not what. Found
+  by the NVDA workflow, whose case for this had been failing at every run since 2026-09-15
+  behind a badge reporting success; read on 2026-09-18. Now the three ways signing in again
+  can fail (no sign-in credentials for the provider, a sign-in Windows would not keep, and the
+  provider refusing) are each one announcement: the event's words, then the reason, as
+  "Sign-in needs attention, Signing in failed: ..." with the sound, the words and the line of
+  text coming from the one event, on whichever channels your Feedback row for it allows.
+  Known limitations: whether that one line is heard whole is the runner's next run to show,
+  or your ear; nobody has heard it yet.
 - **A spelling language you chose for a region this computer has no dictionary for was
   rewritten to this computer's own region the first time Settings was saved.** Found by CI on
   2026-09-18 in `1.0.0-alpha.1+149.g744d05ef`, not by anybody: the machine the testing happens on
