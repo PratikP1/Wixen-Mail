@@ -3750,6 +3750,86 @@ the caveat at the top of this file binds every `[D]` line.
     the section it cross-references, the "never" row quoting its grep.
   - [S] Whether the page is clear to the person it is for is his.
 
+**Added 2026-09-18, later the same day: three more, from three issues filed that day after the
+phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
+
+- [ ] **LIST-11**: Every sentence the status bar shows reads to one shape in a person's words,
+  read in one pass, with a reading that holds new sentences to the shape where a reading can.
+  - Evidence: at `08197657` on 2026-09-18, `grep -rn --include='*.rs' -F "<call>" src`, comments
+    excluded, test modules not: `send_status(` 110, `send_refusal(` 99, `said_and_shown(` 82,
+    `set_status_text(` 45, `UIUpdate::StatusUpdated(` 34, `UIUpdate::Progress(` 17,
+    `send_progress(` 12 (the issue's 109, 98, 72, 45, 34, 17, 11 had test modules out). Six sites
+    for one refusal in two kinds (`wx_app.rs:4135, 10348` "Choose a message first"; `:4856` "No
+    message selected to delete"; `:4913` "No message selected"; `:13954, 13968` "No conversation
+    selected to delete"); `:5227` "Flushing outbox queue..."; `:2372` "No cache available for
+    export". The built sentences: `checking_on_a_schedule::what_the_status_line_says`,
+    `mail_sync::what_arrived`, `bringing_everything_down`'s six, `trying_again`'s wait.
+    `tests/the_words_that_say_nothing.rs` is the pattern for a reading over words.
+  - [S] #75, raised 2026-09-18: "Read every sentence the status bar shows for coherence and
+    conciseness, as one pass ... every status sentence listed from the code ..., each rewritten
+    to the same shape (what happened, to what, and what to do next when there is something to
+    do; a person's words; one style of ending), the four refusals for 'nothing chosen' reduced
+    to one wording per kind of thing, and a reading that holds new sentences to the shape where
+    a reading can ... Nothing about which channel a line goes to changes."
+  - [D] `application::status_sentences` holds the three "nothing chosen" wordings, one per kind,
+    and the words a status sentence may not use with the ending rule a step and an answer
+    each follow; a target prints the census of every site outside test modules and holds every
+    literal to the rule with an exception table; every sentence is rewritten by hand in place,
+    the built ones in their modules with their tests rewritten in place, no test added to
+    `wx_app.rs`; every line keeps its call and channel, and `PROGRESS_OPENINGS` gains any new
+    step opening; the summary carries the table of every sentence changed, old and new.
+  - [S] Whether the bar reads well on its own with NVDA+End is his ear's.
+
+- [ ] **LIST-12**: After a delete, or a move out of the folder, the cursor is on the next
+  message, or on the previous one when the last was deleted, on the list control and not only
+  in the state; and a re-read of the folder keeps it on the same message by its identity.
+  - Evidence: `take_row_out_of_the_list` (`wx_app.rs:19495-19520` at `08197657`) sets
+    `selected_message_index` to `idx.min(len - 1)` or `None`, calls `tell_the_list_how_many`
+    and `refresh`, and sets no item state on the control, reached from
+    `MessageDeletedFromCache` (`:18338`) and `MessageLeftTheFolder` (`:18341`);
+    `put_the_selection_back` (`:14148-14172`) is the shape that does set `Selected` and
+    `Focused`. `MessagesLoaded` (`:17482-17497`) replaces the rows and does not re-select, by
+    10-02's design, and since 10-06 the watch's `MailboxChanged` re-reads the open folder after
+    every delete on an IMAP account. Which path the tester met is not settled by reading.
+  - [S] #76, the tester on 2026-09-18: "Deleting a message puts the cursor at the top of the
+    list. It should land on the next message, and on the previous one when the deleted message
+    was the last."
+  - [D] `presentation::landing_after_a_removal::where_to_land(removed, len_after)` answers the
+    next row or the previous, for one row or a set; `where_the_same_message_is` and
+    `whether_to_move` answer the cursor's new index after a re-read and whether it moved;
+    `take_row_out_of_the_list` sets the control's `Selected` and `Focused` from the rule;
+    the `MessagesLoaded` arm re-selects only when the cursor's message moved; a built virtual
+    list in a target proves a middle removal, a last removal, a re-read that moved the id and
+    one that did not; 11-07's delete of a set lands after the set through the same rule.
+  - [S] That NVDA reads the landed row once after Delete and not again after the re-read is
+    his ear's.
+
+- [ ] **LIST-13**: Landing on a message with an attachment says the word once: the earcon
+  plays by default, the spoken event is off by default, the Attachment column stays.
+  - Evidence: `feedback_events_for_landing` (`wx_app.rs:19625-19634`) signals `HasAttachment`,
+    spoken at Low as "Has attachment" (`feedback.rs:202, 256`) with a tone (`:304`); the
+    Attachment cell reads "Has attachment" (`message_rows.rs:77-80`) and the column is in
+    every default layout; `FeedbackSettings::default()` disables the Earcon channel
+    (`feedback.rs:505-516`) with phase 6's reason; `channels_for` (`:581-602`) filters an
+    event's own set or every channel by the global switch and adds the first enabled of
+    Braille, Visual, Speech to a sound-only set; a set holding Braille calls `announce_topic`,
+    which the screen reader speaks (`accessibility.rs:258-266`; `feedback.rs:335-341` says
+    braille is a preference, not a transport; the Feedback tab's one switch names both). The
+    tester's profile stores `off=`, every channel on, read 2026-09-18 through Python.
+  - [S] #77, Pratik on 2026-09-18: "The attachment earcon is on by default and the spoken
+    announcement of the event is off by default. The column stays"; and his comment: "the
+    Earcon channel is enabled by default for every event ..., and per-event exceptions stay
+    allowed ... For this event the exception is the default itself: the earcon plus the status
+    bar and braille, no speech."
+  - [D] `FeedbackSettings::default()` enables every channel and holds `HasAttachment`'s own set
+    of earcon and status bar, phase 6's reason kept and dated; `from_stored("off=earcon")`
+    keeps earcons off; an event whose text is already on the row never gains speech or braille
+    from the never-sound-alone rule, only the status bar; the older-file test and the Feedback
+    tab readback are rewritten in place; a reading holds the landing arm to signalling and
+    nothing spoken; the decision's "and braille" is the one clause the tree cannot carry
+    without speaking the words, said in the summary and the close comment.
+  - [S] That the row is heard once with the tone is his ear's.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -3856,12 +3936,20 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-08 | Phase 11 | Pending, 11-10 |
 | LIST-09 | Phase 11 | Pending, 11-11 |
 | LIST-10 | Phase 11 | Pending, 11-11 |
+| LIST-11 | Phase 11 | Pending, 11-13 |
+| LIST-12 | Phase 11 | Pending, 11-06.1 |
+| LIST-13 | Phase 11 | Pending, 11-09.1 |
 
 **Coverage:**
 
-- v1 requirements: 77 total
-- Mapped to phases: 77
+- v1 requirements: 80 total
+- Mapped to phases: 80
 - Unmapped: 0
+
+**Re-taken 2026-09-18, later the same day.** This block said 77 and 77 from the morning until
+three issues filed that afternoon (#75, #76, #77) were taken by inserted plans. Counted with
+the same command as below, which gives 80 at `08197657` plus this edit with `LIST-11` to
+`LIST-13` in, and the traceability table above has 80 rows.
 
 **Re-taken 2026-09-18.** This block said 65 and 65 from 2026-09-17 until phase 11 was planned.
 Counted with the same command as below, which gives 77 at `744d05ef` plus this edit with the
@@ -3959,6 +4047,10 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-18, later the same day.** `LIST-11` to `LIST-13` trace to #75, #76 and #77,
+filed that afternoon from the third day of testing and taken by inserted plans 11-13, 11-06.1
+and 11-09.1. The total is 80.
 
 **Discrepancy, resolved 2026-08-29.** The brief said the first section has 27 rows. The file
 has 33, and 33 is right. The 27 was quoted from the inventory agent's summary of the document

@@ -1,21 +1,41 @@
 # Phase 11: Reading, and the list
 
-Twelve plans, one per wave, written 2026-09-18 against `main` at `744d05ef`,
-version `1.0.0-alpha.1`, `guards/guards.toml` holding 912 records by the
-TOML reader (census 802 + 110 at `guards.toml:84`), `.planning/WINDOWS.md`
-at entry 529 with 499 open, 8,032 tests on the last whole gate, nothing
-unpushed: `main` was pushed this morning and the three workflows ran on it.
-Phase 10 closed on 2026-09-18 with all ten plans merged. This is the fourth
-of the seven groups Pratik agreed on 2026-09-16, with two plans in front of
-it from what the morning's push showed.
+Fifteen plans, one per wave: twelve written 2026-09-18 against `main` at
+`744d05ef`, version `1.0.0-alpha.1`, `guards/guards.toml` holding 912
+records by the TOML reader (census 802 + 110 at `guards.toml:84`),
+`.planning/WINDOWS.md` at entry 529 with 499 open, 8,032 tests on the last
+whole gate, nothing unpushed (`main` was pushed that morning and the three
+workflows ran on it); and three inserted later the same day against
+`08197657`, after the plan check, for issues filed that afternoon. Phase 10
+closed on 2026-09-18 with all ten plans merged. This is the fourth of the
+seven groups Pratik agreed on 2026-09-16, with two plans in front of it from
+what the morning's push showed.
 
-**Planned from ten issues and three runs.** The issues: #70 (the folder
+**Three plans were inserted later on 2026-09-18, after the plan check
+(two blockers and ten warnings, applied at the same commit).** 11-06.1 is
+#76: deleting a message puts the cursor at the top, because the rule that
+lands it on the next message lives in the state and nothing sets the
+control's focus to it, and the watch's re-read after every delete replaces
+the rows without re-selecting; it goes before 11-07 because that plan
+reworks the same function for a set and lands the cursor after the set
+through this rule, and 11-07 was at three tasks. 11-09.1 is #77: landing
+on a message with an attachment says the word three ways; Pratik's decision
+is the earcon on by default, the spoken event off, the column kept; it sits
+beside 11-09, which was at three tasks. 11-13 is #75: every status bar
+sentence read in one pass and rewritten to one shape; it runs after 11-11
+so it reads every sentence this phase adds, and before the closing read,
+which then reads the bar's words as that pass left them. Their requirements
+are `LIST-11` to `LIST-13`; the plans after each insert moved up a wave.
+
+**Planned from thirteen issues and three runs.** The issues: #70 (the folder
 chooser, filed on the second day of testing), #71 (the log level's default,
 Pratik's decision of 2026-09-17), and the eight of group 4 from the first
 day: #25 (read state on traversal), #26 (column headers on every row), #27
 (Mark as Read's label, M, the thread), #28 with #29 (pictures, and the
 privacy page), #30 (selecting more than one), #31 (which message a thread
-row is), #62 (a rule that changes how a row is announced). Pratik's
+row is), #62 (a rule that changes how a row is announced); and the three
+of the third day, #75 (the status sentences), #76 (the cursor after a
+delete) and #77 (attachment said once). Pratik's
 decisions are in the bodies and comments and are settled; each plan quotes
 his words. The runs: CI 35336142985 (red on one test), NVDA 35336142908
 (green over a failed job) and Accessibility 35336142914 (the five editors
@@ -36,13 +56,13 @@ hears; the log's default follows the build; and the privacy page lists
 every way a reader of mail can be tracked. Behind it, CI is green and the
 NVDA workflow's verdict is the run's.
 
-**Requirements:** `LIST-01` to `LIST-10`, one per issue, in
+**Requirements:** `LIST-01` to `LIST-13`, one per issue, in
 `.planning/REQUIREMENTS.md` under "Reading, and the list"; `FOUND-17` and
 `FOUND-18` for the two plans in front, under phase 9's section beside
 FOUND-13 to FOUND-16, on the same reasoning: a regression of 09-02's fix
 found by CI, and the workflow 09-06's case runs in.
 
-**Roadmap success criteria this phase owns:** all thirteen.
+**Roadmap success criteria this phase owns:** all sixteen.
 
 ## Pratik's order, and which part of it this is
 
@@ -67,7 +87,9 @@ log, lands with #64; #33 was waiting on the NVDA run and closed on the
 tester's ear instead. **#72, the status bar and F6, filed 2026-09-18, is
 held** by Pratik's decision of that day: a screen reader reads a native
 status bar with its own key (NVDA+End), so it waits until a user asks; it
-carries the label `held` and belongs to no group.
+carries the label `held` and belongs to no group. Three more filed that
+afternoon, #75, #76 and #77, are this phase's by insertion, above, and
+belong to no group either.
 
 ## The plans
 
@@ -79,32 +101,37 @@ carries the label `held` and belongs to no group.
 | 11-04 | 4 | 2 | #71 | advances; #64's half stays | the log level's default from the version, Debug under alpha and beta; the lines a report needs at that level; a guard that no line names a secret or a body; the table on the alpha page with the measured cost |
 | 11-05 | 5 | 3 | #25 | closes | moving through the list marks nothing; reading aloud or opening starts the clock; the rule in `reading_habits`; the sentence under the setting |
 | 11-06 | 6 | 4 (label, key) | #27 | advances | the label follows the state on the Action menu, the context menu and the toolbar (relabelled natively); M consumed on a real list; the words as rules |
-| 11-07 | 7 | 5, and 4's thread clause | #30, #27 | closes both | the list selects a set; seven commands act on it with one sentence; a conversation row contributes its messages; the bound shared with Select All and measured |
-| 11-08 | 8 | 6 | #31 | closes | a thread row stands for the originator or the first unread message, chosen in SQL where the columns are; the preview and the window follow it; the conversation's text as one chunk on selection |
-| 11-09 | 9 | 7 | #26 | closes | Ctrl+Shift+; reads the row's columns with their headings on request; the headers on every row are NVDA's setting, and the page gives the profile steps |
-| 11-10 | 10 | 8 | #62 | closes | a rule's phrase said first and shown in a column; a sound once per check through a new event; the labels as a column |
-| 11-11 | 11 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
-| 11-12 | 12 | 13 | all ten | closes the phase | the pages, the listening lines, the closing read |
+| 11-06.1 | 7 | 15 | #76 | closes | inserted 2026-09-18: where the cursor lands after rows leave, as a rule; the control's focus set from it after a delete or a move; a re-read keeps the cursor by id and moves nothing when nothing moved; a built list proves the four cases |
+| 11-07 | 8 | 5, and 4's thread clause | #30, #27 | closes both | the list selects a set; seven commands act on it with one sentence; a conversation row contributes its messages; the bound shared with Select All and measured; a set's delete lands after the set through 11-06.1's rule |
+| 11-08 | 9 | 6 | #31 | closes | a thread row stands for the originator or the first unread message, chosen in SQL where the columns are; the preview and the window follow it; the conversation's text as one chunk on selection |
+| 11-09 | 10 | 7 | #26 | closes | Ctrl+Shift+; reads the row's columns with their headings on request; the headers on every row are NVDA's setting, and the page gives the profile steps |
+| 11-09.1 | 11 | 16 | #77 | closes | inserted 2026-09-18: the earcon channel on by default for every event, the attachment event's own default the earcon and the status bar with no speech, the column kept, a stored profile kept, the never-sound-alone rule unable to speak for an on-the-row event |
+| 11-10 | 12 | 8 | #62 | closes | a rule's phrase said first and shown in a column; a sound once per check through a new event; the labels as a column; the phase's longest plan |
+| 11-11 | 13 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
+| 11-13 | 14 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
+| 11-12 | 15 | 13 | all thirteen | closes the phase | the pages, the listening lines, the closing read |
 
 Requirement coverage: FOUND-17 by 11-01; FOUND-18 by 11-02, which also
 ticks FOUND-08 and FOUND-09; LIST-01 by 11-03; LIST-02 by 11-04; LIST-03 by
 11-05; LIST-04 by 11-06 and 11-07; LIST-05 by 11-07; LIST-06 by 11-08;
-LIST-07 by 11-09; LIST-08 by 11-10; LIST-09 and LIST-10 by 11-11; 11-12
-reads all ten.
+LIST-07 by 11-09; LIST-08 by 11-10; LIST-09 and LIST-10 by 11-11; LIST-11
+by 11-13; LIST-12 by 11-06.1; LIST-13 by 11-09.1; 11-12 reads all thirteen.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
 publish and the executor may do it; filing or editing other issues is not
 theirs. 11-02 closes nothing: #33 is closed already.
 
-## Why twelve plans, and why this order
+## Why fifteen plans, and why this order
 
-Twelve because two things the morning's push showed go before the issues,
-and the ten issues fall into ten pieces that share files only through
-`wx_app.rs`, the changelog and the records file. One per wave because every
-plan but 11-01 writes `docs/changelog.md` and `guards/guards.toml`, ten of
-the twelve write `src/presentation/wx_app.rs`, and a wave is a set of plans
-sharing no file. The order:
+Twelve at first because two things the morning's push showed go before the
+issues, and the ten issues fall into ten pieces that share files only
+through `wx_app.rs`, the changelog and the records file; three more that
+afternoon for three issues filed that day, each an insert beside the plan
+it belongs with because that plan was at three tasks. One per wave because
+every plan but 11-01 writes `docs/changelog.md` and `guards/guards.toml`,
+thirteen of the fifteen write `src/presentation/wx_app.rs`, and a wave is a
+set of plans sharing no file. The order:
 
 - **The red CI first** (11-01), because every later merge lands on it.
 - **The NVDA workflow second** (11-02), because its verdict has to reach
@@ -116,14 +143,20 @@ sharing no file. The order:
   own lines from here on.
 - **#25 then #27's label and key** (11-05, 11-06), read state and its
   command, the two smallest changes to the list.
-- **#30 seventh** (11-07), the selection, which #27's thread marking and
+- **#76 before the selection** (11-06.1), because the selection's delete
+  of a set lands the cursor through the rule this plan writes.
+- **#30 next** (11-07), the selection, which #27's thread marking and
   #62's set-wide commands rest on, and which every arm after it reads.
-- **#31 eighth** (11-08), the conversation row, before #26 and #62 read a
+- **#31** (11-08), the conversation row, before #26 and #62 read a
   row's cells.
-- **#26 ninth** (11-09), what a row says on request, which #62 extends.
-- **#62 tenth** (11-10), the last change to what a row says.
-- **#28 with #29 eleventh** (11-11), the reader and the privacy page,
-  which reads every plan before it for what a reader of mail sends.
+- **#26** (11-09), what a row says on request, which #62 extends.
+- **#77 beside it** (11-09.1), the other duplicate on the row, which
+  changes a default 11-10's new event then inherits.
+- **#62** (11-10), the last change to what a row says.
+- **#28 with #29** (11-11), the reader and the privacy page, which reads
+  every plan before it for what a reader of mail sends.
+- **#75 after every plan that adds a sentence** (11-13), so the pass reads
+  the phase's own sentences too.
 - **The documents last** (11-12).
 
 ## Decisions made here, each overrulable with a reason in a summary
@@ -177,6 +210,19 @@ sharing no file. The order:
 14. **11-08 fixes a defect the issue did not name**: under conversation
     view the preview showed the message at the row's index of the flat
     list, not the row's.
+15. **#77's "and braille" is not sent**, because this program has no
+    braille route apart from the screen reader notification it also
+    speaks (`accessibility.rs:258-266`; the Feedback tab's one switch
+    names both), so the attachment event's default is the earcon and the
+    status bar; 11-09.1's summary and close comment say so, and one
+    channel added to the default set is the overrule.
+16. **11-13 rewords by hand and holds only what a reading can hold**: the
+    words a person does not use, the endings, and the three refusals; the
+    shape "what happened, to what, what next" is a table in the summary
+    and not a grammar in a test.
+17. **11-06.1 narrows 10-02's no-reselect rule** rather than removing it:
+    a re-read moves focus only when the cursor's message changed index,
+    so a load that changed nothing under the cursor still moves nothing.
 
 ## What the tree contradicted in the issues and the brief
 
@@ -213,6 +259,8 @@ and 60; `src/presentation/wx_settings.rs` 19 and 0; `src/application/mail_sync.r
 13 and 149; `src/presentation/reader_text.rs` 13 and 125 (touched by
 nothing here); `src/data/message_cache/mod.rs` 12 and 23; `src/data/config.rs`
 11 and 68; `src/presentation/wx_managers.rs` 10 and 44;
+`src/presentation/wx_account_manager.rs` 6 and 14 (11-02's first draft
+quoted `wx_managers.rs`'s counts for it; the checker caught it);
 `src/presentation/accessibility.rs` 7 and 24; `src/presentation/html_renderer.rs`
 6 and 83; `src/presentation/ui_types.rs` 6 and 79; `src/data/message_cache/folders.rs`
 6 and 61; `src/application/allowed.rs` 5 and 27; `src/presentation/folder_tree.rs`
@@ -360,15 +408,16 @@ on this project, so the factor is taken by hand from the files and said here.
 ## What is owed to documents, and who does it
 
 1. **The roadmap's phase 11 entry and progress row.** Done by the planner in
-   the commit that lands these plans: the goal, the twelve requirements,
-   thirteen criteria, the plan list, the row at `0/12`, and the milestone
-   paragraph kept true. `test_the_roadmap_counts_the_files_that_are_on_disk`
-   holds the row to the files.
+   the commit that lands these plans and the one that lands the inserts:
+   the goal, the fifteen requirements, sixteen criteria, the plan list, the
+   row at `0/15`, and the milestone paragraph kept true.
+   `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to
+   the files.
 2. **`.planning/REQUIREMENTS.md`.** Done by the planner: the `LIST` section,
-   FOUND-17 and FOUND-18 beside FOUND-16, the twelve traceability rows, the
-   coverage count re-taken at 77, the provenance note.
+   FOUND-17 and FOUND-18 beside FOUND-16, the fifteen traceability rows, the
+   coverage count re-taken at 80, the provenance note.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
-   phase 11 current, plan 1 of 12, `Total Plans in Phase: 12`,
+   phase 11 current, plan 1 of 15, `Total Plans in Phase: 15`,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan but 11-12 writes its entries under
    `[Unreleased]`; 11-12 reads them as one.
