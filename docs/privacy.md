@@ -512,6 +512,14 @@ sign-in token, or the body of a message. It does contain folder names, message c
 messages from your provider, and the addresses involved in a failed send, because those are
 what makes a problem diagnosable.
 
+Since 2026-09-18 the level a fresh profile starts at is Debug while the version says alpha or
+beta, and Info from the release candidate on. Debug adds a line for each chunk of the download,
+with counts, and a line for a repeated announcement that was not spoken, with its topic; Info
+now also says how many characters were held back from speech while content was muted, the
+count and never the words. The rule above is unchanged at every level: no
+password, no sign-in token, no message text, and a reading of every log call in the source
+holds each call to naming none of them.
+
 If you send a log to report a problem, it is worth reading first. Nothing in it should be
 sensitive, and if you find something that is, that is a bug worth reporting on its own.
 

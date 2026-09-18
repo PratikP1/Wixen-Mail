@@ -82,11 +82,19 @@
 //! dialog, and that the window opens on All Inboxes, because a fresh profile
 //! otherwise opens with no folder chosen and no list ever loads.
 //!
+//! The settings hold the log level `WIXEN_MEASUREMENT_LOG_LEVEL` names, or
+//! the build's default when it is unset, which since 2026-09-18 follows
+//! the version (#71): debug under an alpha or beta build, info otherwise.
+//! Each run also prints how many bytes the log held at the end, so what a
+//! level costs on disk over a two-minute start can be measured at each
+//! level and put on the page beside the other rows.
+//!
 //! # Running the measurement
 //!
 //! ```text
 //! cargo build --release
 //! cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture
+//! WIXEN_MEASUREMENT_LOG_LEVEL=info cargo test --release --test the_numbers_the_targets_ask_for -- --ignored --nocapture test_cold_start_and_memory_with_a_thousand_cached_messages
 //! ```
 //!
 //! On a machine doing nothing else. The tests refuse a debug build, because
@@ -96,6 +104,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use wixen_mail::common::logging::LogLevel;
 use wixen_mail::common::paths::AppPaths;
 use wixen_mail::common::started;
 use wixen_mail::common::types::FolderType;
@@ -192,10 +201,32 @@ fn write_the_settings(paths: &AppPaths) -> Result<(), String> {
     let settings = AppConfig {
         told_about_the_alpha: true,
         start_in_all_inboxes: true,
+        log_level: the_log_level_asked_for()?,
         ..AppConfig::default()
     };
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(paths.config_dir().join("app_config.json"), json).map_err(|e| e.to_string())
+}
+
+/// Set this to one of the five level words to measure a run at that level.
+const THE_LOG_LEVEL: &str = "WIXEN_MEASUREMENT_LOG_LEVEL";
+
+/// The log level the profile is written with: the one the environment
+/// names, held to a word the program reads, or the build's default.
+///
+/// Refused rather than passed through, because a word the program does not
+/// read falls back to the default at startup and the row would then say
+/// "debug" over a run that was not.
+fn the_log_level_asked_for() -> Result<String, String> {
+    let Some(asked) = std::env::var_os(THE_LOG_LEVEL) else {
+        return Ok(AppConfig::default().log_level);
+    };
+    let asked = asked.to_string_lossy().to_string();
+    LogLevel::parse(&asked)
+        .map(|level| level.as_stored().to_string())
+        .ok_or(format!(
+            "{THE_LOG_LEVEL} is {asked:?}, which is not a level the program reads"
+        ))
 }
 
 /// One IMAP account whose server refuses at once and whose password is empty,
@@ -399,7 +430,25 @@ struct Started {
 
 impl Started {
     /// Start the release binary against a profile, changing nothing anywhere.
+    ///
+    /// Refused while any Wixen Mail is running, whatever profile it is on.
+    /// One copy runs at a time: a second start hands itself to the first and
+    /// stops, and the first is raised and says "Wixen Mail is already
+    /// running, and this is it". Found on 2026-09-18 by a run that "exited
+    /// with exit code 0" while the tester's copy was open on his account,
+    /// which that start raised and made speak. Looking first means the
+    /// measurement never touches a copy somebody is using.
     fn against(profile: &Path) -> Result<Self, String> {
+        if let Some((id, _, _)) = every_process()?
+            .into_iter()
+            .find(|(_, _, name)| name.eq_ignore_ascii_case("wixen-mail.exe"))
+        {
+            return Err(format!(
+                "another copy of Wixen Mail is running (process {id}); a start would hand \
+                 itself over to it and raise it, so nothing was started; close that copy \
+                 before measuring"
+            ));
+        }
         let child = Command::new(env!("CARGO_BIN_EXE_wixen-mail"))
             .arg("--read-only")
             .env("WIXEN_MAIL_DATA", profile)
@@ -547,6 +596,16 @@ fn wait_for_usable(started: &mut Started, profile: &Path) -> Result<(usize, u64)
     let deadline = Instant::now() + THE_LONGEST_WAIT_FOR_USABLE;
     while Instant::now() < deadline {
         if let Some(gone) = started.has_exited() {
+            // The second net under `Started::against`'s look: a copy that
+            // started between the look and the spawn is handed this start
+            // and this one stops, and the log says so.
+            if the_newest_log(profile).is_some_and(|log| log.contains("Handed this start over")) {
+                return Err(
+                    "this run produced nothing: another copy of Wixen Mail is running and \
+                     the start handed itself over to it; close that copy before measuring"
+                        .to_string(),
+                );
+            }
             return Err(format!("this run produced nothing: {gone}"));
         }
         if let Some(found) = the_newest_log(profile)
@@ -574,6 +633,10 @@ struct ARun {
     /// Every WARN and ERROR line the application wrote, so the summary can
     /// say what it did with the refused connection rather than guess.
     complaints: Vec<String>,
+    /// How many bytes the log held at the last reading, and the level the
+    /// profile was written with, so a level's cost on disk is a row.
+    log_bytes: usize,
+    log_level: String,
 }
 
 /// The WARN and ERROR lines of a log, without their timestamps.
@@ -589,12 +652,19 @@ fn complaints_in(log: &str) -> Vec<String> {
         .collect()
 }
 
+/// What the log held at the last reading: its complaints, and its size.
+struct WhatTheLogHeld {
+    complaints: Vec<String>,
+    bytes: usize,
+}
+
 /// Read memory at the three moments after the usable line, then take the
-/// log's complaints, refusing a process that went before the last reading.
+/// log's complaints and size, refusing a process that went before the last
+/// reading.
 fn the_three_readings(
     started: &mut Started,
     profile: &Path,
-) -> Result<(AReading, AReading, AReading, Vec<String>), String> {
+) -> Result<(AReading, AReading, AReading, WhatTheLogHeld), String> {
     started.wait_until(started.began.elapsed() + AFTER_USABLE);
     if let Some(gone) = started.has_exited() {
         return Err(format!("this run produced nothing: {gone}"));
@@ -618,7 +688,11 @@ fn the_three_readings(
             println!("  {line}");
         }
     }
-    Ok((after_usable, at_sixty, at_one_twenty, complaints_in(&log)))
+    let held = WhatTheLogHeld {
+        complaints: complaints_in(&log),
+        bytes: log.len(),
+    };
+    Ok((after_usable, at_sixty, at_one_twenty, held))
 }
 
 /// Set this to have a run print the application's whole log.
@@ -629,15 +703,16 @@ const SHOW_THE_LOG: &str = "WIXEN_MEASUREMENT_SHOW_LOG";
 fn one_run(profile: &Path) -> Result<ARun, String> {
     let mut started = Started::against(profile)?;
     let (rows_in_the_list, usable_after_ms) = wait_for_usable(&mut started, profile)?;
-    let (after_usable, at_sixty, at_one_twenty, complaints) =
-        the_three_readings(&mut started, profile)?;
+    let (after_usable, at_sixty, at_one_twenty, log) = the_three_readings(&mut started, profile)?;
     Ok(ARun {
         rows_in_the_list,
         usable_after_ms,
         after_usable,
         at_sixty,
         at_one_twenty,
-        complaints,
+        complaints: log.complaints,
+        log_bytes: log.bytes,
+        log_level: the_log_level_asked_for()?,
     })
 }
 
@@ -708,6 +783,10 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
     for complaint in &run.complaints {
         println!("the log complained: {complaint}");
     }
+    println!(
+        "the log at level {} held {} bytes at 120 s",
+        run.log_level, run.log_bytes
+    );
 
     let with_the_messages = format!(
         "{} MB",
@@ -722,6 +801,7 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
         )
     );
     let cold = format!("{} ms", run.usable_after_ms);
+    let log_size = format!("{} bytes", run.log_bytes);
     for (what, value) in [
         (format!("Cold start to a usable list, {profile_name}"), cold),
         (
@@ -729,6 +809,13 @@ fn print_the_run(profile_name: &str, command: &str, run: &ARun) {
             with_the_messages,
         ),
         (format!("Idle memory at 120 s, {profile_name}"), idle),
+        (
+            format!(
+                "The log a two-minute start writes at level {}, {profile_name}",
+                run.log_level
+            ),
+            log_size,
+        ),
     ] {
         println!(
             "{}",
@@ -775,7 +862,7 @@ fn test_the_empty_profile_floor() {
     // to wait for: the floor is the application on nothing, read at the same
     // moments from the start.
     let mut started = Started::against(home.path()).expect("the application starts");
-    let (after_usable, at_sixty, at_one_twenty, complaints) =
+    let (after_usable, at_sixty, at_one_twenty, log) =
         the_three_readings(&mut started, home.path()).expect("a run that produced a number");
     drop(started);
 
@@ -785,7 +872,9 @@ fn test_the_empty_profile_floor() {
         after_usable,
         at_sixty,
         at_one_twenty,
-        complaints,
+        complaints: log.complaints,
+        log_bytes: log.bytes,
+        log_level: the_log_level_asked_for().expect("a level the program reads"),
     };
     print_the_run("empty profile", THE_COMMAND, &run);
 }

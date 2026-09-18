@@ -484,6 +484,43 @@ Log files are in your Wixen Mail data folder, under `logs`. They do not contain
 your passwords or the text of your messages. They may contain folder names and
 email addresses, so read one before attaching it if that matters to you.
 
+### What the log writes, and where the level is
+
+The level is under Settings, then Advanced, then Log level. Each level writes
+everything the levels above it write, and this much more:
+
+| Level | What it adds |
+|---|---|
+| Error | What went wrong: a save that failed, a server that could not be reached. |
+| Warn | What was refused or could not be done: a folder that would not open, a watch that could not start, a chunk of the download the server refused and why, the wait before the next try. |
+| Info | What the program did: each check's result per folder, the watch's end and why, the download's finish per account, that the settings were saved and which log level and while-fetching level they hold, what was spoken, and how many characters were held back from speech because content is muted. |
+| Debug | Each chunk of the download, headers and text, with the counts; a repeat that was not spoken. |
+| Trace | Nothing more today. |
+
+Since 2026-09-18 the level a fresh profile starts at follows the build: Debug
+while the version says alpha or beta, Info from the release candidate on.
+Under a testing round every report comes with a log, and the lines a report
+needs are at Info and Debug, so the alpha starts where a report can be
+written from. Nothing moves by hand at a cut. A profile that already holds a
+level keeps it, whatever the build: the first tester's profile held Info when
+it was read on 2026-09-18, so a build after that date leaves it at Info, and
+Settings, then Advanced, then Log level is where to move it.
+
+What Debug costs on disk is not measured yet, and this page does not guess.
+The measurement is the harness in `tests/the_numbers_the_targets_ask_for.rs`
+run twice, `WIXEN_MEASUREMENT_LOG_LEVEL=info cargo test --release --test
+the_numbers_the_targets_ask_for -- --ignored --nocapture
+test_cold_start_and_memory_with_a_thousand_cached_messages` and the same at
+`debug`, each printing the size of the log after a two-minute start against
+the measurement profile; the two rows go on `docs/development/measurements.md`
+with their date. On 2026-09-18 the run was refused, because only one copy of
+Wixen Mail runs at a time and the tester's copy was open on his account all
+afternoon; a second start hands itself to the first and makes it say
+"Wixen Mail is already running, and this is it", so the harness now looks
+first and starts nothing while a copy is running. A day of real use writes
+more than a two-minute start in any case, and how much more is something
+only a day on a real account can say.
+
 ## Where your data is
 
 Everything is in one folder, `%LOCALAPPDATA%\wixen-mail`: the cached mail, your

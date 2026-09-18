@@ -8,6 +8,29 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The log starts at Debug while the build is an alpha or a beta, and writes what a report
+  needs.** Reported on 2026-09-17 from build `1.0.0-alpha.1+114.g44bff634` (#71), and decided
+  the same day: the level a fresh profile starts at follows the version the build carries,
+  Debug while it says alpha or beta and Info from the release candidate on, so nothing is owed
+  by hand at a cut. A profile that already holds a level keeps it, whatever the build; the
+  level is under Settings, then Advanced, then Log level. The level alone was not what a
+  report needed: until this build the log said nothing per folder of a check, nothing per
+  chunk of the download, nothing when the settings were saved and nothing when an
+  announcement was held back. Now each check's result is written per folder at Info with
+  the account, the folder and the counts; each chunk of the download, headers and text, at
+  Debug with the counts; a chunk the server refused, and the text download stopping, with
+  this program's words for the kind of failure before the server's own; the settings save at
+  Info with the log level and the while-fetching level and nothing else from the settings;
+  and what the announcement queue held back, muted content by its length at Info, a line
+  dropped to make room at Info, a repeat at Debug, each with its topic and never the words.
+  No line carries a password, a sign-in token or the text of a message, and a reading of
+  every log call in the source now holds each call to spelling none of those as a value. The
+  filter the log runs under names this program alone, so no library's own logging is switched
+  on by the level. `docs/ALPHA_TESTING.md` has the table of what each level writes and where
+  the measured cost of Debug is. Known limitations: no report has yet been written from a log
+  at this level, so whether these are the lines a report needs is what the next report says;
+  the reading over log calls is lexical and cannot see a body bound to another name; and the
+  dialog that attaches the log to a report is not here, it lands with #64.
 - **The NVDA workflow fails when one of its cases fails.** Since 2026-09-18. The job that
   drives a real NVDA against the real program on GitHub's runner had been marked non-blocking
   since 2026-08-16, so that its findings would be a work queue rather than a gate, and the queue
