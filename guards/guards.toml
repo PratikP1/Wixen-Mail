@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 137 records have arrived since and have not been through it.
+# 139 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26094,4 +26094,59 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "tests/moving_through_the_list_marks_nothing_read.rs", tests = 13 },
+]
+
+# ── 11-06.1: where the cursor lands after a delete, and after a re-read ──────
+#
+# #76: deleting a message put the cursor at the top of the list, because the
+# rule that lands it on the next message lived in the window's own record of
+# the selection and nothing set the control's focus to it. The rules are
+# `presentation::landing_after_a_removal`, held by cases on the library, and
+# the control following them is held by the built list in
+# `tests/deleting_a_message_lands_on_the_next_one.rs`.
+
+# The row before the set dropped from the answer, so a delete of the last
+# row, or of a set that reaches the end, lands nowhere: the cursor is left
+# wherever the control puts it, which for a virtual list is no row at all.
+# The two cases that end at the last row and the case holding both ends go
+# red; the first draft named those three and the runner agreed.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "deleting the last row lands on the row before it, not nowhere"
+file = "src/presentation/landing_after_a_removal.rs"
+before = """    Some(
+        after_the_set
+            .or(before_the_set)
+            .unwrap_or(len_after - 1)
+            .min(len_after - 1),
+    )"""
+after = """    after_the_set.map(|row| row.min(len_after - 1))"""
+red = [
+    "presentation::landing_after_a_removal::tests::test_the_last_row_removed_lands_on_the_row_before_it",
+    "presentation::landing_after_a_removal::tests::test_a_set_at_the_end_lands_on_the_row_before_the_first_removed",
+    "presentation::landing_after_a_removal::tests::test_a_set_holding_both_ends_lands_on_the_last_row_left",
+]
+tests_last_seen = [
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
+]
+
+# A re-read that moves the cursor on every load, whatever row the cursor's
+# message is on now, which is what 10-02 refused: re-selecting moves focus
+# and takes the screen reader's cursor with it. The no-move case goes red.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the library.
+[[guard]]
+name = "a re-read that left the cursor's message where it was moves nothing, not the cursor every load"
+file = "src/presentation/landing_after_a_removal.rs"
+before = """    new_index.filter(|new| Some(*new) != old_index)"""
+after = """    let _ = old_index;
+    new_index"""
+red = [
+    "presentation::landing_after_a_removal::tests::test_a_message_still_on_its_row_is_no_move_and_neither_is_one_that_is_gone",
+]
+tests_last_seen = [
+    { file = "src/presentation/landing_after_a_removal.rs", tests = 12 },
 ]

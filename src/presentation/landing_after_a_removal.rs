@@ -34,15 +34,32 @@
 /// the last row left. Nothing removed is nothing to land after, so the
 /// cursor stays where it is.
 pub fn where_to_land(removed: &[usize], len_after: usize) -> Option<usize> {
-    let _ = (removed, len_after);
-    None
+    let first = *removed.iter().min()?;
+    let last = *removed.iter().max()?;
+    if len_after == 0 {
+        return None;
+    }
+    let len_before = len_after + removed.len();
+    // The row after the set, numbered as it is now: every removed row sat
+    // below it, so it moved up by the size of the set.
+    let after_the_set = (last + 1 < len_before).then(|| last + 1 - removed.len());
+    // The row before the set did not move: nothing removed sat below it.
+    let before_the_set = (first > 0).then(|| first - 1);
+    // Neither exists only when the set holds both ends of the list; the last
+    // row left is the previous message in the sense the last-row case means.
+    Some(
+        after_the_set
+            .or(before_the_set)
+            .unwrap_or(len_after - 1)
+            .min(len_after - 1),
+    )
 }
 
 /// The row the cursor's message sits on now, by its identity, or nothing
 /// when there was no cursor or the message is no longer listed.
 pub fn where_the_same_message_is(cursor: Option<i64>, ids_after: &[i64]) -> Option<usize> {
-    let _ = (cursor, ids_after);
-    None
+    let cursor = cursor?;
+    ids_after.iter().position(|id| *id == cursor)
 }
 
 /// The row to move the cursor to, or nothing when it is already there.
@@ -52,8 +69,7 @@ pub fn where_the_same_message_is(cursor: Option<i64>, ids_after: &[i64]) -> Opti
 /// removal, where the same row is a different message, is the case it did
 /// not cover.
 pub fn whether_to_move(old_index: Option<usize>, new_index: Option<usize>) -> Option<usize> {
-    let _ = (old_index, new_index);
-    None
+    new_index.filter(|new| Some(*new) != old_index)
 }
 
 #[cfg(test)]
