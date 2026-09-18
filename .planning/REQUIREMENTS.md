@@ -3934,9 +3934,23 @@ third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted pl
     it, and two guard records are measured (11-06.1, task 3).
   - [S] That the landed row's reading is enough on its own is his ear's.
 
-- [ ] **LIST-15**: Alt+A reaches the attachments from the reader and from the formatted
+- [x] **LIST-15**: Alt+A reaches the attachments from the reader and from the formatted
   page window, and F7 the warning, whichever control has focus, the WebView included; the
   pages say Alt+A where they said F8.
+  **Ticked 2026-09-18 by 11-04.1, merged at `70d84bc5`, on its `[D]` line:** the page
+  window's script, `presentation::page_jumps::SCRIPT`, posts `{kind:'attachments'}` on
+  Alt+A and `{kind:'warning'}` on F7 and the module's reader turns them back into jumps,
+  with a test walking every posted kind through the reader; the window's handler moves
+  focus to the list saying "Attachments, N", to the bar saying "Security warning", says
+  "No attachments" and "No warning" with nothing to go to and "Message" on the way back;
+  the `KEY_DOWN` binding on the page is removed; the reader's item reads
+  "&Attachments\tAlt+A", the sentences say "Alt+A for them" and "Alt+A for the list", the
+  reader's way back answers the chord from the menu handler when the list has focus; held
+  by `tests/attachments_are_reached_with_alt_a_in_both_views.rs` (five readings and five
+  companions, 10 tests) and four guard records; the shortcuts page, the guide and the
+  changelog say Alt+A with F8 dated. The `[S]` line is untouched and is ledger 538; nobody
+  has heard the landing, and the reader's way back through the accelerator was reasoned
+  from the toolkit, not watched.
   - Evidence: the reader binds `ID_GO_ATTACHMENTS` to `F8` (`wx_reader.rs:36`, `:316-317`
     "&Attachments\tF8") and its sentence says "F8 for the list" (`:238`); the page window
     binds `KEY_DOWN` on the page for F7 and F8 (`wx_app.rs:21201`), which WebView2 never
@@ -4165,7 +4179,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-12 | Phase 11 | Pending, 11-06.1 |
 | LIST-13 | Phase 11 | Pending, 11-09.1 |
 | LIST-14 | Phase 11 | Pending, 11-06.1 |
-| LIST-15 | Phase 11 | Pending, 11-04.1 |
+| LIST-15 | Phase 11 | Complete, 11-04.1 at `70d84bc5`; whether Alt+A lands on the list and NVDA says the landing in both views, and whether the reader's way back through the accelerator fires, are the tester's ear, ledger 538 |
 | LIST-16 | Phase 11 | Pending, 11-09.1 |
 | LIST-17 | Phase 11 | Pending, 11-09.2 |
 | LIST-18 | Phase 11 | Pending, 11-11.3 |
