@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 124 records have arrived since and have not been through it.
+# 125 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25721,4 +25721,33 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 14 },
     { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
+]
+
+# ── A message nobody read is never marked read ──────────────────────────────
+#
+# #25: a row selected for two seconds was marked read, and hearing a row takes
+# longer than that, so a walk through a folder by ear marked every message
+# stopped on. The rule answers nothing when no reading began, whatever is
+# selected. The break is the old behaviour in the rule's own words: when
+# nothing began, the selected unread message stands in as though its reading
+# had begun just now. The case that selects a row for an hour with no reading
+# begun goes red under Immediately, and the case that reads one message and
+# then selects another goes red the same way, because the break stands the
+# second message in too.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "a message nobody read is never marked read, whatever is selected"
+file = "src/application/reading_habits.rs"
+before = """    let (message, since) = began.filter(|(message, _)| Some(*message) == selected_unread)?;"""
+after = """    let (message, since) = began
+        .filter(|(message, _)| Some(*message) == selected_unread)
+        .or_else(|| selected_unread.map(|message| (message, now)))?;"""
+red = [
+    "application::reading_habits::a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected::test_nothing_began_means_nothing_is_marked_however_long_a_row_is_selected",
+    "application::reading_habits::a_message_is_marked_read_after_it_was_read_and_never_after_it_was_selected::test_a_message_that_began_reading_is_not_marked_once_another_is_selected",
+]
+tests_last_seen = [
+    { file = "src/application/reading_habits.rs", tests = 25 },
 ]

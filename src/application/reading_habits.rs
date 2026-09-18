@@ -112,8 +112,14 @@ pub fn offered_index(stored: &str) -> usize {
 impl Default for MarkRead {
     /// Two seconds, not instantly.
     ///
-    /// Long enough that arrowing past a message does not mark it, short enough
-    /// that stopping to read one does.
+    /// Counted from the moment a message is read aloud or opened, never from
+    /// the moment it is selected (#25, 2026-09-18). Until then the two seconds
+    /// were counted from selection, on the reasoning that arrowing past a
+    /// message takes less than that; hearing a row's sender, subject and date
+    /// takes longer, so a walk through a folder by ear marked every message
+    /// stopped on. Counted from reading, two seconds is long enough that a
+    /// Space pressed by mistake and left at once does not mark the message,
+    /// and short enough that hearing it through does.
     fn default() -> Self {
         MarkRead::After(2)
     }
@@ -121,15 +127,36 @@ impl Default for MarkRead {
 
 /// Whether the message somebody began reading is to be marked read now.
 ///
-/// A stub until the rule is written: it answers nothing, whatever it is
-/// asked.
+/// The clock starts when a message is read aloud from the list or opened in
+/// its own window, and never when it is selected (#25, decided 2026-09-18):
+/// selecting a row is how somebody moves through a folder, and for somebody
+/// working by ear hearing the row takes longer than any short wait, so a
+/// clock started by selection marked every message stopped on. `began` is
+/// which message was read and when; `selected_unread` is the message under
+/// the cursor if it is still unread. The answer is the message to mark, or
+/// nothing.
+///
+/// Nothing began, nothing is marked, whatever is selected and however long
+/// it has been. The message that began reading must still be the selected
+/// unread one: moving on to another row before the wait has run leaves the
+/// first unread and starts nothing for the second. Then the setting: at once
+/// under Immediately, once the wait has run under a wait, never under Only
+/// when I say so.
 pub fn whether_to_mark_read(
-    _began: Option<(i64, std::time::Instant)>,
-    _selected_unread: Option<i64>,
-    _now: std::time::Instant,
-    _setting: MarkRead,
+    began: Option<(i64, std::time::Instant)>,
+    selected_unread: Option<i64>,
+    now: std::time::Instant,
+    setting: MarkRead,
 ) -> Option<i64> {
-    None
+    let (message, since) = began.filter(|(message, _)| Some(*message) == selected_unread)?;
+    match setting {
+        MarkRead::Immediately => Some(message),
+        MarkRead::After(seconds) => {
+            let waited = now.saturating_duration_since(since);
+            (waited >= std::time::Duration::from_secs(u64::from(seconds))).then_some(message)
+        }
+        MarkRead::Never => None,
+    }
 }
 
 /// Whether the Cc and Bcc lines are in the compose window from the start.
