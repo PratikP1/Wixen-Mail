@@ -3640,6 +3640,18 @@ the caveat at the top of this file binds every `[D]` line.
   the short form, started the clock. The second `[D]` line below is amended for 11-05.1,
   which moves the record to where the depth is known; the tick stands for the rest and
   11-05.1's summary dates the amendment when it merges.
+  **Held 2026-09-18 by 11-05.1, merged at `b3ab5d51`, on the amended `[D]` line:**
+  `read_aloud::what_a_press_starts(depth) -> WhatBegan` answers `Nothing` for `Short` and
+  `TheWholeReading` for `Full`, two cases in the module (49 to 51 tests); `wire_read_aloud`
+  takes a second closure and calls it once the depth is known, only under `TheWholeReading`;
+  the mail wiring writes `reading_began` in that closure and its lookup closure writes
+  nothing; `open_single_message` is unchanged; held by `test_a_first_space_marks_nothing_and_a_second_does`
+  over the real cycle and the real decision, by the two readings the old one was split into,
+  `test_the_short_form_records_nothing_about_reading` and
+  `test_the_whole_reading_records_when_reading_began` (13 tests in the target), and by three
+  records measured on 2026-09-18; the sentence under the choice, the guide and the changelog
+  say reading the whole message or opening it. The `[S]` line is untouched and is ledger 539,
+  amended: whether the first Space leaves the count alone and the second moves it is his ear.
   - Evidence: `mark_the_open_one_read` (`wx_app.rs:10035`, polled from the main timer at
     `:5576`) starts a clock when the selected message is unread and marks it read when
     `mark_read_after`'s delay passes with the row still selected (`:10046-10098`); the
@@ -4207,7 +4219,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
-| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
+| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
 | LIST-04 | Phase 11 | In progress, 11-06 at `fe143d46`: the label on three surfaces and M held on the first two `[D]` lines; the thread row is 11-07's; the label heard, the word after M and the list not jumping are the tester's ear, ledger 540 |
 | LIST-05 | Phase 11 | Pending, 11-07 |
 | LIST-06 | Phase 11 | Pending, 11-08 |
