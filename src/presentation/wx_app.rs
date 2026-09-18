@@ -7191,6 +7191,20 @@ pub fn the_offer_to_fetch(count: usize) -> Option<String> {
 const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \
      computer.";
 
+/// What the download of everything says the moment it starts.
+///
+/// `pub` for the red half only: nothing calls it yet, `dead_code` fires on a
+/// private constant nothing reads, and `-D warnings` refuses the build. It is
+/// narrowed to private in the commit that gives it a caller. Empty here so
+/// the test that reads its words is red on an assertion rather than on a
+/// missing name.
+pub const STARTING_THE_DOWNLOAD: &str = "";
+
+/// What Get Older Messages answers before it hands to the download.
+///
+/// `pub` and empty for the reason the constant above gives.
+pub const DOWNLOADING_THIS_FOLDER_FIRST: &str = "";
+
 /// The offer as it is spoken, rather than as it is printed on the button.
 ///
 /// Three things, and the third is why this is a function rather than a format
@@ -30030,13 +30044,24 @@ mod what_a_saved_search_says_before_it_runs {
         after[..end].to_string()
     }
 
-    /// The body of the routine that carries out the offer.
-    fn the_fetch_command(source: &str) -> String {
+    /// The body of the routine that runs the download of everything.
+    fn the_download_runner(source: &str) -> String {
         let after = source
-            .split_once("fn start_the_missing_text_fetch(")
-            .expect("the routine that carries out the offer")
+            .split_once("fn start_the_download(")
+            .expect("the routine that runs the download")
             .1;
         let end = after.find("\n}\n").unwrap_or(after.len());
+        after[..end].to_string()
+    }
+
+    /// The arm of the menu handler that answers for Get Older Messages, up
+    /// to the next arm.
+    fn the_get_older_arm(source: &str) -> String {
+        let after = source
+            .split_once("_ if id == ID_GET_OLDER => {")
+            .expect("a menu arm for Get Older Messages")
+            .1;
+        let end = after.find("_ if id ==").unwrap_or(after.len());
         after[..end].to_string()
     }
 
@@ -30189,27 +30214,35 @@ mod what_a_saved_search_says_before_it_runs {
     }
 
     #[test]
-    fn test_choosing_the_offer_starts_the_backfill_and_says_what_it_did() {
-        // Both halves. A command that reaches the backfill and throws its
-        // report away is the defect this file has already had once: a number
-        // worked out and never said. So the report has to reach a window
-        // update after the call, not merely be computed.
-        let command =
-            the_fetch_command(&crate::common::what_ships::what_ships(&the_window_itself()));
+    fn test_get_older_messages_says_this_folder_comes_first_before_handing_to_the_download() {
+        // Both halves. Shift+F9 means "carry on downloading, this folder
+        // first" since 2026-09-17, and the download prefers the folder on
+        // screen, so the arm hands to it rather than running a sync of its
+        // own. The hand-over alone would be a key pressed and then silence:
+        // the download's own lines are steps, silent under Say what arrived,
+        // so the arm answers the key first, in words that name the folder.
+        let arm = the_get_older_arm(&crate::common::what_ships::what_ships(&the_window_itself()));
 
-        let starts = command
-            .find("fetch_the_missing_message_text")
-            .expect("the offer to start the backfill");
-        let reports = command
-            .find("what_the_fetch_did")
-            .expect("the offer to say what the backfill did");
+        let says = arm
+            .find("send_status(")
+            .expect("Get Older Messages to answer the key");
+        let hands_over = arm
+            .find("start_the_download(")
+            .expect("Get Older Messages to hand to the download");
         assert!(
-            starts < reports,
-            "the report is worked out before the run it is about"
+            says < hands_over,
+            "the key is answered after the hand-over, so what is said first is the download's \
+             own first step"
         );
         assert!(
-            command[reports..].contains("UIUpdate::"),
-            "what the backfill did is worked out and never said to anybody"
+            arm[says..hands_over].contains("DOWNLOADING_THIS_FOLDER_FIRST"),
+            "something other than the folder-first line answers the key, so what is said is \
+             not what this test read"
+        );
+        assert!(
+            super::DOWNLOADING_THIS_FOLDER_FIRST.contains("this folder"),
+            "the answer does not say which folder comes first: {}",
+            super::DOWNLOADING_THIS_FOLDER_FIRST
         );
     }
 
@@ -30282,38 +30315,39 @@ mod what_a_saved_search_says_before_it_runs {
     }
 
     #[test]
-    fn test_the_fetch_says_it_has_started_before_it_opens_a_connection() {
-        // From the button this was covered by the label somebody had just
-        // pressed. From a menu it is a command chosen and then silence, for as
-        // long as a mail server takes to answer, and the first thing the run
-        // itself says comes after the connection is open. Silence after a
-        // command is how somebody chooses it twice and starts a second run.
-        let command =
-            the_fetch_command(&crate::common::what_ships::what_ships(&the_window_itself()));
+    fn test_the_download_says_it_has_started_before_it_opens_a_connection() {
+        // The download starts on its own after every check, and its first
+        // step is a sign-in that takes as long as a mail server takes. A
+        // status bar that says nothing until then reads, to somebody who
+        // cannot see the connection light, as a program doing nothing. So
+        // the runner says it has started before any work is handed off, as
+        // a step: shown always, spoken only under Say every step.
+        let runner =
+            the_download_runner(&crate::common::what_ships::what_ships(&the_window_itself()));
 
-        let says = command
-            .find("send_status")
-            .expect("the fetch to say something the moment it is chosen");
-        let works = command
+        let says = runner
+            .find("send_progress(")
+            .expect("the download to say it has started");
+        let works = runner
             .find("spawn_blocking")
-            .expect("the fetch to do its work off the window thread");
+            .expect("the download to do its work off the window thread");
         assert!(
             says < works,
-            "nothing is said until the work has started, so choosing this from \
-             a menu is silence for as long as a server takes"
+            "nothing is said until the work has started, so the start of a download is \
+             silence for as long as a server takes"
         );
         // Ordering alone would be satisfied by saying nothing at all, and an
         // empty status line is exactly the silence this is about. So the line
         // is named and the words are read.
         assert!(
-            command[says..works].contains("STARTING_THE_MISSING_TEXT_FETCH"),
-            "something other than the opening line is sent first, so what is \
-             said the moment this is chosen is not what this test read"
+            runner[says..works].contains("STARTING_THE_DOWNLOAD"),
+            "something other than the opening line is sent first, so what is said the moment \
+             the download starts is not what this test read"
         );
         assert!(
-            super::STARTING_THE_MISSING_TEXT_FETCH.contains("message text"),
-            "the opening line does not say what is being looked for: {}",
-            super::STARTING_THE_MISSING_TEXT_FETCH
+            super::STARTING_THE_DOWNLOAD.contains("not on this computer"),
+            "the opening line does not say what is being downloaded: {}",
+            super::STARTING_THE_DOWNLOAD
         );
     }
 }

@@ -4549,11 +4549,17 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-04 as first written; rewritten and measured
 # through `--remeasure` on 2026-09-17.
+#
+# Renamed on 2026-09-17 with the target, when 10-05 retired the whole-folder
+# request for #20 and #23: the download of everything sends the same update
+# once per chunk of headers, so the arm and the break are unchanged and the
+# target that reads them is `everything_comes_down_without_being_asked`.
+# Measured again through `--remeasure` that day.
 
 [[guard]]
-name = "a chunk of a whole-folder request that lands is shown, and no limit grows"
+name = "a chunk of the download that lands is shown, and no limit grows"
 file = "src/presentation/wx_app.rs"
-suite = "a_whole_folder_moves_both_bounds"
+suite = "everything_comes_down_without_being_asked"
 before = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
             reread_folder_if_open(state, message_cache, *folder_id, tx);"""
 after = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
@@ -4563,7 +4569,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_whole_folder_moves_both_bounds.rs", tests = 8 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 16 },
 ]
 
 # ── A deletion that stops being noticed because nobody looks any more ────────
@@ -13730,32 +13736,35 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
-# ── The offer reaches the backfill, and says what it did ───────────────────
+# ── Get Older Messages answers the key before it hands to the download ──────
 #
-# A button that starts a run and throws its report away is the defect this
-# file has already had once, one plan ago: a number worked out and never said.
-# So the break here is not deleting the call. It is keeping the call and
-# discarding what it answered, which is the shape that gets past a guard
-# written to look for the call.
+# Until 2026-09-17 this record was "choosing the offer starts the backfill
+# and says what it did", on the missing-text fetch: a button that started a
+# run and threw its report away. 10-05 retired that command for #23, because
+# the download of everything is what it did, and rewrote the record and its
+# test in place onto the arm that survives: Shift+F9, Get Older Messages,
+# which hands to the download with the folder on screen first. The download's
+# own lines are steps, silent under Say what arrived, so the arm answers the
+# key before the hand-over or pressing it is silence for as long as a server
+# takes. The break drops the answer and keeps the hand-over, which is the
+# shape that gets past a guard written to look for the call.
 #
-# The first version of this record's test was green through exactly that
-# break, and for a reason worth recording: the routine imported both function
-# names on one `use` line, so a test asking whether the command reaches the
-# backfill and reports what it did found both names sitting together in an
-# import with neither being called. The names are written out in full at their
-# call sites now, and the comment above them says why.
+# The first version of the old record's test was green through a break of
+# that shape, because the routine imported both function names on one `use`
+# line. The names are written out in full at their call sites, and the
+# comment above them says why.
+#
+# Measured 2026-09-17 on the branch the rewrite landed on, through
+# `scripts/guards.sh --remeasure`, the whole library.
 
 [[guard]]
-name = "choosing the offer starts the backfill and says what it did"
+name = "get older messages answers the key before it hands to the download"
 file = "src/presentation/wx_app.rs"
-before = """            Ok(done) => {
-                say(UIUpdate::StatusUpdated(
-                    crate::application::mail_sync::what_the_fetch_did(&done),
-                ));"""
-after = """            Ok(done) => {
-                let _ = &done;"""
+before = """                                    send_status(&ui_tx, &runtime, DOWNLOADING_THIS_FOLDER_FIRST);
+                                    start_the_download(app);"""
+after = """                                    start_the_download(app);"""
 red = [
-    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_choosing_the_offer_starts_the_backfill_and_says_what_it_did",
+    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_get_older_messages_says_this_folder_comes_first_before_handing_to_the_download",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -14097,26 +14106,29 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
-# ── The fetch saying something the moment it is chosen ──────────────────────
+# ── The download saying it has started before it opens a connection ─────────
 #
-# The run itself says nothing until it has a connection, and a mail server
-# takes as long as it takes. From the button that gap was covered by the label
-# somebody had just pressed and could still see. From the File menu it is a
-# command chosen and then silence, which is how somebody chooses it twice and
-# starts a second run.
+# Until 2026-09-17 this record was "the fetch says what it is doing before it
+# opens a connection", on the missing-text fetch chosen from the File menu.
+# 10-05 retired that command for #23 and rewrote the record and its test in
+# place onto the download of everything, which starts on its own after every
+# check: its first step is a sign-in that takes as long as a mail server
+# takes, and a status bar that says nothing until then reads, to somebody who
+# cannot see the connection light, as a program doing nothing.
 #
 # The break is the one that keeps the call and throws the words away, because
 # an ordering check on its own is satisfied by saying nothing at all.
 #
-# Taken red by hand against the whole library on 2026-09-01: exactly one.
+# Taken red by hand against the whole library on 2026-09-01 as first written:
+# exactly one. Measured 2026-09-17 on the branch the rewrite landed on,
+# through `scripts/guards.sh --remeasure`, the whole library.
 [[guard]]
-name = "the fetch says what it is doing before it opens a connection"
+name = "the download says it has started before it opens a connection"
 file = "src/presentation/wx_app.rs"
-before = """const STARTING_THE_MISSING_TEXT_FETCH: &str = "Looking for message text that is not on this \\
-     computer.";"""
-after = """const STARTING_THE_MISSING_TEXT_FETCH: &str = "";"""
+before = """const STARTING_THE_DOWNLOAD: &str = "Downloading the mail that is not on this computer yet...";"""
+after = """const STARTING_THE_DOWNLOAD: &str = "";"""
 red = [
-    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_fetch_says_it_has_started_before_it_opens_a_connection",
+    "presentation::wx_app::what_a_saved_search_says_before_it_runs::test_the_download_says_it_has_started_before_it_opens_a_connection",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
