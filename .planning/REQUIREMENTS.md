@@ -3527,8 +3527,18 @@ Nothing here has met a real provider except through the tester's Gmail account. 
 requirement's last `[S]` line says what only his ear, his reader or his account can settle;
 the caveat at the top of this file binds every `[D]` line.
 
-- [ ] **LIST-01**: Folders to Keep Up to Date is a tree whose ticks a screen reader hears,
+- [x] **LIST-01**: Folders to Keep Up to Date is a tree whose ticks a screen reader hears,
   names the account, shows All Mail when the server lists it, and is on the Tools menu.
+  **Ticked 2026-09-18 by 11-03, merged at `70f4737b`, on its two `[D]` lines:** a
+  `TreeCtrl` with `TVS_CHECKBOXES` nested by `folder_parents`, the state read from
+  `TVM_GETITEMSTATE` at OK, the title the account's name, the sentence for Gmail with no
+  listed folder holding every message, held by
+  `tests/a_kept_folder_reads_as_a_checked_check_box.rs` (readings B, C and D and the title's
+  source reading, 8 tests) and 21 in the module; the item on Tools as `Alt+L`, the three
+  pages and the sentence dated. The reading over the old rows found the cause of
+  "read-only": wxdragon's state constants arrive at wxWidgets renumbered, so CHECKED was
+  BUSY and SELECTABLE was READONLY (ledger 534). The `[S]` lines are untouched and are
+  ledger 533; nobody has heard the tree.
   - Evidence: `src/presentation/wx_folder_choice.rs:159-168` on 2026-09-18 at `744d05ef`: one
     `CheckListBox`, one row per folder in stored order, and the header's reason ("the folder
     tree in the main window is one flat level") is no longer so (`folder_tree::nested` at
@@ -3983,7 +3993,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
-| LIST-01 | Phase 11 | Pending, 11-03 |
+| LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | Pending, 11-04; #64's half stays #64's |
 | LIST-03 | Phase 11 | Pending, 11-05 |
 | LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
