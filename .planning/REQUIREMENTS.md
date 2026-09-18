@@ -3674,6 +3674,17 @@ the caveat at the top of this file binds every `[D]` line.
 - [ ] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
   menu and the toolbar, M toggles it in the message list and says read or unread, and a
   conversation row marks the whole thread.
+  **Held 2026-09-18 by 11-06, merged at `fe143d46`, on its first two `[D]` lines; the box
+  waits for the third, which is 11-07's:** `marking_read::what_the_command_says(any_unread)`
+  answers the menu word, the context entry, the spoken form and the help, and
+  `what_the_key_says(now_read)` the one word, five cases; `refresh_mark_read_wording` sets
+  the item and its help through `find_item_and_menu`, the tool through
+  `toolbar_text::relabel` (`TB_SETBUTTONINFOW`) and its tip, from the selection handler,
+  the toggle and the `MessageReadToggled` arm; the context menu is built from
+  `entries_for_messages(any_unread)` at the key; `list_keys::wire_letter` consumes M with
+  `skip(false)`; `tests/mark_as_read_says_which_way_it_will_go.rs` reads the letter on a
+  built list (the selection stays on row 0 where the search would have moved it to Mango),
+  the relabel through `TB_GETBUTTONTEXTW` and `get_accName`, and the three refresh sites.
   - Evidence: one id on three surfaces with one fixed label: `ID_MARK_READ` at
     `wx_app.rs:886` (the toolbar, "Mark Read"), `:6725` ("Mark as R&ead"), and
     `context_menu.rs:296` ("&Mark as read", a static slice); the arm at `:4859` toggles and
@@ -4197,7 +4208,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
-| LIST-04 | Phase 11 | Pending, 11-06 and 11-07 |
+| LIST-04 | Phase 11 | In progress, 11-06 at `fe143d46`: the label on three surfaces and M held on the first two `[D]` lines; the thread row is 11-07's; the label heard, the word after M and the list not jumping are the tester's ear, ledger 540 |
 | LIST-05 | Phase 11 | Pending, 11-07 |
 | LIST-06 | Phase 11 | Pending, 11-08 |
 | LIST-07 | Phase 11 | Pending, 11-09 |
