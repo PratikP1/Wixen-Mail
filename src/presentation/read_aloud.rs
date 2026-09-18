@@ -96,6 +96,35 @@ impl SpaceCycle {
     }
 }
 
+/// What a Space press begins, beyond the words it reads.
+///
+/// In mail the answer decides whether the clock towards marking the message
+/// read starts. Elsewhere nothing reads it, because nothing else has a clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatBegan {
+    /// The row was heard again, and the message is no more read than before.
+    Nothing,
+    /// The message itself was read, and whatever counts from reading counts
+    /// from now.
+    TheWholeReading,
+}
+
+/// Which press counts as reading the message.
+///
+/// The short form, subject, sender and snippet, is the row said a little
+/// more fully; it is what the first Space reads, and hearing it is not
+/// reading the message. #25 was reopened on 2026-09-18 on the tester's word,
+/// reading the snippet is not reading, after the first Space had started the
+/// clock from the build of that morning. The whole reading, the second Space
+/// or Shift+Space, is the message itself, and that is where the clock starts.
+///
+/// One function over the depth the cycle chose, rather than a rule inside
+/// the wiring, so the decision has cases of its own and the wiring only asks.
+pub fn what_a_press_starts(depth: Depth) -> WhatBegan {
+    let _ = depth;
+    WhatBegan::TheWholeReading
+}
+
 /// Something a list row can read aloud.
 ///
 /// One trait across six modules so Space behaves identically everywhere.
@@ -744,6 +773,19 @@ mod tests {
         cycle.press("mail", "7");
         cycle.reset();
         assert_eq!(cycle.press("mail", "7"), Depth::Short);
+    }
+
+    #[test]
+    fn test_the_short_form_starts_nothing_towards_marking_read() {
+        // The first Space reads subject, sender and snippet, and the tester's
+        // word (#25, reopened 2026-09-18) is that hearing those is not
+        // reading the message.
+        assert_eq!(what_a_press_starts(Depth::Short), WhatBegan::Nothing);
+    }
+
+    #[test]
+    fn test_the_whole_reading_starts_the_clock_towards_marking_read() {
+        assert_eq!(what_a_press_starts(Depth::Full), WhatBegan::TheWholeReading);
     }
 
     #[test]
