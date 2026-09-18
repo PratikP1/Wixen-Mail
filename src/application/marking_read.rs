@@ -38,12 +38,22 @@ pub struct Wording {
 /// command on a conversation row says what it will do to the messages that
 /// need it.
 pub const fn what_the_command_says(any_unread: bool) -> Wording {
-    let _ = any_unread;
-    Wording {
-        menu: "Mark as R&ead",
-        context: "&Mark as read",
-        spoken: "Mark as Read",
-        help: "Mark the selected message as read",
+    // The mnemonic stays on the e in both, so somebody who learned Alt+A, E
+    // keeps it whichever way the command goes; the context menu keeps its M.
+    if any_unread {
+        Wording {
+            menu: "Mark as R&ead",
+            context: "&Mark as read",
+            spoken: "Mark as Read",
+            help: "Mark the selected message as read",
+        }
+    } else {
+        Wording {
+            menu: "Mark as Unr&ead",
+            context: "&Mark as unread",
+            spoken: "Mark as Unread",
+            help: "Mark the selected message as unread",
+        }
     }
 }
 
@@ -52,8 +62,7 @@ pub const fn what_the_command_says(any_unread: bool) -> Wording {
 /// The tester's two words, and nothing else, because the row is still under
 /// the cursor and a screen reader has already said whose message it is.
 pub const fn what_the_key_says(now_read: bool) -> &'static str {
-    let _ = now_read;
-    "unread"
+    if now_read { "read" } else { "unread" }
 }
 
 #[cfg(test)]

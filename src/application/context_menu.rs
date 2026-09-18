@@ -299,15 +299,45 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
 /// way it will go (#27, 2026-09-18). Asked at the moment the menu key is
 /// pressed, because the answer changes as the cursor moves and as M toggles.
 pub fn entries_for_messages(any_unread: bool) -> &'static [Entry] {
-    let _ = any_unread;
-    MESSAGES
+    if any_unread {
+        MESSAGES
+    } else {
+        MESSAGES_WITH_THE_ONE_UNDER_THE_CURSOR_READ
+    }
 }
 
+/// The message list's menu when the message under the cursor is unread, and
+/// the form [`entries_for`] answers for the focus.
 static MESSAGES: &[Entry] = &[
     entry("&Reply", Action::Reply),
     entry("Reply &all", Action::ReplyAll),
     entry("&Forward", Action::Forward),
-    entry("&Mark as read", Action::MarkRead),
+    entry(
+        crate::application::marking_read::what_the_command_says(true).context,
+        Action::MarkRead,
+    ),
+    entry("&Star or unstar", Action::ToggleStar),
+    entry("&Delete", Action::DeleteMessage),
+    entry("Delete &permanently", Action::DeleteMessageOutright),
+    entry("Mo&ve to folder", Action::MoveToFolder),
+    entry("Cop&y to folder", Action::CopyToFolder),
+    // The thing you have to do arrived as an email, and retyping its subject
+    // into a task list is the clerical work software exists to remove.
+    entry("Copy to a &task", Action::CopyToTask),
+    entry("Copy to the &calendar", Action::CopyToEvent),
+    entry("Copy to a &note", Action::CopyToNote),
+];
+
+/// The same list when the message under the cursor is read: one entry
+/// differs, and the test over the message menu holds the rest identical.
+static MESSAGES_WITH_THE_ONE_UNDER_THE_CURSOR_READ: &[Entry] = &[
+    entry("&Reply", Action::Reply),
+    entry("Reply &all", Action::ReplyAll),
+    entry("&Forward", Action::Forward),
+    entry(
+        crate::application::marking_read::what_the_command_says(false).context,
+        Action::MarkRead,
+    ),
     entry("&Star or unstar", Action::ToggleStar),
     entry("&Delete", Action::DeleteMessage),
     entry("Delete &permanently", Action::DeleteMessageOutright),

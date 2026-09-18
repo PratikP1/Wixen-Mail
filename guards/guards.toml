@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 128 records have arrived since and have not been through it.
+# 130 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25842,4 +25842,58 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_settings_dialog_opens_in.rs", tests = 7 },
+]
+
+# ── Mark as Read says which way it will go ──────────────────────────────────
+#
+# #27: the command said "Mark as Read" on every surface whatever the message's
+# state, and toggled. The words for each state are one rule in
+# marking_read, and the break makes both states answer the unread form,
+# which is what every surface said until 2026-09-18. The read-state case in
+# the module goes red, and so does the message-menu test in context_menu,
+# whose second form takes its Mark entry's words from the same rule; the
+# mnemonic and context-word cases stay green, because a rule that answers
+# one form agrees with itself.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "mark as read says mark as unread on a read message, not the one word whatever the state"
+file = "src/application/marking_read.rs"
+before = """    if any_unread {
+        Wording {"""
+after = """    if any_unread || !any_unread {
+        Wording {"""
+red = [
+    "application::marking_read::tests::test_a_read_message_is_offered_mark_as_unread",
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
+    { file = "src/application/marking_read.rs", tests = 5 },
+]
+
+# ── The context menu's second form is offered on a read message ─────────────
+#
+# #27: the context menu has two forms of its message list since 2026-09-18,
+# and entries_for_messages picks by the message under the cursor. The break
+# answers the unread form for a read message too, which is what the menu did
+# before, and the message-menu test goes red on the Mark entry's words.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "the context menu on a read message offers mark as unread, not the unread form"
+file = "src/application/context_menu.rs"
+before = """    } else {
+        MESSAGES_WITH_THE_ONE_UNDER_THE_CURSOR_READ
+    }"""
+after = """    } else {
+        MESSAGES
+    }"""
+red = [
+    "application::context_menu::tests::test_a_message_menu_has_the_things_you_do_to_a_message",
+]
+tests_last_seen = [
+    { file = "src/application/context_menu.rs", tests = 18 },
 ]
