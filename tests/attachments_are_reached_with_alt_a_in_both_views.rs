@@ -40,6 +40,15 @@ fn shipped(path: &str) -> String {
     what_ships(&read(path))
 }
 
+/// The text with every comment line dropped, so a comment recording where a
+/// retired key went is not read as the key being bound.
+fn the_code_lines(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// One function's text, from its signature to the closing brace at column
 /// nought, or a complaint when the signature is gone.
 fn body_of(source: &str, signature: &str) -> Result<String, String> {
@@ -103,7 +112,7 @@ fn the_page_window_is_given_the_jumps(app: &str, jumps: &str) -> Result<(), Stri
     if !jumps.contains("e.key === 'F7'") || !jumps.contains("e.altKey") {
         return Err("the page's script reads neither F7 nor the Alt key".to_string());
     }
-    if jumps.contains("F8") {
+    if the_code_lines(jumps).contains("F8") {
         return Err("the page's script still names F8, which is retired from the page".to_string());
     }
     let wiring = body_of(app, "fn wire_the_way_out(")?;
@@ -153,7 +162,14 @@ fn the_page_window_acts_on_each_jump(app: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
-    let warning = between(&body, "Some(page_jumps::Jump::Warning) =>", "None =>")?;
+    // Up to the way out's own arm, which follows the warning arm and its
+    // "nothing to go to" answer; the arm's inner `None` is part of what is
+    // read, not the end of it.
+    let warning = between(
+        &body,
+        "Some(page_jumps::Jump::Warning) =>",
+        "leaving_which_way(&json)",
+    )?;
     if !warning.contains("bar.set_focus()") {
         return Err("the warning arm does not move focus to the bar".to_string());
     }
@@ -196,7 +212,7 @@ fn the_page_window_goes_back_and_says_alt_a(app: &str) -> Result<(), String> {
             ));
         }
     }
-    if body.contains("F8") {
+    if the_code_lines(&body).contains("F8") {
         return Err(
             "the page window still names F8, which never reached anything there".to_string(),
         );
@@ -226,7 +242,7 @@ fn the_reader_is_on_alt_a(reader: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
-    if reader.contains("F8") {
+    if the_code_lines(reader).contains("F8") {
         return Err("the reader still names F8".to_string());
     }
     Ok(())
@@ -317,15 +333,26 @@ fn test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump() {
     assert!(why.contains("not given the jumps"), "{why}");
 }
 
+/// The main window with one change planted inside the page window's own
+/// body, since the main window has lists of its own that set focus.
+fn planted_in_the_page_window(app: &str, from: &str, to: &str) -> String {
+    let body = body_of(app, "fn show_conversation_as_page(").expect("the page window");
+    app.replacen(&body, &with(&body, from, to), 1)
+}
+
 #[test]
 fn test_the_reading_complains_when_focus_stays_put_or_a_key_is_bound_on_the_browser() {
     let app = shipped(THE_MAIN_WINDOW);
 
-    let why = the_page_window_acts_on_each_jump(&with(&app, "list.set_focus();", ""))
-        .expect_err("an attachments arm that moves no focus was passed over");
+    let why = the_page_window_acts_on_each_jump(&planted_in_the_page_window(
+        &app,
+        "list.set_focus();",
+        "",
+    ))
+    .expect_err("an attachments arm that moves no focus was passed over");
     assert!(why.contains("does not move focus"), "{why}");
 
-    let why = the_page_window_acts_on_each_jump(&with(
+    let why = the_page_window_acts_on_each_jump(&planted_in_the_page_window(
         &app,
         "frame.set_sizer(sizer, true);",
         "page.bind_internal(EventType::KEY_DOWN, |_| {});\n    frame.set_sizer(sizer, true);",

@@ -235,7 +235,7 @@ fn attachment_summary(attachments: &[ReaderAttachment]) -> String {
         (1, _) => ", one of them a program".to_string(),
         (many, _) => format!(", {many} of them programs"),
     };
-    format!(" {count}{programs}, F8 for the list.")
+    format!(" {count}{programs}, Alt+A for the list.")
 }
 
 /// Shorten a subject to something that works as a tab label.
@@ -312,10 +312,13 @@ impl ReaderWindow {
                 "Move to the previous message in this conversation",
             )
             .append_separator()
+            // Alt+A since 2026-09-18 (#84), in both message windows. F8 is
+            // the column chooser's key in the main window, and in the
+            // formatted window it was bound where it could never fire.
             .append_item(
                 ID_GO_ATTACHMENTS,
-                "&Attachments\tF8",
-                "Move to the list of attachments",
+                "&Attachments\tAlt+A",
+                "Move to the list of attachments, and back",
             )
             .append_item(ID_READER_FIND, "&Find\tCtrl+F", "Find text in this message")
             .build();
@@ -615,12 +618,17 @@ impl ReaderWindow {
         }
     }
 
-    /// Enter on an attachment row saves it, and F8 goes back to the message.
+    /// Enter on an attachment row reads it, and Alt+A goes back to the message.
     ///
     /// Enter because that is what pressing Enter on a row means everywhere
     /// else, and a list where the obvious key does nothing reads as broken.
-    /// F8 both ways for the same reason F7 goes both ways on the warning bar:
-    /// somewhere to jump to is only useful with a way back.
+    /// Alt+A both ways for the same reason F7 goes both ways on the warning
+    /// bar: somewhere to jump to is only useful with a way back.
+    ///
+    /// The way back is answered twice, here and in the menu handler, because
+    /// the chord is the Attachments item's accelerator and the frame takes an
+    /// accelerator before the focused control sees the key. Whichever of the
+    /// two the key reaches, it goes back once.
     fn wire_attachment_list(&self, list: ListBox, index: usize) {
         let documents = self.documents.clone();
         let save = self.save_attachment.clone();
@@ -656,9 +664,11 @@ impl ReaderWindow {
                         Doing::Saving,
                     );
                 }
-                // WXK_F8 goes back to the message, which is the first control
-                // on the page after any warning bar.
-                Some(347) => {
+                // Alt+A goes back to the message, which is the first control
+                // on the page after any warning bar. Consumed rather than
+                // skipped: Alt with a letter no menu answers is a beep.
+                Some(65) if event.alt_down() => {
+                    event.skip(false);
                     if let Some(page) = notebook.get_page(index) {
                         page.set_focus();
                         let _ = a11y.announce("Message", Priority::Normal);
@@ -808,6 +818,16 @@ impl ReaderWindow {
             if id == ID_GO_ATTACHMENTS {
                 let page = current.get();
                 match lists.borrow().get(page).and_then(Option::as_ref) {
+                    // From the list, the same chord goes back to the message.
+                    // The frame takes an accelerator wherever focus is, so
+                    // the list's own key handler never sees it and the way
+                    // back has to be answered here as well.
+                    Some(list) if list.has_focus() => {
+                        if let Some(tab) = notebook.get_page(page) {
+                            tab.set_focus();
+                            let _ = a11y.announce("Message", Priority::Normal);
+                        }
+                    }
                     Some(list) => {
                         list.set_focus();
                         // The list announces its own name and row on focus, so

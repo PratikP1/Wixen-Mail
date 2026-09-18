@@ -144,6 +144,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Alt+A reaches the attachments of an open message in both views, and F8 is retired
+  there.** Reported on 2026-09-18 from build `1.0.0-alpha.1+149.g744d05ef` under NVDA (#84):
+  "in an open message F8 does not reach the attachments". Under the Formatted style, which
+  is the default, a message opens in the page window, and that window had bound F7 and F8
+  on the browser control itself. A key bound on a browser control is a key the browser
+  keeps: once the page has focus no such binding ever fires, so F8 never left the page
+  there, and the sentence read when the message opened promised a key that did nothing.
+  Escape and F6 had met the same fault earlier and were answered with a script inside the
+  page that hands the key to the window; Alt+A and F7 now take that route. Decided the
+  same day: `Alt+A` moves to the list of attachments and back in both message windows, the
+  plain-text reader and the formatted view; `F7` moves to the security warning and back in
+  the formatted view as it already did in the reader; the window says where it landed,
+  "Attachments" with the count, "Security warning", "Message" on the way back, and "No
+  attachments" or "No warning" when there is nothing to go to. The sentence read on open,
+  the reader's Go menu, `docs/KEYBOARD_SHORTCUTS.md` and the user guide say `Alt+A`. F8
+  still opens the column chooser in the main window and reaches the toolbar in the
+  composer. Known limitations: nobody has heard the landing sentences, and whether
+  "Attachments" spoken after the list announces itself is one thing too many is the
+  tester's ear; and in the plain-text reader the way back from the list is answered by the
+  menu accelerator, which was reasoned from how the toolkit routes a chord and not watched.
 - **Folders to Keep Up to Date is a tree, its check boxes reach a screen reader, and its
   title names the account.** Reported on 2026-09-17 from build `1.0.0-alpha.1` under NVDA
   (#70): "the folder list is a flat list, not a tree like the folder tree"; a kept folder was

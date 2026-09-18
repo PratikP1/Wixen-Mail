@@ -35,15 +35,33 @@ pub enum Jump {
 /// with Control held: Control+Alt is AltGr on many keyboard layouts, where
 /// the same chord types a letter of that language, and a shortcut that eats
 /// a letter somebody is typing is worse than none. F7 is the bare key.
-pub const SCRIPT: &str = "";
+pub const SCRIPT: &str = r#"document.addEventListener('keydown', function(e) {
+    // The jumps inside the window: Alt+A to the attachments, F7 to the
+    // warning. Taken from the browser before it acts on them, the way Escape
+    // and F6 are, because the browser's own F7 is caret browsing.
+    if (e.key === 'F7' && !e.altKey && !e.ctrlKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'warning' }));
+    }
+    if (e.altKey && !e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.contextMenu.postMessage(JSON.stringify({ kind: 'attachments' }));
+    }
+}, true);"#;
 
 /// The jump a page asked for, read from the message it posted.
 ///
 /// `None` for the way out, the context menu and anything unreadable, which
 /// the window answers elsewhere or ignores.
 pub fn the_jump_the_page_asked_for(json: &str) -> Option<Jump> {
-    let _ = json;
-    None
+    let posted = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    match posted.get("kind").and_then(serde_json::Value::as_str)? {
+        "attachments" => Some(Jump::Attachments),
+        "warning" => Some(Jump::Warning),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 120 records have arrived since and have not been through it.
+# 124 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25615,4 +25615,110 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
     { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+]
+
+# ── The page's script posts the attachments jump for Alt+A ──────────────────
+#
+# #84: the formatted message window bound F8 on the browser control, where a
+# key binding never fires, and the tester met a dead key. The jumps go through
+# the page's own script now, and the script posting nothing for Alt+A is the
+# same dead key with a different spelling. The break drops the post; the
+# reading in the target goes red with "posts nothing for Alt+A", and its
+# companion goes red on its anchor. The module's own unit tests go red too and
+# are not named here, because this record runs the target alone; the record
+# below runs the library for them.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the page's script posts the attachments jump for alt+a, not nothing"
+file = "src/presentation/page_jumps.rs"
+suite = "attachments_are_reached_with_alt_a_in_both_views"
+before = """        window.contextMenu.postMessage(JSON.stringify({ kind: 'attachments' }));"""
+after = """        // The post, dropped by a guard's break."""
+red = [
+    "test_the_page_window_is_given_the_jumps_and_the_preview_is_not",
+    "test_the_reading_complains_when_the_script_or_the_wiring_loses_a_jump",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 5 },
+    { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
+]
+
+# ── The window reads every kind the page's script posts ─────────────────────
+#
+# The same module holds the script and the reader of what it posts so the two
+# words cannot differ, and this is the break that makes them differ: the
+# reader stops answering the warning kind. The test walking every posted kind
+# through the reader goes red, and so does the one asking for F7 by name.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "the window reads the warning kind the page's script posts, not only the attachments"
+file = "src/presentation/page_jumps.rs"
+before = """        "warning" => Some(Jump::Warning),"""
+after = """        "a kind no page posts" => Some(Jump::Warning),"""
+red = [
+    "presentation::page_jumps::tests::test_f7_in_the_page_posts_the_warning_and_the_window_reads_it_back",
+    "presentation::page_jumps::tests::test_every_kind_the_script_posts_is_one_the_window_reads",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_jumps.rs", tests = 5 },
+]
+
+# ── Alt+A in the page window moves focus to the attachments list ────────────
+#
+# #84: a jump that speaks and goes nowhere is the promise the tester met,
+# said out loud. The break drops the focus call from the attachments arm and
+# leaves the sentence; the reading goes red with "does not move focus", and
+# its companion goes red on its anchor.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "alt+a in the page window moves focus to the attachments list, not only says so"
+file = "src/presentation/wx_app.rs"
+suite = "attachments_are_reached_with_alt_a_in_both_views"
+before = """                    Some(list) => {
+                        list.set_focus();
+                        let _ =
+                            a11y.announce(&format!("Attachments, {}", attached), Priority::Normal);
+                    }"""
+after = """                    Some(list) => {
+                        let _ = list;
+                        let _ =
+                            a11y.announce(&format!("Attachments, {}", attached), Priority::Normal);
+                    }"""
+red = [
+    "test_the_page_window_moves_focus_on_each_jump_and_binds_nothing_on_the_browser",
+    "test_the_reading_complains_when_focus_stays_put_or_a_key_is_bound_on_the_browser",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
+]
+
+# ── The reader's Attachments item is on Alt+A ───────────────────────────────
+#
+# #84, Pratik's decision: Alt+A in both message windows, F8 retired there.
+# The break puts F8 back on the reader's Go menu item; the reading goes red
+# with "not on Alt+A", and its companion goes red on its anchor. The reader's
+# own count-sentence test is in the library and not named here.
+#
+# Measured 2026-09-18 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the reader's attachments item is on alt+a, not back on f8"
+file = "src/presentation/wx_reader.rs"
+suite = "attachments_are_reached_with_alt_a_in_both_views"
+before = '''                "&Attachments\tAlt+A",'''
+after = '''                "&Attachments\tF8",'''
+red = [
+    "test_the_readers_item_is_on_alt_a_and_f8_is_gone",
+    "test_the_reading_complains_when_the_readers_item_goes_back_to_f8",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_reader.rs", tests = 14 },
+    { file = "tests/attachments_are_reached_with_alt_a_in_both_views.rs", tests = 10 },
 ]
