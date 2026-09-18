@@ -3053,8 +3053,21 @@ showed, owned by phase 11 and placed here on the reasoning FOUND-13 to FOUND-16 
 workflow FOUND-09's case runs in, reporting success over a failed job. Neither is one of the
 seven groups.
 
-- [ ] **FOUND-17**: The Settings screen keeps a chosen spelling language exactly as chosen
-  when this machine cannot check it, and CI on `main` is green.
+- [x] **FOUND-17**: The Settings screen keeps a chosen spelling language exactly as chosen
+  when this machine cannot check it, and CI on `main` is green. **Ticked 2026-09-18 by 11-01,
+  merged at `316ea755`, on its two `[D]` lines:** the rule is
+  `presentation::which_language_row::which_row_shows`, held by
+  `test_a_tag_with_a_region_is_shown_as_its_own_row_even_without_a_dictionary`,
+  `test_a_tag_with_a_region_the_machine_does_not_list_is_added_as_stored`,
+  `test_a_tag_with_a_region_finds_its_row_whatever_its_case`,
+  `test_a_bare_tag_is_resolved_to_the_row_the_checker_would_use`,
+  `test_a_bare_tag_the_checker_cannot_place_stands_as_its_own_row_when_listed` and
+  `test_a_tag_nothing_offers_is_added_as_stored`, four of them red at `7c8ebda9` and all six
+  green at `29e4d850`; `language_rows_and_selection` asks it at `wx_settings.rs:890` and
+  `read_settings` rebuilds the same list; the integration target is unchanged and passes here;
+  the region rule's record measured 2 red and nothing else on the library, the screen's
+  rewritten record 1 on its target; the changelog entry names 09-02 and #21. The clause "CI on
+  `main` is green" and the `[S]` line below are the runner's at the next push, ledger 530.
   - Evidence: `gh run view 35336142985 --json conclusion` -> `failure` on 2026-09-18 at
     `744d05ef`, the Test Suite job alone; its log at line 10868: `thread
     'test_the_language_the_screen_shows_is_the_one_the_checker_uses' panicked ... stored
@@ -3924,7 +3937,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523 |
 | MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526 |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
-| FOUND-17 | Phase 11 | Pending, 11-01; the runner's next run is Pratik's push |
+| FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Pending, 11-02; the sign-in line and the corrected settings case are the runner's at the next push |
 | LIST-01 | Phase 11 | Pending, 11-03 |
 | LIST-02 | Phase 11 | Pending, 11-04; #64's half stays #64's |

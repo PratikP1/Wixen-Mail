@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 499
+open_count: 500
 waived_count: 0
 fixed_count: 30
-total_count: 529
-last_updated: 2026-09-18T05:59:52.000Z
+total_count: 530
+last_updated: 2026-09-18T13:04:42.000Z
 ---
 
 # Broken Windows Ledger
@@ -544,6 +544,7 @@ last_updated: 2026-09-18T05:59:52.000Z
 | 527 | 10 | deviation | .planning/phases/10-all-the-mail-and-what-is-said-while-it-comes/10-06-PLAN.md |  | 10-06 executed with departures, so 10-07 reads the watch from the tree and not from the plan. The restart decision answers three things, not two: AfterAWait, Never for a stop somebody asked for, and OnTheScheduleAlone with what would lift it, because a stop the window itself asked for when replacing a watch must not mark the account, and a server that could not be reached and a server that refused to watch are lifted by different facts. A watch already reading events is left alone by a request, so a scheduled check does not replace a working watch every five minutes. The download is asked for only after a check in which some account went through, as 10-05's tree did, found by running the release binary. The schedule follows the network and does not run while the program believes there is none, so an unreachable server is not an error every interval while the network is gone. mark_synced marks the worker's copy and update_account_last_sync writes the column, not save_account, which would write the credential store on every check. The watch's wait is on InboxWatch per account beside its handle, not on a second map. The account editor's sentence is on the field as its accessible description and beneath it as text. The measurement account is refused by the credential store and not the port, ledger 526. | open |  | 2026-09-18T04:51:18.000Z |  |
 | 528 | 10 | stub | src/data/account.rs |  | Account.last_sync is written by every check that goes through since 10-06, on the worker's copy through mark_synced and in the row through update_account_last_sync, and read back by load_accounts into a field nothing reads: the schedule keeps its own clock for the session in WxUIState.last_checked, and a start checks every enabled account whatever the row says. The column is true now where it was empty before, and it is a fact with no reader. A reader would be a start that skipped an account checked a moment ago by a previous run, or a status line that says when the account was last checked; neither exists, and this entry says so rather than leaving the column to read as consumed. | open |  | 2026-09-18T04:51:18.000Z |  |
 | 529 | 10 | todo | docs/privacy.md |  | The privacy page's table row for OneNote says Never, nothing here reads or writes a notebook, and the section under it, The OneNote permission which nothing uses, says no notebook has ever been opened and no note written here goes anywhere. Both were true when written and false since phase 5.2: notes on an Outlook or Office 365 account sync to OneNote, docs/ALPHA_TESTING.md says so under what is known to be missing or unproven, and the Calendar and PIM tab says it is experimental. Found on 2026-09-18 by 10-07 reading the page for every sentence phase 10 falsified; left because correcting it means reading phase 5.2's summaries for what a notes sync sends, which is outside this phase, and a dated sentence beside each of the two claims is the shape the page uses. Until then a person reading the privacy page is told a permission is unused that the notes sync uses. | open |  | 2026-09-18T05:59:52.000Z |  |
+| 530 | 11 | unrun-verify | tests/the_language_the_screen_shows_is_the_one_used.rs |  | The en-AU case of this target, the one that failed on GitHub's runner in CI run 35336142985 at 744d05ef, cannot be run red on this machine, because Windows here offers en-AU and the runner does not; 11-01 fixed the rule in presentation::which_language_row, held it by six cases over hand-built rows that are red on both machines before the rule, and left this target unchanged and green here. Whether the runner now keeps en-AU is settled by the next push of main, which is Pratik's; until that run is read this entry stands, and the run's Test Suite job is the reading. | open |  | 2026-09-18T13:04:42.000Z |  |
 
 ````json
 [
@@ -6893,6 +6894,18 @@ last_updated: 2026-09-18T05:59:52.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-18T05:59:52.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 530,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "tests/the_language_the_screen_shows_is_the_one_used.rs",
+    "line": null,
+    "description": "The en-AU case of this target, the one that failed on GitHub's runner in CI run 35336142985 at 744d05ef, cannot be run red on this machine, because Windows here offers en-AU and the runner does not; 11-01 fixed the rule in presentation::which_language_row, held it by six cases over hand-built rows that are red on both machines before the rule, and left this target unchanged and green here. Whether the runner now keeps en-AU is settled by the next push of main, which is Pratik's; until that run is read this entry stands, and the run's Test Suite job is the reading.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T13:04:42.000Z",
     "resolved_at": null
   }
 ]
