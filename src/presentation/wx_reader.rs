@@ -1006,11 +1006,14 @@ mod tests {
     #[test]
     fn test_the_announcement_names_the_key_that_reaches_the_list() {
         // The list is last in the tab order, so somebody who reads the message
-        // and closes it would never find out it was there.
+        // and closes it would never find out it was there. The key is Alt+A
+        // since 2026-09-18 (#84); F8 is the column chooser's in the main
+        // window and never reached the list in the formatted view.
         let said = attachment_summary(&[attachment("report.pdf")]);
 
         assert!(said.contains("1 attachment"), "{said}");
-        assert!(said.contains("F8"), "{said}");
+        assert!(said.contains("Alt+A"), "{said}");
+        assert!(!said.contains("F8"), "{said}");
     }
 
     #[test]
