@@ -260,6 +260,11 @@ const fn entry(label: &'static str, action: Action) -> Entry {
 /// which account it is showing and calls [`note_folder_entries`] with that
 /// account's answer. Both go through the same function, so the two cannot come
 /// to offer different things.
+///
+/// A message list is the other row a `Focus` cannot fully answer, since
+/// 2026-09-18: what its Mark entry says depends on the message under the
+/// cursor (#27), which [`entries_for_messages`] is asked with. This answers
+/// the unread form, so the callers that name the focus keep what they had.
 pub fn entries_for(focus: Focus) -> &'static [Entry] {
     match focus {
         Focus::Messages => MESSAGES,
@@ -287,6 +292,15 @@ pub fn entries_for(focus: Focus) -> &'static [Entry] {
         }
         Focus::Containers(ContainerKind::ContactGroup) => CONTACT_GROUPS,
     }
+}
+
+/// What to offer on a message, given whether the message under the cursor is
+/// unread: the same list either way but for the Mark entry, which says which
+/// way it will go (#27, 2026-09-18). Asked at the moment the menu key is
+/// pressed, because the answer changes as the cursor moves and as M toggles.
+pub fn entries_for_messages(any_unread: bool) -> &'static [Entry] {
+    let _ = any_unread;
+    MESSAGES
 }
 
 static MESSAGES: &[Entry] = &[
@@ -506,6 +520,22 @@ static CONTACT_GROUPS: &[Entry] = &[
 mod tests {
     use super::*;
 
+    /// Every menu somebody can open, named: one per focus, and the message
+    /// list's second form, offered when the message under the cursor is read.
+    /// The walks over `Focus::ALL` walk this instead, so the second form is
+    /// held to the same rules as the first.
+    fn every_menu() -> Vec<(String, &'static [Entry])> {
+        let mut menus: Vec<(String, &'static [Entry])> = Focus::ALL
+            .iter()
+            .map(|focus| (format!("{focus:?}"), entries_for(*focus)))
+            .collect();
+        menus.push((
+            "Messages, the one under the cursor read".to_string(),
+            entries_for_messages(false),
+        ));
+        menus
+    }
+
     #[test]
     fn test_move_is_offered_exactly_where_it_means_something() {
         // The menu and the command have to agree. Offering it on a message,
@@ -693,12 +723,12 @@ mod tests {
 
     #[test]
     fn test_no_menu_offers_the_same_thing_twice() {
-        for focus in Focus::ALL {
-            let mut actions: Vec<Action> = entries_for(focus).iter().map(|e| e.action).collect();
+        for (menu, entries) in every_menu() {
+            let mut actions: Vec<Action> = entries.iter().map(|e| e.action).collect();
             let count = actions.len();
             actions.sort_by_key(|a| format!("{a:?}"));
             actions.dedup();
-            assert_eq!(actions.len(), count, "{focus:?} lists something twice");
+            assert_eq!(actions.len(), count, "{menu} lists something twice");
         }
     }
 
@@ -707,19 +737,19 @@ mod tests {
         // Two entries on Alt+D means one of them cannot be reached by keyboard
         // once the menu is open, which is the only way it is opened by the
         // people this is for.
-        for focus in Focus::ALL {
+        for (menu, entries) in every_menu() {
             let mut letters: Vec<char> = Vec::new();
-            for item in entries_for(focus) {
+            for item in entries {
                 let mnemonic = item
                     .label
                     .split('&')
                     .nth(1)
                     .and_then(|rest| rest.chars().next())
-                    .unwrap_or_else(|| panic!("{focus:?}: {:?} has no mnemonic", item.label))
+                    .unwrap_or_else(|| panic!("{menu}: {:?} has no mnemonic", item.label))
                     .to_ascii_lowercase();
                 assert!(
                     !letters.contains(&mnemonic),
-                    "{focus:?}: two entries both use Alt+{mnemonic}"
+                    "{menu}: two entries both use Alt+{mnemonic}"
                 );
                 letters.push(mnemonic);
             }
@@ -849,5 +879,44 @@ mod tests {
                 "a message menu has no {wanted:?}"
             );
         }
+
+        // And says which way Mark as Read will go (#27): the entry's words
+        // are the rule's, for either state, and nothing else on the menu
+        // moves with the state. The focus form is the unread form, so a
+        // caller that names the focus keeps what it had.
+        use crate::application::marking_read::what_the_command_says;
+        let mark_entry = |entries: &'static [Entry]| {
+            entries
+                .iter()
+                .find(|e| e.action == Action::MarkRead)
+                .map(|e| e.label)
+                .expect("a message menu has no Mark entry")
+        };
+        for (any_unread, words) in [(true, "&Mark as read"), (false, "&Mark as unread")] {
+            let entries = entries_for_messages(any_unread);
+            assert_eq!(mark_entry(entries), words, "any_unread {any_unread}");
+            assert_eq!(
+                mark_entry(entries),
+                what_the_command_says(any_unread).context,
+                "the entry's words are not the rule's"
+            );
+            let rest = |entries: &'static [Entry]| -> Vec<(&str, Action)> {
+                entries
+                    .iter()
+                    .filter(|e| e.action != Action::MarkRead)
+                    .map(|e| (e.label, e.action))
+                    .collect()
+            };
+            assert_eq!(
+                rest(entries),
+                rest(entries_for(Focus::Messages)),
+                "the two forms differ somewhere other than the Mark entry"
+            );
+        }
+        assert_eq!(
+            entries_for(Focus::Messages).as_ptr(),
+            entries_for_messages(true).as_ptr(),
+            "the focus form is not the unread form"
+        );
     }
 }
