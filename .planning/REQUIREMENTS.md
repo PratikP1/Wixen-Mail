@@ -3897,6 +3897,150 @@ phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
     without speaking the words, said in the summary and the close comment.
   - [S] That the row is heard once with the tone is his ear's.
 
+**Added 2026-09-18, in the evening: six more, from six issues filed that evening, two taken as a
+third task of a plan not yet executed (11-06.1, 11-09.1) and four by inserted plans (11-04.1,
+11-09.2, 11-11.3, and 11-11.1 with 11-11.2).**
+
+- [ ] **LIST-14**: A delete says the one word Delete when the key goes down and nothing when
+  the server answers; the next row's reading is the confirmation; a failure is still spoken;
+  the status line keeps the fuller words for the eye; the same for the moves.
+  - Evidence: the Delete arm (`wx_app.rs:4847` at `eb5d8517`) sends `send_status("Deleting
+    {}...")` and the server's answer comes back through `server_delete.rs:43-56` and the arms at
+    `:20718-20740`, each spoken as a `StatusUpdated`; the folder and conversation deletes at
+    `:8779` and `:14048` follow the same shape; no `UIUpdate` kind exists today that is shown
+    on the status bar and never spoken (`ui_types.rs`, 79 tests, 6 records; `server_delete.rs`
+    17, 1).
+  - [S] #83, the tester on 2026-09-18: a delete is spoken twice, once when pressed and once
+    when done, and the landed row's reading is what he wants to hear.
+  - [D] `UIUpdate::Shown(String)` is shown on the status bar and named quiet on purpose in
+    `test_every_arm_that_shows_something_says_it_or_is_named_as_quiet`; `send_shown` is its one
+    sender; the Delete arms announce "Delete" at Normal when the key goes down and send the
+    success as `Shown`; a failure is spoken at High with its reason as before; Move to Trash,
+    Move to Folder and a delete of a set take the same shape; a reading over the arms holds
+    it, and two guard records are measured (11-06.1, task 3).
+  - [S] That the landed row's reading is enough on its own is his ear's.
+
+- [ ] **LIST-15**: Alt+A reaches the attachments from the reader and from the formatted
+  page window, and F7 the warning, whichever control has focus, the WebView included; the
+  pages say Alt+A where they said F8.
+  - Evidence: the reader binds `ID_GO_ATTACHMENTS` to `F8` (`wx_reader.rs:36`, `:316-317`
+    "&Attachments\tF8") and its sentence says "F8 for the list" (`:238`); the page window
+    binds `KEY_DOWN` on the page for F7 and F8 (`wx_app.rs:21201`), which WebView2 never
+    delivers while the browser has focus, so the key works from the bar and not from the
+    document; the injected script (`:11959`, `wire_the_way_out`) posts Escape and F6 only;
+    `docs/KEYBOARD_SHORTCUTS.md:188`, `:214` and `:225-226` say F8.
+  - [S] #84, the tester on 2026-09-18: F8 does nothing from the message body, and F8 is the
+    column chooser's key on the list.
+  - [D] The script posts `{kind:'attachments'}` on Alt+A and `{kind:'warning'}` on F7, the
+    handler moves focus and speaks, the dead `KEY_DOWN` binding at `:21201` is removed, the
+    reader's item reads "&Attachments\tAlt+A", the sentences say "Alt+A for them" and "Alt+A
+    for the list", the pages follow, and a target drives both views (11-04.1).
+  - [S] That Alt+A lands on the attachments under NVDA from inside the document is his
+    ear's.
+
+- [ ] **LIST-16**: The earcons keep playing after hours open: a device that goes away or is
+  invalidated is noticed from the stream's error callback and the default device is opened
+  again before the next sound; a default device that changes under a live stream is covered
+  by a reopen after a gap or by Windows' notice, whichever a measurement chooses; a reopen
+  that fails is logged once for the outage and said once on the status bar; the sounds
+  resume when a device can be opened.
+  - Evidence: `EarconPlayer::new` opens the default device once
+    (`feedback.rs:842`, `open_default_sink().ok()`) and holds it for the run (`:771`);
+    `Mixer::add` ignores a send when nothing listens (`:850-853`), so a stream that ended
+    underneath makes every later `play` answer true and play nothing; nothing reopens and
+    nothing listens for the stream ending; `rodio` 0.22.2's `DeviceSinkBuilder` takes an
+    error callback (`stream.rs:368`) and `cpal` 0.17.3's WASAPI loop calls it with
+    `DeviceNotAvailable` on `AUDCLNT_E_DEVICE_INVALIDATED` and ends the stream thread
+    (`wasapi/stream.rs:382-404`, `wasapi/mod.rs:98-110`); cpal does not follow the default
+    device changing.
+  - [S] #81, the tester on 2026-09-18: "After Wixen Mail has been open for a few hours, the
+    earcons stop playing. Nothing says so; the setting is still on."
+  - [D] The player's output is opened through the builder with a callback that sets an
+    `ended` flag; `play_at` opens the default device again on the flag, and after a gap when
+    the open measured cheap, else on Windows' default-device notice; a failed reopen is one
+    warn line and one `take_complaint` sentence that `Accessibility::signal` hands to the
+    visual channel; cases over a dropped source, the gap, a failing opener and the resume,
+    and one for the complaint reaching `take_visual_feedback`; the probe's median and worst
+    quoted with the command and the date (11-09.1, task 3).
+  - [S] Whether what silenced them after hours was the device going or something else is
+    his machine's; if they stop again the log at `debug` holds the moment.
+
+- [ ] **LIST-17**: A message row's snippet is the message's first relevant words, chosen by
+  reading the text and not by cutting it at 200 characters: addresses dropped altogether,
+  lines that are only an address or a marker skipped, recognisable opening boilerplate
+  skipped, a bare greeting skipped when something follows it, quoted lines and the signature
+  after the delimiter left out, the first sentences with words taken up to the limit ending
+  at a sentence boundary inside it, and the least bad line when nothing survives.
+  - Evidence: `snippet_from` (`bodies.rs:312-325`) splits on whitespace and cuts at 200;
+    `snippet_of` (`:339-347`) takes the plain part as written, else `words_of_markup`; the
+    reader drops a link's address and keeps its words (`long_text.rs:1576-1584`); nothing
+    looks for an address; the pass that puts stored snippets right runs once under
+    `SNIPPETS_PUT_RIGHT` over HTML-only bodies (`:350-351`, `:767-779`); `sign_off::split`
+    finds the signature delimiter (`sign_off.rs:76`).
+  - [S] #82, the tester on 2026-09-18: a snippet holding a link reads the whole address;
+    and Pratik's decision on the issue: "the message's first relevant words, chosen by reading
+    the text rather than cutting it at 200 characters ... Rules, written down and tested one
+    by one, not a model; a message whose text has nothing but those gives the least bad line
+    rather than nothing."
+  - [D] `application::snippet` holds the rules as functions with a test each and
+    `first_relevant_words` over lines; `snippet_of` uses it for the plain part's lines and
+    for the markup's pieces through `long_text::pieces_of_markup`; the pass is widened to
+    every stored body under a new once-only name with the old name kept; a target reads a
+    saved body's snippet back and runs the pass over an older stored snippet; the pass's
+    milliseconds over 2,000 bodies quoted (11-09.2).
+  - [S] That the rows now say the message is his ear's.
+
+- [ ] **LIST-18**: A Markdown block marker typed with its space at the start of any line of
+  the message body becomes its structure, on the first line, after a line break in a body
+  that arrived as plain text, after Enter on the empty first line and after Shift+Enter; a
+  refusal that met a marker is logged and never announced; text after a closing inline
+  delimiter is plain; a reading types into the real page.
+  - Evidence: the block rule runs on the typed space (`editor_document.rs:801`) and refuses
+    when the text node has a previous sibling (`:742`); `escaped_plain_text` (`:77-81`) makes
+    every line after the first of a plain body a text node after a bare `<br>`; the probe of
+    2026-09-18 on runtime 153.0.4234.32 made an `<h2>` on the first line at `3e633252` and at
+    `744d05ef`, refused after a `<br>`, after Enter on the empty first line and after
+    Shift+Enter, and left `##Heading ` as text; no test drives the real page with keystrokes.
+  - [S] #79, the tester on 2026-09-18: "The compose dialog does not allow for markdown
+    writing", "I'm expecting the structure", and "He pressed ## followed by text; nothing
+    became a heading."
+  - [D] `startsItsLine` replaces the sibling guard; a refusal after a `blockRule` match posts
+    `{kind:'refused', where:'line'}` and `wx_compose` writes it at debug; the inline applier
+    releases the style after its closing delimiter; `- ` on the empty first line is measured
+    and made to work or said; `tests/a_marker_counts_at_the_start_of_any_line.rs` drives the
+    real page with keystrokes through the steps; the pages say "type the marker, then a
+    space" in words and the guide lists the markers (11-11.3).
+  - [S] Which of the two states he was in, a lower line or no space, is his ear's; the by-ear
+    steps are in the ledger.
+
+- [ ] **LIST-19**: Where a link opens is a setting on the Reading tab, the default browser by
+  default, the message view, or a separate Wixen Mail window; the link's context menu offers
+  all three whatever the setting; a link activated the way NVDA's Enter activates it goes
+  where the setting says; every route passes the sanitiser; the separate window is a process
+  of its own with a browser profile of its own; the privacy page says what each route
+  shares with the preview.
+  - Evidence: every navigation the preview or the page window sees is vetoed and handed to
+    `open::that` after `safe_external_url` (`wx_app.rs:1351-1397`, `:21054-21080`;
+    `html_renderer.rs:860-880`); the link's menu offers Copy Link and Save Link
+    (`:1474-1492`, `:4462-4480`); no setting exists; wxdragon 0.9.17 creates every WebView
+    through `wxWebView::New` with no configuration and exposes no browsing-data clear, and
+    wxWidgets 3.3.2 puts one WebView2 environment per process under
+    `wxStandardPaths::GetUserLocalDataDir()`, which is `%LOCALAPPDATA%\wixen-mail` here
+    (`EBWebView` sits beside `cache` and `config` in the tester's profile, read through
+    Python).
+  - [S] #80, Pratik on 2026-09-18: the setting, the three menu items, the in-app routes in a
+    profile of their own, the privacy line; and the tester: "Enter on a message and Enter on
+    a link both open in the same window; the link does not go to the default browser."
+  - [D] `opening_links::Where` and `route(setting, asked, address)` as one pure function with
+    every cell tested; `open_links_in` on the Reading tab with the two settings guards; the
+    page script catches the anchor's activation and posts it; the three items; the message
+    view route with its title spoken, its failure spoken and Backspace back; a `page` scan
+    target and an NVDA case as the probe and the regression (11-11.1); `--show-page` answered
+    before the claim and the handover, `page_window::show` with the app name set before the
+    WebView, the child sanitising again, the erase reaching the profile, the route spawning
+    the executable (11-11.2).
+  - [S] The three routes under NVDA are his ear's.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -4006,12 +4150,24 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-11 | Phase 11 | Pending, 11-13 |
 | LIST-12 | Phase 11 | Pending, 11-06.1 |
 | LIST-13 | Phase 11 | Pending, 11-09.1 |
+| LIST-14 | Phase 11 | Pending, 11-06.1 |
+| LIST-15 | Phase 11 | Pending, 11-04.1 |
+| LIST-16 | Phase 11 | Pending, 11-09.1 |
+| LIST-17 | Phase 11 | Pending, 11-09.2 |
+| LIST-18 | Phase 11 | Pending, 11-11.3 |
+| LIST-19 | Phase 11 | Pending, 11-11.1 and 11-11.2 |
 
 **Coverage:**
 
-- v1 requirements: 80 total
-- Mapped to phases: 80
+- v1 requirements: 86 total
+- Mapped to phases: 86
 - Unmapped: 0
+
+**Re-taken 2026-09-18, in the evening.** This block said 80 and 80 from the afternoon until six
+more issues filed that evening (#79 to #84) were taken by two tasks added to plans not yet
+executed (11-06.1, 11-09.1) and five inserted plans (11-04.1, 11-09.2, 11-11.1, 11-11.2,
+11-11.3). Counted with the same command as below, which gives 86 at `eb5d8517` plus this edit
+with `LIST-14` to `LIST-19` in, and the traceability table above has 86 rows.
 
 **Re-taken 2026-09-18, later the same day.** This block said 77 and 77 from the morning until
 three issues filed that afternoon (#75, #76, #77) were taken by inserted plans. Counted with
@@ -4114,6 +4270,12 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-18, in the evening.** `LIST-14` to `LIST-19` trace to #83, #84, #81, #82, #79
+and #80, filed that evening from the same day of testing: two taken as a third task of a plan
+not yet executed (11-06.1 for #83, 11-09.1 for #81) and four by inserted plans (11-04.1 for
+#84, 11-09.2 for #82, 11-11.3 for #79, and 11-11.1 with 11-11.2 for #80, the second of those
+because the separate window is a process of its own). The total is 86.
 
 **Added 2026-09-18, later the same day.** `LIST-11` to `LIST-13` trace to #75, #76 and #77,
 filed that afternoon from the third day of testing and taken by inserted plans 11-13, 11-06.1
