@@ -387,6 +387,13 @@ pub const DOWNLOADING_A_WHOLE_FOLDER_IS_EXPERIMENTAL: &str = "Downloading a whol
      folder is here or the server stops sending, which on a large mailbox is a long time. \
      Nothing is changed at the server and nothing is sent.";
 
+/// The warning on the item that pauses the download of everything.
+///
+/// The write warning for the red half only: it exists so the two tests that
+/// read it are red on an assertion rather than on a missing name, and the
+/// green commit gives it its own words.
+pub const DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL: &str = EXPERIMENTAL_WARNING;
+
 /// The warning shown beside the command that imports a PGP private key.
 ///
 /// A third kind of experimental, and it is worth saying which because the two
@@ -751,47 +758,60 @@ mod tests {
     }
 
     #[test]
-    fn test_fetching_text_in_bulk_says_it_is_experimental_and_says_what_could_go_wrong() {
+    fn test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong() {
         // Its own sentence, and it has to earn being a second one. Everything
         // else here is experimental because it has never run; this is
         // experimental because of what a provider may do when it does, and
         // that is the risk no test in this repository can settle. A warning
         // saying only "experimental" tells somebody to be careful and not what
-        // to be careful of.
+        // to be careful of. Four things it names: that it runs on its own
+        // after every check, that no real account has met it, whose decision
+        // the thing that could go wrong is, and where the hold is.
         assert!(
-            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("experimental"),
-            "{FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("experimental"),
+            "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
         assert!(
-            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("real account"),
-            "{FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("on its own"),
+            "it does not say the download starts without being asked: \
+             {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
         assert!(
-            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("provider"),
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL
+                .contains("never been run against a real account"),
+            "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("provider"),
             "it does not say whose decision the thing that could go wrong is: \
-             {FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+             {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
         assert!(
-            !FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL.contains("  "),
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("Pause Downloading")
+                && DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("Tools"),
+            "it does not say where the hold is: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            !DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("  "),
             "a wrapped literal lost its continuations, so this is read aloud \
-             with stray silences: {FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL}"
+             with stray silences: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
     }
 
     #[test]
-    fn test_the_bulk_fetch_warning_is_beside_the_write_warning_and_not_inside_it() {
+    fn test_the_download_warning_is_beside_the_write_warning_and_not_inside_it() {
         // Two reasons, and both matter. The write warning opens by saying both
         // of the things it covers are experimental, so a read folded into it
         // would be counted among things that cannot be undone. And six
         // assertions hold that warning word for word, which is the right way
         // round for a warning about irreversible changes.
         assert!(
-            !EXPERIMENTAL_WARNING.contains("fetch"),
+            !EXPERIMENTAL_WARNING.contains("download"),
             "the read was folded into the warning about writes: \
              {EXPERIMENTAL_WARNING}"
         );
         assert_ne!(
-            FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL, EXPERIMENTAL_WARNING,
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL, EXPERIMENTAL_WARNING,
             "one sentence is doing both jobs"
         );
     }

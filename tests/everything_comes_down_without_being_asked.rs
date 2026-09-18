@@ -444,6 +444,130 @@ fn test_the_reading_would_see_get_older_messages_running_its_own_sync() {
     );
 }
 
+// ── Pause Downloading is on the Tools menu, ticked, with the warning ─────────
+
+/// The source with every space taken out, so a call can be found whatever
+/// way rustfmt has chosen to wrap it.
+fn without_whitespace(source: &str) -> String {
+    source.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// What is wrong with the Pause item, as sentences; nothing when it is a
+/// check item on the Tools menu whose description is the experimental
+/// sentence, its arm reaches the one function that flips the flag, and that
+/// function ticks the item as well.
+fn what_is_wrong_with_the_pause_item(window: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let squashed = without_whitespace(window);
+    match squashed.find("append_check_item(ID_PAUSE_DOWNLOADING,") {
+        None if squashed.contains("append_item(ID_PAUSE_DOWNLOADING,") => wrong.push(
+            "Pause Downloading is a plain item, so a screen reader cannot say whether the \
+             download is paused"
+                .into(),
+        ),
+        None => wrong.push("Pause Downloading is on no menu".into()),
+        Some(at) => {
+            let item = &squashed[at..squashed.len().min(at + 400)];
+            if !item.contains("DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL") {
+                wrong.push(
+                    "the Pause item's description is not the sentence saying the download has \
+                     never met a real provider, so nobody deciding whether to pause reads it"
+                        .into(),
+                );
+            }
+        }
+    }
+    let Some(tools) = window.find("let tools = Menu::builder()") else {
+        wrong.push("the Tools menu is not built where this reads".into());
+        return wrong;
+    };
+    let tools_menu = &window[tools..];
+    let tools_menu = &tools_menu[..tools_menu.find(".build();").unwrap_or(tools_menu.len())];
+    if !tools_menu.contains("ID_PAUSE_DOWNLOADING") {
+        wrong.push("Pause Downloading is not on the Tools menu".into());
+    }
+    match squashed.find("_ifid==ID_PAUSE_DOWNLOADING=>") {
+        None => wrong.push("no arm answers for Pause Downloading".into()),
+        Some(at) => {
+            let arm = &squashed[at..];
+            let ends = arm[1..].find("_ifid==").map_or(arm.len(), |next| next + 1);
+            if !arm[..ends].contains("pause_or_carry_on_downloading(") {
+                wrong.push("the Pause arm does not reach the function that pauses".into());
+            }
+        }
+    }
+    match window.find("fn pause_or_carry_on_downloading(") {
+        None => wrong.push("nothing pauses".into()),
+        Some(at) => {
+            let body = &window[at..];
+            let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+            if !body.contains("sync_menu_check(frame, ID_PAUSE_DOWNLOADING") {
+                wrong.push(
+                    "pausing flips the flag and not the tick, so the menu says the opposite of \
+                     the truth half the time"
+                        .into(),
+                );
+            }
+        }
+    }
+    wrong
+}
+
+#[test]
+fn test_pause_downloading_is_on_the_tools_menu_ticked_and_carries_the_warning() {
+    // The one way to hold the download. A check item, because a screen
+    // reader says "checked" or "unchecked" from the item's own state and a
+    // plain item would leave somebody guessing; on Tools, beside the other
+    // things that act on the whole program; with the experimental sentence
+    // as its description, which is what Windows shows in the status bar and
+    // hands over as the item's accessible description, because somebody
+    // deciding whether to pause is the person who needs to read it.
+    let wrong = what_is_wrong_with_the_pause_item(&the_window_itself());
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_plain_item_or_an_untouched_tick() {
+    // Proving the reading before believing it: a plain item, a check item
+    // with a plain description, and a function that flips the flag alone.
+    let a_plain_item = "        let tools = Menu::builder()\n            .append_item(\n                \
+                        ID_PAUSE_DOWNLOADING,\n                \"&Pause Downloading\",\n                \
+                        crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL,\n            )\n            \
+                        .build();\n\
+                        _ if id == ID_PAUSE_DOWNLOADING => {\n    pause_or_carry_on_downloading(app, &frame);\n}\n\
+                        fn pause_or_carry_on_downloading(app: AppHandles<'_>, frame: &Frame) {\n    \
+                        sync_menu_check(frame, ID_PAUSE_DOWNLOADING, paused);\n}\n";
+    let wrong = what_is_wrong_with_the_pause_item(a_plain_item);
+    assert_eq!(
+        wrong,
+        vec![
+            "Pause Downloading is a plain item, so a screen reader cannot say whether the \
+             download is paused"
+                .to_string()
+        ],
+        "the reading did not see exactly the plain item"
+    );
+
+    let no_warning_and_no_tick = a_plain_item
+        .replace("append_item(", "append_check_item(")
+        .replace(
+            "crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL",
+            "\"Hold the download\"",
+        )
+        .replace(
+            "    sync_menu_check(frame, ID_PAUSE_DOWNLOADING, paused);\n",
+            "",
+        );
+    let wrong = what_is_wrong_with_the_pause_item(&no_warning_and_no_tick);
+    assert!(
+        wrong
+            .iter()
+            .any(|w| w.contains("never met a real provider"))
+            && wrong.iter().any(|w| w.contains("not the tick")),
+        "the reading did not see the warning and the tick missing: {wrong:?}"
+    );
+}
+
 // ── A chunk that lands is shown, and no limit grows ──────────────────────────
 
 /// The words a limit on the list would be written in, none of which the arm

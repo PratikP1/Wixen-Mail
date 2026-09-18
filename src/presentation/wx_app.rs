@@ -7171,6 +7171,16 @@ fn coverage_before(
 /// whatever was just searched, and the coverage sentence beside it carries a
 /// different number about a different set. Two numbers on the screen with
 /// nothing saying which is which read as one number contradicting itself.
+/// What a count of messages with no text here means, or nothing at all.
+///
+/// The red half: an empty sentence for every count, `pub` so nothing refuses
+/// the build before a caller exists. The green gives it its words and its
+/// caller.
+pub fn what_the_missing_text_means(count: usize, reading_allowed: bool) -> Option<String> {
+    let _ = (count, reading_allowed);
+    Some(String::new())
+}
+
 pub fn the_offer_to_fetch(count: usize) -> Option<String> {
     match count {
         0 => None,
@@ -30152,7 +30162,7 @@ mod the_tree_holds_every_account {
 
 #[cfg(test)]
 mod what_a_saved_search_says_before_it_runs {
-    use super::{coverage_before, how_the_offer_is_announced, the_offer_to_fetch};
+    use super::{coverage_before, what_the_missing_text_means};
     use crate::application::saved_searches::{Join, Question, SavedSearch};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage, MessageCache};
@@ -30435,34 +30445,38 @@ mod what_a_saved_search_says_before_it_runs {
     }
 
     #[test]
-    fn test_no_offer_is_made_when_there_is_nothing_to_fetch() {
-        // The two coverage numbers being equal is the ordinary case, and an
-        // offer to fetch nought messages beside a sentence saying everything
-        // is here reads as a fault in one of the two.
+    fn test_nothing_is_said_about_missing_text_when_none_is_missing() {
+        // The two coverage numbers being equal is the ordinary case, and a
+        // sentence about nought messages beside one saying everything is here
+        // reads as a fault in one of the two.
         assert_eq!(
-            the_offer_to_fetch(0),
+            what_the_missing_text_means(0, true),
             None,
-            "an offer appeared when there was nothing to fetch"
+            "something was said about missing text when none was missing"
         );
-        let one = the_offer_to_fetch(1).expect("an offer for one message");
-        assert!(one.contains('1'), "the offer does not say how many: {one}");
-        let several = the_offer_to_fetch(12).expect("an offer for twelve messages");
+        let one = what_the_missing_text_means(1, true).expect("a sentence for one message");
+        assert!(
+            one.contains('1'),
+            "the sentence does not say how many: {one}"
+        );
+        let several =
+            what_the_missing_text_means(12, true).expect("a sentence for twelve messages");
         assert!(
             several.contains("12"),
-            "the offer does not say how many: {several}"
+            "the sentence does not say how many: {several}"
         );
         assert_ne!(
             one, several,
-            "one message and twelve are offered in the same words"
+            "one message and twelve are said in the same words"
         );
     }
 
     #[test]
-    fn test_the_offer_says_which_mail_it_counts_and_the_coverage_sentence_says_which_search() {
+    fn test_the_missing_text_sentence_says_which_mail_it_counts_and_borrows_no_words() {
         // Two numbers arrive together on one search and they are different
-        // numbers on purpose. The sentence says how much of the text this
-        // search could look inside, narrowed to the folder the In box named.
-        // The offer says how much text can still be fetched, for the whole
+        // numbers on purpose. The coverage sentence says how much of the text
+        // this search could look inside, narrowed to the folder the In box
+        // named. This one says how much text is still to come, for the whole
         // account and only for mail with a server to ask. Read as one claim
         // they contradict each other, and the person reading them has no way
         // to know they are answers to different questions.
@@ -30476,56 +30490,51 @@ mod what_a_saved_search_says_before_it_runs {
             messages: 500,
             with_text: 40,
         });
-        let offer = the_offer_to_fetch(137).expect("an offer for a hundred and thirty-seven");
+        let said = what_the_missing_text_means(137, true)
+            .expect("a sentence for a hundred and thirty-seven");
 
-        // The button is pressed from a search of one folder as readily as from
-        // a search of everything, and it walks the account either way. A label
+        // Said after a search of one folder as readily as after a search of
+        // everything, and the count is the account's either way. A sentence
         // that does not say so reads as being about whatever was just
         // searched.
         assert!(
-            offer.contains("in this account"),
-            "the offer does not say which mail it counts, so a search of one \
-             folder reads as an offer about that folder: {offer}"
+            said.contains("in this account"),
+            "the sentence does not say which mail it counts, so a search of one \
+             folder reads as a sentence about that folder: {said}"
         );
-        // Not the sentence's words. Sharing the phrase that carries the
-        // sentence's number is how two claims are heard as one.
+        // Not the coverage sentence's words. Sharing the phrase that carries
+        // that sentence's number is how two claims are heard as one.
         assert!(
-            !offer.contains("has the text of"),
-            "the offer borrows the coverage sentence's words, so the two read \
-             as one number contradicting itself: {offer} / {covered}"
+            !said.contains("has the text of"),
+            "the sentence borrows the coverage sentence's words, so the two read \
+             as one number contradicting itself: {said} / {covered}"
         );
     }
 
     #[test]
-    fn test_the_offer_announced_says_which_question_its_number_answers() {
-        // What somebody hears, which is not what is printed on the button: the
-        // announcement has room for the distinction and the button does not.
-        // It has to carry three things at once, and the third is the one that
-        // was missing.
-        let offer = the_offer_to_fetch(137).expect("an offer for a hundred and thirty-seven");
-        let announced = how_the_offer_is_announced(&offer);
+    fn test_the_missing_text_sentence_says_it_is_coming_or_that_the_box_is_off() {
+        // What the number means is what somebody needs: since 2026-09-17 the
+        // text comes down on its own after every check, so a number of
+        // messages with no text here is a number that will fall, unless the
+        // Message Text box is off, in which case it will not and the sentence
+        // says which box. Until then the sentence was a button offering to
+        // fetch, which the download made redundant.
+        let coming = what_the_missing_text_means(137, true).expect("a sentence with reading on");
+        let held_back =
+            what_the_missing_text_means(137, false).expect("a sentence with reading off");
 
         assert!(
-            announced.starts_with(&offer),
-            "the announcement stopped opening with the offer itself: {announced}"
+            coming.contains("on its own"),
+            "with reading on, the sentence does not say the text comes down on its own: {coming}"
         );
         assert!(
-            announced.contains("above the message list"),
-            "the announcement stopped saying where the button is, so somebody \
-             is told about a button and not where to find it: {announced}"
+            held_back.contains("Message Text"),
+            "with reading off, the sentence does not name the box that holds the text back: \
+             {held_back}"
         );
-        // The distinction itself. "Fetched" is this number's question and
-        // "read" is the coverage sentence's, and saying both is what stops the
-        // two being heard as one number that disagrees with itself.
-        assert!(
-            announced.contains("fetched"),
-            "the announcement does not say that its number is what can be \
-             fetched: {announced}"
-        );
-        assert!(
-            announced.contains("read"),
-            "the announcement does not tell its number apart from the one the \
-             coverage sentence gave: {announced}"
+        assert_ne!(
+            coming, held_back,
+            "reading on and reading off are said in the same words"
         );
     }
 
@@ -30561,24 +30570,34 @@ mod what_a_saved_search_says_before_it_runs {
     }
 
     #[test]
-    fn test_the_offer_and_its_warning_are_put_on_the_screen_by_the_answer() {
-        // The offer appears because there is something to fetch and goes away
-        // because there is not, and the experimental sentence is beside it
-        // where somebody reads it before choosing, rather than in a changelog.
+    fn test_the_answer_says_what_the_missing_text_means_and_puts_no_button_on_the_screen() {
+        // The number of messages with no text here reaches the window after
+        // every search that reads text, as it did when a button was offered
+        // on it; since 2026-09-17 the arm says what the number means and puts
+        // nothing on the screen, because the download brings the text down
+        // on its own and a button offering to fetch it would offer to do
+        // what is already happening, or to fetch beyond a chosen size. The
+        // experimental sentence went to the Pause item, where somebody
+        // deciding whether to hold the download reads it.
         let shipping = crate::common::what_ships::what_ships(&the_window_itself());
         let arm = the_offer_arm(&shipping);
 
         assert!(
-            arm.contains("the_offer_to_fetch"),
-            "the offer is shown without asking whether there is anything to fetch"
+            arm.contains("what_the_missing_text_means("),
+            "the number is not turned into a sentence, so nobody is told what it means"
         );
         assert!(
-            arm.contains(".show("),
-            "the offer is never put on or taken off the screen"
+            !arm.contains(".show("),
+            "a button is still put on or taken off the screen by the answer"
         );
         assert!(
-            shipping.contains("FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL"),
-            "the experimental sentence is not on screen anywhere"
+            !shipping.contains("FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL"),
+            "the retired warning about fetching text in bulk is still on screen somewhere"
+        );
+        assert!(
+            shipping.contains("DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL"),
+            "the sentence saying the download has never met a real provider is on screen \
+             nowhere"
         );
     }
 
@@ -30622,11 +30641,10 @@ mod what_a_saved_search_says_before_it_runs {
     }
 
     #[test]
-    fn test_the_fetch_is_on_the_menu_bar_and_the_menu_reaches_the_command() {
-        // Ledger 13, the half a button cannot close. The offer appears only
-        // while a search that reads message text has just been run, so
-        // somebody who searches by subject, or never searches, is never shown
-        // it at all. A menu is how somebody finds out a command exists.
+    fn test_pause_downloading_is_on_the_menu_bar_and_the_menu_reaches_the_arm() {
+        // The one way to hold the download that runs on its own. A menu is
+        // how somebody finds out a command exists, and a check item is how a
+        // screen reader says whether it is on.
         //
         // Both halves are checked here because the first without the second is
         // this file's own recorded defect: a command on a menu, an arm that
@@ -30635,51 +30653,49 @@ mod what_a_saved_search_says_before_it_runs {
         let squashed = without_whitespace(&shipping);
 
         assert!(
-            squashed.contains("append_item(ID_FETCH_MISSING_TEXT,"),
-            "the fetch is on no menu, so it is reachable only from a button \
-             that appears after one kind of search"
+            squashed.contains("append_check_item(ID_PAUSE_DOWNLOADING,"),
+            "Pause Downloading is on no menu as a check item, so the download that runs on its \
+             own cannot be held, or its state cannot be heard"
         );
 
         let at = squashed
-            .find("_ifid==ID_FETCH_MISSING_TEXT=>")
-            .expect("a menu arm for the fetch");
+            .find("_ifid==ID_PAUSE_DOWNLOADING=>")
+            .expect("a menu arm for Pause Downloading");
         // As far as the next arm, so a call sitting in the one below cannot
         // answer for this one.
         let arm = &squashed[at..];
         let ends = arm[1..].find("_ifid==").map_or(arm.len(), |next| next + 1);
         assert!(
-            arm[..ends].contains("start_the_missing_text_fetch("),
-            "the menu item is caught by an arm that does not start the fetch"
+            arm[..ends].contains("pause_or_carry_on_downloading("),
+            "the menu item is caught by an arm that does not pause or carry on"
         );
     }
 
     #[test]
-    fn test_the_menu_says_the_fetch_is_experimental_before_it_is_chosen() {
-        // The warning lives beside the button as a line of static text, and a
-        // menu has nowhere to put one. Widening where the fetch is offered
-        // widens who meets a path no provider has ever seen, so the new door
-        // has to carry the same warning the old one does.
-        //
-        // On the label as well as in the help line. The help line is what
+    fn test_the_pause_item_says_the_download_is_experimental_before_it_is_chosen() {
+        // The download starts without anybody choosing it, so there is no
+        // moment of choosing for a warning to sit beside; the Pause item is
+        // where somebody deciding whether to hold it reads what nobody yet
+        // knows about a real provider. In the help line, which is what
         // Windows puts in the status bar and hands to a screen reader as the
-        // item's description, and the label is what is read whatever anybody's
-        // settings say.
+        // item's description.
         let shipping = crate::common::what_ships::what_ships(&the_window_itself());
         let squashed = without_whitespace(&shipping);
 
         let at = squashed
-            .find("append_item(ID_FETCH_MISSING_TEXT,")
-            .expect("the fetch on a menu");
+            .find("append_check_item(ID_PAUSE_DOWNLOADING,")
+            .expect("Pause Downloading on a menu");
         let item = &squashed[at..squashed.len().min(at + 400)];
         assert!(
-            item.contains("(experimental)"),
-            "the menu item does not say it is experimental, so somebody \
-             choosing it from the menu is never told: {item}"
+            item.contains("DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL"),
+            "the Pause item's description does not carry the sentence saying what could go \
+             wrong: {item}"
         );
         assert!(
-            item.contains("FETCHING_TEXT_IN_BULK_IS_EXPERIMENTAL"),
-            "the menu item's description does not carry the sentence saying \
-             what could go wrong: {item}"
+            crate::application::allowed::DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL
+                .contains("Pause Downloading"),
+            "the sentence does not name the item it sits on, so somebody who hears it \
+             elsewhere is not told where the hold is"
         );
     }
 
