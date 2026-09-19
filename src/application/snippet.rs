@@ -389,6 +389,39 @@ mod tests {
         );
     }
 
+    // ── Characters nobody hears are dropped ─────────────────────────────
+
+    #[test]
+    fn test_invisible_characters_are_dropped_from_a_line() {
+        // The Substack shape through the reader: the hidden preheader's
+        // padding sits in the same element as its words, so it arrives on
+        // the same line, and the reader collapses its spaces and keeps the
+        // joiners and soft hyphens between them.
+        let padded = format!("The week in three stories{}", "\u{34f} \u{ad}".repeat(30));
+        assert_eq!(snippet(&padded), "The week in three stories");
+    }
+
+    // ── A line repeating the line before it is said once ────────────────
+
+    #[test]
+    fn test_a_line_repeating_the_line_before_it_is_said_once() {
+        // The same Substack shape: the hidden preheader is the title, and
+        // the title follows it as a heading.
+        assert_eq!(
+            snippet("Big news\nBig news\nThe details follow."),
+            "Big news The details follow."
+        );
+    }
+
+    #[test]
+    fn test_a_line_repeated_later_with_another_between_is_kept_both_times() {
+        // The companion: only the line before counts, so a refrain is kept.
+        assert_eq!(
+            snippet("Again\nand once more\nAgain"),
+            "Again and once more Again"
+        );
+    }
+
     // ── Recognisable opening boilerplate is skipped ─────────────────────
 
     #[test]

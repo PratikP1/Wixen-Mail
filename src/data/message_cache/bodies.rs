@@ -820,7 +820,7 @@ impl MessageCache {
     /// held open over a table while the same table is written is a lock
     /// against itself. A body that no longer reads, evicted or damaged, is
     /// left as it is, because there is nothing to derive from.
-    pub fn put_right_the_snippets_read_from_stylesheets(&self) -> Result<usize> {
+    pub fn put_right_the_stored_snippets(&self) -> Result<usize> {
         let already: bool = self
             .conn
             .query_row(
@@ -1145,15 +1145,25 @@ mod tests {
     }
 
     #[test]
-    fn test_a_snippet_is_one_line_and_bounded() {
-        // It is read aloud on every row while arrowing, so it cannot be a
-        // paragraph and it cannot contain newlines that the list would
-        // render as boxes.
-        let long = format!("first line\nsecond line\n{}", "x".repeat(500));
-        let snippet = snippet_from(&long);
+    fn test_a_snippet_of_a_plain_body_with_an_address_on_its_first_line_has_no_address_in_it() {
+        // The tester's row (#82): the plain part opened with a link and the
+        // row read the whole address out. The rules live in
+        // `application::snippet`; this holds that the plain part reaches
+        // them as its lines, one line and bounded as before.
+        let body = MessageBody {
+            body_plain: Some(
+                "https://example.com/reports/q3\nThe numbers are in.\nSee the attached sheet."
+                    .to_string(),
+            ),
+            body_html: None,
+        };
+        let snippet = snippet_of(&body);
         assert!(!snippet.contains('\n'), "snippet kept a newline");
-        assert!(snippet.chars().count() <= 200, "snippet was not bounded");
-        assert!(snippet.starts_with("first line second line"));
+        assert!(
+            !snippet.contains("example.com"),
+            "the address is in the row: {snippet}"
+        );
+        assert_eq!(snippet, "The numbers are in. See the attached sheet.");
     }
 
     #[test]
@@ -1233,12 +1243,14 @@ mod tests {
 
     // ── Snippets already stored are put right once ──────────────────────
     //
-    // Every HTML-only message somebody downloaded before the reader changed
-    // has the stylesheet in its snippet column, and the column is what the
-    // list reads. So the stored ones are re-derived once, on the first open
-    // after the change, and each row put right is reindexed, because the
-    // index holds a copy of the snippet and the body text and a search for
-    // `padding` would otherwise still find the newsletter.
+    // Every message somebody downloaded before the rules changed has a
+    // snippet in the column the list reads that was derived the old way: the
+    // stylesheet for an HTML-only message downloaded before 2026-09-16, the
+    // first 200 characters as written for everything before 2026-09-19. So
+    // the stored ones are re-derived once, on the first open after the
+    // change, and each row put right is reindexed, because the index holds a
+    // copy of the snippet and the body text and a search for `padding` would
+    // otherwise still find the newsletter.
 
     /// The snippet an old build stored for `A_NEWSLETTER`, written over the
     /// column by SQL the way it sits in a database from before the change.
@@ -1269,23 +1281,25 @@ mod tests {
     }
 
     #[test]
-    fn test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included() {
+    fn test_stored_snippets_are_put_right_once_index_included_plain_bodies_too() {
         let cache = body_test_cache();
         let newsletter = cache.save_message(&cached(6, "Weekly")).unwrap();
         cache
             .save_message_body(newsletter, None, Some(A_NEWSLETTER))
             .unwrap();
         plant_the_old_snippet(&cache, newsletter);
-        // A message with a plain part, whose snippet came from that part and
-        // is not this pass's to touch, however odd it looks.
+        // A message with a plain part, whose stored snippet is the old form
+        // with the greeting in it. Until 2026-09-19 the pass read HTML-only
+        // bodies alone and this row was not its to touch; the rules changed
+        // for every body, so every stored body is read once.
         let letter = cache.save_message(&cached(7, "A letter")).unwrap();
         cache
-            .save_message_body(letter, Some("Dear Ada, the numbers are attached."), None)
+            .save_message_body(letter, Some("Dear Ada,\nThe numbers are attached."), None)
             .unwrap();
         cache
             .conn
             .execute(
-                "UPDATE messages SET snippet = 'left as it was' WHERE id = ?1",
+                "UPDATE messages SET snippet = 'Dear Ada, The numbers are attached.' WHERE id = ?1",
                 rusqlite::params![letter],
             )
             .unwrap();
@@ -1296,19 +1310,17 @@ mod tests {
         );
         as_if_the_pass_had_never_run(&cache);
 
-        let put_right = cache
-            .put_right_the_snippets_read_from_stylesheets()
-            .unwrap();
+        let put_right = cache.put_right_the_stored_snippets().unwrap();
 
-        assert_eq!(put_right, 1, "one HTML-only message was stored wrongly");
+        assert_eq!(put_right, 2, "both stored snippets were in an old form");
         assert_eq!(
             snippet_of_message(&cache, newsletter).as_deref(),
             Some("Hello from the newsletter")
         );
         assert_eq!(
             snippet_of_message(&cache, letter).as_deref(),
-            Some("left as it was"),
-            "a snippet derived from a plain part was rewritten"
+            Some("The numbers are attached."),
+            "a snippet derived from a plain part was not put right"
         );
         assert_eq!(
             found_by_the_search_box(&cache, "padding"),
@@ -1328,12 +1340,7 @@ mod tests {
         plant_the_old_snippet(&cache, first);
         as_if_the_pass_had_never_run(&cache);
 
-        assert_eq!(
-            cache
-                .put_right_the_snippets_read_from_stylesheets()
-                .unwrap(),
-            1
-        );
+        assert_eq!(cache.put_right_the_stored_snippets().unwrap(), 1);
 
         // A second wrong row arriving after the pass: a body written by an
         // old build that somehow reached the database later. The pass is
@@ -1346,9 +1353,7 @@ mod tests {
         plant_the_old_snippet(&cache, later);
 
         assert_eq!(
-            cache
-                .put_right_the_snippets_read_from_stylesheets()
-                .unwrap(),
+            cache.put_right_the_stored_snippets().unwrap(),
             0,
             "the pass ran a second time"
         );
@@ -1361,13 +1366,11 @@ mod tests {
 
     #[test]
     fn test_an_empty_body_leaves_no_snippet_rather_than_an_empty_one() {
-        assert_eq!(
-            snippet_from(
-                "   
-  	 "
-            ),
-            ""
-        );
+        let body = MessageBody {
+            body_plain: Some("   \n  \t ".to_string()),
+            body_html: None,
+        };
+        assert_eq!(snippet_of(&body), "");
     }
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::CachedMessage;

@@ -7861,7 +7861,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
     "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
     "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
-    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
     "application::long_text::tests::test_a_bar_inside_a_cell_does_not_break_the_table_it_is_in",
@@ -23604,7 +23604,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_snippet_of_an_html_only_body_is_its_words_and_not_its_stylesheet",
     "data::message_cache::bodies::tests::test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers",
     "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
-    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
 ]
 tests_last_seen = [
@@ -23627,7 +23627,7 @@ before = """                (None, Some(html)) => crate::application::long_text:
 after = """                (None, Some(html)) => html,"""
 red = [
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
-    "data::message_cache::bodies::tests::test_stored_snippets_read_from_stylesheets_are_put_right_once_index_included",
+    "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 50 },

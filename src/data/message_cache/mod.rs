@@ -1407,7 +1407,7 @@ impl MessageCache {
         // still wrong is what it was yesterday, and the next open tries again,
         // because the pass records itself as done only when it finished.
         let started = std::time::Instant::now();
-        match cache.put_right_the_snippets_read_from_stylesheets() {
+        match cache.put_right_the_stored_snippets() {
             Ok(0) => {}
             Ok(put_right) => tracing::info!(
                 "Put right the snippets of {put_right} HTML-only messages through the reader, \
