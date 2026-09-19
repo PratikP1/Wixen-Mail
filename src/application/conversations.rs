@@ -214,7 +214,8 @@ pub struct ConversationItem {
     pub newest_received: String,
     /// The newest sender date in it.
     pub newest_sent: String,
-    /// The newest message's first line, when there is any.
+    /// The first line of the message the row stands for, when there is any
+    /// (#31; the newest message's until 2026-09-19).
     ///
     /// The same three states as [`crate::presentation::ui_types::MessageItem`]
     /// and for the same reason: `None` is text nobody has fetched and
@@ -222,7 +223,8 @@ pub struct ConversationItem {
     /// conversation row said the same thing about both until this was an
     /// option, and one of the two things it said was untrue.
     pub snippet: Option<String>,
-    /// Every distinct sender, as stored.
+    /// Every distinct sender, as stored, one per line; the cell says
+    /// [`Self::stands_for`]'s sender first and these after it, each once.
     pub senders: String,
     /// Every distinct addressee.
     pub to: String,
@@ -240,6 +242,35 @@ pub struct ConversationItem {
     pub any_draft: bool,
     /// The worst verdict any message in it carries.
     pub worst_safety: crate::service::safety::Safety,
+    /// The one message this row stands for, by [`RowMessage`]'s rule.
+    pub stands_for: RowMessage,
+}
+
+/// The one message a conversation row stands for (#31).
+///
+/// A row describes the whole conversation, but a person landing on it is
+/// landing on one message: the one the preview shows, the one Enter opens
+/// the conversation on, the one Space reads, the one whose sender the
+/// Correspondent cell says first. The tester's rule, 2026-09-16: the
+/// originator when nothing in the conversation has been read, otherwise the
+/// first unread message; and when everything has been read, the originator
+/// again, since there is then no unread message to prefer.
+///
+/// Chosen in SQL where the columns are, by one ordering used by every
+/// expression that reads it, `read ASC, received_at ASC, id ASC`: an unread
+/// message before a read one, the earlier arrival before the later, the row
+/// id as the tie-break. Filled by the conversation listing and read by the
+/// cell, the sort, the preview, the window and the fetch, so the five cannot
+/// come to disagree about which message a row is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowMessage {
+    /// Its row in the store, which the preview loads and the window opens
+    /// on.
+    pub id: i64,
+    /// The server's number for it inside its folder, which a fetch asks by.
+    pub uid: u32,
+    /// Who sent it, as stored, which the Correspondent cell says first.
+    pub from: String,
 }
 
 /// The conversation's own name, from the subject of the oldest message present.

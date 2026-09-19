@@ -200,7 +200,7 @@ pub(super) fn conversation_scope() -> String {
                AND f.holds_all_mail = 0
          ),
          here AS (
-             SELECT m.thread_id, m.id, m.subject, m.snippet, m.read, m.starred,
+             SELECT m.thread_id, m.id, m.uid, m.subject, m.snippet, m.read, m.starred,
                     m.answered, m.draft, m.has_attachments, m.safety,
                     m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
                     COALESCE(m.internaldate, m.date) AS received_at
@@ -257,8 +257,17 @@ pub(super) fn messages_in_one_conversation() -> String {
 ///
 /// Every one of those expressions counts rows of `here`, and none of them
 /// deduplicates, which is why `here` is what holds one row per message.
+///
+/// # The message the row stands for
+///
+/// Three columns after the sixteen: the id, the number and the sender of
+/// the one message the row stands for (#31), by
+/// [`MessageColumn::conversation_stands_for_expression`]'s ordering. The
+/// sender is the Correspondent expression's own value, selected again by
+/// name so the reader can fill [`ConversationItem::stands_for`] without
+/// parsing the cell; `senders` stays the aggregate for the rest of the cell.
 pub(super) fn conversations_query(order: &str) -> String {
-    use crate::presentation::message_columns::MessageColumn;
+    use crate::presentation::message_columns::{EVERYONE_WHO_SENT, MessageColumn};
 
     format!(
         "{scope}
@@ -269,7 +278,7 @@ pub(super) fn conversations_query(order: &str) -> String {
                 {received},
                 {sent},
                 {snippet},
-                {correspondent},
+                {senders},
                 {to_addr},
                 {cc},
                 {size},
@@ -277,11 +286,17 @@ pub(super) fn conversations_query(order: &str) -> String {
                 {flagged},
                 {answered},
                 {draft},
-                {safety}
+                {safety},
+                {stands_for},
+                {stands_for_uid},
+                {correspondent}
          FROM here m
          GROUP BY m.thread_id
          ORDER BY {order}, m.thread_id ASC",
         scope = conversation_scope(),
+        senders = EVERYONE_WHO_SENT,
+        stands_for = MessageColumn::conversation_stands_for_expression(),
+        stands_for_uid = MessageColumn::conversation_stands_for_uid_expression(),
         subject = MessageColumn::Subject.conversation_sort_expression(),
         messages = MessageColumn::Thread.conversation_sort_expression(),
         unread = MessageColumn::Unread.conversation_sort_expression(),
@@ -331,6 +346,15 @@ pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<Conversa
             2 => crate::service::safety::Safety::Spam,
             1 => crate::service::safety::Safety::Suspicious,
             _ => crate::service::safety::Safety::Ordinary,
+        },
+        // Never null: the group has at least one row of `here`, and the
+        // subquery picks one of them. Read as the numbers they are, so a
+        // query that drifted would refuse the listing rather than preview
+        // row nought.
+        stands_for: crate::application::conversations::RowMessage {
+            id: row.get(16)?,
+            uid: row.get(17)?,
+            from: row.get::<_, Option<String>>(18)?.unwrap_or_default(),
         },
     })
 }

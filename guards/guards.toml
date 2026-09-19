@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 162 records have arrived since and have not been through it.
+# 167 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26073,21 +26073,22 @@ tests_last_seen = [
 # row, where 11-05 wrote it and where it runs for every press. The
 # short-form reading goes red with "the first Space starts the clock"; the
 # whole-reading reading stays green, since the second closure still writes
-# it too, and the companions read snippets.
+# it too, and the companions read snippets. Rewritten onto the lookup as
+# 11-08 left it, which asks which message the row stands for rather than
+# the flat list at the row's index, and measured again: one red, as
+# before.
 #
-# Measured 2026-09-18 on the branch the record was written on, through
+# Measured 2026-09-19 on the branch the record was rewritten on, through
 # `scripts/guards.sh --remeasure`, the target named.
 [[guard]]
 name = "the first space, the short form, starts no clock towards marking the message read"
 file = "src/presentation/wx_app.rs"
 suite = "moving_through_the_list_marks_nothing_read"
 before = """                            let s = lock_state(&state);
-                            let message = s.messages.get(index)?.clone();
-                            (message, message_rows::conversation_size(&s.messages, index))"""
+                            let message = s.the_loaded_message_the_row_stands_for(index)?.clone();"""
 after = """                            let mut s = lock_state(&state);
-                            let message = s.messages.get(index)?.clone();
-                            s.reading_began = Some((message.message_id, std::time::Instant::now()));
-                            (message, message_rows::conversation_size(&s.messages, index))"""
+                            let message = s.the_loaded_message_the_row_stands_for(index)?.clone();
+                            s.reading_began = Some((message.message_id, std::time::Instant::now()));"""
 red = [
     "test_the_short_form_records_nothing_about_reading",
 ]
@@ -26786,4 +26787,128 @@ red = [
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 45 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
+]
+
+# The one ordering every expression about the row message reads, put back
+# to the newest by arrival, which is what the row was until 11-08: the
+# preview, the sender said first, the snippet and the sort all move to the
+# last message in the conversation, which is the row the tester reported
+# (#31). Every case of the target that reads the rule through the listing
+# goes red but the conversation of one, where the newest and the originator
+# are the same message: the four read patterns, the cell, the sort, and
+# the fetch list's case, which asks which message the row is before it
+# asks what is missing. The first draft named six; the measurement at
+# task 2's red could not see the seventh, since that case was red under
+# its own stub, and the measurement on the green tree found it; corrected
+# by hand and measured again.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a conversation row stands for the first unread or the originator, not the newest"
+file = "src/presentation/message_columns.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """             ORDER BY r.read ASC, r.received_at ASC, r.id ASC LIMIT 1)\""""
+after = """             ORDER BY r.received_at DESC, r.id DESC LIMIT 1)\""""
+red = [
+    "test_with_nothing_read_the_row_stands_for_the_originator",
+    "test_with_later_messages_read_the_row_still_stands_for_the_originator",
+    "test_with_the_first_messages_read_the_row_stands_for_the_first_unread",
+    "test_with_everything_read_the_row_stands_for_the_originator_again",
+    "test_the_correspondent_cell_says_the_row_messages_sender_first_and_everyone_once",
+    "test_sorting_by_correspondent_orders_conversations_by_their_row_messages_senders",
+    "test_selecting_a_row_asks_for_the_conversations_missing_text_with_the_row_message_first",
+]
+tests_last_seen = [
+    { file = "src/presentation/message_columns.rs", tests = 43 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+]
+
+# The row message's sender dropped from the front of the Correspondent
+# cell, so the cell lists the senders in stored order again and the first
+# name heard on a thread row is whoever wrote first, not the message the
+# row previews (#31). The cell case on the target goes red; the library's
+# own cell test would too, and this record measures the target.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the correspondent cell says the row message's sender first, not the senders in stored order"
+file = "src/presentation/message_rows.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """            one_first_then_everyone(&conversation.stands_for.from, &conversation.senders)"""
+after = """            everyone_in(&conversation.senders)"""
+red = [
+    "test_the_correspondent_cell_says_the_row_messages_sender_first_and_everyone_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/message_rows.rs", tests = 41 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+]
+
+# The cursor handler reading the flat list at the row's index again, which
+# under conversation view is a message unrelated to the row: the preview,
+# the body fetch and the receipt all take that message, the defect #31 did
+# not name and phase 11's decision 14 fixes (T-11-29). The handler reading
+# on the target goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the cursor handler previews the message the row stands for, not the flat row at its index"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """                        let stands_for = s.the_row_stands_for(idx);"""
+after = """                        let stands_for = s.messages.get(idx).map(|message| RowMessage {
+                            id: message.message_id,
+                            uid: message.uid,
+                            from: message.from.clone(),
+                        });"""
+red = [
+    "test_the_cursor_handler_previews_the_row_message_and_starts_the_fetch",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+]
+
+# The reading gate dropped from the conversation's fetch, so selecting a
+# thread row brings text under a Message Text box that forbids it
+# (T-11-31). The fetch reading on the target goes red.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a conversation's text is fetched under the reading gate, not whatever the box says"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """    let reading = crate::application::allowed::allowed_for(&account.id).reading;"""
+after = """    let reading = true;"""
+red = [
+    "test_the_conversations_text_is_one_bounded_chunk_under_the_reading_gate",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+]
+
+# The conversation tree putting the cursor on the root whatever message
+# was asked for, so Enter on arrival opens the whole conversation rather
+# than the message the row stood for (#31). The tree reading on the target
+# goes red; the pure rule's case stays green, since the rule is untouched.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the conversation tree opens on the message the row stood for, not the root whatever was asked"
+file = "src/presentation/wx_thread_view.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = """    let opening = where_to_open(nodes, open_on).and_then(|at| items[at].clone());"""
+after = """    let opening: Option<TreeItemId> = None;"""
+red = [
+    "test_enter_opens_the_conversation_on_the_row_message",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
 ]

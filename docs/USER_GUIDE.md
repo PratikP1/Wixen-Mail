@@ -485,6 +485,23 @@ message alone. `Esc` from the tree goes back to the message list, on the row
 you came from. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md#conversations) has
 the full detail.
 
+**Which message a conversation row is.** A row describes the whole
+conversation, but when you land on it you are on one message of it. Since
+2026-09-19 that message is the one that started the conversation when nothing
+in it has been read, otherwise the first message you have not read, in the
+order they arrived; and when you have read everything, the one that started it
+again. Its sender is the first name the Correspondent column says, with the
+other senders after it, each once; the Snippet column is its first line; the
+preview under the list shows it; `Space` reads it; and `Enter` opens the
+conversation window with the cursor on it, so `Enter` again opens that message
+and `Up` reaches the whole conversation on the first row. Landing on a
+conversation row also fetches the text of every message in the conversation
+that is not on this computer yet, up to fifty at a time, in the background and
+without saying anything, when the account's Message Text box allows reading.
+Before this the row's snippet was the newest message's, the senders came in
+the order they were stored, and the preview showed a message that was not the
+row's at all.
+
 ## Attachments
 
 ### Viewing Attachments

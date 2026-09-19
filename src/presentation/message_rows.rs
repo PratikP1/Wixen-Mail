@@ -155,7 +155,11 @@ pub fn conversation_cell_text(
                 conversation.subject.clone()
             }
         }
-        MessageColumn::Correspondent => everyone_in(&conversation.senders),
+        // The sender of the message the row stands for first (#31), then
+        // everyone else who sent, each once.
+        MessageColumn::Correspondent => {
+            one_first_then_everyone(&conversation.stands_for.from, &conversation.senders)
+        }
         MessageColumn::Received => format_for_list(&conversation.newest_received, now, dates),
         MessageColumn::Sent => format_for_list(&conversation.newest_sent, now, dates),
         MessageColumn::Snippet => the_first_line(conversation.snippet.as_deref()),
@@ -201,10 +205,34 @@ pub fn conversation_cell_text(
 /// Empty for a conversation nobody was copied in on, which is most of them, and
 /// an empty cell costs no listening time.
 fn everyone_in(stored: &str) -> String {
+    each_of(stored)
+        .map(display_address)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The people a stored list holds, one per line, blank lines dropped.
+fn each_of(stored: &str) -> impl Iterator<Item = &str> {
     stored
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
+}
+
+/// One person first, then everyone else in `stored`, each said once.
+///
+/// The Correspondent cell of a conversation row (#31): the sender of the
+/// message the row stands for is the first name heard, because that is the
+/// message the row previews and opens on, and the other senders follow in
+/// stored order. The first is compared as stored, the same spelling the
+/// aggregate holds, so a sender who wrote twice is not heard twice.
+fn one_first_then_everyone(first: &str, stored: &str) -> String {
+    let first = first.trim();
+    let the_rest = each_of(stored).filter(|person| *person != first);
+    (!first.is_empty())
+        .then_some(first)
+        .into_iter()
+        .chain(the_rest)
         .map(display_address)
         .collect::<Vec<_>>()
         .join(", ")
@@ -923,6 +951,14 @@ mod tests {
             any_answered: true,
             any_draft: true,
             worst_safety: crate::service::safety::Safety::Phishing,
+            // The second sender, so a cell that merely listed the senders in
+            // stored order would read the same as one that said the row
+            // message's sender first, and the test below could not tell.
+            stands_for: crate::application::conversations::RowMessage {
+                id: 2,
+                uid: 2,
+                from: "Bob <bob@example.com>".to_string(),
+            },
         }
     }
 
@@ -1100,11 +1136,13 @@ mod tests {
     fn test_correspondent_lists_the_distinct_senders_by_name() {
         // D-02's fifth family. Names rather than addresses, the same way one
         // message's Correspondent cell already reads, because "Ada Lovelace" is
-        // quicker to hear than "ada dot lovelace at example dot com".
+        // quicker to hear than "ada dot lovelace at example dot com". The
+        // sender of the message the row stands for comes first (#31), and
+        // nobody is said twice: the fixture's row message is Bob's.
         let conversation = conversation();
         assert_eq!(
             conversation_cell(&conversation, MessageColumn::Correspondent),
-            "Ada Lovelace, Bob"
+            "Bob, Ada Lovelace"
         );
         assert_eq!(
             conversation_cell(&conversation, MessageColumn::To),
@@ -1125,9 +1163,15 @@ mod tests {
         // "Smith, John" is an ordinary way to write a name and the reason the
         // senders arrive a line apiece rather than comma separated: SQLite's
         // own separator is a comma, so splitting on one would make two people
-        // out of one.
+        // out of one. The row stands for the comma-holding sender's message,
+        // so the first name said is the one with the comma in it, and it is
+        // still said once (#31).
         let conversation = ConversationItem {
             senders: "\n\"Smith, John\" <john@example.com>\nAda <ada@example.com>".to_string(),
+            stands_for: crate::application::conversations::RowMessage {
+                from: "\"Smith, John\" <john@example.com>".to_string(),
+                ..conversation().stands_for
+            },
             ..conversation()
         };
         assert_eq!(

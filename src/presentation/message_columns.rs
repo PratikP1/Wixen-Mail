@@ -40,6 +40,48 @@ macro_rules! how_bad_the_safety_word_is {
     };
 }
 
+/// One column of the message a conversation row stands for (#31).
+///
+/// The rule is
+/// [`crate::application::conversations::RowMessage`]'s, spelled once here
+/// and read by every expression that answers about that message: the
+/// sender the Correspondent cell says first, the snippet, and the id and
+/// the number the preview, the window and the fetch use. `m` is the
+/// conversation's group, `r` the rows of `here` in the same conversation,
+/// and the first of them in this order is the one: an unread message
+/// before a read one, then the earlier arrival, then the lower row id. So
+/// the first unread by arrival when any is unread, and the originator when
+/// none is, which is also the answer when every message is read. The
+/// tester's rule of 2026-09-16 (#31), phase 11's decision 9.
+///
+/// A macro for the reason [`how_bad_the_safety_word_is`] is one: the column
+/// name goes inside a larger literal, and `concat!` joins literals while the
+/// compiler is running, so the result is still a fixed string chosen by
+/// matching on the enum and never built from anything a user typed.
+macro_rules! the_message_the_row_stands_for {
+    ($column:literal) => {
+        concat!(
+            "(SELECT r.",
+            $column,
+            " FROM here r WHERE r.thread_id = m.thread_id \
+             ORDER BY r.read ASC, r.received_at ASC, r.id ASC LIMIT 1)"
+        )
+    };
+}
+
+/// Every distinct sender in a conversation, one per line.
+///
+/// One per line, not one per comma. SQLite's own separator is a comma and a
+/// display name is allowed to contain one, so "Smith, John <j@example.com>"
+/// would come back as two people. The same reasoning `safety_reasons`
+/// already records for storing its sentences a line apiece.
+///
+/// The conversation listing selects this into `ConversationItem::senders`
+/// for the rest of the Correspondent cell, after the sender the row says
+/// first; named here beside the column expressions because it is the same
+/// kind of fixed string, interpolated into the same query.
+pub(crate) const EVERYONE_WHO_SENT: &str = "GROUP_CONCAT(DISTINCT char(10) || m.from_addr)";
+
 /// A column the message list can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageColumn {
@@ -192,13 +234,20 @@ impl MessageColumn {
     /// red at compile time, and this is one of them, so a new column cannot
     /// arrive with a display rule and no sort rule.
     ///
-    /// The families, in D-02's own words:
+    /// The families, in D-02's own words, with the change #31 made on
+    /// 2026-09-19:
     ///
-    /// - Dates and Snippet take the newest message's value.
+    /// - Dates take the newest message's value: a conversation's date is
+    ///   when it last moved.
+    /// - `Snippet` and `Correspondent` take the message the row stands for,
+    ///   [`the_message_the_row_stands_for!`]: the originator when nothing is
+    ///   read, else the first unread by arrival. The Correspondent cell says
+    ///   that sender first and the rest after, so its shown value begins
+    ///   with the expression's value.
     /// - `Attachment`, `Flagged`, `Answered` and `Draft` are true if any is.
     /// - `Safety` is the worst.
     /// - `Size` is the sum.
-    /// - `Correspondent` is the distinct senders, and `To` and `Cc` follow it.
+    /// - `To` and `Cc` are the distinct addressees.
     /// - `Subject` is the conversation's name, per D-04.
     /// - `Thread` is the counts, per D-03.
     ///
@@ -221,22 +270,16 @@ impl MessageColumn {
                  (SELECT o.subject FROM here o WHERE o.thread_id = m.thread_id \
                   ORDER BY o.received_at ASC, o.id ASC LIMIT 1))"
             }
-            // One per line, not one per comma. SQLite's own separator is a
-            // comma and a display name is allowed to contain one, so
-            // "Smith, John <j@example.com>" would come back as two people.
-            // The same reasoning `safety_reasons` already records for storing
-            // its sentences a line apiece.
-            MessageColumn::Correspondent => "GROUP_CONCAT(DISTINCT char(10) || m.from_addr)",
+            // The sender the row says first, which is what sorting by
+            // Correspondent orders by; the rest of the cell is
+            // [`EVERYONE_WHO_SENT`], selected beside it.
+            MessageColumn::Correspondent => the_message_the_row_stands_for!("from_addr"),
             // The server's arrival time, falling back to the sender's date for
             // rows stored before arrival times were kept. `received_at` is that
             // fallback, applied once where the reach is worked out.
             MessageColumn::Received => "MAX(m.received_at)",
             MessageColumn::Sent => "MAX(m.date)",
-            MessageColumn::Snippet => {
-                "(SELECT n.snippet FROM here n \
-                 WHERE n.thread_id = m.thread_id \
-                 ORDER BY n.received_at DESC, n.id DESC LIMIT 1)"
-            }
+            MessageColumn::Snippet => the_message_the_row_stands_for!("snippet"),
             MessageColumn::Thread => "COUNT(*)",
             // Null where no message in it says what it weighs, which reads as
             // blank rather than as "0 bytes", a claim we cannot make.
@@ -252,6 +295,25 @@ impl MessageColumn {
             MessageColumn::To => "GROUP_CONCAT(DISTINCT char(10) || m.to_addr)",
             MessageColumn::Cc => "GROUP_CONCAT(DISTINCT char(10) || m.cc)",
         }
+    }
+
+    /// The SQL expression for the row id of the message a conversation row
+    /// stands for (#31).
+    ///
+    /// Beside the column expressions rather than among them, because it is
+    /// no column: nothing shows or sorts by a row id. It is what the preview
+    /// loads, the conversation window opens on and the fetch puts first, and
+    /// it comes from the same ordering the Correspondent and Snippet arms
+    /// above read, so the message whose sender the row says first is the
+    /// message the row previews.
+    pub(crate) fn conversation_stands_for_expression() -> &'static str {
+        the_message_the_row_stands_for!("id")
+    }
+
+    /// The server's number for that message, by the same ordering, which a
+    /// fetch of its text asks by.
+    pub(crate) fn conversation_stands_for_uid_expression() -> &'static str {
+        the_message_the_row_stands_for!("uid")
     }
 }
 
