@@ -4389,6 +4389,81 @@ decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
     another account, an identifier the destination already holds) and #63's copy and move
     across accounts, re-taken after this, are his accounts'.
 
+**Added 2026-09-19, in the morning: two more, from two issues filed that morning, as
+inserts (11-08.1 after 11-08, whose row message a re-threading moves; 11-10.1 after 11-10
+and before 11-11, so 11-11.1's activation covers a made link).**
+
+- [ ] **LIST-23**: On a server that advertises Gmail's extension the conversation id is
+  asked for in the fetch already made and names the conversation here, the stored id
+  follows the server's and a message whose id changes moves; mail already stored gets its
+  id once at the next check; on every server a child stored before its parent joins it when
+  the parent lands, a sibling with a fuller chain and a reply with a cut one join their
+  tree; subject matching stays refused; the conversation row's count and the row message
+  follow a re-threading.
+  - Evidence: at `38ebcb86` (the same bytes as `1962e341` in every file named but
+    `mail_sync.rs`, which gained four comment lines), `application::threading` threads from
+    `References` and `In-Reply-To` alone (`:1-14`), refuses subject matching
+    (`test_subjects_are_never_used_to_thread`, `:485`), and prefers
+    `ThreadInput::server_thread_id` (`:26-31`), which only `apply_threading` supplies and
+    always as `None` (`wx_app.rs:13428`); `GMAIL_FIELDS` is `X-GM-MSGID X-GM-LABELS` with
+    `X-GM-THRID` "deliberately not asked for" because the library's reader once hid it
+    (`imap.rs:112-120`), and `test_the_thread_id_is_not_asked_for` (`:2497`) pins the
+    absence; `imap-proto` 0.16.7 parses the attribute into `AttributeValue::GmailThrId` and
+    the attributes are read directly here (`:1918-1935`); the stored `thread_id` is
+    `thread_identity::conversation_root(message_id, refs)`, the root of the chain whether or
+    not the root is here, and `rejoin` reroots the conversations an arrival proves to be one
+    onto the earliest name (`thread_identity.rs:1-40`, `:200-260`; `messages.rs:982-1000`,
+    `:1116-1150`); a check lists a folder and stores what is new and never re-fetches a
+    stored uid (`mail_sync.rs:1360-1405`); the tester's account holds 17,753 messages.
+  - [S] #88, the tester on 2026-09-19: "Messages that belong to one thread show as separate
+    threads with the same subject in conversation view."
+  - [D] `GMAIL_FIELDS` gains `X-GM-THRID` and `ImapMessage::gmail_thread_id` reads it; the
+    pinning test is rewritten in place to its opposite; `messages.server_thread_id`
+    (additive) carried in `IncomingMessage` and `MessageListRow`; `conversation_root` and
+    `rejoin` take the server's id, which wins when present; `apply_threading` hands the row's
+    id to the in-memory threader; a once-only pass per Gmail account fetches the field for
+    stored uids per kept folder at the next check before its listing, under `work_done_once`;
+    the cost per message measured on the scripted server; the late-parent, fuller-sibling,
+    cut-reply, Gmail-id-over-headers, differing-id and same-subject cases traced against the
+    loopback servers newest first in a target, each case's state before and after in the
+    summary, what failed fixed; readings that 11-08's row message and count follow a
+    re-threading; six guard records (11-08.1).
+  - [S] Whether his split threads become one after the next check, and whether a
+    conversation here matches Gmail's, are his account's.
+
+- [ ] **LIST-24**: An address written out in a plain-text message, in the quoted part of a
+  reply, in a note shown as a page and in an event or task description read aloud is a
+  link, made by one recogniser that passes every link through the sanitiser's address rule;
+  what is not an address is left alone; a description read aloud says a link to its host;
+  the sanitiser keeps the schemes a sender writes and a link it refuses says so beside its
+  words; the snippet still drops addresses.
+  - Evidence: at `38ebcb86`, `wrap_body` shows a plain-text message escaped inside `<pre>`
+    (`html_renderer.rs:612-630`) after the older fault of guessing markup was fixed by not
+    guessing (`:606-611`); `escaped_plain_text` does the same for a reply's quoted plain part
+    (`editor_document.rs:77-81`); `SAFE_URL_SCHEMES` is `http://`, `https://`, `mailto:`
+    (`:12`) and `safe_external_url` (`:860-880`) filters every `href` the cleaner keeps
+    (`:140-175`), a refused scheme losing its address and keeping its words with nothing
+    said (`:2141-2172`); `long_text::spoken` reads a link's words alone (`:285-300`,
+    `:1576-1584`) and `as_markup` is `pulldown-cmark` 0.13, which has no autolink
+    (`:455-475`); the composer's link rule balances brackets (`editor_document.rs:681-704`);
+    Pratik's comment: the tester's FanFiction message is plain text only with the chapter
+    address bare on its own line and two more at the foot, so the sanitiser stripped nothing.
+  - [S] Pratik on #89, 2026-09-19: "An address written out in a message, an invitation or a
+    description should be a link a person can follow"; and his comment: "bare addresses in
+    plain text become links through safe_external_url. The corpus check of the sanitiser's
+    schemes stays as a smaller task."
+  - [D] `application::links_in_text` with `addresses_in`, `as_html` and `spoken`: http,
+    https, www., mailto: and a bare name@host address, ending before trailing punctuation
+    and an unbalanced closing bracket, nothing inside a word, `a.b` and `1.2.3` and a bare
+    host left alone, every href through `safe_external_url`, a case per shape and per
+    non-address; `wrap_body`'s plain branch, `escaped_plain_text`, `as_markup`'s text events
+    outside code and links, and `spoken` use it; `tel:` allowed; the corpus (`mailto:`,
+    `tel:`, a port, a space, a fragment, `sms:`, `javascript:`) with a case per shape and a
+    refused link's words followed by "(link not opened here: {scheme})"; a target holding the
+    FanFiction shape, a reply's quoted text, a description spoken, a note as a page, the
+    snippet still bare; five guard records (11-10.1).
+  - [S] The chapter address in NVDA's link list on the tester's message is his ear's.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -4508,12 +4583,19 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
 | LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
+| LIST-23 | Phase 11 | Pending, 11-08.1 |
+| LIST-24 | Phase 11 | Pending, 11-10.1 |
 
 **Coverage:**
 
-- v1 requirements: 90 total
-- Mapped to phases: 90
+- v1 requirements: 92 total
+- Mapped to phases: 92
 - Unmapped: 0
+
+**Re-taken 2026-09-19, later.** This block said 90 and 90 from the morning until two issues
+filed that morning (#88, #89) were taken by two inserted plans (11-08.1, 11-10.1). Counted
+with the same command as below, which gives 92 at `38ebcb86` plus this edit with `LIST-23`
+and `LIST-24` in, and the traceability table above has 92 rows.
 
 **Re-taken 2026-09-19.** This block said 89 and 89 from the night of 2026-09-18 until Pratik
 overruled 11-07.1's decision 29 and #86's second half became 11-07.2. Counted with the same
@@ -4632,6 +4714,11 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-19, later.** `LIST-23` and `LIST-24` trace to #88 and #89, filed that morning
+and taken by inserted plans 11-08.1 (after 11-08, whose row message a re-threading moves)
+and 11-10.1 (after 11-10 and before 11-11, so 11-11.1's activation covers a made link).
+The total is 92.
 
 **Added 2026-09-19.** `LIST-22` traces to #86's second half, Pratik's comment of that day
 overruling 11-07.1's decision to keep a move across accounts server-first, taken by 11-07.2
