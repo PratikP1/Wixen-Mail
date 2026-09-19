@@ -1,6 +1,6 @@
 # Phase 11: Reading, and the list
 
-Twenty-seven plans, one per wave: twelve written 2026-09-18 against `main` at
+Twenty-eight plans, one per wave: twelve written 2026-09-18 against `main` at
 `744d05ef`, version `1.0.0-alpha.1`, `guards/guards.toml` holding 912
 records by the TOML reader (census 802 + 110 at `guards.toml:84`),
 `.planning/WINDOWS.md` at entry 529 with 499 open, 8,032 tests on the last
@@ -16,8 +16,9 @@ night against `4d9f14bf`, with 11-05.1 merged and the tree free, for #87,
 #85 and #86; and one written on 2026-09-19 against `15407b1e`, while
 11-07 executed, for #86's second half after Pratik overruled decision
 29; and two written later that day against `1962e341`, while 11-07.2
-executed, for #88 and #89. Phase 10 closed on 2026-09-18 with all ten
-plans merged. This is the fourth of the seven
+executed, for #88 and #89; and one written that afternoon against
+`ced898eb`, while 11-10 executed, for #90. Phase 10 closed on 2026-09-18
+with all ten plans merged. This is the fourth of the seven
 groups Pratik agreed on 2026-09-16, with two plans in front of it from what
 the morning's push showed.
 
@@ -118,6 +119,26 @@ schemes a sender writes, `tel:` allowed, a refused link saying so beside
 its words. Their requirements are `LIST-23` and `LIST-24`, the criteria
 27 and 28; the waves from 11-09 on moved one and from 11-11 on two.
 
+**One more was written on the afternoon of 2026-09-19 against
+`ced898eb`, while 11-10 executed, and committed in the gap after its
+merge at `39d53503`.** #90 (an HTML message read in the formatted view
+repeats phrases and announces groupings) is 11-11.0, after 11-11, which
+changes the same renderer for pictures, and before 11-11.1, whose
+listener catches a link in the page this plan cleans. Pratik measured
+the message the tester named, a Substack newsletter, on its raw markup,
+and gave leave to keep it in the tree as a public fixture with its
+tracking addresses and the recipient's token replaced. The plan drops
+what the sender hid before the sanitiser by the sender's own rule, with
+a count said once only when a dropped block held words that were not a
+preheader; strips the invisible padding; keeps `role="presentation"` on
+tables so a layout table is not a table to the reader; keeps a sender's
+`aria-label` only where it is a link's or a data table's name; says the
+subject and the sender once from the page's own markup; and gives the
+reader's own structure the same fixture, closing ledger 555. Its
+requirement is `LIST-25`, its criterion 29; the waves from 11-11.1 on
+moved one. Its plan number is written as the string `"11.0"` in the
+frontmatter because the bare number would parse as 11, which is 11-11's.
+
 **Three plans were inserted later on 2026-09-18, after the plan check
 (two blockers and ten warnings, applied at the same commit).** 11-06.1 is
 #76: deleting a message puts the cursor at the top, because the rule that
@@ -134,7 +155,7 @@ so it reads every sentence this phase adds, and before the closing read,
 which then reads the bar's words as that pass left them. Their requirements
 are `LIST-11` to `LIST-13`; the plans after each insert moved up a wave.
 
-**Planned from twenty-four issues and three runs.** The issues: #70 (the folder
+**Planned from twenty-five issues and three runs.** The issues: #70 (the folder
 chooser, filed on the second day of testing), #71 (the log level's default,
 Pratik's decision of 2026-09-17), and the eight of group 4 from the first
 day: #25 (read state on traversal), #26 (column headers on every row), #27
@@ -150,7 +171,8 @@ attachments); and the three of that night, #85 (the gate's own hazard),
 cross-account half; Enter in the Move dialog) and #87 (Tab
 into the list lands on a row); and the two of the morning of 2026-09-19,
 #88 (threads split on Gmail) and #89 (an address written out is not a
-link). Pratik's decisions are in the bodies and comments and are
+link); and #90 of that afternoon (the formatted view repeating what the
+sender hid). Pratik's decisions are in the bodies and comments and are
 settled; each plan quotes his words. The runs: CI 35336142985 (red on one test), NVDA 35336142908
 (green over a failed job) and Accessibility 35336142914 (the five editors
 walked), all on `744d05ef`, read with `gh run view` and quoted in 11-01 and
@@ -170,7 +192,7 @@ hears; the log's default follows the build; and the privacy page lists
 every way a reader of mail can be tracked. Behind it, CI is green and the
 NVDA workflow's verdict is the run's.
 
-**Requirements:** `LIST-01` to `LIST-24`, one per issue and one for #86's
+**Requirements:** `LIST-01` to `LIST-25`, one per issue and one for #86's
 second half, in
 `.planning/REQUIREMENTS.md` under "Reading, and the list"; `FOUND-17` and
 `FOUND-18` for the two plans in front, under phase 9's section beside
@@ -178,7 +200,7 @@ FOUND-13 to FOUND-16, on the same reasoning: a regression of 09-02's fix
 found by CI, and the workflow 09-06's case runs in; `FOUND-19` beside
 them for 11-06.3, a defect in what the hook and CI run.
 
-**Roadmap success criteria this phase owns:** all twenty-eight.
+**Roadmap success criteria this phase owns:** all twenty-nine.
 
 ## Pratik's order, and which part of it this is
 
@@ -234,11 +256,12 @@ phase's by insertion, above, and belong to no group either.
 | 11-10 | 20 | 8 | #62 | closes | a rule's phrase said first and shown in a column; a sound once per check through a new event; the labels as a column; the phase's longest plan |
 | 11-10.1 | 21 | 28 | #89 | closes | written 2026-09-19: `application::links_in_text` recognises http, https, www., mailto: and a bare address in text, ends before trailing punctuation and an unbalanced closing bracket as the composer's rule does, touches nothing in a code span or an existing link, and makes anchors through `safe_external_url`; used by `wrap_body`'s plain branch, the reply's quoted text, `as_markup` and `spoken`; the sanitiser's corpus, `tel:` allowed, a refused link's note; the FanFiction shape held; the snippet still bare |
 | 11-11 | 22 | 9, 10 | #28, #29 | closes both | pictures shown by default except pixels and decorative ones; the link's words as a description; an undescribed picture by rule with its setting; the privacy page's tracking section |
-| 11-11.1 | 23 | 22 (first half) | #80 | advances | inserted 2026-09-18 (evening): a `page` scan target and an NVDA case as the probe; Open links on the Reading tab; the route as one pure function; the page script catching the anchor's activation; the three menu items; the message view route with its title and its way back; the privacy paragraph |
-| 11-11.2 | 24 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
-| 11-11.3 | 25 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
-| 11-13 | 26 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
-| 11-12 | 27 | 13 | all twenty-four and #25's correction | closes the phase | the pages, the listening lines, the closing read |
+| 11-11.0 | 23 | 29 | #90 | closes | written 2026-09-19: `application::hidden_text` with a rule per way a sender hides (`display:none`, `visibility:hidden`, `font-size:0`, `max-height:0` with `overflow:hidden`, `mso-hide:all`, `aria-hidden`) and the filler characters, the drop before the sanitiser on the reading path with a count said once only for words that were not a preheader; `role="presentation"` kept on tables; `aria-label` kept only as a link's or a data table's name; the page's own heading unnumbered for one message; the reader's cell walk separating blocks and a presentational table read as blocks (ledger 555); the Substack fixture under `tests/fixtures/` with its addresses replaced |
+| 11-11.1 | 24 | 22 (first half) | #80 | advances | inserted 2026-09-18 (evening): a `page` scan target and an NVDA case as the probe; Open links on the Reading tab; the route as one pure function; the page script catching the anchor's activation; the three menu items; the message view route with its title and its way back; the privacy paragraph |
+| 11-11.2 | 25 | 22 (second half) | #80 | closes | inserted 2026-09-18 (evening): the separate window as a process of its own started with `--show-page`, answered before the claim and the handover, its WebView2 profile of its own by the app name set before the WebView, the route reaching it, the erase reaching the profile |
+| 11-11.3 | 26 | 21 | #79 | closes | inserted 2026-09-18 (evening): a marker counts at the start of any line, a refusal that met a marker is logged, the inline style ends at its delimiter, `- ` on the empty first line measured, a reading types into the real page, the pages say the space in words |
+| 11-13 | 27 | 14 | #75 | closes | inserted 2026-09-18: every status sentence listed from the code and rewritten by hand to one shape, the refusals one per kind, a reading over the words and endings, no line moved between channels; after every plan that adds a sentence and before the closing read |
+| 11-12 | 28 | 13 | all twenty-five and #25's correction | closes the phase | the pages, the listening lines, the closing read |
 
 Requirement coverage: FOUND-17 by 11-01; FOUND-18 by 11-02, which also
 ticks FOUND-08 and FOUND-09; LIST-01 by 11-03; LIST-02 by 11-04; LIST-03 by
@@ -247,15 +270,15 @@ LIST-07 by 11-09; LIST-08 by 11-10; LIST-09 and LIST-10 by 11-11; LIST-11
 by 11-13; LIST-12 and LIST-14 by 11-06.1; LIST-13 and LIST-16 by 11-09.1;
 LIST-15 by 11-04.1; LIST-17 by 11-09.2; LIST-18 by 11-11.3; LIST-19 by
 11-11.1 and 11-11.2; LIST-20 by 11-06.2; LIST-21 by 11-07.1; LIST-22 by
-11-07.2; LIST-23 by 11-08.1; LIST-24 by 11-10.1; FOUND-19 by 11-06.3;
-11-12 reads all twenty-four.
+11-07.2; LIST-23 by 11-08.1; LIST-24 by 11-10.1; LIST-25 by 11-11.0;
+FOUND-19 by 11-06.3; 11-12 reads all twenty-five.
 
 Each plan ends with the `gh issue close` or `gh issue comment` the executor
 runs after the merge, quoting the merge commit. Closing an issue is not a
 publish and the executor may do it; filing or editing other issues is not
 theirs. 11-02 closes nothing: #33 is closed already.
 
-## Why twenty-seven plans, and why this order
+## Why twenty-eight plans, and why this order
 
 Twelve at first because two things the morning's push showed go before the
 issues, and the ten issues fall into ten pieces that share files only
@@ -270,11 +293,12 @@ a correction to a merged plan; three more that night for #87, #85 and
 of the phase; one more the next day for #86's second half, once Pratik
 overruled the decision that had kept it server-first; two more that
 morning for #88 and #89, the first after the plan that chooses a
-conversation's row and the second before the plan that routes a link.
-One per wave
+conversation's row and the second before the plan that routes a link;
+one more that afternoon for #90, between the plan that changes the
+renderer for pictures and the plan that routes a link. One per wave
 because every plan writes `docs/changelog.md`, all but the closing read
 and the gate's own plan write `guards/guards.toml`, twenty of the
-twenty-seven write
+twenty-eight write
 `src/presentation/wx_app.rs`, and a wave is a set of plans sharing no
 file. The order:
 
@@ -324,6 +348,9 @@ file. The order:
   link.
 - **#28 with #29** (11-11), the reader and the privacy page, which reads
   every plan before it for what a reader of mail sends.
+- **#90 right after** (11-11.0), what the sender hid and the layout
+  tables, on the renderer 11-11 has just changed and before 11-11.1's
+  listener reads the page.
 - **#80 in two plans after it** (11-11.1, 11-11.2), because both write
   beside the privacy section 11-11 rewrites, and the separate window is a
   process of its own.
@@ -493,6 +520,26 @@ file. The order:
     address's characters and not nothing: 11-09.2's snippet drops
     addresses because a row is a hint, and a description is the thing
     itself.
+37. **#90's drop is by the sender's own hiding and never by content**:
+    the six rules are the ways a sender hides text in mail, `opacity:0`
+    alone is not one (a fade-in is not hiding), and a dropped block that
+    held words beyond a preheader is counted and said once at the top in
+    the held-back pictures' register, so nothing is left out in silence.
+38. **A layout table keeps `role="presentation"` rather than losing its
+    table tags**, because the value is the sender's own claim and a
+    browser keeps it; the four tags get the one value and no other role
+    survives.
+39. **A sender's `aria-label` is kept where it is an accessible name a
+    reader would hear**: a link or button with no text of its own, and a
+    table that is not presentational; dropped on layout elements with
+    the role that made them a region. A rule, not a list of senders.
+40. **The page's own markup says each thing once**: the subject as the
+    `<h1>`, the sender in the message's heading with a number only in a
+    conversation, the count line only in a conversation; the sender's own
+    From line in the body is the sender's.
+41. **11-11.0 is numbered as a string** (`plan: "11.0"`) because the bare
+    number parses as 11 and collides with 11-11; the file name orders it
+    between 11-11 and 11-11.1, which is where it runs.
 
 ## What the tree contradicted in the issues and the brief
 
@@ -533,6 +580,10 @@ filed; the shapes held. These moved in kind:
 | #88 | the late parent's merge is to be traced | the store already names a conversation by the root its chain points at whether or not the root is here, and rejoins a cut chain through what its identifiers are filed under; the trace proves it in the download's order and fixes what fails | `git show main:src/application/thread_identity.rs \| sed -n 1,40p`; `git show main:src/data/message_cache/messages.rs \| sed -n 1116,1150p` |
 | #89 | either the recogniser or the sanitiser | Pratik's comment: the tester's message is plain text only, the address bare on its own line; the sanitiser stripped nothing; the recogniser is the whole fix and the corpus a smaller task | the comment of 2026-09-19 on #89 |
 | #89 | Markdown can autolink | `pulldown-cmark` 0.13 has no autolink option; the split is applied to its text events outside code and links | `git show main:src/application/long_text.rs \| sed -n 455,475p` |
+| #90 | `font-size:0` and `visibility:hidden` blocks in the message | none with words: the six `font-size:0` are spacer cells, `visibility:hidden` and `mso-hide` do not occur; the two hidden blocks are both `display:none` with `max-height:0` and `overflow:hidden`; every rule is still written and held by a hand-built case | `python: re.findall` over the saved body `issue-90-marcus.html`, 2026-09-19 |
+| #90 | forty-nine tables carry `role="presentation"` | forty-eight of forty-nine; the fixture's case asserts 48 | the same |
+| #90 | the padding is zero-width spaces | U+034F (the combining grapheme joiner) two hundred times, with no-break spaces, figure spaces and soft hyphens between; no U+200B in the file; the filler rule names the joiner, the zero-width set, U+2060, U+FEFF and the soft hyphen | the same |
+| #90 | the drop can be done in the sanitiser's filter | ammonia's filter sees attributes, not elements; the drop is a pass over a `scraper` parse before the clean, which the reader already does for its own structure | `git show main:src/application/long_text.rs \| sed -n 560,566p` |
 
 ## Costs every plan is written around
 
@@ -724,23 +775,24 @@ on this project, so the factor is taken by hand from the files and said here.
 
 1. **The roadmap's phase 11 entry and progress row.** Done by the planner in
    the commit that lands these plans and the ones that land the inserts:
-   the goal, the twenty-seven requirements, twenty-eight criteria, the plan
+   the goal, the twenty-eight requirements, twenty-nine criteria, the plan
    list, the row at `0/15`, then `3/20` after the evening's inserts, then
    `8/24` after the night's, then `12/25` after 11-07.2, then `14/27` after
-   11-08.1 and 11-10.1, and the milestone
+   11-08.1 and 11-10.1, then `20/28` after 11-11.0, and the milestone
    paragraph kept true.
    `test_the_roadmap_counts_the_files_that_are_on_disk` holds the row to
    the files.
 2. **`.planning/REQUIREMENTS.md`.** Done by the planner: the `LIST` section,
-   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the twenty-seven
+   FOUND-17, FOUND-18 and FOUND-19 beside FOUND-16, the twenty-eight
    traceability rows, the coverage count re-taken at 80, then 86, then 89,
-   then 90, then 92,
+   then 90, then 92, then 93,
    the provenance notes.
 3. **`.planning/STATE.md`.** Done by the planner in the same commit, by hand:
    phase 11 current, plan 1 of 15, then `Total Plans in Phase: 20` with
    the current plan left where 11-03's summary put it, then 21 with it
    where 11-05's put it, then 24 with it where 11-05.1's put it, then 25
    with it where 11-07's put it, then 27 with it where 11-07.2's put it,
+   then 28 with it where 11-10's put it,
    `progress.total_plans` counted from the disk.
 4. **`docs/changelog.md`.** Every plan but 11-12 writes its entries under
    `[Unreleased]`; 11-12 reads them as one.

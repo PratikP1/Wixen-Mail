@@ -4494,6 +4494,53 @@ and before 11-11, so 11-11.1's activation covers a made link).**
     snippet still bare; five guard records (11-10.1).
   - [S] The chapter address in NVDA's link list on the tester's message is his ear's.
 
+**Added 2026-09-19, in the afternoon: one more, from an issue filed that afternoon, as an
+insert (11-11.0 after 11-11, which changes the same renderer for pictures, and before
+11-11.1, whose listener reads the page this plan cleans).**
+
+- [ ] **LIST-25**: An HTML message read in the formatted view says what the sender showed,
+  once: text the sender hid is dropped before the sanitiser by the sender's own rule and
+  never by content, invisible filler is stripped, a count is said once only when a dropped
+  block held words that were not a preheader, a layout table is not a table to the reader,
+  a sender's grouping is named only where a reader would use the name, the page's own
+  markup says the subject and the sender once, the plain part is never touched, and the
+  reader's own structure reads the same message with its blocks apart.
+  - Evidence: Pratik's measurement of the tester's Substack message (2026-09-19, the raw
+    stored body of 101,756 bytes read through Python): two `display:none` divs at the top
+    styled `display:none;font-size:1px;...;max-height:0px;...;opacity:0;overflow:hidden`, the
+    first holding the subtitle "Actions speak louder than words" and two hundred U+034F
+    joiners with no-break spaces, figure spaces and soft hyphens between, the second the
+    padding alone; forty-eight of forty-nine tables `role="presentation"`, 111 cells, no
+    `<th>`; one `aria-label`, "Post header", on a `div role="region"`; six `font-size:0`
+    spacer cells with no words; no `visibility:hidden`, `mso-hide` or `aria-hidden`. At
+    `f92871bb` (the same bytes as `ced898eb` in every file named), `cleaner()`
+    (`html_renderer.rs:142-168`) is ammonia's defaults with `data` and `cid`, which drop
+    `style`, `class`, `role` and `aria-*`, and its filter reads only `src`, `href` and
+    `background`; `sanitize_and_count_held_back` (`:410-415`) cleans and then rewrites
+    pictures by regex; `render_thread_under_a_bar` (`:757-830`) writes "{n}. Message from
+    {sender}" for every message and the count line only for a conversation; `long_text`'s
+    `OpenTable` (`:127-180`) pushes a cell's content as one string (ledger 555); `scraper`
+    0.27 is the parser the reader already uses (`:560-566`).
+  - [S] #90, the tester on 2026-09-19: "Reading an HTML message in the formatted view is
+    verbose: groupings are announced and phrases repeat themselves as the reader moves
+    through the page"; and Pratik's comments the same day, the measurement above and the
+    leave to keep the message as a public fixture with its addresses replaced.
+  - [D] `application::hidden_text` with `whether_hidden` over the six rules (and `opacity:0`
+    alone not one), `strip_filler` over the joiner, the zero-width set, U+2060, U+FEFF and
+    the soft hyphen, `what_a_dropped_block_was` (nothing, preheader, words) and the count
+    sentence in the pictures' register; `drop_what_the_sender_hid` in the renderer, a
+    `scraper` pass before the clean on the reading path only, never on the sending path or a
+    plain part; `role="presentation"` allowed on `table`, `tr`, `td` and `th` and no other
+    role; `aria-label` kept on a link or button and on a table that is not presentational,
+    dropped elsewhere; the page's heading unnumbered for one message; `long_text`'s cell
+    walk separating blocks and a presentational table read as blocks; the fixture at
+    `tests/fixtures/issue_90_substack_newsletter.html` with every tracking address and the
+    recipient's token replaced, a case holding its shapes and the token's absence; a target
+    over the fixture through `wrap_body`, `render_thread_under_a_bar` and
+    `pieces_of_markup`; the drop's cost on the fixture measured; six guard records (11-11.0).
+  - [S] That the newsletter now reads once, with no table and no grouping announced, is his
+    ear's.
+
 ## v2 Requirements
 
 Deferred out of this milestone, with the reason. Each was in the inventory's "not built"
@@ -4615,12 +4662,18 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Pending, 11-10.1 |
+| LIST-25 | Phase 11 | Pending, 11-11.0 |
 
 **Coverage:**
 
-- v1 requirements: 92 total
-- Mapped to phases: 92
+- v1 requirements: 93 total
+- Mapped to phases: 93
 - Unmapped: 0
+
+**Re-taken 2026-09-19, in the afternoon.** This block said 92 and 92 from the morning until
+#90 was taken by the inserted 11-11.0. Counted with the same command as below, which gives
+93 at `f92871bb` plus this edit with `LIST-25` in, and the traceability table above has 93
+rows.
 
 **Re-taken 2026-09-19, later.** This block said 90 and 90 from the morning until two issues
 filed that morning (#88, #89) were taken by two inserted plans (11-08.1, 11-10.1). Counted
@@ -4744,6 +4797,9 @@ of testing) and #71 (his decision of 2026-09-17) in front. `FOUND-17` traces to 
 to CI run 35336142985 on `744d05ef`, a regression of FOUND-02's fix; `FOUND-18` to NVDA run
 35336142908 and Accessibility run 35336142914 on the same push, and to guardrail 4. Neither
 belongs to the seven groups. The total is 77.
+
+**Added 2026-09-19, in the afternoon.** `LIST-25` traces to #90, filed that afternoon and
+taken by the inserted 11-11.0 between 11-11 and 11-11.1. The total is 93.
 
 **Added 2026-09-19, later.** `LIST-23` and `LIST-24` trace to #88 and #89, filed that morning
 and taken by inserted plans 11-08.1 (after 11-08, whose row message a re-threading moves)
