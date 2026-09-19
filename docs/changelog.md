@@ -202,6 +202,32 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A conversation row stands for the message that matters, and the preview shows it.** The
+  tester on 2026-09-16 under NVDA (#31): "Focusing on a thread in the mail list should use
+  the originator of the thread as the first reported correspondent and the associated message
+  if all the messages in the thread are unread. If not, then the first unread message should
+  be highlighted. Currently, the last message is highlighted. If a thread is highlighted, all
+  messages should be cached." Since 2026-09-19 a conversation row stands for one message,
+  chosen where the row's columns are: the message that started the conversation when nothing
+  in it has been read, otherwise the first unread message by arrival, and the originator again
+  when everything is read. Its sender is the first name the Correspondent column says, with
+  the other senders after it, each once; the Snippet column is its first line; sorting by
+  Correspondent orders conversations by that sender; the preview shows it; Space reads it;
+  Enter opens the conversation window with the cursor on it; and Reply, the read receipt, the
+  invitation and the rest of the commands over the row under the cursor act on it. Landing on
+  the row fetches the text of every message in the conversation not yet on this computer, the
+  row's message first, up to fifty messages or 16 MB at a time, in the background with nothing
+  said, under the account's Message Text box and paused when the download is paused. One
+  defect the issue did not name was found on the way and is fixed: under conversation view the
+  preview showed the message sitting at the same position in the flat list of the folder,
+  which had nothing to do with the row, and Space, Reply and the receipt read that message
+  too. Known limitations: no real account has had a conversation's text fetched this way; a
+  row's message filed in another folder of the account is previewed, but the conversation
+  window opens on its first row rather than on that message, and Space and Reply act on
+  nothing, because those read the rows on screen and that folder's are not; and
+  what the fetch adds beside the download, which since 2026-09-18 brings every kept folder's
+  text anyway, is the order, a folder not kept up to date, and a mailbox under a chosen size.
+
 - **Tab, F6 or a click into the message list lands on a row, not on the list itself.** The
   tester on 2026-09-18 under NVDA (#87): "Tab from the folder tree to the message list: focus
   lands on the list with no row under it. It should land on a row, the newest message." Opening

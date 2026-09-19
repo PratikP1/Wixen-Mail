@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 514
+open_count: 515
 waived_count: 0
 fixed_count: 33
-total_count: 547
-last_updated: 2026-09-19T08:20:00.000Z
+total_count: 548
+last_updated: 2026-09-19T10:35:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -562,6 +562,7 @@ last_updated: 2026-09-19T08:20:00.000Z
 | 545 | 11 | deviation | tests/house_style.rs |  | 11-07: test_every_guard_record_still_names_one_place_in_the_tree exempts a whole file when any record's after is in the tree and its before is not, taken as the file being mid-measurement, so one record whose after matched the rewritten cursor handler by coincidence hid five other records of wx_app.rs whose before had left the tree, and the check passed green over six unmeasurable records; found by an independent one-place count run by hand on 2026-09-19 and the six rewritten and measured. The exemption should be per record, and a pass through it should say so | open |  | 2026-09-19T03:44:00.000Z |  |
 | 546 | 11 | unrun-verify | src/application/moves_waiting.rs |  | 11-07.1: what only the tester's ear and a real server settle for #86. A move leaving the row at once under NVDA with the cursor read on the next message; Enter on the chosen folder in the Move dialog moving the message; a move made with the network off put back and the refusal heard once when the server answers no; a move made with the network off and the program closed, replayed at the next check after a restart with the message in the destination and not brought back by the check; a copy heard as "Copied to Work" once with the row staying. And what a real mail server does with a replayed move, and with a message another client changed meanwhile, which the loopback servers cannot say: #63's move, copy and delete proofs against the tester's account are re-taken after this plan, and ledger 187's three questions about a crossing stay the tester's. Since 11-07.2 (later on 2026-09-19) the crossing completes here first too, so #63's copy and move across accounts are re-taken against that shape, and 547 names what its ear settles | open |  | 2026-09-19T06:07:03.000Z |  |
 | 547 | 11 | unrun-verify | src/application/moves_waiting.rs |  | 11-07.2: what only the tester's ear and two real servers settle for #86's second half. A move to a folder of the other account leaving the row at once under NVDA with the cursor read on the next message and "Moved to Work in Home" shown; the message appearing in that folder of the other account at its next check; with the network off, the row going and coming back with the refusal spoken once when a server answers no; a restart with a crossing waiting finishing it at the next check of either account from the kept message, without a question; a message over 25 MB saying it goes now and its row leaving when the other account has taken it; a copy across accounts heard once. And what two real servers do: the upload's answer at a real destination, what a destination does with a message carrying an identifier it already holds, which the replay reads as an arrival only for a new number, and Gmail's treatment of an appended message; the loopback servers prove the four answers at each of the two servers and the restart from held bytes, and nothing here has met a real account | open |  | 2026-09-19T08:20:00.000Z |  |
+| 548 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-08: what only the tester's ear and account settle for #31. The sender of the message a thread row stands for heard first when the row is read in his inbox, the originator on a thread nothing in it read and the first unread message otherwise; the preview under the row heard to be that message, and Enter opening the conversation window with the cursor on it so Enter again opens it; Space reading it; M marking the whole thread; a thread with everything read reading the oldest; and the text of a conversation arriving from Gmail on landing on its row, which the readings hold to one bounded chunk under the reading gate and no server has been asked for. The cache cases hold the rule through the real listing and the readings hold the window; none of it has been heard | open |  | 2026-09-19T10:35:00.000Z |  |
 
 ````json
 [
@@ -7127,6 +7128,18 @@ last_updated: 2026-09-19T08:20:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T08:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 548,
+    "kind": "unrun-verify",
+    "phase": "11",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "11-08: what only the tester's ear and account settle for #31. The sender of the message a thread row stands for heard first when the row is read in his inbox, the originator on a thread nothing in it read and the first unread message otherwise; the preview under the row heard to be that message, and Enter opening the conversation window with the cursor on it so Enter again opens it; Space reading it; M marking the whole thread; a thread with everything read reading the oldest; and the text of a conversation arriving from Gmail on landing on its row, which the readings hold to one bounded chunk under the reading gate and no server has been asked for. The cache cases hold the rule through the real listing and the readings hold the window; none of it has been heard",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-19T10:35:00.000Z",
     "resolved_at": null
   }
 ]
