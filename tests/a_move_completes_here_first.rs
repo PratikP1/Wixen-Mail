@@ -500,3 +500,215 @@ fn test_the_readings_complain_when_a_folder_is_listed_before_the_replay() {
         .expect_err("wired to the network");
     assert!(why.contains("Nobody asked"), "{why}");
 }
+
+// ── The dialog: Enter on a folder is the Move ──────────────────────────────
+
+const THE_DIALOG: &str = "src/presentation/wx_destination.rs";
+
+fn the_dialog() -> String {
+    let whole = fs::read_to_string(THE_DIALOG)
+        .unwrap_or_else(|why| panic!("{THE_DIALOG}: {why}"))
+        .replace("\r\n", "\n");
+    what_ships(&whole)
+}
+
+/// The tree's activation, which the control raises for Enter and a double
+/// click, and what the handler does with it.
+const THE_ACTIVATION: &str = "tree.on_item_activated(";
+const ENDS_WITH_THE_ACT: &str = "end_modal(ID_OK)";
+const ASKS_WHICH_ROW: &str = "what_a_selection_means(";
+const THE_BUILDER: &str = "pub fn build_destination_dialog(";
+
+/// Enter on a folder ends the dialog with the act: the activation is bound,
+/// it asks which row was activated, and it ends the dialog with `ID_OK`
+/// only for a destination; the Move button is not made the default, so
+/// Enter on Cancel stays Cancel.
+fn enter_on_a_folder_is_the_act(dialog: &str) -> Result<(), String> {
+    let builder = body_of(dialog, THE_BUILDER)?;
+    let handler = between(&builder, THE_ACTIVATION, "\n    });")?;
+    for needed in [ASKS_WHICH_ROW, ENDS_WITH_THE_ACT] {
+        if !handler.contains(needed) {
+            return Err(format!(
+                "the tree's activation handler does not reach {needed}, so Enter on a folder \
+                 does nothing, or ends the dialog for a heading row"
+            ));
+        }
+    }
+    if builder.contains("set_default()") {
+        return Err(
+            "a button is made the dialog's default, so Enter on Cancel is the act rather \
+             than Cancel"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_enter_on_a_folder_in_the_dialog_is_the_move() {
+    enter_on_a_folder_is_the_act(&the_dialog()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// A builder shaped as it should be, holding the anchors and nothing else.
+fn a_builder_as_it_should_be() -> String {
+    format!(
+        "{THE_BUILDER}) {{\n    tree.on_item_activated(move |_event| {{\n        \
+         if what_a_selection_means(&destinations, where_the_selection_sits(&tree)).is_some() {{\n            \
+         dialog.end_modal(ID_OK);\n        }}\n    }});\n    (dialog, tree, destinations)\n}}\n"
+    )
+}
+
+#[test]
+fn test_the_dialog_reading_passes_a_builder_shaped_as_it_should_be() {
+    enter_on_a_folder_is_the_act(&a_builder_as_it_should_be())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_dialog_reading_complains_when_enter_does_nothing_or_a_default_button_takes_it() {
+    let builder = a_builder_as_it_should_be();
+    let unbound = builder.replacen("dialog.end_modal(ID_OK);", "let _ = dialog;", 1);
+    let why = enter_on_a_folder_is_the_act(&unbound).expect_err("Enter does nothing");
+    assert!(why.contains("does not reach end_modal(ID_OK)"), "{why}");
+
+    let a_default = builder.replacen(
+        "    (dialog, tree, destinations)",
+        "    choose.set_default();\n    (dialog, tree, destinations)",
+        1,
+    );
+    let why = enter_on_a_folder_is_the_act(&a_default).expect_err("a default button");
+    assert!(why.contains("made the dialog's default"), "{why}");
+}
+
+/// What a built tree does with Enter on a folder that holds others,
+/// measured before the binding was chosen (README decision 30).
+#[cfg(windows)]
+mod the_built_tree {
+    use std::sync::{Arc, Mutex, OnceLock};
+    use wxdragon::prelude::*;
+
+    const WM_KEYDOWN: u32 = 0x0100;
+    const WM_KEYUP: u32 = 0x0101;
+    const VK_RETURN: usize = 0x0D;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+    }
+
+    /// What the control did with Enter on a collapsed parent.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct EnterOnAParent {
+        expanded_before: bool,
+        /// Whether `TREE_ITEM_ACTIVATED` reached a handler.
+        activated: bool,
+        expanded_after: bool,
+        /// Whether the parent was still the selected row afterwards.
+        still_on_the_parent: bool,
+    }
+
+    fn measure(frame: &Frame) -> Result<EnterOnAParent, String> {
+        let tree = TreeCtrl::builder(frame)
+            .with_style(
+                TreeCtrlStyle::HideRoot | TreeCtrlStyle::HasButtons | TreeCtrlStyle::LinesAtRoot,
+            )
+            .build();
+        let root = tree
+            .add_root("root", None, None)
+            .ok_or("the tree gave no root")?;
+        let account = tree
+            .append_item(&root, "Work account", None, None)
+            .ok_or("no account row")?;
+        let parent = tree
+            .append_item(&account, "Projects", None, None)
+            .ok_or("no parent row")?;
+        let _child = tree
+            .append_item(&parent, "Alpha", None, None)
+            .ok_or("no child row")?;
+        tree.expand(&account);
+        let activated = Arc::new(Mutex::new(false));
+        {
+            let activated = activated.clone();
+            tree.on_item_activated(move |_event| {
+                if let Ok(mut fired) = activated.lock() {
+                    *fired = true;
+                }
+            });
+        }
+        frame.show(true);
+        tree.select_item(&parent);
+        tree.set_focus();
+        let expanded_before = tree.is_expanded(&parent);
+        let hwnd = tree.get_handle() as isize;
+        // SAFETY: a live window this file built, sent the two messages a
+        // key press is.
+        unsafe {
+            SendMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0);
+            SendMessageW(hwnd, WM_KEYUP, VK_RETURN, 0);
+        }
+        let expanded_after = tree.is_expanded(&parent);
+        let still_on_the_parent = tree.is_selected(&parent);
+        let fired = activated.lock().map(|fired| *fired).unwrap_or(false);
+        tree.destroy();
+        Ok(EnterOnAParent {
+            expanded_before,
+            activated: fired,
+            expanded_after,
+            still_on_the_parent,
+        })
+    }
+
+    fn take_the_measurement() -> Result<EnterOnAParent, String> {
+        let outcome: Arc<Mutex<Option<Result<EnterOnAParent, String>>>> =
+            Arc::new(Mutex::new(None));
+        let result = {
+            let outcome = outcome.clone();
+            wxdragon::main(move |app| {
+                let frame = Frame::builder().build();
+                let taken = measure(&frame);
+                if let Ok(mut slot) = outcome.lock() {
+                    *slot = Some(taken);
+                }
+                wxdragon::call_after(Box::new(move || {
+                    app.exit_main_loop();
+                }));
+            })
+        };
+        if let Err(why) = result {
+            return Err(format!("wxdragon::main returned {why:?}"));
+        }
+        let taken = outcome
+            .lock()
+            .map_err(|_| "the measurement's lock was poisoned".to_string())?
+            .take();
+        taken.unwrap_or_else(|| Err("the window session ended without a measurement".to_string()))
+    }
+
+    fn the_measurement() -> &'static EnterOnAParent {
+        static TAKEN: OnceLock<Result<EnterOnAParent, String>> = OnceLock::new();
+        match TAKEN.get_or_init(take_the_measurement) {
+            Ok(taken) => taken,
+            Err(why) => panic!("the built tree could not be read: {why}"),
+        }
+    }
+
+    #[test]
+    fn test_what_enter_does_on_a_folder_that_holds_others() {
+        // The record of the day: what the control did on its own with Enter
+        // on a collapsed parent, which decided the binding (README decision
+        // 30). A change here is the control behaving differently and is
+        // worth reading again before the binding above it is trusted.
+        let taken = the_measurement();
+        assert_eq!(
+            *taken,
+            EnterOnAParent {
+                expanded_before: false,
+                activated: true,
+                expanded_after: false,
+                still_on_the_parent: true,
+            },
+            "measured 2026-09-19 on this machine's comctl32 through wxWidgets 3.3.2: Enter \
+             raises the activation and neither expands the row nor moves off it"
+        );
+    }
+}
