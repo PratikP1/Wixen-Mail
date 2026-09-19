@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 190 records have arrived since and have not been through it.
+# 191 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27420,7 +27420,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/filters.rs", tests = 49 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
 # Every match counted as one that sounds, whether or not the rule carries
@@ -27444,7 +27444,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 149 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
 # The prefix dropped: the first visible cell is painted as it was, so the
@@ -27469,7 +27469,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/virtual_rows.rs", tests = 6 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
 # The count sent per folder as well as once after the loop: the arm runs
@@ -27500,7 +27500,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 16 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
 # The event given another event's tone: a match sounds like a search that
@@ -27521,4 +27521,26 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
+]
+
+# The editor opened on a stored rule with the sound, its box left clear:
+# OK reads the box back, so editing anything about such a rule turns its
+# sound off without a word. The break drops the one line that sets the box
+# from the stored rule. On the target the editor reading goes red at that
+# rule; the pure readings over the label and the refusal stay green.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the rule editor opens a rule with the sound as it was stored, not with the box clear"
+file = "src/presentation/wx_managers.rs"
+suite = "a_rule_can_change_how_a_row_is_announced"
+before = """        sound_check.set_value(r.plays_a_sound);"""
+after = """        sound_check.set_value(false);"""
+red = [
+    "test_the_editor_offers_the_action_and_the_sound_and_reads_a_stored_rule_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]

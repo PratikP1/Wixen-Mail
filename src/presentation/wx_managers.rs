@@ -10,9 +10,9 @@
 //! the answer to the key just pressed.
 
 use crate::application::filters::{
-    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, a_way_of_matching_compares_against_nothing,
-    the_field_those_words_name, the_way_of_matching_those_words_name, the_words_for_a_field,
-    the_words_for_a_way_of_matching,
+    A_FIELD_A_RULE_MAY_NAME, A_WAY_A_RULE_MAY_MATCH, SAY_FIRST_LIMIT,
+    a_way_of_matching_compares_against_nothing, the_field_those_words_name,
+    the_way_of_matching_those_words_name, the_words_for_a_field, the_words_for_a_way_of_matching,
 };
 use crate::application::saved_searches::Question;
 use crate::presentation::accessibility::Accessibility;
@@ -2572,6 +2572,9 @@ pub fn show_filter_manager_dialog(
 /// afterwards. A folder the account does not have is passed over with a word
 /// in the log rather than failing the whole sync, so a rule naming a folder
 /// somebody has since renamed does not stop their mail arriving.
+///
+/// Say this first (#62) carries the phrase as its value: a few words kept
+/// on every message the rule matches and heard at the start of its row.
 const RULE_ACTIONS: &[(&str, &str)] = &[
     ("mark_as_read", "Mark as read"),
     ("mark_as_unread", "Mark as unread"),
@@ -2579,7 +2582,12 @@ const RULE_ACTIONS: &[(&str, &str)] = &[
     ("delete", "Delete it"),
     ("move_to_folder", "Move to a folder"),
     ("add_tag", "Add a label"),
+    ("say_first", SAY_THIS_FIRST),
 ];
+
+/// The words for the action that says a phrase first, read by the value
+/// box's label and the refusal below as well as by the list.
+const SAY_THIS_FIRST: &str = "Say this first";
 
 /// The words for a stored action, or the stored name when it is not one of
 /// these, so a rule written by a later version is shown rather than blanked.
@@ -2605,9 +2613,15 @@ pub fn stored_action(shown: &str) -> String {
 /// row says nothing about what to type (#62). Asked of the words rather than
 /// of a stored name, for the reason [`the_pattern_box_asks_for_something`]
 /// gives. The accessible name follows the label, through
-/// [`crate::presentation::accessibility::names::name_from_label`].
-pub fn the_value_label_for(_action_words: &str) -> &'static str {
-    "Action &Value:"
+/// [`crate::presentation::accessibility::names::name_from_label`]. H for
+/// its letter: F is the field's and P the pattern's, and two controls on
+/// one letter is a key that lands on whichever comes first.
+pub fn the_value_label_for(action_words: &str) -> &'static str {
+    if action_words == SAY_THIS_FIRST {
+        "P&hrase to say first:"
+    } else {
+        "Action &Value:"
+    }
 }
 
 /// What stops a rule being saved, given the words showing in the Action
@@ -2617,8 +2631,21 @@ pub fn the_value_label_for(_action_words: &str) -> &'static str {
 /// [`SAY_FIRST_LIMIT`] characters, because the reader of a stored rule
 /// refuses both and a rule that saved and then never ran is the failure
 /// nobody reports. Said here, where the person can still type.
-pub fn what_stops_the_rule_being_saved(_action_words: &str, _value: &str) -> Option<String> {
-    None
+pub fn what_stops_the_rule_being_saved(action_words: &str, value: &str) -> Option<String> {
+    if action_words != SAY_THIS_FIRST {
+        return None;
+    }
+    let phrase = value.trim();
+    if phrase.is_empty() {
+        return Some("A phrase to say first is needed before this can be saved.".to_string());
+    }
+    let length = phrase.chars().count();
+    (length > SAY_FIRST_LIMIT).then(|| {
+        format!(
+            "The phrase to say first is {length} characters, and it can be at most \
+             {SAY_FIRST_LIMIT}: it is heard before every message this rule matches."
+        )
+    })
 }
 
 /// Whether the Pattern box has anything to ask for, given the words showing in
@@ -3236,10 +3263,14 @@ fn populate_filters(list: &ListCtrl, rules: &[FilterRule]) {
             1,
             &format!("{} {} '{}'", r.field, r.match_type, r.pattern),
         );
+        // The words, not the stored name: "Say this first (Urgent)" and not
+        // "say_first (Urgent)", which is what this column read until
+        // 2026-09-19 for every action, a machine name in a list somebody
+        // hears. The same words the editor's list offers.
         let action = if r.action_value.is_empty() {
-            r.action_type.clone()
+            shown_action(&r.action_type).to_string()
         } else {
-            format!("{} ({})", r.action_type, r.action_value)
+            format!("{} ({})", shown_action(&r.action_type), r.action_value)
         };
         list.set_item_text_by_column(idx, 2, &action);
         list.set_item_text_by_column(idx, 3, if r.enabled { "Active" } else { "Disabled" });
@@ -3412,7 +3443,22 @@ pub fn build_filter_edit_dialog(
         select_choice_by_string(&action_choice, shown_action(&r.action_type));
         action_value_f.set_value(&r.action_value);
         en_check.set_value(r.enabled);
+        sound_check.set_value(r.plays_a_sound);
     }
+
+    // The value box's label follows the action, and the box's accessible
+    // name follows the label: under Say this first the box asks for the
+    // phrase (#62), under everything else for the value as before. Set once
+    // for what is showing now and again whenever the list changes.
+    let name_the_value_box = move |action_words: &str| {
+        let label = the_value_label_for(action_words);
+        value_label.set_label(label);
+        set_accessible_name(&action_value_f, &name_from_label(label));
+    };
+    name_the_value_box(&get_choice_string(&action_choice).unwrap_or_default());
+    action_choice.on_selection_changed(move |event| {
+        name_the_value_box(&event.get_string().unwrap_or_default());
+    });
 
     // The Pattern box only asks when there is something to compare against.
     //
@@ -3447,6 +3493,16 @@ pub fn build_filter_edit_dialog(
                 name_f.set_focus();
                 return;
             }
+            // Say this first needs its phrase, and one within the bound,
+            // said here where the person can still type it (#62).
+            if let Some(said) = what_stops_the_rule_being_saved(
+                &get_choice_string(&action_choice).unwrap_or_default(),
+                &action_value_f.get_value(),
+            ) {
+                a_sub_dialog_needs(&d, "Not saved", &said);
+                action_value_f.set_focus();
+                return;
+            }
             d.end_modal(ID_OK);
         }
     });
@@ -3457,7 +3513,7 @@ pub fn build_filter_edit_dialog(
         }
     });
 
-    // Painted last. The three Choice controls and the two CheckBox controls
+    // Painted last. The three Choice controls and the three CheckBox controls
     // are left to Windows, matching every other Choice and CheckBox this
     // round paints around. `None` means high contrast is on, or the system
     // is set up in a way this application should not paint over, so nothing

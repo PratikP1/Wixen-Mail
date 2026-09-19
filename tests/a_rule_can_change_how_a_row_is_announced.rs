@@ -880,7 +880,7 @@ const THE_ACTIONS_OFFERED: [&str; 7] = [
 fn test_the_value_box_is_called_the_phrase_under_say_this_first_and_the_value_otherwise() {
     assert_eq!(
         the_value_label_for("Say this first"),
-        "Phrase to say &first:"
+        "P&hrase to say first:"
     );
     for other in THE_ACTIONS_OFFERED
         .iter()
@@ -1026,7 +1026,7 @@ fn what_is_wrong_with_the_editor(wrong: &mut Wrong) {
         ));
     }
     let label = saying.value_label.get_label();
-    if label != "Phrase to say &first:" {
+    if label != "P&hrase to say first:" {
         wrong.push((
             "the value box's label under Say this first".to_string(),
             format!("reads {label:?}, which says nothing about what to type"),

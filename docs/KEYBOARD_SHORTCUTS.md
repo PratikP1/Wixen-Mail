@@ -649,6 +649,24 @@ group are being written to, so you can tell when somebody has been missed.
 | Open Rules Manager | (menu only) | Open message filter rules manager |
 | Open Blocked Senders | (Tools menu) | Who you have blocked, and where their mail is being filed |
 
+#### Inside the Add or Edit Filter Rule dialog
+
+| Field | Shortcut |
+|-------|----------|
+| Rule Name | `Alt+N` |
+| Match Field | `Alt+F` |
+| Match Type | `Alt+T` |
+| Pattern | `Alt+P` |
+| Case Sensitive | `Alt+C` |
+| Action | `Alt+A` |
+| Action Value, or Phrase to say first under the action Say this first | `Alt+V`, or `Alt+H` while the box asks for the phrase |
+| Enabled | `Alt+E` |
+| Play a sound when this rule matches | `Alt+S` |
+
+The value box's label follows the action: under Say this first it asks
+for the phrase, and its letter moves to H with it, since F is the
+field's and P the pattern's. Since 2026-09-19.
+
 ### View Menu
 
 | Action | Shortcut | Description |
