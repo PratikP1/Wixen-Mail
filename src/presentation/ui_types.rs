@@ -630,6 +630,21 @@ pub enum UIUpdate {
     /// superseding is what makes that fall out of the arrangement rather than
     /// out of code somebody has to remember.
     AFlagChangeIsWaiting(String),
+    /// A move, a delete or a copy made here first that the server refused
+    /// when it was told (#86, 2026-09-19).
+    ///
+    /// Carries the waiting row as the table held it, because the arm undoes
+    /// the change from it: the row goes back to the folder and the number
+    /// the server still has the message under, or a copy made here goes,
+    /// and the row stops waiting there rather than where the refusal was
+    /// read, so a program gone between the two meets the refusal again at
+    /// the next check and undoes it then. The reason is the server's words;
+    /// the arm speaks the sentence at High, since an announcement that
+    /// turned out to be wrong is corrected rather than left standing.
+    MovePutBack {
+        waiting: crate::data::message_cache::moves_waiting::AWaitingMove,
+        reason: String,
+    },
     /// Active PIM module changed
     ModuleChanged(PimModule),
     /// Calendar containers loaded

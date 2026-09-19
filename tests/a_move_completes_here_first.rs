@@ -102,7 +102,13 @@ const THE_MOVE: &str = "fn move_or_copy_message(";
 /// The one function a move, a delete and a copy share for "made here, kept
 /// waiting, pushed once".
 const MADE_HERE: &str = "fn complete_here_then_tell_the_server(";
-const THE_PUT_BACK_ARM: &str = "UIUpdate::MovePutBack {";
+/// The move arm's half of the way there, and the delete arm's decision.
+const THE_MOVE_MADE_HERE: &str = "fn move_or_copy_here_first(";
+const THE_DELETE_DECIDED_HERE: &str = "fn where_a_delete_goes_here(";
+/// The arm and not the send, which sits hundreds of lines above it: the
+/// bare variant name found the line that sends the update, the finding
+/// `nothing_sends_a_flag_change_unasked` recorded on 2026-09-05.
+const THE_PUT_BACK_ARM: &str = "UIUpdate::MovePutBack { waiting, reason } => {";
 const THE_CHECK: &str = "fn spawn_mail_sync(";
 const THE_DOWNLOAD: &str = "fn start_the_download(";
 const THE_REPLAY: &str = "replay_the_moves_that_were_waiting(";
@@ -122,6 +128,8 @@ const UNDOES_IT_HERE: &str = "undo_here(";
 const SAYS_WHY_AT_HIGH: &str = "Priority::High";
 const WORDS_THE_REFUSAL: &str = "put_back_because_the_server_refused(";
 const LISTS_THE_FOLDERS: &str = "fetch_folders()";
+/// The first arm after the rows that left, which ends the line's stretch.
+const THE_FIRST_REFUSAL_ARM: &str = "Err(NotMadeHere::";
 
 // ── The readings ───────────────────────────────────────────────────────────
 
@@ -129,21 +137,28 @@ const LISTS_THE_FOLDERS: &str = "fetch_folders()";
 /// makes the change here, keeps it waiting and pushes once.
 fn the_move_arm_completes_here_first(app: &str) -> Result<(), String> {
     let asks = body_of(app, THE_MOVE)?;
-    if !asks.contains(MADE_HERE.trim_start_matches("fn ")) {
+    if !asks.contains(THE_MOVE_MADE_HERE.trim_start_matches("fn ")) {
         return Err(format!(
-            "move_or_copy_message does not reach {MADE_HERE}, so a move waits for the \
+            "move_or_copy_message does not reach {THE_MOVE_MADE_HERE}, so a move waits for \
+             the server before the row leaves"
+        ));
+    }
+    let made = body_of(app, THE_MOVE_MADE_HERE)?;
+    if !made.contains(MADE_HERE.trim_start_matches("fn ")) {
+        return Err(format!(
+            "move_or_copy_here_first does not reach {MADE_HERE}, so a move waits for the \
              server before the row leaves"
         ));
     }
     Ok(())
 }
 
-/// Delete and Delete Permanently decide where the message goes and go
-/// through the same function.
+/// Delete and Delete Permanently decide where the message goes, before
+/// anything changes, and go through the same function.
 fn the_delete_arm_completes_here_first(app: &str) -> Result<(), String> {
     let arm = the_id_arm(app, THE_DELETE_ARM)?;
     for needed in [
-        DECIDES_WHERE_A_DELETE_GOES,
+        THE_DELETE_DECIDED_HERE.trim_start_matches("fn "),
         MADE_HERE.trim_start_matches("fn "),
         "say_the_one_word(&a11y, \"Delete\")",
     ] {
@@ -153,6 +168,13 @@ fn the_delete_arm_completes_here_first(app: &str) -> Result<(), String> {
                  before the row leaves, or asks it without deciding where the message goes"
             ));
         }
+    }
+    let decided = body_of(app, THE_DELETE_DECIDED_HERE)?;
+    if !decided.contains(DECIDES_WHERE_A_DELETE_GOES) {
+        return Err(format!(
+            "where_a_delete_goes_here does not reach {DECIDES_WHERE_A_DELETE_GOES}, so the \
+             delete decides for itself where the message goes"
+        ));
     }
     Ok(())
 }
@@ -181,7 +203,32 @@ fn made_here_before_the_server_is_asked(app: &str) -> Result<(), String> {
                 .to_string(),
         );
     }
+    // The line for a row that left: from the row leaving to the first
+    // refusal arm, shown and never spoken, since the row the cursor lands
+    // on is what is heard (#83).
+    let a_row_that_left = between(&made, TAKES_THE_ROW_OUT, THE_FIRST_REFUSAL_ARM)?;
+    if !a_row_that_left.contains(SHOWS_THE_LINE) || a_row_that_left.contains(SPEAKS_THE_LINE) {
+        return Err(
+            "complete_here_then_tell_the_server speaks the line for a row that left, or \
+             does not show it, so a move is heard twice or the eye has nothing"
+                .to_string(),
+        );
+    }
     Ok(())
+}
+
+/// The text after the first `from` up to the next `to`, or a complaint
+/// naming which anchor is gone.
+fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
+    let start = text
+        .find(from)
+        .ok_or(format!("{from:?} is no longer here, so this reads nothing"))?
+        + from.len();
+    let rest = &text[start..];
+    let end = rest
+        .find(to)
+        .ok_or(format!("{to:?} is no longer here, so this reads nothing"))?;
+    Ok(&rest[..end])
 }
 
 /// A refusal arrives on its own update, whose arm undoes the change here
@@ -309,24 +356,30 @@ fn test_the_network_coming_back_replays_no_waiting_move() {
 fn a_window_as_it_should_be() -> String {
     let mut snippet = String::new();
     snippet.push_str(THE_MOVE);
+    snippet.push_str(") {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);\n}\n");
+    snippet.push_str(THE_MOVE_MADE_HERE);
     snippet.push_str(") {\n    complete_here_then_tell_the_server(app, asks);\n}\n");
     snippet.push_str(THE_DELETE_ARM);
     snippet.push_str(
-        " {\n    where_a_deleted_message_goes(folders, from, asked);\n    \
+        " {\n    where_a_delete_goes_here(&state, &cache, row, asked);\n    \
          say_the_one_word(&a11y, \"Delete\");\n    \
          complete_here_then_tell_the_server(app, asks);\n}\n_ if id == ID_OTHER => {}\n",
     );
+    snippet.push_str(THE_DELETE_DECIDED_HERE);
+    snippet.push_str(") {\n    where_a_deleted_message_goes(folders, from, asked);\n}\n");
     snippet.push_str(MADE_HERE);
     snippet.push_str(
-        ") {\n    what_happens_here(cache, &asked, &subject);\n    \
-         take_row_out_of_the_list(state, list, row);\n    send_shown(tx, rt, &shown);\n    \
-         if asked.what.is_a_copy() {\n        send_status(tx, rt, &shown);\n    }\n    \
+        ") {\n    match what_happens_here(cache, &asked, &subject) {\n        Ok(made) => {\n            \
+         if asked.what.is_a_copy() {\n                send_status(tx, rt, &shown);\n            \
+         } else {\n                take_row_out_of_the_list(state, list, row);\n                \
+         send_shown(tx, rt, &shown);\n            }\n        }\n        \
+         Err(NotMadeHere::RefusedInWords(words)) => send_refusal(tx, rt, &words),\n    }\n    \
          the_session_at(&account);\n}\n",
     );
     snippet.push_str("        ");
     snippet.push_str(THE_PUT_BACK_ARM);
     snippet.push_str(
-        " waiting, reason } => {\n            undo_here(cache, waiting);\n            \
+        "\n            undo_here(cache, waiting);\n            \
          a11y.announce(&put_back_because_the_server_refused(what, subject, reason), \
          Priority::High);\n        }\n        UIUpdate::Other => {}\n",
     );
@@ -361,12 +414,23 @@ fn test_the_readings_complain_when_an_arm_waits_for_the_server_again() {
     let app = a_window_as_it_should_be();
 
     let move_waits = app.replacen(
-        "fn move_or_copy_message() {\n    complete_here_then_tell_the_server(app, asks);",
-        "fn move_or_copy_message() {\n    spawn_folder_move(app, moving);",
+        "fn move_or_copy_here_first() {\n    complete_here_then_tell_the_server(app, asks);",
+        "fn move_or_copy_here_first() {\n    spawn_folder_move(app, moving);",
         1,
     );
     let why = the_move_arm_completes_here_first(&move_waits).expect_err("the move waits");
     assert!(why.contains("does not reach fn complete_here"), "{why}");
+
+    let move_never_here = app.replacen(
+        "fn move_or_copy_message() {\n    move_or_copy_here_first(app, list, &cache, a11y, asked);",
+        "fn move_or_copy_message() {\n    spawn_folder_move(app, moving);",
+        1,
+    );
+    let why = the_move_arm_completes_here_first(&move_never_here).expect_err("never here");
+    assert!(
+        why.contains("does not reach fn move_or_copy_here_first"),
+        "{why}"
+    );
 
     let delete_waits = app.replacen(
         "    complete_here_then_tell_the_server(app, asks);\n}\n_ if id == ID_OTHER",
@@ -376,21 +440,31 @@ fn test_the_readings_complain_when_an_arm_waits_for_the_server_again() {
     let why = the_delete_arm_completes_here_first(&delete_waits).expect_err("the delete waits");
     assert!(why.contains("the Delete arm does not reach"), "{why}");
 
-    let session_first = app.replacen(
-        "    what_happens_here(cache, &asked, &subject);\n    take_row_out_of_the_list(state, list, row);\n    send_shown(tx, rt, &shown);\n    if asked.what.is_a_copy() {\n        send_status(tx, rt, &shown);\n    }\n    the_session_at(&account);",
-        "    the_session_at(&account);\n    what_happens_here(cache, &asked, &subject);\n    take_row_out_of_the_list(state, list, row);\n    send_shown(tx, rt, &shown);\n    if asked.what.is_a_copy() {\n        send_status(tx, rt, &shown);\n    }",
-        1,
-    );
+    let session_first = app
+        .replacen("    the_session_at(&account);\n}\n", "}\n", 1)
+        .replacen(
+            "    match what_happens_here(cache, &asked, &subject) {",
+            "    the_session_at(&account);\n    match what_happens_here(cache, &asked, &subject) {",
+            1,
+        );
     let why = made_here_before_the_server_is_asked(&session_first).expect_err("the session first");
     assert!(why.contains("asks for a session before"), "{why}");
 
     let copy_silent = app.replacen(
-        "    if asked.what.is_a_copy() {\n        send_status(tx, rt, &shown);\n    }\n",
-        "",
+        "            if asked.what.is_a_copy() {\n                send_status(tx, rt, &shown);\n            } else {\n",
+        "            {\n",
         1,
     );
     let why = made_here_before_the_server_is_asked(&copy_silent).expect_err("the copy silent");
     assert!(why.contains("does not speak a copy's line"), "{why}");
+
+    let moved_row_spoken = app.replacen(
+        "                take_row_out_of_the_list(state, list, row);\n                send_shown(tx, rt, &shown);",
+        "                take_row_out_of_the_list(state, list, row);\n                send_status(tx, rt, &shown);\n                send_shown(tx, rt, &shown);",
+        1,
+    );
+    let why = made_here_before_the_server_is_asked(&moved_row_spoken).expect_err("spoken again");
+    assert!(why.contains("speaks the line for a row that left"), "{why}");
 }
 
 #[test]

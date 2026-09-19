@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 152 records have arrived since and have not been through it.
+# 155 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26529,4 +26529,84 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 179 },
+]
+
+# The line for a row that left spoken again, as the outcome was until
+# 2026-09-18: "Move", then the landed row, then "Moved to Archive: subject",
+# the second sentence the tester was waiting through on every move (#83,
+# #86). The made-here reading goes red on the target.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a row that left at the key has its line shown, not spoken as well"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                    send_shown(tx, rt, &made.shown);"""
+after = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                    send_status(tx, rt, &made.shown);"""
+red = [
+    "test_the_row_leaves_and_the_line_is_shown_before_any_session_is_asked_for",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
+]
+
+# The undo dropped from the arm a refusal arrives on: the server said no,
+# the sentence says the message is back where it was, and the row stays in
+# the folder the server never moved it to until the next read of either
+# folder. The refusal reading goes red on the target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a refused move is undone here, not left made with the refusal spoken over it"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """            if let Err(why) = undo_here(cache, waiting) {
+                tracing::error!(
+                    "A change the server refused could not be undone here for message {}: {why}",
+                    waiting.message_row_id
+                );
+            }"""
+after = """            let _ = waiting.message_row_id;"""
+red = [
+    "test_a_refusal_puts_the_change_back_here_and_is_said_at_high",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
+]
+
+# A check wired into the arm that runs when the network comes back, which
+# is how a waiting move would reach the server with nobody having asked:
+# closing a laptop on a train and opening it in an office would write at
+# somebody's mail server. Guardrail 7. The network-back reading goes red on
+# the target; `nothing_sends_a_flag_change_unasked` would go red too, on
+# its own run, which this record's one suite does not see (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the network coming back replays no waiting move, not a check that would"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """        UIUpdate::TheNetworkIsBack => {
+            back_online_offer.panel.show(true);"""
+after = """        UIUpdate::TheNetworkIsBack => {
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                lock_state(state).accounts.clone(),
+                None,
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
+            back_online_offer.panel.show(true);"""
+red = [
+    "test_the_network_coming_back_replays_no_waiting_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 11 },
 ]

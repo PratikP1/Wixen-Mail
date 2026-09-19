@@ -128,15 +128,24 @@ pub fn what_a_replay_answered(answer: &Result<()>, now: WhereItIsNow) -> Replaye
 /// happened, and this line is spoken as the answer to the key, in place of
 /// the one word: 11-06.1's rule that a row which stayed has its outcome
 /// spoken, kept, with the outcome known at once.
+///
+/// Worded by [`crate::application::server_delete`], the one owner of what a
+/// delete, a move or a copy says, over the ending the server will give when
+/// it agrees; a second spelling here is the drift the window's own
+/// one-owner test exists to stop, and that test reads the window alone.
 pub fn shown_when_made_here(what: &WhatAWaitingMoveDoes, subject: &str) -> String {
+    use crate::application::server_delete::{Copied, after_a_copy, after_a_delete, after_a_move};
+    use crate::service::protocols::imap::{Deletion, Moved};
     match what {
         WhatAWaitingMoveDoes::Move { into_folder_path } => {
-            format!("Moved to {into_folder_path}: {subject}")
+            after_a_move(&Moved::Moved, into_folder_path, subject).said
         }
-        WhatAWaitingMoveDoes::DeleteToTrash { .. } => format!("Moved to Trash: {subject}"),
-        WhatAWaitingMoveDoes::DeleteOutright => format!("Deleted: {subject}"),
+        WhatAWaitingMoveDoes::DeleteToTrash { .. } => {
+            after_a_delete(&Deletion::MovedToTrash, subject).said
+        }
+        WhatAWaitingMoveDoes::DeleteOutright => after_a_delete(&Deletion::Removed, subject).said,
         WhatAWaitingMoveDoes::Copy { into_folder_path } => {
-            format!("Copied to {into_folder_path}: {subject}")
+            after_a_copy(Copied::WithinTheAccount, into_folder_path, subject).said
         }
     }
 }
@@ -187,6 +196,38 @@ pub struct MadeHere {
     pub shown: String,
 }
 
+/// Why a change was not made here.
+///
+/// Two answers rather than one error, because the window does two different
+/// things with them: a refusal in words is said and that is the end of it,
+/// and a change that could not be recorded here is asked of the server first
+/// instead, the path every move and delete took until 2026-09-19, since a
+/// change made here with no record of it is one the next read of the folder
+/// undoes.
+#[derive(Debug)]
+pub enum NotMadeHere {
+    /// Nothing is done and this is said.
+    RefusedInWords(String),
+    /// The store would not take the change or its record; the server is
+    /// asked first, as before.
+    CouldNotBeRecorded(Error),
+}
+
+impl std::fmt::Display for NotMadeHere {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RefusedInWords(words) => f.write_str(words),
+            Self::CouldNotBeRecorded(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+impl From<Error> for NotMadeHere {
+    fn from(why: Error) -> Self {
+        Self::CouldNotBeRecorded(why)
+    }
+}
+
 /// Make the change here: the row into the folder the move names, or marked
 /// deleted, or copied into the folder named, and the waiting row written.
 ///
@@ -197,13 +238,13 @@ pub fn what_happens_here(
     cache: &MessageCache,
     asked: &AWaitingMove,
     subject: &str,
-) -> Result<MadeHere> {
+) -> std::result::Result<MadeHere, NotMadeHere> {
     let already_waiting = cache.the_move_waiting_for(asked.message_row_id)?;
     if already_waiting
         .as_ref()
         .is_some_and(|waiting| waiting.what.is_a_copy())
     {
-        return Err(Error::InPlainWords(
+        return Err(NotMadeHere::RefusedInWords(
             THAT_COPY_HAS_NOT_REACHED_THE_SERVER.to_string(),
         ));
     }
@@ -696,7 +737,10 @@ mod tests {
         )
         .expect_err("a move of a copy the server does not hold yet");
 
-        assert_eq!(refused.to_string(), THAT_COPY_HAS_NOT_REACHED_THE_SERVER);
+        let NotMadeHere::RefusedInWords(words) = refused else {
+            panic!("the refusal was handed to the server-first path: {refused}");
+        };
+        assert_eq!(words, THAT_COPY_HAS_NOT_REACHED_THE_SERVER);
         assert_eq!(
             still_waiting(&home),
             vec![copy.message_row_id],
