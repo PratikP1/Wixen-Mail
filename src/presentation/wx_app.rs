@@ -5181,6 +5181,22 @@ impl WxMailApp {
                             // Once for the set, never once per message.
                             say_the_one_word(&a11y, "Delete");
                             send_shown(&ui_tx, &runtime, &what_is_being_done("Deleting", &chosen));
+                            // The deletes made here first, grouped by the
+                            // account that is told, so a set is one push
+                            // per account.
+                            use crate::data::message_cache::moves_waiting::AWaitingMove;
+                            let Some(cache_for_deleting) = message_cache.clone() else {
+                                return send_refusal(
+                                    &ui_tx,
+                                    &runtime,
+                                    "No message store is available",
+                                );
+                            };
+                            let asked_at = chrono::Utc::now().to_rfc3339();
+                            let mut deleting_here_first: std::collections::BTreeMap<
+                                String,
+                                (Account, Vec<AnAskMadeHere>),
+                            > = std::collections::BTreeMap::new();
                             for message in &chosen.messages {
                                 // In the outbox, delete means cancel the send.
                                 // There is no server copy to remove: the
@@ -5200,12 +5216,57 @@ impl WxMailApp {
                                 ) {
                                     continue;
                                 }
-                                spawn_server_change(
-                                    app,
+                                // A message on a server: decided here where
+                                // it goes, made here first, and the server
+                                // told in the background (#86, 2026-09-19).
+                                // The two refusals, no trash recognised and
+                                // no folders known yet, are said before
+                                // anything changes, in the sentences
+                                // `destinations` owns.
+                                match where_a_delete_goes_here(
+                                    &state,
+                                    &message_cache,
                                     message.row_id,
-                                    message.uid,
-                                    message.subject.clone(),
-                                    ServerChange::Deleted(asked),
+                                    asked,
+                                ) {
+                                    Ok((account, what, from)) => {
+                                        let account_id = account.id.clone();
+                                        deleting_here_first
+                                            .entry(account_id.clone())
+                                            .or_insert_with(|| (account, Vec::new()))
+                                            .1
+                                            .push(AnAskMadeHere {
+                                                asked: AWaitingMove {
+                                                    message_row_id: message.row_id,
+                                                    account_id,
+                                                    from_folder_path: from,
+                                                    uid: message.uid,
+                                                    what,
+                                                    asked_at: asked_at.clone(),
+                                                },
+                                                subject: message.subject.clone(),
+                                            });
+                                    }
+                                    Err(why) => send_refusal(&ui_tx, &runtime, &why),
+                                }
+                            }
+                            for (account, asks) in deleting_here_first.into_values() {
+                                complete_here_then_tell_the_server(
+                                    app,
+                                    &msg_list,
+                                    &cache_for_deleting,
+                                    account,
+                                    asks,
+                                    None,
+                                    move |ask| {
+                                        spawn_server_change(
+                                            app,
+                                            ask.asked.message_row_id,
+                                            ask.asked.uid,
+                                            ask.subject,
+                                            ServerChange::Deleted(asked),
+                                        )
+                                    },
                                 );
                             }
                         }
@@ -15054,6 +15115,62 @@ pub(crate) fn send_refusal(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, why: &str) 
     });
 }
 
+/// Replay the moves and deletes made here and not yet at the server, on a
+/// session that is already open, before any folder of the account is read.
+///
+/// **Nothing calls this because the network came back.** The same rule as
+/// the flag changes below, for the same reason: a move reaching the server is
+/// a write at somebody else's service, and this runs because a person's own
+/// action put this program in front of it (#86, 2026-09-19).
+///
+/// Before the listing rather than after, because a folder the server still
+/// has the message in, listed before the server has heard of the move, names
+/// a message this computer no longer holds there, and a listing brings back
+/// what it names. Answers whether the check may go on: a server that could not
+/// be reached about a waiting move is one whose folders must not be read yet,
+/// so the account's check ends with the reason the check already says for a
+/// server it could not reach. A refusal is undone here and said, through the
+/// update the window handles; a move the server carried out, or had already,
+/// stops waiting with its row where the server holds it.
+fn replay_the_moves_that_were_waiting(
+    cache: &crate::data::message_cache::MessageCache,
+    controller: &crate::application::mail_controller::MailController,
+    account_id: &str,
+    handle: &tokio::runtime::Handle,
+    say: &dyn Fn(UIUpdate),
+) -> std::result::Result<(), String> {
+    use crate::application::moves_waiting::{Replayed, replay_the_moves_waiting_for};
+    let replayed =
+        match handle.block_on(replay_the_moves_waiting_for(controller, cache, account_id)) {
+            Ok(replayed) => replayed,
+            Err(why) => {
+                return Err(format!(
+                    "A change made here could not be finished at the server: {why}"
+                ));
+            }
+        };
+    for (waiting, answer) in replayed {
+        match answer {
+            Replayed::Done | Replayed::AlreadyDone => {}
+            // Undone and said by the window's arm, which holds the list the
+            // row goes back into.
+            Replayed::Refused(reason) => say(UIUpdate::MovePutBack { waiting, reason }),
+            Replayed::NotReached => {
+                tracing::info!(
+                    "A move of message {} is still waiting: the server could not be reached",
+                    waiting.message_row_id
+                );
+                return Err(
+                    "The mail server could not be reached, so a move made here is still \
+                     waiting and this account was not read"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Offer the flag changes that have been waiting, on a session that is already
 /// open.
 ///
@@ -18567,6 +18684,58 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 crate::application::flag_changes_waiting::WHAT_HAPPENED_TO_A_CHANGE,
             );
         }
+        UIUpdate::MovePutBack { waiting, reason } => {
+            // The server refused a move, a delete or a copy that was made
+            // here first (#86). Undone here, from the waiting row as the
+            // table held it: the row back in the folder and under the
+            // number the server still has the message under, or the copy
+            // made here gone, and the wait over. The subject is read before
+            // the undo, since a copy's row is gone after it.
+            use crate::application::moves_waiting::{
+                put_back_because_the_server_refused, undo_here,
+            };
+            let Some(cache) = message_cache else {
+                return;
+            };
+            let subject = cache
+                .get_message(waiting.message_row_id)
+                .ok()
+                .flatten()
+                .map(|message| message.subject)
+                .unwrap_or_default();
+            if let Err(why) = undo_here(cache, waiting) {
+                tracing::error!(
+                    "A change the server refused could not be undone here for message {}: {why}",
+                    waiting.message_row_id
+                );
+            }
+            // The folder the row is back in, or the copy left, read again
+            // when it is the one on screen, so the list shows the message
+            // where it is.
+            let folders_to_read: Vec<i64> = [
+                Some(waiting.from_folder_path.as_str()),
+                waiting.what.destination(),
+            ]
+            .into_iter()
+            .flatten()
+            .filter_map(|path| cache.get_folder(&waiting.account_id, path).ok().flatten())
+            .map(|folder| folder.id)
+            .collect();
+            for folder_id in folders_to_read {
+                reread_folder_if_open(state, message_cache, folder_id, tx);
+            }
+            let said = put_back_because_the_server_refused(&waiting.what, &subject, reason);
+            {
+                let mut s = lock_state(state);
+                s.status_message = said.clone();
+            }
+            frame.set_status_text(&said, 0);
+            // At High on the refusal topic: an announcement that turned out
+            // to be wrong is corrected rather than left standing, and this
+            // is the one thing somebody working by ear cannot be left to
+            // miss.
+            let _ = a11y.announce_topic(&said, Priority::High, "refusal");
+        }
         UIUpdate::TheNetworkIsBack => {
             back_online_offer.panel.show(true);
             // The list below it has changed size.
@@ -19755,6 +19924,25 @@ fn move_or_copy_message(
             },
         })
         .collect();
+    // Whether every chosen message is in the account the folder is on. A
+    // move or a copy within one account completes here first (#86); a set
+    // that crosses accounts anywhere keeps the server-first path for the
+    // whole set, since a crossing is a fetch and an append and cannot be
+    // replayed from a row, and one set is one sentence. 11-07.2 makes the
+    // crossing complete here first as well.
+    let within_the_account = {
+        let s = lock_state(state);
+        moving.iter().all(|message| {
+            owner_of(
+                &s.messages,
+                &s.accounts,
+                message.row_id,
+                s.active_account_id.as_deref(),
+            )
+            .is_some_and(|owner| owner.id == into.account_id)
+        })
+    };
+
     // The set's rows on screen, remembered so the cursor lands once, after
     // the last of them has left (#30, on #76's rule). A copy takes no row
     // out, and under conversation view nothing lands.
@@ -19768,6 +19956,21 @@ fn move_or_copy_message(
                     .map(|row| (message.row_id, row))
             }))
         });
+    }
+
+    if within_the_account {
+        return move_or_copy_here_first(
+            app,
+            list,
+            &cache,
+            a11y,
+            AMoveAsked {
+                moving,
+                chosen,
+                into,
+                copying,
+            },
+        );
     }
 
     // One word at the key and the fuller line for the eye (#83), the shape
@@ -19784,6 +19987,125 @@ fn move_or_copy_message(
     spawn_folder_move(app, moving, chosen, into, copying);
 }
 
+/// A move or a copy of a set within one account, made here first (#86).
+///
+/// The gate is met at the key, before anything changes: an account that may
+/// not change anything at its server is refused here in the gate's own
+/// words, so no row leaves that would come back a moment later. Then the one
+/// word and the intent line for a move, as before, and nothing spoken for a
+/// copy, whose line is the answer to the key. A message the store would not
+/// record goes down the server-first path on its own, through the worker.
+fn move_or_copy_here_first(
+    app: AppHandles<'_>,
+    list: &ListCtrl,
+    cache: &Arc<MessageCache>,
+    a11y: &Accessibility,
+    asked: AMoveAsked,
+) {
+    use crate::application::choosing_messages::{
+        Members, MessageRef, Outcome, what_is_being_done, what_the_selection_holds, what_was_done,
+    };
+    use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
+    let AMoveAsked {
+        moving,
+        chosen,
+        into,
+        copying,
+    } = asked;
+    let AppHandles { state, tx, rt } = app;
+    let Some(account) = lock_state(state)
+        .accounts
+        .iter()
+        .find(|account| account.id == into.account_id)
+        .cloned()
+    else {
+        return send_refusal(
+            tx,
+            rt,
+            "This message is not in an account this program knows about.",
+        );
+    };
+    let doing = if copying {
+        "copy a message"
+    } else {
+        "move a message"
+    };
+    if let Err(why) = crate::service::outward::permitted(
+        crate::application::allowed::allowed_for(&account.id).mail,
+        doing,
+    ) {
+        lock_state(state).a_set_leaving = None;
+        return send_refusal(tx, rt, &why.to_string());
+    }
+    if !copying {
+        say_the_one_word(a11y, "Move");
+        send_shown(tx, rt, &what_is_being_done("Moving", &chosen));
+    }
+    let a_set = moving.len() > 1;
+    let one_sentence = a_set.then(|| {
+        what_was_done(
+            &chosen,
+            &if copying {
+                Outcome::CopiedTo {
+                    into: into.id.clone(),
+                    not_copied: 0,
+                }
+            } else {
+                Outcome::MovedTo {
+                    into: into.id.clone(),
+                    not_moved: 0,
+                }
+            },
+        )
+    });
+    let asked_at = chrono::Utc::now().to_rfc3339();
+    let asks: Vec<AnAskMadeHere> = moving
+        .into_iter()
+        .map(|message| AnAskMadeHere {
+            asked: AWaitingMove {
+                message_row_id: message.row_id,
+                account_id: account.id.clone(),
+                from_folder_path: message.from,
+                uid: message.uid,
+                what: if copying {
+                    WhatAWaitingMoveDoes::Copy {
+                        into_folder_path: into.id.clone(),
+                    }
+                } else {
+                    WhatAWaitingMoveDoes::Move {
+                        into_folder_path: into.id.clone(),
+                    }
+                },
+                asked_at: asked_at.clone(),
+            },
+            subject: message.subject,
+        })
+        .collect();
+    let into_for_the_worker = into.clone();
+    complete_here_then_tell_the_server(app, list, cache, account, asks, one_sentence, move |ask| {
+        let one = MessageRef {
+            row_id: ask.asked.message_row_id,
+            uid: ask.asked.uid,
+            subject: ask.subject.clone(),
+            read: false,
+            starred: false,
+        };
+        let chosen_one = what_the_selection_holds(&[0], |_| Some(Members::AMessage(one.clone())));
+        spawn_folder_move(
+            app,
+            vec![AMessageMoving {
+                row_id: ask.asked.message_row_id,
+                uid: ask.asked.uid,
+                subject: ask.subject,
+                from: ask.asked.from_folder_path,
+            }],
+            chosen_one,
+            into_for_the_worker.clone(),
+            copying,
+        );
+    });
+}
+
 /// One message a move or a copy is taking, as the worker needs it.
 struct AMessageMoving {
     row_id: i64,
@@ -19791,6 +20113,145 @@ struct AMessageMoving {
     subject: String,
     /// The folder it is in now.
     from: String,
+}
+
+/// What the Move to or Copy to key asked for, once the folder is chosen.
+struct AMoveAsked {
+    moving: Vec<AMessageMoving>,
+    chosen: crate::application::choosing_messages::Chosen,
+    into: crate::application::destinations::Destination,
+    copying: bool,
+}
+
+/// One change to make here first: what to do with which message, and the
+/// subject for the line.
+struct AnAskMadeHere {
+    asked: crate::data::message_cache::moves_waiting::AWaitingMove,
+    subject: String,
+}
+
+/// Make a move, a delete or a copy here first, keep it waiting, and tell the
+/// server once in the background (#86, 2026-09-19).
+///
+/// The one function the move arm and the delete arm share, so the two
+/// cannot drift: each ask is made in the cache through
+/// `moves_waiting::what_happens_here`, its row taken out of the list at
+/// once for a move or a delete, and its line delivered, all before any
+/// session is asked for. Then one push, on the session this account is
+/// signed in with, replays everything waiting for the account: a server
+/// that carried the change out ends the wait; one that refused it sends
+/// `MovePutBack`, whose arm undoes the change here and says why; one that
+/// could not be reached leaves the change waiting for the next check.
+///
+/// # What is heard
+///
+/// A move's or a delete's line is shown and not spoken (#83): the one word
+/// was said at the key, and the row the cursor lands on is the confirmation.
+/// A copy's row stays, so nothing else says it happened, and 11-06.1's rule
+/// for a row that stayed holds: its line is spoken, at Normal, as the
+/// answer to the key. Over a set the lines are shown one by one and the one
+/// sentence is spoken for a copy and shown for a move, for the same reason.
+///
+/// # When the server is asked first after all
+///
+/// A change the store would not record is handed to `server_first`, the
+/// path every move and delete took until this date: a change made here with
+/// no record of it is one the next read of the folder undoes, and asking the
+/// server first is the honest fallback. A refusal in words is said and that
+/// is the end of it.
+fn complete_here_then_tell_the_server(
+    app: AppHandles<'_>,
+    list: &ListCtrl,
+    cache: &Arc<MessageCache>,
+    account: Account,
+    asks: Vec<AnAskMadeHere>,
+    one_sentence_for_the_set: Option<String>,
+    server_first: impl Fn(AnAskMadeHere),
+) {
+    use crate::application::moves_waiting::{NotMadeHere, what_happens_here};
+    let AppHandles { state, tx, rt } = app;
+    let a_set = asks.len() > 1;
+    let mut made_here = 0usize;
+    let mut a_copy = false;
+    for ask in asks {
+        match what_happens_here(cache, &ask.asked, &ask.subject) {
+            Ok(made) => {
+                made_here += 1;
+                if made.kept.what.is_a_copy() {
+                    a_copy = true;
+                    if a_set {
+                        send_shown(tx, rt, &made.shown);
+                    } else {
+                        send_status(tx, rt, &made.shown);
+                    }
+                } else {
+                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                    send_shown(tx, rt, &made.shown);
+                }
+            }
+            Err(NotMadeHere::RefusedInWords(words)) => send_refusal(tx, rt, &words),
+            Err(NotMadeHere::CouldNotBeRecorded(why)) => {
+                tracing::warn!(
+                    "A change to message {} could not be recorded here, so the server is \
+                     asked first: {why}",
+                    ask.asked.message_row_id
+                );
+                server_first(ask);
+            }
+        }
+    }
+    if made_here == 0 {
+        return;
+    }
+    if let Some(sentence) = one_sentence_for_the_set {
+        if a_copy {
+            send_status(tx, rt, &sentence);
+        } else {
+            send_shown(tx, rt, &sentence);
+        }
+    }
+
+    // The push: once, in the background, on the session this account is
+    // signed in with. A connection of this thread's own to the store, the
+    // way every other worker here opens one. Nothing here fails for the
+    // person: a server that cannot be reached, or signed in to, leaves the
+    // change waiting for the next check, and the log says so.
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+    rt.spawn_blocking(move || {
+        let say = |update: UIUpdate| {
+            handle.block_on(async {
+                let _ = tx.send(update).await;
+            });
+        };
+        let Some(dir) = AppPaths::resolve().ok().map(|paths| paths.cache_dir()) else {
+            tracing::warn!("The change made here waits: there is no cache directory");
+            return;
+        };
+        let cache = match crate::data::message_cache::MessageCache::new(dir, None) {
+            Ok(cache) => cache,
+            Err(why) => {
+                tracing::warn!("The change made here waits: the store could not be opened: {why}");
+                return;
+            }
+        };
+        let controller =
+            match handle.block_on(crate::application::mail_session::the_session_at(&account)) {
+                Ok(session) => session,
+                Err(why) => {
+                    tracing::info!(
+                        "The change made here waits for the next check of {}: {why}",
+                        account.name
+                    );
+                    return;
+                }
+            };
+        if let Err(why) =
+            replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
+        {
+            tracing::info!("{why}");
+        }
+    });
 }
 
 /// Do the move or copy on the server, and only then change the list.
@@ -20577,10 +21038,85 @@ fn delete_if_local(
             true
         }
         Err(e) => {
-            send_status(tx, rt, &format!("{subject} was not deleted: {e}"));
+            // A refusal, not a status line: the row stays, and a set that
+            // was leaving is landed after the rows that left rather than
+            // waiting for one that will not (a deferred item of 11-07).
+            send_refusal(tx, rt, &format!("{subject} was not deleted: {e}"));
             true
         }
     }
+}
+
+/// Where a delete of a message on a server goes, decided before anything
+/// changes (#86).
+///
+/// The account the message is in, what the waiting row will ask the server
+/// to do, and the folder the server has the message in. The gate is met
+/// here, in its own words, so an account that may not change anything at
+/// its server changes nothing here either; the two refusals a delete has,
+/// no trash recognised and no folders known yet, come back in the sentences
+/// `destinations` owns, as they did when the server was asked first.
+fn where_a_delete_goes_here(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    row_id: i64,
+    asked: Deleting,
+) -> std::result::Result<
+    (
+        Account,
+        crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes,
+        String,
+    ),
+    String,
+> {
+    use crate::application::destinations::{
+        DeletedGoesTo, NO_FOLDERS_KNOWN_YET, NO_TRASH_FOLDER_FOUND, where_a_deleted_message_goes,
+    };
+    use crate::data::message_cache::moves_waiting::WhatAWaitingMoveDoes;
+    let Some(cache) = cache.as_ref() else {
+        return Err("No message store is available".to_string());
+    };
+    let account = {
+        let s = lock_state(state);
+        owner_of(
+            &s.messages,
+            &s.accounts,
+            row_id,
+            s.active_account_id.as_deref(),
+        )
+    }
+    .ok_or_else(|| "This message is not in an account this program knows about.".to_string())?;
+    crate::service::outward::permitted(
+        crate::application::allowed::allowed_for(&account.id).mail,
+        "delete a message",
+    )
+    .map_err(|why| why.to_string())?;
+    let from = cache
+        .folder_path_for_message(row_id)
+        .ok()
+        .flatten()
+        .ok_or_else(|| "The message is not in a folder we know about".to_string())?;
+    let folders = cache
+        .get_folders_for_account(&account.id)
+        .unwrap_or_default();
+    let what = match where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                crate::common::types::FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        &from,
+        asked,
+    ) {
+        DeletedGoesTo::TheTrash(path) => WhatAWaitingMoveDoes::DeleteToTrash {
+            trash_path: path.to_string(),
+        },
+        DeletedGoesTo::OffTheServer => WhatAWaitingMoveDoes::DeleteOutright,
+        DeletedGoesTo::NoTrashFolderFound => return Err(NO_TRASH_FOLDER_FOUND.to_string()),
+        DeletedGoesTo::NoFoldersKnownYet => return Err(NO_FOLDERS_KNOWN_YET.to_string()),
+    };
+    Ok((account, what, from))
 }
 
 /// Which feedback events landing on this message calls for.
@@ -22908,6 +23444,17 @@ fn start_the_download(app: AppHandles<'_>) {
                     break;
                 }
             };
+            // The download lists folders too, so a move made here and not yet
+            // at the server is replayed here as well before the first listing
+            // (#86); a server that could not be reached about one is a server
+            // that stopped.
+            if let Err(why) =
+                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
+            {
+                tracing::warn!("The download stopped at {}: {why}", account.name);
+                ended = WhyTheRunEnded::AServerStopped;
+                break;
+            }
             let folders = match handle.block_on(controller.fetch_folders()) {
                 Ok(folders) => folders,
                 Err(e) => {
@@ -23468,6 +24015,18 @@ fn spawn_mail_sync(
             say(UIUpdate::ConnectionStatusChanged(
                 ConnectionStatus::Connected,
             ));
+
+            // The moves and deletes made here first, before any folder of
+            // this account is listed (#86): a listing taken first would
+            // bring back a message the server still has where it was.
+            // A server that could not be reached about one ends this
+            // account's check.
+            if let Err(why) =
+                replay_the_moves_that_were_waiting(&cache, &controller, &account.id, &handle, &say)
+            {
+                fail(why);
+                continue;
+            }
 
             // The changes that were waiting, on the session this check has just
             // opened. Here rather than anywhere that watches the network, because

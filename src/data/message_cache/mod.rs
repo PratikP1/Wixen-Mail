@@ -18,6 +18,7 @@ pub mod held_conflicts;
 pub mod how_it_arrived;
 mod messages;
 pub mod moves_in_flight;
+pub mod moves_waiting;
 pub use address_books::AddressBookContainer;
 pub use calendar::DeletedCalendarEvent;
 pub use contacts::{CardsRead, MovedBetweenGroups};
@@ -2091,6 +2092,30 @@ impl MessageCache {
                     e
                 ))
             })?;
+
+        // Moves and deletes made here first and not yet at the server (#86,
+        // 2026-09-19), on the flag table's pattern and beside it. One row
+        // per message rather than one per ask, for the reason
+        // `moves_waiting.rs`'s header gives: a second move of a waiting
+        // message is asked from a folder and under a number the server has
+        // never heard of, so the row keeps where the server still has the
+        // message and takes only the new destination. `from_folder_path`
+        // and `uid` are the server's; `kind` is one of three words and
+        // `into_folder_path` goes with two of them.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS moves_waiting (
+                message_row_id INTEGER PRIMARY KEY,
+                account_id TEXT NOT NULL,
+                from_folder_path TEXT NOT NULL,
+                uid INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                into_folder_path TEXT,
+                asked_at TEXT NOT NULL
+            )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to create moves_waiting table: {}", e)))?;
 
         self.conn
             .execute(

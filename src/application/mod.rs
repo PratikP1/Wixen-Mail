@@ -75,6 +75,7 @@ pub mod marking_read;
 pub mod message_files;
 pub mod message_id;
 pub mod messages;
+pub mod moves_waiting;
 pub mod new_item;
 pub mod notes_backend;
 pub mod notes_sync;

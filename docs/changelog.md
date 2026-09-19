@@ -8,6 +8,38 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **A move, a delete or a copy within one account completes on this computer first, and
+  Enter on a folder in the Move dialog is the move.** The tester on 2026-09-18, on build
+  `1.0.0-alpha.1` at `7573a812` under NVDA against Gmail (#86): a move takes a noticeable time
+  before the row leaves and the sentence comes, and Enter on the chosen folder in the Move
+  dialog does nothing. The wait was by design: the move was done at the server first and the
+  list changed only once the server had agreed, so that a "deleted" another device contradicts
+  was never announced. Since 2026-09-19 the change is made here at once, the row leaves the
+  list and the cursor lands on the next message the way it does after any delete, "Moved to
+  Archive" or "Moved to Trash" is shown on the status bar and not spoken, and the move is
+  recorded as made here and not yet at the server. The server is told in the background on the
+  session the person's own action opened, and again at the next check for mail before any folder
+  of that account is read, so a restart replays it and a check does not bring the message back.
+  What the old design guarded is kept by the record and the undo: a move or a delete the server
+  refuses comes back where it was, and the refusal is spoken with the server's reason; a move the
+  server had already done, before a restart or from another device, is read as done and nothing
+  is put back. A copy within one account takes the same shape, on Pratik's word of 2026-09-19:
+  the copy appears in the destination at once with its text, "Copied to Work" is spoken as the
+  answer to the key since the row stays, and a refusal drops the copy and says nothing was
+  copied. A second move or a delete of a copy the server does not hold yet is refused in words
+  until the next check. In the Move dialog, Enter on a folder is the move or the copy, on a
+  folder that holds others as much as on any other, and on an account row it does nothing;
+  Enter on Cancel stays Cancel, because no button was made the default. Every move and delete
+  until this build waited for the server, and Enter on the chosen folder did nothing because
+  nothing listened to the tree. Known limitations: a move or a copy to a folder on another
+  account still waits for both servers before the row leaves, because it is a fetch and an
+  append rather than a move, and 11-07.2 makes it complete here first; nobody has replayed a
+  move against a real mail server after a restart, and what a real server does with a replayed
+  move, or with a message another client changed meanwhile, is what the tester's account
+  settles, so #63's move, copy and delete proofs are re-taken after this; the loopback servers
+  the tests run against answer the four ways a server can, done, already done, refused and not
+  reached, and are not a real mail server; a set that includes a message on another account
+  keeps the server-first path for the whole set.
 - **The log starts at Debug while the build is an alpha or a beta, and writes what a report
   needs.** Reported on 2026-09-17 from build `1.0.0-alpha.1+114.g44bff634` (#71), and decided
   the same day: the level a fresh profile starts at follows the version the build carries,

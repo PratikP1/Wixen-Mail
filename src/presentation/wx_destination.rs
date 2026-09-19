@@ -293,6 +293,27 @@ pub fn build_destination_dialog(
 
     dialog.set_sizer(sizer, true);
 
+    // Enter on a folder is the act (#86, 2026-09-19). The tree's activation,
+    // which the control raises for Enter and for a double click, ends the
+    // dialog with the act's answer when the row is a destination, and does
+    // nothing for a heading row, which is an account. Not a default button:
+    // Enter on Cancel has to stay Cancel. Whether Enter on a folder that
+    // holds others also expands it was measured on a built tree before this
+    // was bound, in `tests/a_move_completes_here_first.rs`: the activation
+    // is raised, the row is neither expanded nor left, so nothing is
+    // collapsed back here. Until this was bound, Enter on the chosen folder
+    // did nothing, the tester's second finding on #86.
+    {
+        let destinations = destinations.clone();
+        tree.on_item_activated(move |_event| {
+            if what_a_selection_means(&destinations, tree_walk::where_the_selection_sits(&tree))
+                .is_some()
+            {
+                dialog.end_modal(ID_OK);
+            }
+        });
+    }
+
     // Focus lands on a real destination rather than on the tree's notion of
     // nothing selected, so the first thing announced is somewhere the message
     // could go, and on the last folder used so that filing the next one is a

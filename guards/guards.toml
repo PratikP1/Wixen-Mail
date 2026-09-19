@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 150 records have arrived since and have not been through it.
+# 156 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26480,4 +26480,161 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/every_command_acts_on_the_selection.rs", tests = 17 },
+]
+
+# A refusal for a message the destination already holds read as a refusal:
+# the server did the move before the restart, or another client did, and
+# the replay then puts the row back in a folder the server no longer has the
+# message in and says the server refused. The already-done case and the two
+# loopback cases where the scripted server refuses and finds the message go
+# red (#86, 11-07.1).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a refused replay of a message already where it was going is read as done, not put back"
+file = "src/application/moves_waiting.rs"
+before = """            WhereItIsNow::WhereTheMoveWantedIt => Replayed::AlreadyDone,"""
+after = """            WhereItIsNow::WhereTheMoveWantedIt => Replayed::Refused(why.to_string()),"""
+red = [
+    "application::moves_waiting::tests::test_a_refusal_for_a_message_already_where_it_was_going_is_already_done",
+    "application::moves_waiting::tests::test_a_refusal_for_a_message_the_destination_already_holds_is_already_done",
+    "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 27 },
+]
+
+# The marker dropped from the forgetting: a row this program filed is
+# deleted the moment a caller names its number as one the server does not
+# list, which is a sent copy kept here and, since 11-07.1, a move made here
+# and not yet at the server. The two cache cases that hold the marker go
+# red. The sync case in `application::moves_waiting` that reads Archive over
+# a moved row does not, and the first draft of this record said it would:
+# the read leaves marked rows out of the numbers it compares as well, so the
+# forgetting is never asked about the row, and no one-place break reaches
+# that case through either guard alone (#86, 11-07.1).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library; the first draft's red
+# list was corrected by hand from the runner's answer before this.
+[[guard]]
+name = "a row this program filed is not forgotten when the server does not list its number"
+file = "src/data/message_cache/messages.rs"
+before = """                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0","""
+after = """                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2","""
+red = [
+    "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
+    "data::message_cache::messages::tests::test_a_copy_kept_here_survives_the_sync_that_finds_it_is_not_on_the_server",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 179 },
+]
+
+# The line for a row that left spoken again, as the outcome was until
+# 2026-09-18: "Move", then the landed row, then "Moved to Archive: subject",
+# the second sentence the tester was waiting through on every move (#83,
+# #86). The made-here reading goes red on the target.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a row that left at the key has its line shown, not spoken as well"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                    send_shown(tx, rt, &made.shown);"""
+after = """                    take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                    send_status(tx, rt, &made.shown);"""
+red = [
+    "test_the_row_leaves_and_the_line_is_shown_before_any_session_is_asked_for",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# The undo dropped from the arm a refusal arrives on: the server said no,
+# the sentence says the message is back where it was, and the row stays in
+# the folder the server never moved it to until the next read of either
+# folder. The refusal reading goes red on the target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a refused move is undone here, not left made with the refusal spoken over it"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """            if let Err(why) = undo_here(cache, waiting) {
+                tracing::error!(
+                    "A change the server refused could not be undone here for message {}: {why}",
+                    waiting.message_row_id
+                );
+            }"""
+after = """            let _ = waiting.message_row_id;"""
+red = [
+    "test_a_refusal_puts_the_change_back_here_and_is_said_at_high",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# A check wired into the arm that runs when the network comes back, which
+# is how a waiting move would reach the server with nobody having asked:
+# closing a laptop on a train and opening it in an office would write at
+# somebody's mail server. Guardrail 7. The network-back reading goes red on
+# the target; `nothing_sends_a_flag_change_unasked` would go red too, on
+# its own run, which this record's one suite does not see (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "the network coming back replays no waiting move, not a check that would"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """        UIUpdate::TheNetworkIsBack => {
+            back_online_offer.panel.show(true);"""
+after = """        UIUpdate::TheNetworkIsBack => {
+            spawn_mail_sync(
+                AppHandles { state, tx, rt },
+                lock_state(state).accounts.clone(),
+                None,
+                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+            );
+            back_online_offer.panel.show(true);"""
+red = [
+    "test_the_network_coming_back_replays_no_waiting_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+]
+
+# The activation binding dropped from the Move dialog's tree, which is the
+# dialog as the tester met it on 2026-09-18: Enter on the chosen folder does
+# nothing, since no button is the default and nothing listens to the tree.
+# The dialog reading goes red on the target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "enter on a folder in the move dialog is the move, not nothing"
+file = "src/presentation/wx_destination.rs"
+suite = "a_move_completes_here_first"
+before = """        let destinations = destinations.clone();
+        tree.on_item_activated(move |_event| {
+            if what_a_selection_means(&destinations, tree_walk::where_the_selection_sits(&tree))
+                .is_some()
+            {
+                dialog.end_modal(ID_OK);
+            }
+        });"""
+after = """        let _ = destinations.clone();"""
+red = [
+    "test_enter_on_a_folder_in_the_dialog_is_the_move",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_destination.rs", tests = 6 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
 ]

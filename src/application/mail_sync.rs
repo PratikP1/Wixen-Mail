@@ -1380,6 +1380,17 @@ pub(crate) async fn sync_folder<M: Mailbox>(
     // Asked of whichever way this server offers, rather than of the comparison
     // by name. That is the seam: swapping the comparison for VANISHED is an
     // implementor and a probe arm, and nothing on this line changes.
+    //
+    // Nothing here subtracts the rows a move made here and not yet at the
+    // server holds in this folder (#86, 2026-09-19), and that is not an
+    // omission: `stored` above leaves out every row this program filed, and
+    // `forget_message` refuses one, so a row moved here under a reserved
+    // number and the marker is neither compared nor forgotten. What the
+    // marker cannot do is stop the source folder listing a message the
+    // server still has there, which is why every path that reaches this
+    // function replays the account's waiting moves first, through
+    // `application::moves_waiting::replay_the_moves_waiting_for`, and ends
+    // the account's check when the server could not be reached about one.
     let forgotten = finding_what_was_deleted::what_the_server_no_longer_has(
         finding_what_was_deleted::the_way_this_server_offers(
             controller.what_this_server_can_do().await,
