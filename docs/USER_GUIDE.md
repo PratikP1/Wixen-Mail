@@ -127,6 +127,14 @@ Wixen Mail uses a classic three-pane layout:
 - **Keyboard:** Press `F6` to cycle through panes
 - **Mouse:** Click on the desired pane
 
+When you move into the message list, by `Tab` from the folder tree, by `F6`
+or by a click, the cursor lands on a row and that row is read: the row you
+were on in that folder if it is still there, or the first row, which is the
+newest message unless you have sorted the list another way. If you leave the
+list and come back, the cursor is where you left it. An empty folder's list
+says "No messages". Since 2026-09-19; before that the list took focus with no
+row under the cursor and you had to press `Down` to reach the first message.
+
 ### Getting your mail
 
 Since the build of 2026-09-18, mail comes down whole and keeps coming, and you

@@ -3588,6 +3588,45 @@ impl WxMailApp {
                 }
             });
 
+            // Focus arriving on the list with no row under the cursor lands
+            // on one (#87): the row somebody was on when it is still there,
+            // else the first row under the sort; a list holding a row
+            // already is left alone, and an empty one says so, once, at
+            // Normal and on the status bar. On the focus event, the one path
+            // Tab, F6 and a click share. The count is the view's, so under
+            // conversation view the remembered index, which is a
+            // conversation row's there, lands on its own row; the selection
+            // handler writes the index back as it does for any landing.
+            crate::presentation::list_arrival::wire(
+                &msg_list,
+                {
+                    let state = state.clone();
+                    move || {
+                        let s = lock_state(&state);
+                        landing_after_a_removal::where_to_land_on_arrival(
+                            s.selected_message_index,
+                            view_state::how_many_rows(
+                                s.showing,
+                                s.messages.len(),
+                                s.conversations.len(),
+                            ),
+                        )
+                    }
+                },
+                {
+                    let a11y = a11y.clone();
+                    let ui_tx = ui_tx.clone();
+                    let runtime = runtime.clone();
+                    move || {
+                        let _ = a11y.announce(
+                            NO_MESSAGES,
+                            crate::presentation::accessibility::announcements::Priority::Normal,
+                        );
+                        send_shown(&ui_tx, &runtime, NO_MESSAGES);
+                    }
+                },
+            );
+
             // Track preview-split state (starts unsplit / hidden)
             let preview_visible = std::cell::Cell::new(false);
 
@@ -12140,6 +12179,12 @@ fn contact_matches_search(contact: &ContactItem, query: &str) -> bool {
         || holds(&contact.phone)
         || holds(&contact.company)
 }
+
+/// What an empty message list says when focus arrives on it (#87): one
+/// sentence in place of a row to land on, said once at Normal and shown on
+/// the status bar. The count line, "0 messages, 0 unread", is said when the
+/// rows arrive and not when focus does.
+const NO_MESSAGES: &str = "No messages";
 
 /// What a mailbox holds, said whenever its message list arrives.
 ///

@@ -144,6 +144,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Tab, F6 or a click into the message list lands on a row, not on the list itself.** The
+  tester on 2026-09-18 under NVDA (#87): "Tab from the folder tree to the message list: focus
+  lands on the list with no row under it. It should land on a row, the newest message." Opening
+  a folder loads the rows and, on purpose, selects nothing while you are still in the tree, so
+  a screen reader's cursor is not taken away from the folder you are choosing; nothing then put
+  the cursor on a row when focus arrived, and the list was read as "list" until Down was
+  pressed. Now, when the list takes focus with no row under the cursor, the cursor lands on the
+  row you were on when it is still there, or on the first row under the sort, which is the
+  newest message under the default sort, selected and focused with the row in view, so the row
+  is what is read on arrival. A list that already holds a row is left alone when you come back
+  to it. An empty folder's list says "No messages" once when focus arrives, and shows it on the
+  status bar. A built tree and list proved the four cases, and recorded that the control raised
+  the row's focus event on arrival, where before it raised only its own. Known limitations:
+  nobody has heard the row read once on arrival and not twice; the calendar, contacts, tasks,
+  notes and reminders lists are not changed.
 - **After a delete the cursor lands on the next message, or on the previous one when the
   last was deleted, and stays on the same message when the folder is re-read.** The tester
   on 2026-09-18, on build `1.0.0-alpha.1+149.g744d05ef` under NVDA (#76): "Deleting a message

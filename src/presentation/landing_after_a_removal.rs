@@ -1,5 +1,6 @@
-//! Where the cursor lands on the message list after rows leave it, and
-//! whether a re-read of the folder should move it.
+//! Where the cursor lands on the message list: after rows leave it, whether
+//! a re-read of the folder should move it, and when focus arrives on a list
+//! with no row under the cursor.
 //!
 //! The tester on 2026-09-18 (#76), under NVDA: deleting a message puts the
 //! cursor at the top of the list. The rule he asked for, the next message or
@@ -9,7 +10,14 @@
 //! screen reader follows. The rules live here, as cases, so the window asks
 //! them and a test can hold them without a window.
 //!
-//! Three questions, each one function:
+//! The same day (#87): Tab from the folder tree to the message list lands on
+//! the list itself, read as "list" with no row, and Down then lands on the
+//! first row. Opening a folder loads the rows and, by 10-02's rule, selects
+//! nothing while focus is in the tree; nothing landed a row when focus later
+//! arrived. Where it lands is the fourth question here, since it is the same
+//! question as the other three: where the cursor lands on the list.
+//!
+//! Four questions, each one function:
 //!
 //! - [`where_to_land`]: which row the cursor lands on once `removed` rows
 //!   have left, for one row or a set.
@@ -21,6 +29,9 @@
 //!   screen reader's cursor with it; that stands for a load that leaves the
 //!   cursor's message where it was, and only a load that moved it moves the
 //!   cursor.
+//! - [`where_to_land_on_arrival`]: which row the cursor lands on when focus
+//!   arrives and no row is under it: the remembered row when there is one
+//!   and it is still there, else the first row under the sort.
 //!
 //! Every index is a row of the list. `removed` holds rows as they were
 //! numbered before they left; the answer is a row as it is numbered after.
@@ -70,6 +81,17 @@ pub fn where_the_same_message_is(cursor: Option<i64>, ids_after: &[i64]) -> Opti
 /// not cover.
 pub fn whether_to_move(old_index: Option<usize>, new_index: Option<usize>) -> Option<usize> {
     new_index.filter(|new| Some(*new) != old_index)
+}
+
+/// The row the cursor lands on when focus arrives on a list of `len` rows
+/// with no row under the cursor (#87): the remembered row when there is one
+/// and it is still there, else the first row under the sort, and nothing
+/// when the list holds no row.
+pub fn where_to_land_on_arrival(remembered: Option<usize>, len: usize) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    Some(remembered.filter(|row| *row < len).unwrap_or(0))
 }
 
 #[cfg(test)]
@@ -155,5 +177,35 @@ mod tests {
         assert_eq!(whether_to_move(Some(1), Some(1)), None);
         assert_eq!(whether_to_move(Some(1), None), None);
         assert_eq!(whether_to_move(None, None), None);
+    }
+
+    #[test]
+    fn test_focus_arriving_on_an_empty_list_lands_nowhere() {
+        assert_eq!(where_to_land_on_arrival(None, 0), None);
+        assert_eq!(where_to_land_on_arrival(Some(3), 0), None);
+    }
+
+    #[test]
+    fn test_focus_arriving_with_a_remembered_row_still_there_lands_on_it() {
+        // The row somebody was on in this folder, still inside the rows the
+        // list holds.
+        assert_eq!(where_to_land_on_arrival(Some(3), 5), Some(3));
+        assert_eq!(where_to_land_on_arrival(Some(4), 5), Some(4));
+    }
+
+    #[test]
+    fn test_focus_arriving_with_a_remembered_row_past_the_end_lands_on_the_first() {
+        // A shorter list than the one the row was remembered in: the row is
+        // gone, so the first row under the sort.
+        assert_eq!(where_to_land_on_arrival(Some(5), 5), Some(0));
+        assert_eq!(where_to_land_on_arrival(Some(40), 5), Some(0));
+    }
+
+    #[test]
+    fn test_focus_arriving_with_nothing_remembered_lands_on_the_first_row() {
+        // A folder just opened: the newest message under the default sort,
+        // the sort's first row under any other.
+        assert_eq!(where_to_land_on_arrival(None, 5), Some(0));
+        assert_eq!(where_to_land_on_arrival(None, 1), Some(0));
     }
 }
