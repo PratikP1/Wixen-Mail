@@ -3856,7 +3856,7 @@ the caveat at the top of this file binds every `[D]` line.
   - [S] That the reading is heard whole and once on the key, and that arrowing is quiet under
     the profile, are his ear's; Narrator and JAWS are unread.
 
-- [ ] **LIST-08**: A rule can change how a row is announced: a phrase said first and shown
+- [x] **LIST-08**: A rule can change how a row is announced: a phrase said first and shown
   in a column, a sound once per check, and the labels heard on the row as a column.
   - Evidence: `FilterAction` has seven variants (`filters.rs:11-19`), stored as one
     `action_type` and one `action_value` per rule (`mod.rs:1845`); `Outcome` carries read,
@@ -3874,14 +3874,22 @@ the caveat at the top of this file binds every `[D]` line.
     written onto the message in an additive `says_first` column, carried into `MessageItem`,
     prefixed to the first visible cell of the row under either view so it is the first thing
     spoken, and shown in a Says first column; a Labels column off by default; both columns
-    in the Columns dialog.
+    in the Columns dialog. Amended 2026-09-19 by 11-10: a conversation row's labels are
+    selected by the conversation query as the column's own expression over the rows of
+    `here`, one per line, rather than joined in Rust from the per-message read, so the cell
+    and the sort are one expression as the file's rule requires; the listing guard's closed
+    set gains `tags` for the Labels sort; the phrase's heading is left unsaid on request and
+    the Labels heading is said (11-10, tasks 1 and 2).
   - [D] An additive `plays_a_sound` flag per rule with a box in the rule editor; a new
     `Event::RuleMatched` with its own tone and Feedback row; the check counts the matches
     that sounded and the `WhatArrived` arm signals the event once per check, never per
     message; the rule editor offers the action and the box; readings hold the prefix, the
-    columns, the bound and the arm.
+    columns, the bound and the arm. Amended 2026-09-19 by 11-10: the box's letter is S,
+    since P is the pattern's; the value box is called the phrase under Say this first with
+    H for its letter; OK refuses a missing or over-long phrase in a sentence; the manager's
+    list says every action in the editor's words (11-10, tasks 1 to 3).
   - [S] The phrase at the start of a row, the sound once after a check with several matches,
-    and the labels read as part of the row, are his ear's.
+    and the labels read as part of the row, are his ear's (ledger 556).
 
 - [ ] **LIST-09**: Pictures a message points at are shown by default except tracking pixels
   and pictures the sender marked decorative, a linked picture takes the link's words as its
@@ -4590,7 +4598,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
-| LIST-08 | Phase 11 | Pending, 11-10 |
+| LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
 | LIST-09 | Phase 11 | Pending, 11-11 |
 | LIST-10 | Phase 11 | Pending, 11-11 |
 | LIST-11 | Phase 11 | Pending, 11-13 |
