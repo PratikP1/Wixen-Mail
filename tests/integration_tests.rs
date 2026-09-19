@@ -183,6 +183,7 @@ fn test_filter_multiple_rules_single_message() {
             case_sensitive: false,
             action: FilterAction::MarkAsRead,
             enabled: true,
+            plays_a_sound: false,
         })
         .unwrap();
 
@@ -196,6 +197,7 @@ fn test_filter_multiple_rules_single_message() {
             case_sensitive: false,
             action: FilterAction::AddTag("updates".to_string()),
             enabled: true,
+            plays_a_sound: false,
         })
         .unwrap();
 
@@ -234,6 +236,7 @@ fn test_filter_disabled_rule_not_applied() {
             case_sensitive: false,
             action: FilterAction::Delete,
             enabled: false,
+            plays_a_sound: false,
         })
         .unwrap();
 
@@ -272,6 +275,7 @@ fn test_filter_regex_match() {
             case_sensitive: true,
             action: FilterAction::MoveToFolder("Invoices".to_string()),
             enabled: true,
+            plays_a_sound: false,
         })
         .unwrap();
 

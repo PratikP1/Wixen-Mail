@@ -322,6 +322,13 @@ pub struct Filtered {
     /// done in the cache alone would show a message in a folder it is not in
     /// until the next sync put it back.
     pub to_move: Vec<Moving>,
+    /// How many times a rule that plays a sound matched a message (#62).
+    ///
+    /// One per message per such rule, so the window can say how many; the
+    /// sound itself is played once per check from this count, never per
+    /// message and never per folder, which is what keeps a folder of matches
+    /// from flooding (guardrail 5).
+    pub matches_with_a_sound: usize,
 }
 
 /// One message a rule says belongs somewhere else.
@@ -1014,11 +1021,10 @@ impl Mailbox for MailController {
 /// carried out on one message is not a reason to stop filtering the rest, and
 /// the alternative, stopping the whole sync, would turn a bad rule into a
 /// mailbox that no longer updates.
-pub(crate) fn apply_rules(
-    cache: &MessageCache,
-    filtering: &Filtering<'_>,
-    arrived: &[i64],
-) -> Filtered {
+///
+/// Public since 2026-09-19 so `tests/a_rule_can_change_how_a_row_is_announced.rs`
+/// can run the rules over a real cache without a server in the way.
+pub fn apply_rules(cache: &MessageCache, filtering: &Filtering<'_>, arrived: &[i64]) -> Filtered {
     let mut done = Filtered::default();
     for id in arrived {
         let Ok(Some(message)) = cache.get_message(*id) else {
@@ -2306,6 +2312,7 @@ pub(crate) mod tests {
             action_type: "mark_as_read".into(),
             action_value: None,
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-07-31T00:00:00Z".into(),
         }]);
 
@@ -2399,6 +2406,7 @@ pub(crate) mod tests {
             action_type: "move_to_folder".into(),
             action_value: Some("Invoices".into()),
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-08-24T00:00:00Z".into(),
         }]);
 
@@ -2490,6 +2498,7 @@ pub(crate) mod tests {
             action_type: "mark_as_read".into(),
             action_value: None,
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-07-31T00:00:00Z".into(),
         }]);
 
@@ -2576,6 +2585,7 @@ pub(crate) mod tests {
             action_type: "delete".into(),
             action_value: None,
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-07-31T00:00:00Z".into(),
         }]);
 
@@ -3748,6 +3758,7 @@ pub(crate) mod tests {
             action_type: "move_to_folder".into(),
             action_value: Some("Invoices".into()),
             enabled: true,
+            plays_a_sound: false,
             created_at: "2026-08-24T00:00:00Z".into(),
         }]);
         let filtering = Filtering {
@@ -3855,6 +3866,7 @@ pub(crate) mod tests {
                 action_type: (*action).to_string(),
                 action_value: value.map(str::to_string),
                 enabled: true,
+                plays_a_sound: false,
                 created_at: "2026-08-24T00:00:00Z".into(),
             })
             .collect();
@@ -6387,6 +6399,7 @@ pub(crate) mod tests {
                 held_back: 5,
                 to_move: Vec::new(),
                 could_not_be_filed: Vec::new(),
+                matches_with_a_sound: 0,
             },
             ..FolderSync::default()
         });

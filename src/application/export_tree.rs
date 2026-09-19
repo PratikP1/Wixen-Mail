@@ -787,6 +787,7 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
             list_unsubscribe: None,
+            says_first: None,
         }
     }
 

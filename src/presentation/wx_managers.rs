@@ -2508,6 +2508,8 @@ pub struct FilterRule {
     pub action_type: String,
     pub action_value: String,
     pub enabled: bool,
+    /// Whether a match plays the Rule matched sound (#62); the editor's box.
+    pub plays_a_sound: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3486,6 +3488,7 @@ fn show_filter_edit(
             action_type: stored_action(&get_choice_string(&action_choice).unwrap_or_default()),
             action_value: action_value_f.get_value(),
             enabled: en_check.get_value(),
+            plays_a_sound: existing.is_some_and(|r| r.plays_a_sound),
         })
     } else {
         None

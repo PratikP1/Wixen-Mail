@@ -13480,6 +13480,7 @@ fn conversation_parts(
                 list_unsubscribe: None,
                 account_id: String::new(),
                 labels: Vec::new(),
+                says_first: None,
             };
             // Asked per message, here, where both conversation surfaces build
             // their parts: each message's armour is offered to the key and its
@@ -16691,6 +16692,7 @@ fn open_for_scanning(
                     list_unsubscribe: None,
                     account_id: String::new(),
                     labels: Vec::new(),
+                    says_first: None,
                 },
                 &MessageBody::Html(
                     "<h1>A heading</h1><p>Some text, and \
@@ -26380,6 +26382,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 
@@ -27363,6 +27366,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 
@@ -27490,6 +27494,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         };
         let messages = vec![read(true), read(false), read(true), read(false)];
 
@@ -27542,6 +27547,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         };
         m.read = false;
         let messages = vec![m];

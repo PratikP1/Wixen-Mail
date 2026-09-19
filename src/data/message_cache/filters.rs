@@ -10,13 +10,13 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO message_filter_rules
-             (id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             (id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, plays_a_sound, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 &rule.id, &rule.account_id, &rule.name, &rule.field,
                 &rule.match_type, &rule.pattern, &rule.case_sensitive,
                 &rule.action_type, &rule.action_value, &rule.enabled,
-                &rule.created_at, &now,
+                &rule.plays_a_sound, &rule.created_at, &now,
             ],
         ).map_err(|e| Error::Other(format!("Failed to create filter rule: {}", e)))?;
         Ok(())
@@ -25,7 +25,7 @@ impl MessageCache {
     /// Get all message filter rules for an account
     pub fn get_filter_rules_for_account(&self, account_id: &str) -> Result<Vec<MessageFilterRule>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at
+            "SELECT id, account_id, name, field, match_type, pattern, case_sensitive, action_type, action_value, enabled, created_at, plays_a_sound
              FROM message_filter_rules
              WHERE account_id = ?1
              ORDER BY name"
@@ -45,6 +45,7 @@ impl MessageCache {
                     action_value: row.get(8)?,
                     enabled: row.get(9)?,
                     created_at: row.get(10)?,
+                    plays_a_sound: row.get(11)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query filter rules: {}", e)))?
@@ -63,12 +64,12 @@ impl MessageCache {
         let now = chrono::Utc::now().to_rfc3339();
         let touched = self.conn.execute(
             "UPDATE message_filter_rules
-             SET name = ?1, field = ?2, match_type = ?3, pattern = ?4, case_sensitive = ?5, action_type = ?6, action_value = ?7, enabled = ?8, updated_at = ?9
+             SET name = ?1, field = ?2, match_type = ?3, pattern = ?4, case_sensitive = ?5, action_type = ?6, action_value = ?7, enabled = ?8, updated_at = ?9, plays_a_sound = ?11
              WHERE id = ?10",
             params![
                 &rule.name, &rule.field, &rule.match_type, &rule.pattern,
                 &rule.case_sensitive, &rule.action_type, &rule.action_value,
-                &rule.enabled, &now, &rule.id,
+                &rule.enabled, &now, &rule.id, &rule.plays_a_sound,
             ],
         ).map_err(|e| Error::Other(format!("Failed to update filter rule: {}", e)))?;
         Ok(touched)
@@ -106,6 +107,7 @@ mod tests {
             action_type: "move_to_folder".to_string(),
             action_value: Some("Archive".to_string()),
             enabled: true,
+            plays_a_sound: false,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 

@@ -652,6 +652,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 

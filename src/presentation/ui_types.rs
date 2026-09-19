@@ -129,6 +129,13 @@ pub struct MessageItem {
     /// for nothing at all, and a label that is only a colour is a label they
     /// cannot know is there.
     pub labels: Vec<String>,
+    /// The phrase a rule said to say before this row's first cell (#62).
+    ///
+    /// Carried from the listing's row, never asked per message. The list
+    /// prefixes it to the first visible cell, so it is the first thing a
+    /// screen reader says for the row whatever columns are shown, and the
+    /// Says first column shows it. `None` is a message no rule spoke for.
+    pub says_first: Option<String>,
 }
 
 impl MessageItem {
@@ -193,6 +200,7 @@ impl MessageItem {
             // one query and its labels are in another table; asking here would
             // be a second query per row of a five hundred row page.
             labels: Vec::new(),
+            says_first: row.says_first.clone(),
         }
     }
 }
@@ -1828,6 +1836,7 @@ mod tests {
             safety_reasons: Vec::new(),
             receipt_to: None,
             list_unsubscribe: None,
+            says_first: None,
         };
 
         let item = MessageItem::from_row(&row);
@@ -3398,6 +3407,7 @@ mod tests {
             list_unsubscribe: None,
             account_id: String::new(),
             labels: Vec::new(),
+            says_first: None,
         }
     }
 

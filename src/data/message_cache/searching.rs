@@ -513,7 +513,7 @@ impl MessageCache {
                         (m.has_attachments = 1
                          OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
                         m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe,
-                        m.thread_id
+                        m.thread_id, m.says_first
                  -- Not aliased. A MATCH names the full text table itself, and
                  -- SQLite reads an alias there as a column it cannot find.
                  FROM message_search
@@ -596,6 +596,7 @@ impl MessageCache {
                         receipt_to: row.get(19)?,
                         list_unsubscribe: row.get(20)?,
                         thread_id: row.get(21)?,
+                        says_first: row.get(22)?,
                     })
                 },
             )

@@ -329,6 +329,12 @@ pub struct MessageFilterRule {
     pub action_type: String,
     pub action_value: Option<String>,
     pub enabled: bool,
+    /// Whether a match plays the sound scheme's Rule matched event (#62).
+    ///
+    /// `plays_a_sound` on the rules table, added on 2026-09-19 with
+    /// `ensure_column_exists` and `NOT NULL DEFAULT 0`, so a rule written
+    /// before the column has no sound until somebody ticks the box.
+    pub plays_a_sound: bool,
     pub created_at: String,
 }
 
@@ -2885,6 +2891,21 @@ impl MessageCache {
         // that mail.
         self.ensure_column_exists("messages", "original_uid", "INTEGER")?;
         self.ensure_column_exists("messages", "original_account_id", "TEXT")?;
+        // The phrase a rule said to say before the row's first cell (#62),
+        // written by the rules as mail arrives and read by every listing, so
+        // the row never asks per message. Null is a message no rule spoke
+        // for, which is every message written before this existed and most
+        // of them after. A message a rule no longer matches keeps its phrase
+        // until a rule clears it, since the rules run once on arrival.
+        self.ensure_column_exists("messages", "says_first", "TEXT")?;
+        // Whether a rule plays the Rule matched sound when it matches (#62).
+        // Off for every rule written before this existed, which is what those
+        // rules did.
+        self.ensure_column_exists(
+            "message_filter_rules",
+            "plays_a_sound",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // The name recipients see on mail from this account, which is the
         // person's own name and not the label they gave the account. Empty by
         // default, which is exactly what every message sent before this column

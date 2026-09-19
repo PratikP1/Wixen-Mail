@@ -60,7 +60,8 @@ pub(super) fn listing_query(order: &str, limit_clause: &str) -> String {
                 m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id,
+                m.says_first
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
@@ -421,6 +422,7 @@ pub(super) fn listing_row(row: &rusqlite::Row) -> rusqlite::Result<MessageListRo
         receipt_to: row.get(20)?,
         list_unsubscribe: row.get(21)?,
         thread_id: row.get(22)?,
+        says_first: row.get(23)?,
     })
 }
 
@@ -455,7 +457,8 @@ pub(super) fn unified_inbox_query(order: &str, limit: Option<usize>) -> String {
                 m.size_bytes, m.read, m.starred, m.answered, m.draft,
                 (m.has_attachments = 1
                  OR EXISTS(SELECT 1 FROM attachments a WHERE a.message_id = m.id)),
-                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id
+                m.safety, m.safety_reasons, m.receipt_to, m.list_unsubscribe, m.thread_id,
+                m.says_first
          FROM messages m
          INNER JOIN folders f ON m.folder_id = f.id
          WHERE f.folder_type = 'Inbox' AND m.deleted = 0
@@ -527,6 +530,13 @@ pub struct MessageListRow {
     /// carried it with nothing in it; those are different facts, because the
     /// header being there at all is what says this came from a list.
     pub list_unsubscribe: Option<String>,
+    /// The phrase a rule said to say before this row's first cell (#62).
+    ///
+    /// Read by every listing so the row never asks per message, and kept on
+    /// the message: a rule that no longer matches leaves it until a rule
+    /// clears it, since the rules run once when mail arrives. `None` is a
+    /// message no rule spoke for.
+    pub says_first: Option<String>,
 }
 
 /// A message as a sync knows it: headers and flags, and no body yet.
@@ -2605,6 +2615,20 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to update flags: {}", e)))?;
 
+        Ok(())
+    }
+
+    /// Keep, or clear, the phrase a rule says before this message's row (#62).
+    ///
+    /// `None` clears it. Written by the rules as mail arrives and read by
+    /// every listing through `says_first`; nothing else writes the column.
+    pub fn set_says_first(&self, message_id: i64, phrase: Option<&str>) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE messages SET says_first = ?1 WHERE id = ?2",
+                params![phrase, message_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep the phrase said first: {}", e)))?;
         Ok(())
     }
 
