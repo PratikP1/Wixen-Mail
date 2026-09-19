@@ -18651,7 +18651,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 let _ = a11y.announce_topic(said, Priority::Low, "progress");
             }
         }
-        UIUpdate::WhatArrived { what } => {
+        UIUpdate::WhatArrived {
+            what,
+            matches_with_a_sound,
+        } => {
             {
                 let mut s = lock_state(state);
                 s.status_message = what.clone();
@@ -18664,6 +18667,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // wakes, so the sound means mail arrived. No detail: the counts
             // are the sentence below, and the event's own word is enough.
             let _ = a11y.signal(FeedbackEvent::NewMail, "");
+            // The count and never a subject or a phrase (#62): what a rule
+            // with a sound matched is a number in the log, and the report
+            // 11-04 asks for reads counts.
+            tracing::debug!("{matches_with_a_sound} matches of a rule with a sound this check");
             // Once per check, with the counts, at Normal on its own topic so
             // a step arriving behind it cannot replace it; silent only under
             // Errors only.
@@ -21885,7 +21892,10 @@ fn check_pop_mail(
             // the sentence follow the level and the row; a step otherwise.
             let what = crate::application::pop_sync::what_the_pop_check_did(&result);
             if result.fetched > 0 {
-                say(UIUpdate::WhatArrived { what });
+                say(UIUpdate::WhatArrived {
+                    what,
+                    matches_with_a_sound: result.filtered.matches_with_a_sound,
+                });
             } else {
                 say(UIUpdate::Progress(what));
             }
@@ -24192,8 +24202,11 @@ fn start_the_download(app: AppHandles<'_>) {
                             // Once per account, and only when it had anything
                             // to do: the one sentence a run says under Say
                             // what arrived.
+                            // No rules run over a download of everything,
+                            // so nothing here can have sounded.
                             say(UIUpdate::WhatArrived {
                                 what: crate::application::bringing_everything_down::what_a_whole_account_came_to(folders_done, with_text),
+                                matches_with_a_sound: 0,
                             });
                         }
                         break;
@@ -24697,6 +24710,9 @@ fn spawn_mail_sync(
             // Each folder with what it received, for the one result line at the
             // end; the folders with nothing are dropped where the words are made.
             let mut arrived: Vec<(String, usize)> = Vec::new();
+            // How many times a rule with a sound matched, summed over the
+            // folders, for the one signal at the end (#62).
+            let mut matches_with_a_sound = 0usize;
             let mut problems: Vec<String> = Vec::new();
 
             // The account's rules, read once for the whole sync rather than once
@@ -24740,6 +24756,7 @@ fn spawn_mail_sync(
                     Ok(result) => {
                         fetched += result.fetched;
                         arrived.push((folder.name.clone(), result.fetched));
+                        matches_with_a_sound += result.filtered.matches_with_a_sound;
                         // The words are worked out where they can be tested. Built
                         // here, they were inside this closure with its own cache on
                         // a background thread, which nothing could reach.
@@ -24802,7 +24819,10 @@ fn spawn_mail_sync(
             // Once, after the loop, and only when something arrived: the arm
             // this reaches is where the new-mail sound is signalled from.
             if let Some(what) = crate::application::mail_sync::what_arrived(&arrived) {
-                say(UIUpdate::WhatArrived { what });
+                say(UIUpdate::WhatArrived {
+                    what,
+                    matches_with_a_sound,
+                });
             }
             say(UIUpdate::ConnectionStatusChanged(
                 ConnectionStatus::Disconnected,

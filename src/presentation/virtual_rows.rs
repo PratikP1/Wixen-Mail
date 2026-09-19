@@ -150,6 +150,8 @@ mod tests {
                 uid: 1,
                 from: "Ada Lovelace <ada@example.com>".to_string(),
             },
+            says_first: None,
+            labels: String::new(),
         }
     }
 

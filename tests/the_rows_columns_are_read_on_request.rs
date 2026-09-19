@@ -245,6 +245,8 @@ fn test_a_conversation_row_is_composed_from_its_own_cells() {
             uid: 2,
             from: "Bob <bob@example.com>".to_string(),
         },
+        says_first: None,
+        labels: String::new(),
     };
     let cells = the_cells_the_list_shows(
         Listed {

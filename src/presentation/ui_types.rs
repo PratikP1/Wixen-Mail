@@ -790,8 +790,15 @@ pub enum UIUpdate {
     /// one place the new-mail sound is signalled from: the sound means mail
     /// arrived, not that the watch woke. Spoken at Normal on its own topic
     /// unless nothing but errors was asked for.
+    ///
+    /// `matches_with_a_sound` is how many times a rule that plays a sound
+    /// matched a message across the check (#62), summed over its folders,
+    /// so the arm can signal the Rule matched event once with the count as
+    /// its detail: once per check, never per message and never per folder,
+    /// which is what keeps a folder of matches from flooding.
     WhatArrived {
         what: String,
+        matches_with_a_sound: usize,
     },
     /// A tasks or notes sync finished, in the words the status line uses.
     ///

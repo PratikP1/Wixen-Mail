@@ -203,7 +203,7 @@ pub(super) fn conversation_scope() -> String {
          here AS (
              SELECT m.thread_id, m.id, m.uid, m.subject, m.snippet, m.read, m.starred,
                     m.answered, m.draft, m.has_attachments, m.safety,
-                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date,
+                    m.size_bytes, m.from_addr, m.to_addr, m.cc, m.date, m.says_first,
                     COALESCE(m.internaldate, m.date) AS received_at
              FROM messages m
              INNER JOIN folders mf ON m.folder_id = mf.id
@@ -267,6 +267,14 @@ pub(super) fn messages_in_one_conversation() -> String {
 /// sender is the Correspondent expression's own value, selected again by
 /// name so the reader can fill [`ConversationItem::stands_for`] without
 /// parsing the cell; `senders` stays the aggregate for the rest of the cell.
+///
+/// # The two columns a rule can change (#62)
+///
+/// Two more after those: the phrase said first, which is the row message's
+/// by the same ordering, and the labels on any message in the conversation,
+/// once each, one per line. Both are the column enum's own expressions, so
+/// the rule above holds for them: what the cell shows is what the sort
+/// orders by.
 pub(super) fn conversations_query(order: &str) -> String {
     use crate::presentation::message_columns::{EVERYONE_WHO_SENT, MessageColumn};
 
@@ -290,7 +298,9 @@ pub(super) fn conversations_query(order: &str) -> String {
                 {safety},
                 {stands_for},
                 {stands_for_uid},
-                {correspondent}
+                {correspondent},
+                {says_first},
+                {labels}
          FROM here m
          GROUP BY m.thread_id
          ORDER BY {order}, m.thread_id ASC",
@@ -298,6 +308,8 @@ pub(super) fn conversations_query(order: &str) -> String {
         senders = EVERYONE_WHO_SENT,
         stands_for = MessageColumn::conversation_stands_for_expression(),
         stands_for_uid = MessageColumn::conversation_stands_for_uid_expression(),
+        says_first = MessageColumn::SaysFirst.conversation_sort_expression(),
+        labels = MessageColumn::Labels.conversation_sort_expression(),
         subject = MessageColumn::Subject.conversation_sort_expression(),
         messages = MessageColumn::Thread.conversation_sort_expression(),
         unread = MessageColumn::Unread.conversation_sort_expression(),
@@ -357,6 +369,8 @@ pub(super) fn conversation_row(row: &rusqlite::Row) -> rusqlite::Result<Conversa
             uid: row.get(17)?,
             from: row.get::<_, Option<String>>(18)?.unwrap_or_default(),
         },
+        says_first: row.get(19)?,
+        labels: row.get::<_, Option<String>>(20)?.unwrap_or_default(),
     })
 }
 
@@ -7046,7 +7060,18 @@ mod tests {
             }
             let row = cache.upsert_message(&zebras).unwrap();
             cache.save_message_body(row, Some("zzz"), None).unwrap();
+            // Every zebra carries the phrase, so whichever message the row
+            // stands for, the conversation's phrase is this one (#62); the
+            // label sits on the one message that has everything.
+            cache.set_says_first(row, Some("Zebras first")).unwrap();
+            if everything {
+                a_label_on(&cache, row, "Zebras label");
+            }
         }
+        cache
+            .set_says_first(apples_row, Some("Apples first"))
+            .unwrap();
+        a_label_on(&cache, apples_row, "Apples label");
 
         (cache, inbox)
     }
@@ -7377,7 +7402,35 @@ mod tests {
             .save_message_body(behind_row, Some("zzz"), None)
             .unwrap();
 
+        // The two columns a rule can change (#62), ordered as the subjects
+        // are: a phrase on each, and a label on each.
+        cache
+            .set_says_first(ahead_row, Some("Apples first"))
+            .unwrap();
+        cache
+            .set_says_first(behind_row, Some("Zebras first"))
+            .unwrap();
+        a_label_on(&cache, ahead_row, "Apples label");
+        a_label_on(&cache, behind_row, "Zebras label");
+
         (cache, inbox)
+    }
+
+    /// A label named `name` put on the message at `row`, for the two
+    /// sorting fixtures.
+    fn a_label_on(cache: &super::super::MessageCache, row: i64, name: &str) {
+        let id = format!("tag-{}", name.to_lowercase().replace(' ', "-"));
+        cache
+            .create_tag(&super::super::Tag {
+                id: id.clone(),
+                account_id: "acc".to_string(),
+                name: name.to_string(),
+                color: "#000000".to_string(),
+                created_at: "2026-09-19T00:00:00Z".to_string(),
+                keyword: None,
+            })
+            .unwrap();
+        cache.add_tag_to_message(row, &id).unwrap();
     }
 
     #[test]
@@ -7955,7 +8008,7 @@ mod a_listing_reads_no_message_text {
     /// is caught by a closed set and invisible to a list of forbidden names.
     /// Widening it is an edit somebody makes on purpose with a sentence to
     /// write, rather than a test somebody quietens.
-    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 4] = [
+    const WHAT_A_LISTING_MAY_READ: [(&str, &str); 5] = [
         (
             "messages",
             "the rows themselves: the subject, the addresses, the flags and the \
@@ -7977,8 +8030,15 @@ mod a_listing_reads_no_message_text {
         ),
         (
             "message_tags",
-            "the join a label view reads, for tag_id and message_id only; a \
-             tag's name and colour live in tags, which is not on this list",
+            "the join a label view reads, for tag_id and message_id only, and \
+             the join the Labels column sorts through",
+        ),
+        (
+            "tags",
+            "the names, and nothing else, for the Labels column (#62): a sort \
+             by that column orders on the names of a message's labels, one \
+             per line, through message_tags. Widened on 2026-09-19 from the \
+             four above; a colour is never read by a listing",
         ),
     ];
 
@@ -8212,10 +8272,12 @@ mod a_listing_reads_no_message_text {
     fn test_a_listing_that_read_a_table_outside_the_allowed_set_is_caught() {
         let stripped = a_database_holding_only_what_a_listing_may_read();
 
+        // The bodies table, which no listing may read. Until 2026-09-19
+        // this planted a read of a tag's name; the Labels column's sort
+        // reads that on purpose now (#62), and tags is on the list.
         let asked = stripped.prepare(
-            "SELECT m.id, t.name FROM messages m
-             INNER JOIN message_tags mt ON mt.message_id = m.id
-             INNER JOIN tags t ON t.id = mt.tag_id",
+            "SELECT m.id, b.message_id FROM messages m
+             INNER JOIN message_bodies b ON b.message_id = m.id",
         );
 
         assert!(

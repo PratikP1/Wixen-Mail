@@ -463,6 +463,8 @@ fn a_conversation_row(thread_id: &str, messages: i64, stands_for: RowMessage) ->
         any_draft: false,
         worst_safety: wixen_mail::service::safety::Safety::Ordinary,
         stands_for,
+        says_first: None,
+        labels: String::new(),
     }
 }
 

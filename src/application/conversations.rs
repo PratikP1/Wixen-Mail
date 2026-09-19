@@ -244,6 +244,14 @@ pub struct ConversationItem {
     pub worst_safety: crate::service::safety::Safety,
     /// The one message this row stands for, by [`RowMessage`]'s rule.
     pub stands_for: RowMessage,
+    /// The phrase a rule said to say before the row's first cell (#62): the
+    /// row message's, by the same rule as `stands_for`, so the phrase heard
+    /// first belongs to the message the row previews.
+    pub says_first: Option<String>,
+    /// Every label on any message in the conversation, once each, one per
+    /// line, by name; empty when there are none. A line apiece because a
+    /// label may hold a comma, the same reason `senders` gives.
+    pub labels: String,
 }
 
 /// The one message a conversation row stands for (#31).
