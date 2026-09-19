@@ -20,6 +20,7 @@ pub mod folder_tree;
 pub mod help_page;
 pub mod html_renderer;
 pub mod landing_after_a_removal;
+pub mod list_arrival;
 pub mod list_keys;
 pub mod mail_sort;
 pub mod manager_words;
