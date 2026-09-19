@@ -19945,45 +19945,44 @@ fn move_or_copy_message(
         return send_status(tx, rt, "The message is not in a folder we know about");
     };
 
-    // Every chosen message with the folder it is in. The first message's
-    // folder was read above so it could be kept off the list of
-    // destinations; the rest are read the same way, since in All Inboxes
-    // the rows are in different folders of different accounts.
-    let moving: Vec<AMessageMoving> = chosen
-        .messages
-        .iter()
-        .map(|message| AMessageMoving {
-            row_id: message.row_id,
-            uid: message.uid,
-            subject: message.subject.clone(),
-            from: if message.row_id == row_id {
-                from.clone()
-            } else {
-                cache
-                    .folder_path_for_message(message.row_id)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_else(|| from.clone())
-            },
-        })
-        .collect();
-    // Whether every chosen message is in the account the folder is on. A
-    // move or a copy within one account completes here first (#86); a set
-    // that crosses accounts anywhere keeps the server-first path for the
-    // whole set, since a crossing is a fetch and an append and cannot be
-    // replayed from a row, and one set is one sentence. 11-07.2 makes the
-    // crossing complete here first as well.
-    let within_the_account = {
+    // Every chosen message with the folder it is in, the account that holds
+    // it and its size. The first message's folder was read above so it
+    // could be kept off the list of destinations; the rest are read the
+    // same way, since in All Inboxes the rows are in different folders of
+    // different accounts. The account is read off the row, as the worker
+    // reads it, and the size is what the row's headers said, which decides
+    // whether a crossing can be held here (#86, 11-07.2).
+    let moving: Vec<AMessageMoving> = {
         let s = lock_state(state);
-        moving.iter().all(|message| {
-            owner_of(
-                &s.messages,
-                &s.accounts,
-                message.row_id,
-                s.active_account_id.as_deref(),
-            )
-            .is_some_and(|owner| owner.id == into.account_id)
-        })
+        chosen
+            .messages
+            .iter()
+            .map(|message| AMessageMoving {
+                row_id: message.row_id,
+                uid: message.uid,
+                subject: message.subject.clone(),
+                from: if message.row_id == row_id {
+                    from.clone()
+                } else {
+                    cache
+                        .folder_path_for_message(message.row_id)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| from.clone())
+                },
+                account: owner_of(
+                    &s.messages,
+                    &s.accounts,
+                    message.row_id,
+                    s.active_account_id.as_deref(),
+                ),
+                size_bytes: s
+                    .messages
+                    .iter()
+                    .find(|row| row.message_id == message.row_id)
+                    .and_then(|row| row.size_bytes),
+            })
+            .collect()
     };
 
     // The set's rows on screen, remembered so the cursor lands once, after
@@ -20001,54 +20000,63 @@ fn move_or_copy_message(
         });
     }
 
-    if within_the_account {
-        return move_or_copy_here_first(
-            app,
-            list,
-            &cache,
-            a11y,
-            AMoveAsked {
-                moving,
-                chosen,
-                into,
-                copying,
-            },
-        );
-    }
-
     // One word at the key and the fuller line for the eye (#83), the shape
     // a delete has: a move whose row leaves is confirmed by the row the
-    // cursor lands on, and a copy, whose row stays, by its spoken outcome.
-    // Once for the set.
-    let (word, doing) = if copying {
-        ("Copy", "Copying")
-    } else {
-        ("Move", "Moving")
-    };
-    say_the_one_word(a11y, word);
-    send_shown(tx, rt, &what_is_being_done(doing, &chosen));
-    spawn_folder_move(app, moving, chosen, into, copying);
+    // cursor lands on, and a copy, whose row stays, by its spoken outcome,
+    // which is the answer to the key. Once for the set.
+    if !copying {
+        say_the_one_word(a11y, "Move");
+        send_shown(tx, rt, &what_is_being_done("Moving", &chosen));
+    }
+
+    // Within the account or across, a move or a copy completes here first
+    // (#86; the crossing since 11-07.2, on Pratik's decision of
+    // 2026-09-19).
+    move_or_copy_here_first(
+        app,
+        list,
+        &cache,
+        AMoveAsked {
+            moving,
+            chosen,
+            into,
+            copying,
+        },
+    );
 }
 
-/// A move or a copy of a set within one account, made here first (#86).
+/// A move or a copy of a set, made here first (#86), within the account or
+/// to a folder on another account.
 ///
 /// The gate is met at the key, before anything changes: an account that may
 /// not change anything at its server is refused here in the gate's own
-/// words, so no row leaves that would come back a moment later. Then the one
-/// word and the intent line for a move, as before, and nothing spoken for a
-/// copy, whose line is the answer to the key. A message the store would not
-/// record goes down the server-first path on its own, through the worker.
+/// words, so no row leaves that would come back a moment later; a crossing
+/// meets both accounts' gates. The one word and the intent line for a move
+/// are the arm's, said before this is reached, and nothing is spoken for a
+/// copy, whose line is the answer to the key. The asks are grouped by the
+/// account the server holds each message at, and the kind of each is the
+/// one difference between a move within the account and a crossing, so the
+/// arms cannot drift.
+///
+/// A message going to another account that the store cannot hold, over
+/// `LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES` or of a size nobody knows,
+/// cannot be replayed from here after a restart, so it goes the way every
+/// crossing went before this date, server first through the worker, and the
+/// line says why. A message the store would not record goes the same way.
 fn move_or_copy_here_first(
     app: AppHandles<'_>,
     list: &ListCtrl,
     cache: &Arc<MessageCache>,
-    a11y: &Accessibility,
     asked: AMoveAsked,
 ) {
     use crate::application::choosing_messages::{
-        Members, MessageRef, Outcome, what_is_being_done, what_the_selection_holds, what_was_done,
+        Chosen, Members, MessageRef, Outcome, what_the_selection_holds, what_was_done,
     };
-    use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
+    use crate::application::mail_across_accounts::{Crossing, whether_it_crosses};
+    use crate::data::message_cache::moves_in_flight::LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES;
+    use crate::data::message_cache::moves_waiting::{
+        AWaitingMove, TheOtherAccount, WhatAWaitingMoveDoes,
+    };
     let AMoveAsked {
         moving,
         chosen,
@@ -20056,16 +20064,17 @@ fn move_or_copy_here_first(
         copying,
     } = asked;
     let AppHandles { state, tx, rt } = app;
-    let Some(account) = lock_state(state)
+    let Some(destination_account) = lock_state(state)
         .accounts
         .iter()
         .find(|account| account.id == into.account_id)
         .cloned()
     else {
+        lock_state(state).a_set_leaving = None;
         return send_refusal(
             tx,
             rt,
-            "This message is not in an account this program knows about.",
+            "The account that folder is on is not set up on this computer.",
         );
     };
     let doing = if copying {
@@ -20073,16 +20082,30 @@ fn move_or_copy_here_first(
     } else {
         "move a message"
     };
-    if let Err(why) = crate::service::outward::permitted(
-        crate::application::allowed::allowed_for(&account.id).mail,
-        doing,
-    ) {
-        lock_state(state).a_set_leaving = None;
-        return send_refusal(tx, rt, &why.to_string());
+    // Every account a message is at, and the one it is going to: each gate
+    // met before anything changes.
+    let mut gated: Vec<Account> = vec![destination_account.clone()];
+    for message in &moving {
+        let Some(account) = message.account.as_ref() else {
+            lock_state(state).a_set_leaving = None;
+            return send_refusal(
+                tx,
+                rt,
+                "This message is not in an account this program knows about.",
+            );
+        };
+        if !gated.iter().any(|known| known.id == account.id) {
+            gated.push(account.clone());
+        }
     }
-    if !copying {
-        say_the_one_word(a11y, "Move");
-        send_shown(tx, rt, &what_is_being_done("Moving", &chosen));
+    for account in &gated {
+        if let Err(why) = crate::service::outward::permitted(
+            crate::application::allowed::allowed_for(&account.id).mail,
+            doing,
+        ) {
+            lock_state(state).a_set_leaving = None;
+            return send_refusal(tx, rt, &why.to_string());
+        }
     }
     let a_set = moving.len() > 1;
     let one_sentence = a_set.then(|| {
@@ -20102,34 +20125,102 @@ fn move_or_copy_here_first(
         )
     });
     let asked_at = chrono::Utc::now().to_rfc3339();
-    let asks: Vec<AnAskMadeHere> = moving
-        .into_iter()
-        .map(|message| AnAskMadeHere {
-            asked: AWaitingMove {
-                message_row_id: message.row_id,
-                account_id: account.id.clone(),
-                from_folder_path: message.from,
-                uid: message.uid,
-                what: if copying {
-                    WhatAWaitingMoveDoes::Copy {
+    let mut by_account: std::collections::BTreeMap<String, AsksOfOneAccount> =
+        std::collections::BTreeMap::new();
+    let mut too_large_to_hold: Vec<AMessageMoving> = Vec::new();
+    for message in moving {
+        let Some(account) = message.account.clone() else {
+            continue;
+        };
+        let what = match whether_it_crosses(&account.id, &into.account_id) {
+            Crossing::TheSameAccount if copying => WhatAWaitingMoveDoes::Copy {
+                into_folder_path: into.id.clone(),
+            },
+            Crossing::TheSameAccount => WhatAWaitingMoveDoes::Move {
+                into_folder_path: into.id.clone(),
+            },
+            Crossing::AnotherAccount => {
+                let can_be_held = message
+                    .size_bytes
+                    .is_some_and(|size| size <= LARGEST_MESSAGE_KEPT_WHILE_IT_MOVES_BYTES);
+                if !can_be_held {
+                    too_large_to_hold.push(message);
+                    continue;
+                }
+                let to_account = TheOtherAccount {
+                    id: destination_account.id.clone(),
+                    name: destination_account.name.clone(),
+                };
+                if copying {
+                    WhatAWaitingMoveDoes::CopyAcross {
                         into_folder_path: into.id.clone(),
+                        to_account,
                     }
                 } else {
-                    WhatAWaitingMoveDoes::Move {
+                    WhatAWaitingMoveDoes::MoveAcross {
                         into_folder_path: into.id.clone(),
+                        to_account,
                     }
+                }
+            }
+        };
+        by_account
+            .entry(account.id.clone())
+            .or_insert_with(|| AsksOfOneAccount {
+                account: account.clone(),
+                asks: Vec::new(),
+            })
+            .asks
+            .push(AnAskMadeHere {
+                asked: AWaitingMove {
+                    message_row_id: message.row_id,
+                    account_id: account.id,
+                    from_folder_path: message.from,
+                    uid: message.uid,
+                    what,
+                    asked_at: asked_at.clone(),
                 },
-                asked_at: asked_at.clone(),
-            },
-            subject: message.subject,
-        })
-        .collect();
+                subject: message.subject,
+            });
+    }
+    // The crossings that cannot be held here: the whole crossing in front
+    // of the person, as every crossing was until this date, and the row
+    // leaves when the other account has taken it. Spoken, since the person
+    // will wait.
+    for message in &too_large_to_hold {
+        send_status(
+            tx,
+            rt,
+            &format!(
+                "{} {}: larger than 25 MB, so it goes now and the row leaves when {} has taken it",
+                if copying { "Copying" } else { "Moving" },
+                message.subject,
+                destination_account.name
+            ),
+        );
+    }
+    if !too_large_to_hold.is_empty() {
+        let those = Chosen {
+            messages: too_large_to_hold
+                .iter()
+                .map(|message| MessageRef {
+                    row_id: message.row_id,
+                    uid: message.uid,
+                    subject: message.subject.clone(),
+                    read: false,
+                    starred: false,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        spawn_folder_move(app, too_large_to_hold, those, into.clone(), copying);
+    }
     let into_for_the_worker = into.clone();
     complete_here_then_tell_the_server(
         app,
         list,
         cache,
-        vec![AsksOfOneAccount { account, asks }],
+        by_account.into_values().collect(),
         one_sentence,
         move |ask| {
             let one = MessageRef {
@@ -20148,6 +20239,8 @@ fn move_or_copy_here_first(
                     uid: ask.asked.uid,
                     subject: ask.subject,
                     from: ask.asked.from_folder_path,
+                    account: None,
+                    size_bytes: None,
                 }],
                 chosen_one,
                 into_for_the_worker.clone(),
@@ -20164,6 +20257,11 @@ struct AMessageMoving {
     subject: String,
     /// The folder it is in now.
     from: String,
+    /// The account that holds it, as `owner_of` answers; the worker reads
+    /// its own.
+    account: Option<Account>,
+    /// Its size as the headers said, or nothing where nobody knows.
+    size_bytes: Option<i64>,
 }
 
 /// What the Move to or Copy to key asked for, once the folder is chosen.
@@ -20403,6 +20501,7 @@ fn spawn_folder_move(
                 uid,
                 subject,
                 from,
+                ..
             } = message;
             let into = into.clone();
             let destination_account = destination_account.clone();

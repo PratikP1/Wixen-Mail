@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 798 records were swept that day.
-# 159 records have arrived since and have not been through it.
+# 162 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26710,4 +26710,80 @@ tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
     { file = "src/application/moves_waiting.rs", tests = 45 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
+]
+
+# A session asked for in the move arm before the change is made here,
+# which is the wait the tester felt on every move: the row leaves once a
+# server has answered and not before. The arms reading goes red on the
+# target (#86, 11-07.2).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a crossing is made here before any session is asked for, not after"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_across_accounts_completes_here_first"
+before = """    let into_for_the_worker = into.clone();"""
+after = """    let _ = rt.block_on(crate::application::mail_session::the_session_at(
+        &destination_account,
+    ));
+    let into_for_the_worker = into.clone();"""
+red = [
+    "test_a_move_or_a_copy_to_another_account_completes_here_first",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_across_accounts_completes_here_first.rs", tests = 11 },
+]
+
+# The store of held bytes read again for a dialog, which is the question
+# at start phase 4.1 asked and 11-07.2 retired: a crossing is what the
+# person asked for, and a restart finishes it from the held bytes at the
+# next check rather than asking. The retirement reading goes red on the
+# target (#86).
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a restart asks no question about a crossing, not a dialog from the held bytes"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_across_accounts_completes_here_first"
+before = """    let every_account: Vec<Account> = lock_state(&state).accounts.clone();"""
+after = """    let every_account: Vec<Account> = lock_state(&state).accounts.clone();
+    let _ = crate::data::message_cache::MessageCache::new(std::path::PathBuf::new(), None)
+        .and_then(|cache| cache.moves_that_did_not_finish());"""
+red = [
+    "test_a_restart_asks_no_question_about_a_crossing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_across_accounts_completes_here_first.rs", tests = 11 },
+]
+
+# The crossings offered to the source account's check alone, so a crossing
+# waits for an account whose check may never come while the destination is
+# checked every few minutes; the plan put this record on the sync, but the
+# sync does not read the table, and the query that answers either account
+# does. The table's case, the two of the replay at the destination's check
+# and the made-here case, which reads the waiting crossings from the
+# destination's side, go red (#86, 11-07.2); the first draft named three
+# and the runner answered four, and the record was corrected by hand
+# before it was measured again.
+#
+# Measured 2026-09-19 on the branch the record was written on, through
+# `scripts/guards.sh --remeasure`, on the library.
+[[guard]]
+name = "a crossing is offered at a check of either account, not the source alone"
+file = "src/data/message_cache/moves_waiting.rs"
+before = """                   AND (account_id = ?1 OR to_account_id = ?1)"""
+after = """                   AND account_id = ?1"""
+red = [
+    "data::message_cache::moves_waiting::tests::test_a_crossing_is_offered_at_a_check_of_either_account",
+    "application::moves_waiting::tests::test_a_crossing_is_replayed_at_a_check_of_the_destination_account",
+    "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
+    "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 45 },
+    { file = "src/data/message_cache/moves_waiting.rs", tests = 15 },
 ]
