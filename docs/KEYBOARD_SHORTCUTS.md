@@ -433,6 +433,15 @@ can navigate. Making them real headings is being worked on.
 
 ### Window and Pane Navigation
 
+`Tab`, `F6` or a click into the message list lands on a row: the row you were
+on in that folder when it is still there, or the first row under the sort,
+which is the newest message under the default sort. The row is read on
+arrival. A list that already holds a row is left where it was when you come
+back to it, and an empty folder's list says "No messages". Since 2026-09-19;
+until then the list took focus with no row under the cursor, because opening
+a folder selects nothing while you are still in the tree, on purpose, and
+nothing landed a row when focus arrived.
+
 | Action | Shortcut | Description |
 |--------|----------|-------------|
 | Next pane | `F6` | Move focus to the next pane and say which one |
